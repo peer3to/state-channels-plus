@@ -1,8 +1,6 @@
 # RpcHandler.ts
 
 > **Source:** [src/rpc/network/RpcHandler.ts](../../../../../../../src/rpc/network/RpcHandler.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

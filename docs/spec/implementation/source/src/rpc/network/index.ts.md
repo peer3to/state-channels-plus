@@ -1,8 +1,6 @@
 # index.ts
 
 > **Source:** [src/rpc/network/index.ts](../../../../../../../src/rpc/network/index.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

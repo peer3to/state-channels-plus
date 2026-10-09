@@ -28,5 +28,5 @@ runtime sides keep SDK and consumer ABI fragments during a complete two-peer set
 
 ## Tests
 
-- `lets an inline client drive self and peer RPC with failure recovery`: REQ-RPC-1-FF89Z0.T1.P1, REQ-RUN-8-A4B4SA.T1.P1, UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6.P1, UNIT-TEST-RPC-HANDLER-1-8BP2K8.P4, UNIT-TEST-RPC-HANDLER-1-8BP2K8.P11, UNIT-TEST-RPC-HANDLER-1-8BP2K8.P15, INTEGRATION-TEST-RPC-5-ACP2QT.P4, UNIT-TEST-MANAGER-BINDING-1-WB503Z.P8
+- `lets an inline client drive self and peer RPC with failure recovery`: REQ-RPC-1-FF89Z0.T1.P1, UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6.P1, UNIT-TEST-RPC-HANDLER-1-8BP2K8.P4, UNIT-TEST-RPC-HANDLER-1-8BP2K8.P11, UNIT-TEST-RPC-HANDLER-1-8BP2K8.P15, INTEGRATION-TEST-RPC-5-ACP2QT.P4, UNIT-TEST-MANAGER-BINDING-1-WB503Z.P8
 - `lets a worker client drive self and peer RPC with failure recovery`: none

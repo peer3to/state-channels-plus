@@ -126,13 +126,13 @@ prohibited.
 A state machine MUST NOT read ambient EVM values whose content depends on _where_ or _when_ the
 transition executes rather than on the injected transaction and restored state. In particular:
 
-| Prohibited                                                                                                             | Why it breaks replay                                                                                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `msg.sender`, `tx.origin`                                                                                              | Inside the self-call, `msg.sender` is the state-machine address itself; at the outer level it is whichever runner invoked `stateTransition` (off-chain participant-local account off-chain, the manager on-chain). It never identifies the author. Use `_tx.header.participant`. |
-| `block.timestamp`, `block.number`, `blockhash`, `block.prevrandao`, `block.coinbase`, `block.basefee`, `block.chainid` | These come from the executing EVM (a local in-process chain off-chain, the real chain during replay) and differ across executions. Use `_tx.header.timestamp` for time.                                                                                                          |
-| `msg.data` at the `stateTransition` level                                                                              | It is the wrapper's calldata, not the transition input. Use the function arguments dispatched from `transaction.body.data`.                                                                                                                                                      |
-| `msg.value`, `address(this).balance`, external calls to other contracts, precompile-dependent randomness               | State outside `getState()` cannot be restored for replay.                                                                                                                                                                                                                        |
-| `gasleft()`                                                                                                            | Differs between execution environments even under the same `gasLimit`.                                                                                                                                                                                                           |
+| Prohibited                                                                                                                | Why it breaks replay                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `msg.sender`, `tx.origin`                                                                                                 | Inside the self-call, `msg.sender` is the state-machine address itself; at the outer level it is whichever runner invoked `stateTransition` (off-chain participant-local account off-chain, the manager on-chain). It never identifies the author. Use `_tx.header.participant`. |
+| `block.timestamp`, `block.number`, `blockhash`, `block.prevrandao`, `block.coinbase`, `block.basefee`, `block.chainid`    | These come from the executing EVM (a local in-process chain off-chain, the real chain during replay) and differ across executions. Use `_tx.header.timestamp` for time.                                                                                                          |
+| `msg.data` at the `stateTransition` level                                                                                 | It is the wrapper's calldata, not the transition input. Use the function arguments dispatched from `transaction.body.data`.                                                                                                                                                      |
+| `msg.value`, `address(this)`, `address(this).balance`, external calls to other contracts, precompile-dependent randomness | State outside `getState()` cannot be restored for replay.                                                                                                                                                                                                                        |
+| `gasleft()`                                                                                                               | Differs between execution environments even under the same `gasLimit`.                                                                                                                                                                                                           |
 
 - **[`REQ-SM-1-Y72CKX`](state-machines.md#req-sm-1-y72ckx)** — Author identity MUST be read from `_tx.header.participant` and time from
   `_tx.header.timestamp`; any use of the prohibited ambient context in transition logic is a
@@ -311,7 +311,9 @@ it. The recommended policy is round-robin
 argument depends on it). A participant uses `getNextToWrite` to decide whether a received
 block came from the legitimate author and whether it is this instance's turn
 (the corresponding participant-state operation); `peekNextToWrite(serializedState)`
-answers the same question against a supplied state without mutating the live one.
+answers the same question against a supplied state without mutating the live one. The
+supplied-state query MUST be externally reachable on the deployed machine: timeout audits depend
+on it.
 
 - **[`REQ-SM-6-BJZVQ5`](state-machines.md#req-sm-6-bjzvq5)** — Turn authorization is a protocol-layer responsibility, enforced generically for
   every state machine: the validation pipeline checks `block.author == getNextToWrite()` on the
@@ -350,7 +352,9 @@ stateDiagram-v2
       (a top-up on a repeated join).
 
 Joins arrive as inbound messages. The state machine dispatches the standard join message to the
-join operation and MAY dispatch other message types to application-defined handlers.
+join operation and MAY dispatch other message types to application-defined handlers; a message type
+with no handler is rejected. On-chain dispute output generation fails when the machine rejects an
+inbound message.
 
 ### 6.2 `_removeParticipant(address)` — soft removal
 
@@ -361,7 +365,9 @@ participant leaves with their balance; they are not treated as a fraudster. Retu
 ### 6.3 `_slashParticipant(address)` — punitive removal
 
 The punitive exit for objectively proven fraud. The state machine decides how the penalty is
-applied to the offender's balance. Returns `(bool success, ExitChannel)`.
+applied to the offender's balance. Returns `(bool success, ExitChannel)`. Slashing MUST succeed
+for every current participant: dispute reduction applies a timeout removal only when no slash took
+effect, so a refused slash of a present participant causes the timeout target to be removed as well.
 
 ### 6.4 Exits are outbound messages
 
@@ -391,6 +397,12 @@ MAY also produce an exit; exits are not limited to removal and slashing.
   opens a different channel rather than upgrading an existing one in place.
 - Balance arithmetic and custom `Balance.data` encodings are deterministic, bounded by the EVM execution/gas
   model, and reject invalid arithmetic or malformed encodings identically off-chain and on-chain.
+- The gas limit and any configured roster limit are identical for the off-chain instance and the
+  on-chain replay instance, and the manager's dispute-execution gas limit equals the machine's own;
+  otherwise a transition can succeed in one environment and run out of gas in the other.
+- The deployed machine's entry points are not caller-authorized. Its storage is scratch that the
+  manager restores before every use, so no value or authority may be attached to that storage
+  between manager calls.
 - Participant identity is an address and author/time authority comes only from `_tx.header`. The protocol's
   generic leader check runs before transition execution.
 - The current model has one transaction per block. Requirements phrased in terms of block authorship remain
@@ -419,10 +431,12 @@ headers supply the only trusted author and time context.
 - Incorrect turn or membership handling can authorize the wrong participant, duplicate members, or produce an
   invalid exit. [`REQ-SM-5-3GS7A7`](state-machines.md#req-sm-5-3gs7a7) through [`REQ-SM-8-8CHSQ8`](state-machines.md#req-sm-8-8chsq8) define the protocol and hook boundaries.
 - Unbounded transition work can exhaust the fixed gas budget and make otherwise valid history unreplayable.
-  Integrators must define bounded state and collection sizes compatible with the configured gas limit.
+  Integrators must define bounded state and collection sizes compatible with the configured gas limit. A
+  replay transaction must carry the full transition budget plus its own work; a budget whose requirement
+  does not fit a chain block cannot be replayed on that chain.
 
 **Residual gaps:** there is no generic static ambient-context checker, replay-equivalence harness, integrator
-serialization property suite, top-up test, generic on-chain wrong-turn proof, or slash/remove symmetry test.
+serialization property suite, reference algebra for custom `Balance.data`, top-up test, generic on-chain wrong-turn proof, or slash/remove symmetry test.
 Until those gaps close, engineer review of an integrator contract remains a security-critical control.
 
 ## Requirements and invariants

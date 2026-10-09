@@ -1,8 +1,6 @@
 # NodeLogger.ts
 
 > **Source:** [src/utils/logging/node/NodeLogger.ts](../../../../../../../../src/utils/logging/node/NodeLogger.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 No specified behavior: Node logger implementation (console/stream sinks, colorized).
 

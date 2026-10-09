@@ -1,8 +1,6 @@
 # stateChannelManager.ts
 
 > **Source:** [src/utils/stateChannelManager.ts](../../../../../../src/utils/stateChannelManager.ts)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../views/architecture/contracts/manager-and-facets.md)
 
 ## Requirements
 

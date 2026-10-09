@@ -1,8 +1,6 @@
 # P2pEventHooksUtils.ts
 
 > **Source:** [src/utils/P2pEventHooksUtils.ts](../../../../../../src/utils/P2pEventHooksUtils.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

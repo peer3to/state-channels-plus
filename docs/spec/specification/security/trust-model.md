@@ -112,6 +112,12 @@ resilience and decentralization of the underlying chain.
 **Intended:** Redundancy across independent providers as an availability improvement, explicitly
 documented as not removing the honesty assumption.
 
+A client may be configured with an ordered list of endpoints. It sends each request to the first
+connected endpoint, fails over when that endpoint drops, and subscribes to events on every endpoint,
+catching up after a reconnect. Answers are not cross-checked, so every listed endpoint, backups
+included, is trusted: any one of them can forge events on its subscription and thereby make the
+client skip honest events it treats as already passed. Cross-endpoint verification is out of scope.
+
 ## 6. Honest-peer assumption
 
 **<a id="req-trust-3-3ywezr"></a>`REQ-TRUST-3-3YWEZR`.** The protocol assumes at least one non-Byzantine participant in each
@@ -164,6 +170,9 @@ watchtower design:
 The delegate's concrete shape — how it is deployed, what channel access it holds, and how it
 appears to other participants — is not yet decided:
 [`OQ-44-3Y5MD7` (Watchtower deployment shape)](../open-questions.md#oq-44-3y5md7).
+Until that is decided, an integrator deploying version one MUST either keep every honest
+participant's client online through every contest window or operate an external delegate running
+the same client on the participant's behalf.
 
 **Required verification:** offline-participant tests (honest participant
 offline while a counterparty submits an invalid dispute/timeout; delegate contests in time) and
@@ -174,7 +183,9 @@ collusion tests (remaining participants collude against the offline participant)
 **<a id="req-trust-5-ndvrw8"></a>`REQ-TRUST-5-NDVRW8`.** The design targets many SMALL channels, not large ones. For the
 intended poker use case a channel of up to roughly ten participants — commonly six — is an
 acceptable fit for the full mesh. The protocol MUST NOT be presented as suitable for very large
-participant sets under this full-mesh topology.
+participant sets under this full-mesh topology. In the full mesh every participant connects directly
+to every other and broadcasts to all of them, so messaging cost grows quadratically with the
+participant count.
 
 ## 9. Threat model
 

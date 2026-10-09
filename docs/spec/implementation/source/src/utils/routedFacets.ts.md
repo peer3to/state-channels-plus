@@ -1,8 +1,6 @@
 # routedFacets.ts
 
 > **Source:** [src/utils/routedFacets.ts](../../../../../../src/utils/routedFacets.ts)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../views/architecture/contracts/manager-and-facets.md)
 
 ## Requirements
 

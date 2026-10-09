@@ -1,8 +1,6 @@
 # DisputeManager.ts
 
 > **Source:** [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts)
->
-> **Design views:** [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md), [views/protocol/disputes.md](../../../views/protocol/disputes.md)
 
 ## Requirements
 

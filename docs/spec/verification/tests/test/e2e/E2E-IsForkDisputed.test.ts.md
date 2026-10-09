@@ -23,9 +23,9 @@ remains uncovered here.
 ## Tests
 
 - `should broadcast acknowledgment request and receive responses from all peers`: REQ-DACK-1-ESEGGG.T1.P1, UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P1
-- `should ignore duplicate dispute acknowledgment requests`: INV-IFD-3-DZ83BB.T1.P1
-- `should disconnect peer sending duplicate acknowledgment requests`: REQ-DACK-1-ESEGGG.T1.P2, UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P4, UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P2, INV-IFD-1-HBJR2P.T1.P4, REQ-RPC-4-9VX0B9.T1.P7, INTEGRATION-TEST-RPC-6-009EGG.P5
+- `should ignore duplicate dispute acknowledgment requests`: none
+- `should disconnect peer sending duplicate acknowledgment requests`: REQ-DACK-1-ESEGGG.T1.P2, UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P4, UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P2, REQ-RPC-4-9VX0B9.T1.P7, INTEGRATION-TEST-RPC-6-009EGG.P5
 - `should strike non-responding peers after acknowledgment timeout and let them reconnect`: UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P7
-- `should disconnect peer building on acknowledged disputed fork`: REQ-DACK-3-J4Z33Y.T1.P2, REQ-IFD-4-26FWYZ.T1.P1
+- `should disconnect peer building on acknowledged disputed fork`: REQ-DACK-3-J4Z33Y.T1.P2
 - `should disconnect peer requesting acknowledgment of non-disputed fork`: UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P2
 - `should run stubbed RPC method via createRPCMethods wrapper`: none

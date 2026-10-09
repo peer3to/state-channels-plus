@@ -19,4 +19,4 @@ self-slash branch and the slash-then-reduce consumption invariant instead.
 
 ## Tests
 
-- `[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4, INV-DVP-6-RFSBRQ.T1.P1
+- `[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4

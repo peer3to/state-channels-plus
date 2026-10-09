@@ -1,8 +1,6 @@
 # Logger.ts
 
 > **Source:** [src/utils/logging/Logger.ts](../../../../../../../src/utils/logging/Logger.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

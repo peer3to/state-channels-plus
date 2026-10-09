@@ -1,8 +1,6 @@
 # HolepunchRelay.ts
 
 > **Source:** [src/HolepunchRelay.ts](../../../../../src/HolepunchRelay.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

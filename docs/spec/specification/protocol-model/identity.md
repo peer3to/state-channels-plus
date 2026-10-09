@@ -106,12 +106,16 @@ the same (message, signature) pair MUST recover the same address.
 
 **<a id="req-id-2-f3y8j4"></a>`REQ-ID-2-F3Y8J4` — Normalized identity comparison.** Every identity comparison and identity-keyed
 structure MUST use the normalized address form; case or checksum variance MUST NOT create distinct
-identities or miss a match.
+identities or miss a match. Peer exclusion is keyed by identity, not by connection, so it survives
+replacement of the peer's transport.
 
 **<a id="req-id-3-kr0be3"></a>`REQ-ID-3-KR0BE3` — Confined signing authority.** One trusted runtime component holds the key and signs;
 signing capability never crosses to less-trusted execution contexts or peer-reachable surfaces,
 and every remotely triggered signature is produced only by an endpoint whose contract specifies
-validation-before-signing.
+validation-before-signing. The participant runtime takes only a key secret (a random key when none is
+given), never an externally supplied signer object; the application holds only signers that forward to the
+runtime. The key owner also owns the chain nonce, and every chain transaction the participant sends takes
+its nonce from that one owner, so concurrent flows cannot race on it.
 
 **<a id="req-id-4-bnekcm"></a>`REQ-ID-4-BNEKCM` — Domain-separated signing forms.** Session-authentication signatures MUST be
 domain-tagged such that they cannot verify as any protocol-object signature, and vice versa,

@@ -1,8 +1,6 @@
 # resolveCustomRpcManifest.ts
 
 > **Source:** [src/rpc/network/resolveCustomRpcManifest.ts](../../../../../../../src/rpc/network/resolveCustomRpcManifest.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

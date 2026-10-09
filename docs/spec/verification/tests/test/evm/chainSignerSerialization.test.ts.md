@@ -21,9 +21,9 @@ scope; only the serialization boundary is pinned here.
 
 - `preserves full transaction fields and byte message signatures through an inline SDK`: none
 - `preserves full transaction fields and byte message signatures through an SDK worker`: none
-- `round-trips a normalized transaction request`: REQ-RUN-6-MTBT2H.T1.P1
+- `round-trips a normalized transaction request`: none
 - `reconstructs a native provider-backed transaction response`: none
 - `allows explicit client-side replacement detection`: none
-- `rejects fields that cannot cross the runtime port`: REQ-RUN-6-MTBT2H.T1.P4
+- `rejects fields that cannot cross the runtime port`: none
 - `adds gas headroom to estimates and limitless sends through an inline SDK`: REQ-SDK-ARCH-5-AAM7YK.T1.P4
 - `adds gas headroom to estimates and limitless sends through an SDK worker`: REQ-SDK-ARCH-5-AAM7YK.T1.P5

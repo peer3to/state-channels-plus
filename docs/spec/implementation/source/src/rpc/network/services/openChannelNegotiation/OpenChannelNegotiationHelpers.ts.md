@@ -1,8 +1,6 @@
 # OpenChannelNegotiationHelpers.ts
 
 > **Source:** [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/open-channel-negotiation.md](../../../../../../views/architecture/sdk/rpc/open-channel-negotiation.md)
 
 ## Requirements
 

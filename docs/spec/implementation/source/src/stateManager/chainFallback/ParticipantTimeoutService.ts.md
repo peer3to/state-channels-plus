@@ -1,8 +1,6 @@
 # ParticipantTimeoutService.ts
 
 > **Source:** [ParticipantTimeoutService.ts](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts)
->
-> **Design views:** [Dispute pipeline](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

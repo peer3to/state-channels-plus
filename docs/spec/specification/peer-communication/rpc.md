@@ -55,6 +55,13 @@ RPC methods base and the language object base: base helpers, built-in names, acc
 not inherit the runtime's RPC methods base. Every function-valued own property on a methods object is public
 wire API; helpers and stored callbacks MUST stay off that object or use language-enforced private fields.
 
+The caller chooses the delivery mode per call, within what the method's declaration admits: a method
+with no result may be broadcast to every open session or sent one-way to chosen peers, and a method
+with a result is invoked as a correlated request. One-way delivery to a peer with no live session is a
+silent no-op; a request to an unresolvable peer fails locally. An endpoint MUST therefore be safe under
+every delivery mode its declaration admits. Application extensions add entry points only as declared
+services carrying their own guards and payload validation; there is no way to expose a bare function.
+
 | Family                      | Specification                                            | Session precondition          | Delivery shape              |
 | --------------------------- | -------------------------------------------------------- | ----------------------------- | --------------------------- |
 | Identity handshake          | [handshake.md](./handshake.md)                           | None — it _is_ authentication | Challenge/response exchange |
@@ -143,7 +150,10 @@ persistence) are tracked in [`OQ-34-FY08V2` (RPC boundary decisions)](../open-qu
 ## Request lifecycle and correlation
 
 - Correlation identity binds one request to at most one settlement: response, declared remote error,
-  timeout, cancellation, or disconnect ([`REQ-RPC-2-SZDTTM`](rpc.md#req-rpc-2-szdttm)).
+  timeout, cancellation, or disconnect ([`REQ-RPC-2-SZDTTM`](rpc.md#req-rpc-2-szdttm)). Correlation
+  identities need only be unique per requester; settlement authenticity rests on the addressed-peer
+  rule, not on unpredictable identities. The default request deadline is one agreement window,
+  overridable per call.
 - **Addressed-peer rule.** Only the authenticated peer a request was addressed to may settle it —
   matched by peer identity, not by transport object, so a transport upgrade does not orphan pending
   requests. A settlement attempt by any other peer is a protocol violation.
@@ -226,7 +236,7 @@ effects, or resource ownership. Every endpoint declares its replay class
 ([Replay classification](#replay-classification)).
 
 **<a id="req-rpc-5-cv1r1y"></a>`REQ-RPC-5-CV1R1Y` — Resource bounds.** Payload size, outstanding requests, expensive proof/signaling work, and
-per-peer rate MUST be bounded, with overload isolated from unrelated peers and services. Unknown-source block intake delegates directly to ordinary sync and creates no separate admission registry or rate window ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df)). Per-entry source limits do not establish a global connection, request-rate, byte-rate, hash-count or channel-count policy.
+per-peer rate MUST be bounded, including per-request chain reads and proof generation, with overload isolated from unrelated peers and services. Unknown-source block intake delegates directly to ordinary sync and creates no separate admission registry or rate window ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df)). Per-entry source limits do not establish a global connection, request-rate, byte-rate, hash-count or channel-count policy.
 
 **<a id="req-rpc-6-e60s4j"></a>`REQ-RPC-6-E60S4J` — Ordered ingress verification.** Inbound frames MUST pass the fixed dispatch order of
 [Ingress dispatch algorithm](#ingress-dispatch-algorithm): size bound before parsing, response
@@ -289,6 +299,10 @@ handshake domain. (Scheme unresolved: [`OQ-34-FY08V2` (RPC boundary decisions)](
 - RPC handlers run outside the block-progression execution boundary: an endpoint never assumes
   exclusive access to live protocol state and hands validated input to the owning system
   ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
+- Proven identity and exclusion standing survive transport churn; per-connection negotiation state
+  does not. Endpoint state that must survive a transport replacement is keyed by identity.
+- Request deadlines are denominated in the protocol agreement window
+  ([time.md](../protocol-model/time.md)).
 - Application extensions and production bundles may load compatible SDK code through separate JavaScript
   module graphs; constructor identity is therefore not a protocol type discriminator.
 - Host-only admission relies on loopback self-delivery being the only guard bypass; a network transport
@@ -314,6 +328,13 @@ excluded by identity, so it loses only the transport and may reconnect under a f
 the refusal still gives it no protected effect. Withholding the guard-failure response gives a remote
 probe no declared rejection to learn from; the caller learns only that its session closed. A benign
 but misconfigured remote caller therefore sees a disconnect rather than a diagnostic rejection.
+
+Request flooding is unbounded until rate limiting is decided ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)): every valid call,
+including handshake signing, proof serving, join countersigning, signaling, and ignored responses,
+costs the receiver work. The decided direction is one central limiter on the common dispatch path,
+shared by all services including extensions, with dispute and handshake traffic kept responsive above
+bulk synchronization. Which failure classes are misconduct evidence and which are tolerable is today
+decided per service; a uniform policy is open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
 
 ## Verification and test plan
 

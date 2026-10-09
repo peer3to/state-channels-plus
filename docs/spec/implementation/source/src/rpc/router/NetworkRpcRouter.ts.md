@@ -1,8 +1,6 @@
 # NetworkRpcRouter.ts
 
 > **Source:** [src/rpc/router/NetworkRpcRouter.ts](../../../../../../../src/rpc/router/NetworkRpcRouter.ts)
->
-> **Design views:** [RPC architecture](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

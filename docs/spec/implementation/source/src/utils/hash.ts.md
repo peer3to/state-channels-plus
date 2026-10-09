@@ -1,8 +1,6 @@
 # hash.ts
 
 > **Source:** [src/utils/hash.ts](../../../../../../src/utils/hash.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

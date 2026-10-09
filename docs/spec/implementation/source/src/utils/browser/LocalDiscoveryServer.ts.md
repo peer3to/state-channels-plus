@@ -1,8 +1,6 @@
 # LocalDiscoveryServer.ts
 
 > **Source:** [src/utils/browser/LocalDiscoveryServer.ts](../../../../../../../src/utils/browser/LocalDiscoveryServer.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

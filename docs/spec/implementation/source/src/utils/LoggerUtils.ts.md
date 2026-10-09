@@ -1,8 +1,6 @@
 # LoggerUtils.ts
 
 > **Source:** [src/utils/LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 No specified behavior: Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
 

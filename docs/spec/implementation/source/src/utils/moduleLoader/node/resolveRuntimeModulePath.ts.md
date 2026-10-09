@@ -1,8 +1,6 @@
 # resolveRuntimeModulePath.ts
 
 > **Source:** [src/utils/moduleLoader/node/resolveRuntimeModulePath.ts](../../../../../../../../src/utils/moduleLoader/node/resolveRuntimeModulePath.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

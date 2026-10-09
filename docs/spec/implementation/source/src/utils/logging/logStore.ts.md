@@ -1,8 +1,6 @@
 # logStore.ts
 
 > **Source:** [src/utils/logging/logStore.ts](../../../../../../../src/utils/logging/logStore.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

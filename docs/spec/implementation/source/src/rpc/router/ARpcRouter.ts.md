@@ -3,8 +3,6 @@
 > **Source:** [src/rpc/router/ARpcRouter.ts](../../../../../../../src/rpc/router/ARpcRouter.ts)
 >
 > **Replaces:** `src/IOnMessage.ts`
->
-> **Design views:** [Runtime and concurrency](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

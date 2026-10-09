@@ -270,7 +270,7 @@ default root for any downstream consumer building peers with the harness.
 
 Today the blast radius is bounded only by production `p2pSetup` registering the bare
 `MainRpcService`. Decide: restrict harness services to the trusted loopback transport and exclude
-them from the published artifact ([`REQ-RUN-10-FSD184` (Harness control unreachable by network peers)](views/architecture/sdk/runtime-and-concurrency.md#req-run-10-fsd184)'s intended rule), or accept "test peers only run on
+them from the published artifact ([`REQ-RUN-10-FSD184` (Test control unreachable by peers)](../specification/runtime/execution.md#req-run-10-fsd184)'s intended rule), or accept "test peers only run on
 closed networks" as an explicit, documented limitation. See
 [sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4. This is a production gate.
 

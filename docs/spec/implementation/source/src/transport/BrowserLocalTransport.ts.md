@@ -1,8 +1,6 @@
 # BrowserLocalTransport.ts
 
 > **Source:** [src/transport/BrowserLocalTransport.ts](../../../../../../src/transport/BrowserLocalTransport.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

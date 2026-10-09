@@ -1,8 +1,6 @@
 # RemoteRpcProxy.ts
 
 > **Source:** [src/rpc/network/RemoteRpcProxy.ts](../../../../../../../src/rpc/network/RemoteRpcProxy.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

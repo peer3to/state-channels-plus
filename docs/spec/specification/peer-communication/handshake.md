@@ -116,11 +116,13 @@ peer is merely dropped — there is no proven identity to penalize.
 **<a id="inv-auth-1-j0prya"></a>`INV-AUTH-1-J0PRYA` — Signature is the only proof.** The sole authentication evidence is a valid signature
 over this node's own fresh challenge under the handshake domain. Discovery metadata,
 acknowledgements, peer assertions such as claimed channel membership, and transport properties
-prove nothing.
+prove nothing. Any value carried on an acknowledgement is diagnostic only and never authenticates or
+authorizes anything.
 
 **<a id="inv-auth-2-vq6d54"></a>`INV-AUTH-2-VQ6D54` — Domain separation.** Handshake signatures are made only over the domain-tagged,
 versioned message form; a handshake exchange can never produce a signature usable in any other
-protocol context, regardless of the challenge value chosen by the counterparty.
+protocol context, regardless of the challenge value chosen by the counterparty. Every message the node
+signs for an unauthenticated caller is domain-separated in this way.
 
 **<a id="inv-auth-3-0qp5e9"></a>`INV-AUTH-3-0QP5E9` — Objective facts only.** Handshake completion establishes exactly two objective
 facts — proven key control and clock compatibility — and decides nothing else: no channel
@@ -128,13 +130,16 @@ participation, no synchronization eligibility, no authorization, and no subjecti
 proven identity. An identity's channel role never changes the handshake outcome.
 
 **<a id="req-auth-1-rf901k"></a>`REQ-AUTH-1-RF901K` — Validate before signing.** A responder MUST fully validate challenge shape and time
-bounds before creating any signature for an unauthenticated caller.
+bounds before creating any signature for an unauthenticated caller. Every handshake endpoint accepts
+pre-authentication traffic and MUST tolerate wholly unauthenticated, adversarial input without an
+escaping failure.
 
 **<a id="req-auth-2-bq5crg"></a>`REQ-AUTH-2-BQ5CRG` — Fresh single-use challenges.** Challenges MUST be unpredictable, single-use, and
 scoped to one exchange; verification MUST bind the response to exactly the issued challenge.
 
 **<a id="req-auth-3-zv74kb"></a>`REQ-AUTH-3-ZV74KB` — Completion requires both roles.** A session authenticates only when local
-verification _and_ the peer's acknowledgement are both present; completion is idempotent,
+verification _and_ the peer's acknowledgement are both present, with the peer's transport preference
+known; completion is idempotent,
 establishes exactly one live authenticated session for the peer pair, and writes the proven identity
 onto the exact authenticated transport. The identity profile may survive later transport replacement.
 
@@ -154,7 +159,8 @@ and the key together. A failure on an unknown transport never records a verdict 
 a proven identity, the initiator MUST independently validate two timing conditions: the signed
 difference between the remote clock reading and its own MUST be within the inclusive agreement
 tolerance in either direction, and the challenge/response exchange MUST be within its own inclusive
-round-trip/freshness bound. Passing one condition never waives the other; excessive positive skew,
+round-trip/freshness bound. The responder's request-time check, the round trip, and the response
+timestamp all use the same agreement window. Passing one condition never waives the other; excessive positive skew,
 excessive negative skew, or a stale exchange prevents authenticated session establishment. The
 signature MUST verify over exactly the issued challenge under the handshake domain, and an identity
 this node has excluded MUST be rejected.
@@ -190,7 +196,13 @@ authority: a proven stranger gains continued interaction at this layer and nothi
 participation, catch-up, and authorization are decided by their own owners
 ([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)). Residual: the responder in a single
 direction signs for an unauthenticated caller by design; the cost is bounded by validation-before-
-signing and the domain tag. Exclusion durability and its interaction with deferred-call queues are
+signing and the domain tag. The signed message binds no transport, session, or peer identities, so a
+live relay can forward one peer's challenge to a third party and return that party's signature; the
+transports supply no channel binding of their own, and only the agreement-window bounds limit the relay.
+The handshake signature is the entire root of identity trust, so this lack of channel binding is its
+largest residual risk. Each request costs the responder a signature before any guard applies; that
+flood is unbounded until rate limiting is decided ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). A response discloses only the
+responder's transport preference and clock reading. Exclusion durability and its interaction with deferred-call queues are
 open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
 
 ## Verification and test plan

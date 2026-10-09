@@ -1,8 +1,6 @@
 # EventForwarding.ts
 
 > **Source:** [src/evm/p2pRuntime/host/EventForwarding.ts](../../../../../../../../src/evm/p2pRuntime/host/EventForwarding.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

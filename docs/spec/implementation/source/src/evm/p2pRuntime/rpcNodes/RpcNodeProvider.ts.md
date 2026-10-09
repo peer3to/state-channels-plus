@@ -1,8 +1,6 @@
 # RpcNodeProvider.ts
 
 > **Source:** [src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts)
->
-> **Design views:** [runtime/chain-observation.md](../../../../../views/runtime/chain-observation.md)
 
 ## Requirements
 

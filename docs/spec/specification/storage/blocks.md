@@ -43,7 +43,7 @@ populated only from chain observation, never from gossiped payloads.
 
 **<a id="req-blkstore-3-s9v2kc"></a>`REQ-BLKSTORE-3-S9V2KC` — Tip tracking and bounded traversal.** The per-fork maximum height advances only
 on stores that extend the fork (a persistence-only store MAY opt out of tip advancement, e.g. when
-backfilling proof data). Range and latest-block reads MUST clamp any caller-supplied bound to the
+backfilling proof data; imported history stored that way never appears as live progress). Range and latest-block reads MUST clamp any caller-supplied bound to the
 fork's known tip so a remote-supplied absurd height cannot force iteration over an empty range. Deleting the block at the fork's maximum height lowers the maximum to the height below (deletes
 below the tip leave it unchanged); the store does not search for the next held block — history
 contiguity makes the two equivalent.

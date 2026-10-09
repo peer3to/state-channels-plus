@@ -90,6 +90,7 @@ Compact proofs may omit such historical blocks, so absence there is inconclusive
 A different stored block at that height does not receive this exception. A source whose lineage carries
 the block stays. A block on any other fork after the sync is also inconclusive and its source is kept. A probe toward a source with another
 synchronization already in flight waits for that one first, because it need not cover the block.
+A not-ready entry restored after its lifetime already elapsed is handled as expired at once.
 
 ### Stage 4 — Ordering
 
@@ -97,7 +98,8 @@ Execution is scheduled for the lowest queued height not exceeding the next expec
 current fork, one block at a time ([`REQ-BLOCK-PIPE-6-XQ0RTT`](block-processing.md#req-block-pipe-6-xq0rtt)). Competing bodies at one coordinate coexist
 in the queue; the first body to pass validation wins locally while the conflict feeds the evidence
 rules — equivocation is provable regardless, and finality or dispute resolution selects the
-canonical candidate.
+canonical candidate. Ordering is re-evaluated after every intake, every completed execution, and
+every fork transition, and only for the fork that is still current.
 
 ### Stage 5 — Serialized validation
 
@@ -275,10 +277,15 @@ fork's next height when it reaches the serialized boundary (the writer's own ear
 reduction that replaced the fork, or a block at a slot that was never this writer's) is stale and
 produces no block — it is never moved to another coordinate, and signing it would author a
 conflicting block that honest peers prove fraudulent. The caller reassesses against the current
-state. A current-height submission by a non-writer remains an out-of-turn violation.
+state. A current-height submission by a non-writer remains an out-of-turn violation. Any failure after
+execution began restores the pre-transition application state before the serialization boundary
+releases; once the block is persisted, a failing post-commit side effect never rewinds application
+state behind storage.
 
 **<a id="req-block-pipe-1-ss24d1"></a>`REQ-BLOCK-PIPE-1-SS24D1` — Unified work item.** Duplicate confirmations MUST merge signatures and source
 attribution before processing; no path may discard attribution or validate a bare block with weaker context.
+Every input path enters the same work item: a peer copy carries its sender attribution, and an
+observed on-chain posting carries its on-chain timestamp.
 
 **<a id="req-block-pipe-2-pcxnt6"></a>`REQ-BLOCK-PIPE-2-PCXNT6` — Complete pre-execution validation.** Authenticity, channel binding, membership,
 authorship, linkage, fork/height, time, message inputs, and state-proof constraints MUST be evaluated against the same pre-state.
@@ -305,15 +312,18 @@ the block MUST NOT be excluded.
 **<a id="req-block-pipe-5-wj31rg"></a>`REQ-BLOCK-PIPE-5-WJ31RG` — Pre-execution merge layer.** Intake, deduplication, and signature merging form a
 pre-execution layer. Accepting an older, future, duplicate, or not-yet-eligible block, or additional
 signatures for any already known block, MUST NOT require the serialization boundary that guards
-state-machine execution. Admitted contribution history MUST grow monotonically within each source allowance and preserve exact supplier attribution. The live validation block excludes rejected confirmations without refunding those charges. Merge is idempotent and order-independent below each source allowance; at capacity, each source keeps its first admitted values. Pre-execution
+state-machine execution. Admitted contribution history MUST grow monotonically within each source allowance and preserve exact supplier attribution. The live validation block excludes rejected confirmations without refunding those charges. Merge is idempotent and order-independent below each source allowance; at capacity, each source keeps its first admitted values, and excess sources or values are ignored without penalizing their supplier. Pre-execution
 retention limits supplied signature counts per source. Signature validity is checked during normal
 processing. These count limits do not establish a fixed-byte or total-memory bound. An entry's queue
 deadline is fixed at first sight and MUST NOT be extended by duplicates or restores.
 
 **<a id="req-block-pipe-6-xq0rtt"></a>`REQ-BLOCK-PIPE-6-XQ0RTT` — Total-order application.** Blocks leave the pre-execution layer in total order by fork
-identity and block height, and at most one block per channel MAY be in state-machine execution at a time.
+identity and block height, and at most one block per channel MAY be in state-machine execution at a time,
+so no two blocks interleave their effects on application state. In a live context a block above the
+next expected height is parked, never executed early.
 Two blocks claiming the same fork and height MUST be resolved by the specified validation, evidence, and
-drop rules; arrival or queue order MUST NOT decide which one becomes canonical.
+drop rules; arrival or queue order MUST NOT decide which one becomes canonical. Locally, the first
+body to pass validation is the one the node signs and builds on.
 
 **<a id="req-block-pipe-7-fye9vj"></a>`REQ-BLOCK-PIPE-7-FYE9VJ` — Commit before publish.** A confirmation is persisted locally before it is
 published to peers, so echoed copies merge as duplicates instead of re-entering validation, and a
@@ -321,7 +331,8 @@ publication can never advertise state the node has not committed.
 
 **<a id="req-block-pipe-8-n529vh"></a>`REQ-BLOCK-PIPE-8-N529VH` — Evidence precedes escalation.** Every escalation of an objective fault stores
 the fraud evidence for the offender before initiating the dispute, so the dispute can carry it; only
-canonically checkable violations may escalate, and subjective judgments (agreement-window lateness)
+canonically checkable violations may escalate, the objective timestamp rule is evaluated by the
+canonical enforcement logic over the exact proof structure the chain would verify, and subjective judgments (agreement-window lateness)
 MUST NOT produce evidence, penalties, or escalation.
 
 **<a id="req-block-pipe-9-qa66gt"></a>`REQ-BLOCK-PIPE-9-QA66GT` — Dead-fork containment.** A block on a fork with an observed dispute MUST be
@@ -356,6 +367,10 @@ or repeated copies ([`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../s
 - Non-state-mutating intake and merge may proceed concurrently with an in-flight transition; only
   application of a transition is serialized, so pre-execution work must not read or mutate live state.
 - Synchronization may supply missing data but cannot establish trust by itself.
+- The node's clock tracks chain time within the configured skew ([time.md](../protocol-model/time.md)).
+- The local mirror of chain state is only as fresh as the chain events processed so far. Checks that
+  must not miss an on-chain fact (disputed-fork checks during recovery, calldata commitments in
+  timeout logic) read the chain directly and inherit the single-provider trust assumption.
 - Queue and retry bounds must prevent one fork or peer from starving unrelated work.
 - Pre-execution retention is finite: an entry that never becomes eligible must age out or cap without
   affecting the outcome of blocks that do execute.
@@ -368,6 +383,13 @@ invalid execution commitments, recovery bypass, and adversarial resource retenti
 never-eligible blocks or signatures must not delay the serialized execution path or displace the entries
 required for canonical progress, and same-coordinate equivocation must be settled by evidence rules rather
 than by whichever copy the queue happened to hold first.
+
+The pre-execution layer caps each entry but not the number of distinct entries. An admitted source
+can supply distinct authentic blocks on unknown forks, and each one lives a full agreement window, so
+the entry count is bounded only by the admission rate of the communication layer. That single rate
+limit is required and not yet specified ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). A spectator that observes provable
+participant fraud aborts and stops following; the remaining spectate and join failure-point details
+are open ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)).
 
 Authentication is the one intake check that runs in client code instead of the mirrored logic.
 Its asset is agreement between local history and on-chain proof checks: a client check that accepts

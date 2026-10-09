@@ -1,8 +1,6 @@
 # LoopbackTransport.ts
 
 > **Source:** [src/transport/LoopbackTransport.ts](../../../../../../src/transport/LoopbackTransport.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

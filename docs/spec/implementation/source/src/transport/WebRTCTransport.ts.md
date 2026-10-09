@@ -1,8 +1,6 @@
 # WebRTCTransport.ts
 
 > **Source:** [src/transport/WebRTCTransport.ts](../../../../../../src/transport/WebRTCTransport.ts)
->
-> **Design views:** [architecture/sdk/rpc/webrtc-setup.md](../../../views/architecture/sdk/rpc/webrtc-setup.md)
 
 ## Requirements
 

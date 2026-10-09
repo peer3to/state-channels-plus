@@ -26,7 +26,8 @@ every participating node that authors, counter-signs, or learns new signatures r
 confirmation to every open session, fire-and-forget. This service is the receiving end — a
 deliberately thin attribution shim: **the communication layer owns caller admission, sender
 attribution, and the verdict-to-consequence mapping; the pipeline owns every judgment about the
-bytes.** The service performs no protocol validation of the payload.
+bytes.** The service performs no protocol validation of the payload, never mutates channel state
+itself, and never waits on the serialized execution boundary.
 
 ## Algorithm
 
@@ -58,23 +59,29 @@ gossip redundancy plus the recovery paths of [`REQ-BLOCK-PIPE-4-CF52J6` (Recover
 
 ## Failure outcomes
 
-| Failure                                                        | Outcome                                                                   |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Unauthenticated or malformed frame                             | Ingress dispatch consequences ([rpc.md](./rpc.md)); never reaches intake. |
-| Duplicate/older/future confirmation                            | No penalty — merged or held by the pipeline's rules.                      |
-| Sender-attributable objective violation (per pipeline verdict) | Terminate and exclude the sender.                                         |
-| Non-attributable invalid data                                  | Drop; session-level consequence at most.                                  |
+| Failure                                                        | Outcome                                                                                                              |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Unauthenticated or malformed frame                             | Ingress dispatch consequences ([rpc.md](./rpc.md)); never reaches intake.                                            |
+| Duplicate/older/future confirmation                            | No penalty — merged or held by the pipeline's rules.                                                                 |
+| Wrong-channel confirmation                                     | Terminate and exclude the sender: a peer addressing the wrong channel is misdirected or probing.                     |
+| Confirmation on a disputed fork                                | Ignored without penalty (the sender may be an honest straggler) unless the sender already acknowledged that dispute. |
+| Confirmation on an unknown fork                                | Held; the admitted-source expiry probe decides the sender's fate.                                                    |
+| Sender-attributable objective violation (per pipeline verdict) | Terminate and exclude the sender.                                                                                    |
+| Non-attributable invalid data                                  | Drop; session-level consequence at most.                                                                             |
 
 ## Requirements and invariants
 
 **<a id="req-gossip-1-htk3nx"></a>`REQ-GOSSIP-1-HTK3NX` — Thin attributed ingress.** The gossip service MUST attach the authenticated
 sender identity to every received confirmation and hand it to pipeline intake unmodified; it MUST
-NOT validate, filter, reorder, or merge protocol content itself.
+NOT validate, filter, reorder, or merge protocol content itself, mutate channel state, or wait on the
+serialized execution boundary. A peer-delivered confirmation never enters the pipeline without its
+sender; sourceless entries are reserved for proof replay.
 
 **<a id="req-gossip-2-9pmmnh"></a>`REQ-GOSSIP-2-9PMMNH` — Verdict-mapped consequences.** Communication-layer penalties for gossiped content
 MUST follow the pipeline's verdict classification; the gossip layer never penalizes content the
 pipeline classifies as acceptable knowledge, and never forgives what the pipeline attributes as the
-sender's own violation.
+sender's own violation. A rejecting verdict terminates the session and excludes the sender by its
+proven identity, durably across reconnects; an accepting verdict has no communication-layer effect.
 
 **<a id="req-gossip-3-hqznqx"></a>`REQ-GOSSIP-3-HQZNQX` — Re-broadcast on growth.** A participating node MUST re-broadcast accepted signature growth for blocks whose participant union contains it. Spectators and pending joiners MUST persist accepted growth without unsolicited block relaying. A participant that has left MUST relay its leave block and MUST NOT relay blocks committed after it while its exit is pending: peers that already applied its exit no longer admit it as a source. Participant promotion restores normal gossip. Duplicate copies produce no rebroadcast. Receiving, applying, retaining confirmations, and requesting or serving sync remain allowed.
 
@@ -116,6 +123,17 @@ second, weaker judgment of protocol content that an adversary could play against
 ([`REQ-GOSSIP-1-HTK3NX`](block-gossip.md#req-gossip-1-htk3nx) prevents divergence). Attribution fidelity is the security payload — it converts
 flooding and forgery into attributable evidence downstream. Flooding is the main residual until
 rate limiting lands; structural caps in the queue bound per-entry damage.
+
+Inauthentic junk excludes its sender on the first frame, but identities are cheap, so it recycles into
+connection churn rather than sustained load. Replayed copies of a valid confirmation merge as
+duplicates with no state effect and no penalty, so their only cost is flooding; for the same reason
+the receiving path is safe under any delivery mode. Equivocation (different blocks at one coordinate
+sent to different peers) is invisible at a single ingress; honest re-gossip brings both bodies to some
+node, where the conflict rule produces double-sign evidence. Per-copy attribution is what keeps
+relayers of a conflicting body distinguishable from its author. A peer partitioned from honest
+re-gossip keeps the equivocated view until finality or dispute resolution. Residual risk: a local
+intake failure (for example an unavailable chain provider) is not evidence against the sender, and
+reporting it as a rejecting verdict would exclude an honest peer.
 
 ## Verification and test plan
 

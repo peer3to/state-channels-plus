@@ -1,8 +1,6 @@
 # StateManager.ts
 
 > **Source:** [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md), [architecture/sdk/architecture.md](../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

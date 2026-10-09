@@ -64,21 +64,31 @@ it.
 
 ## Failure outcomes
 
-| Failure                                                  | Outcome                                                                                                                            |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Duplicate acknowledgment request (same fork, same peers) | Protocol violation: terminate and exclude the requester.                                                                           |
-| Responder rejects, errors, or times out                  | Counted close against the responder; no verdict below the bound (chain-verifiable-fact rule).                                      |
-| Request to a peer that has not yet observed the dispute  | The responder's chain fallback resolves it; a peer whose chain view genuinely lags spends one retry — see the open decision below. |
+| Failure                                                                 | Outcome                                                                                                                            |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate acknowledgment request (same fork, same peers)                | Protocol violation: terminate and exclude the requester.                                                                           |
+| Request for a fork neither local knowledge nor the chain shows disputed | Protocol violation: terminate and exclude the requester; nothing is recorded.                                                      |
+| Malformed request fields                                                | Request error only; the connection is kept and nothing is recorded.                                                                |
+| Responder rejects, errors, or times out                                 | Counted close against the responder; no verdict below the bound (chain-verifiable-fact rule).                                      |
+| Request to a peer that has not yet observed the dispute                 | The responder's chain fallback resolves it; a peer whose chain view genuinely lags spends one retry — see the open decision below. |
 
 ## Requirements and invariants
 
 **<a id="req-dack-1-eseggg"></a>`REQ-DACK-1-ESEGGG` — One round per fork per peer pair.** Acknowledgment requests run at most once per
 disputed fork toward each peer, and a peer answers each fork at most once; duplicates in either
-direction are protocol violations.
+direction are protocol violations. The round starts on a relevant dispute-window event, asks the
+peers connected at round start, and allows each reply twice the agreement window; peers connecting
+later are neither asked nor penalized for that fork. At most one acknowledgment is recorded per
+direction, peer and fork.
 
 **<a id="req-dack-2-mjzenj"></a>`REQ-DACK-2-MJZENJ` — Bilateral records.** Both sides record the acknowledgment: the requester records
 that the peer knows, the responder records that it acknowledged. Records key by peer identity and
 survive transport churn.
+
+**<a id="req-ifd-2-13862z"></a>`REQ-IFD-2-13862Z` — Acknowledge only verified disputes.** A responder MUST
+acknowledge only a fork it has verified disputed, checking its local dispute knowledge first and the
+chain on a miss, and MUST record the acknowledgment before replying. A request for a fork that neither
+shows disputed is a protocol violation that terminates and excludes the requester.
 
 **<a id="req-dack-3-j4z33y"></a>`REQ-DACK-3-J4Z33Y` — Knowledge-gated consequences.** Dead-fork blocks from a recorded acknowledger MUST
 lose straggler tolerance and be treated as attributable misbehavior; from an unrecorded peer they
@@ -90,11 +100,15 @@ MUST keep the tolerant outcome.
   ([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)).
 - The round is relevance-gated to avoid acknowledging forks the node has no stake in tracking.
 - Timing bound: two agreement windows per request, tolerating one chain-read round trip on the
-  responder.
+  responder; the window must exceed honest event propagation plus chain-read latency.
+- The chain view is trusted: a lying chain provider can make an honest responder refuse a true
+  claim or acknowledge a false one.
+- A node that never observes the dispute event never asks; its protection against dead-fork
+  blocks is then the disputed-fork intake gate alone.
 
 ## Security considerations
 
-The round converts "cannot know who knew" into signed, recorded knowledge — the evidentiary
+The round converts "cannot know who knew" into recorded knowledge — the evidentiary
 foundation for punishing dead-fork extension without punishing honest stragglers. The rule for
 silence or refusal assumes every honest connected peer can verify the fact within the window; a peer
 with a lagging or failing chain view fails it despite honesty. The counted close bounds that cost: one
@@ -104,18 +118,35 @@ decision as the sync service's [`DEF-5-E8TP9N`](../../audit/open-findings.md#def
 undisputed forks is bounded by the responder's chain fallback (the claim is checkable) and the
 duplicate rule.
 
+An acknowledgment is an unsigned reply. It binds only inside the requester: it cannot be shown to a
+third party, cannot back a fraud proof and does not survive restart, so dead-fork building by an
+acknowledger is locally attributable misbehavior (exclusion), not slashable evidence. Any
+affirmative reply counts, which is harmless because it only records the responder against itself.
+An acknowledgment is the settlement of one correlated request and is recorded under the fork the
+requester asked about, so it cannot be replayed across forks. Records grow only with forks that are
+really disputed on-chain. Each request for a new peer-fork pair can cost the responder one chain
+read, bounded per identity by the duplicate and false-claim rules but not rate-limited
+([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). A malformed request costs no penalty while a well-formed false claim
+excludes the sender; this inverted severity is part of the failure-outcome policy in
+[`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2). Whoever uploads a dispute controls when the round starts, so a participant
+can time one to a victim's outage; the counted close bounds the victim's cost to retries, and
+safety is unaffected because dispute and reduction data are on-chain.
+
 ## Verification and test plan
 
 ### Requirement test matrix
 
-| Plan item                                               | Requirements / invariants                                          | Setup and stimulus                                                                                 | Expected result                                                                                        | Required permutations                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-dack-1-eseggg.t1"></a>`REQ-DACK-1-ESEGGG.T1` | [`REQ-DACK-1-ESEGGG`](dispute-acknowledgment.md#req-dack-1-eseggg) | Run rounds normally, repeat requests for the same fork, and answer a fork twice.                   | Single round per fork per pair; duplicates in either direction are violations with their consequences. | <a id="req-dack-1-eseggg.t1.p1"></a>`REQ-DACK-1-ESEGGG.T1.P1` — normal round; <a id="req-dack-1-eseggg.t1.p2"></a>`REQ-DACK-1-ESEGGG.T1.P2` — duplicate request violation; <a id="req-dack-1-eseggg.t1.p3"></a>`REQ-DACK-1-ESEGGG.T1.P3` — duplicate answer violation; <a id="req-dack-1-eseggg.t1.p4"></a>`REQ-DACK-1-ESEGGG.T1.P4` — distinct forks are distinct rounds. |
-| <a id="req-dack-2-mjzenj.t1"></a>`REQ-DACK-2-MJZENJ.T1` | [`REQ-DACK-2-MJZENJ`](dispute-acknowledgment.md#req-dack-2-mjzenj) | Complete rounds, then replace transports and reconnect.                                            | Records persist by identity across churn on both sides.                                                | <a id="req-dack-2-mjzenj.t1.p1"></a>`REQ-DACK-2-MJZENJ.T1.P1` — bilateral recording; <a id="req-dack-2-mjzenj.t1.p2"></a>`REQ-DACK-2-MJZENJ.T1.P2` — record survives transport upgrade; <a id="req-dack-2-mjzenj.t1.p3"></a>`REQ-DACK-2-MJZENJ.T1.P3` — record survives reconnect.                                                                                         |
-| <a id="req-dack-3-j4z33y.t1"></a>`REQ-DACK-3-J4Z33Y.T1` | [`REQ-DACK-3-J4Z33Y`](dispute-acknowledgment.md#req-dack-3-j4z33y) | Deliver dead-fork blocks from recorded and unrecorded peers before and after their acknowledgment. | Tolerance before recording; attributable-misbehavior consequences after.                               | <a id="req-dack-3-j4z33y.t1.p1"></a>`REQ-DACK-3-J4Z33Y.T1.P1` — unrecorded straggler tolerated; <a id="req-dack-3-j4z33y.t1.p2"></a>`REQ-DACK-3-J4Z33Y.T1.P2` — recorded acknowledger cut; <a id="req-dack-3-j4z33y.t1.p3"></a>`REQ-DACK-3-J4Z33Y.T1.P3` — block racing the acknowledgment boundary.                                                                       |
+| Plan item                                               | Requirements / invariants                                          | Setup and stimulus                                                                                                  | Expected result                                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-dack-1-eseggg.t1"></a>`REQ-DACK-1-ESEGGG.T1` | [`REQ-DACK-1-ESEGGG`](dispute-acknowledgment.md#req-dack-1-eseggg) | Run rounds normally, repeat requests for the same fork, and answer a fork twice.                                    | Single round per fork per pair; duplicates in either direction are violations with their consequences.   | <a id="req-dack-1-eseggg.t1.p1"></a>`REQ-DACK-1-ESEGGG.T1.P1` — normal round; <a id="req-dack-1-eseggg.t1.p2"></a>`REQ-DACK-1-ESEGGG.T1.P2` — duplicate request violation; <a id="req-dack-1-eseggg.t1.p3"></a>`REQ-DACK-1-ESEGGG.T1.P3` — duplicate answer violation; <a id="req-dack-1-eseggg.t1.p4"></a>`REQ-DACK-1-ESEGGG.T1.P4` — distinct forks are distinct rounds. |
+| <a id="req-dack-2-mjzenj.t1"></a>`REQ-DACK-2-MJZENJ.T1` | [`REQ-DACK-2-MJZENJ`](dispute-acknowledgment.md#req-dack-2-mjzenj) | Complete rounds, then replace transports and reconnect.                                                             | Records persist by identity across churn on both sides.                                                  | <a id="req-dack-2-mjzenj.t1.p1"></a>`REQ-DACK-2-MJZENJ.T1.P1` — bilateral recording; <a id="req-dack-2-mjzenj.t1.p2"></a>`REQ-DACK-2-MJZENJ.T1.P2` — record survives transport upgrade; <a id="req-dack-2-mjzenj.t1.p3"></a>`REQ-DACK-2-MJZENJ.T1.P3` — record survives reconnect.                                                                                         |
+| <a id="req-dack-3-j4z33y.t1"></a>`REQ-DACK-3-J4Z33Y.T1` | [`REQ-DACK-3-J4Z33Y`](dispute-acknowledgment.md#req-dack-3-j4z33y) | Deliver dead-fork blocks from recorded and unrecorded peers before and after their acknowledgment.                  | Tolerance before recording; attributable-misbehavior consequences after.                                 | <a id="req-dack-3-j4z33y.t1.p1"></a>`REQ-DACK-3-J4Z33Y.T1.P1` — unrecorded straggler tolerated; <a id="req-dack-3-j4z33y.t1.p2"></a>`REQ-DACK-3-J4Z33Y.T1.P2` — recorded acknowledger cut; <a id="req-dack-3-j4z33y.t1.p3"></a>`REQ-DACK-3-J4Z33Y.T1.P3` — block racing the acknowledgment boundary.                                                                       |
+| <a id="req-ifd-2-13862z.t1"></a>`REQ-IFD-2-13862Z.T1`   | [`REQ-IFD-2-13862Z`](dispute-acknowledgment.md#req-ifd-2-13862z)   | Request acknowledgment for a fork disputed in local knowledge, disputed only on the chain, and not disputed at all. | Verified forks are recorded then acknowledged; a false claim excludes the requester and records nothing. | <a id="req-ifd-2-13862z.t1.p1"></a>`REQ-IFD-2-13862Z.T1.P1` — only a fork verified disputed is acknowledged; a false claim excludes the requester.                                                                                                                                                                                                                         |
 
 ## Future Work
 
 _Non-normative._ Split honest-unavailable from refusing responders below the bound (a grace round
 before the counted close — the [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n) fault taxonomy); consider carrying compact dispute references in the request so a lagging
-responder can verify without its own chain round trip.
+responder can verify without its own chain round trip; signed acknowledgments, making dead-fork
+building portable evidence; binding each request to the node's own channel and keying records by
+channel and fork; pruning acknowledgment records once a fork's successor finalizes.

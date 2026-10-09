@@ -1,8 +1,6 @@
 # ObjectChecks.ts
 
 > **Source:** [src/utils/ObjectChecks.ts](../../../../../../src/utils/ObjectChecks.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

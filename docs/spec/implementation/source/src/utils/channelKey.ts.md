@@ -1,8 +1,6 @@
 # channelKey.ts
 
-> **Source:** [channelKey.ts](../../../../../../src/utils/channelKey.ts#L1)
->
-> **Design views:** [components.md](../../../views/architecture/sdk/components.md)
+> **Source:** [channelKey.ts](../../../../../../src/utils/channelKey.ts)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # LocalWebRTCConnectionFactory.ts
 
 > **Source:** [src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts)
->
-> **Design views:** [architecture/sdk/rpc/webrtc-setup.md](../../../../../../../views/architecture/sdk/rpc/webrtc-setup.md)
 
 ## Requirements
 

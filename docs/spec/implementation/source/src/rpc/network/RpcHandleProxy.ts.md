@@ -1,8 +1,6 @@
 # RpcHandleProxy.ts
 
 > **Source:** [src/rpc/network/RpcHandleProxy.ts](../../../../../../../src/rpc/network/RpcHandleProxy.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

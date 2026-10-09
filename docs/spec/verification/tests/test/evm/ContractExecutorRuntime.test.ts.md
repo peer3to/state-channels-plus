@@ -11,7 +11,7 @@ The suite exercises actual SDK-owned components and connections. Each declaratio
 - `waits for inline initialization and the ready signal before returning`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P1
 - `waits for worker initialization and the ready signal before returning`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P2
 - `keeps the supplied inline logger and starts no duplicate monitor`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P3
-- `normalizes inline manifest addresses and preserves optional binary and BigInt values`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P4, REQ-RUN-1-FSV0SH.T1.P7
+- `normalizes inline manifest addresses and preserves optional binary and BigInt values`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P4
 - `normalizes worker manifest addresses and preserves optional binary and BigInt values`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P5
 - `installs no probe or controller during ordinary SDK construction`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P6
 - `keeps canonical calls and simulations ordered through the inline RPC adapter`: UNIT-TEST-EXECUTOR-ROOT-1-WPQCJH.P7

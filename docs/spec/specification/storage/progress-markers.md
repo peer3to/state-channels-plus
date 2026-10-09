@@ -30,7 +30,8 @@ Three markers that carry a node's position or intent across protocol phases:
 
 **<a id="req-rmstore-1-bwkvbg"></a>`REQ-RMSTORE-1-BWKVBG` — Monotone observation progress.** Event-sync progress per channel only advances: a
 store of a lower block number than the retained one leaves the retained value. Progress reflects
-_processed_, not merely observed, events — the producer stores it only after handling.
+_processed_, not merely observed, events — the producer stores it only after handling, and it never
+advances past a block with an event whose handling failed or is incomplete.
 
 **<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-join marker is set on submission, read
 for non-inclusion detection, and cleared explicitly; clearing returns it to its absent state. The

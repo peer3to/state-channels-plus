@@ -1,8 +1,6 @@
 # Mutex.ts
 
 > **Source:** [src/utils/Mutex.ts](../../../../../../src/utils/Mutex.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

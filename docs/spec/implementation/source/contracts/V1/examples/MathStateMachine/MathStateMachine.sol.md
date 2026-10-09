@@ -1,8 +1,6 @@
 # MathStateMachine.sol
 
 > **Source:** [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol)
->
-> **Design views:** [architecture/contracts/state-machine-base.md](../../../../../views/architecture/contracts/state-machine-base.md)
 
 ## Requirements
 

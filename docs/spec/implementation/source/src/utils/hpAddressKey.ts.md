@@ -1,8 +1,6 @@
 # hpAddressKey.ts
 
-> **Source:** [hpAddressKey.ts](../../../../../../src/utils/hpAddressKey.ts#L1)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
+> **Source:** [hpAddressKey.ts](../../../../../../src/utils/hpAddressKey.ts)
 
 ## Requirements
 

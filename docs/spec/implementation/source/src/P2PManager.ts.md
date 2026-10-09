@@ -1,8 +1,6 @@
 # P2PManager.ts
 
 > **Source:** [src/P2PManager.ts](../../../../../src/P2PManager.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md), [architecture/sdk/components.md](../../views/architecture/sdk/components.md)
 
 ## Requirements
 

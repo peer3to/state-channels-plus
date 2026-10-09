@@ -124,11 +124,13 @@ Once those gates pass, escalation MUST NOT start before
 
 **<a id="req-joinsig-1-8x1a4v"></a>`REQ-JOINSIG-1-8X1A4V` — Pinned-state authorization.** Both sides bind the authorization to an exact
 on-chain snapshot and fork; a countersigner MUST refuse when its own current view differs from the
-pin, and the collection's pins MUST be carried to submission.
+pin, and the collection's pins MUST be carried to submission. A countersigner MUST complete decoding,
+identity binding, channel, deadline, pin, and authority checks before signing, and signs only while it
+is itself in the current threshold set.
 
 **<a id="req-joinsig-2-rr2g4q"></a>`REQ-JOINSIG-2-RR2G4Q` — All-or-nothing unanimity.** The collection succeeds only with a verified
 countersignature from every threshold member over the exact encoded join; any member's failure
-fails the collection.
+fails the collection. A collector collects only for its own identity's join.
 
 **<a id="req-joinsig-3-vagfvd"></a>`REQ-JOINSIG-3-VAGFVD` — Refusal is penalty-free.** A responder's validation failure is a declared error
 without session or identity consequences; countersigning is voluntary cooperation, not an
@@ -157,6 +159,17 @@ what was signed; state pinning stops authorization against a moved or forked sta
 membership stops non-members from manufacturing authority. Residual: unconditional signing of valid
 requests means membership control is purely structural until the admission filter is decided
 ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)); a malicious joiner can burn responder attention (rate bounds per [`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y)).
+Unconditional signing downgrades unanimous authorization to unanimous availability: an honest member
+cannot refuse an unwanted joiner, and a joiner may collect signatures and never submit. The signed join
+binds no snapshot, fork, or domain tag; pinning lives in the collection and in enforcement. A join
+signature is therefore an instance of cross-deployment replay exposure ([`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf)), while
+same-channel replay gains nothing because enforcement rejects an existing participant. Join and top-up
+share the same signed bytes, so a responder cannot tell them apart; enforcement's participant
+preconditions reject the wrong use. The joiner chooses the deadline freely and no bound ties it to
+protocol windows ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)). Concurrent joins are serialized by on-chain pin races, so an honest
+concurrent joiner can waste a whole collection round ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)). Penalty-free refusals let any
+authenticated peer probe the endpoint repeatedly, each probe costing chain reads, and descriptive
+refusals disclose the responder's chain view and threshold membership ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
 
 ## Verification and test plan
 

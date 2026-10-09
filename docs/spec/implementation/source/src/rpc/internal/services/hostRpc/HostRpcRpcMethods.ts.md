@@ -1,8 +1,6 @@
 # HostRpcRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/hostRpc/HostRpcRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/hostRpc/HostRpcRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

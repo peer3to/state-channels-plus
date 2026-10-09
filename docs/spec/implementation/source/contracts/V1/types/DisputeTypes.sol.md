@@ -1,8 +1,6 @@
 # DisputeTypes.sol
 
 > **Source:** [contracts/V1/types/DisputeTypes.sol](../../../../../../../contracts/V1/types/DisputeTypes.sol)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # StateChannelEventListener.ts
 
 > **Source:** [src/StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../views/architecture/sdk/components.md), [runtime/chain-observation.md](../../views/runtime/chain-observation.md)
 
 ## Requirements
 

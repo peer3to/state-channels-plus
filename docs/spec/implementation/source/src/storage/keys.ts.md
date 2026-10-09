@@ -1,8 +1,6 @@
 # keys.ts
 
-> **Source:** [keys.ts](../../../../../../src/storage/keys.ts#L1)
->
-> **Design views:** [components.md](../../../views/architecture/sdk/components.md)
+> **Source:** [keys.ts](../../../../../../src/storage/keys.ts)
 
 ## Requirements
 

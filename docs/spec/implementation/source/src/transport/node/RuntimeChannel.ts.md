@@ -1,8 +1,6 @@
 # RuntimeChannel.ts
 
 > **Source:** [src/transport/node/RuntimeChannel.ts](../../../../../../../src/transport/node/RuntimeChannel.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

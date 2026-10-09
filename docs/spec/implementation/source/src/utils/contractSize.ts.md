@@ -1,8 +1,6 @@
 # contractSize.ts
 
 > **Source:** [src/utils/contractSize.ts](../../../../../../src/utils/contractSize.ts)
->
-> **Design views:** [architecture/contracts/architecture.md](../../../views/architecture/contracts/architecture.md)
 
 ## Requirements
 
