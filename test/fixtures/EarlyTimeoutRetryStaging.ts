@@ -797,10 +797,27 @@ async function storeUnappliedPost(
 }
 
 /**
+ * The recorded checks that waited for the predecessor's post. That wait lasts
+ * about as long as the post lagged the block; a reschedule rounding up to the
+ * block's own deadline lasts a second or so, so half the lag tells them apart.
+ */
+async function waitsForPost(
+    tasks: { tasks: () => Promise<{ taskName: string; delayMs: number }[]> },
+    postLagSeconds: number
+): Promise<number[]> {
+    return (await tasks.tasks())
+        .filter(
+            (task) =>
+                task.taskName.startsWith("timeoutParticipantDelayed") &&
+                task.delayMs >= (postLagSeconds * 1000) / 2
+        )
+        .map((task) => task.delayMs);
+}
+
+/**
  * The writer signed the predecessor, whose post lands after the block reached
  * the observer. The observer's own check must neither wait for the post nor
- * raise the claim's minimum: it submits before the post could have moved the
- * deadline, against the block's own deadline.
+ * raise the claim's minimum: it submits against the block's own deadline.
  */
 export async function assertSignedPredecessorPostGrantsNoTime(
     h: MathPeerTestHarness,
@@ -825,8 +842,8 @@ export async function assertSignedPredecessorPostGrantsNoTime(
     )!;
     await h.rpcStub.suppressTimeoutCheck(author.index);
     await h.rpcStub.holdCalldataPostedEventsExceptLeader(author.index);
-    // post strictly after the block reached the observer
-    await sleep(3000);
+    // post well after the block reached the observer
+    await sleep((timeConfig.p2pTime + timeConfig.agreementTime) * 1000);
     const { onChainTimestamp } = await h
         .control(author)
         .validation.postBlockCalldataOnChain(previous.encodedSignedBlock)
@@ -849,11 +866,9 @@ export async function assertSignedPredecessorPostGrantsNoTime(
             protocolEventTimeoutMs(timeConfig)
         );
         expect(
-            Clock.getTimeInSeconds(),
-            "submitted only after the post-based deadline"
-        ).to.be.lessThan(
-            onChainTimestamp + timeoutWaitTime(timeConfig, height)
-        );
+            await waitsForPost(tasks, onChainTimestamp - previous.timestamp),
+            "the check waited for the post"
+        ).to.deep.equal([]);
         expect(
             (await tasks.tasks()).filter((task) =>
                 task.taskName.startsWith(PREDECESSOR_POSTED_RECHECK_REASON)
@@ -908,9 +923,9 @@ export async function assertUnsignedPredecessorPostDelaysCheck(
             protocolEventTimeoutMs(timeConfig)
         );
         expect(
-            Clock.getTimeInSeconds(),
-            "submitted before the post-based deadline"
-        ).to.be.at.least(postedDeadline);
+            await waitsForPost(tasks, onChainTimestamp - previous.timestamp),
+            "the check waited for the post"
+        ).to.not.deep.equal([]);
         expect(
             (await tasks.tasks()).filter((task) =>
                 task.taskName.startsWith(PREDECESSOR_POSTED_RECHECK_REASON)
