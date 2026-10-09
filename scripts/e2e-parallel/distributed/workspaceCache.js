@@ -122,6 +122,9 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
     const previous = readJson(paths.sourceManifest, { files: [] });
     const diff = diffSourceFiles(previous.files, manifest.files);
     const changed = new Set(diff.changed);
+    const recordedStats = new Map(
+        previous.files.map((entry) => [entry.path, entry.stat])
+    );
     for (const entry of manifest.files) {
         if (changed.has(entry.path)) continue;
         const target = resolveWorkspaceFile(paths.workspace, entry.path);
@@ -138,6 +141,12 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
             (stat.mode & 0o777) !== entry.mode
         ) {
             changed.add(entry.path);
+            continue;
+        }
+        // Unchanged size and mtime since this host committed the file: its
+        // content is the committed one. Any write moves the mtime.
+        const recorded = recordedStats.get(entry.path);
+        if (recorded?.mtimeMs === stat.mtimeMs && recorded.size === stat.size) {
             continue;
         }
         const digest = await sha256File(target);
@@ -404,14 +413,28 @@ function removeDeletedFiles(workspaceRoot, deleted) {
     }
 }
 
+// Records each file's on-disk size and mtime next to its offered hash, so the
+// next inspection hashes only files whose stat moved.
 function commitSourceManifest(cache, manifest) {
     fs.mkdirSync(cache.root, { recursive: true });
+    const files = manifest.files.map((entry) => {
+        let stat;
+        try {
+            const { size, mtimeMs } = fs.statSync(
+                resolveWorkspaceFile(cache.workspace, entry.path)
+            );
+            stat = { size, mtimeMs };
+        } catch {
+            stat = undefined;
+        }
+        return { ...entry, stat };
+    });
     fs.writeFileSync(
         cache.sourceManifest,
         JSON.stringify(
             {
                 sourceDigest: manifest.sourceDigest,
-                files: manifest.files
+                files
             },
             null,
             2
