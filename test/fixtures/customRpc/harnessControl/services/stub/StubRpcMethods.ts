@@ -59,6 +59,7 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import type { ContractTransactionResponse } from "ethers";
@@ -1272,6 +1273,27 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         if (runHeld) for (const { task } of held) void task();
         return true;
+    }
+
+    /**
+     * Restore scheduling for `prefix`, run its held tasks and wait for each to
+     * finish. Like TimeoutManager.scheduleTask, a failing task does not reject
+     * the call; its error is returned so the caller can require a clean run.
+     */
+    public async runHeldScheduledTasks(
+        prefix: string
+    ): Promise<{ ran: number; errors: string[] }> {
+        const held = this.service.heldScheduledTasks.get(prefix) ?? [];
+        this.restoreHeldScheduledTasks(prefix, false);
+        const errors: string[] = [];
+        for (const { task } of held) {
+            try {
+                await task();
+            } catch (error) {
+                errors.push(errorMessage(error));
+            }
+        }
+        return { ran: held.length, errors };
     }
 
     public holdNextSignature(match?: SignatureBlockMatch): boolean {
@@ -3234,8 +3256,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.startTimeoutConstruction(writer, height);
     }
 
-    public holdTimeoutBuild(): boolean {
-        this.service.holdTimeoutBuild();
+    public holdTimeoutBuild(seam: "chain" | "mirror" = "chain"): boolean {
+        this.service.holdTimeoutBuild(seam);
         return true;
     }
 
@@ -3250,6 +3272,25 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreTimeoutBuildRecording(): boolean {
         this.service.restoreTimeoutBuildRecording();
+        return true;
+    }
+
+    public stubFailChainReads(
+        method:
+            | "getBlockCallDataCommitment"
+            | "getDisputeWindowCreationTimestamp",
+        times: number
+    ): boolean {
+        this.service.stubFailChainReads(method, times);
+        return true;
+    }
+
+    public getChainReadObservation(): { failed: number; passed: number } {
+        return this.service.getChainReadObservation();
+    }
+
+    public restoreChainReadFailures(): boolean {
+        this.service.restoreChainReadFailures();
         return true;
     }
 

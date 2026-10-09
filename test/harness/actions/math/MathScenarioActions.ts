@@ -925,6 +925,20 @@ export class MathScenarioActions extends ScenarioActions {
     async previousBlockUnsignedByNextWriter(options: {
         timeConfig: TimeConfig;
     }) {
+        const { observer, author, previous, forkId, postParent } =
+            await this.unpostedParentUnsignedByNextWriter(options);
+        const parentPostTimestamp = await postParent();
+        return { observer, author, previous, forkId, parentPostTimestamp };
+    }
+
+    /**
+     * The staging of `previousBlockUnsignedByNextWriter` without the parent's
+     * on-chain post: `postParent` performs it when the caller is ready, e.g.
+     * after the observer has built a timeout against the unposted parent.
+     */
+    async unpostedParentUnsignedByNextWriter(options: {
+        timeConfig: TimeConfig;
+    }) {
         const h = this.harness;
         await h.lifecycle.start(3, 1, { timeConfig: options.timeConfig });
         const forkId = h.activeForkId!;
@@ -1018,24 +1032,29 @@ export class MathScenarioActions extends ScenarioActions {
             parentAuthor.index
         );
 
-        // leave the parent's p2p window before posting, so its real post time
-        // is strictly later than its own timestamp
-        await sleep((options.timeConfig.p2pTime + 2) * 1000);
-        const { onChainTimestamp: parentPostTimestamp } = await h
-            .control(parentAuthor)
-            .validation.postBlockCalldataOnChain(previous.encodedSignedBlock)
-            .request();
-        if (parentPostTimestamp <= previous.timestamp) {
-            throw new Error(
-                `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
-            );
-        }
-        await h
-            .control(observer)
-            .stub.waitForHeldCalldataPostedEvent()
-            .request();
+        const postParent = async () => {
+            // leave the parent's p2p window before posting, so its real post time
+            // is strictly later than its own timestamp
+            await sleep((options.timeConfig.p2pTime + 2) * 1000);
+            const { onChainTimestamp: parentPostTimestamp } = await h
+                .control(parentAuthor)
+                .validation.postBlockCalldataOnChain(
+                    previous.encodedSignedBlock
+                )
+                .request();
+            if (parentPostTimestamp <= previous.timestamp) {
+                throw new Error(
+                    `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
+                );
+            }
+            await h
+                .control(observer)
+                .stub.waitForHeldCalldataPostedEvent()
+                .request();
+            return parentPostTimestamp;
+        };
 
-        return { observer, author, previous, forkId, parentPostTimestamp };
+        return { observer, author, parentAuthor, previous, forkId, postParent };
     }
 
     /**

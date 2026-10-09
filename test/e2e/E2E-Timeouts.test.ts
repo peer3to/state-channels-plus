@@ -1,9 +1,30 @@
+import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
+    MISMATCH_TIMEOUT_RECHECK_REASON,
+    PREDECESSOR_POSTED_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroAddress } from "ethers";
+
+// short windows, so the staged parent post and the moved deadline fit one test
+const MOVED_DEADLINE_TIME_CONFIG = {
+    p2pTime: 2,
+    agreementTime: 8,
+    chainFallbackTime: 10,
+    evidenceTime: 20
+};
+// M9: the dispute window must outlive the post-moved deadline, or the fork is
+// reduced before the claim is ever built
+const WINDOW_OUTLIVES_DEADLINE_TIME_CONFIG = {
+    ...MOVED_DEADLINE_TIME_CONFIG,
+    evidenceTime: 60
+};
 
 /**
  * E2E Tests for Timeout Management
@@ -414,6 +435,371 @@ describe("E2E: Timeouts", function () {
                 timedoutParticipantIndex: 0,
                 peerToCheck: 2
             }); // peer 0 should be timed out for not authoring block
+        });
+    });
+
+    describe("Previous-Producer Mismatch Recheck", function () {
+        it("M6 a real predecessor post refuses the first upload and the recheck commits rebuilt evidence", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            // peer 0 authors height 0; nobody writes height 1, so observer 2
+            // times out writer 1 with peer 0 as the previous producer
+            await h.transition.advanceState();
+            const predecessor = h.getPeer(0);
+            const writer = h.getPeer(1);
+            const observer = h.getPeer(2);
+            const forkId = h.activeForkId!;
+            await h.dispute.suppressDisputeInitiation([predecessor.index]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // Park the observer's first upload (built while height 0 was
+            // unposted), post height 0 for real, then let the upload reach
+            // the real contract: the refusal and the retry are both on chain.
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { hold: true, forward: true }
+            );
+            try {
+                await uploads.waitUntilHeld(h.event.hostExecTimeoutMs());
+                const parent = await h
+                    .control(predecessor)
+                    .query.getBlockByHeight(forkId, 0)
+                    .request();
+                await h
+                    .control(predecessor)
+                    .validation.postBlockCalldataOnChain(
+                        parent!.encodedSignedBlock
+                    )
+                    .request();
+                await uploads.release();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+
+                // the commit event can land before the observer's own wait()
+                await waitFor(
+                    async () =>
+                        (await uploads.submissions()).at(-1)?.waited === true,
+                    h.event.hostExecTimeoutMs()
+                );
+                const submissions = await uploads.submissions();
+                const refused = submissions[0];
+                const committed = submissions[submissions.length - 1];
+                expect(submissions.length).to.be.greaterThan(1);
+                expect(refused.revert?.name).to.equal(
+                    "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
+                );
+                expect(committed.revert).to.equal(null);
+                expect(committed.waited).to.equal(true);
+                const refusedTimeout = Codec.decode(
+                    refused.encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                const committedTimeout = Codec.decode(
+                    committed.encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                // the retry rebuilt the evidence from the new posting state
+                expect(
+                    refusedTimeout.previousBlockProducerPostedCalldata
+                ).to.equal(false);
+                expect(
+                    committedTimeout.previousBlockProducerPostedCalldata
+                ).to.equal(true);
+                expect(committedTimeout.previousBlockProducer).to.equal(
+                    predecessor.address
+                );
+                expect(committedTimeout.participant).to.equal(writer.address);
+                expect(Number(committedTimeout.blockHeight)).to.equal(1);
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            MISMATCH_TIMEOUT_RECHECK_REASON
+                        )
+                    )
+                ).to.equal(true);
+            } finally {
+                await uploads.release();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("Previous-Producer Mismatch Moves The Deadline", function () {
+        it("M7 a real post of a parent the writer never signed refuses the upload, and the recheck waits for the moved deadline", async function () {
+            const h = TestSession.getHarness();
+            // the writer never signed the parent, so the parent's on-chain
+            // post really extends the writer's deadline
+            const { observer, author, parentAuthor, previous, postParent } =
+                await h.scenario.unpostedParentUnsignedByNextWriter({
+                    timeConfig: MOVED_DEADLINE_TIME_CONFIG
+                });
+            const height = previous.height + 1;
+            await h.dispute.suppressDisputeInitiation([
+                parentAuthor.index,
+                author.index
+            ]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { hold: true, forward: true }
+            );
+            try {
+                // the observer built its claim against the unposted parent
+                await uploads.waitUntilHeld(h.event.hostExecTimeoutMs());
+                const parentPostTimestamp = await postParent();
+                await uploads.release();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+                await waitFor(
+                    async () =>
+                        (await uploads.submissions()).at(-1)?.waited === true,
+                    h.event.hostExecTimeoutMs()
+                );
+
+                const submissions = await uploads.submissions();
+                expect(submissions[0].revert?.name).to.equal(
+                    "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
+                );
+                const committedTimeout = Codec.decode(
+                    submissions[submissions.length - 1].encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                expect(
+                    committedTimeout.previousBlockProducerPostedCalldata
+                ).to.equal(true);
+                expect(committedTimeout.participant).to.equal(author.address);
+                expect(Number(committedTimeout.blockHeight)).to.equal(height);
+                // rebuilt against the parent's post, not its own timestamp
+                expect(Number(committedTimeout.minTimeStamp)).to.be.at.least(
+                    parentPostTimestamp +
+                        timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height)
+                );
+                // the recheck waited for the moved deadline instead of
+                // resubmitting at once
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith("timeoutParticipantDelayed")
+                    )
+                ).to.equal(true);
+            } finally {
+                await uploads.release();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("Previous-Producer Post During Timeout Construction", function () {
+        it("M8 a parent post landing during timeout construction re-runs the check instead of submitting the stale deadline", async function () {
+            const h = TestSession.getHarness();
+            const { observer, author, parentAuthor, previous, postParent } =
+                await h.scenario.unpostedParentUnsignedByNextWriter({
+                    timeConfig: MOVED_DEADLINE_TIME_CONFIG
+                });
+            const height = previous.height + 1;
+            await h.dispute.suppressDisputeInitiation([
+                parentAuthor.index,
+                author.index
+            ]);
+            // park the observer's check right after it computed its deadline
+            // from the still-unposted parent
+            await h.control(observer).stub.holdTimeoutBuild("mirror").request();
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            try {
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(observer)
+                                .stub.getTimeoutBuildObservation()
+                                .request()
+                        ).entered === 1,
+                    protocolEventTimeoutMs(MOVED_DEADLINE_TIME_CONFIG)
+                );
+                const parentPostTimestamp = await postParent();
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+                await waitFor(
+                    async () =>
+                        (await uploads.submissions()).at(-1)?.waited === true,
+                    h.event.hostExecTimeoutMs()
+                );
+
+                // the very first claim already follows the post: no claim
+                // pairing the post with the old deadline was ever submitted
+                const [first] = await uploads.submissions();
+                expect(first.revert).to.equal(null);
+                const timeout = Codec.decode(first.encodedDispute, Type.Dispute)
+                    .input.timeout;
+                expect(timeout.previousBlockProducerPostedCalldata).to.equal(
+                    true
+                );
+                expect(Number(timeout.minTimeStamp)).to.be.at.least(
+                    parentPostTimestamp +
+                        timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height)
+                );
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            PREDECESSOR_POSTED_RECHECK_REASON
+                        )
+                    )
+                ).to.equal(true);
+            } finally {
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+                await h
+                    .control(observer)
+                    .stub.restoreTimeoutBuildRecording()
+                    .request();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("Dispute Window Opened Before A Moved Deadline", function () {
+        it("M9 a window opened before the post-moved deadline keeps the observer from storing a claim the chain refuses", async function () {
+            const h = TestSession.getHarness();
+            const { observer, author, parentAuthor, previous, forkId } =
+                await h.scenario.unpostedParentUnsignedByNextWriter({
+                    timeConfig: WINDOW_OUTLIVES_DEADLINE_TIME_CONFIG
+                });
+            // the parent author must stay free to open the window below
+            await h.dispute.suppressDisputeInitiation([author.index]);
+            // park the observer's check at the parent-based deadline
+            await h.control(observer).stub.holdTimeoutBuild("mirror").request();
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // the window's event never reaches the observer, so its local
+            // mirror reads no window: only the chain knows it opened
+            const restoreDisputeEvents =
+                await h.rpcStub.holdDisputeCommittedEvents(observer.index, {
+                    passFirst: false
+                });
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            try {
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(observer)
+                                .stub.getTimeoutBuildObservation()
+                                .request()
+                        ).entered === 1,
+                    h.event.hostExecTimeoutMs()
+                );
+                // a window opens after that deadline...
+                await h.execOnHost(parentAuthor, (sm) =>
+                    sm.membershipService.startSelfRemovalDispute(sm.forkId)
+                );
+                await waitFor(
+                    async () =>
+                        await h.execOnHost(
+                            observer,
+                            async (sm, args) =>
+                                Number(
+                                    await sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                                        sm.channelId,
+                                        args.forkId
+                                    )
+                                ) !== 0,
+                            { forkId }
+                        ),
+                    h.event.hostExecTimeoutMs()
+                );
+                // ...and only then does the predecessor post, moving the
+                // writer's deadline past the window
+                await h.byzantine.postJunkCalldataOnChain(parentAuthor.index, {
+                    height: previous.height,
+                    forkId
+                });
+                // the first chain window read fails once: the check must re-arm
+                await h
+                    .control(observer)
+                    .stub.stubFailChainReads(
+                        "getDisputeWindowCreationTimestamp",
+                        1
+                    )
+                    .request();
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+
+                // the check waits out the post-based deadline...
+                const awaitPost = async () =>
+                    (await tasks.tasks()).find(
+                        (task) =>
+                            task.taskName.startsWith(
+                                PREDECESSOR_POSTED_RECHECK_REASON
+                            ) && task.delayMs > 1000
+                    );
+                await waitFor(
+                    async () => (await awaitPost()) !== undefined,
+                    h.event.hostExecTimeoutMs()
+                );
+                await sleep((await awaitPost())!.delayMs + 5000);
+
+                // ...then finds the window predates it: nothing stored, and
+                // no claim against the writer ever reaches the chain
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.equal(null);
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            CHAIN_READ_FAILED_RECHECK_REASON
+                        )
+                    )
+                ).to.equal(true);
+                // the re-armed check really ran and read the window again
+                expect(
+                    await h
+                        .control(observer)
+                        .stub.getChainReadObservation()
+                        .request()
+                ).to.deep.include({ failed: 1 });
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getChainReadObservation()
+                            .request()
+                    ).passed
+                ).to.be.greaterThan(0);
+                for (const submission of await uploads.submissions()) {
+                    expect(
+                        Codec.decode(submission.encodedDispute, Type.Dispute)
+                            .input.timeout.participant
+                    ).to.not.equal(author.address);
+                }
+            } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreChainReadFailures()
+                    .request();
+                await restoreDisputeEvents(false);
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+                await h
+                    .control(observer)
+                    .stub.restoreTimeoutBuildRecording()
+                    .request();
+                await uploads.restore();
+                await tasks.restore();
+            }
         });
     });
 
