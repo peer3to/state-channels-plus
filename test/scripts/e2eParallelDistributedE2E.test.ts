@@ -975,6 +975,12 @@ describe("distributed parallel runner", function () {
         write(".gitignore", "dist\n");
         fs.mkdirSync(path.join(workspace.projectRoot, "dist"));
         write("dist/value.js", "module.exports = 'first build';\n");
+        // build tools can leave group/other-writable outputs; the worker must
+        // accept the archived mode on extraction and on its next check
+        fs.chmodSync(
+            path.join(workspace.projectRoot, "dist", "value.js"),
+            0o666
+        );
         write(
             "test/cost.test.js",
             `const assert = require("assert");

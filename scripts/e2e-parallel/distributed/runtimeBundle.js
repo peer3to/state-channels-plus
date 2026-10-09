@@ -246,9 +246,9 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
                 path: workspacePath,
                 bytes: stat.size,
                 sha256: await sha256File(source),
-                // the mode the archive carries: tar adds owner write and drops
-                // group/other write, and both ends compare against this
-                mode: (stat.mode | 0o200) & 0o755
+                // the mode the archive carries: tar adds owner read and write
+                // and drops group/other write, and both ends compare against this
+                mode: (stat.mode | 0o600) & 0o755
             });
         }
         const prepareScript = builtHere
