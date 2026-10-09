@@ -10,7 +10,11 @@ import {
     assertAuthoredLeaveFallback,
     assertExitFallbackFailureGuards
 } from "@test/fixtures/AuthoredLeaveFailureStaging";
-import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
+import {
+    assertClean,
+    expectLeftHandoffEndsJoins,
+    setup
+} from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
@@ -1623,6 +1627,59 @@ describe("discovery runtime port", function () {
         } finally {
             await Promise.all(releases.map((release) => release()));
         }
+    });
+
+    it("ends a lobby join left during the handoff when its negotiation then fails", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-handoff-leave");
+        await expectLeftHandoffEndsJoins(h, topic, async (signer) => {
+            expect(await signer.leaveLobby(topic)).to.equal(false);
+        });
+    });
+
+    it("keeps a handoff leave when a second join on the same signer is rejected", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-handoff-leave-rejected-join");
+        await expectLeftHandoffEndsJoins(h, topic, async (signer) => {
+            expect(await signer.leaveLobby(topic)).to.equal(false);
+            await expect(
+                signer.joinLobby(ethers.id("runtime-port-handoff-other"))
+            ).to.be.rejectedWith("already handed off");
+        });
+    });
+
+    it("matches a handoff leave across topic letter case and keeps it after a leave of another topic", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-handoff-leave-case");
+        await expectLeftHandoffEndsJoins(h, topic, async (signer) => {
+            expect(
+                await signer.leaveLobby(`0x${topic.slice(2).toUpperCase()}`)
+            ).to.equal(false);
+            expect(
+                await signer.leaveLobby(ethers.id("runtime-port-handoff-other"))
+            ).to.equal(false);
+        });
+    });
+
+    it("ends a lobby join left before its matching started", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("runtime-port-leave-before-matching");
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        const join = signer.joinLobby(topic);
+        // nothing is matching yet, so nothing is cancelled
+        expect(await signer.leaveLobby(topic)).to.equal(false);
+        expect(await join).to.equal(undefined);
+        const peer = h.control(h.peers[0]);
+        expect(await peer.query.getStatus().request()).to.equal(
+            Status.NOT_OPENED
+        );
+        expect(
+            (await peer.query.getLobbyAvailability().request()).topic
+        ).to.equal(undefined);
     });
 
     it("joinLobby starts ordinary negotiation from the returned match", async function () {

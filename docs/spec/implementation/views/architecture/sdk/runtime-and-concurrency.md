@@ -138,7 +138,7 @@ finite timeout crosses with the options. Replacing a join settles an earlier act
 `leaveLobby` returns the host's phase decision: true during cancellable matching and false after handoff.
 Lobby-authenticated transports remain host-side and outside ordinary connection tracking until one selected
 profile is promoted at commitment. Every non-success cleanup closes the session set, and unsigned retry
-leaves and freshly rejoins the topic. The internal match transcript never crosses the port.
+leaves and freshly rejoins the topic unless the caller left the lobby. The internal match transcript never crosses the port.
 The host derives the channel ID during negotiation, observes the opening on-chain, leaves the topic, and
 returns the opened channel ID and selected peer address for the client to observe.
 

@@ -47,7 +47,9 @@ operational limits. It hosts every other system without changing their observabl
   until the chain's snapshot confirms the removal.
 - **Lobby control.** `joinLobby(topic, options)` is indefinite while matching unless the caller supplies
   a positive finite `matchTimeoutMs`. `leaveLobby(topic)` returns true only when it cancels active matching;
-  after commitment it returns false and the host-owned negotiation continues to its chain-observed outcome.
+  otherwise it returns false. After commitment the host-owned negotiation continues to its chain-observed
+  outcome, and any outcome other than opening then ends the join instead of rematching; a leave before
+  matching starts ends the join without matching.
 - **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
   [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
   ([configuration.md](./configuration.md)); `INV-CHAINOBS-*`, `REQ-CHAINOBS-*`

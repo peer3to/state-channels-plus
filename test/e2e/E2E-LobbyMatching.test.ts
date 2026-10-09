@@ -1521,6 +1521,40 @@ describe("E2E: lobby matching", function () {
         }
     });
 
+    it("ends a lobby join left during the negotiation handoff instead of rematching", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-leave-during-handoff");
+        const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
+        try {
+            // no matching is active to cancel, so the leave reports false
+            for (const peer of h.peers) {
+                expect(
+                    await h.control(peer).network.leaveLobby(topic).request()
+                ).to.equal(false);
+            }
+            await release();
+            // both joins settle on their failed negotiation without a rematch,
+            // so neither peer opens a channel
+            await TestSession.settleDetached();
+            for (const peer of h.peers) {
+                expect(
+                    (
+                        await h
+                            .control(peer)
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).topic
+                ).to.equal(undefined);
+                expect(
+                    await h.control(peer).query.getChannelId().request()
+                ).to.equal(ethers.ZeroHash);
+            }
+        } finally {
+            await release();
+        }
+    });
+
     it("keeps a signed attempt observing the chain after a remote abort and opens on the observed submission", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });

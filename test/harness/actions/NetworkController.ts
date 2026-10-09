@@ -155,6 +155,35 @@ export class NetworkController<
         );
     }
 
+    /**
+     * Joins the lobby and returns once every peer's matched negotiation is
+     * parked at the handoff. The returned release fails those negotiations
+     * unsigned, the outcome after which a join rematches.
+     */
+    async joinLobbyHeldAtHandoff(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<() => Promise<void>> {
+        const releases = await Promise.all(
+            peerIndices.map((index) =>
+                this.harness.rpcStub.holdMatchedNegotiation(index, true)
+            )
+        );
+        const release = async () => {
+            await Promise.all(releases.map((releaseOne) => releaseOne()));
+        };
+        try {
+            await this.joinLobby(peerIndices, rendezvousTopic);
+            await this.harness.rpcStub.waitForHeldMatchedNegotiation(
+                peerIndices
+            );
+        } catch (error) {
+            await release();
+            throw error;
+        }
+        return release;
+    }
+
     async joinSelectedKey(
         peerIndices: number[],
         channelId: string

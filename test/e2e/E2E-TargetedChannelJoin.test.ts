@@ -82,23 +82,6 @@ describe("E2E: Targeted channel join", function () {
         peerIndex: number
     ) => await h.control(h.getPeer(peerIndex)).query.getStatus().request();
 
-    const waitForHeldMatchedNegotiation = async (
-        h: ReturnType<typeof TestSession.getHarness>,
-        peerIndices: number[]
-    ) => {
-        await waitFor(async () => {
-            const counts = await Promise.all(
-                peerIndices.map((index) =>
-                    h
-                        .control(h.getPeer(index))
-                        .stub.getHeldMatchedNegotiationCount()
-                        .request()
-                )
-            );
-            return counts.every((count) => count === 1);
-        }, 20_000);
-    };
-
     it("unopened target without autoOpen and without balance returns false without discovery", async function () {
         const { h, channelId, targeted } = await unopened("target-no-open");
         expect(await targeted.connect(h.getPeer(0), channelId)).to.equal(false);
@@ -581,7 +564,7 @@ describe("E2E: Targeted channel join", function () {
             })
         );
         try {
-            await waitForHeldMatchedNegotiation(h, [0, 1]);
+            await h.rpcStub.waitForHeldMatchedNegotiation([0, 1], 20_000);
             await sleep(3_100);
             expect(
                 await h
@@ -743,7 +726,7 @@ describe("E2E: Targeted channel join", function () {
             targeted.connect(h.getPeer(index), channelId, { autoOpen: true })
         );
         try {
-            await waitForHeldMatchedNegotiation(h, [0, 1]);
+            await h.rpcStub.waitForHeldMatchedNegotiation([0, 1], 20_000);
             expect(
                 await h
                     .getPeer(0)

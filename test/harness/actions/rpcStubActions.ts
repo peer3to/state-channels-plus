@@ -268,6 +268,29 @@ export class RpcStubActions<
                 .request();
     }
 
+    /** Waits until each peer has one matched negotiation parked by holdMatchedNegotiation. */
+    async waitForHeldMatchedNegotiation(
+        peerIndices: number[],
+        timeoutMs = this.harness.event.protocolEventTimeoutMs({
+            withFirstBlockGrace: true
+        })
+    ): Promise<void> {
+        await waitFor(
+            async () =>
+                (
+                    await Promise.all(
+                        peerIndices.map((index) =>
+                            this.harness
+                                .control(this.harness.getPeer(index))
+                                .stub.getHeldMatchedNegotiationCount()
+                                .request()
+                        )
+                    )
+                ).every((count) => count === 1),
+            timeoutMs
+        );
+    }
+
     async failNextMatchedNegotiation(peerIndex: number): Promise<void> {
         await this.harness
             .control(this.harness.getPeer(peerIndex))

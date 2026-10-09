@@ -15,6 +15,7 @@
 - [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
 - [`REQ-TJOIN-4-SDPZJW` (Direct response routing)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw)
 - [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
+- [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
 
 ## UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW
 
@@ -31,3 +32,14 @@ Targeted connect composition
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6` — Both lobby founders publish channel discovery records only after becoming PARTICIPATING
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P7` — Both lobby founders open the same channel; a later spectator discovers it, synchronizes on that channel and connects to both founders
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P8` — A later joiner discovers the lobby-opened channel and connectToChannel with shouldJoin succeeds, with its address present among on-chain pending participants
+
+## UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ
+
+Ordinary lobby join leave
+
+- Setup: Park both peers' matched negotiations at the handoff, leave from the in-process signer, then fail the negotiations unsigned
+- Oracle: Each join resolves undefined with no channel, NOT_OPENED status, and no lobby session
+
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P1` — same-topic leave ends both joins
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P2` — a rejected second join on the signer keeps the leave
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3` — a differently cased leave counts, and a later leave of another topic does not undo it

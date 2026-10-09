@@ -33,3 +33,5 @@ its own join state is still open.
 - `U75e: a landed join whose self-removal reduction the joiner installs while the chain still lists it → the chain's snapshot event lowers it to SYNCED and its leave settles`: REQ-LIF-10-QR8NQ9.T2.P4
 - `U75f: a pending joiner whose uncertain join can still land handles a snapshot event that does not list it → it stays PENDING_PARTICIPANT with its join open`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P18
 - `U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it`: INV-TJOIN-2-H7JSQM.T2.P6, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P40
+- `U130: a leave of another topic during the handoff → the join still rematches on its own topic`: REQ-LOBBY-9-N894C0.T1.P27
+- `U130: a new join after a leave during the handoff → its failed negotiation rematches again`: REQ-LOBBY-9-N894C0.T1.P29
