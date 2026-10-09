@@ -109,10 +109,14 @@ jobs:
             - name: Check import order
               run: yarn lint:imports
 
+            - name: Read the pinned Foundry version
+              id: forge
+              run: echo "version=$(cat .forge-version)" >> "$GITHUB_OUTPUT"
+
             - name: Install Foundry
               uses: foundry-rs/foundry-toolchain@v1
               with:
-                  version: v1.7.1
+                  version: ${{ steps.forge.outputs.version }}
 
             - name: Check Solidity formatting
               run: forge fmt --check
@@ -139,8 +143,8 @@ jobs:
                   path: |
                       out
                       cache_forge
-                  key: forge-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
-                  restore-keys: forge-
+                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  restore-keys: forge-${{ steps.forge.outputs.version }}-
 
             - name: Compile contracts and generated artifacts
               run: yarn compile
