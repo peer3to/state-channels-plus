@@ -827,7 +827,7 @@ describe("forge warm-up build", function () {
         };
         write(
             "foundry.toml",
-            "[profile.default]\nsrc = 'contracts'\nout = 'out'\ntest = 'test'\n"
+            "[profile.default]\nsrc = 'contracts'\nout = 'out'\ntest = 'test'\nsolc = '0.8.34'\n"
         );
         write(
             "contracts/Lib.sol",
@@ -864,6 +864,20 @@ describe("forge warm-up build", function () {
                     built
                 ).to.equal(true);
             }
+            expect(
+                fs.existsSync(path.join(root, "out", "Skipped.t.sol"))
+            ).to.equal(false);
+            // the scheduled task then has nothing left to build
+            const cache = path.join(root, "cache", "solidity-files-cache.json");
+            const cacheBefore = fs.readFileSync(cache, "utf8");
+            const test = spawnSync(
+                FORGE_BIN,
+                ["test", "--match-contract", "^SelectedTest$"],
+                { cwd: root, encoding: "utf8" }
+            );
+            expect(test.status, test.stderr).to.equal(0);
+            expect(test.stdout).to.include("No files changed");
+            expect(fs.readFileSync(cache, "utf8")).to.equal(cacheBefore);
             expect(
                 fs.existsSync(path.join(root, "out", "Skipped.t.sol"))
             ).to.equal(false);
