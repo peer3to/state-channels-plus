@@ -25,7 +25,7 @@ Exit discriminator
 
 - Setup: Trigger a successful `removeParticipant` and `slashParticipant` and read the resulting outbound messages.
 - Oracle: Both exit messages carry `MESSAGE_TYPE_EXIT` (`keccak256("EXIT_CHANNEL_MESSAGE")`), which differs from `MESSAGE_TYPE_JOIN` and from any custom type the application uses.
-- Specification: [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [ ] `UNIT-TEST-SM-MESSAGE-HASHES-2-RVBJRK.P1` — A removal exit uses the exit constant
@@ -38,7 +38,7 @@ Compatibility
 
 - Setup: Compare `MESSAGE_TYPE_JOIN` and `MESSAGE_TYPE_EXIT` with the off-chain values (`id("JOIN_CHANNEL_MESSAGE")` in `AgreementManager` and `MembershipService`) and with the types stamped on proxy joins and facet exits, then reprocess persisted and replayed messages.
 - Oracle: Every producer and consumer uses the same 32-byte values, and a stored or replayed message is classified as the type it was created with.
-- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1), [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [ ] `UNIT-TEST-SM-MESSAGE-HASHES-3-PJX2MA.P1` — Constants remain identical across producers/consumers

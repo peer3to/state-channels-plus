@@ -554,15 +554,15 @@ _Non-normative._
 - **Per-message failure isolation.** Explore skip/quarantine semantics so one wedged consumer
   `withdraw` cannot block the whole outbound stream (§1.5).
 - **Admission policy.** The configurable admission filter and snapshot-scoped consent for
-  `signJoinRequest`; possibly protocol-visible declines (§4.2).
+  `signJoinRequest`; possibly protocol-visible declines (§4.1).
 - **Refund path for stranded deposits.** A first-class refund for acknowledged-but-never-included
-  joins, instead of relying on force-join disputes (§4.2).
+  joins, instead of relying on force-join disputes (§4.1).
 - **Batched joins.** `depositAssetsComposable` already accepts arrays and `JoinChannelBlock`
   exists in the types; specifying multi-join batching could amortize inbound-stream costs.
 - **Spectate simulation stubs.** Dummy consumer contracts so spectators can simulate snapshot
-  advances whose withdrawals touch external assets (§3.2).
-- **Invariant on snapshot update.** Implement the declared intent to run the balance-invariant
-  check as the last step of every snapshot update (§2.3, §6.3).
+  advances whose withdrawals touch external assets (§3.1).
+- **Invariant on snapshot update.** If [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx) selects snapshot-update enforcement, run the
+  balance-invariant check as the last step of every snapshot update (§2.2, §6.3).
 - **Marker consolidation.** Mirror the outbound tip hash into `ChannelBalance` (§1.1).
 
 ---

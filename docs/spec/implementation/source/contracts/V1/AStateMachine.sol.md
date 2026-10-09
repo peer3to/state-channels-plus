@@ -11,7 +11,7 @@
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
-- [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
   Partial: determinism of the integrator logic `stateTransition` calls is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
@@ -138,7 +138,7 @@ Removal and slashing wrappers
 
 - Setup: On a Math state, call `removeParticipant` and `slashParticipant` for a present target, an absent target, and the same target a second time.
 - Oracle: A successful call returns `(true, exit)` and appends exactly one `MESSAGE_TYPE_EXIT` message whose participant and balance equal the returned exit; an absent or repeated target returns `false` with an empty exit, appends no message and leaves `getState()` unchanged.
-- Specification: [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P1` — Equivalent successful removal and slashing produce one canonical exit message

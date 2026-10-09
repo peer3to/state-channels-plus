@@ -1672,7 +1672,13 @@ describe("E2E: BlockQueueManager", function () {
                         };
                         // Record-only: an on-chain dispute against an honest
                         // block would derail the session; the proof stays real.
+                        let storedBeforeDispute = false;
                         disputeManager.dispute = async (forkId: unknown) => {
+                            storedBeforeDispute = proofHash
+                                ? !!sm.storage.fraudProofs.getFraudProofByHash(
+                                      proofHash as any
+                                  )
+                                : false;
                             disputed.push(String(forkId));
                             return {};
                         };
@@ -1682,6 +1688,7 @@ describe("E2E: BlockQueueManager", function () {
                             return {
                                 result,
                                 disputed,
+                                storedBeforeDispute,
                                 forkId: String(sm.forkId),
                                 proofStored: proofHash
                                     ? !!sm.storage.fraudProofs.getFraudProofByHash(
@@ -1700,6 +1707,7 @@ describe("E2E: BlockQueueManager", function () {
 
                 expect(r.result).to.equal(BlockValidationResult.DISPUTE);
                 expect(r.disputed).to.deep.equal([r.forkId]);
+                expect(r.storedBeforeDispute).to.equal(true);
                 expect(r.proofStored).to.equal(true);
             });
         });

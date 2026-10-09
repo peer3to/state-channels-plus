@@ -479,7 +479,7 @@ final is future work; local finality or transaction submission alone does not cl
 
 **<a id="req-sm-7-y38nty"></a>`REQ-SM-7-Y38NTY`.** `_joinChannel` handles admission and top-up
 
-**<a id="req-sm-8-8chsq8"></a>`REQ-SM-8-8CHSQ8`.** Slashing a current participant MUST succeed. A successful slash or removal MUST return and record exactly one corresponding `ExitChannel` through `_addExitChannel`. Only successful removal produces an exit; hooks retain their distinct balance semantics. Consumers MUST not deliver the returned and recorded exit twice.
+**<a id="req-sm-8-8chsq8"></a>`REQ-SM-8-8CHSQ8`.** A successful slash or removal MUST return and record exactly one corresponding `ExitChannel` through `_addExitChannel`. Slashing a current participant MUST succeed. Only successful removal produces an exit; hooks retain their distinct balance semantics. Consumers MUST not deliver the returned and recorded exit twice.
 
 **<a id="req-sm-10-jd8tsf"></a>`REQ-SM-10-JD8TSF`.** Slashing or removal of a participant absent from the state being transformed MUST be an idempotent no-op: no state, balance, outbound message or withdrawal change. This includes a departed participant still listed by an older chain snapshot. Repeating an operation after removal MUST not create another exit.
 

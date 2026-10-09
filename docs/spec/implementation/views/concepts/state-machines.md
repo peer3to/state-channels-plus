@@ -76,7 +76,7 @@
 
 ## INTEGRATION-TEST-SM-6-7PZZCS
 
-- Specification: [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 - Setup: Compose removal/slashing hooks, wrapper/facet handling, outbound collection, state persistence, and withdrawal aggregation.
 - Oracle: Equivalent exits remain equivalent across components; failure cannot partially mutate state or totals.

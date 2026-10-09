@@ -9,7 +9,7 @@
 - [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
 - [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../../../../../specification/disputes/disputes.md#inv-dis-8-1gy6q5)
   Contradicts: Empty-timeout struct (height 0) suppresses real timeouts. Slash-carrying case intended (slash precedence, decision 2026-08-14); slash-free case still cancels order-dependently — open per [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../../../../../specification/open-questions.md#oq-9-xr1mfs).
-- [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
   Partial: `reduceAndFinalize` checks no eligibility, so anyone can reduce; only `challengeDisputeReduction` admits by bounded chain eligibility. Who may reduce is open per [`OQ-27-GT4W09` (Reducer eligibility is disabled)](../../../../../specification/open-questions.md#oq-27-gt4w09).
@@ -74,7 +74,7 @@ Apply removals and slashes
 
 - Setup: Call `computeDisputeOutputState` on a Math state (with an `address(0)` sentinel participant) with no targets, a `selfRemoval`, a `selfRemoval` plus a `timeout`, an `onChainSlashes` entry, a non-member, duplicated targets, and a state machine whose hook returns false or reverts.
 - Oracle: Each successful hook call yields one `MESSAGE_TYPE_EXIT` message in `outboundMessageBlock.messages` with the target's balance, slashes first and then removals in `_calculateRemovals` order, and the target leaves the decoded state; no targets keep every participant with no messages, a false hook adds no exit, and a reverting hook reverts the whole call.
-- Specification: [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [x] `UNIT-TEST-SM-DISPUTE-VERIFICATION-2-DKTKDF.P1` — Zero targets return an empty canonical exit set
@@ -105,7 +105,7 @@ Wrapper/facet equivalence
 
 - Setup: Run the same slash and removal targets through `slashParticipant`/`removeParticipant` directly on the state machine and through `computeDisputeOutputState`.
 - Oracle: Each successful wrapper call records one exit message matching its returned exit, and the facet's outbound block carries one exit per successful target built from the returned exits, so the state machine's own recorded message is not counted a second time.
-- Specification: [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [ ] `UNIT-TEST-SM-DISPUTE-VERIFICATION-4-ES92Q5.P1` — Removal and slashing return paths each record one successful exit; reduction consumes the returned exit once

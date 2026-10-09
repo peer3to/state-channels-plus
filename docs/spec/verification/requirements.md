@@ -513,7 +513,7 @@ Specification cases tested: 216/237. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5
 Specification cases tested: 0/9.
 
 [`REQ-GOSSIP-1-HTK3NX` (Thin attributed ingress)](../specification/peer-communication/block-gossip.md#req-gossip-1-htk3nx)
-Specification cases tested: 0/3.
+Specification cases tested: 0/4.
 
 [`REQ-GOSSIP-2-9PMMNH` (Verdict-mapped consequences)](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)
 Specification cases tested: 0/7.
@@ -531,7 +531,7 @@ Specification cases tested: 0/9.
 Specification cases tested: 0/7.
 
 [`REQ-ID-3-KR0BE3` (Confined signing authority)](../specification/protocol-model/identity.md#req-id-3-kr0be3)
-Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5.
+Specification cases tested: 2/8. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P7, T1.P8.
 
 [`REQ-ID-4-BNEKCM` (Domain-separated signing forms)](../specification/protocol-model/identity.md#req-id-4-bnekcm)
 Specification cases tested: 0/7.
@@ -735,7 +735,7 @@ Specification cases tested: 24/24.
 Specification cases tested: 5/5.
 
 [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
-Specification cases tested: 2/3. Untested: T1.P1.
+Specification cases tested: 2/5. Untested: T1.P1, T1.P4, T1.P5.
 
 [`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)
 Specification cases tested: 0/4.
@@ -845,7 +845,7 @@ Specification cases tested: 0/8.
 [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 Specification cases tested: 0/11.
 
-[`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+[`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 Specification cases tested: 3/13. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P7, T1.P8, T1.P12, T1.P14, T1.P18.
 
 [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
