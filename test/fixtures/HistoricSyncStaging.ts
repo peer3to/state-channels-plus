@@ -150,5 +150,11 @@ export async function stageOutboundAroundAnchor(
         (await chainSnapshot(h)).hash,
         "the first exit snapshot stays the chain anchor"
     ).to.equal(anchor.hash);
-    return { forkId: h.activeForkId!, anchor, remaining, heldPost };
+    return {
+        forkId: h.activeForkId!,
+        anchor,
+        remaining,
+        heldLeaver: heldLeaver.index,
+        heldPost
+    };
 }
