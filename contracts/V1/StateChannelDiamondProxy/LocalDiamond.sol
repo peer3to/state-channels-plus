@@ -138,10 +138,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 timestamp
     ) external {
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
-        blockCalldataCommitments[channelId][sender][_block.transaction.header.forkId][_block
-            .transaction
-            .header
-            .transactionCnt] = commitmentHash;
+        blockCalldataCommitments[
+            channelId
+        ][sender][_block.transaction.header.forkId][_block.transaction.header.transactionCnt] = commitmentHash;
     }
 
     // Called by DisputeCommitted event
@@ -200,7 +199,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         address,
         /*disputer*/
         bytes32 disputeHash
-    ) external {
+    )
+        external
+    {
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
         bytes32[] storage commitments = disputeWindow.evidence.disputeCommitments;
 
@@ -369,9 +370,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
-            dispute, disputeAuditingData
-        );
+        return DisputeVerificationFacet(disputeVerificationFacetAddress)
+            .checkDisputeAuditingDataCommitment(dispute, disputeAuditingData);
     }
 
     function isBlockAuthorParticipant(

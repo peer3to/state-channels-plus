@@ -59,10 +59,7 @@ contract UtilityFacetTest is Test {
     }
 
     // after insert x is present, and a duplicate insert does not grow the array
-    function testFuzz_insertIntoAddressArrayNoDuplicates_containsAndDedup(address[] memory arr, address x)
-        public
-        view
-    {
+    function testFuzz_insertIntoAddressArrayNoDuplicates_containsAndDedup(address[] memory arr, address x) public view {
         bool wasPresent = _contains(arr, x);
         address[] memory result = util.insertIntoAddressArrayNoDuplicates(arr, x);
 

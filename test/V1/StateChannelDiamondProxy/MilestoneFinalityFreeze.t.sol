@@ -154,16 +154,19 @@ contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerifi
         inbound.previousBlockHash = previous;
         inbound.blockHeight = height;
         Balance memory balance = Balance({amount: 0, data: ""});
-        inbound.messages.push(
-            Message({
-                messageType: MESSAGE_TYPE_JOIN,
-                participant: participant,
-                balance: balance,
-                data: abi.encode(
-                    JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
-                )
-            })
-        );
+        inbound.messages
+            .push(
+                Message({
+                    messageType: MESSAGE_TYPE_JOIN,
+                    participant: participant,
+                    balance: balance,
+                    data: abi.encode(
+                        JoinChannel({
+                            channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance
+                        })
+                    )
+                })
+            );
         channelBalances[channelId].latestInboundMessageBlockHash = hash;
         channelBalances[channelId].latestInboundMessageBlockHeight = height;
     }
@@ -239,8 +242,9 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         for (uint256 i = 0; i < signerCount; i++) {
             signerKeys[i + 2] = 0x1001 + i;
         }
-        Dispute memory dispute =
-            _dispute(heads[anchorIndex], anchorIndex + 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, signerKeys));
+        Dispute memory dispute = _dispute(
+            heads[anchorIndex], anchorIndex + 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, signerKeys)
+        );
 
         // expected = {A, B} plus every join at or below the anchor, computed from the seed
         bool expectedFinal = signerCount >= anchorIndex;
@@ -371,10 +375,7 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         genesisData.latestInboundMessageBlockHeight = 1;
         bytes32 genesisForkId = keccak256(abi.encode(genesisData));
         StateSnapshot memory genesis = StateSnapshot({
-            snapshotData: genesisData,
-            forkId: genesisForkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisData, forkId: genesisForkId, blockHeight: 0, timestamp: block.timestamp
         });
         harness.seedSnapshot(CHANNEL_ID, genesis);
 

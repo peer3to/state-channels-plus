@@ -265,10 +265,7 @@ abstract contract StateProofStaging is DiamondHarness {
         inbound.totalBalance.amount = deposit;
         inbound.messages = new Message[](1);
         inbound.messages[0] = Message({
-            messageType: MESSAGE_TYPE_JOIN,
-            participant: participant,
-            balance: join.balance,
-            data: abi.encode(join)
+            messageType: MESSAGE_TYPE_JOIN, participant: participant, balance: join.balance, data: abi.encode(join)
         });
     }
 
@@ -349,8 +346,7 @@ abstract contract StateProofStaging is DiamondHarness {
             bytes memory encoded = abi.encode(next);
             milestone.blockConfirmations[i] = BlockConfirmation({
                 signedBlock: SignedBlock({
-                    encodedBlock: encoded,
-                    signature: _sign(_keyOf(next.transaction.header.participant), encoded)
+                    encodedBlock: encoded, signature: _sign(_keyOf(next.transaction.header.participant), encoded)
                 }),
                 signatures: new bytes[](0)
             });
@@ -489,10 +485,7 @@ abstract contract StateProofStaging is DiamondHarness {
     ) internal {
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
         proofs[0] = DisputeFraudProof({
-            proofType: proofType,
-            participant: dispute.input.disputer,
-            dispute: dispute,
-            encodedProof: encodedProof
+            proofType: proofType, participant: dispute.input.disputer, dispute: dispute, encodedProof: encodedProof
         });
         vm.prank(challenger);
         harness.applyDisputeFraudProofs(proofs);
@@ -530,8 +523,7 @@ abstract contract StateProofStaging is DiamondHarness {
     {
         return abi.encode(
             DisputeInvalidBalanceInvariant({
-                latestStateSnapshot: latestStateSnapshot,
-                latestStateMachineState: latestStateMachineState
+                latestStateSnapshot: latestStateSnapshot, latestStateMachineState: latestStateMachineState
             })
         );
     }
@@ -714,15 +706,16 @@ abstract contract StateProofStaging is DiamondHarness {
         if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(auditingData.latestStateSnapshot))) {
             return false;
         }
-        ProofWalkResult memory walk = _diamond().verifyMilestones(
-            ProofWalkInput(
-                dispute.input.channelId,
-                dispute.input.forkId,
-                dispute.input.stateProof,
-                auditingData.genesisStateSnapshotData,
-                auditingData.milestoneSnapshots
-            )
-        );
+        ProofWalkResult memory walk = _diamond()
+            .verifyMilestones(
+                ProofWalkInput(
+                    dispute.input.channelId,
+                    dispute.input.forkId,
+                    dispute.input.stateProof,
+                    auditingData.genesisStateSnapshotData,
+                    auditingData.milestoneSnapshots
+                )
+            );
         return walk.valid && _diamond().isCorrectLatestState(dispute, auditingData.genesisStateSnapshotData);
     }
 
@@ -732,8 +725,8 @@ abstract contract StateProofStaging is DiamondHarness {
         view
         returns (ProofWalkResult memory)
     {
-        return
-            _diamond().verifyMilestones(ProofWalkInput(CHANNEL, forkId, StateProof(milestones), genesisData, snapshots));
+        return _diamond()
+            .verifyMilestones(ProofWalkInput(CHANNEL, forkId, StateProof(milestones), genesisData, snapshots));
     }
 
     function _assertFinalized(ProofWalkResult memory result, StateSnapshot memory expected, uint256 replayBlockIndex)

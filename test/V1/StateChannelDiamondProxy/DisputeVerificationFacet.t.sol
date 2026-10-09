@@ -163,9 +163,8 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
     /// handler can be driven against an exact set without the rest of a channel.
     function seedOnChainSlashes(bytes32 channelId, address[] memory slashedParticipants) external {
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
-            disputeData[channelId].onChainSlashes.push(
-                OnChainSlash({participant: slashedParticipants[i], timestamp: block.timestamp})
-            );
+            disputeData[channelId].onChainSlashes
+                .push(OnChainSlash({participant: slashedParticipants[i], timestamp: block.timestamp}));
         }
     }
 
@@ -858,8 +857,9 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     // this edge is beyond the no-grace window and only validates because of the
     // +evidenceTime first-block grace. (Separate tests: each opens the channel once.)
     function _firstBlockGraceWindow() internal view returns (uint256) {
-        return diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
-            + diamond.getChainFallbackTime();
+        return
+            diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
+                + diamond.getChainFallbackTime();
     }
 
     function test_validateTimeoutCalldataPostedProof_firstBlockGraceEdge_valid() public {
@@ -1586,9 +1586,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
     // block branch: the reduced output has a block, so the block's
     // stateSnapshotHash has to be the hash of the supplied snapshot
-    function test_reduceOutputToSnapshotData_latestBlockNotLinkedToSnapshot_revertsCarryingBothSnapshotHashes()
-        public
-    {
+    function test_reduceOutputToSnapshotData_latestBlockNotLinkedToSnapshot_revertsCarryingBothSnapshotHashes() public {
         MathState memory state;
         state.participants = _participants();
         state.balances = new uint256[](state.participants.length);

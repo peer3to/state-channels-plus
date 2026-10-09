@@ -789,8 +789,9 @@ contract StateProofChallengesTest is StateProofStaging {
             _snapshotAt(9, genesisData.participants, firstJoinHash, 1),
             _snapshotAt(11, _set(alice, bob, carol), secondJoinHash, 2)
         );
-        milestones =
-            _three(_hopRun(entries[0], 1, everyone), _hopRun(entries[1], 1, everyone), _hopRun(entries[2], 1, everyone));
+        milestones = _three(
+            _hopRun(entries[0], 1, everyone), _hopRun(entries[1], 1, everyone), _hopRun(entries[2], 1, everyone)
+        );
     }
 
     function test_U100_departureAfterAConsumedJoinIsNotAnOmission() public {
