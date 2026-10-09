@@ -595,6 +595,9 @@ export default class BlockQueueManager {
                 entry,
                 this.stateManager.getActiveValidationStrategy(entry.block)
             );
+            // a drain dequeues one height and a stored one advances nothing:
+            // drain the next queued height now, not at its queue timeout
+            this.scheduleQueueExecution(entry.block.forkId);
             return;
         }
 

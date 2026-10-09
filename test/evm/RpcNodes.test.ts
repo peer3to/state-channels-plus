@@ -30,7 +30,8 @@ import {
     assertStopReconnectingLeavesNodeDown,
     assertTransactionFailsOverToNextNode,
     assertTransactionHeldUntilANodeReconnects,
-    assertTransactionSentToFirstNodeOnly
+    assertTransactionSentToFirstNodeOnly,
+    assertUnsubscribeAnsweredAfterDestroyStaysQuiet
 } from "@test/fixtures/node/RpcNodesFixture";
 import { expect } from "chai";
 
@@ -147,6 +148,10 @@ describe("MultiRpcProvider", () => {
 
     it("relays each new block once from the node sockets without polling", async () => {
         await assertBlockEventsComeFromNodeSockets();
+    });
+
+    it("leaves no unhandled rejection when a node socket's unsubscribe is answered after destroy", async () => {
+        await assertUnsubscribeAnsweredAfterDestroyStaysQuiet();
     });
 
     it("starts the runtime chain context while one of its nodes is unreachable", async () => {
