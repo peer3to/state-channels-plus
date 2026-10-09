@@ -87,7 +87,10 @@ function main() {
 
     const solFiles = findSolFiles(contractsDir);
     // parsing every contract takes seconds; skip it when no contract (and not
-    // this generator) changed since the last run
+    // this generator) changed since the last run and the output (tracked, so git
+    // can rewrite it) still holds what that run generated
+    const sha256 = (data: string | Buffer) =>
+        createHash("sha256").update(data).digest("hex");
     const inputs = createHash("sha256").update(fs.readFileSync(__filename));
     for (const file of solFiles) {
         inputs
@@ -99,7 +102,8 @@ function main() {
     if (
         fs.existsSync(outputFile) &&
         fs.existsSync(stampFile) &&
-        fs.readFileSync(stampFile, "utf8") === digest
+        fs.readFileSync(stampFile, "utf8") ===
+            `${digest} ${sha256(fs.readFileSync(outputFile))}`
     ) {
         return;
     }
@@ -119,7 +123,7 @@ function main() {
 
     writeFileIfChanged(outputFile, generatedCode);
     fs.mkdirSync(path.dirname(stampFile), { recursive: true });
-    fs.writeFileSync(stampFile, digest);
+    fs.writeFileSync(stampFile, `${digest} ${sha256(generatedCode)}`);
 }
 
 main();
