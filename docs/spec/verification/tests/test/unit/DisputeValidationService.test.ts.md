@@ -51,6 +51,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `dispute.outputSnapshotDataHash = random -> false + DisputeInvalidOutputState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P32
 - `requireExistingDisputeWindow true with no other reason -> valid without a fraud proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P23
 - `timeout.participant = 0 AND onChainSlashes = [] AND selfRemoval false -> false + InvalidDisputeReason`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P33
+- `successor fork dispute lists the on-chain slash of a participant only the ancestor fork had -> false + InvalidDisputeReason, whatever its other reasons`: REQ-DIS-11-WQK8P2.T1.P4
 - `same invalid dispute audited twice -> false both times, disputeFraudProofs stays at 1`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P34
 - `dispute.input.timeout.blockHeight += 1 -> false + TimeoutNotLinkedToLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P44
 - `dispute.input.timeout.participant = a peer that is not next to write -> false + TimeoutParticipantNotNext`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P45
@@ -62,6 +63,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `timeout.blockHeight = a block whose calldata is on-chain, isForced true -> false + TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P51
 - `stale local previousBlockCalldata -> validateTimeoutCalldataPostedProof false, audit continues without TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P52
 - `timeout dispute audited before the window reaches the local chain view -> throw`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P53
+- `a replay holds the state mutex with the predecessor state installed while the timeout audit peeks the next writer -> the audit settles under the hold and judges the disputed state, true, no TimeoutParticipantNotNext`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129, UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P5
 - `fork advances while the audit is parked at getOnChainSlashedParticipants -> false + DisputeNotLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P54
 
 The previous-block signature test captures block 2’s next writer before opening the dispute window. It must not read the mutable VM’s current writer concurrently with a subscribed audit’s temporary replay state. The empty, timed-out-signer and wrong-signer signature variants retain their exact TimeoutTooEarly oracles and the unchanged authored/calldata timing bounds.

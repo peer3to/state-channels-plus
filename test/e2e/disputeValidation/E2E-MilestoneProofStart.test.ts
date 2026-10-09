@@ -850,10 +850,10 @@ describe("E2E: dispute validation / milestone proof start", function () {
         });
     });
 
-    // Teleportation under collusion: the colluders' final block breaks the
-    // balance invariant against the chain, and the tail built on it makes
-    // correct transitions, so only the balance counter on the latest state
-    // catches it.
+    // Teleportation under collusion: the colluders' final block withdraws
+    // funds the state never released, which breaks the balance invariant
+    // against the chain, and the tail built on it makes correct transitions,
+    // so only the balance counter on the latest state catches it.
     describe("E15: balance judged on the unfinalized latest state", function () {
         it("E15: a forged final head breaks the balance invariant and a correct tail replays on it, posted data, audited by a pending auditor that never finalized that head → the replay succeeds, DisputeInvalidBalanceInvariant judges the latest state and kills the dispute, then DisputeConflictsWithFinalState kills the colluders' real-head disputes", async function () {
             const h = TestSession.getHarness();
@@ -883,6 +883,11 @@ describe("E2E: dispute validation / milestone proof start", function () {
                         teleported.head.snapshot.toStruct();
                     auditingData!.latestStateSnapshot =
                         teleported.tail.snapshot.toStruct();
+                    // the run links the anchor to the forged exit: only
+                    // the balance counter may land
+                    auditingData!.outboundMessageBlocks.push(
+                        teleported.outboundBlock
+                    );
                     dispute.input.latestStateSnapshotHash =
                         teleported.tail.snapshot.hash;
                     dispute.input.disputeAuditingDataHash = hash(

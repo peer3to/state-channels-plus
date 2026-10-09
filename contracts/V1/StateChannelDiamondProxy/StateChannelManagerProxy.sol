@@ -84,6 +84,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(StateProofFacet.isTimeoutSupersededByFinalState.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isStateProofStepInvalid.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isDisputeConflictingWithFinalState.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isDisputeOutboundRunInvalid.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isInvalidBlockStructureInStateProof.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.verifyMilestones.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isMilestoneFinal.selector, _stateProofFacet);
@@ -118,6 +119,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.isReduceChallengePeriodExpired.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getDisputeWindows.selector, _utilityFacet);
         _registerRoute(UtilityFacet.verifyOutboundMessageBlocks.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.verifyOutboundRunAboveAnchor.selector, _utilityFacet);
         _registerRoute(UtilityFacet.pruneOutboundMessageBlocks.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isSnapshotNewer.selector, _utilityFacet);
@@ -226,9 +228,12 @@ contract StateChannelManagerProxy is StateChannelCommon {
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -268,10 +273,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
@@ -356,6 +358,27 @@ contract StateChannelManagerProxy is StateChannelCommon {
             (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
             if (!success) {
                 // Bubble up the revert reason
+                assembly ("memory-safe") {
+                    revert(add(result, 32), mload(result))
+                }
+            }
+            results[i] = result;
+        }
+    }
+
+    /// @notice `multicall` whose last call is best effort: every earlier call
+    ///     must succeed as in `multicall`, but a revert of the last call keeps
+    ///     the earlier effects and is reported as `MulticallLastCallFailed`
+    ///     with its raw revert data. Its result is then empty.
+    function multicallBestEffortLast(bytes[] calldata calls) external returns (bytes[] memory results) {
+        results = new bytes[](calls.length);
+        for (uint256 i = 0; i < calls.length; i++) {
+            (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
+            if (!success) {
+                if (i == calls.length - 1) {
+                    emit MulticallLastCallFailed(result);
+                    break;
+                }
                 assembly ("memory-safe") {
                     revert(add(result, 32), mload(result))
                 }

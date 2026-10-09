@@ -87,6 +87,27 @@ contract StateProofFacet is StateChannelCommon {
         return isFault || (snapshotMismatch && dispute.postedAuditingData);
     }
 
+    /// The committed posted auditing data's outbound run does not link the chain anchor's outbound head to the
+    /// dispute's latest state (`_outboundRunAboveAnchor`): a block above the anchor is missing, forged or extra. Data
+    /// that is not posted, not committed, or whose latest state is not the dispute's is no evidence here.
+    function isDisputeOutboundRunInvalid(Dispute memory dispute, DisputeInvalidOutboundRun memory proof)
+        public
+        view
+        returns (bool)
+    {
+        DisputeAuditingData memory data = proof.auditingData;
+        if (!dispute.postedAuditingData || dispute.input.disputeAuditingDataHash != keccak256(abi.encode(data))) {
+            return false;
+        }
+        if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(data.latestStateSnapshot))) return false;
+        (bool isValid,) = _outboundRunAboveAnchor(
+            data.outboundMessageBlocks,
+            stateSnapshots[dispute.input.channelId].snapshotData,
+            data.latestStateSnapshot.snapshotData
+        );
+        return !isValid;
+    }
+
     /// The on-chain anchor of `forkId`; see `_getAnchorSnapshot`.
     function getAnchorSnapshot(bytes32 channelId, bytes32 forkId)
         public
@@ -153,9 +174,8 @@ contract StateProofFacet is StateChannelCommon {
         // a block the dispute's walk does not check (history below the anchor) is no conflict
         (bool isKept, bool hasHeight, uint256 fromIndex) = _checkedRunStart(milestone, cursor);
         if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
-        (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
-            milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock
-        );
+        (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress)
+            .tryDecodeBlock(milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock);
         return decoded && conflicting.transaction.header.channelId == dispute.input.channelId
             && conflicting.transaction.header.forkId == dispute.input.forkId
             && conflicting.transaction.header.transactionCnt == finalPoint.blockHeight
@@ -173,10 +193,11 @@ contract StateProofFacet is StateChannelCommon {
             return (false, finalPoint);
         }
         ProofWalkResult memory walk = _walkStateProof(finalProof, stateSnapshots[finalProof.channelId]);
-        return (
-            walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
-            walk.finalizedSnapshot
-        );
+        return
+            (
+                walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
+                walk.finalizedSnapshot
+            );
     }
 
     /**

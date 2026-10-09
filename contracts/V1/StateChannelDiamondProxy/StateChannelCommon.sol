@@ -55,12 +55,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return slashedParticipants;
     }
 
-    function _isParticipantSlashedOnChain(bytes32 channelId, address participant)
-        internal
-        view
-        virtual
-        returns (bool)
-    {
+    function _isParticipantSlashedOnChain(bytes32 channelId, address participant) internal view virtual returns (bool) {
         address[] memory slashedParticipants = _getOnChainSlashedParticipants(channelId);
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             if (slashedParticipants[i] == participant) {
@@ -79,12 +74,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _getOnChainThresholdSet(bytes32 channelId) internal view virtual returns (address[] memory) {
-        return UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
-            UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
-                _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
-            ),
-            _getOnChainSlashedParticipants(channelId)
-        );
+        return UtilityFacetInterface(utilityFacetAddress)
+            .subtractAddressArrays(
+                UtilityFacetInterface(utilityFacetAddress)
+                    .concatAddressArraysNoDuplicates(
+                        _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
+                    ),
+                _getOnChainSlashedParticipants(channelId)
+            );
     }
 
     function _getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
@@ -99,7 +96,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && StateChannelManagerInterface(address(this)).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                    && StateChannelManagerInterface(address(this))
+                        .isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -116,7 +114,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // check if current on-chain snapshot.fork == forkId
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                    && UtilityFacetInterface(utilityFacetAddress)
+                        .isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -161,9 +160,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
                 if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
                     JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
-                    pendingParticipants = UtilityFacetInterface(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                        pendingParticipants, joinChannel.participant
-                    );
+                    pendingParticipants = UtilityFacetInterface(utilityFacetAddress)
+                        .insertIntoAddressArrayNoDuplicates(pendingParticipants, joinChannel.participant);
                 }
             }
 
@@ -179,15 +177,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory snapshotParticipants,
         bytes32 lowerInboundHash
     ) internal view returns (address[] memory eligibleParticipants) {
-        address[] memory pendingParticipants =
-            _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, lowerInboundHash);
+        address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
+            channelId, latestInboundMessageBlockHash, lowerInboundHash
+        );
 
-        address[] memory participants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            snapshotParticipants, pendingParticipants
-        );
-        eligibleParticipants = UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
-            participants, _getOnChainSlashedParticipants(channelId)
-        );
+        address[] memory participants = UtilityFacetInterface(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        eligibleParticipants = UtilityFacetInterface(utilityFacetAddress)
+            .subtractAddressArrays(participants, _getOnChainSlashedParticipants(channelId));
         return eligibleParticipants;
     }
 
@@ -231,12 +228,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
         return disputeWindow.evidence.creationTimestamp != 0;
-    }
-
-    function _getStateMachineParticipants(bytes memory encodedState) internal virtual returns (address[] memory) {
-        // setState fails
-        stateMachineImplementation.setState(encodedState);
-        return stateMachineImplementation.getParticipants();
     }
 
     function _getP2pTime() internal view virtual returns (uint256) {
@@ -329,12 +320,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return inboundBlock.totalBalance;
     }
 
-    function _hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)
-        internal
-        view
-        virtual
-        returns (bool)
-    {
+    function _hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) internal view virtual returns (bool) {
         MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][messageBlockHash];
         return storedBlock.timestamp != 0 || storedBlock.messages.length != 0;
     }
@@ -393,13 +379,19 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return pruned;
     }
 
+    /// The run links `lowerSnapshot`'s outbound head to `upperSnapshot`'s and its balances sum to the upper total. The
+    /// links, heights and endpoint are checked first, so balances reach the state machine's arithmetic only when the
+    /// upper head authenticates them. The upper head can still be forged (a snapshot signed only by its author), so a
+    /// forged or unaddable balance gives false, never a revert. An out-of-gas in `addBalance` is not a verdict: EIP-150
+    /// leaves the caller at most 1/64 of the gas it had, and that case reverts with `ErrorOutboundBalanceSumOutOfGas`,
+    /// so an under-funded call cannot judge an honest run invalid. This assumes `addBalance` fails fast (a bounded-gas
+    /// revert) on an unaddable balance.
     function _verifyOutboundMessageBlocks(
         MessageBlock[] memory outboundMessageBlocks,
         SnapshotData memory lowerSnapshot,
         SnapshotData memory upperSnapshot
     ) internal view virtual returns (bool) {
         bytes32 previousBlockHash = lowerSnapshot.latestOutboundMessageBlockHash;
-        Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
         uint256 expectedHeight = lowerSnapshot.latestOutboundMessageBlockHeight;
 
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
@@ -410,20 +402,48 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             if (outboundMessageBlocks[i].blockHeight != expectedHeight) {
                 return false;
             }
-            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
-                totalOutbound =
-                    stateMachineImplementation.addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance);
-            }
             previousBlockHash = keccak256(abi.encode(outboundMessageBlocks[i]));
-        }
-        if (keccak256(abi.encode(totalOutbound)) != keccak256(abi.encode(upperSnapshot.totalWithdrawals))) {
-            return false;
         }
         if (expectedHeight != upperSnapshot.latestOutboundMessageBlockHeight) {
             return false;
         }
+        if (previousBlockHash != upperSnapshot.latestOutboundMessageBlockHash) {
+            return false;
+        }
 
-        return previousBlockHash == upperSnapshot.latestOutboundMessageBlockHash;
+        Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
+        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
+                uint256 gasBefore = gasleft();
+                try stateMachineImplementation.addBalance(
+                    totalOutbound, outboundMessageBlocks[i].messages[j].balance
+                ) returns (
+                    Balance memory sum
+                ) {
+                    totalOutbound = sum;
+                } catch {
+                    if (gasleft() <= gasBefore / 64) revert ErrorOutboundBalanceSumOutOfGas();
+                    return false;
+                }
+            }
+        }
+        return keccak256(abi.encode(totalOutbound)) == keccak256(abi.encode(upperSnapshot.totalWithdrawals));
+    }
+
+    /// The part of `run` above the anchor's outbound head, and whether it links that head to the latest state's. The
+    /// outbound chain continues across forks, so an anchor on an older fork is a start too. An anchor whose outbound
+    /// head is above the latest state's leaves no part to verify (empty, valid). The anchor only moves forward, so a
+    /// run that links one anchor to the latest state also links every later anchor on its chain.
+    function _outboundRunAboveAnchor(
+        MessageBlock[] memory run,
+        SnapshotData memory anchorData,
+        SnapshotData memory latestData
+    ) internal view virtual returns (bool isValid, MessageBlock[] memory aboveAnchor) {
+        if (anchorData.latestOutboundMessageBlockHeight > latestData.latestOutboundMessageBlockHeight) {
+            return (true, aboveAnchor);
+        }
+        aboveAnchor = _pruneOutboundMessageBlocks(run, anchorData.latestOutboundMessageBlockHash);
+        isValid = _verifyOutboundMessageBlocks(aboveAnchor, anchorData, latestData);
     }
 
     function _isSnapshotLinkedToBlock(Block memory blockData, StateSnapshot memory stateSnapshot)
@@ -530,13 +550,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
+    /// Applies the inbound messages to the state already loaded in the state machine
+    /// (`encodedStateMachineState`, named only in the failure error).
     function _applyInboundMessages(
         bytes memory encodedStateMachineState,
         MessageBlock[] memory inboundMessageBlocks,
         Balance memory currentInboundTotalDeposits
-    ) internal returns (bytes memory encodedModifiedState, Balance memory newTotalDeposits) {
+    ) internal returns (Balance memory newTotalDeposits) {
         newTotalDeposits = currentInboundTotalDeposits;
-        stateMachineImplementation.setState(encodedStateMachineState);
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
@@ -551,11 +572,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                         keccak256(encodedStateMachineState)
                     );
                 }
-                newTotalDeposits =
-                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
+                newTotalDeposits = stateMachineImplementation.addBalance(
+                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
+                );
             }
         }
-        encodedModifiedState = stateMachineImplementation.getState();
     }
 
     function _processOutboundMessage(Message memory message) internal virtual returns (bool) {
@@ -591,12 +612,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function _canParticipateInDisputesNow(bytes32 channelId, address participant)
-        internal
-        view
-        virtual
-        returns (bool)
-    {
+    function _canParticipateInDisputesNow(bytes32 channelId, address participant) internal view virtual returns (bool) {
         address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
             channelId,
             channelBalances[channelId].latestInboundMessageBlockHash,
@@ -763,9 +779,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         // only a prefix lies below the anchor: a skipped predecessor keeps the walk at its start
         if (cursor.useOnChainSnapshot && _isMilestoneBelow(previous, cursor.start.blockHeight)) return true;
         cursor.hasKeptMilestone = true;
-        (bool decoded, Block memory previousFirstBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
-            previous.blockConfirmations[0].signedBlock.encodedBlock
-        );
+        (bool decoded, Block memory previousFirstBlock) = UtilityFacetInterface(utilityFacetAddress)
+            .tryDecodeBlock(previous.blockConfirmations[0].signedBlock.encodedBlock);
         if (!decoded) return false;
         cursor.previousFirstHeight = previousFirstBlock.transaction.header.transactionCnt;
         // the run holding the anchor keeps the walk at the anchor
@@ -794,9 +809,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
         cursor.hasKeptMilestone = true;
         // only its height is read here: a block before the anchor block is history below the anchor
-        (bool firstDecoded, Block memory firstBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
-            milestone.blockConfirmations[0].signedBlock.encodedBlock
-        );
+        (bool firstDecoded, Block memory firstBlock) = UtilityFacetInterface(utilityFacetAddress)
+            .tryDecodeBlock(milestone.blockConfirmations[0].signedBlock.encodedBlock);
         if (!firstDecoded) return _blockFault(result, 0);
 
         uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
@@ -877,9 +891,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (cursor.useOnChainSnapshot && _isMilestoneBelow(milestone, cursor.start.blockHeight)) {
             return (false, false, 0);
         }
-        (bool firstDecoded, Block memory firstBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
-            milestone.blockConfirmations[0].signedBlock.encodedBlock
-        );
+        (bool firstDecoded, Block memory firstBlock) = UtilityFacetInterface(utilityFacetAddress)
+            .tryDecodeBlock(milestone.blockConfirmations[0].signedBlock.encodedBlock);
         if (!firstDecoded) return (true, false, 0);
         uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
         if (cursor.useOnChainSnapshot && firstHeight <= cursor.start.blockHeight) {
@@ -929,13 +942,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     ) internal view returns (bool isLinked, bool isThresholdReached) {
         // a hop's consumed joiners are read from stored inbound blocks: a run this storage does not hold (a lagging
         // mirror) cannot prove the hop, so the caller's next tier decides
-        if (
-            !_isInboundRunStored(
+        if (!_isInboundRunStored(
                 input.channelId,
                 resultingSnapshot.snapshotData.latestInboundMessageBlockHash,
                 result.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash
-            )
-        ) return (false, false);
+            )) return (false, false);
         address[] memory expectedParticipants = _deriveMilestoneUnionParticipants(
             input.channelId, result.finalizedSnapshot.snapshotData, resultingSnapshot.snapshotData
         );
@@ -968,9 +979,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     /// The milestone's last block decodes to a height below `height`.
     function _isMilestoneBelow(MilestoneProof memory milestone, uint256 height) internal view returns (bool) {
-        (bool decoded, Block memory lastBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
-            milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock
-        );
+        (bool decoded, Block memory lastBlock) = UtilityFacetInterface(utilityFacetAddress)
+            .tryDecodeBlock(
+                milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock
+            );
         return decoded && lastBlock.transaction.header.transactionCnt < height;
     }
 
@@ -981,9 +993,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         returns (bool, Block memory decodedBlock)
     {
         bool decoded;
-        (decoded, decodedBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
-            milestone.blockConfirmations[blockIndex].signedBlock.encodedBlock
-        );
+        (decoded, decodedBlock) = UtilityFacetInterface(utilityFacetAddress)
+            .tryDecodeBlock(milestone.blockConfirmations[blockIndex].signedBlock.encodedBlock);
         return (
             decoded && decodedBlock.transaction.header.channelId == input.channelId
                 && decodedBlock.transaction.header.forkId == input.forkId,
@@ -1018,17 +1029,15 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         SnapshotData memory previousSnapshotData,
         SnapshotData memory resultingSnapshotData
     ) internal view returns (address[] memory expectedParticipants) {
-        expectedParticipants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            previousSnapshotData.participants, resultingSnapshotData.participants
-        );
+        expectedParticipants = UtilityFacetInterface(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(previousSnapshotData.participants, resultingSnapshotData.participants);
         address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
             channelId,
             resultingSnapshotData.latestInboundMessageBlockHash,
             previousSnapshotData.latestInboundMessageBlockHash
         );
-        return UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            expectedParticipants, pendingParticipants
-        );
+        return UtilityFacetInterface(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(expectedParticipants, pendingParticipants);
     }
 
     /**
@@ -1058,11 +1067,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         Block memory previousBlock;
         for (uint256 i = fromIndex; i < milestone.blockConfirmations.length; i++) {
             BlockConfirmation memory currentBlockConfirmation = milestone.blockConfirmations[i];
-            (bool decoded, Block memory currentBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
-                currentBlockConfirmation.signedBlock.encodedBlock
-            );
-            if (
-                !_walkBlock(
+            (bool decoded, Block memory currentBlock) = UtilityFacetInterface(utilityFacetAddress)
+                .tryDecodeBlock(currentBlockConfirmation.signedBlock.encodedBlock);
+            if (!_walkBlock(
                     channelId,
                     forkId,
                     currentBlockConfirmation,
@@ -1072,8 +1079,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                     previousEncodedBlock,
                     previousBlock,
                     tally
-                )
-            ) return (false, 0, bytes32(0), i);
+                )) return (false, 0, bytes32(0), i);
             if (i == fromIndex) fromBlockSnapshotHash = currentBlock.stateSnapshotHash;
             previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
             previousBlock = currentBlock;
@@ -1108,16 +1114,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return false;
         }
         bytes memory encodedBlock = confirmation.signedBlock.encodedBlock;
-        (address adr, bool isValid) = UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(
-            encodedBlock, confirmation.signedBlock.signature
-        );
+        (address adr, bool isValid) = UtilityFacetInterface(utilityFacetAddress)
+            .retrieveSignerAddress(encodedBlock, confirmation.signedBlock.signature);
         if (!isValid || adr != currentBlock.transaction.header.participant) return false;
         // This doesn't check if the signer is a participant -> if it's a dishonest block it will fail on the STF and the dispute will be slashed
         _tally(tally, adr);
         for (uint256 j = 0; j < confirmation.signatures.length; j++) {
-            (adr, isValid) = UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(
-                encodedBlock, confirmation.signatures[j]
-            );
+            (adr, isValid) = UtilityFacetInterface(utilityFacetAddress)
+                .retrieveSignerAddress(encodedBlock, confirmation.signatures[j]);
             if (!isValid) return false;
             _tally(tally, adr);
         }

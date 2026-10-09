@@ -3,6 +3,9 @@ import { StateSnapshot } from "@/models";
 import type { SyncPayload } from "@/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id } from "ethers";
 
@@ -102,4 +105,50 @@ export function forgedOutboundBlock(
         totalBalance: latest.snapshotData.totalWithdrawals,
         timestamp: 1n
     };
+}
+
+/**
+ * Four participants, blocks 0..1 final. The next writer leaves: its exit is
+ * the fork's first outbound block and its exit snapshot lands as the chain
+ * anchor. The next writer after it leaves with its exit post held: its exit
+ * is the second outbound block, above the anchor. Then `finalBlocks` more
+ * final blocks by the two remaining peers. `heldPost` releases the held post.
+ */
+export async function stageOutboundAroundAnchor(
+    h: MathPeerTestHarness,
+    options: { finalBlocks: number }
+) {
+    await h.lifecycle.start(4, 2);
+    await suppressTimeoutChecks(h, [0, 1, 2, 3]);
+    let remaining = [0, 1, 2, 3];
+    const anchoredLeaver = await h.query.getNextPeerToWrite();
+    await h.transition.participantLeaveStateTransition({
+        leaverIndex: anchoredLeaver.index,
+        waitForPeers: remaining
+    });
+    remaining = remaining.filter((index) => index !== anchoredLeaver.index);
+    await waitFor(
+        async () =>
+            (await chainSnapshot(h)).latestOutboundMessageBlockHeight === 1,
+        h.event.protocolEventTimeoutMs()
+    );
+    const anchor = await chainSnapshot(h);
+    const heldLeaver = await h.query.getNextPeerToWrite();
+    const heldPost = await h.rpcStub.holdSnapshotPostSend(heldLeaver.index);
+    await h.transition.participantLeaveStateTransition({
+        leaverIndex: heldLeaver.index,
+        waitForPeers: remaining
+    });
+    remaining = remaining.filter((index) => index !== heldLeaver.index);
+    await h.transition.advanceState({
+        count: options.finalBlocks,
+        waitForPeers: remaining,
+        waitForFinalization: true
+    });
+    await h.assert.sync.peersInSyncWait({ peerIndices: remaining });
+    expect(
+        (await chainSnapshot(h)).hash,
+        "the first exit snapshot stays the chain anchor"
+    ).to.equal(anchor.hash);
+    return { forkId: h.activeForkId!, anchor, remaining, heldPost };
 }

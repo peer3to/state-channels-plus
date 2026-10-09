@@ -27,16 +27,19 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeed
         inbound.previousBlockHash = previous;
         inbound.blockHeight = ++channelBalances[channelId].latestInboundMessageBlockHeight;
         Balance memory balance = Balance({amount: 0, data: ""});
-        inbound.messages.push(
-            Message({
-                messageType: MESSAGE_TYPE_JOIN,
-                participant: participant,
-                balance: balance,
-                data: abi.encode(
-                    JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
-                )
-            })
-        );
+        inbound.messages
+            .push(
+                Message({
+                    messageType: MESSAGE_TYPE_JOIN,
+                    participant: participant,
+                    balance: balance,
+                    data: abi.encode(
+                        JoinChannel({
+                            channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance
+                        })
+                    )
+                })
+            );
         channelBalances[channelId].latestInboundMessageBlockHash = hash;
     }
 

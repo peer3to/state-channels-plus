@@ -9,11 +9,12 @@ A Foundry suite around the reduction engine and its dispute plumbing, driven thr
 diamond (`DiamondHarness`) plus three purpose-built harnesses: `DisputeExpiryGuardHarness`
 (seeds dispute windows and on-chain slash sets, and exposes window observation, commitment
 counts, the reduced-result commit, the author-not-participant handler and the on-chain-slash-subset
-handler), `InboundVerificationHarness` (exposes `StateChannelCommon`'s
+handler and the `InvalidDisputeReason` handler), `InboundVerificationHarness` (exposes `StateChannelCommon`'s
 internal `_verifyInboundMessageBlocks` walk and its inbound-block store), and
-`DisputeOutputStateHarness` (wires the MathStateMachine so public `computeDisputeOutputState` hits
-`_calculateRemovals`, and exposes the outbound message dispatch). The oracles
-assert: `reduce` never OOB-panics and clamps `slashedParticipants` to the union bound; the
+`DisputeOutputStateHarness` (wires the MathStateMachine so public `computeDisputeOutputState` can be
+driven, and exposes the outbound message dispatch). The oracles
+assert: `reduce` keeps the deduplicated slash candidates without reading any participant set; a
+successor-fork dispute listing the ancestor fork's slash is killed by `InvalidDisputeReason`; the
 removal/exit algebra of `computeDisputeOutputState` (self-removal, timeout, both in order,
 slash-suppresses-timeout, sentinel-preserving shrink) with exact `MESSAGE_TYPE_EXIT` messages
 and amounts; `reduceOutputToSnapshotData` participant output under slash/timeout/self-removal
@@ -44,11 +45,24 @@ has since been atomized into single-scenario IDs (per proof family, per gate rev
 one this suite reaches in full is assigned below; families and gates the suite does not exercise
 stay unassigned.
 
+Two cases deploy a real `LocalDiamond` over the suite's MathStateMachine (`_deployLocalDiamond`,
+with a chosen dispute execution gas limit; 0 keeps the default) and call the gas-capped dispute
+computations on a seeded state with a timeout against the third participant. With a 30,000-gas
+budget, `computeDisputeOutputState` reverts with `ErrorDisputeExecutionOutOfGas` (selector match).
+With the default budget, `computeDisputeOutputSnapshotData` returns a snapshot whose state hash is
+the hash of the state `computeDisputeOutputState` returns and whose participants are those of that
+output state (the timed-out participant removed, the other two and the zero sentinel kept in order), and the output carries exactly
+the timed-out participant's exit. Three more cases use the 3,000,000 default budget. With 150 participants the
+out-of-gas happens inside the state machine's `setState`, where the facet keeps the 1/64 the nested call
+leaves it; the call still reverts with `ErrorDisputeExecutionOutOfGas`. An inbound message of a type the
+state machine does not handle reverts with the exact `ErrorDisputeStateMachineInboundProcessingFailed`
+bytes. A state the state machine cannot decode reverts with empty data, which stays empty.
+
 ## Tests
 
-- `test_reduce_oversizedOnChainSlashes_doesNotPanic`: none
-- `test_reduce_snapshotAlreadyPastSlashedSigner_stillFoldsOnChainSlash`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P9
-- `testFuzz_reduce_slashedParticipantsNeverExceedsMaxSlashCount`: none
+- `test_reduce_listedSlashesWithoutChannel_keptAsDedupedCandidates`: none
+- `test_reduce_snapshotAlreadyPastSlashedSigner_stillFoldsOnChainSlash`: REQ-DIS-11-WQK8P2.T1.P6, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P9
+- `testFuzz_reduce_listedSlashCandidatesAreDeduplicated`: none
 - `test_computeDisputeOutputState_noRemoval_keepsAllParticipantsAndNoExits`: UNIT-TEST-SM-DISPUTE-VERIFICATION-2-DKTKDF.P1
 - `test_removePresentRecordsOnlySuccessfulExit`: REQ-SM-8-8CHSQ8.T1.P15
 - `test_removeAbsentRecordsOnlySuccessfulExit`: REQ-SM-10-JD8TSF.T1.P4
@@ -58,6 +72,11 @@ stay unassigned.
 - `test_slashRepeatedRecordsOnlySuccessfulExit`: REQ-SM-10-JD8TSF.T1.P7
 - `test_computeDisputeOutputState_selfRemovalOnly_removesDisputerAndEmitsExit`: UNIT-TEST-SM-DISPUTE-VERIFICATION-2-DKTKDF.P3
 - `test_computeDisputeOutputState_timeoutOnly_removesTimedOutParticipantAndEmitsExit`: none
+- `test_computeDisputeOutputState_localDiamondBudgetUsedUp_revertsDisputeExecutionOutOfGas`: UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P1
+- `test_computeDisputeOutputState_localDiamondNestedCallUsesUpBudget_revertsDisputeExecutionOutOfGas`: UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P4
+- `test_computeDisputeOutputState_localDiamondFacetRevertWithinBudget_keepsRevertBytes`: UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P3
+- `test_computeDisputeOutputState_localDiamondEmptyRevertWithinBudget_staysEmpty`: UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P5
+- `test_computeDisputeOutputSnapshotData_localDiamondWithinBudget_readsParticipantsOfOutputState`: UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P2
 - `test_computeDisputeOutputState_selfRemovalAndTimeout_removesBothInOrderAndEmitsExits`: UNIT-TEST-SM-DISPUTE-VERIFICATION-2-DKTKDF.P4
 - `test_computeDisputeOutputState_slashSuppressesTimeout_keepsTimeoutTargetAndExitsSlashOnly`: none
 - `test_staleSnapshotRecordsSlashThenAbsentStateApplicationIsNoOp`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P18
@@ -67,6 +86,8 @@ stay unassigned.
 - `test_reduceOutputToSnapshotData_slashOnly_removesSlashedParticipant`: none
 - `test_reduceOutputToSnapshotData_slashAndTimeout_ignoresTimeout`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P5
 - `test_reduceOutputToSnapshotData_slashTimeoutAndSelfRemoval_ignoresTimeout`: none
+- `test_reduceOutputToSnapshotData_ancestorSlashInChildFork_appliesTimeout`: INV-DIS-7-9GGZSD.T1.P18, REQ-DIS-11-WQK8P2.T1.P5, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P28
+- `test_handleInvalidDisputeReason_slashOfAncestorForkParticipant_slashesDisputer`: REQ-DIS-11-WQK8P2.T1.P1, REQ-DIS-11-WQK8P2.T1.P2
 - `test_getOnChainSlashedParticipantsUpToTimestamp_returnsStrictPrefixByCutoff`: UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P3, INV-ENFFP-1-BGVZN4.T1.P3
 - `test_isInvalidBlockStructure_validOneMilestoneChain_returnsFalse`: none
 - `test_isInvalidBlockStructure_invalidSignature_returnsTrue`: none

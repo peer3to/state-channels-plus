@@ -1,4 +1,5 @@
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const { BROWSER_TYPECHECK_COMMAND } = require("./browserConfig");
 const { FORGE_BIN } = require("./forgeConfig");
 
@@ -82,11 +83,47 @@ function tierBuildFailure(command, args, { missing, failed }) {
  * whenever artifacts are stale and has no `--no-build`, so concurrently
  * scheduled forge tasks would each start a via_ir build in the same working
  * directory and race on `out/` and the solidity files cache (`--threads 1` caps
- * test threads, not solc compile jobs). Distributed workers build in their
- * prepare script; the local path has no such step, so it builds once here.
+ * test threads, not solc compile jobs). Distributed runs ship this build to
+ * their workers.
+ *
+ * Only the sources and the test files of the scheduled tasks are built:
+ * `forge test --match-contract` compiles exactly those, and every test file is
+ * its own via_ir compile of the whole diamond.
  */
-function forgeBuildFailure() {
-    return tierBuildFailure(FORGE_BIN, ["build"], {
+function forgeBuildFailure(tasks, distributed = false) {
+    // workers run the forge pinned in .forge-version, and a build from any
+    // other forge is stale there: every forge task would recompile it
+    if (distributed && fs.existsSync(".forge-version")) {
+        const pinned = fs
+            .readFileSync(".forge-version", "utf8")
+            .trim()
+            .replace(/^v/, "");
+        const local = spawnSync(FORGE_BIN, ["--version"], {
+            encoding: "utf8"
+        }).stdout?.match(/Version: (\d+\.\d+\.\d+)/)?.[1];
+        if (local && local !== pinned) {
+            return new Error(
+                `forge ${local} does not match .forge-version (${pinned}), so the workers would rebuild it. ` +
+                    'Run: foundryup --install "$(cat .forge-version)"'
+            );
+        }
+    }
+    const testFiles = [
+        ...new Set(
+            tasks
+                .filter((task) => task.runner === TASK_RUNNERS.FORGE)
+                .map((task) => task.sourceFile)
+        )
+    ];
+    const config = spawnSync(FORGE_BIN, ["config", "--json"], {
+        encoding: "utf8"
+    });
+    // An unreadable config falls through to a full build, which reports why.
+    const sources =
+        config.status === 0
+            ? [JSON.parse(config.stdout).src, ...testFiles]
+            : [];
+    return tierBuildFailure(FORGE_BIN, ["build", ...sources], {
         missing:
             "Install Foundry, or re-run with --no-forge to skip the forge tier.",
         failed:

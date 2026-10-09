@@ -164,8 +164,9 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
     /// withdrawals-cap guard cannot fire before the index under test.
     // every milestone starts below the chain height and none sits at it, so nothing is proven above the
     // chain snapshot; a forged newer snapshot behind such a proof must not be adopted by anyone
-    function test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof(
-    ) public {
+    function test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof()
+        public
+    {
         StateSnapshot memory current = _advanceOnce();
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _allSkippedProof(current);
         StateSnapshot memory forged = snapshots[0];

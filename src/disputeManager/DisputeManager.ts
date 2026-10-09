@@ -13,11 +13,15 @@ import {
     hash,
     intersection,
     Codec,
+    CustomEvmError,
     Type,
     SignatureUtils,
     Mutex,
     difference,
+    getChecksumAddress,
+    isReasonlessRevert,
     Logger,
+    multicallLastCallRevertData,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils";
@@ -98,15 +102,20 @@ class DisputeManager {
      * Uploads this peer's dispute of `forkId`. With `kill`, the dispute fraud
      * proof against that invalid dispute runs first in the same multicall,
      * and our dispute already counts its submitter's slash: the kill must
-     * land for our dispute to be admitted. A refusal because the chain's
-     * inbound head is newer than our anchor loads the missing inbound run and
-     * disputes again; `refusedInboundHead` is that head, so a retry refused at
-     * the same head made no progress and is fatal.
+     * land for our dispute to be admitted. In a multicall the upload is best
+     * effort: the kill and fraud proofs land even when the upload is refused,
+     * and that refusal is handled as a refused lone upload. A refusal because
+     * the chain's inbound head is newer than our anchor loads the missing
+     * inbound run and disputes again; `refusedInboundHead` is that head, so a
+     * retry refused at the same head made no progress and is fatal. Without
+     * an error, `lostEvidenceRace` is the refusal of an upload whose evidence
+     * period had already closed: a no-op here, which a caller with its own
+     * policy for it (a leave) can read.
      */
     public async dispute(
         forkId: ForkId,
         options?: { kill?: DisputeStruct; refusedInboundHead?: Hash }
-    ): Promise<void> {
+    ): Promise<{ lostEvidenceRace?: CustomEvmError }> {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
@@ -118,13 +127,18 @@ class DisputeManager {
         let killLanded = false;
         let latestStateTimestamp = 0;
         let inboundRetry: { chainHead: Hash; anchor: Hash } | undefined;
+        // the mined multicall reported the upload's refusal
+        let uploadRefusedInMulticall = false;
+        // the refusal the multicall's all-or-nothing estimate reverted with
+        let estimatedUploadRefusal: CustomEvmError | undefined;
+        let lostEvidenceRace: CustomEvmError | undefined;
         try {
             await this.mutex.lock({ taskName: "dispute" });
             if (this.storage.disputes.didIDispute(forkId)) {
                 this.logger.info(
                     `Already initiated dispute for forkId ${forkId}, skipping dispute attempt.`
                 );
-                return;
+                return {};
             }
 
             // Drain admitted block work before closing admission. Construction
@@ -138,7 +152,7 @@ class DisputeManager {
                 },
                 { taskName: "dispute signing barrier" }
             );
-            if (!admitted) return;
+            if (!admitted) return {};
 
             const killProof = options?.kill
                 ? this.getStoredDisputeFraudProof(options.kill)
@@ -202,19 +216,21 @@ class DisputeManager {
                         )
                     ).data
                 );
-            if (calls.length > 0) {
-                // the kill and fraud proofs land before the upload that counts their slashes
+            const bestEffort = calls.length > 0;
+            if (bestEffort) {
+                // the kill and fraud proofs land before the upload that counts
+                // their slashes, and stay landed when the upload is refused
                 calls.push(uploadDisputeCalldata);
-                txResponse = await this.stateChannelManagerContract.multicall(
-                    calls,
-                    {
-                        gasLimit: await this.replayGasLimit(
-                            this.stateChannelManagerContract
-                                .getFunction("multicall")
-                                .estimateGas(calls)
-                        )
-                    }
+                const estimate = this.estimateBestEffortMulticall(calls);
+                const gasLimit = await this.replayGasLimit(
+                    estimate.then(({ gas }) => gas)
                 );
+                estimatedUploadRefusal = (await estimate).refusal;
+                txResponse =
+                    await this.stateChannelManagerContract.multicallBestEffortLast(
+                        calls,
+                        { gasLimit }
+                    );
             } else if (shouldPostAuditingData) {
                 // TODO - revisit postedAuditingData under early finalization
                 txResponse =
@@ -233,12 +249,20 @@ class DisputeManager {
                 hash(Codec.encode(dispute, Type.Dispute)),
                 dispute
             );
-            await txResponse.wait();
+            const receipt = await txResponse.wait();
             killLanded = !!killProof;
+            const refusal = bestEffort
+                ? await this.lastCallRefusal(receipt!, estimatedUploadRefusal)
+                : undefined;
+            if (refusal) {
+                uploadRefusedInMulticall = true;
+                throw refusal;
+            }
         } catch (error) {
             uploadFailed = true;
             const success = await tryHandleEvmError(error, {
-                tx: txResponse,
+                // a mined multicall is never resent: its kill already landed
+                tx: uploadRefusedInMulticall ? undefined : txResponse,
                 logger: this.logger,
                 forkId,
                 signer: this.signer,
@@ -296,17 +320,18 @@ class DisputeManager {
                         );
                         rethrow = customError;
                     },
+                    // Another participant's evidence closed the evidence
+                    // period first. The marker below rolls back and the
+                    // refusal is returned to the caller.
+                    // TODO(OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ): revisit how a lost evidence race is interpreted
                     RaceConditionDisputeEvidencePeriodExpired: (
                         customError
                     ) => {
-                        // The error stays visible to the caller, but no
-                        // dispute landed: the marker below rolls back so a
-                        // later window can take this peer's evidence.
-                        this.logger.error(
-                            "dispute: evidence period already expired",
+                        this.logger.info(
+                            "dispute no-op: the evidence period closed before our evidence landed",
                             { forkId, channelId: this.channelId }
                         );
-                        rethrow = customError;
+                        lostEvidenceRace = customError;
                     }
                 }
             });
@@ -377,7 +402,7 @@ class DisputeManager {
                 this.channelId,
                 observedOnChainSlashes
             );
-            if (changed) await this.dispute(forkId);
+            if (changed) return this.dispute(forkId);
         }
         if (
             inboundRetry &&
@@ -394,10 +419,11 @@ class DisputeManager {
                 throw new Error(
                     "dispute - the inbound run up to the chain's head is unavailable"
                 );
-            await this.dispute(forkId, {
+            return this.dispute(forkId, {
                 refusedInboundHead: inboundRetry.chainHead
             });
         }
+        return { lostEvidenceRace };
     }
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
@@ -437,6 +463,62 @@ class DisputeManager {
         }
         const [estimated, required] = await Promise.all([estimate, replayGas]);
         return estimated + required;
+    }
+
+    /**
+     * Estimate for a best-effort multicall. A searching estimator funds a call
+     * only up to the least gas at which it succeeds, and the best-effort call
+     * succeeds even when its last call runs out of gas. The all-or-nothing
+     * estimate funds the last call too; only a last call that already fails
+     * is estimated best effort, so the earlier calls still land. That
+     * estimate can leave the last call too little gas to revert with its
+     * reason, so `refusal` keeps the custom error the all-or-nothing estimate
+     * reverted with.
+     */
+    private async estimateBestEffortMulticall(
+        calls: string[]
+    ): Promise<{ gas: bigint; refusal?: CustomEvmError }> {
+        const contract = this.stateChannelManagerContract;
+        try {
+            return {
+                gas: await contract.getFunction("multicall").estimateGas(calls)
+            };
+        } catch (error) {
+            return {
+                gas: await contract
+                    .getFunction("multicallBestEffortLast")
+                    .estimateGas(calls),
+                refusal: tryDecodeCustomError(error) ?? undefined
+            };
+        }
+    }
+
+    /**
+     * The refusal of a mined best-effort multicall's last call, decoded as its
+     * revert would be, or undefined when the last call landed. A refusal
+     * that names no reason (no revert data, or the proxy's revert for a facet
+     * that reverted without data, see isReasonlessRevert) is
+     * `estimatedRefusal` when its estimate decoded one: the last call ran out
+     * of the gas the best-effort estimate left it. Otherwise it is fatal.
+     */
+    private async lastCallRefusal(
+        receipt: ethers.TransactionReceipt,
+        estimatedRefusal: CustomEvmError | undefined
+    ): Promise<Error | undefined> {
+        const revertData = await multicallLastCallRevertData(
+            this.stateChannelManagerContract,
+            receipt.logs
+        );
+        if (revertData === undefined) return undefined;
+        if (isReasonlessRevert(revertData))
+            return (
+                estimatedRefusal ??
+                new Error(`dispute upload reverted: ${revertData}`)
+            );
+        return (
+            tryDecodeCustomError({ data: revertData }) ??
+            new Error(`dispute upload reverted: ${revertData}`)
+        );
     }
 
     /**
@@ -528,7 +610,7 @@ class DisputeManager {
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof = this.getStoredDisputeFraudProof(dispute);
-            const { windowExists, isExpired } =
+            const { windowExists, isExpired, killPeriodEnd } =
                 await this.stateChannelManagerContract.isKillPeriodExpired(
                     dispute.input.channelId,
                     dispute.input.forkId
@@ -540,6 +622,12 @@ class DisputeManager {
                 );
                 return;
             }
+            this.logger.info(`killDispute: sending kill ${formattedHash}`, {
+                disputeMeta,
+                ...LoggerUtils.getDisputeDeadlineMetadata({
+                    killPeriodEnd: Number(killPeriodEnd)
+                })
+            });
             const disputeFraudProofs = [disputeFraudProof];
             txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs(
@@ -659,10 +747,13 @@ class DisputeManager {
             throw error;
         });
 
-        // onChainSlashes
         // Construction uses the local observation. A refused conditional upload
-        // recovers missing chain slashes before normal reconstruction.
-        let onChainSlashes = new Set<Address>(_onChainSlashes);
+        // recovers missing chain slashes before normal reconstruction. The kill
+        // in the same multicall lands `expectedSlashes` first.
+        const slashedOnChain = new Set<Address>([
+            ..._onChainSlashes,
+            ...(options?.expectedSlashes ?? [])
+        ]);
         const participants = new Set<Address>(_participants);
 
         //sanity check
@@ -692,33 +783,41 @@ class DisputeManager {
             );
         }
 
-        // to make sure we're trying to slash only participants - even though onChainSlashes should always be a subset of participants
-        onChainSlashes = intersection(onChainSlashes, participants);
-        // the kill in the same multicall lands this slash first, also for a
-        // departed submitter outside our participant union
-        for (const slashed of options?.expectedSlashes ?? [])
-            onChainSlashes.add(slashed);
-        const participantsNotSlashedOnChain = difference(
-            participants,
-            onChainSlashes
-        );
-
         const fraudProofsToApply: FraudProofStruct[] = [];
-        for (const participant of participantsNotSlashedOnChain) {
+        for (const participant of difference(participants, slashedOnChain)) {
             const fraudProof =
                 this.storage.fraudProofs.getFraudProofForParticipant(
                     participant
                 );
             if (fraudProof) {
                 fraudProofsToApply.push(fraudProof);
-                onChainSlashes.add(participant);
+                slashedOnChain.add(participant);
             }
         }
+        // Only participants of the latest state may be listed: a slash of
+        // anyone else, e.g. a participant an ancestor fork already removed,
+        // makes the dispute provably invalid (InvalidDisputeReason).
+        const onChainSlashes = intersection(
+            slashedOnChain,
+            new Set<Address>(
+                latestStateSnapshot.snapshotData.participants.map(
+                    getChecksumAddress
+                )
+            )
+        );
 
-        // timeout
+        // timeout: it links only at the height right after the proof's latest
+        // block. A lower one names a height this node passed (block accepted
+        // or later state installed) -> drop it. A higher one was stored after
+        // a later block landed during construction -> keep it, not attached.
+        const storedTimeout = this.storage.timeout.getTimeout(forkId);
+        const nextHeight = BigInt(latestBlockHeight + 1);
+        if (storedTimeout && BigInt(storedTimeout.blockHeight) < nextHeight)
+            this.storage.timeout.removeTimeout(forkId);
         const timeoutStruct =
-            this.storage.timeout.getTimeout(forkId) ||
-            this.getEmptyTimeoutStruct();
+            storedTimeout && BigInt(storedTimeout.blockHeight) === nextHeight
+                ? storedTimeout
+                : this.getEmptyTimeoutStruct();
 
         // latestStateSnapshot proves its own inbound head -> naming anything
         // below it is objective fraud against ourselves
@@ -852,8 +951,9 @@ class DisputeManager {
 
     /**
      * The auditing data of our own proof: the walk evidence, the latest
-     * state, the state of the proof's final point, and the inbound and
-     * outbound runs. Missing local data throws: this peer holds what it signed.
+     * state, the state of the proof's final point, the inbound run, and the
+     * outbound run above the on-chain anchor. Missing local data throws: this
+     * peer holds what it signed.
      */
     private async buildAuditingData(
         forkId: ForkId,
@@ -881,17 +981,24 @@ class DisputeManager {
             throw new Error(
                 "buildAuditingData - the inbound run is unavailable after event recovery"
             );
-        const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId)!;
+        // only the run above the chain's anchor serves a later snapshot post;
+        // the anchor only moves forward, so this run keeps covering it.
+        // An anchor at or above the latest head leaves nothing to carry.
+        const onChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
+                this.channelId
+            )
+        );
         const outboundMessageBlocks =
-            this.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    latestStateSnapshot.snapshotData
-                        .latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    genesisStateSnapshot.snapshotData
-                        .latestOutboundMessageBlockHash
-            });
+            onChainSnapshot.latestOutboundMessageBlockHeight >=
+            latestStateSnapshot.latestOutboundMessageBlockHeight
+                ? []
+                : this.storage.outboundMessages.getMessageBlocksInRange({
+                      upperBlockHash:
+                          latestStateSnapshot.latestOutboundMessageBlockHash,
+                      lowerBlockHash:
+                          onChainSnapshot.latestOutboundMessageBlockHash
+                  });
 
         const auditingData: DisputeAuditingDataStruct = {
             genesisStateSnapshotData: built.evidence.genesisStateSnapshotData,

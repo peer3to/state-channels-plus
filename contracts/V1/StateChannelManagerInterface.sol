@@ -37,6 +37,8 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
 
+    function multicallBestEffortLast(bytes[] calldata calls) external virtual returns (bytes[] memory results);
+
     function facetAddressForSelector(bytes4 sig) public view virtual returns (address);
 
     // ********** routed to UtilityFacet **********
@@ -65,11 +67,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function getOpenChannelCount() public view virtual returns (uint256);
 
-    function getOpenChannelIds(uint256 offset, uint256 limit)
-        public
-        view
-        virtual
-        returns (bytes32[] memory channelIds);
+    function getOpenChannelIds(uint256 offset, uint256 limit) public view virtual returns (bytes32[] memory channelIds);
 
     function getChannelBalance(bytes32 channelId) public view virtual returns (ChannelBalance memory);
 
@@ -138,6 +136,12 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         SnapshotData memory lowerSnapshot,
         SnapshotData memory upperSnapshot
     ) public view virtual returns (bool);
+
+    function verifyOutboundRunAboveAnchor(
+        MessageBlock[] memory run,
+        SnapshotData memory anchorData,
+        SnapshotData memory latestData
+    ) public view virtual returns (bool isValid, MessageBlock[] memory aboveAnchor);
 
     function pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)
         public
@@ -274,6 +278,12 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         returns (bool);
 
     function isDisputeConflictingWithFinalState(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
+        public
+        view
+        virtual
+        returns (bool);
+
+    function isDisputeOutboundRunInvalid(Dispute memory dispute, DisputeInvalidOutboundRun memory proof)
         public
         view
         virtual

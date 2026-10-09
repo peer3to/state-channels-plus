@@ -8,6 +8,7 @@
 
 - [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 - [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)
+- [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 
 ## UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5
 
@@ -36,3 +37,5 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P20` — a forced check for a height whose predecessor is not stored → returns without submitting or rescheduling
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P21` — a rejected posted block with a dispute window created before the deadline → no forced timeout
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P22` — a dispute window created before the deadline with nothing posted → no plain timeout
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P23` — the latest stored state is past the checked height (block 3 stored, block 2 missing, block 1 stored) → after the deadline, no stored timeout and no submission
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P33` — a timeout check for the current fork, fired while a sync install of its successor fork is held, waits on the state mutex for that install; after the install the check stores no timeout for the old fork and submits no dispute

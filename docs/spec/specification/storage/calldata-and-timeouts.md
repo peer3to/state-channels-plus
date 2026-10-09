@@ -35,21 +35,32 @@ cannot legitimately coexist — the on-chain commitment at those coordinates is 
 first-post-wins, and non-overwritable ([data-availability.md](../security/data-availability.md)),
 and records are populated only from chain observation.
 
-**<a id="req-tostore-1-jqpxbc"></a>`REQ-TOSTORE-1-JQPXBC` — Lowest-height timeout candidate.** The store keeps at most one candidate per
-fork and ignores a stored update whose height is above the retained candidate's — mirroring the
-protocol's lowest-timed-out-height precedence ([`INV-DIS-8-1GY6Q5`](../disputes/disputes.md#inv-dis-8-1gy6q5)) so the node never escalates a
-later slot while an earlier one is missed. An equal-height store refreshes the retained candidate:
-the accountable participant at a height is deterministic, so this is the same slot re-observed, and
-the detection inputs only accrue (on-chain commitments are non-overwritable; signature knowledge is
-monotone) — a refresh never weakens the retained dispute evidence.
+**<a id="req-tostore-3-h0mh84"></a>`REQ-TOSTORE-3-H0MH84` — Newest timeout candidate.** The store keeps at most one candidate per
+fork, and a store always adopts the incoming candidate. The node stores a candidate only for the
+next unfilled height of its latest local state
+([`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)), so a
+retained candidate at a lower height names a height the node already passed: a block or an installed
+later state filled it. An honest node never times out a height it passed; it can only time out its
+next height. So the new store replaces the passed candidate, and a passed candidate never blocks the
+live one. An equal-height store refreshes the retained candidate: the accountable participant at a
+height is deterministic, so this is the same slot re-observed, and the detection inputs only accrue
+(on-chain commitments are non-overwritable; signature knowledge is monotone) — a refresh never
+weakens the retained dispute evidence. Forks are independent.
+
+The store needs no lowest-height retention for the protocol's lowest-timed-out-height precedence
+([`INV-DIS-8-1GY6Q5`](../disputes/disputes.md#inv-dis-8-1gy6q5)). The chain applies that precedence
+across all committed disputes on the fork. The node's own claim is always at the lowest height its
+local state has not filled, and dispute construction attaches a stored claim only at the state
+proof's latest height + 1. Every lower height is filled in the node's view, so its claim never skips
+an earlier missed slot.
 
 **<a id="req-tostore-2-wx7vmh"></a>`REQ-TOSTORE-2-WX7VMH` — Drop a refused candidate by identity.** A consumer whose escalation was
 refused because the base layer proved the candidate moot MUST be able to drop it, and the drop MUST
 match the refused candidate's identity: same height, same participant, and not a forced candidate.
 A candidate the store holds for another height or participant, or a forced candidate stored since,
-survives the drop. Without the drop the retained candidate is the lowest height on that fork
-([`REQ-TOSTORE-1-JQPXBC`](calldata-and-timeouts.md#req-tostore-1-jqpxbc)) and would be carried into
-every later escalation on it.
+survives the drop. Without the drop the refused candidate stays retained until a later store
+replaces it ([`REQ-TOSTORE-3-H0MH84`](calldata-and-timeouts.md#req-tostore-3-h0mh84)), and a later
+escalation at the same next height would carry it again.
 
 ## Assumptions and constraints
 
@@ -62,18 +73,18 @@ every later escalation on it.
 
 Calldata hash-matching prevents a same-coordinate different-content record from silently
 satisfying an availability check — exactly the divergence the slashing rules exist for. The
-lowest-height rule in the timeout store keeps the node's own escalation aligned with timeout
-precedence even when observations arrive out of order.
+timeout store adopts the newest candidate: a retained candidate for a passed height must not block
+the claim at the node's next height, or a silent writer at that height is never disputed.
 
 ## Verification and test plan
 
 ### Requirement test matrix
 
-| Plan item                                                     | Requirements / invariants                                               | Setup and stimulus                                                                                                       | Expected result                                                                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="req-cdstore-1-ecwbny.t1"></a>`REQ-CDSTORE-1-ECWBNY.T1` | [`REQ-CDSTORE-1-ECWBNY`](calldata-and-timeouts.md#req-cdstore-1-ecwbny) | Store calldata records; query by coordinates and by matching block with equal and unequal hashes.                        | Coordinate reads return the record; match succeeds only on hash equality.                  | <a id="req-cdstore-1-ecwbny.t1.p1"></a>`REQ-CDSTORE-1-ECWBNY.T1.P1` — store/read by coordinates; <a id="req-cdstore-1-ecwbny.t1.p2"></a>`REQ-CDSTORE-1-ECWBNY.T1.P2` — match equal hash; <a id="req-cdstore-1-ecwbny.t1.p3"></a>`REQ-CDSTORE-1-ECWBNY.T1.P3` — same coordinates, different hash → no match; <a id="req-cdstore-1-ecwbny.t1.p4"></a>`REQ-CDSTORE-1-ECWBNY.T1.P4` — absent coordinates; <a id="req-cdstore-1-ecwbny.t1.p5"></a>`REQ-CDSTORE-1-ECWBNY.T1.P5` — re-store at held coordinates adopts the incoming record. |
-| <a id="req-tostore-1-jqpxbc.t1"></a>`REQ-TOSTORE-1-JQPXBC.T1` | [`REQ-TOSTORE-1-JQPXBC`](calldata-and-timeouts.md#req-tostore-1-jqpxbc) | Store timeout candidates at varied heights per fork in varied orders.                                                    | The lowest height is retained regardless of arrival order; forks are independent.          | <a id="req-tostore-1-jqpxbc.t1.p1"></a>`REQ-TOSTORE-1-JQPXBC.T1.P1` — lower replaces higher; <a id="req-tostore-1-jqpxbc.t1.p2"></a>`REQ-TOSTORE-1-JQPXBC.T1.P2` — higher ignored; <a id="req-tostore-1-jqpxbc.t1.p3"></a>`REQ-TOSTORE-1-JQPXBC.T1.P3` — order permutations converge; <a id="req-tostore-1-jqpxbc.t1.p4"></a>`REQ-TOSTORE-1-JQPXBC.T1.P4` — per-fork isolation; <a id="req-tostore-1-jqpxbc.t1.p5"></a>`REQ-TOSTORE-1-JQPXBC.T1.P5` — equal-height store refreshes the retained candidate.                           |
-| <a id="req-tostore-2-wx7vmh.t1"></a>`REQ-TOSTORE-2-WX7VMH.T1` | [`REQ-TOSTORE-2-WX7VMH`](calldata-and-timeouts.md#req-tostore-2-wx7vmh) | Drop candidates by identity against stored candidates that match and that differ in height, participant, or forced flag. | Only the identical non-forced candidate is removed; every other stored candidate survives. | <a id="req-tostore-2-wx7vmh.t1.p1"></a>`REQ-TOSTORE-2-WX7VMH.T1.P1` — the matching non-forced candidate is removed; <a id="req-tostore-2-wx7vmh.t1.p2"></a>`REQ-TOSTORE-2-WX7VMH.T1.P2` — a forced candidate at the same slot survives; <a id="req-tostore-2-wx7vmh.t1.p3"></a>`REQ-TOSTORE-2-WX7VMH.T1.P3` — a candidate at another height survives; <a id="req-tostore-2-wx7vmh.t1.p4"></a>`REQ-TOSTORE-2-WX7VMH.T1.P4` — a candidate for another participant at the same height survives                                          |
+| Plan item                                                     | Requirements / invariants                                               | Setup and stimulus                                                                                                                                                                    | Expected result                                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="req-cdstore-1-ecwbny.t1"></a>`REQ-CDSTORE-1-ECWBNY.T1` | [`REQ-CDSTORE-1-ECWBNY`](calldata-and-timeouts.md#req-cdstore-1-ecwbny) | Store calldata records; query by coordinates and by matching block with equal and unequal hashes.                                                                                     | Coordinate reads return the record; match succeeds only on hash equality.                                       | <a id="req-cdstore-1-ecwbny.t1.p1"></a>`REQ-CDSTORE-1-ECWBNY.T1.P1` — store/read by coordinates; <a id="req-cdstore-1-ecwbny.t1.p2"></a>`REQ-CDSTORE-1-ECWBNY.T1.P2` — match equal hash; <a id="req-cdstore-1-ecwbny.t1.p3"></a>`REQ-CDSTORE-1-ECWBNY.T1.P3` — same coordinates, different hash → no match; <a id="req-cdstore-1-ecwbny.t1.p4"></a>`REQ-CDSTORE-1-ECWBNY.T1.P4` — absent coordinates; <a id="req-cdstore-1-ecwbny.t1.p5"></a>`REQ-CDSTORE-1-ECWBNY.T1.P5` — re-store at held coordinates adopts the incoming record.                   |
+| <a id="req-tostore-3-h0mh84.t1"></a>`REQ-TOSTORE-3-H0MH84.T1` | [`REQ-TOSTORE-3-H0MH84`](calldata-and-timeouts.md#req-tostore-3-h0mh84) | Store a lower candidate then a higher one, the same height twice, and candidates on two forks; end to end, leave a candidate for a passed height stored and time out the next height. | The latest store is retained; forks are independent; the passed candidate does not block the next-height claim. | <a id="req-tostore-3-h0mh84.t1.p1"></a>`REQ-TOSTORE-3-H0MH84.T1.P1` — a later store at a higher height replaces a stale lower one; <a id="req-tostore-3-h0mh84.t1.p2"></a>`REQ-TOSTORE-3-H0MH84.T1.P2` — equal-height store refreshes the retained candidate; <a id="req-tostore-3-h0mh84.t1.p3"></a>`REQ-TOSTORE-3-H0MH84.T1.P3` — per-fork isolation; <a id="req-tostore-3-h0mh84.t1.p4"></a>`REQ-TOSTORE-3-H0MH84.T1.P4` — a stale candidate for a passed height does not block the next-height timeout: the dispute carries the next-height claim. |
+| <a id="req-tostore-2-wx7vmh.t1"></a>`REQ-TOSTORE-2-WX7VMH.T1` | [`REQ-TOSTORE-2-WX7VMH`](calldata-and-timeouts.md#req-tostore-2-wx7vmh) | Drop candidates by identity against stored candidates that match and that differ in height, participant, or forced flag.                                                              | Only the identical non-forced candidate is removed; every other stored candidate survives.                      | <a id="req-tostore-2-wx7vmh.t1.p1"></a>`REQ-TOSTORE-2-WX7VMH.T1.P1` — the matching non-forced candidate is removed; <a id="req-tostore-2-wx7vmh.t1.p2"></a>`REQ-TOSTORE-2-WX7VMH.T1.P2` — a forced candidate at the same slot survives; <a id="req-tostore-2-wx7vmh.t1.p3"></a>`REQ-TOSTORE-2-WX7VMH.T1.P3` — a candidate at another height survives; <a id="req-tostore-2-wx7vmh.t1.p4"></a>`REQ-TOSTORE-2-WX7VMH.T1.P4` — a candidate for another participant at the same height survives                                                            |
 
 ## Future Work
 

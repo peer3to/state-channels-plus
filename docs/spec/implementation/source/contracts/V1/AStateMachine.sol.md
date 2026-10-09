@@ -27,8 +27,11 @@
 - [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
   Partial: admission and top-up in the integrator's `_joinChannel` are integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+  Partial: state-machine diamonds MUST route `getNextToWriteOf(bytes)`; it sets the given state and must only be called as a simulated call. An unrouted selector makes every timeout audit throw (`EvmDiamondStateMachine.peekNextToWrite`). Routing is integrator-owned and not checked ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../../../../specification/protocol-model/finality.md#req-fin-5-dh29vz)
 - [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../../../../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
+- [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
+  Partial: `_slashParticipant` must return true for every current participant, because dispute reduction adds the timeout target to the removals only when no slash took effect; the contract is integrator-owned and not enforced, so a machine that returns false for a present participant also removes the timeout target and inverts the slash precedence for that machine ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 
 ## UNIT-TEST-ASTATE-MACHINE-1-67J5W6
 

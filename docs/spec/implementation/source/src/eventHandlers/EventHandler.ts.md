@@ -34,3 +34,4 @@ Dispute-event branches
 - [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P10` — challenge mismatched reduction
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P11` — improvement upload skipped as already initiated: reduction still scheduled
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P12` — A disconnected spectator observes a committed dispute and successor fork without invoking the first local or chain audit predicate or storing a dispute counter, while a participant audits the same dispute
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P18` — A pending joiner whose uncertain join can still land handles a snapshot event that does not list it: it stays PENDING_PARTICIPANT and its own join state stays open.

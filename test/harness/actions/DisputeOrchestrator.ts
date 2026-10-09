@@ -481,6 +481,11 @@ export class DisputeOrchestrator<
             const settledPeers = candidatePeers.filter(
                 (_, idx) => candidateForkIds[idx] === newForkId
             );
+            if (settledPeers.length === 0) {
+                throw new Error(
+                    `No honest peer is on the resolved fork ${newForkId} after resolving ${originalForkId}`
+                );
+            }
 
             for (const peer of settledPeers) {
                 const participants = await this.harness

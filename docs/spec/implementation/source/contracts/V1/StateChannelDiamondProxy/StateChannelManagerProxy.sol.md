@@ -117,6 +117,20 @@ Funded replay or no verdict
 - [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P12` — fuzzing both the attached gas and the size of the replayed transition's input (up to 128 KiB) never slashes the author of an honest transition that catches an inner out-of-gas
 - [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P13` — with many outbound messages left in the machine's storage by an earlier transition, fuzzed attached gas never slashes the author of an honest transition that catches an inner out-of-gas: the deletion either fits beside the full budget or the replay is refused
 
+## UNIT-TEST-MANAGER-PROXY-4-4H4FFY
+
+Best-effort last call
+
+- Setup: On a deployed diamond, call `multicallBestEffortLast` with two opens of one channel, with an earlier failing open in front of a last open of another channel, and with an open followed by a read; compare the all-succeed result with `multicall` on the same state
+- Oracle: A reverted last call keeps the earlier effects and emits `MulticallLastCallFailed` with the exact revert data; a reverted earlier call reverts the whole call with its error and leaves no effect; when every call succeeds the results equal `multicall`'s and no failure event is emitted
+
+- [x] `UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P1` — last call reverts: earlier effects persist, event carries the exact revert data
+- [x] `UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P2` — earlier call reverts: whole call reverts with that error, no effect
+- [x] `UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P3` — every call succeeds: results equal `multicall`, no failure event
+- [x] `UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P4` — empty call list: no results, no failure event
+- [x] `UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P5` — a sole call that succeeds: its result equals `multicall`, its effect is kept, no failure event
+- [x] `UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P6` — a sole call that reverts: one empty result slot and `MulticallLastCallFailed` with that revert data, no revert of the whole call
+
 ## UNIT-TEST-SM-MANAGER-PROXY-1-8GBCH7
 
 Replay execution

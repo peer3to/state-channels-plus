@@ -5,6 +5,11 @@ import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
+    scheduleForkRecoveryAroundStop,
+    stopWithHeldForkRecovery,
+    stopWithRejectedAndPendingProbes
+} from "@test/fixtures/QueueDrainStaging";
+import {
     QueueIntakeFixture,
     receiveWithExplicitStrategy
 } from "@test/fixtures/QueueIntakeFixture";
@@ -86,6 +91,206 @@ describe("Unit: BlockQueueManager", () => {
             armedAfter: 0,
             cancelled: 1
         });
+    });
+
+    it("stop waits for a source probe held in flight at its sync", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const result = await f.h.execOnHost(
+            f.h.getPeer(0),
+            async (sm, args, { ethers }) => {
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                const sync = spectate.sync;
+                let release!: () => void;
+                const gate = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                let entered!: () => void;
+                const held = new Promise<void>((resolve) => {
+                    entered = resolve;
+                });
+                let synced = false;
+                const queue = sm.blockQueueManager;
+                const dispose = queue.dispose;
+                let drainEntered!: () => void;
+                const draining = new Promise<void>((resolve) => {
+                    drainEntered = resolve;
+                });
+                queue.dispose = () => {
+                    drainEntered();
+                    return dispose.call(queue);
+                };
+                spectate.sync = async (...parameters) => {
+                    entered();
+                    await gate;
+                    try {
+                        return await sync.apply(spectate, parameters);
+                    } finally {
+                        synced = true;
+                    }
+                };
+                try {
+                    const block = ethers.AbiCoder.defaultAbiCoder().decode(
+                        [args.blockType],
+                        args.encodedBlockConfirmation
+                    )[0];
+                    await sm.blockQueueManager.ingestBlockConfirmation(block, {
+                        origin: args.origin,
+                        senderAddress: args.source
+                    });
+                    // the real queue timeout probes the future block's source
+                    await held;
+                    let stopped = false;
+                    let syncedWhenStopped = false;
+                    const stopping = sm.stop().then(() => {
+                        stopped = true;
+                        syncedWhenStopped = synced;
+                    });
+                    // stop reached the drain while the probe is held
+                    await draining;
+                    const stoppedWhileHeld = stopped;
+                    release();
+                    await stopping;
+                    return { stoppedWhileHeld, syncedWhenStopped };
+                } finally {
+                    release();
+                    spectate.sync = sync;
+                    queue.dispose = dispose;
+                }
+            },
+            {
+                blockType: BlockConfirmationEthersType,
+                encodedBlockConfirmation: f.encodedBlockConfirmation,
+                origin: BlockOrigin.NETWORK as const,
+                source: f.h.getPeer(1).address
+            }
+        );
+        expect(result).to.deep.equal({
+            stoppedWhileHeld: false,
+            syncedWhenStopped: true
+        });
+    });
+
+    it("stop drains a pending probe after another fails, clears the queue, then rejects with the failure", async () => {
+        expect(await stopWithRejectedAndPendingProbes()).to.deep.equal({
+            jobs: 2,
+            afterFailure: {
+                stopped: false,
+                inFlight: 1,
+                timeoutManagerDisposed: false
+            },
+            stopError: "probe failed",
+            afterStop: {
+                inFlight: 0,
+                queued: [false, false],
+                recoveryScheduled: 0,
+                recoverySuppressed: 0,
+                timeoutManagerDisposed: true
+            }
+        });
+    });
+
+    it("stop waits for a fork recovery held in flight, then clears the recovery state", async () => {
+        expect(
+            await stopWithHeldForkRecovery(MathTestSession.getHarness())
+        ).to.deep.equal({
+            recoveries: 1,
+            whileHeld: {
+                onSourceFork: true,
+                stopped: false,
+                inFlight: 1,
+                recoveryScheduled: true,
+                timeoutManagerDisposed: false
+            },
+            afterStop: {
+                inFlight: 0,
+                recoveryScheduled: 0,
+                timeoutManagerDisposed: true
+            }
+        });
+    });
+
+    it("a fork recovery scheduled or firing after stop began never runs", async () => {
+        expect(await scheduleForkRecoveryAroundStop()).to.deep.equal({
+            scheduledBeforeStop: 1,
+            scheduledAfterStop: 0,
+            inFlight: 0,
+            entered: 0
+        });
+    });
+
+    it("a queue timeout firing after stop began starts no source probe", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const result = await f.h.execOnHost(
+            f.h.getPeer(0),
+            async (sm, args, { ethers }) => {
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                const sync = spectate.sync;
+                let syncCalls = 0;
+                spectate.sync = (...parameters) => {
+                    syncCalls++;
+                    return sync.apply(spectate, parameters);
+                };
+                const schedule = sm.timeoutManager.scheduleTask.bind(
+                    sm.timeoutManager
+                );
+                let fired!: () => void;
+                const timeoutFired = new Promise<void>((resolve) => {
+                    fired = resolve;
+                });
+                sm.timeoutManager.scheduleTask = (task, delay, name) =>
+                    schedule(
+                        name?.startsWith("BlockQueueManager.queueTimeout -")
+                            ? async () => {
+                                  await task();
+                                  fired();
+                              }
+                            : task,
+                        delay,
+                        name
+                    );
+                // stop() parks on the custom RPC disposal, after it set
+                // isDisposed and before the block queue disposes
+                const localRpc = sm.p2pManager.localRpc;
+                const disposeLocalRpc = localRpc.dispose;
+                let release!: () => void;
+                const gate = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                localRpc.dispose = async () => {
+                    await gate;
+                    return disposeLocalRpc.call(localRpc);
+                };
+                try {
+                    const block = ethers.AbiCoder.defaultAbiCoder().decode(
+                        [args.blockType],
+                        args.encodedBlockConfirmation
+                    )[0];
+                    await sm.blockQueueManager.ingestBlockConfirmation(block, {
+                        origin: args.origin,
+                        senderAddress: args.source
+                    });
+                    const stopping = sm.stop();
+                    await timeoutFired;
+                    release();
+                    await stopping;
+                    return { isDisposed: sm.isDisposed, syncCalls };
+                } finally {
+                    release();
+                    spectate.sync = sync;
+                    sm.timeoutManager.scheduleTask = schedule;
+                    localRpc.dispose = disposeLocalRpc;
+                }
+            },
+            {
+                blockType: BlockConfirmationEthersType,
+                encodedBlockConfirmation: f.encodedBlockConfirmation,
+                origin: BlockOrigin.NETWORK as const,
+                source: f.h.getPeer(1).address
+            }
+        );
+        expect(result).to.deep.equal({ isDisposed: true, syncCalls: 0 });
     });
 
     it("sync succeeds but the sender is still absent: blacklisted with no queue entry", async () => {

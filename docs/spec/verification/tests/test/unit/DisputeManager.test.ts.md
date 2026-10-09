@@ -5,8 +5,8 @@ Exercises: [DisputeManager.ts](../../../../implementation/source/src/disputeMana
 
 ## Overview
 
-The suite drives `DisputeManager` host-side on live in-process channels: `constructDispute` and
-`getAuditingData` run via `execOnHost` against a peer's StateManager, while `dispute()` and
+The suite drives `DisputeManager` host-side on live in-process channels: `constructDispute` (and its
+`buildAuditingData` step) run via `execOnHost` against a peer's StateManager, while `dispute()` and
 `killDispute()` run with the chain boundary stubbed by harness probes
 (`recordDisputeSubmissions`/`recordDisputeFraudProofApplies`) that record uploads instead of
 sending them and inject failures as the real 4-byte custom-error revert data, so the SDK's own
@@ -22,6 +22,10 @@ forwards a real send instead: a multicall upload is parked while a join moves th
 head, then released so the chain itself reverts `RaceConditionDisputeInboundNotLatest(head,
 anchor)`. Local storage is assumed current through event sync, so the refusal is not retried: the
 marker rolls back and nothing re-uploads.
+The successor-fork construction case resolves a four-peer dispute, adds one honest transition on the
+successor and checks that the chain anchor is still on the parent fork. The dispute constructed on the
+successor is accepted by the chain's proof check, and an honest auditor accepts it (posted data, an
+existing window required) with no counter.
 Other real sends and on-chain dispute settlement are out of scope (owned by the dispute e2e
 flows), and skipped declarations document unreachable branches. The permutation pool has since been atomized, so the formerly bundled
 comparisons (empty vs held timeout, plain vs calldata upload, each named race revert, the
@@ -29,7 +33,7 @@ posted-auditing probe both ways) are now assigned one side per test below. Still
 scenarios with no staged test — rollback-with-retry (`1.P2`), self-removal flag (`2.P3`),
 snapshot/state hash mismatch (`2.P5`), empty-stream tip defaults (`2.P8`), submission-hook
 identity (`3.P4`), the range-bound assertions (`5.P3`, `5.P7`), and the remaining
-missing-element partial cases (`5.P5`, `5.P6`) — plus `4.P3` (window absent), whose only test is
+missing-element cases where construction throws (`5.P5`, `5.P6`) — plus `4.P3` (window absent), whose only test is
 a skipped unreachable-branch declaration, and the inbound-head no-retry branches for a local head
 already at the chain head (`1.P31`) and a disposed runtime or changed fork (`1.P32`).
 
@@ -77,6 +81,8 @@ estimate plus the replay gas, the kill mined without error (`6.P11`).
 - `a counter-signature already requested finishes before a dispute task captures its state`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P13, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P7
 - `a refused dispute reopens own-turn authoring before a retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P14, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P8
 - `a refused dispute reopens counter-signing before a retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P15, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P9
+- `successor fork: the ancestor fork's slash, also one a kill lands first, is not listed`: REQ-DIS-11-WQK8P2.T1.P3
+- `successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof`: UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P18
 - `healthy fork → well-formed dispute, the chain accepts its proof`: none
 - `no blocks written yet → a genesis-based dispute with an empty state proof`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P3, UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P4
 - `inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head`: none
@@ -86,7 +92,10 @@ estimate plus the replay gas, the kill mined without error (`6.P11`).
 - `latest block final by everyone → postedAuditingData false`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P9
 - `unfinalized inbound join at the head → postedAuditingData true (calldata needed)`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P6
 - `a fresh timeout planted for the next writer → carried into dispute.input.timeout`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P7
+- `a stored timeout at a height a later accepted block passed → the next dispute carries no timeout, drops it, and no auditor kills it`: REQ-DISPUTE-PIPE-13-R2QJZN.T2.P1
+- `a stored timeout above the proof's next height → not attached and kept stored`: REQ-DISPUTE-PIPE-13-R2QJZN.T2.P2
 - `own fully-synced fork proof → one milestoneSnapshot per proof milestone`: none
+- `the chain anchor holds the fork's first outbound block and a later exit sits above it → the outbound run is only the block above the anchor, the chain accepts the dispute`: UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P8
 - `recoverable gap → complete, and the hash still agrees with the disputer's`: none
 - `unrecoverable gap → the auditing-data build throws`: none
 - `own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw`: none
@@ -106,8 +115,8 @@ estimate plus the replay gas, the kill mined without error (`6.P11`).
 - `a refusal other than the posted-calldata race while a posted block lands → the withheld block is handed back and stored`: REQ-DISPUTE-PIPE-11-HRGJ43.T1.P5
 - `RaceConditionDisputeTimeoutNotMinTimestamp while a posted block lands → the refusal re-arms the check and the withheld block is stored`: REQ-DISPUTE-PIPE-11-HRGJ43.T1.P4, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P33
 - `RaceConditionDisputeTimeoutCalldataPosted, then an authentic block failing its state transition → the fraud-proof dispute carries no timeout`: REQ-DISPUTE-PIPE-11-HRGJ43.T1.P2, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P32
-- `RaceConditionDisputeEvidencePeriodExpired at send → rejects and the marker rolls back`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P6
-- `RaceConditionDisputeEvidencePeriodExpired at wait → rejects and the marker rolls back`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P10
+- `RaceConditionDisputeEvidencePeriodExpired at send → resolves as a no-op and the marker rolls back`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P46
+- `RaceConditionDisputeEvidencePeriodExpired at wait → resolves as a no-op and the marker rolls back`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P47
 - `after a late revert on the wait, a retry submits replacement evidence, and the fork is closed to our signing while it holds`: REQ-DISPUTE-PIPE-8-BVR8XV.T1.P3, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P7
 - `dispute start closes the fork: our turn produces no block`: REQ-DISPUTE-PIPE-8-BVR8XV.T1.P1, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P8
 - `dispute start closes the fork: a delivered block gets no signature of ours`: REQ-DISPUTE-PIPE-8-BVR8XV.T1.P2, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P9

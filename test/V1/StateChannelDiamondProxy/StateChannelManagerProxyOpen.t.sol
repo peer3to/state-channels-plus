@@ -159,9 +159,10 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 300;
         amounts[1] = 200;
-        return _openChannelConfirmationWithDeadline(
-            DEADLINE_CHANNEL_ID, participantPrivateKeys, amounts, true, OPEN_DEADLINE
-        );
+        return
+            _openChannelConfirmationWithDeadline(
+                DEADLINE_CHANNEL_ID, participantPrivateKeys, amounts, true, OPEN_DEADLINE
+            );
     }
 
     function _assertOpenedWithDeposits() internal view {

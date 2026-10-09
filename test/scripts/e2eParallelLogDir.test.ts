@@ -28,6 +28,7 @@ const argParser: {
 } = require("../../scripts/e2e-parallel/shared/argParser.js");
 const { getHelpText, parseCliArgs } = argParser;
 const {
+    annotateFailure,
     colorize,
     cleanupNonErrorLogs,
     countStarvation,
@@ -37,9 +38,15 @@ const {
     isWithinDefaultLogDir,
     safeEmptyDir,
     nextRunDir,
+    result,
     summary,
     summaryCounts
 } = require("../../scripts/e2e-parallel/shared/logging.js") as {
+    annotateFailure: (
+        label: string,
+        reason: string,
+        env?: Record<string, string>
+    ) => void;
     colorize: (color: string, text: string) => string;
     cleanupNonErrorLogs: (
         dirPath: string,
@@ -60,6 +67,7 @@ const {
     isWithinDefaultLogDir: (resolved: string) => boolean;
     safeEmptyDir: (dirPath: string, allow: boolean) => void;
     nextRunDir: (baseDir: string) => string;
+    result: (options: Record<string, unknown>) => void;
     summary: (options: Record<string, unknown>) => void;
     summaryCounts: (
         total: number,
@@ -664,6 +672,101 @@ describe("e2e-parallel logging - starvation diagnostics", function () {
 
         expect(countStarvation(output)).to.equal(2);
         expect(parseTimings(output).maxEventLoopDelayMs).to.equal(1100);
+    });
+});
+
+// console.log lines printed while fn runs
+function captureLog(fn: () => void): string[] {
+    const lines: string[] = [];
+    const original = console.log;
+    console.log = (line = "") => lines.push(line);
+    try {
+        fn();
+    } finally {
+        console.log = original;
+    }
+    return lines;
+}
+
+function taskResult(code: number, label: string, env: Record<string, string>) {
+    return {
+        completed: 1,
+        total: 1,
+        code,
+        failureReason: code === 0 ? undefined : "x\ny",
+        label,
+        durationMs: 1,
+        oomCount: 0,
+        starveCount: 0,
+        timing: parseTimings(""),
+        env
+    };
+}
+
+describe("e2e-parallel logging - github annotations", function () {
+    it("emits one encoded failure annotation inside GitHub Actions", function () {
+        const lines = captureLog(() =>
+            result(taskResult(1, "a%b\r\nc", { GITHUB_ACTIONS: "true" }))
+        );
+        expect(lines.filter((line) => line.startsWith("::"))).to.deep.equal([
+            "::error title=Test failed::a%25b%0D%0Ac [x%0Ay]"
+        ]);
+        expect(lines.some((line) => line.includes("FAIL [x\ny]"))).to.equal(
+            true
+        );
+    });
+
+    it("emits no annotation outside GitHub Actions", function () {
+        const unset = captureLog(() => result(taskResult(1, "fails", {})));
+        const disabled = captureLog(() =>
+            result(taskResult(1, "fails", { GITHUB_ACTIONS: "false" }))
+        );
+        for (const lines of [unset, disabled]) {
+            expect(lines.some((line) => line.includes("FAIL"))).to.equal(true);
+            expect(lines.some((line) => line.startsWith("::"))).to.equal(false);
+        }
+        expect(
+            captureLog(() => annotateFailure("fails", "exit 1", {}))
+        ).to.deep.equal([]);
+    });
+
+    it("emits no annotation for a passing task inside GitHub Actions", function () {
+        const lines = captureLog(() =>
+            result(taskResult(0, "passes", { GITHUB_ACTIONS: "true" }))
+        );
+        expect(lines).to.have.length(1);
+        expect(lines[0]).to.include("PASS");
+    });
+
+    it("lists every failed task in the GitHub step summary", function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scp-summary-"));
+        const summaryPath = path.join(dir, "summary.md");
+        const failed = Array.from({ length: 12 }, (_, i) => ({
+            label: `fails ${i}`
+        }));
+        try {
+            captureLog(() =>
+                summary({
+                    tasks: [{ label: "passes" }, ...failed],
+                    failed,
+                    wallMs: 1000,
+                    sumDurationMs: 1000,
+                    peakCpu: 0,
+                    avgCpu: 0,
+                    peakOccupiedGb: 0,
+                    avgPerTestGb: 0,
+                    memBoundGb: 1,
+                    env: { GITHUB_STEP_SUMMARY: summaryPath }
+                })
+            );
+            const written = fs.readFileSync(summaryPath, "utf8");
+            expect(written).to.include("12 failing");
+            for (const task of failed)
+                expect(written).to.include(`- ${task.label}\n`);
+            expect(written).not.to.include("passes");
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
 

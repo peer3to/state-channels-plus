@@ -22,6 +22,7 @@
 - [`INV-LIF-5-ENQB91` (Settlement conserves value)](../../../../../specification/settlement/lifecycle.md#inv-lif-5-enqb91)
 - [`REQ-MSG-8-N1ECJ5` (Exits MUST be withdrawable only through snapshot advance)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-8-n1ecj5)
 - [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../../../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
+- [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB
 
@@ -68,6 +69,7 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P44` — An unfinalized block after the anchor cannot be adopted
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P45` — An overlapping last milestone targets its separate later final point
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P46` — The preceding change-point snapshot cannot replace the final snapshot in an overlapping proof
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P47` — a snapshot post whose new snapshot has its outbound head at an overflowing block right above the anchor reverts `ErrorOutboundMessageBlocksInvalid` (invalid run), not an arithmetic panic
 
 ## INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP
 

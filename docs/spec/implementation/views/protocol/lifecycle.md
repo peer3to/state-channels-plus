@@ -17,8 +17,8 @@
 - Settlement is assembled by `SnapshotUpdateService` and applied through `StateSnapshotFacet` and
   the consumer withdrawal hook. Benign races include another peer's snapshot landing first.
 
-Current: [`MathStateMachine.leaveChannel`](../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L112)
+Current: [`MathStateMachine.leaveChannel`](../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L134)
 is exactly this — a normal transition that removes the caller and records an `ExitChannel`
 outbound message. After a transition in which the local participant left, the SDK waits
 `agreementTime` and then either posts the finalized snapshot (everyone signed) or opens a
-self-removal dispute (`StateManager.startMaybeExitOnChain`).
+self-removal dispute (`MembershipService.startMaybeExitOnChain`).

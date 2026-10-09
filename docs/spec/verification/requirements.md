@@ -65,8 +65,8 @@ Specification cases tested: 0/21.
 [`INV-DIS-5-J1QZ92` (The reduced result is independent of the order in which valid dispute inputs…)](../specification/disputes/disputes.md#inv-dis-5-j1qz92)
 Specification cases tested: 0/21.
 
-[`INV-DIS-7-9GGZSD` (In a fork whose reduction contains any on-chain slashes, timeout removal is not…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
-Specification cases tested: 0/17.
+[`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
+Specification cases tested: 1/18. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17.
 
 [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../specification/disputes/disputes.md#inv-dis-8-1gy6q5)
 Specification cases tested: 0/19.
@@ -566,6 +566,12 @@ Specification cases tested: 1/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T
 [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)
 Specification cases tested: 5/20. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P20.
 
+[`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2)
+Specification cases tested: 6/6.
+
+[`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../specification/disputes/disputes.md#req-dis-12-axy60r)
+Specification cases tested: 24/24.
+
 [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)
 Specification cases tested: 3/8. Untested: T1.P1, T1.P2, T1.P3, T1.P7, T1.P8.
 
@@ -582,7 +588,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P3, T1.P4, T1.P6, T1.P7, T
 Specification cases tested: 24/33. Untested: T1.P2, T1.P3, T1.P6, T1.P7, T1.P9, T1.P17, T1.P18, T1.P19, T1.P20.
 
 [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
-Specification cases tested: 13/18. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P9.
+Specification cases tested: 15/20. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P9.
 
 [`REQ-DISPUTE-PIPE-7-76N72X` (Combined membership intent)](../specification/disputes/dispute-processing.md#req-dispute-pipe-7-76n72x)
 Specification cases tested: 2/3. Untested: T1.P4.
@@ -601,6 +607,9 @@ Specification cases tested: 5/5.
 
 [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)
 Specification cases tested: 8/8.
+
+[`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
+Specification cases tested: 6/6.
 
 [`REQ-DSTORE-1-5AQYJX` (Dispute confirmation merge)](../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx)
 Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
@@ -825,7 +834,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 17/17.
+Specification cases tested: 18/18.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -1244,10 +1253,10 @@ Specification cases tested: 5/5.
 [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
 Specification cases tested: 11/11.
 
-[`REQ-TOSTORE-1-JQPXBC` (Lowest-height timeout candidate)](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc)
-Specification cases tested: 0/5.
-
 [`REQ-TOSTORE-2-WX7VMH` (Drop a refused candidate by identity)](../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)
+Specification cases tested: 4/4.
+
+[`REQ-TOSTORE-3-H0MH84` (Newest timeout candidate)](../specification/storage/calldata-and-timeouts.md#req-tostore-3-h0mh84)
 Specification cases tested: 4/4.
 
 [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../specification/security/trust-model.md#req-trust-1-k5ps99)

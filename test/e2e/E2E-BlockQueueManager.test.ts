@@ -1591,6 +1591,7 @@ describe("E2E: BlockQueueManager", function () {
                         // Record-only: a real dispute would derail the session.
                         disputeManager.dispute = async () => {
                             disputes += 1;
+                            return {};
                         };
                         try {
                             const result =
@@ -1673,6 +1674,7 @@ describe("E2E: BlockQueueManager", function () {
                         // block would derail the session; the proof stays real.
                         disputeManager.dispute = async (forkId: unknown) => {
                             disputed.push(String(forkId));
+                            return {};
                         };
                         try {
                             const result =

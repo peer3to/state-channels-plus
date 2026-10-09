@@ -16,12 +16,12 @@ Related: [../components.md](../components.md) §2 (service summary), [./README.m
 
 Code (paths relative to this file; repo root = `../../../../../`):
 
-- [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L4)
-- [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L5)
+- [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L27)
+- [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L12)
 - [src/rpc/network/guards/HandshakeCompletedGuard.ts](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L1)
 - callers: [src/transport/HolepunchTransport.ts](../../../../../../../src/transport/HolepunchTransport.ts#L1),
   [src/transport/WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts#L1),
-  [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L5)
+  [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L74)
 - state consumers: [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1),
   [src/ProfileManager.ts](../../../../../../../src/ProfileManager.ts#L1),
   [src/PeerProfile.ts](../../../../../../../src/PeerProfile.ts#L1)
@@ -34,7 +34,7 @@ Establishing a transport ([`src/transport/`](../../../../../../../src/transport)
 pipe to an unauthenticated counterparty. Nothing about a fresh `HolepunchTransport`,
 `WebRTCTransport`, or `LocalTransport` tells the node _who_ is on the other end: the discovery and
 NAT-traversal layers advertise an EVM address as plaintext registration metadata
-([`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L32) registration carries
+([`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L625) registration carries
 an address string), but they do not write it to `transport.peerAddress` or bind it to control of the
 corresponding private key. `InitHandshakeService` is the mechanism that supplies that proof.
 
@@ -42,9 +42,9 @@ Its place in the lifecycle:
 
 1. A transport is constructed. Every network transport immediately calls
    `initHandshakeService.initHandshake(this)` from its constructor / channel-open hook
-   ([`HolepunchTransport`](../../../../../../../src/transport/HolepunchTransport.ts#L5) line 24,
-   [`WebRTCTransport.startHandshake`](../../../../../../../src/transport/WebRTCTransport.ts#L48) line 51,
-   [`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L32) lines 600/978).
+   ([`HolepunchTransport`](../../../../../../../src/transport/HolepunchTransport.ts#L26) line 26,
+   [`WebRTCTransport.startHandshake`](../../../../../../../src/transport/WebRTCTransport.ts#L57) line 57,
+   [`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L765) lines 765/1310).
    Both peers do this, so **two challenge/response exchanges cross the same transport, one per
    direction**.
 2. The service is the _only_ built-in that carries no `HandshakeCompletedGuard` — it is the
@@ -94,7 +94,7 @@ proof (§4).
 
 ## 3. Algorithm, per method and per role
 
-Two public `RpcMethods` endpoints exist ([`InitHandshakeRpcMethods`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L11)):
+Two public `RpcMethods` endpoints exist ([`InitHandshakeRpcMethods`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L12)):
 `onInitHandshakeRequest` (request/response) and `onInitHandshakeAck` (fire-and-forget). The initiator
 half (`runHandshake`, `handleHandshakeResponse`) lives on the service and is _not_ remotely callable —
 it is driven locally by `initHandshake(transport)`.
@@ -123,7 +123,7 @@ signature even when the peer sets `challengeHash = keccak256(encodedBlock)` (§4
 Inputs: `challengeHash` (peer-chosen), `time` (peer's claimed clock, seconds). Return: `HandshakeResponse
 = { signature, responseTime, preferredTransport }`.
 
-Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)):
+Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L24)):
 
 1. **Decode / shape validation, before signing.** `!ethers.isHexString(challengeHash, 32)` or
    `!Number.isFinite(time)` → log, `disconnectConnection(senderTransport)`, `throw`. Rejecting a

@@ -40,9 +40,9 @@ Source admission delegates to [MembershipService](../../../source/src/stateManag
 ## 2. Input paths
 
 Every path converges on
-[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L66)
+[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L69)
 or on the validation entry
-[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L498)
+[`BlockIngestService.onBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockIngestService.ts#L78)
 directly:
 
 1. **Peer RPC gossip.**
@@ -53,15 +53,15 @@ directly:
    source attribution (§4).
 2. **Block-calldata chain events.**
    [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L17) →
-   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L96) →
-   [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L290):
+   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L208) →
+   [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L275):
    stores the calldata record (before the first await, so recovery re-reads
    observe it), mirrors the event into the `LocalDiamond`, fires
    `onPostedCalldata`, then calls
-   [`BlockQueueManager.ingestPostedBlock`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L217)
+   [`BlockQueueManager.ingestPostedBlock`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L220)
    with the block and its `onChainTimestamp`. The work item carries the
    timestamp, so
-   [`StateManager.getActiveValidationStrategy`](../../../../../../src/stateManager/StateManager.ts#L529)
+   [`StateManager.getActiveValidationStrategy`](../../../../../../src/stateManager/StateManager.ts#L526)
    selects `CalldataCommittedStrategy` for a committed participant (spectating
    for an observer), at ingest and again under the mutex at execution.
    `DisputeManager` (after any failed dispute upload) and
@@ -71,14 +71,14 @@ directly:
    `EventSyncService.tryRecoverBlockCalldataAndScheduleValidation` (timeout
    checks and time validation query the chain for missed calldata).
 3. **Local authoring.**
-   [`StateManager.playTransaction`](../../../../../../src/stateManager/StateManager.ts#L498)
+   [`BlockProductionService.playTransaction`](../../../../../../src/stateManager/block/BlockProductionService.ts#L33)
    executes the author's own transaction under the mutex and enters the success
    path (§7) directly — no queue, no validation strategy.
 4. **Replay adapters.** Dispute state-proof replay and spectate sync call
-   [`StateManager.onBlockConfirmationStruct`](../../../../../../src/stateManager/StateManager.ts#L498),
+   [`BlockIngestService.onBlockConfirmationStruct`](../../../../../../src/stateManager/ingest/BlockIngestService.ts#L41),
    which wraps the confirmation into a **sourceless** entry (no transport to
    punish) and may inject an explicit strategy
-   ([`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)).
+   ([`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L22)).
 
 ## 3. Pipeline overview
 
@@ -121,15 +121,16 @@ pipeline splits into two regimes:
   single-threaded runtime), bounded per-entry resources, and deterministic merge rules.
 - **Inside the mutex — total-order state mutation.** The mutex is reserved for operations that
   can mutate the live state machine. Verified acquisition sites:
-  [`onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L498) (apply the next eligible
-  block), [`playTransaction`](../../../../../../src/stateManager/StateManager.ts#L498) (local authoring),
-  and [`setLatestState`](../../../../../../src/stateManager/StateManager.ts#L498) (fork transition).
+  [`onBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockIngestService.ts#L95) (apply the next eligible
+  block), [`playTransaction`](../../../../../../src/stateManager/block/BlockProductionService.ts#L37) (local authoring),
+  and [`StateManager.withMutex`](../../../../../../src/stateManager/StateManager.ts#L508) (fork transition via
+  `unsafeSetGenesisState`, sync adoption, timeout and dispute admission).
   Dequeue-and-execute is a total-order operation by `(forkId, height)`: only the lowest eligible
   height on the current fork is scheduled, and at most one block is in state-machine execution
   at a time ([`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz), enforced by the mutex plus the ordering stage §5).
 
 **Queue key and body-conflict model.** The network entry key includes the **block hash**
-([`QueueStorage`](../../../../../../src/storage/QueueStorage.ts#L27) queued entries keyed by block hash),
+([`QueueStorage`](../../../../../../src/storage/QueueStorage.ts#L68) queued entries keyed by block hash),
 with a secondary coordinate index `(forkId, height) → Set<Hash>`. Two competing block bodies at
 the same coordinate therefore coexist as distinct entries; the queue never picks between them.
 Conflicts are resolved downstream by the defined validation paths — the conflict predicate over
@@ -154,16 +155,16 @@ possibly per-peer — deliberately not per-service limits) is not implemented ye
 before production — tracked in [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5).
 
 Current: the implementation matches the mutex boundary — signature merging into stored blocks
-([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L483)) and all
+([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/ingest/StoredBlockMergeService.ts#L25)) and all
 ingest/queue work run without the mutex; per-entry caps exist; the RPC rate limit does not.
 
 ## 4. Stage: intake, authentication, deduplication, queueing
 
-[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L66),
+[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L69),
 in order:
 
 1. **Authenticity.** The confirmation is decoded once with
-   [`Block.tryFromBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L78)
+   [`Block.tryFromBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L81)
    (`Codec`, a plain ABI decode; `null` when the bytes do not decode), then the author signature
    must be an encoding the contracts accept and recover to the block header's `participant`
    (stage 1 of [block-processing.md](../../../../specification/block-progression/block-processing.md),
@@ -189,7 +190,7 @@ in order:
       calldata on-chain, an objective fault. **Open question:** the code returns
       `DISPUTE` but builds no fraud proof and initiates no dispute at this site
       (two TODOs in
-      [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15));
+      [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L14));
       the required proof type and escalation context are unresolved.
 2. **Channel gate.** A wrong channel is rejected before source admission or stored merging.
 3. **Source admission and stored duplicate.** Network copies require an authenticated transport source
@@ -208,7 +209,7 @@ in order:
 
 ### 4.1 Stored-block merge (duplicate confirmations)
 
-[`StateManager.tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L498):
+[`StoredBlockMergeService.tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/ingest/StoredBlockMergeService.ts#L25):
 normalize confirmations through ValidationService and the strategy malformed-signature hook, then compute `newSignatures = incoming − existing`; empty → `DUPLICATE`. Otherwise
 recover each new signer and require it to be inside the block's **participant
 union** (previous snapshot ∪ resulting snapshot, from storage). Strays go to
@@ -221,14 +222,14 @@ the threshold is now met, and a participating peer using live or spectating vali
 
 ### 4.2 Queue timeout for admitted sources
 
-After `agreementTime`, [`queueTimeout`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L429)
+After `agreementTime`, [`queueTimeout`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L431)
 dequeues the entry first (it owns what it sees; later copies pool into a fresh
 entry) and then decides:
 
 - fork disputed → clear fork, drop;
 - block became stored → stored-merge path;
 - **known stale fork** (disputed, or we hold its genesis snapshot or any block
-  — [`isKnownStaleFork`](../../../../../../src/stateManager/StateManager.ts#L483)) → drop
+  — [`isKnownStaleFork`](../../../../../../src/stateManager/ingest/ValidationService.ts#L258)) → drop
   silently (we are ahead; probing would blacklist honest stragglers);
 - **unknown fork** → request spectate sync once from each source peer and the
   author (`spectateService.sync`); a failed sync punishes them. This is the admitted-source expiry probe. A still-unknown sender after refresh triggers ordinary sync and ends intake without retention;
@@ -244,7 +245,7 @@ immediate task.
 
 ## 5. Stage: ordering
 
-[`tryExecuteFromQueue`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L229) runs
+[`tryExecuteFromQueue`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L232) runs
 as a scheduled task after every ingest, after every mutex release of
 `onBlockConfirmation`, and after every fork transition (`setLatestState`). It:
 
@@ -262,7 +263,7 @@ restores it to the queue).
 
 ## 6. Stage: serialized validation
 
-[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L498)
+[`BlockIngestService.onBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockIngestService.ts#L78)
 takes the `StateManager` mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x)) and selects the strategy: an
 explicit override (dispute replay, calldata) or by status —
 committed status (`PENDING_PARTICIPANT`, `PARTICIPATING`) → `BlockValidationStrategy`, otherwise →
@@ -280,7 +281,7 @@ Pre-checks under the mutex:
 - **Authenticity** re-checked (`block.isAuthentic` on the entry's block, the same signature rule
   as intake; replay adapters enter here without intake).
 
-Then [`ValidationService.validateBlockConfirmation`](../../../../../../src/stateManager/ingest/ValidationService.ts#L78)
+Then [`ValidationService.validateBlockConfirmation`](../../../../../../src/stateManager/ingest/ValidationService.ts#L73)
 runs the ordered predicate chain. Each failure routes to a strategy hook that
 returns a `BlockValidationResult`; §9 gives the per-strategy actions.
 
@@ -298,7 +299,7 @@ returns a `BlockValidationResult`; §9 gives the per-strategy actions.
 
 ### 6.1 Time validation
 
-[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L485); the
+[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L510); the
 protocol time model is specified in [../protocol/time.md](../../../../specification/protocol-model/time.md).
 `previousTimestamp` is the predecessor block's _relevant_ timestamp for this
 author (block timestamp if the author signed the predecessor, otherwise
@@ -348,7 +349,7 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 5. **Inbound application.** Each carried inbound message runs through
    `processInboundMessage`; `totalDeposits` accumulates via the state machine's
    balance algebra. Failure throws (restores VM).
-6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/StateManager.ts#L498)
+6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/block/SnapshotAssemblyService.ts#L148)
    derives the committed `SnapshotData` from the previous snapshot: state hash
    = `keccak(stateAfterInbound)`, participants = post-transition set, inbound
    tip/height and `totalDeposits` advanced by the carried inbound blocks,
@@ -367,7 +368,7 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 
 ## 8. Stage: success — persistence, signing, agreement, side effects
 
-[`StateManager.success`](../../../../../../src/stateManager/StateManager.ts#L498), in code
+[`BlockCommitService.success`](../../../../../../src/stateManager/block/BlockCommitService.ts#L31), in code
 order:
 
 1. **Status promotion.** `SYNCED`/`PENDING_PARTICIPANT` → `PARTICIPATING` when
@@ -379,7 +380,7 @@ order:
 2. **Persist snapshot + state first** — `shouldSignBlock` reads the resulting
    participants from storage.
 3. **Sign if appropriate** (never under `DisputeValidationStrategy`):
-   [`shouldSignBlock`](../../../../../../src/stateManager/StateManager.ts#L498) requires:
+   [`shouldSignBlock`](../../../../../../src/stateManager/block/BlockCommitService.ts#L194) requires:
    author not blacklisted; status `PARTICIPATING`; we are in the block's
    participant union; and NOT (block posted on-chain AND we are next to write)
    — signing a calldata-posted block when we are next would forfeit the extra
@@ -401,7 +402,7 @@ order:
 7. `successCallback()` publishes contract events on the bus; `onTurn` fires for
    the next author.
 8. **Data availability.** The block **author** schedules
-   [`maybePostBlockOnChain`](../../../../../../src/stateManager/StateManager.ts#L498)
+   [`maybePostBlockOnChain`](../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L28)
    after `agreementTime`: if the stored copy still lacks a full signature set,
    post `postBlockCalldata(signedBlock, maxTimestamp)` with
    `maxTimestamp = previousRelevantTimestamp + p2pTime + agreementTime + chainFallbackTime + grace`;
@@ -434,10 +435,10 @@ as impossible (throws).
 
 | Strategy                                                                                                                    | Active when                                                      | Distinctive behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`BlockValidationStrategy`](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L23)           | Status `PENDING_PARTICIPANT` or `PARTICIPATING` (live arrivals)  | Full live gates. Objective faults (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) build a fraud proof via [`FraudProofService`](../../../../../../src/stateManager/utils/FraudProofService.ts#L31) and call `disputeManager.dispute(forkId)` → `DISPUTE`. Unattributable malformedness (bad linkage, unknown-genesis height-0 block, non-participant author) → disconnect/blacklist suppliers. Not-yet-ready situations (channel not open, disputed fork with a possibly-honest supplier, future block) → restore to queue, `NOT_READY`. |
-| [`SpectatingValidationStrategy`](../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21) | Uncommitted live arrivals and every synchronization proof replay | Historical subjective timestamps are accepted. Committed peers delegate fraud and disputed-fork reactions to the live strategy. An uncommitted spectator cannot dispute: **provable participant fraud → `stateManager.abort()`** and stop following (fail-closed spectate; see [`OQ-10-04YNC4`](../../../../specification/open-questions.md#oq-10-04ync4)); junk with nobody to slash → drop sender and keep spectating (the DoS vector must never force an abort).                                                                                                                |
-| [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15)       | Block entered from a `BlockCalldataPosted` event                 | Delegates everything to `BlockValidationStrategy`; only authenticity failure differs (`DISPUTE`, open question §4.1). Confirmation carries only the author's signature; hooks that presuppose extra signers throw as unreachable.                                                                                                                                                                                                                                                                                                                                                  |
-| [`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)       | Injected per replayed block of a dispute's state proof           | `enforcesLiveForkAndOrderingGates = false` (audits a fixed proof, out of live order, on a disputed fork). Deviations become **dispute fraud proofs** that kill the dispute (see [dispute-pipeline.md](./dispute-pipeline.md) §5); observations that only reflect missing local baselines return `SUCCESS` to continue replay. Double signs found during replay store an ordinary fraud proof but do **not** abort the replay (the dispute may still be honest).                                                                                                                    |
+| [`BlockValidationStrategy`](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L24)           | Status `PENDING_PARTICIPANT` or `PARTICIPATING` (live arrivals)  | Full live gates. Objective faults (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) build a fraud proof via [`FraudProofService`](../../../../../../src/stateManager/utils/FraudProofService.ts#L32) and call `disputeManager.dispute(forkId)` → `DISPUTE`. Unattributable malformedness (bad linkage, unknown-genesis height-0 block, non-participant author) → disconnect/blacklist suppliers. Not-yet-ready situations (channel not open, disputed fork with a possibly-honest supplier, future block) → restore to queue, `NOT_READY`. |
+| [`SpectatingValidationStrategy`](../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L22) | Uncommitted live arrivals and every synchronization proof replay | Historical subjective timestamps are accepted. Committed peers delegate fraud and disputed-fork reactions to the live strategy. An uncommitted spectator cannot dispute: **provable participant fraud → `stateManager.abort()`** and stop following (fail-closed spectate; see [`OQ-10-04YNC4`](../../../../specification/open-questions.md#oq-10-04ync4)); junk with nobody to slash → drop sender and keep spectating (the DoS vector must never force an abort).                                                                                                                |
+| [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L14)       | Block entered from a `BlockCalldataPosted` event                 | Delegates everything to `BlockValidationStrategy`; only authenticity failure differs (`DISPUTE`, open question §4.1). Confirmation carries only the author's signature; hooks that presuppose extra signers throw as unreachable.                                                                                                                                                                                                                                                                                                                                                  |
+| [`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L22)       | Injected per replayed block of a dispute's state proof           | `enforcesLiveForkAndOrderingGates = false` (audits a fixed proof, out of live order, on a disputed fork). Deviations become **dispute fraud proofs** that kill the dispute (see [dispute-pipeline.md](./dispute-pipeline.md) §5); observations that only reflect missing local baselines return `SUCCESS` to continue replay. Double signs found during replay store an ordinary fraud proof but do **not** abort the replay (the dispute may still be honest).                                                                                                                    |
 
 ## 10. Assumptions, constraints & dependencies
 

@@ -25,7 +25,7 @@ const { FORGE_TEST_TASK, extractForgeTestContracts, discoverForgeTasks } =
             options?: { threads?: number; testPattern?: string }
         ) => {
             files: string[];
-            tasks: ParallelTask[];
+            tasks: (ParallelTask & { sourceFile: string })[];
             preGrepTaskCount: number;
         };
     };
@@ -271,6 +271,18 @@ function hasWarmForgeArtifacts(
             null
         );
     if (newestSource !== null && newestSource > newestArtifact) return false;
+    // the runner builds only the scheduled test files; listing would compile
+    // the rest
+    const testFiles = discoverForgeTasks(path.join(root, "test")).tasks.map(
+        (task) => task.sourceFile
+    );
+    if (
+        testFiles.some(
+            (file) =>
+                !fs.existsSync(path.join(root, "out", path.basename(file)))
+        )
+    )
+        return false;
     return forgeAvailable();
 }
 
@@ -400,6 +412,53 @@ describe("parallel forge task discovery", function () {
         }
     });
 
+    it("skips parity when a Foundry test file was not built", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "partial-forge-parity-")
+        );
+        let probes = 0;
+        try {
+            fs.mkdirSync(path.join(root, "cache_forge"));
+            fs.mkdirSync(path.join(root, "test"));
+            for (const name of ["Built", "Unbuilt"]) {
+                fs.writeFileSync(
+                    path.join(root, "test", `${name}.t.sol`),
+                    `contract ${name}Test { function test_x() public {} }`
+                );
+            }
+            const old = new Date(Date.now() - 2000);
+            for (const name of ["Built", "Unbuilt"]) {
+                fs.utimesSync(
+                    path.join(root, "test", `${name}.t.sol`),
+                    old,
+                    old
+                );
+            }
+            fs.mkdirSync(path.join(root, "out", "Built.t.sol"), {
+                recursive: true
+            });
+            fs.writeFileSync(
+                path.join(root, "out", "Built.t.sol", "BuiltTest.json"),
+                "{}"
+            );
+            expect(
+                hasWarmForgeArtifacts(root, () => {
+                    probes++;
+                    return true;
+                })
+            ).to.equal(false);
+            expect(probes).to.equal(0);
+            fs.mkdirSync(path.join(root, "out", "Unbuilt.t.sol"));
+            fs.writeFileSync(
+                path.join(root, "out", "Unbuilt.t.sol", "UnbuiltTest.json"),
+                "{}"
+            );
+            expect(hasWarmForgeArtifacts(root, () => true)).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("discovers one task per Foundry test contract in the repository test tree", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
@@ -407,6 +466,7 @@ describe("parallel forge task discovery", function () {
             "DepartedTimeoutCalldataPostedTest",
             "DisputeConflictsWithFinalStateTest",
             "DisputeFraudProofFacetPayloadsTest",
+            "DisputeInvalidOutboundRunTest",
             "DisputeVerificationFacetTest",
             "DisputeWindowAdmissionTest",
             "DisputeUtilsTest",
@@ -417,6 +477,7 @@ describe("parallel forge task discovery", function () {
             "MilestoneFinalityFreezeTest",
             "SameForkSnapshotKillPeriodTest",
             "StateChannelManagerProxyDepositTest",
+            "StateChannelManagerProxyMulticallTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
             "StateProofChallengesTest",
@@ -428,7 +489,7 @@ describe("parallel forge task discovery", function () {
             "TimeoutSupersededByFinalStateTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(24);
+        expect(tasks).to.have.lengthOf(26);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {
@@ -647,6 +708,7 @@ describe("parallel forge task discovery", function () {
         );
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "StateChannelManagerProxyDepositTest",
+            "StateChannelManagerProxyMulticallTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest"
         ]);
@@ -749,6 +811,119 @@ describe("forge task runner", function () {
             expect(run.status).to.equal(1);
         } finally {
             fs.rmSync(run.root, { recursive: true, force: true });
+        }
+    });
+});
+
+describe("forge warm-up build", function () {
+    it("refuses a distributed build from a forge other than .forge-version", function () {
+        if (spawnSync(FORGE_BIN, ["--version"], { stdio: "ignore" }).error)
+            this.skip();
+        const { forgeBuildFailure } =
+            require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+                forgeBuildFailure: (
+                    tasks: object[],
+                    distributed?: boolean
+                ) => Error | null;
+            };
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-pin-"));
+        fs.writeFileSync(path.join(root, ".forge-version"), "v0.0.1\n");
+        const cwd = process.cwd();
+        try {
+            process.chdir(root);
+            const failure = forgeBuildFailure(
+                [
+                    {
+                        runner: TASK_RUNNERS.FORGE,
+                        sourceFile: path.join(root, "test", "A.t.sol")
+                    }
+                ],
+                true
+            );
+            expect(failure?.message).to.include(
+                "does not match .forge-version (0.0.1)"
+            );
+            expect(failure?.message).to.include("foundryup --install");
+            expect(fs.existsSync(path.join(root, "out"))).to.equal(false);
+        } finally {
+            process.chdir(cwd);
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("builds the sources and only the scheduled test files", function () {
+        if (spawnSync(FORGE_BIN, ["--version"], { stdio: "ignore" }).error)
+            this.skip();
+        const { forgeBuildFailure } =
+            require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+                forgeBuildFailure: (tasks: object[]) => Error | null;
+            };
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-warm-"));
+        const write = (relative: string, content: string) => {
+            fs.mkdirSync(path.dirname(path.join(root, relative)), {
+                recursive: true
+            });
+            fs.writeFileSync(path.join(root, relative), content);
+        };
+        write(
+            "foundry.toml",
+            "[profile.default]\nsrc = 'contracts'\nout = 'out'\ntest = 'test'\nsolc = '0.8.34'\n"
+        );
+        write(
+            "contracts/Lib.sol",
+            "pragma solidity ^0.8.0;\ncontract Lib { function one() external pure returns (uint256) { return 1; } }\n"
+        );
+        write(
+            "contracts/Unused.sol",
+            "pragma solidity ^0.8.0;\ncontract Unused {}\n"
+        );
+        for (const name of ["Selected", "Skipped"]) {
+            write(
+                `test/${name}.t.sol`,
+                `pragma solidity ^0.8.0;\nimport {Lib} from "../contracts/Lib.sol";\ncontract ${name}Test { function test_one() external { new Lib(); } }\n`
+            );
+        }
+        const cwd = process.cwd();
+        try {
+            process.chdir(root);
+            expect(
+                forgeBuildFailure([
+                    {
+                        runner: TASK_RUNNERS.HARDHAT,
+                        sourceFile: path.join(root, "test", "Skipped.t.sol")
+                    },
+                    {
+                        runner: TASK_RUNNERS.FORGE,
+                        sourceFile: path.join(root, "test", "Selected.t.sol")
+                    }
+                ])
+            ).to.equal(null);
+            for (const built of ["Lib.sol", "Unused.sol", "Selected.t.sol"]) {
+                expect(
+                    fs.existsSync(path.join(root, "out", built)),
+                    built
+                ).to.equal(true);
+            }
+            expect(
+                fs.existsSync(path.join(root, "out", "Skipped.t.sol"))
+            ).to.equal(false);
+            // the scheduled task then has nothing left to build
+            const cache = path.join(root, "cache", "solidity-files-cache.json");
+            const cacheBefore = fs.readFileSync(cache, "utf8");
+            const test = spawnSync(
+                FORGE_BIN,
+                ["test", "--match-contract", "^SelectedTest$"],
+                { cwd: root, encoding: "utf8" }
+            );
+            expect(test.status, test.stderr).to.equal(0);
+            expect(test.stdout).to.include("No files changed");
+            expect(fs.readFileSync(cache, "utf8")).to.equal(cacheBefore);
+            expect(
+                fs.existsSync(path.join(root, "out", "Skipped.t.sol"))
+            ).to.equal(false);
+        } finally {
+            process.chdir(cwd);
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 });

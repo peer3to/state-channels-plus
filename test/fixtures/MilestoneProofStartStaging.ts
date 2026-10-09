@@ -11,7 +11,14 @@ import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
 import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import type { DisputeTamper } from "@test/harness/actions/DisputeTamperingActions";
-import type { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    encodeExitChannelData,
+    MESSAGE_TYPE_EXIT
+} from "@test/utils/mathHarnessAbi";
+import type {
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import type {
     DisputeAuditingDataStruct,
     DisputeStruct
@@ -93,6 +100,14 @@ export async function stageChainAnchor(
                     prepared.callData
                 );
             await transaction.wait();
+            // the mirror wait compares with the prepared anchor: the chain
+            // must hold exactly that snapshot
+            expect(
+                StateSnapshot.from(
+                    await h.channelManager.getStateSnapshot(h.channelId)
+                ).hash,
+                "the chain must store the prepared anchor"
+            ).to.equal(anchor.hash);
             await h.assert.snapshot.localSnapshotsChangedWait({
                 expectedSnapshot: anchor
             });
@@ -588,15 +603,18 @@ export async function stageOffWireTailOverBlindPendingAuditor(
 
 /**
  * Collusion staging: the head H re-signed by every harness peer (but
- * `staging.outsideColluders`) with a
- * snapshot whose total withdrawals are one higher (the invariant fails
- * against the chain), and the submitter's real tail block re-signed by its
- * author on top of it. The tail's transaction, state and every other
- * snapshot field are its real ones: the snapshot assembly copies the total
- * withdrawals from the previous snapshot when a block emits no outbound
- * message, so the tail replays correctly from the forged head and keeps the
- * wrong total. Total deposits cannot carry the fault: a tail that consumes
- * the pending join takes them from the chain's inbound block.
+ * `staging.outsideColluders`) with a snapshot that withdraws one unit the
+ * state never released (the invariant fails against the chain), and the
+ * submitter's real tail block re-signed by its author on top of it. The
+ * withdrawal is a forged exit block to the submitter on the head's outbound
+ * head (`outboundBlock`): a posted run that carries it links the chain
+ * anchor to the latest state, so the outbound run check passes. The tail's
+ * transaction, state and every other snapshot field are its real ones: the
+ * snapshot assembly copies the outbound head and the total withdrawals from
+ * the previous snapshot when a block emits no outbound message, so the tail
+ * replays correctly from the forged head and keeps the wrong total. Total
+ * deposits cannot carry the fault: a tail that consumes the pending join
+ * takes them from the chain's inbound block.
  */
 export async function buildTeleportedTail(
     h: MathPeerTestHarness,
@@ -604,25 +622,61 @@ export async function buildTeleportedTail(
 ): Promise<{
     head: { confirmation: BlockConfirmationStruct; snapshot: StateSnapshot };
     tail: { confirmation: BlockConfirmationStruct; snapshot: StateSnapshot };
+    outboundBlock: MessageBlockStruct;
 }> {
-    const breakWithdrawals = (
-        data: SnapshotDataStruct
+    const submitter = h.getPeer(staging.submitter);
+    const withForgedExit = (
+        data: SnapshotDataStruct,
+        block: MessageBlockStruct
     ): SnapshotDataStruct => ({
         ...data,
-        totalWithdrawals: {
-            ...data.totalWithdrawals,
-            amount: BigInt(data.totalWithdrawals.amount) + 1n
-        }
+        totalWithdrawals: block.totalBalance,
+        latestOutboundMessageBlockHash: hash(
+            Codec.encode(block, Type.MessageBlock)
+        ),
+        latestOutboundMessageBlockHeight: block.blockHeight
     });
     // the head holder's latest block is the head; the submitter's is the tail
     const forged = await h.tamper.buildForgedSnapshot(
         staging.headHolder ?? staging.auditors[0]!,
-        (ctx) => ({ snapshotData: breakWithdrawals(ctx.originalSnapshotData) }),
+        ({ originalSnapshotData, blockTimestamp }) => {
+            const balance = { amount: 1n, data: "0x" };
+            const outboundBlock: MessageBlockStruct = {
+                previousBlockHash:
+                    originalSnapshotData.latestOutboundMessageBlockHash,
+                blockHeight:
+                    BigInt(
+                        originalSnapshotData.latestOutboundMessageBlockHeight
+                    ) + 1n,
+                messages: [
+                    {
+                        messageType: MESSAGE_TYPE_EXIT,
+                        participant: submitter.address,
+                        balance,
+                        data: encodeExitChannelData(submitter.address, balance)
+                    }
+                ],
+                totalBalance: {
+                    amount:
+                        BigInt(originalSnapshotData.totalWithdrawals.amount) +
+                        balance.amount,
+                    data: "0x"
+                },
+                timestamp: BigInt(blockTimestamp)
+            };
+            return {
+                snapshotData: withForgedExit(
+                    originalSnapshotData,
+                    outboundBlock
+                ),
+                outboundMessageBlock: outboundBlock
+            };
+        },
         { withoutSignerIndices: staging.outsideColluders }
     );
     expect(forged.forgedBlock.height).to.equal(staging.headHeight);
+    const outboundBlock = forged.mutated.outboundMessageBlock!;
 
-    const submitter = h.getPeer(staging.submitter);
     const bundle = await h
         .control(submitter)
         .query.getBlockByHeight(staging.forkId, staging.headHeight + 1)
@@ -640,9 +694,18 @@ export async function buildTeleportedTail(
         realSnapshot!.encodedSnapshot,
         Type.StateSnapshot
     );
+    expect(
+        realTailSnapshot.snapshotData.latestOutboundMessageBlockHash,
+        "the tail must emit no outbound message"
+    ).to.equal(
+        forged.originalSnapshot.snapshotData.latestOutboundMessageBlockHash
+    );
     const tailSnapshot = StateSnapshot.from({
         ...realTailSnapshot,
-        snapshotData: breakWithdrawals(realTailSnapshot.snapshotData)
+        snapshotData: withForgedExit(
+            realTailSnapshot.snapshotData,
+            outboundBlock
+        )
     });
     const signedTail = Codec.decode(
         bundle!.encodedSignedBlock,
@@ -664,7 +727,8 @@ export async function buildTeleportedTail(
         tail: {
             confirmation: tailBlock.blockConfirmationStruct,
             snapshot: tailSnapshot
-        }
+        },
+        outboundBlock
     };
 }
 

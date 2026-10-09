@@ -455,7 +455,9 @@ export async function readDisputeKill(
     const manager = h.channelManager.interface;
     const parsed = manager.parseTransaction({ data: tx.data });
     const calls: string[] =
-        parsed?.name === "multicall" ? [...parsed.args[0]] : [tx.data];
+        parsed?.name === "multicallBestEffortLast"
+            ? [...parsed.args[0]]
+            : [tx.data];
     const appliedProofTypes: DisputeFraudProofType[] = [];
     const appliedEncodedProofs: string[] = [];
     for (const call of calls) {

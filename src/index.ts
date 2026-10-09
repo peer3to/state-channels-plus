@@ -70,8 +70,10 @@ export {
     getChecksumAddress
 };
 export { DisconnectPolicy } from "@/DisconnectPolicy";
-export { Status } from "@/types";
+export { Status, isCommittedParticipantStatus } from "@/types";
 export type { ChannelId } from "@/types";
+export type { default as P2pInstance } from "@/evm/P2pInstance";
+export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 export {
     EventBus,
     attachContractEvents,
@@ -93,6 +95,7 @@ export type {
 export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";
+export { errorMessage } from "@/utils/errorMessage";
 export {
     connectStateChannelManager,
     mergeStateChannelManagerAbi,

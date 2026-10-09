@@ -138,10 +138,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 timestamp
     ) external {
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
-        blockCalldataCommitments[channelId][sender][_block.transaction.header.forkId][_block
-            .transaction
-            .header
-            .transactionCnt] = commitmentHash;
+        blockCalldataCommitments[
+            channelId
+        ][sender][_block.transaction.header.forkId][_block.transaction.header.transactionCnt] = commitmentHash;
     }
 
     // Called by DisputeCommitted event
@@ -200,7 +199,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         address,
         /*disputer*/
         bytes32 disputeHash
-    ) external {
+    )
+        external
+    {
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
         bytes32[] storage commitments = disputeWindow.evidence.disputeCommitments;
 
@@ -327,17 +328,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
-        // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
-
-        if (!success) {
-            assembly ("memory-safe") {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
-        }
-
-        outputSnapshotData = abi.decode(returnData, (SnapshotData));
+        outputSnapshotData = abi.decode(_delegateDisputeExecution(data), (SnapshotData));
     }
 
     function computeDisputeOutputState(
@@ -351,16 +342,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
-        (bool success, bytes memory returnData) =
-            disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
-
-        if (!success) {
-            assembly ("memory-safe") {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
-        }
-
-        outputState = abi.decode(returnData, (DisputeOutputState));
+        outputState = abi.decode(_delegateDisputeExecution(data), (DisputeOutputState));
     }
 
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -369,9 +351,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
-            dispute, disputeAuditingData
-        );
+        return DisputeVerificationFacet(disputeVerificationFacetAddress)
+            .checkDisputeAuditingDataCommitment(dispute, disputeAuditingData);
     }
 
     function isBlockAuthorParticipant(
@@ -404,15 +385,46 @@ contract LocalDiamond is StateChannelManagerProxy {
             DisputeVerificationFacet.isDisputeOutputCorrect,
             (dispute, latestStateSnapshot, latestFinalizedStateStateMachineState, inboundMessageBlocks)
         );
-        // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
-        if (!success) {
-            assembly ("memory-safe") {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
+        return abi.decode(_delegateDisputeExecution(data), (bool));
+    }
+
+    /**
+     * Runs `data` on the dispute verification facet within the dispute
+     * execution gas limit and returns its result. A frame that used up the
+     * forwarded budget (all but the 1/64 a nested call leaves it) without
+     * return data reverts with
+     * ErrorDisputeExecutionOutOfGas; any other failure is re-thrown as is.
+     */
+    function _delegateDisputeExecution(bytes memory data) internal returns (bytes memory returnData) {
+        uint256 gasLimit = _getGasLimit();
+        address target = disputeVerificationFacetAddress;
+        bool success;
+        uint256 gasBefore;
+        uint256 gasAfter;
+        uint256 returnSize;
+        assembly ("memory-safe") {
+            gasBefore := gas()
+            success := delegatecall(gasLimit, target, add(data, 0x20), mload(data), 0, 0)
+            gasAfter := gas()
+            returnSize := returndatasize()
         }
-        return abi.decode(returnData, (bool));
+        returnData = new bytes(returnSize);
+        assembly ("memory-safe") {
+            returndatacopy(add(returnData, 0x20), 0, returndatasize())
+        }
+        if (success) return returnData;
+        uint256 gasUsed = gasBefore - gasAfter;
+        // The frame receives at most all but 1/64 of the remaining gas (EIP-150).
+        // An out-of-gas inside a nested call (e.g. a state machine call) leaves
+        // the facet the 1/64 it kept; `forwarded / 64` covers it, and 5_000 covers
+        // the call's own cost before the frame starts.
+        uint256 forwarded = gasLimit < gasBefore - gasBefore / 64 ? gasLimit : gasBefore - gasBefore / 64;
+        if (returnData.length == 0 && gasUsed + forwarded / 64 + 5_000 >= forwarded) {
+            revert ErrorDisputeExecutionOutOfGas(gasLimit, gasUsed);
+        }
+        assembly ("memory-safe") {
+            revert(add(returnData, 0x20), mload(returnData))
+        }
     }
 
     function getLatestBlockFromStateProof(StateProof memory stateProof)

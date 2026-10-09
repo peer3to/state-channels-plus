@@ -117,19 +117,18 @@ function validateDiscoveryResults(
  * What a run has to warm before it admits a task, in order: forge so concurrent
  * tasks never race on a cold via_ir build, Chromium because a gate cannot run
  * without it, and the browser typecheck so one run performs it once rather than
- * per gate. A tier with no scheduled task warms nothing. Distributed workers
- * build forge in their prepare script and carry Chromium in their image, so a
- * distributed run warms only the typecheck: it checks the same sources the
- * workers receive, and running it here keeps it out of every worker prepare,
- * which a run without browser gates would otherwise pay for.
+ * per gate. A tier with no scheduled task warms nothing. Forge is warmed in
+ * both modes; a distributed run ships the result to its workers. Chromium is
+ * checked only locally, because workers carry it in their image. The browser
+ * typecheck runs once here, for the same sources the workers receive.
  */
 function resolveWarmUps(tasks, distributed) {
     return [
         {
             runner: TASK_RUNNERS.FORGE,
-            localOnly: true,
+            localOnly: false,
             message: "Warming the Foundry build before the forge tier...",
-            warm: forgeBuildFailure
+            warm: () => forgeBuildFailure(tasks, distributed)
         },
         {
             runner: TASK_RUNNERS.BROWSER,
@@ -279,8 +278,9 @@ async function main(options = {}) {
             "Compiled test mode needs this project's test:parallel:build script; running the TypeScript sources under ts-node."
         );
     }
-    // Distributed workers build in their prepare script; the local path
-    // refreshes the tree here when a source is newer than the last build. The
+    // Both paths build here: a distributed run ships this tree to its workers
+    // with the other declared build outputs. The tree is refreshed when a
+    // source is newer than the last build. The
     // refresh emits in place and never deletes dist: this runner may itself be
     // a task of an outer run whose siblings are loading from that tree.
     if (compiledAvailable && !cli.skipBuild && !cli.dryRun) {

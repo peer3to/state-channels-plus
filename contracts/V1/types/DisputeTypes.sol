@@ -126,8 +126,9 @@ struct DisputeAuditingData {
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
     bytes latestFinalizedStateStateMachineState;
     MessageBlock[] inboundMessageBlocks;
-    /// @notice Stores all outbound message blocks since genesis
-    /// @dev Covers the outbound message chain segment proven up to the challenge deadline (new fork)
+    /// @notice The outbound message blocks above the on-chain snapshot's outbound head, up to the latest state's
+    /// @dev Cut at the current chain anchor, the run must link the anchor's outbound head to the latest state's, else
+    /// DisputeInvalidOutboundRun kills the dispute. Auditors persist the verified part for a later snapshot post.
     MessageBlock[] outboundMessageBlocks;
 }
 

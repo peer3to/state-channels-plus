@@ -97,5 +97,6 @@ enum DisputeFraudProofType {
     DisputeInboundAnchorBehindLatestState,
     DisputeStateProofBelowOnChainAnchor,
     TimeoutSupersededByFinalState,
-    DisputeConflictsWithFinalState
+    DisputeConflictsWithFinalState,
+    DisputeInvalidOutboundRun
 }
