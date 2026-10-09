@@ -129,7 +129,7 @@ function resolveWarmUps(tasks, distributed) {
             runner: TASK_RUNNERS.FORGE,
             localOnly: false,
             message: "Warming the Foundry build before the forge tier...",
-            warm: () => forgeBuildFailure(tasks)
+            warm: () => forgeBuildFailure(tasks, distributed)
         },
         {
             runner: TASK_RUNNERS.BROWSER,

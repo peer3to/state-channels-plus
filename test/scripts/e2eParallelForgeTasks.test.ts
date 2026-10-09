@@ -813,7 +813,44 @@ describe("forge task runner", function () {
 });
 
 describe("forge warm-up build", function () {
+    it("refuses a distributed build from a forge other than .forge-version", function () {
+        if (spawnSync(FORGE_BIN, ["--version"], { stdio: "ignore" }).error)
+            this.skip();
+        const { forgeBuildFailure } =
+            require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+                forgeBuildFailure: (
+                    tasks: object[],
+                    distributed?: boolean
+                ) => Error | null;
+            };
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-pin-"));
+        fs.writeFileSync(path.join(root, ".forge-version"), "v0.0.1\n");
+        const cwd = process.cwd();
+        try {
+            process.chdir(root);
+            const failure = forgeBuildFailure(
+                [
+                    {
+                        runner: TASK_RUNNERS.FORGE,
+                        sourceFile: path.join(root, "test", "A.t.sol")
+                    }
+                ],
+                true
+            );
+            expect(failure?.message).to.include(
+                "does not match .forge-version (0.0.1)"
+            );
+            expect(failure?.message).to.include("foundryup --install");
+            expect(fs.existsSync(path.join(root, "out"))).to.equal(false);
+        } finally {
+            process.chdir(cwd);
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("builds the sources and only the scheduled test files", function () {
+        if (spawnSync(FORGE_BIN, ["--version"], { stdio: "ignore" }).error)
+            this.skip();
         const { forgeBuildFailure } =
             require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
                 forgeBuildFailure: (tasks: object[]) => Error | null;

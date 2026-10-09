@@ -1,4 +1,5 @@
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const { BROWSER_TYPECHECK_COMMAND } = require("./browserConfig");
 const { FORGE_BIN } = require("./forgeConfig");
 
@@ -89,7 +90,24 @@ function tierBuildFailure(command, args, { missing, failed }) {
  * `forge test --match-contract` compiles exactly those, and every test file is
  * its own via_ir compile of the whole diamond.
  */
-function forgeBuildFailure(tasks) {
+function forgeBuildFailure(tasks, distributed = false) {
+    // workers run the forge pinned in .forge-version, and a build from any
+    // other forge is stale there: every forge task would recompile it
+    if (distributed && fs.existsSync(".forge-version")) {
+        const pinned = fs
+            .readFileSync(".forge-version", "utf8")
+            .trim()
+            .replace(/^v/, "");
+        const local = spawnSync(FORGE_BIN, ["--version"], {
+            encoding: "utf8"
+        }).stdout?.match(/Version: (\d+\.\d+\.\d+)/)?.[1];
+        if (local && local !== pinned) {
+            return new Error(
+                `forge ${local} does not match .forge-version (${pinned}), so the workers would rebuild it. ` +
+                    'Run: foundryup --install "$(cat .forge-version)"'
+            );
+        }
+    }
     const testFiles = [
         ...new Set(
             tasks
