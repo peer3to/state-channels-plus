@@ -29,7 +29,7 @@ and starts fixed-ID negotiation. Probes may compose the same services directly. 
 identifies the two peers and one fresh attempt. It does not choose a channel ID or open a channel.
 Explicit leave settles the client's pending join result only while matching is active. After commitment,
 it reports that cancellation is unavailable and the host continues negotiation or signed-attempt
-observation through its normal outcome.
+observation through its normal outcome; an unsigned failure then ends the join instead of retrying.
 
 Ordinary discovery is a no-channel lifecycle role. A peer in ordinary discovery has an active caller topic
 and no selected channel ID. A peer targeting a concrete channel is outside ordinary discovery but may run
