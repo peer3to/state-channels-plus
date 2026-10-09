@@ -819,7 +819,7 @@ export async function postForgedOutboundRunDispute(
     // the held leaver's exit is not on chain yet: it is still a participant
     // and audits (and may kill) like the remaining peers
     const auditors = [...remaining, heldLeaver];
-    return { forkId, remaining, auditors, auditorIndex, disputer, heldPost };
+    return { forkId, auditors, auditorIndex, disputer, heldPost };
 }
 
 /**

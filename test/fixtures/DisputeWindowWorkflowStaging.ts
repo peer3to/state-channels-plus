@@ -5,10 +5,10 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { stripDisputeReasons } from "@test/fixtures/DisputeAuditStaging";
 import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ZeroAddress } from "ethers";
 
 /** The window commitment of `dispute`, as the chain stores it. */
 export function commitmentOf(dispute: DisputeStruct): Hash {
@@ -32,13 +32,6 @@ export function lastMilestoneFirstBlock(dispute: DisputeStruct): Block {
     return Block.fromBlockConfirmation(first);
 }
 
-const spamTamper = (dispute: DisputeStruct) => {
-    dispute.input.timeout.participant = ZeroAddress;
-    dispute.input.onChainSlashes = [];
-    dispute.input.selfRemoval = false;
-    dispute.input.requireExistingDisputeWindow = false;
-};
-
 /**
  * `spammerIndex` uploads its own dispute with every enforcement basis
  * removed (no timeout, slash or self-removal, no existing-window claim):
@@ -50,7 +43,7 @@ export async function postSpamDispute(
 ): Promise<DisputeStruct> {
     const { dispute } = await h.tamper.postTamperedDispute(
         spammerIndex,
-        spamTamper
+        stripDisputeReasons
     );
     return dispute;
 }
@@ -248,7 +241,7 @@ export async function stageSpamAfterOwnDispute(
     // upload races the evidence period, not the peers' audits
     const submitSpam = await h.tamper.prepareTamperedDispute(
         spammer.index,
-        spamTamper
+        stripDisputeReasons
     );
     await disputeOnHost(h, killer.index, forkId);
     const [ownSubmission] = await ownUploads.submissions();
