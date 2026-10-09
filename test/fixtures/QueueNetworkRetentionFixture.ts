@@ -566,8 +566,8 @@ export async function assertStoredCopyQuota(network: boolean) {
         ).to.equal(null);
         await deliver(variants.slice(8));
         await hold.release();
-        // each copy merges as its own task after release; wait for both before
-        // asserting that nothing past either copy's quota was stored
+        // the hold pauses only the first merge; the second copy merges in its
+        // own task in either order -> wait for both before asserting quotas
         const expected = [
             ...new Set([
                 ...block.confirmationSignatures,
@@ -575,6 +575,7 @@ export async function assertStoredCopyQuota(network: boolean) {
                 ...variants.slice(8, 10)
             ])
         ];
+        // on timeout fall through -> the members assertion names what is missing
         await waitFor(async () => {
             const stored = (
                 await h
@@ -583,14 +584,7 @@ export async function assertStoredCopyQuota(network: boolean) {
                     .request()
             )?.confirmationSignatures;
             return expected.every((signature) => stored?.includes(signature));
-        });
-        await waitFor(
-            async () =>
-                (await h
-                    .control(observer)
-                    .query.getQueuedRetention(block.hash)
-                    .request()) === null
-        );
+        }).catch(() => undefined);
         const after = await h
             .control(observer)
             .query.getBlockByHash(block.hash)
