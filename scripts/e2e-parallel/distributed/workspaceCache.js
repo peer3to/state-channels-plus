@@ -6,6 +6,10 @@ const { sha256File } = require("../shared/fileHash");
 
 const PREPARATION_VERSION = 2;
 
+// Timestamps advance once per clock tick on older kernels, so a write within
+// this window of the commit may leave the recorded ctime unchanged.
+const RACY_STAT_WINDOW_MS = 2000;
+
 function assertWorkspaceId(workspaceId) {
     if (!/^[a-f0-9]{64}$/.test(workspaceId)) {
         throw new Error("Invalid workspace ID");
@@ -122,6 +126,9 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
     const previous = readJson(paths.sourceManifest, { files: [] });
     const diff = diffSourceFiles(previous.files, manifest.files);
     const changed = new Set(diff.changed);
+    const recordedStats = new Map(
+        previous.files.map((entry) => [entry.path, entry.stat])
+    );
     for (const entry of manifest.files) {
         if (changed.has(entry.path)) continue;
         const target = resolveWorkspaceFile(paths.workspace, entry.path);
@@ -138,6 +145,18 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
             (stat.mode & 0o777) !== entry.mode
         ) {
             changed.add(entry.path);
+            continue;
+        }
+        // Unchanged since this host committed the file: its content is the
+        // committed one. A writer can put mtime back, but every write, chmod
+        // and utimes moves ctime, and a replacement gets a new inode.
+        const recorded = recordedStats.get(entry.path);
+        if (
+            recorded?.size === stat.size &&
+            recorded.mtimeMs === stat.mtimeMs &&
+            recorded.ctimeMs === stat.ctimeMs &&
+            recorded.ino === stat.ino
+        ) {
             continue;
         }
         const digest = await sha256File(target);
@@ -404,14 +423,34 @@ function removeDeletedFiles(workspaceRoot, deleted) {
     }
 }
 
+// Records each file's on-disk stat next to its offered hash, so the next
+// inspection hashes only files whose stat moved. A file written within the
+// racy window gets no stat and is hashed next time (git's racily-clean rule).
 function commitSourceManifest(cache, manifest) {
     fs.mkdirSync(cache.root, { recursive: true });
+    const racyAfterMs = Date.now() - RACY_STAT_WINDOW_MS;
+    const files = manifest.files.map((entry) => {
+        let stat;
+        try {
+            const { size, mtimeMs, ctimeMs, ino } = fs.statSync(
+                resolveWorkspaceFile(cache.workspace, entry.path)
+            );
+            // ctime is set by this host's clock on every write; mtime can come
+            // from the orchestrator's clock (tar keeps it) and may lie ahead
+            if (ctimeMs < racyAfterMs) {
+                stat = { size, mtimeMs, ctimeMs, ino };
+            }
+        } catch {
+            stat = undefined;
+        }
+        return { ...entry, stat };
+    });
     fs.writeFileSync(
         cache.sourceManifest,
         JSON.stringify(
             {
                 sourceDigest: manifest.sourceDigest,
-                files: manifest.files
+                files
             },
             null,
             2
