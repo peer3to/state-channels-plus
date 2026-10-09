@@ -132,7 +132,8 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     public async match(
         topic: string,
         matchTimeoutMs?: number | null,
-        observedTargetChannelId?: string
+        observedTargetChannelId?: string,
+        left?: () => boolean
     ): Promise<LobbyMatch | undefined> {
         const normalizedTopic = this.validateTopic(topic);
         const normalizedTimeout = validateMatchTimeout(matchTimeoutMs);
@@ -154,6 +155,14 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             if (this.activeTopic) await this.cleanup();
         } finally {
             this.matchesWaitingForCleanup -= 1;
+        }
+        // A caller that left while this waited starts no session; the session
+        // starts synchronously below, so a later leave cancels it instead.
+        // Cleanup without a session only settles discovery status, and a
+        // session another caller started meanwhile is not this caller's.
+        if (left?.()) {
+            if (!this.activeTopic) await this.cleanup();
+            return undefined;
         }
         return this.startMatching(
             normalizedTopic,
@@ -948,7 +957,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         );
     }
 
-    private validateTopic(topic: string): string {
+    public validateTopic(topic: string): string {
         requireBytes32(topic, "Rendezvous topic must be exactly 32 bytes");
         return ethers.hexlify(topic);
     }

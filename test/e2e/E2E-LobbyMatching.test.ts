@@ -1523,7 +1523,8 @@ describe("E2E: lobby matching", function () {
                 ).to.equal(false);
             }
             await release();
-            // both joins settle on their failed negotiation without a rematch
+            // both joins settle on their failed negotiation without a rematch,
+            // so neither peer opens a channel
             await TestSession.settleDetached();
             for (const peer of h.peers) {
                 expect(
@@ -1534,6 +1535,9 @@ describe("E2E: lobby matching", function () {
                             .request()
                     ).topic
                 ).to.equal(undefined);
+                expect(
+                    await h.control(peer).query.getChannelId().request()
+                ).to.equal(ethers.ZeroHash);
             }
         } finally {
             await release();

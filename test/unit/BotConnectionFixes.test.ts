@@ -914,6 +914,21 @@ describe("Unit: bot-connection fixes", function () {
     });
 
     describe("lobby leave during negotiation handoff", function () {
+        const waitForBothChannelsOpened = async (
+            h: ReturnType<typeof TestSession.getHarness>
+        ) =>
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            h.peers.map((peer) =>
+                                h.control(peer).query.getChannelId().request()
+                            )
+                        )
+                    ).every((channelId) => channelId !== ethers.ZeroHash),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+
         it("U130: a leave of another topic during the handoff → the join still rematches on its own topic", async function () {
             const h = TestSession.getHarness();
             await h.setup(2, { autoConnect: false });
@@ -930,24 +945,8 @@ describe("Unit: bot-connection fixes", function () {
                         .request();
                 }
                 await release();
-                await waitFor(
-                    async () =>
-                        (
-                            await Promise.all(
-                                h.peers.map((peer) =>
-                                    h
-                                        .control(peer)
-                                        .query.getLobbyAvailability()
-                                        .request()
-                                )
-                            )
-                        ).every(
-                            (availability) =>
-                                availability.topic === topic &&
-                                availability.matching
-                        ),
-                    h.event.protocolEventTimeoutMs()
-                );
+                // the rematch pairs the two peers again and opens a channel
+                await waitForBothChannelsOpened(h);
             } finally {
                 await release();
                 await h.network.leaveLobby([0, 1], topic);
@@ -972,24 +971,8 @@ describe("Unit: bot-connection fixes", function () {
             );
             try {
                 await second();
-                await waitFor(
-                    async () =>
-                        (
-                            await Promise.all(
-                                h.peers.map((peer) =>
-                                    h
-                                        .control(peer)
-                                        .query.getLobbyAvailability()
-                                        .request()
-                                )
-                            )
-                        ).every(
-                            (availability) =>
-                                availability.topic === topic &&
-                                availability.matching
-                        ),
-                    h.event.protocolEventTimeoutMs()
-                );
+                // the rematch pairs the two peers again and opens a channel
+                await waitForBothChannelsOpened(h);
             } finally {
                 await second();
                 await h.network.leaveLobby([0, 1], topic);
