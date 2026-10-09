@@ -912,4 +912,89 @@ describe("Unit: bot-connection fixes", function () {
             expect(run.submissionsBelowBound).to.equal(0);
         });
     });
+
+    describe("lobby leave during negotiation handoff", function () {
+        it("U130: a leave of another topic during the handoff → the join still rematches on its own topic", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(2, { autoConnect: false });
+            const topic = ethers.id("unit-lobby-leave-other-topic");
+            const release = await h.network.joinLobbyHeldAtHandoff(
+                [0, 1],
+                topic
+            );
+            try {
+                for (const peer of h.peers) {
+                    await h
+                        .control(peer)
+                        .network.leaveLobby(ethers.id("unit-lobby-other"))
+                        .request();
+                }
+                await release();
+                await waitFor(
+                    async () =>
+                        (
+                            await Promise.all(
+                                h.peers.map((peer) =>
+                                    h
+                                        .control(peer)
+                                        .query.getLobbyAvailability()
+                                        .request()
+                                )
+                            )
+                        ).every(
+                            (availability) =>
+                                availability.topic === topic &&
+                                availability.matching
+                        ),
+                    h.event.protocolEventTimeoutMs()
+                );
+            } finally {
+                await release();
+                await h.network.leaveLobby([0, 1], topic);
+            }
+            await TestSession.settleDetached();
+        });
+
+        it("U130: a new join after a leave during the handoff → its failed negotiation rematches again", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(2, { autoConnect: false });
+            const topic = ethers.id("unit-lobby-rejoin-after-leave");
+            const first = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
+            try {
+                await h.network.leaveLobby([0, 1], topic);
+            } finally {
+                await first();
+            }
+            await TestSession.settleDetached();
+            const second = await h.network.joinLobbyHeldAtHandoff(
+                [0, 1],
+                topic
+            );
+            try {
+                await second();
+                await waitFor(
+                    async () =>
+                        (
+                            await Promise.all(
+                                h.peers.map((peer) =>
+                                    h
+                                        .control(peer)
+                                        .query.getLobbyAvailability()
+                                        .request()
+                                )
+                            )
+                        ).every(
+                            (availability) =>
+                                availability.topic === topic &&
+                                availability.matching
+                        ),
+                    h.event.protocolEventTimeoutMs()
+                );
+            } finally {
+                await second();
+                await h.network.leaveLobby([0, 1], topic);
+            }
+            await TestSession.settleDetached();
+        });
+    });
 });

@@ -44,6 +44,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     logger: Logger;
     //local profile
     isLeader: boolean;
+    // lobby topic the caller left; its join ends instead of rematching
+    leftLobbyTopic?: string;
 
     constructor(
         signer: Signer,
@@ -322,6 +324,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         const matching = this.p2pManager.localRpc.lobbyMatchingService;
         const negotiation =
             this.p2pManager.localRpc.openChannelNegotiationService;
+        this.leftLobbyTopic = undefined;
         let match = await matching.match(lobbyTopic, options.matchTimeoutMs);
         while (match) {
             let opened: LobbyJoinResult | undefined;
@@ -355,6 +358,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 );
                 return opened;
             }
+            // a leave while the match was handed off to negotiation ends here
+            if (this.leftLobbyTopic === lobbyTopic) return undefined;
             // Unsigned failures start from a clean discovery session. The
             // matching service leaves the old topic and closes all lobby-owned
             // transports before rejoining this caller-owned topic.
@@ -364,6 +369,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public leaveLobby(lobbyTopic: string): Promise<boolean> {
+        this.leftLobbyTopic = lobbyTopic;
         return this.p2pManager.localRpc.lobbyMatchingService.cancelMatching(
             lobbyTopic
         );

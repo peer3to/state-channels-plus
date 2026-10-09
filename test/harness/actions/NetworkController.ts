@@ -4,6 +4,7 @@ import { compareAddresses } from "@/rpc/network/services/openChannelNegotiation/
 import { Codec, Logger, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
 
 /**
  * Handles network connectivity and P2P connections between peers.
@@ -153,6 +154,49 @@ export class NetworkController<
                     })
             )
         );
+    }
+
+    /**
+     * Joins the lobby and returns once every peer's matched negotiation is
+     * parked at the handoff. The returned release fails those negotiations
+     * unsigned, the outcome after which a join rematches.
+     */
+    async joinLobbyHeldAtHandoff(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<() => Promise<void>> {
+        const releases = await Promise.all(
+            peerIndices.map((index) =>
+                this.harness.rpcStub.holdMatchedNegotiation(index, true)
+            )
+        );
+        const release = async () => {
+            await Promise.all(releases.map((releaseOne) => releaseOne()));
+        };
+        try {
+            await this.joinLobby(peerIndices, rendezvousTopic);
+            const peers = this.harness.getFilteredPeers(peerIndices);
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            peers.map((peer) =>
+                                this.harness
+                                    .control(peer)
+                                    .stub.getHeldMatchedNegotiationCount()
+                                    .request()
+                            )
+                        )
+                    ).every((count) => count === 1),
+                this.harness.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                })
+            );
+        } catch (error) {
+            await release();
+            throw error;
+        }
+        return release;
     }
 
     async joinSelectedKey(
