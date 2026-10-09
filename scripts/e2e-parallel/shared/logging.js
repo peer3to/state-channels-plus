@@ -419,7 +419,8 @@ function result({
     starveCount,
     timing,
     repeatedStarvation = false,
-    worker
+    worker,
+    env = process.env
 }) {
     const tag = `[${completed}/${total}]${worker ? ` ${worker} ·` : ""}`;
     const duration = formatDurationMs(durationMs);
@@ -461,15 +462,18 @@ function result({
                 `${tag} FAIL [${reason}] [${label}]${timingStr}${elMaxStr}${starveStr}`
             )
         );
-        // github annotation -> the failure shows on the run page while the suite keeps going
-        if (process.env.GITHUB_ACTIONS === "true") {
-            const message = `${label} [${reason}]`
-                .replace(/%/g, "%25")
-                .replace(/\r/g, "%0D")
-                .replace(/\n/g, "%0A");
-            console.log(`::error title=Test failed::${message}`);
-        }
+        annotateFailure(label, reason, env);
     }
+}
+
+// github annotation -> a final failure shows on the run page while the suite keeps going
+function annotateFailure(label, reason, env = process.env) {
+    if (env.GITHUB_ACTIONS !== "true") return;
+    const message = `${label} [${reason}]`
+        .replace(/%/g, "%25")
+        .replace(/\r/g, "%0D")
+        .replace(/\n/g, "%0A");
+    console.log(`::error title=Test failed::${message}`);
 }
 
 // Purple: a slot node mined a block that beat its prior gas peak.
@@ -553,7 +557,8 @@ function summary({
     targetLoad,
     gasPeak = new Map(),
     workers = [],
-    workerLabel
+    workerLabel,
+    env = process.env
 }) {
     const counts = summaryCounts(tasks.length, failed.length, completed);
     const totalFailing = counts.failing;
@@ -582,6 +587,13 @@ function summary({
         console.log(colorize("red", "  Failed tasks:"));
         for (const task of failed) {
             console.log(colorize("red", `    - ${task.label}`));
+        }
+        // full list -> github keeps only the first 10 error annotations per step
+        if (env.GITHUB_STEP_SUMMARY) {
+            fs.appendFileSync(
+                env.GITHUB_STEP_SUMMARY,
+                `### ${totalFailing} failing\n\n${failed.map((task) => `- ${task.label}`).join("\n")}\n\n`
+            );
         }
     }
     if (counts.notRun > 0) {
@@ -875,6 +887,7 @@ module.exports = {
     infrastructureRetry,
     appendRunnerFailureMarker,
     result,
+    annotateFailure,
     gasPeakLine,
     getStarvationSummary,
     summaryCounts,
