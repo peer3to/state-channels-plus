@@ -7,7 +7,7 @@ const { sha256File } = require("../shared/fileHash");
 const PREPARATION_VERSION = 2;
 
 // Timestamps advance once per clock tick on older kernels, so a write within
-// this window of the commit may leave the recorded stat unchanged.
+// this window of the commit may leave the recorded ctime unchanged.
 const RACY_STAT_WINDOW_MS = 2000;
 
 function assertWorkspaceId(workspaceId) {
@@ -435,7 +435,9 @@ function commitSourceManifest(cache, manifest) {
             const { size, mtimeMs, ctimeMs, ino } = fs.statSync(
                 resolveWorkspaceFile(cache.workspace, entry.path)
             );
-            if (mtimeMs < racyAfterMs && ctimeMs < racyAfterMs) {
+            // ctime is set by this host's clock on every write; mtime can come
+            // from the orchestrator's clock (tar keeps it) and may lie ahead
+            if (ctimeMs < racyAfterMs) {
                 stat = { size, mtimeMs, ctimeMs, ino };
             }
         } catch {
