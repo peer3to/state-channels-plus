@@ -142,8 +142,9 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
-account partition. Local runs build the contracts once before scheduling;
-distributed runs rely on the worker's prepare script for that.
+account partition. Local and distributed runs build the contracts and the
+scheduled forge test files once before scheduling; unselected test files are
+not compiled.
 
 Forge tasks run through the Hardhat CLI like every other task. A forge task's
 arguments invoke the `forge-test` Hardhat task in `tasks/forgeTest.ts`, which

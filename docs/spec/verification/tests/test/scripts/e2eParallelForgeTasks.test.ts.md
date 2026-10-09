@@ -35,6 +35,7 @@ Checks Forge task discovery against the configured contract test inventory. This
 - `fails when the forge executable is missing`: none
 - `passes a nonzero forge exit through as a runner failure`: none
 - `turns a forge signal exit into a runner failure`: none
+- `builds the sources and only the scheduled test files`: none
 - `resolves Hardhat from the caller project`: none
 - `loads copied node infrastructure from the compiled package layout`: none
 - `treats a task without a runner as a hardhat task`: none

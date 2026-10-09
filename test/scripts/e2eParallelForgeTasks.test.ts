@@ -753,6 +753,68 @@ describe("forge task runner", function () {
     });
 });
 
+describe("forge warm-up build", function () {
+    it("builds the sources and only the scheduled test files", function () {
+        const { forgeBuildFailure } =
+            require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+                forgeBuildFailure: (tasks: object[]) => Error | null;
+            };
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-warm-"));
+        const write = (relative: string, content: string) => {
+            fs.mkdirSync(path.dirname(path.join(root, relative)), {
+                recursive: true
+            });
+            fs.writeFileSync(path.join(root, relative), content);
+        };
+        write(
+            "foundry.toml",
+            "[profile.default]\nsrc = 'contracts'\nout = 'out'\ntest = 'test'\n"
+        );
+        write(
+            "contracts/Lib.sol",
+            "pragma solidity ^0.8.0;\ncontract Lib { function one() external pure returns (uint256) { return 1; } }\n"
+        );
+        write(
+            "contracts/Unused.sol",
+            "pragma solidity ^0.8.0;\ncontract Unused {}\n"
+        );
+        for (const name of ["Selected", "Skipped"]) {
+            write(
+                `test/${name}.t.sol`,
+                `pragma solidity ^0.8.0;\nimport {Lib} from "../contracts/Lib.sol";\ncontract ${name}Test { function test_one() external { new Lib(); } }\n`
+            );
+        }
+        const cwd = process.cwd();
+        try {
+            process.chdir(root);
+            expect(
+                forgeBuildFailure([
+                    {
+                        runner: TASK_RUNNERS.HARDHAT,
+                        sourceFile: path.join(root, "test", "Skipped.t.sol")
+                    },
+                    {
+                        runner: TASK_RUNNERS.FORGE,
+                        sourceFile: path.join(root, "test", "Selected.t.sol")
+                    }
+                ])
+            ).to.equal(null);
+            for (const built of ["Lib.sol", "Unused.sol", "Selected.t.sol"]) {
+                expect(
+                    fs.existsSync(path.join(root, "out", built)),
+                    built
+                ).to.equal(true);
+            }
+            expect(
+                fs.existsSync(path.join(root, "out", "Skipped.t.sol"))
+            ).to.equal(false);
+        } finally {
+            process.chdir(cwd);
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
 describe("parallel task runner classification", function () {
     it("resolves Hardhat from the caller project", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "project-hardhat-"));
