@@ -1,11 +1,6 @@
-# test/e2e/E2E-WorkerShutdown.test.ts — Test Report
+# E2E-WorkerShutdown.test.ts
 
-> **Test file:** [test/e2e/E2E-WorkerShutdown.test.ts](../../../../../../test/e2e/E2E-WorkerShutdown.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-WorkerShutdown.test.ts](../../../../../../test/e2e/E2E-WorkerShutdown.test.ts)
 
 ## Overview
 
@@ -19,15 +14,8 @@ reclamation, or post-disposal mutation, so the disposal permutations of the runt
 obligations (which require those observations) are not covered in full here and none are
 assigned; `test/evm/workerShutdown.test.ts` covers executor-level shutdown separately.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
+- `drains and tears down multiple threaded peers promptly`: none
 
-| Test declaration                                                                                                                                     | Covers |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: worker shutdown > drains and tears down multiple threaded peers promptly`](../../../../../../test/e2e/E2E-WorkerShutdown.test.ts#L5) (line 5) | —      |
-
-This is partial system evidence for [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), without crediting a full lifecycle permutation.
+This is partial system evidence for `REQ-RUNTIME-3-VQXW59`, without crediting a full lifecycle permutation.

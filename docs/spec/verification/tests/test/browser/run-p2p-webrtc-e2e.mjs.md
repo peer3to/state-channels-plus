@@ -1,11 +1,6 @@
-# test/browser/run-p2p-webrtc-e2e.mjs — Test Report
+# run-p2p-webrtc-e2e.mjs
 
-> **Test file:** [test/browser/run-p2p-webrtc-e2e.mjs](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/browser/run-p2p-webrtc-e2e.mjs](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs)
 
 ## Overview
 
@@ -28,8 +23,6 @@ browser upgrade path works end to end but asserts no cutover-continuity, initiat
 failure-path oracles, so the transport-upgrade and WebRTC-setup permutations (which each carry
 such oracles) remain with the targeted Node suites and none is assigned here.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                      | Covers                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`package script test:browser:webrtc`](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs#L1) (line 1) | [`INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1`](../../../../implementation/source/src/evm/p2pRuntime/browser/README.md#integration-test-browser-p2p-runtime-1-e8w0m2.p1) |
+- `package script test:browser:webrtc`: INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1

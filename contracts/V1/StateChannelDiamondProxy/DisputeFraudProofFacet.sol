@@ -25,7 +25,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // A successful batch means every committed proof was eligible and applied.
             require(!isExpired, RaceConditionDisputeKillPeriodExpired(killPeriodEnd, block.timestamp));
             address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
-            if (slashedParticipant == proofs[i].participant) {
+            // zero is the invalid verdict -> never a kill target
+            if (slashedParticipant != address(0) && slashedParticipant == proofs[i].participant) {
                 _delegatecall(
                     disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
                 );
@@ -98,6 +99,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
             return _handleDisputeConflictsWithFinalState;
         }
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutboundRun) return _handleDisputeInvalidOutboundRun;
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -295,6 +297,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _delegatedVerdict(
             dispute, abi.encodeCall(StateProofFacet.isDisputeConflictingWithFinalState, (dispute, proof))
         );
+    }
+
+    function _handleDisputeInvalidOutboundRun(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeInvalidOutboundRun memory proof = abi.decode(encodedFraudProof, (DisputeInvalidOutboundRun));
+        return _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isDisputeOutboundRunInvalid, (dispute, proof)));
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -683,7 +693,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData = SnapshotData({
             originForkId: latestStateSnapshot.snapshotData.originForkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
-            participants: _getStateMachineParticipants(encodedModifiedState),
+            // executeStateTransition left this state loaded
+            participants: stateMachineImplementation.getParticipants(),
             latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             latestInboundMessageBlockHeight: latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight,
             latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,

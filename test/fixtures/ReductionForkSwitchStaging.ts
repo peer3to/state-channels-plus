@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared live fork-switch staging for mapped reduction tests
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { ForkId } from "@/types/types";
+import type { DisputeSubmissionRecording } from "@test/harness/actions/rpcStubActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -217,50 +218,68 @@ export async function assertLiveForkSwitch(
 export async function assertRefusalAfterLiveForkSwitch(
     h: MathPeerTestHarness
 ): Promise<void> {
-    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
-        disputingPeerIndices: [2, 3],
-        beforeDispute: async () => {
-            await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
-        }
-    });
-    const target = h.getPeer(0);
-    const responder = h.getPeer(2);
-    await h.control(target).stub.restoreDisputeInitiation().request();
-    const recording = await h.rpcStub.recordDisputeSubmissions(0, {
-        hold: true,
-        failWith: {
-            customError: "RaceConditionDisputeWindowNotOpen",
-            at: "send"
-        }
-    });
+    // peers exist once staging starts them
+    const target = () => h.getPeer(0);
+    let recording: DisputeSubmissionRecording | undefined;
+    let attempt: Promise<{ marker: boolean; disposed: boolean }> | undefined;
     let reduced: { release(): Promise<void> } | undefined;
-    await h.control(target).stub.recordSlashRecoveries().request();
-    const attempt = h.execOnHost(
-        target,
-        async (sm, args) => {
-            await sm.disputeManager.dispute(args.forkId);
-            return {
-                marker: sm.storage.disputes.didIDispute(args.forkId),
-                disposed: sm.isDisposed
-            };
-        },
-        { forkId: sourceForkId }
-    );
     try {
-        await recording.waitUntilHeld();
+        // The upload must reach its send while the evidence period is open:
+        // after it, a window holding evidence makes `dispute` a no-op.
+        const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+            disputingPeerIndices: [2, 3],
+            timeConfig: { evidenceTime: 6 },
+            beforeDispute: async () => {
+                await h.dispute.suppressDisputeInitiation([target().index]);
+            },
+            afterDispute: async () => {
+                await h
+                    .control(target())
+                    .stub.restoreDisputeInitiation()
+                    .request();
+                recording = await h.rpcStub.recordDisputeSubmissions(
+                    target().index,
+                    {
+                        hold: true,
+                        failWith: {
+                            customError: "RaceConditionDisputeWindowNotOpen",
+                            at: "send"
+                        }
+                    }
+                );
+                await h
+                    .control(target())
+                    .stub.recordSlashRecoveries()
+                    .request();
+                attempt = h.execOnHost(
+                    target(),
+                    async (sm, args) => {
+                        await sm.disputeManager.dispute(args.forkId);
+                        return {
+                            marker: sm.storage.disputes.didIDispute(
+                                args.forkId
+                            ),
+                            disposed: sm.isDisposed
+                        };
+                    },
+                    { forkId: h.activeForkId! }
+                );
+                await recording.waitUntilHeld();
+            }
+        });
         const synced = await syncTargetToUnpostedReduction(
             h,
-            0,
+            target().index,
             2,
             sourceForkId
         );
         reduced = synced.responderHold;
         const forkId = synced.reducedForkId;
-        await recording.release();
+        await recording!.release();
         expect({
-            ...(await attempt),
+            ...(await attempt!),
             recoveries: await h
-                .control(target)
+                .control(target())
                 .stub.getSlashRecoveryCount()
                 .request()
         }).to.deep.equal({
@@ -268,20 +287,22 @@ export async function assertRefusalAfterLiveForkSwitch(
             marker: false,
             disposed: false
         });
-        expect(await recording.submissions()).to.have.length(1);
-        expect(await h.control(target).query.getForkId().request()).to.equal(
+        expect(await recording!.submissions()).to.have.length(1);
+        expect(await h.control(target()).query.getForkId().request()).to.equal(
             forkId
         );
         expect(
             await h
-                .control(target)
-                .query.isBlacklisted(responder.address)
+                .control(target())
+                .query.isBlacklisted(h.getPeer(2).address)
                 .request()
         ).to.equal(false);
     } finally {
-        await recording.release();
-        await recording.restore();
-        await h.control(target).stub.restoreSlashRecoveries().request();
+        if (recording) {
+            await recording.release();
+            await recording.restore();
+            await h.control(target()).stub.restoreSlashRecoveries().request();
+        }
         await reduced?.release();
     }
 }

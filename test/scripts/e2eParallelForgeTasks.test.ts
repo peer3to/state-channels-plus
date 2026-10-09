@@ -407,6 +407,7 @@ describe("parallel forge task discovery", function () {
             "DepartedTimeoutCalldataPostedTest",
             "DisputeConflictsWithFinalStateTest",
             "DisputeFraudProofFacetPayloadsTest",
+            "DisputeInvalidOutboundRunTest",
             "DisputeVerificationFacetTest",
             "DisputeWindowAdmissionTest",
             "DisputeUtilsTest",
@@ -417,6 +418,7 @@ describe("parallel forge task discovery", function () {
             "MilestoneFinalityFreezeTest",
             "SameForkSnapshotKillPeriodTest",
             "StateChannelManagerProxyDepositTest",
+            "StateChannelManagerProxyMulticallTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
             "StateProofChallengesTest",
@@ -428,7 +430,7 @@ describe("parallel forge task discovery", function () {
             "TimeoutSupersededByFinalStateTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(24);
+        expect(tasks).to.have.lengthOf(26);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {
@@ -647,6 +649,7 @@ describe("parallel forge task discovery", function () {
         );
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "StateChannelManagerProxyDepositTest",
+            "StateChannelManagerProxyMulticallTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest"
         ]);

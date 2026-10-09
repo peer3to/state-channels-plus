@@ -1,12 +1,7 @@
-# test/storage/ExitChannelBlockStorage.test.ts — Test Report
+# ExitChannelBlockStorage.test.ts
 
-> **Test file:** [test/storage/ExitChannelBlockStorage.test.ts](../../../../../../test/storage/ExitChannelBlockStorage.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [MessageBlockStorage.ts](../../../../implementation/source/src/storage/MessageBlockStorage.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/storage/ExitChannelBlockStorage.test.ts](../../../../../../test/storage/ExitChannelBlockStorage.test.ts)
+Exercises: [MessageBlockStorage.ts](../../../../implementation/source/src/storage/MessageBlockStorage.ts.md)
 
 ## Overview
 
@@ -20,21 +15,14 @@ stores, and inbound/outbound isolation are not exercised, so most tip- and range
 permutations are either covered by the inbound suite or stay unassigned; the duplicate-store
 tests assert only hash equality, which is not enough for the idempotence permutations.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                           | Covers                                                                                                                                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`MessageBlockStorage - outbound behavior > store() > stores block with computed hash`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L28) (line 28)                                                      | —                                                                                                                                                                    |
-| [`MessageBlockStorage - outbound behavior > store() > accepts provided hash`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L34) (line 34)                                                                | —                                                                                                                                                                    |
-| [`MessageBlockStorage - outbound behavior > store() > ignores duplicate stores`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L40) (line 40)                                                             | —                                                                                                                                                                    |
-| [`MessageBlockStorage - outbound behavior > read operations > returns undefined for unknown hashes`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L52) (line 52)                                         | —                                                                                                                                                                    |
-| [`MessageBlockStorage - outbound behavior > read operations > retrieves block by hash`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L57) (line 57)                                                      | —                                                                                                                                                                    |
-| [`MessageBlockStorage - outbound behavior > read operations > returns ordered message blocks when iterating by range`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L62) (line 62)                       | —                                                                                                                                                                    |
-| [`MessageBlockStorage - outbound behavior > latest block helpers > returns the most recent block`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L80) (line 80)                                           | [`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1`](../../../../implementation/source/src/storage/MessageBlockStorage.ts.md#unit-test-message-block-storage-1-ehbrd1.p1) |
-| [`MessageBlockStorage - outbound behavior > latest block helpers > returns blocks sorted from newest to oldest when no limit is provided`](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L137) (line 137) | —                                                                                                                                                                    |
-| [head above a hole → truncates at the gap instead of throwing](../../../../../../test/storage/ExitChannelBlockStorage.test.ts#L98) (line 98)                                                                               | —                                                                                                                                                                    |
+- `stores block with computed hash`: none
+- `accepts provided hash`: none
+- `ignores duplicate stores`: none
+- `returns undefined for unknown hashes`: none
+- `retrieves block by hash`: none
+- `returns ordered message blocks when iterating by range`: none
+- `returns the most recent block`: UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1
+- `returns blocks sorted from newest to oldest when no limit is provided`: none
+- `head above a hole → truncates at the gap instead of throwing`: none

@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol — Test Report
+# StateSnapshotFacetSameFork.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateSnapshotFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol)
+Exercises: [StateSnapshotFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
 
 ## Overview
 
@@ -28,12 +23,10 @@ round — and the revert must additionally name that message's participant. Its 
 outbound message types; `_processOutboundMessage` and the guard under test run as written, and a
 real EXIT cannot be made to fail because the example consumer facet's `withdraw` always succeeds.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                         | Covers                                                                                                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_updateStateSnapshotSameFork_submittedSnapshotOlderThanOnChain_revertsCarryingBothBlockHeights`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L83) (line 83)             | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p12) |
-| [`test_updateStateSnapshotSameFork_proofCountDiffersFromSnapshotCount_revertsCarryingForkIdAndBothCounts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L112) (line 112)       | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p13) |
-| [`test_applyOutboundMessageBlocks_messageProcessingFails_revertsCarryingBothIndicesAndParticipant`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L138) (line 138)              | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P14`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p14) |
-| [`test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167) (line 167) | [`UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P33`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1-vjarbb.p33) |
-| [`test_verifyMilestones_everyMilestoneBelowThreshold_confirmsOnlyTheThresholdSnapshot`](../../../../../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L187) (line 187)                          | [`UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P11`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md#unit-test-state-proof-facet-1-jsb4sr.p11)          |
+- `test_updateStateSnapshotSameFork_submittedSnapshotOlderThanOnChain_revertsCarryingBothBlockHeights`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P12
+- `test_updateStateSnapshotSameFork_proofCountDiffersFromSnapshotCount_revertsCarryingForkIdAndBothCounts`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P13
+- `test_applyOutboundMessageBlocks_messageProcessingFails_revertsCarryingBothIndicesAndParticipant`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P14
+- `test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P33
+- `test_verifyMilestones_everyMilestoneBelowThreshold_confirmsOnlyTheThresholdSnapshot`: UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P11

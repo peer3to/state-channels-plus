@@ -305,9 +305,9 @@
         "date": "2026-08-17"
     },
     "specification/storage/participant-changes.md": {
-        "hash": "f54bdd545a361b81",
+        "hash": "4896d110ef4b2b16",
         "reviewer": "Luke Fishman",
-        "date": "2026-08-17"
+        "date": "2026-10-08"
     },
     "specification/storage/progress-markers.md": {
         "hash": "b68eac24d7dbd70c",
@@ -320,9 +320,9 @@
         "date": "2026-08-17"
     },
     "specification/security/README.md": {
-        "hash": "31e49a70f87524ae",
+        "hash": "0f8a3b4a30a4edb6",
         "reviewer": "Luke Fishman",
-        "date": "2026-08-18"
+        "date": "2026-10-08"
     },
     "implementation/source/src/Holepunch.ts.md": {
         "hash": "bdabe076e00d9e2b",

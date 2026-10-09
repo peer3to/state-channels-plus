@@ -522,7 +522,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         attempt: MatchedAttempt
     ): Promise<void> {
         try {
-            await this.selectAttemptChannel(attempt);
             const terms = await this.remoteRpc.openChannelNegotiationService
                 .exchangeTerms(
                     attempt.attemptNonce,
@@ -549,6 +548,8 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 return;
             }
             attempt.theirBalance = theirBalance;
+            // the ID is selected only once the exchanged terms validate
+            await this.selectAttemptChannel(attempt);
             const { participants, balances } =
                 this.getParticipantsAndBalances(attempt);
             let data: BytesLike;
@@ -657,12 +658,15 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     }
 
     private async selectAttemptChannel(attempt: MatchedAttempt): Promise<void> {
+        if (this.state.attempt !== attempt) return;
         const selected = String(this.p2pManager.stateManager.channelId);
         if (selected === attempt.channelId) return;
         if (selected !== ZeroHash) {
             throw new Error("A different channel is already selected");
         }
         await this.p2pManager.stateManager.setChannelId(attempt.channelId);
+        // cleared while selecting -> the clear owns channel and status
+        if (this.state.attempt !== attempt) return;
         this.p2pManager.stateManager.setStatus(Status.NOT_OPENED);
     }
 

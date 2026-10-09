@@ -1,12 +1,7 @@
-# test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts — Test Report
+# SelectorRouting.test.ts
 
-> **Test file:** [test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateChannelManagerProxy.sol](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts)
+Exercises: [StateChannelManagerProxy.sol](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 
 ## Overview
 
@@ -46,39 +41,32 @@ ethers reads that field to choose between an `eth_call` and a transaction.
 Everything here is address resolution or ABI comparison. No case executes a routed operation, so
 nothing in this file is evidence for the operations' semantics, for revert-data propagation, or for the
 "an unowned operation must not affect channel state" half of
-[`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — an unrouted selector resolving to the integrator's consumer facet
+`REQ-CONTRACT-ARCH-5-QT17P1` — an unrouted selector resolving to the integrator's consumer facet
 is exactly what that clause leaves to the integrator. The specification-level routing permutations
-([`REQ-CONTRACT-ARCH-1-9W5390.T1`](../../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390.t1) and [`REQ-CONTRACT-ARCH-5-QT17P1.T1`](../../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1.t1)) all require invoking the
+(`REQ-CONTRACT-ARCH-1-9W5390.T1` and `REQ-CONTRACT-ARCH-5-QT17P1.T1`) all require invoking the
 operations themselves, so none is assigned here; the evidence maps to the proxy's implementation
 obligations instead.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                             | Covers                                                                                                                                                                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`StateChannelManagerProxy selector routing > uses the canonical routed-facet inventory for every deployed facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L36) (line 36)                   | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p30) |
-| [`StateChannelManagerProxy selector routing > routes every dispute manager selector to the dispute manager facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L42) (line 42)                   | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p1)   |
-| [`StateChannelManagerProxy selector routing > routes every dispute verification selector to the dispute verification facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L50) (line 50)         | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P4`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p4)   |
-| [`StateChannelManagerProxy selector routing > routes every fraud proof selector to the fraud proof facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L58) (line 58)                           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P5`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p5)   |
-| [`StateChannelManagerProxy selector routing > routes every dispute fraud proof selector to the dispute fraud proof facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L66) (line 66)           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P6`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p6)   |
-| [`StateChannelManagerProxy selector routing > routes every state snapshot selector to the state snapshot facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L74) (line 74)                     | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P7`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p7)   |
-| [`StateChannelManagerProxy selector routing > routes every join channel selector to the join channel facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L82) (line 82)                         | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p8)   |
-| [`StateChannelManagerProxy selector routing > routes every state proof selector to the state proof facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L90) (line 90)                           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p9)   |
-| [`StateChannelManagerProxy selector routing > routes every utility view selector to the utility facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L98) (line 98)                              | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P17`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p17) |
-| [`StateChannelManagerProxy selector routing > routes both open-channel enumeration selectors through the utility facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L106) (line 106)           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p34) |
-| [`StateChannelManagerProxy selector routing > leaves the utility facet's stateless helpers off the routing table`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L120) (line 120)                 | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P18`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p18) |
-| [`StateChannelManagerProxy selector routing > leaves the dispute verification facet's internal steps off the routing table`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L128) (line 128)       | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P19`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p19) |
-| [`StateChannelManagerProxy selector routing > leaves the fraud proof facet's internal step off the routing table`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L136) (line 136)                 | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P20`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p20) |
-| [`StateChannelManagerProxy selector routing > has no selector defined by two facets`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L144) (line 144)                                              | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P21`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p21) |
-| [`StateChannelManagerProxy selector routing > has no routed facet selector shadowed by a proxy function`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L153) (line 153)                          | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P24`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p24) |
-| [`StateChannelManagerProxy selector routing > declares every proxy-owned and routed facet function on the interface`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L161) (line 161)              | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P25`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p25) |
-| [`StateChannelManagerProxy selector routing > declares nothing the proxy neither implements nor routes`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L171) (line 171)                           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P26`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p26) |
-| [`StateChannelManagerProxy selector routing > declares the implementing function's state mutability for every interface function`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L179) (line 179) | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p27) |
-| [`StateChannelManagerProxy selector routing > declares the implementing function's full signature for every interface function`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L194) (line 194)   | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p28) |
-| [`StateChannelManagerProxy selector routing > resolves an unknown selector to the consumer facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L209) (line 209)                                 | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P22`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p22) |
-| [`StateChannelManagerProxy selector routing > keeps the proxy's own selectors out of the routing table`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L218) (line 218)                           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P23`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p23) |
+- `uses the canonical routed-facet inventory for every deployed facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30
+- `routes every dispute manager selector to the dispute manager facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1
+- `routes every dispute verification selector to the dispute verification facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P4
+- `routes every fraud proof selector to the fraud proof facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P5
+- `routes every dispute fraud proof selector to the dispute fraud proof facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P6
+- `routes every state snapshot selector to the state snapshot facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P7
+- `routes every join channel selector to the join channel facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8
+- `routes every state proof selector to the state proof facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9
+- `routes every utility view selector to the utility facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P17
+- `routes both open-channel enumeration selectors through the utility facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34
+- `leaves the utility facet's stateless helpers off the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P18
+- `leaves the dispute verification facet's internal steps off the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P19
+- `leaves the fraud proof facet's internal step off the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P20
+- `has no selector defined by two facets`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P21
+- `has no routed facet selector shadowed by a proxy function`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P24
+- `declares every proxy-owned and routed facet function on the interface`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P25
+- `declares nothing the proxy neither implements nor routes`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P26
+- `declares the implementing function's state mutability for every interface function`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27
+- `declares the implementing function's full signature for every interface function`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28
+- `resolves an unknown selector to the consumer facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P22
+- `keeps the proxy's own selectors out of the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P23

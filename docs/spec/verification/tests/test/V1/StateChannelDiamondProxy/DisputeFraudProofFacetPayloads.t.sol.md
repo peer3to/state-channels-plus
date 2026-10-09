@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol — Test Report
+# DisputeFraudProofFacetPayloads.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [DisputeFraudProofFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md), [DisputeManagerFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol)
+Exercises: [DisputeFraudProofFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md), [DisputeManagerFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md)
 
 ## Overview
 
@@ -30,12 +25,10 @@ block's calldata commitment on chain (seeded on the harness, and posted through 
 revert must carry that previous block's fork, height, author and stored commitment, each different
 from the timed-out block's corresponding value, so a payload built from the wrong block fails.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                 | Covers                                                                                                                                                                                                          |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_uploadDispute_evidencePeriodExpired_revertsCarryingPeriodEndAndCurrentTimestamp`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol#L85) (line 85)                               | [`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md#unit-test-dispute-manager-facet-1-b4kky2.p16)            |
-| [`test_handleTimeoutTooEarly_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol#L113) (line 113)                | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P24`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p24) |
-| [`test_handleTimeoutTooEarly_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol#L147) (line 147)              | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P25`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p25) |
-| [`test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol#L190) (line 190)   | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P26`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p26) |
-| [`test_validateTimeoutCalldataPostedProof_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol#L229) (line 229) | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P27`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p27) |
+- `test_uploadDispute_evidencePeriodExpired_revertsCarryingPeriodEndAndCurrentTimestamp`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16
+- `test_handleTimeoutTooEarly_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P24
+- `test_handleTimeoutTooEarly_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P25
+- `test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P26
+- `test_validateTimeoutCalldataPostedProof_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P27

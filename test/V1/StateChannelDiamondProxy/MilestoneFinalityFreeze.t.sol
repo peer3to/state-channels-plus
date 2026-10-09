@@ -347,6 +347,23 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertEq(harness.commitmentCount(CHANNEL_ID, FORK_ID), 1, "dispute stays committed");
     }
 
+    // a seated submitter names target zero on a failing proof -> its own slash, not the disputer's
+    function test_applyDisputeFraudProofs_zeroTargetFromParticipant_submitterSlashedNotDisputer() public {
+        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)));
+        harness.seedWindow(CHANNEL_ID, FORK_ID, dispute);
+
+        DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
+        DisputeFraudProof[] memory proofs =
+            _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute);
+        proofs[0].participant = address(0);
+        vm.prank(b);
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertFalse(harness.isSlashed(CHANNEL_ID, a), "honest disputer not slashed");
+        assertTrue(harness.isSlashed(CHANNEL_ID, b), "zero-target submitter slashed");
+        assertEq(harness.commitmentCount(CHANNEL_ID, FORK_ID), 1, "dispute stays committed");
+    }
+
     function test_disputeInvalidStateProof_noCalldata_frozenSet_slashesDisputer() public {
         SnapshotData memory genesisData;
         genesisData.participants = _addresses(a, b);

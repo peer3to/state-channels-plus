@@ -7,6 +7,14 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { buildAndEncodeBlock } from "@test/factory";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    RecordedBestEffortEstimate,
+    RecordedDisputeSubmission,
+    RecordedFraudProofApply,
+    RefusedUploadKind
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { stageOutboundAroundAnchor } from "@test/fixtures/HistoricSyncStaging";
 import { syncSpectatorOnServedPayload } from "@test/fixtures/MilestoneSyncStaging";
 import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import {
@@ -19,9 +27,14 @@ import {
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import { stageFinalityFromNextBlock } from "@test/fixtures/ProofOwnerStaging";
 import type { DisputeTamper } from "@test/harness/actions/DisputeTamperingActions";
-import type { EvidenceComparisonRecording } from "@test/harness/actions/rpcStubActions";
+import type {
+    DisputeSubmissionRecording,
+    EvidenceComparisonRecording
+} from "@test/harness/actions/rpcStubActions";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { DisputeConflictsWithFinalStateStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import type {
@@ -30,7 +43,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { expect } from "chai";
-import { ZeroAddress } from "ethers";
+import { MaxUint256, ZeroAddress } from "ethers";
 
 /**
  * Height of `peerIndex`'s latest locally finalized state (the first audit
@@ -377,6 +390,14 @@ export async function stageFrozenViewBehindDisputeTail(h: MathPeerTestHarness) {
     };
 }
 
+/** A dispute with no reason (no timeout, slash or self-removal) is invalid. */
+export const stripDisputeReasons: DisputeTamper = (dispute) => {
+    dispute.input.timeout.participant = ZeroAddress;
+    dispute.input.onChainSlashes = [];
+    dispute.input.selfRemoval = false;
+    dispute.input.requireExistingDisputeWindow = false;
+};
+
 /**
  * Four peers; peer 1 uploads a dispute that states no reason, so every
  * honest auditor finds it invalid. Peers 1-3 stay out of the kill race:
@@ -396,12 +417,7 @@ export async function stageReasonlessInitialDispute(
         hold: options.hold,
         forward: true
     });
-    await h.tamper.postTamperedDispute(spammer.index, (dispute) => {
-        dispute.input.timeout.participant = ZeroAddress;
-        dispute.input.onChainSlashes = [];
-        dispute.input.selfRemoval = false;
-        dispute.input.requireExistingDisputeWindow = false;
-    });
+    await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
     return {
         spammer,
         submissions,
@@ -416,6 +432,192 @@ export async function stageReasonlessInitialDispute(
                 h.event.protocolEventTimeoutMs()
             )
     };
+}
+
+/**
+ * Four peers with a long evidence period; peer 1 uploads a reasonless
+ * dispute. Peer 0's kill and replacement land in one multicall, so the window
+ * is never empty again and no peer replaces the dispute. Peer 2 stored its
+ * own counter, but its kill was skipped; its dispute uploads are now recorded
+ * and forwarded with a best-effort multicall's upload rewritten as
+ * `refuseUpload` says, and its lone kills are recorded. Peers 1 and 3 stay
+ * out of the kill race; timeout checks and reductions are held.
+ */
+export async function stageRefusedKillAndDispute(
+    h: MathPeerTestHarness,
+    refuseUpload: RefusedUploadKind
+) {
+    // long enough that peer 2's upload is still inside the evidence period
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 30 }
+    });
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers) {
+        await h.rpcStub.suppressTimeoutCheck(peer.index);
+        await h.rpcStub.holdReductionRace(peer.index);
+    }
+    const spammer = h.getPeer(1);
+    const slow = h.getPeer(2);
+    for (const index of [1, 3]) await h.rpcStub.suppressDisputeKill(index);
+    const skippedKill = await h.rpcStub.suppressDisputeKill(slow.index);
+    const first = await h.rpcStub.recordDisputeSubmissions(0, {
+        forward: true
+    });
+    await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
+    await skippedKill.waitUntilSkipped();
+    await waitFor(
+        async () =>
+            (await first.submissions()).some((submission) => submission.waited),
+        h.event.protocolEventTimeoutMs()
+    );
+    const [landed] = await first.submissions();
+    expect(landed.revert, "peer 0's replacement landed").to.equal(null);
+    await skippedKill.restore();
+    const submissions = await h.rpcStub.recordDisputeSubmissions(slow.index, {
+        forward: true,
+        refuseUpload
+    });
+    const applies = await h.rpcStub.recordDisputeFraudProofApplies(slow.index);
+    return { forkId, spammer, slow, submissions, applies };
+}
+
+/**
+ * Four peers with a long evidence period; peer 1 uploads a reasonless
+ * dispute. Peer 0's kill and replacement land late in the kill period, after
+ * which the evidence period closes; peer 2, a slow auditor whose dispute
+ * construction was held, then builds its kill and dispute. Peers 1 and 3
+ * stay out of the kill race; timeout checks and reductions are held. Peer
+ * 2's dispute uploads (forwarded, a best-effort upload rewritten as
+ * `refuseUpload` says) and lone kills are recorded; with `minimumEstimate`
+ * its best-effort multicall estimate is answered with the least gas
+ * (`bestEffortEstimates` reads that probe). Returns once peer 2's
+ * construction is released.
+ */
+export type SlowAuditorPastEvidencePeriod = {
+    forkId: ForkId;
+    slow: TestPeer<HarnessControlRpc, MathStateMachine>;
+    /** Lone kills the slow auditor sent. */
+    slowKills: { applies: () => Promise<RecordedFraudProofApply[]> };
+    slowSubmissions: DisputeSubmissionRecording;
+    /** The minimum-estimate probe's records, when installed. */
+    bestEffortEstimates?: () => Promise<RecordedBestEffortEstimate[]>;
+};
+
+export async function stageSlowAuditorPastEvidencePeriod(
+    h: MathPeerTestHarness,
+    options: { minimumEstimate?: boolean; refuseUpload?: RefusedUploadKind }
+): Promise<SlowAuditorPastEvidencePeriod> {
+    const evidenceTime = 14;
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime }
+    });
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers) {
+        await h.rpcStub.suppressTimeoutCheck(peer.index);
+        await h.rpcStub.holdReductionRace(peer.index);
+    }
+    const spammer = h.getPeer(1);
+    const slow = h.getPeer(2);
+    for (const index of [1, 3]) await h.rpcStub.suppressDisputeKill(index);
+    const first = await h.rpcStub.recordDisputeSubmissions(0, {
+        hold: true,
+        forward: true
+    });
+    const slowKills = await h.rpcStub.recordDisputeFraudProofApplies(
+        slow.index
+    );
+    const slowSubmissions = await h.rpcStub.recordDisputeSubmissions(
+        slow.index,
+        { forward: true, refuseUpload: options.refuseUpload }
+    );
+    const estimates = options.minimumEstimate
+        ? await h.rpcStub.answerMinimumBestEffortEstimate(slow.index)
+        : undefined;
+    const slowConstruction = await h.rpcStub.holdConstructDisputeAtStateProof(
+        slow.index,
+        forkId
+    );
+
+    await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
+    await first.waitUntilHeld();
+    // the slow auditor found the dispute invalid and builds its own
+    await slowConstruction.waitUntilParked();
+    const created = Number(
+        await h.channelManager.getDisputeWindowCreationTimestamp(
+            h.channelId,
+            forkId
+        )
+    );
+
+    // the first kill and replacement land late in the kill period
+    await h.event.waitUntilTimestamp(created + evidenceTime - 6);
+    await first.release();
+    await waitFor(
+        async () =>
+            (await first.submissions()).some(
+                (submission) => submission.waited || submission.revert !== null
+            ),
+        h.event.protocolEventTimeoutMs()
+    );
+    const [landed] = await first.submissions();
+    expect(landed.revert).to.equal(null);
+    await h.assert.dispute.slashedOnChain(spammer.address);
+
+    // the evidence period is over; the replacement's kill period is not
+    await h.event.waitUntilTimestamp(created + evidenceTime + 1);
+    await slowConstruction.release();
+    return {
+        forkId,
+        slow,
+        slowKills,
+        slowSubmissions,
+        bestEffortEstimates: estimates?.estimates
+    };
+}
+
+/**
+ * The slow auditor of `stageSlowAuditorPastEvidencePeriod` sent one
+ * best-effort multicall, kill first, that was mined; its refused upload was
+ * the lost-race no-op: its dispute did not land, its marker rolled back, no
+ * kill was sent alone, and its event pipeline survived. Returns the record.
+ */
+export async function expectSlowAuditorLostRaceNoOp(
+    h: MathPeerTestHarness,
+    staged: SlowAuditorPastEvidencePeriod
+): Promise<RecordedDisputeSubmission> {
+    const { forkId, slow, slowKills, slowSubmissions } = staged;
+    await waitFor(
+        async () =>
+            (await slowSubmissions.submissions()).some(
+                (submission) => submission.waited
+            ),
+        h.event.protocolEventTimeoutMs()
+    );
+    const recorded = await slowSubmissions.submissions();
+    expect(recorded).to.have.length(1);
+    const [multicall] = recorded;
+    expect(multicall.method).to.equal("multicallBestEffortLast");
+    expect(multicall.innerMethods[0]).to.equal("applyDisputeFraudProofs");
+    expect(
+        await h.channelManager.getWindowCommitments(h.channelId, forkId)
+    ).to.have.length(1);
+    expect(
+        await h.execOnHost(
+            slow,
+            (sm, args) => sm.storage.disputes.didIDispute(args.forkId),
+            { forkId }
+        )
+    ).to.equal(false);
+    await h.rpcStub.waitUntilDisputeMutexIdle(slow.index);
+    expect(await eventPipelineOutcome(h, slow.index)).to.deep.equal({
+        failedBlocks: 0,
+        isDisposed: false
+    });
+    expect(await slowKills.applies()).to.deep.equal([]);
+    expect(await slowSubmissions.submissions()).to.have.length(1);
+    return multicall;
 }
 
 /**
@@ -489,6 +691,221 @@ export async function waitUntilAuditsSettled(
             ).length >= count,
         h.event.protocolEventTimeoutMs()
     );
+}
+
+/**
+ * Whether a peer's event pipeline survived: logs whose handling failed keep
+ * their block open (never pruned), and an internal failure disposes it.
+ */
+export async function eventPipelineOutcome(
+    h: MathPeerTestHarness,
+    peerIndex: number
+): Promise<{ failedBlocks: number; isDisposed: boolean }> {
+    return h.execOnHost(h.getPeer(peerIndex), (sm) => ({
+        failedBlocks: [...sm.eventSyncService["blockStates"].values()]
+            .flatMap((blocks) => [...blocks.values()])
+            .filter((block) => block.failed).length,
+        isDisposed: sm.isDisposed
+    }));
+}
+
+/** A constructed dispute whose posted outbound run an auditor judges. */
+export type StagedOutboundDispute = {
+    forkId: ForkId;
+    /** The chain anchor: the first leave's exit snapshot. */
+    anchor: StateSnapshot;
+    /** The second leaver's parked exit snapshot post. */
+    heldPost: {
+        waitUntilHeld: (timeoutMs?: number) => Promise<number>;
+        release: () => Promise<string | null>;
+    };
+    disputerIndex: number;
+    auditorIndex: number;
+    dispute: DisputeStruct;
+    auditingData: DisputeAuditingDataStruct;
+    /** Commit the dispute to its (edited) auditing data. */
+    commit: () => void;
+};
+
+/**
+ * `stageOutboundAroundAnchor` with two final blocks: the chain anchor holds
+ * outbound block 1 (the first leave), the latest state outbound block 2 (the
+ * second leave, its snapshot post held). The first remaining peer constructs
+ * its dispute, whose posted run is the one block above the anchor; it states
+ * existing-window admission as its reason and posts its auditing data. The
+ * second remaining peer audits.
+ */
+export async function stageOutboundDispute(
+    h: MathPeerTestHarness
+): Promise<StagedOutboundDispute> {
+    const { forkId, anchor, remaining, heldPost } =
+        await stageOutboundAroundAnchor(h, { finalBlocks: 2 });
+    const [disputerIndex, auditorIndex] = remaining;
+    const { dispute, auditingData } = await h.dispute.fetchConstructedDispute(
+        disputerIndex,
+        forkId
+    );
+    // premise: the posted run is the one block above the anchor
+    expect(
+        auditingData.outboundMessageBlocks.map(
+            (block) => block.previousBlockHash
+        )
+    ).to.deep.equal([anchor.latestOutboundMessageBlockHash]);
+    // Conditional admission supplies a reason, never an exception to proof validation.
+    dispute.input.requireExistingDisputeWindow = true;
+    dispute.postedAuditingData = true;
+    return {
+        forkId,
+        anchor,
+        heldPost,
+        disputerIndex,
+        auditorIndex,
+        dispute,
+        auditingData,
+        commit: () => {
+            dispute.input.disputeAuditingDataHash = hash(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
+            );
+        }
+    };
+}
+
+/**
+ * `stageOutboundAroundAnchor` with two final blocks; the first remaining peer
+ * posts its self-removal dispute with auditing data whose outbound run
+ * (premise: the one block above the anchor) `forge` edits, recommitted, so
+ * its own audit is bypassed. Returns once that dispute was killed.
+ */
+export async function postForgedOutboundRunDispute(
+    h: MathPeerTestHarness,
+    forge: (
+        auditingData: DisputeAuditingDataStruct,
+        dispute: DisputeStruct
+    ) => void | Promise<void>
+) {
+    const { forkId, remaining, heldPost } = await stageOutboundAroundAnchor(h, {
+        finalBlocks: 2
+    });
+    const [disputerIndex, auditorIndex] = remaining;
+    const disputer = h.getPeer(disputerIndex).address;
+    // self-removal is the dispute's stated reason
+    await h
+        .control(h.getPeer(disputerIndex))
+        .dispute.setForceExit(true)
+        .request();
+    await h.tamper.postTamperedDispute(
+        disputerIndex,
+        async (dispute, _, auditingData) => {
+            if (!auditingData) throw new Error("auditing data missing");
+            expect(auditingData.outboundMessageBlocks).to.have.length(1);
+            await forge(auditingData, dispute);
+            dispute.postedAuditingData = true;
+            dispute.input.disputeAuditingDataHash = hash(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
+            );
+        },
+        { forkId }
+    );
+    await waitFor(
+        async () =>
+            (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeKilled(h.channelId)
+                )
+            ).some((log) => log.args.disputer === disputer),
+        h.event.protocolEventTimeoutMs()
+    );
+    return { forkId, remaining, auditorIndex, disputer, heldPost };
+}
+
+/**
+ * A `postForgedOutboundRunDispute` forge: the disputer signs a new last block
+ * on top of its head that commits a forged latest snapshot. That snapshot's
+ * outbound head is the posted block above the anchor with its first message
+ * balance set to MaxUint256, so the links and the height hold while the sum
+ * with the anchor's withdrawals overflows. The block is authentic and linked:
+ * only the replay can reject the forged latest state.
+ */
+export function overflowingLatestHead(h: MathPeerTestHarness) {
+    return async (
+        auditingData: DisputeAuditingDataStruct,
+        dispute: DisputeStruct
+    ): Promise<void> => {
+        const [block] = auditingData.outboundMessageBlocks;
+        const overflowing = {
+            ...block,
+            messages: block.messages.map((message, index) =>
+                index === 0
+                    ? {
+                          ...message,
+                          balance: { ...message.balance, amount: MaxUint256 }
+                      }
+                    : message
+            )
+        };
+        const latest = auditingData.latestStateSnapshot;
+        const forged = StateSnapshot.from({
+            ...latest,
+            snapshotData: {
+                ...latest.snapshotData,
+                latestOutboundMessageBlockHash: hash(
+                    Codec.encode(overflowing, Type.MessageBlock)
+                )
+            }
+        });
+        const milestone = dispute.input.stateProof.milestones.at(-1)!;
+        const head = Block.fromBlockConfirmation(
+            milestone.blockConfirmations.at(-1)!
+        );
+        const disputer = h.peers.find(
+            (peer) => peer.address === dispute.input.disputer
+        );
+        if (!disputer) throw new Error("No harness peer is the disputer");
+        const encoded = await buildAndEncodeBlock(disputer.signer, {
+            header: {
+                channelId: h.channelId,
+                forkId: head.forkId,
+                transactionCnt: head.height + 1
+            },
+            previousBlockHash: head.hash,
+            stateSnapshotHash: forged.hash
+        });
+        milestone.blockConfirmations.push(
+            Codec.decode(encoded, Type.BlockConfirmation)
+        );
+        auditingData.outboundMessageBlocks = [overflowing];
+        auditingData.latestStateSnapshot = forged.toStruct();
+        dispute.input.latestStateSnapshotHash = forged.hash;
+    };
+}
+
+/**
+ * The auditor's audit of the staged dispute returns false and stores one
+ * DisputeInvalidOutboundRun, which the chain accepts.
+ */
+export async function expectInvalidOutboundRun(
+    h: MathPeerTestHarness,
+    staged: StagedOutboundDispute
+): Promise<void> {
+    const run = await h.dispute.auditDispute(
+        staged.auditorIndex,
+        staged.dispute,
+        staged.auditingData
+    );
+    expect(run).to.include({ outcome: "returned", isValid: false });
+    expect(run.storedProof?.disputeFraudProofType).to.equal(
+        DisputeFraudProofType.DisputeInvalidOutboundRun
+    );
+    expect(run.disputeFraudProofCount).to.equal(1);
+    expect(
+        await h.channelManager.isDisputeOutboundRunInvalid.staticCall(
+            staged.dispute,
+            Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeInvalidOutboundRun
+            )
+        )
+    ).to.equal(true);
 }
 
 /**
@@ -1100,7 +1517,11 @@ export async function expectConflictWithAuditorsFinalBlock(
  * their other disputes are suppressed: only the auditor's counters land.
  */
 export async function stageParallelHeadAudits(h: MathPeerTestHarness) {
-    await h.scenario.preDisputeSetup();
+    // The window opens before the audits are parked, so the evidence period
+    // covers the two later uploads, the held walks and their release, the
+    // three audits, and the auditor's own kill-and-dispute upload. Use the
+    // approved balance-invariant evidence window, as the other audit orders.
+    await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
     const forkId = h.activeForkId!;
     const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(
         h,
@@ -1177,6 +1598,83 @@ export async function waitUntilTimeoutIsTimely(
             timeoutWaitTime(timeConfig, accusedHeight) +
             timeConfig.p2pTime
     );
+}
+
+/**
+ * Peer 0 posts a valid timeout dispute against the real next writer once
+ * the writer's full wait has passed. Reductions and the peers' own timeout
+ * checks are held, so the committed dispute stays under audit and no
+ * natural timeout dispute races it. Returns the window's creation
+ * timestamp and the timeout's deadline (head timestamp + timeoutWaitTime).
+ */
+export async function postTimelyNextWriterTimeout(h: MathPeerTestHarness) {
+    await h.scenario.preDisputeSetup();
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers) {
+        await h.rpcStub.holdReductionRace(peer.index);
+        await h.rpcStub.suppressTimeoutCheck(peer.index);
+    }
+    const head = await h
+        .control(h.getPeer(0))
+        .query.getLatestBlockInfo(forkId)
+        .request();
+    const { header } = Codec.decode(head!.encodedBlock, Type.Block).transaction;
+    const headTs = Number(header.timestamp);
+    const wait = timeoutWaitTime(
+        resolveTestTimeConfig(),
+        Number(header.transactionCnt) + 1
+    );
+    // plant first: the upload's window-created-too-early guard compares
+    // against the timeout's minTimeStamp (set at plant time)
+    await h.tamper.plantFreshTimeoutForNextWriter(0);
+    await h.event.waitUntilTimestamp(headTs + wait + 2);
+    const { dispute } = await h.tamper.postTamperedDispute(0, () => {}, {
+        markMalicious: false
+    });
+    const windowTs = Number(
+        await h.channelManager.getDisputeWindowCreationTimestamp(
+            h.channelId,
+            forkId
+        )
+    );
+    return { dispute, windowTs, deadline: headTs + wait };
+}
+
+/**
+ * Once `auditorIndex` finished its own audit of the committed timeout
+ * `dispute`, a replay-shaped task holds its state mutex with the
+ * predecessor of the disputed state (the state below the latest block)
+ * installed on the shared state machine, and writes it again after any
+ * other task's state write while held.
+ */
+export async function holdReplayOnPredecessorState(
+    h: MathPeerTestHarness,
+    auditorIndex: number,
+    dispute: DisputeStruct
+) {
+    await h.event.waitForEventCounts(
+        "onDisputeCommitted",
+        [{ peerId: auditorIndex, expectedCount: 1 }],
+        undefined,
+        { mode: "atLeast" }
+    );
+    await h.rpcStub.waitUntilDisputeMutexIdle(auditorIndex);
+    const stub = () => h.control(h.getPeer(auditorIndex)).stub;
+    await stub()
+        .holdStateMutexOnState(Number(dispute.input.timeout.blockHeight) - 2)
+        .request();
+    await waitFor(
+        async () => (await stub().getStateMutexHeldCount().request()) === 1,
+        h.event.protocolEventTimeoutMs()
+    );
+    return {
+        state: async () => (await stub().getStateMutexStateHold().request())!,
+        stillHeld: async () =>
+            (await stub().getStateMutexHeldCount().request()) === 1,
+        release: async () => {
+            await stub().releaseStateMutex().request();
+        }
+    };
 }
 
 /**

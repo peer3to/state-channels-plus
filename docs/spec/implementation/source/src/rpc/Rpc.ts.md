@@ -1,91 +1,48 @@
-# Rpc.ts — Source Report
+# Rpc.ts
 
-> **Source:** [src/rpc/Rpc.ts](../../../../../../src/rpc/Rpc.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/rpc/Rpc.ts](../../../../../../src/rpc/Rpc.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+- [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+- [`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf)
+  Missing: No protocol-version field in the envelope; the versioning gap is owned at the session level. See [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../specification/open-questions.md#oq-34-fy08v2).
 
-## Responsibility and observable boundary
+## UNIT-TEST-RPC-WIRE-1-4SDCQE
 
-The wire contract: the `Rpc` envelope (`service`, `method`, `params[]`, optional `requestId`),
-the `RpcResponse` shape, the 16 MiB frame cap, and the (de)serialization functions whose shape
-checks are the first validation every inbound frame meets.
+Shape validation and bigint rejection
 
-## Key design decisions
+- Setup: Round-trip valid envelopes/responses; decode malformed variants; serialize a raw BigInt
+- Oracle: Valid round trips exact; every malformed variant decodes to `undefined`; raw BigInt throws at serialize
 
-One parser classifies a valid response before a valid request and returns undefined for invalid frames. The separate unused request/response parser exports have been removed. See [Rpc.ts](../../../../../../src/rpc/Rpc.ts#L74).
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P1` — valid envelope round trip
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P2` — malformed shape: missing field
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P3` — raw BigInt throws
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P4` — boundary-size frame
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P5` — valid response round trip
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P6` — malformed shape: wrong-typed field
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P7` — malformed shape: non-array params
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P8` — omitted and empty-string request IDs use presence semantics
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P9` — present non-string request ID rejects
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P10` — invalid JSON rejects
+- [x] `UNIT-TEST-RPC-WIRE-1-4SDCQE.P11` — non-empty request ID is preserved
 
-1. **`requestId` presence selects delivery semantics.** An omitted ID means fire-and-forget. Any present string, including `""`, obliges exactly one correlated response; a present non-string ID is malformed ([#L1](../../../../../../src/rpc/Rpc.ts#L1)).
-2. **Raw `BigInt` throws at the sender.** Params/results must be JSON-serializable; bigint-bearing structs cross as `Codec`-encoded strings, and `JSON.stringify`'s throw surfaces the offending method instead of silently coercing ([#L31](../../../../../../src/rpc/Rpc.ts#L31)).
-3. **Reject-by-`undefined` decoding.** Malformed frames yield `undefined` (never throw), so the dispatcher's disconnect consequence is a decision, not an exception path ([#L41](../../../../../../src/rpc/Rpc.ts#L42)).
+## UNIT-TEST-RPC-32-DSTK5A
 
-## Inputs, outputs, state, and side effects
+Frame classification
 
-| Aspect       | Contents                                                  |
-| ------------ | --------------------------------------------------------- |
-| Inputs       | Envelopes/responses to serialize; wire strings to decode. |
-| Outputs      | Strings; decoded structs or `undefined`.                  |
-| Owned state  | None — pure functions and constants.                      |
-| Side effects | None.                                                     |
+- Setup: Pass serialized frames to the shared decoder and inspect its request/response projection; response shape takes priority and malformed shapes return undefined.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                | Specification IDs                                                                                                                                                                      |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Rpc.ts](../../../../../../src/rpc/Rpc.ts) | [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- The frame cap is enforced by the dispatcher _before_ parsing; this file only defines the constant.
-- `params` must be an array because dispatch spreads it — the shape check here is load-bearing.
-
-## Specification adherence
-
-- Envelope identifies method, delivery mode, correlation, and payload ([`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)); malformed frames fail deterministically to `undefined`.
-- Response-shape marker (`rpcResponse: true`) enables the response-first classification of [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j).
-
-## Specification contradictions
-
-None demonstrated. The dispatcher measures the declared cap in UTF-8 bytes before parsing.
-
-## Missing behavior
-
-No protocol-version field in the envelope — the versioning gap is owned at the session level ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf), [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../specification/open-questions.md#oq-34-fy08v2)).
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                            | Gap / divergence |
-| ------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Covered               | **Here:** envelope/response shapes and strict decoders ([#L41](../../../../../../src/rpc/Rpc.ts#L42)). **Other files:** [ANetworkRpcService](network/ANetworkRpcService.ts.md) and [P2PManager](../P2PManager.ts.md) apply the consequences; [Codec](../utils/Codec.ts.md) carries bigint payloads. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                          | Obligation                            | Public entry and setup                                                                                                                                         | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-rpc-wire-1-4sdcqe"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE` | Shape validation and bigint rejection | Round-trip valid envelopes/responses; decode malformed variants; serialize a raw BigInt                                                                        | Valid round trips exact; every malformed variant decodes to `undefined`; raw BigInt throws at serialize      | <a id="unit-test-rpc-wire-1-4sdcqe.p1"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P1` — valid envelope round trip; <a id="unit-test-rpc-wire-1-4sdcqe.p2"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P2` — malformed shape: missing field; <a id="unit-test-rpc-wire-1-4sdcqe.p3"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P3` — raw BigInt throws; <a id="unit-test-rpc-wire-1-4sdcqe.p4"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P4` — boundary-size frame; <a id="unit-test-rpc-wire-1-4sdcqe.p5"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P5` — valid response round trip; <a id="unit-test-rpc-wire-1-4sdcqe.p6"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P6` — malformed shape: wrong-typed field; <a id="unit-test-rpc-wire-1-4sdcqe.p7"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P7` — malformed shape: non-array params; <a id="unit-test-rpc-wire-1-4sdcqe.p8"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P8` — omitted and empty-string request IDs use presence semantics; <a id="unit-test-rpc-wire-1-4sdcqe.p9"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P9` — present non-string request ID rejects; <a id="unit-test-rpc-wire-1-4sdcqe.p10"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P10` — invalid JSON rejects; <a id="unit-test-rpc-wire-1-4sdcqe.p11"></a>`UNIT-TEST-RPC-WIRE-1-4SDCQE.P11` — non-empty request ID is preserved. |
-| <a id="unit-test-rpc-32-dstk5a"></a>`UNIT-TEST-RPC-32-DSTK5A`         | Frame classification                  | Pass serialized frames to the shared decoder and inspect its request/response projection; response shape takes priority and malformed shapes return undefined. | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-rpc-32-dstk5a.p1"></a>`UNIT-TEST-RPC-32-DSTK5A.P1` — classifies request with response-first precedence; <a id="unit-test-rpc-32-dstk5a.p2"></a>`UNIT-TEST-RPC-32-DSTK5A.P2` — classifies response with response-first precedence; <a id="unit-test-rpc-32-dstk5a.p3"></a>`UNIT-TEST-RPC-32-DSTK5A.P3` — classifies dual shape with response-first precedence; <a id="unit-test-rpc-32-dstk5a.p4"></a>`UNIT-TEST-RPC-32-DSTK5A.P4` — classifies invalid response with valid request with response-first precedence; <a id="unit-test-rpc-32-dstk5a.p5"></a>`UNIT-TEST-RPC-32-DSTK5A.P5` — rejects invalid JSON during frame classification; <a id="unit-test-rpc-32-dstk5a.p6"></a>`UNIT-TEST-RPC-32-DSTK5A.P6` — rejects null during frame classification; <a id="unit-test-rpc-32-dstk5a.p7"></a>`UNIT-TEST-RPC-32-DSTK5A.P7` — rejects primitive during frame classification; <a id="unit-test-rpc-32-dstk5a.p8"></a>`UNIT-TEST-RPC-32-DSTK5A.P8` — rejects array during frame classification; <a id="unit-test-rpc-32-dstk5a.p9"></a>`UNIT-TEST-RPC-32-DSTK5A.P9` — rejects missing fields during frame classification                                                                                                                      |
-
-## Related source reports
-
-- [ANetworkRpcService](network/ANetworkRpcService.ts.md) (dispatch consumer), [RpcHandler](network/RpcHandler.ts.md) (sender side), [P2PManager](../P2PManager.ts.md) (frame-size gate + classification).
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P1` — classifies request with response-first precedence
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P2` — classifies response with response-first precedence
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P3` — classifies dual shape with response-first precedence
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P4` — classifies invalid response with valid request with response-first precedence
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P5` — rejects invalid JSON during frame classification
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P6` — rejects null during frame classification
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P7` — rejects primitive during frame classification
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P8` — rejects array during frame classification
+- [x] `UNIT-TEST-RPC-32-DSTK5A.P9` — rejects missing fields during frame classification

@@ -685,3 +685,75 @@ export async function stageWindowBeforeTimeoutDeadline(h: MathPeerTestHarness) {
         }
     };
 }
+
+/**
+ * The participants author two blocks from `height`. The observer then holds
+ * the later one but not `height`, as after a sync that installed
+ * `height + 1` while it missed `height`. Returns the skipped block's author.
+ */
+export async function skipHeightOnObserver(
+    h: MathPeerTestHarness,
+    observerIndex: number,
+    forkId: ForkId,
+    height: BlockHeight
+): Promise<Address> {
+    const observer = h.getPeer(observerIndex);
+    await h.transition.advanceState({ count: 2 });
+    const skipped = await h
+        .control(observer)
+        .query.getBlockByHeight(forkId, height)
+        .request();
+    await h.execOnHost(
+        observer,
+        (sm, args) =>
+            sm.withMutex(
+                () => sm.storage.blocks.deleteBlock(args.forkId, args.height),
+                { taskName: "skip height" }
+            ),
+        { forkId, height }
+    );
+    expect(
+        await h.execOnHost(
+            observer,
+            (sm, args) => sm.storage.blocks.getNextBlockHeight(args.forkId),
+            { forkId }
+        )
+    ).to.equal(height + 2);
+    return skipped!.author;
+}
+
+/**
+ * Peer 0 skips height 2 ({@link skipHeightOnObserver}); its check for that
+ * height then runs after the deadline (`isForced` picks the path). Only this
+ * check runs: the scheduled ones are recorded or suppressed. Neither a
+ * dispute nor a stored timeout follows.
+ */
+export async function assertSkippedHeightNotTimedOut(
+    h: MathPeerTestHarness,
+    isForced: boolean
+): Promise<void> {
+    await h.lifecycle.start(3, 2);
+    const observer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    for (const index of [1, 2]) await h.rpcStub.suppressTimeoutCheck(index);
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index, {
+        suppressPrefix: "participantTimeout("
+    });
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    try {
+        const writer = await skipHeightOnObserver(h, observer.index, forkId, 2);
+        await checkTimeoutAfterDeadline(h, observer.index, {
+            forkId,
+            height: 2,
+            writer,
+            isForced
+        });
+        expect(await recorder.submissions()).to.deep.equal([]);
+        expect(
+            await h.control(observer).query.getTimeout(forkId).request()
+        ).to.equal(null);
+    } finally {
+        await recorder.restore();
+        await tasks.restore();
+    }
+}

@@ -37,10 +37,11 @@ Two branches adding children to the same existing root are editing the same owne
 resolve the normal Git conflict rather than hide it behind independently random child IDs.
 
 The token at its canonical definition is plain inline code preceded by an explicit stable anchor.
-Every other concrete ID occurrence is a linked inline-code label targeting that anchor. Run
+Every other concrete ID occurrence is a linked inline-code label targeting that anchor;
+IDs in `verification/tests/` reports stay bare, and `yarn spec:ids:fix` strips links there. Run
 `yarn spec:ids:fix` after authoring to normalize anchors and references, and
 `yarn spec:ids:check` to reject legacy collision-prone IDs, undefined references, duplicate
-definitions or anchors, unlinked references, and links to the wrong definition.
+definitions or anchors, unlinked references outside test reports, and links to the wrong definition.
 
 Use another test-plan item (`.T2`, `.T3`) only when the requirement needs a materially different
 setup, stimulus, or oracle. Variations of the same obligation are `.P1`…`.PN` under that plan item.
@@ -70,36 +71,40 @@ those non-normative traceability sections.
 ### Implementation
 
 The layer is repository-shaped: every `src/` and `contracts/` file has exactly one file report at
-`implementation/source/<path>.md` (source extension retained). A file report records its source and
-relevant symbols, responsibility and observable boundary, inputs/outputs/state/side effects, linked
-specification requirements by ID, assumptions, dependencies, trust boundaries, limits,
-ordering/concurrency, failures/recovery, current adherence/contradictions/missing behavior,
-`UNIT-TEST-*` component obligations (stable IDs with permutations), and related reports. Exact
-test evidence lives only in verification, mapped against those IDs. Directory
-`README.md`s own subsystem-shared responsibility and `INTEGRATION-TEST-*` cases; design views under
-`implementation/views/` narrate cross-directory flows, each naming its specification owner, and
-never duplicate or replace file reports. Layer relationships are carried by stable IDs, never by
-path equality.
+`implementation/source/<path>.md` (source extension retained). A file report holds only what
+neither the code nor the specification says: its `> **Source:**` header, one `## Requirements`
+bullet per requirement the file contributes to (with an indented hand-written `Contradicts:`,
+`Partial:` or `Missing:` line where the code departs from it), or a single
+`No specified behavior: <reason>.` line, and its `UNIT-TEST-*` families. A sentence that restates the
+code does not belong in the layer. Design views under `implementation/views/` narrate
+cross-directory flows, each naming its specification owner; they hold the `INTEGRATION-TEST-*`
+families, view-local requirements as `### <ID> — <subject>` headings, and a `## Gaps` section for
+divergences no single file owns. Layer relationships are carried by stable IDs, never by path
+equality.
 
-Every implementation test-plan row states its obligations, real public entry point and valid domain
-setup, stimulus, oracle and forbidden effects, normal/no-op/boundary/invalid/failure/recovery/interleaving
-variants, and exact test declarations. `Not applicable` always has a concrete rationale.
-Every permutation in one test family stays in that family's single owning row. New permutations are
-added to the existing `Required permutations` cell; split or appended-permutation tables are not
-valid planning structures.
+Each test family is one `## <family ID>` heading: its obligation, `- Setup:` and `- Oracle:`
+bullets covering the real public entry point, valid domain setup, stimulus, oracle and forbidden
+effects, then one bullet per independently coverable case (`` `<family ID>.P<n>` — <case> ``),
+normal, no-op, boundary, invalid, failure, recovery and interleaving variants included. One family
+has one heading; new cases are added as bullets under it. Every case bullet carries a checkbox and
+`verification/requirements.md` carries each requirement's tested status; both are written by
+`yarn spec:ids:fix` from the verification test bullets, checked by `yarn spec:ids:check`, and never
+typed by hand. No author writes `Covered`.
 
 ### Verification
 
 The layer is repository-shaped: every test file with executable declarations has exactly one report
 at `verification/tests/<path>.md`; fixtures, harness code, utilities, runners, and configuration
-are support code, not evidence units. Each report has a short overview and one table row per
-declaration, whose `Covers` cell lists the permutation IDs that declaration covers **in full** —
+are support code, not evidence units. Each report has a short overview and one bullet per
+declaration, naming it and listing the permutation IDs that declaration covers **in full** —
 the permutation is the unit of evidence (root test IDs only name the family and are never
 assignable), partial credit is never recorded, each permutation is judged independently (siblings
 left unassigned are the tracked gap, not a reason to withhold an earned assignment), and a
 permutation ID may be assigned to at most one test declaration across the whole tree. Tests with
 no assigned ID stay listed and are reported by static analysis. See `verification/README.md` for
-the template and assignment rules.
+the template and assignment rules. The layer also holds `verification/requirements.md`, one block
+per requirement with its tested specification cases, derived from those bullets by
+`yarn spec:ids:fix`.
 
 A listed test ID is an exact mapping claim for that declaration; file and directory links map no
 tests.

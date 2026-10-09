@@ -18,6 +18,7 @@ const {
     promoteAttemptLog,
     promoteStarvationAttemptLog,
     recordWorkerFailure,
+    reportLostTasks,
     recordWorkerRetirement,
     validateWorkerStats,
     workerFaultStatus
@@ -48,6 +49,41 @@ const {
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
 
 describe("distributed orchestrator logs", function () {
+    it("annotates a task lost with its only capable worker", function () {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "scp-lost-"));
+        const reason =
+            "Its attempt was lost with the worker, and no connected worker can run it";
+        const lines: string[] = [];
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalActions = process.env.GITHUB_ACTIONS;
+        console.log = (line = "") => lines.push(line);
+        console.error = () => {};
+        process.env.GITHUB_ACTIONS = "true";
+        try {
+            reportLostTasks(
+                [
+                    {
+                        label: "lost",
+                        logName: "lost",
+                        infrastructureDiagnostics: ["earlier", reason]
+                    }
+                ],
+                logDir
+            );
+        } finally {
+            console.log = originalLog;
+            console.error = originalError;
+            if (originalActions === undefined)
+                delete process.env.GITHUB_ACTIONS;
+            else process.env.GITHUB_ACTIONS = originalActions;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+        expect(lines).to.deep.equal([
+            `::error title=Test failed::lost [${reason}]`
+        ]);
+    });
+
     it("rejects an incompatible worker host before leasing it", function () {
         expect(() =>
             assertCompatibleWorkerProtocol({

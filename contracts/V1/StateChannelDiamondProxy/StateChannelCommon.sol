@@ -233,12 +233,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return disputeWindow.evidence.creationTimestamp != 0;
     }
 
-    function _getStateMachineParticipants(bytes memory encodedState) internal virtual returns (address[] memory) {
-        // setState fails
-        stateMachineImplementation.setState(encodedState);
-        return stateMachineImplementation.getParticipants();
-    }
-
     function _getP2pTime() internal view virtual returns (uint256) {
         return p2pTime;
     }
@@ -393,13 +387,19 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return pruned;
     }
 
+    /// The run links `lowerSnapshot`'s outbound head to `upperSnapshot`'s and its balances sum to the upper total. The
+    /// links, heights and endpoint are checked first, so balances reach the state machine's arithmetic only when the
+    /// upper head authenticates them. The upper head can still be forged (a snapshot signed only by its author), so a
+    /// forged or unaddable balance gives false, never a revert. An out-of-gas in `addBalance` is not a verdict: EIP-150
+    /// leaves the caller at most 1/64 of the gas it had, and that case reverts with `ErrorOutboundBalanceSumOutOfGas`,
+    /// so an under-funded call cannot judge an honest run invalid. This assumes `addBalance` fails fast (a bounded-gas
+    /// revert) on an unaddable balance.
     function _verifyOutboundMessageBlocks(
         MessageBlock[] memory outboundMessageBlocks,
         SnapshotData memory lowerSnapshot,
         SnapshotData memory upperSnapshot
     ) internal view virtual returns (bool) {
         bytes32 previousBlockHash = lowerSnapshot.latestOutboundMessageBlockHash;
-        Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
         uint256 expectedHeight = lowerSnapshot.latestOutboundMessageBlockHeight;
 
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
@@ -410,20 +410,45 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             if (outboundMessageBlocks[i].blockHeight != expectedHeight) {
                 return false;
             }
-            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
-                totalOutbound =
-                    stateMachineImplementation.addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance);
-            }
             previousBlockHash = keccak256(abi.encode(outboundMessageBlocks[i]));
-        }
-        if (keccak256(abi.encode(totalOutbound)) != keccak256(abi.encode(upperSnapshot.totalWithdrawals))) {
-            return false;
         }
         if (expectedHeight != upperSnapshot.latestOutboundMessageBlockHeight) {
             return false;
         }
+        if (previousBlockHash != upperSnapshot.latestOutboundMessageBlockHash) {
+            return false;
+        }
 
-        return previousBlockHash == upperSnapshot.latestOutboundMessageBlockHash;
+        Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
+        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
+                uint256 gasBefore = gasleft();
+                try stateMachineImplementation.addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance)
+                returns (Balance memory sum) {
+                    totalOutbound = sum;
+                } catch {
+                    if (gasleft() <= gasBefore / 64) revert ErrorOutboundBalanceSumOutOfGas();
+                    return false;
+                }
+            }
+        }
+        return keccak256(abi.encode(totalOutbound)) == keccak256(abi.encode(upperSnapshot.totalWithdrawals));
+    }
+
+    /// The part of `run` above the anchor's outbound head, and whether it links that head to the latest state's. The
+    /// outbound chain continues across forks, so an anchor on an older fork is a start too. An anchor whose outbound
+    /// head is above the latest state's leaves no part to verify (empty, valid). The anchor only moves forward, so a
+    /// run that links one anchor to the latest state also links every later anchor on its chain.
+    function _outboundRunAboveAnchor(
+        MessageBlock[] memory run,
+        SnapshotData memory anchorData,
+        SnapshotData memory latestData
+    ) internal view virtual returns (bool isValid, MessageBlock[] memory aboveAnchor) {
+        if (anchorData.latestOutboundMessageBlockHeight > latestData.latestOutboundMessageBlockHeight) {
+            return (true, aboveAnchor);
+        }
+        aboveAnchor = _pruneOutboundMessageBlocks(run, anchorData.latestOutboundMessageBlockHash);
+        isValid = _verifyOutboundMessageBlocks(aboveAnchor, anchorData, latestData);
     }
 
     function _isSnapshotLinkedToBlock(Block memory blockData, StateSnapshot memory stateSnapshot)
@@ -530,13 +555,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
+    /// Applies the inbound messages to the state already loaded in the state machine
+    /// (`encodedStateMachineState`, named only in the failure error).
     function _applyInboundMessages(
         bytes memory encodedStateMachineState,
         MessageBlock[] memory inboundMessageBlocks,
         Balance memory currentInboundTotalDeposits
-    ) internal returns (bytes memory encodedModifiedState, Balance memory newTotalDeposits) {
+    ) internal returns (Balance memory newTotalDeposits) {
         newTotalDeposits = currentInboundTotalDeposits;
-        stateMachineImplementation.setState(encodedStateMachineState);
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
@@ -555,7 +581,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                     stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
-        encodedModifiedState = stateMachineImplementation.getState();
     }
 
     function _processOutboundMessage(Message memory message) internal virtual returns (bool) {
@@ -713,7 +738,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         StateSnapshot memory previousSnapshot,
         StateSnapshot memory resultingSnapshot
     ) internal view returns (bool isFault, bool snapshotMismatch) {
-        if (milestoneIndex >= input.stateProof.milestones.length) return (false, false);
+        if (milestoneIndex >= input.stateProof.milestones.length) {
+            return (false, false);
+        }
         WalkCursor memory cursor;
         ProofWalkResult memory result;
         // the walk's start belongs to its first step

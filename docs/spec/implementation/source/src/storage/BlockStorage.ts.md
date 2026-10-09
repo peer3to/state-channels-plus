@@ -1,126 +1,64 @@
-# BlockStorage.ts — Source Report
+# BlockStorage.ts
 
-> **Source:** [src/storage/BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/storage/BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts)
+>
 > **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)
+- [`REQ-BLKSTORE-1-KYHTWT` (Same-coordinate conflict is not resolved here)](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt)
+- [`REQ-BLKSTORE-2-VWXP2C` (Monotone signature merge)](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c)
+  Contradicts: Timestamp clause violated here: unconditional overwrite in setter and merge — later replaces earlier; earliest-wins holds only upstream, so a later calldata copy bypasses it. See [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](../../../open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs).
+- [`REQ-BLKSTORE-3-S9V2KC` (Tip tracking and bounded traversal)](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)
+- [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
+  Contradicts: `getIterator` yields the store's own `Block` objects and the wrapping proxy exempts generators, so a caller can mutate stored blocks without a store operation ([`FIND-STORAGE-6-MT9Z2D`](../../../../audit/open-findings.md#find-storage-6-mt9z2d)).
 
-## Responsibility and observable boundary
+## UNIT-TEST-BLOCK-STORAGE-1-FY94TH
 
-The committed-block store: blocks addressable by hash and by (fork, height), per-fork maximum
-height (the local tip), growing confirmation-signature sets, and the optional on-chain posting
-timestamp.
+Index consistency and conflict refusal
 
-## Key design decisions
+- Setup: Store, merge, delete via both key forms; attempt same-coordinate different-block stores
+- Oracle: Both indexes always agree; conflicting store returns absence with original intact; equal store merges
 
-deleteBlock and insertSignature remain on the public production surface for their existing test callers. They are retained test-only methods, not deletion candidates in this pass.
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P1` — store/read via both keys
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P2` — delete via hash key removes both
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P3` — conflicting body refused
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P4` — equal body merges signatures
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P5` — delete via coordinate key removes both
 
-storeBlock owns insertion directly and delegates copy merging to Block.mergeFrom. Signature and timestamp overloads reuse getBlock; explicit keys, missing-target results and proxy mutation behavior remain intact. See [BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts#L35).
+## UNIT-TEST-BLOCK-STORAGE-2-K77ECA
 
-1. **One object, two indexes.** Hash map and coordinate map point at the _same_ `Block`
-   instance ([#L48](../../../../../../src/storage/BlockStorage.ts#L48)), so index consistency ([`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)) holds by
-   construction; deletes remove from both.
-2. **Refuse, then merge.** A store at occupied coordinates aborts (returns absence) when the
-   incoming block differs, and merges signatures when equal ([#L65](../../../../../../src/storage/BlockStorage.ts#L65)) —
-   conflict resolution belongs to validation/evidence, never to the store.
-3. **Persistence-only stores skip the tip.** `justPersist` lets proof/backfill imports store
-   without advancing the fork tip ([#L49](../../../../../../src/storage/BlockStorage.ts#L49)), keeping imported history
-   from masquerading as live progress.
-4. **Traversal clamps to the tip.** Backward iteration clamps caller-supplied start heights so
-   a remote-supplied absurd height cannot loop over an empty range ([#L272](../../../../../../src/storage/BlockStorage.ts#L272)).
+Timestamp semantics
 
-## Inputs, outputs, state, and side effects
+- Setup: Set timestamps by hash and coordinates; merge copies carrying timestamps in both orders
+- Oracle: Documents current overwrite behavior vs the earliest-wins requirement (expected-fail until the engineer decision)
 
-| Aspect       | Contents                                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Inputs       | Blocks with signatures (and optional hash/coordinates/justPersist overrides); signature insertions; timestamps; deletes. |
-| Outputs      | Blocks by hash or coordinates; latest block; next height; bounded iterators.                                             |
-| Owned state  | `hashToBlockMap`, `coordinatesToBlockMap`, `forkIdToMaxHeightMap`.                                                       |
-| Side effects | None beyond its maps.                                                                                                    |
+- [x] `UNIT-TEST-BLOCK-STORAGE-2-K77ECA.P1` — earlier-then-later
+- [ ] `UNIT-TEST-BLOCK-STORAGE-2-K77ECA.P2` — later-then-earlier
+- [ ] `UNIT-TEST-BLOCK-STORAGE-2-K77ECA.P3` — merge-carried timestamp vs setter
 
-## Linked requirements
+## UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+Tip and traversal bounds
 
-| Source file                                                      | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts) | [`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d), [`REQ-BLKSTORE-1-KYHTWT`](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt), [`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c), [`REQ-BLKSTORE-3-S9V2KC`](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc) , [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) — `getIterator` is one of the two store generators whose yielded values escape the copy boundary. |
+- Setup: Store extending, backfill (justPersist), and out-of-order blocks; iterate with absurd bounds
+- Oracle: Tip reflects only live stores; iteration clamps; latest-block agrees with tip
 
-## Assumptions, dependencies, trust boundaries, and limits
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P1` — tip advancement
+- [ ] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P2` — justPersist leaves tip
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P3` — absurd remote-supplied bound clamped
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4` — out-of-order store
 
-- Callers store only pipeline-accepted blocks; the store checks keys and equality, not protocol validity.
-- Caller-supplied hash/coordinate overrides are trusted to match content to the extent the producer guarantees (same trust rule as [`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
-- In-memory medium for this protocol version: durability across restart is not yet provided; the
-  target contract is [durability.md](../../../../specification/storage/durability.md).
+## UNIT-TEST-BLOCK-STORAGE-32-DHXM4N
 
-## Specification adherence
+Block merge and lookup mutations
 
-- Dual-index consistency including deletes ([`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)).
-- Same-coordinate conflict refusal with original intact; equal-block signature merge ([`REQ-BLKSTORE-1-KYHTWT` (Same-coordinate conflict is not resolved here)](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt)).
-- Monotone signature merge via set expansion ([`REQ-BLKSTORE-2-VWXP2C` (Monotone signature merge)](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c), signature clause).
-- Tip advances only on non-`justPersist` stores that raise the height; traversal clamped ([`REQ-BLKSTORE-3-S9V2KC` (Tip tracking and bounded traversal)](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)).
+- Setup: Use factory-built copies and explicit storage keys; check timestamp values, missing-target booleans and merged signatures through public lookup/mutation methods.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Specification contradictions
-
-**Iterator aliasing.** [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
-requires sequential reads to yield copies like every other read shape. `getIterator`
-([L234-268](../../../../../../src/storage/BlockStorage.ts#L253-L268)) yields the store's own `Block`
-objects straight out of `coordinatesToBlockMap`, and the wrapping proxy exempts generators, so a
-caller can mutate stored blocks without a store operation
-([`FIND-STORAGE-6-MT9Z2D`](../../../../audit/open-findings.md#find-storage-6-mt9z2d)).
-`getLatestBlock` ([L272-276](../../../../../../src/storage/BlockStorage.ts#L291-L276)) consumes the
-same generator but returns across the proxy, so its result is copied.
-
-**Timestamp overwrite.** [`REQ-BLKSTORE-2-VWXP2C` (Monotone signature merge)](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c) requires the _earliest_ observed on-chain timestamp to
-win, but both `setOnChainTimestamp` ([#L159](../../../../../../src/storage/BlockStorage.ts#L159)) and the equal-block merge
-([#L64](../../../../../../src/storage/BlockStorage.ts#L64)) overwrite unconditionally — a later timestamp replaces an earlier
-one. Earliest-wins is enforced only upstream in the queue's merge
-(./QueueStorage.ts.md)); a calldata copy arriving after commitment bypasses that.
-Engineer decision: enforce min() here or relax the spec clause.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                      | Gap / divergence                                                                                      |
-| -------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d) | Covered               | **Here:** shared object identity across both maps ([#L48](../../../../../../src/storage/BlockStorage.ts#L48)); dual-map deletes ([#L197](../../../../../../src/storage/BlockStorage.ts#L197)).                                                                                | None.                                                                                                 |
-| [`REQ-BLKSTORE-1-KYHTWT`](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt) | Covered               | **Here:** refuse-if-unequal, merge-if-equal ([#L65](../../../../../../src/storage/BlockStorage.ts#L65)). **Other files:** conflict _resolution_ is [ValidationService](../stateManager/ingest/ValidationService.ts.md) evidence rules.                                        | None.                                                                                                 |
-| [`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c) | Contradicts           | **Here:** monotone signature merge ([#L65](../../../../../../src/storage/BlockStorage.ts#L65)). **Other files:** [QueueStorage](./QueueStorage.ts.md) uses the same defined-timestamp overwrite on queue insertion and restoration.                                           | Timestamp clause violated here: unconditional overwrite in setter and merge — later replaces earlier. |
-| [`REQ-BLKSTORE-3-S9V2KC`](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc) | Covered               | **Here:** `_updateMaxHeight` only-increase ([#L304](../../../../../../src/storage/BlockStorage.ts#L304)); `justPersist` opt-out ([#L52](../../../../../../src/storage/BlockStorage.ts#L52)); clamped traversal ([#L272](../../../../../../src/storage/BlockStorage.ts#L272)). | None.                                                                                                 |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                      | Obligation                             | Public entry and setup                                                                                                                                            | Oracle and forbidden effects                                                                                      | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-block-storage-1-fy94th"></a>`UNIT-TEST-BLOCK-STORAGE-1-FY94TH`   | Index consistency and conflict refusal | Store, merge, delete via both key forms; attempt same-coordinate different-block stores                                                                           | Both indexes always agree; conflicting store returns absence with original intact; equal store merges             | <a id="unit-test-block-storage-1-fy94th.p1"></a>`UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P1` — store/read via both keys; <a id="unit-test-block-storage-1-fy94th.p2"></a>`UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P2` — delete via hash key removes both; <a id="unit-test-block-storage-1-fy94th.p3"></a>`UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P3` — conflicting body refused; <a id="unit-test-block-storage-1-fy94th.p4"></a>`UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P4` — equal body merges signatures; <a id="unit-test-block-storage-1-fy94th.p5"></a>`UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P5` — delete via coordinate key removes both                                                                                                                                                        |
-| <a id="unit-test-block-storage-2-k77eca"></a>`UNIT-TEST-BLOCK-STORAGE-2-K77ECA`   | Timestamp semantics                    | Set timestamps by hash and coordinates; merge copies carrying timestamps in both orders                                                                           | Documents current overwrite behavior vs the earliest-wins requirement (expected-fail until the engineer decision) | <a id="unit-test-block-storage-2-k77eca.p1"></a>`UNIT-TEST-BLOCK-STORAGE-2-K77ECA.P1` — earlier-then-later; <a id="unit-test-block-storage-2-k77eca.p2"></a>`UNIT-TEST-BLOCK-STORAGE-2-K77ECA.P2` — later-then-earlier; <a id="unit-test-block-storage-2-k77eca.p3"></a>`UNIT-TEST-BLOCK-STORAGE-2-K77ECA.P3` — merge-carried timestamp vs setter                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="unit-test-block-storage-3-zpt4bn"></a>`UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN`   | Tip and traversal bounds               | Store extending, backfill (justPersist), and out-of-order blocks; iterate with absurd bounds                                                                      | Tip reflects only live stores; iteration clamps; latest-block agrees with tip                                     | <a id="unit-test-block-storage-3-zpt4bn.p1"></a>`UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P1` — tip advancement; <a id="unit-test-block-storage-3-zpt4bn.p2"></a>`UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P2` — justPersist leaves tip; <a id="unit-test-block-storage-3-zpt4bn.p3"></a>`UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P3` — absurd remote-supplied bound clamped; <a id="unit-test-block-storage-3-zpt4bn.p4"></a>`UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4` — out-of-order store                                                                                                                                                                                                                                                                                                         |
-| <a id="unit-test-block-storage-32-dhxm4n"></a>`UNIT-TEST-BLOCK-STORAGE-32-DHXM4N` | Block merge and lookup mutations       | Use factory-built copies and explicit storage keys; check timestamp values, missing-target booleans and merged signatures through public lookup/mutation methods. | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.      | <a id="unit-test-block-storage-32-dhxm4n.p1"></a>`UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P1` — sets a zero timestamp through the hash overload; <a id="unit-test-block-storage-32-dhxm4n.p2"></a>`UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P2` — sets a timestamp through the coordinate overload; <a id="unit-test-block-storage-32-dhxm4n.p3"></a>`UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P3` — returns false for absent timestamp targets in both overloads; <a id="unit-test-block-storage-32-dhxm4n.p4"></a>`UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P4` — updates timestamp and signatures through explicit storage keys; <a id="unit-test-block-storage-32-dhxm4n.p5"></a>`UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P5` — duplicate storage insertion keeps time when the incoming copy has none |
-
-## Related source reports
-
-- [QueueStorage](./QueueStorage.ts.md) (pre-commit stage), [StateManager](../stateManager/StateManager.ts.md) (commit path), [AgreementManager](../agreementManager/AgreementManager.ts.md) (proof construction reads).
-
-Shared operation owners: [Block.ts.md](../models/Block.ts.md), [StoredBlockMergeService.ts.md](../stateManager/ingest/StoredBlockMergeService.ts.md), [keys.ts.md](keys.ts.md).
+- [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P1` — sets a zero timestamp through the hash overload
+- [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P2` — sets a timestamp through the coordinate overload
+- [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P3` — returns false for absent timestamp targets in both overloads
+- [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P4` — updates timestamp and signatures through explicit storage keys
+- [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P5` — duplicate storage insertion keeps time when the incoming copy has none

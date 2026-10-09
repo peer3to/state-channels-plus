@@ -9,6 +9,7 @@ import {
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: dispute validation / balanceInvariant", function () {
@@ -126,6 +127,17 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         const staged = await stageParallelHeadAudits(h);
         const { forkId, auditorIndex, walks, realHead, forgedHead } = staged;
         const auditor = h.getPeer(auditorIndex);
+        // The auditor kills the other two disputes alone, at once, while its
+        // own kill and dispute is in flight. Its upload lands first here: it
+        // counts one slash, so it is not threshold-final, and the lone kills
+        // then slash the other two disputers before the reduction.
+        const upload = await h.rpcStub.recordDisputeSubmissions(auditorIndex, {
+            forward: true
+        });
+        const loneKills = await h.rpcStub.recordDisputeFraudProofApplies(
+            auditorIndex,
+            { hold: true }
+        );
 
         // the forged audit persists its head first; the real audits, already
         // past their conflict checks, then find the stored forged head
@@ -139,6 +151,19 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await walks.release(realHead.hash);
         await walks.release(realHead.hash);
         await walks.restore();
+
+        await waitFor(
+            async () =>
+                (await upload.submissions()).some(
+                    (submission) =>
+                        submission.waited || submission.revert !== null
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        const [landed] = await upload.submissions();
+        expect(landed.revert).to.equal(null);
+        await loneKills.waitUntilHeld(2);
+        await loneKills.release();
 
         // The concurrent real-head audits can kill a different dispute first.
         await h.eventCountsBarrier.waitFor(

@@ -1,12 +1,7 @@
-# test/stateManager/DisputeReductionStaleEvent.test.ts — Test Report
+# DisputeReductionStaleEvent.test.ts
 
-> **Test file:** [test/stateManager/DisputeReductionStaleEvent.test.ts](../../../../../../test/stateManager/DisputeReductionStaleEvent.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/stateManager/DisputeReductionStaleEvent.test.ts](../../../../../../test/stateManager/DisputeReductionStaleEvent.test.ts)
+Exercises: [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md)
 
 ## Overview
 
@@ -21,13 +16,6 @@ the exact same event through the real handler entry in the worker realm. The ora
 redelivery is treated as already processed: no error surfaces and the peer's fork id is
 unchanged. First-delivery branch behavior and the other dispute-event branches are out of scope.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                | Covers                                                                                                                                              |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Dispute reduction stale event > treats a redelivered reduced-result event as consumed after the reduction was applied`](../../../../../../test/stateManager/DisputeReductionStaleEvent.test.ts#L19) (line 19) | [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P2`](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p2) |
+- `treats a redelivered reduced-result event as consumed after the reduction was applied`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P2

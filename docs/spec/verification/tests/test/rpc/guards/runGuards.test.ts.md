@@ -1,7 +1,7 @@
-# test/rpc/guards/runGuards.test.ts — Test Report
+# runGuards.test.ts
 
-> **Test file:** [test/rpc/guards/runGuards.test.ts](../../../../../../../test/rpc/guards/runGuards.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [runGuards.ts](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md)
+Test file: [test/rpc/guards/runGuards.test.ts](../../../../../../../test/rpc/guards/runGuards.test.ts)
+Exercises: [runGuards.ts](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md)
 
 ## Overview
 
@@ -9,12 +9,10 @@ The suite calls the production guard runner with concrete recording guards. It p
 order, empty/all-pass success, first/middle/last short-circuit, one failure callback, and no later
 checks after failure.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                              | Covers                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`runGuards > returns false and stops when the first guard fails`](../../../../../../../test/rpc/guards/runGuards.test.ts#L6) (line 6)                        | [`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P1`](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md#unit-test-run-guards-1-ts1wht.p1)                                                                                                                                                                                                                                                       |
-| [`runGuards > returns true after every guard passes in declaration order`](../../../../../../../test/rpc/guards/runGuards.test.ts#L19) (line 19)              | [`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P2`](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md#unit-test-run-guards-1-ts1wht.p2)                                                                                                                                                                                                                                                       |
-| [`runGuards > returns true for an empty guard list`](../../../../../../../test/rpc/guards/runGuards.test.ts#L32) (line 32)                                    | [`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P3`](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md#unit-test-run-guards-1-ts1wht.p3)                                                                                                                                                                                                                                                       |
-| [`runGuards > calls one failure handler and skips later guards after a middle failure`](../../../../../../../test/rpc/guards/runGuards.test.ts#L41) (line 41) | [`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P4`](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md#unit-test-run-guards-1-ts1wht.p4), [`REQ-RPC-7-9CBSHK.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1.p1), [`INTEGRATION-TEST-RPC-4-EXZ35F.P1`](../../../../../implementation/views/architecture/sdk/rpc/README.md#integration-test-rpc-4-exz35f.p1) |
-| [`runGuards > calls the last guard failure handler after earlier guards pass`](../../../../../../../test/rpc/guards/runGuards.test.ts#L58) (line 58)          | [`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P5`](../../../../../implementation/source/src/rpc/network/guards/runGuards.ts.md#unit-test-run-guards-1-ts1wht.p5)                                                                                                                                                                                                                                                       |
+- `returns false and stops when the first guard fails`: UNIT-TEST-RUN-GUARDS-1-TS1WHT.P1
+- `returns true after every guard passes in declaration order`: UNIT-TEST-RUN-GUARDS-1-TS1WHT.P2
+- `returns true for an empty guard list`: UNIT-TEST-RUN-GUARDS-1-TS1WHT.P3
+- `calls one failure handler and skips later guards after a middle failure`: UNIT-TEST-RUN-GUARDS-1-TS1WHT.P4, REQ-RPC-7-9CBSHK.T1.P1, INTEGRATION-TEST-RPC-4-EXZ35F.P1
+- `calls the last guard failure handler after earlier guards pass`: UNIT-TEST-RUN-GUARDS-1-TS1WHT.P5

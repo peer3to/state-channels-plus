@@ -140,7 +140,7 @@ against plans of that grain. 3790 permutations await a test; the
 "Test IDs not tested" queue is now a literal to-write list, one test per row.
 
 **2. Tests over surfaces that define no IDs at all (the dominant cause on the test side).**
-Whole components have empty `Component test obligations` tables, so their tests have nothing to
+Whole components define no `UNIT-TEST-*` families, so their tests have nothing to
 claim: most of `test/models/` (Block.test.ts alone holds 44 declarations against ~6 defined
 permutations), `test/utils/` helpers (HolepunchRelay, LogUploader, LoggerUtils,
 SignatureCollectionMap), `test/evm/` infrastructure (EvmFactory, HostNonceManager, jumpdest cache,
@@ -205,7 +205,7 @@ membership boundary, timeout/cancellation, explicit retry, failure phase, handof
 Runtime-port cases cover structured-clone options, dedicated cancellation routing, input validation, and
 Boolean propagation. Matcher, negotiation, P2P, membership, state-application, block, harness-session, and
 browser reports map their component boundaries. Participant-lifecycle evidence covers both pending-join fault
-interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
 
 RO5 is enforced as test architecture: a full connect fixture reaches a real terminal outcome and explicitly
 settles detached work; an intermediate probe never launches the reusable full flow; teardown only reports a
@@ -296,14 +296,14 @@ before the operation finished`. A record-only wrapper on the real executor root'
 `ContractExecutorService.admit`, restored in the same block, records each admitted operation's own
 settlement; the assertions run only after every admitted operation has itself finished, the admitted
 count is 1, 1 and 3, and no host executor error is recorded. They cover
-[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p6)–[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p8) and [`REQ-RUNTIME-3-VQXW59.T1.P79`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p79)–[`REQ-RUNTIME-3-VQXW59.T1.P81`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p81),
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb)–[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) and [`REQ-RUNTIME-3-VQXW59.T1.P79`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p79)–[`REQ-RUNTIME-3-VQXW59.T1.P81`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p81),
 the stronger disposal-rejection contract the second review found unproven. The RootCreation report
 also maps the new crashed parentless worker case: its worker thread exits during a real call, the call
 rejects, the handle closes while the hidden parent is still live, and disposing the handle afterwards
 leaves that parent disposing with no connections
-([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v.p33), [`REQ-RUNTIME-3-VQXW59.T1.P82`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p82)).
+([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v), [`REQ-RUNTIME-3-VQXW59.T1.P82`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p82)).
 
-The bounded executor drain ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym)) has unit and system evidence. `EvmFactory > abandons an admitted call
+The bounded executor drain ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym)) has unit and system evidence. `EvmFactory > abandons an admitted call
 stuck past the drain limit, closes the child, and reports no error` never releases the held reply, measures
 disposal against the exported limit, and reads the closed child, the rejected call, the call count, and an
 empty host error list. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
@@ -315,7 +315,7 @@ this repository.
 
 The handshake-wait disposal fix has unit evidence for the service itself: `HandshakeCompletedGuard >
 settles a pending handshake wait and every later wait as not completed once the service is disposed`
-covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r.p19) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p9): its probe awaits the runtime RPC root's real
+covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m): its probe awaits the runtime RPC root's real
 `dispose()` shutdown hook with a pending wait, then waits again, and both waits return `false` long before
 their timeout. The indentation fix in that suite moved no declaration line. It does not read the order of negotiation and lobby cleanup or a logger error directly;
 immediate settlement is what keeps any wait timer from outliving the logger. The E2E-LocalOnlyGuard

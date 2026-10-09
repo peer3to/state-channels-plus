@@ -17,8 +17,15 @@ import type {
 } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { BlockValidationResult } from "@/types";
-import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
+import type {
+    Address,
+    ChannelId,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
 import { Codec, Mutex, Type } from "@/utils";
+import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -80,6 +87,21 @@ export type StreamedLogDeliveryProbe = {
     logBlockNumber: number;
     /** The completed-block watermark when the log was delivered. */
     watermark: number | null;
+};
+
+/**
+ * The channel listener after an older select or a clear and a newer select
+ * raced over one removal of the live subscriptions.
+ */
+export type ChannelSelectionRaceProbe = {
+    newerChannelKey: string;
+    /** The listener's selected key once both calls settled; null when none. */
+    listenerChannelKey: string | null;
+    eventSyncChannelKey: string;
+    /** Per-node subscription counts, as getChannelSubscriptionCounts. */
+    originalCounts: (number | null)[];
+    olderCounts: (number | null)[];
+    newerCounts: (number | null)[];
 };
 
 export type BlockCalldataRecoveryProbe = {
@@ -528,12 +550,14 @@ export class ValidationProbeService extends ANetworkRpcService<
      * Listeners of the channel's subscription filter on each RPC node's open
      * socket, in node order; null for a node with no open socket.
      */
-    public async getChannelSubscriptionCounts(): Promise<(number | null)[]> {
+    public async getChannelSubscriptionCounts(
+        channelId: ChannelId = this.sm.channelId
+    ): Promise<(number | null)[]> {
         const sm = this.sm;
         const provider = sm.stateChannelManagerContract.runner?.provider;
         if (!(provider instanceof MultiRpcProvider))
             throw new Error("Expected the runtime RPC node provider");
-        const filter = sm.eventSyncService.getSubscriptionFilter(sm.channelId);
+        const filter = sm.eventSyncService.getSubscriptionFilter(channelId);
         return Promise.all(
             provider.nodes.map((node) => {
                 let socket: WebSocketProvider | undefined;
@@ -555,6 +579,48 @@ export class ValidationProbeService extends ANetworkRpcService<
     public async restoreChannelListener(): Promise<boolean> {
         await this.sm.stateChannelEventListener.setChannelId(this.sm.channelId);
         return true;
+    }
+
+    /**
+     * Start a select of a new channel, or a clear, on the listener of the
+     * selected channel, then at once a select of another new channel. The
+     * first call unsubscribes the live sockets, so the second finds nothing
+     * left to remove and resumes first. Selects the original channel again
+     * afterwards.
+     */
+    public async probeChannelSelectionRace(
+        first: "select" | "clear"
+    ): Promise<ChannelSelectionRaceProbe> {
+        const sm = this.sm;
+        const listener = sm.stateChannelEventListener;
+        const original = sm.channelId;
+        const older = ethers.hexlify(ethers.randomBytes(32));
+        const newer = ethers.hexlify(ethers.randomBytes(32));
+        try {
+            const firstCall =
+                first === "select"
+                    ? listener.setChannelId(older)
+                    : listener.clearChannelId();
+            const newerCall = listener.setChannelId(newer);
+            await Promise.all([firstCall, newerCall]);
+            // private internals: the selected key and the sync service's channel
+            const listenerChannelKey = (
+                listener as unknown as { currentChannelKey?: string }
+            ).currentChannelKey;
+            const eventSyncChannelId = (
+                sm.eventSyncService as unknown as { channelId: ChannelId }
+            ).channelId;
+            return {
+                newerChannelKey: channelKey(newer),
+                listenerChannelKey: listenerChannelKey ?? null,
+                eventSyncChannelKey: channelKey(eventSyncChannelId),
+                originalCounts: await this.getChannelSubscriptionCounts(),
+                olderCounts: await this.getChannelSubscriptionCounts(older),
+                newerCounts: await this.getChannelSubscriptionCounts(newer)
+            };
+        } finally {
+            await listener.setChannelId(original);
+        }
     }
 
     /**
@@ -1341,6 +1407,7 @@ export class ValidationProbeService extends ANetworkRpcService<
         if (disputeManager) {
             disputeManager.dispute = async (forkId: ForkId) => {
                 recorded.disputedForkIds.push(String(forkId));
+                return {};
             };
         }
         const p2pManager = this.p2pManager;

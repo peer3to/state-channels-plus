@@ -1,12 +1,7 @@
-# test/evm/nodeGlobalsShim.test.ts — Test Report
+# nodeGlobalsShim.test.ts
 
-> **Test file:** [test/evm/nodeGlobalsShim.test.ts](../../../../../../test/evm/nodeGlobalsShim.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [applyNodeGlobalsShim.ts](../../../../implementation/source/src/evm/p2pRuntime/worker/applyNodeGlobalsShim.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/nodeGlobalsShim.test.ts](../../../../../../test/evm/nodeGlobalsShim.test.ts)
+Exercises: [applyNodeGlobalsShim.ts](../../../../implementation/source/src/evm/p2pRuntime/worker/applyNodeGlobalsShim.ts.md)
 
 ## Overview
 
@@ -19,19 +14,12 @@ existing `nextTick` is never overwritten; a scope whose `process.versions.node` 
 misidentified as a browser; and the shimmed `nextTick` schedules its callback asynchronously with
 arguments passed through. Worker startup wiring that applies the shim is out of scope.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
+- `fills in a full process shim when none exists`: none
+- `patches missing fields on a partial process without clobbering existing ones`: none
+- `does not overwrite an existing nextTick`: none
+- `does not identify a real Node process as a browser`: none
+- `schedules the callback asynchronously via the shimmed nextTick`: none
 
-| Test declaration                                                                                                                                                          | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`applyNodeGlobalsShim > fills in a full process shim when none exists`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L16) (line 16)                                | —      |
-| [`applyNodeGlobalsShim > patches missing fields on a partial process without clobbering existing ones`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L28) (line 28) | —      |
-| [`applyNodeGlobalsShim > does not overwrite an existing nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L42) (line 42)                                      | —      |
-| [`applyNodeGlobalsShim > does not identify a real Node process as a browser`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L51) (line 51)                           | —      |
-| [`applyNodeGlobalsShim > schedules the callback asynchronously via the shimmed nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L61) (line 61)               | —      |
-
-This is partial component evidence for [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y); it does not claim worker placement coverage.
+This is partial component evidence for `REQ-RUNTIME-4-B0N70Y`; it does not claim worker placement coverage.

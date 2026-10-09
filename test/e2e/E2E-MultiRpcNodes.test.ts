@@ -302,6 +302,50 @@ describe("E2E: Multiple RPC nodes", function () {
         ).to.deep.equal([1, 1]);
     });
 
+    it("lets a select that starts while an older select is still removing live subscriptions win, and the older select subscribes nothing", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 2 }
+        });
+        const validation = () => h.control(h.getPeer(proxied)).validation;
+        // premise - the selected channel is subscribed on both live sockets
+        expect(
+            await validation().getChannelSubscriptionCounts().request()
+        ).to.deep.equal([1, 1]);
+
+        const result = await validation()
+            .probeChannelSelectionRace("select")
+            .request();
+
+        expect(result.newerCounts).to.deep.equal([1, 1]);
+        expect(result.olderCounts).to.deep.equal([0, 0]);
+        expect(result.originalCounts).to.deep.equal([0, 0]);
+        expect(result.listenerChannelKey).to.equal(result.newerChannelKey);
+        expect(result.eventSyncChannelKey).to.equal(result.newerChannelKey);
+    });
+
+    it("keeps the key and subscription of a select started while a clear is still removing live subscriptions", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 2 }
+        });
+        const validation = () => h.control(h.getPeer(proxied)).validation;
+        // premise - the selected channel is subscribed on both live sockets
+        expect(
+            await validation().getChannelSubscriptionCounts().request()
+        ).to.deep.equal([1, 1]);
+
+        const result = await validation()
+            .probeChannelSelectionRace("clear")
+            .request();
+
+        expect(result.listenerChannelKey).to.equal(result.newerChannelKey);
+        expect(result.newerCounts).to.deep.equal([1, 1]);
+        expect(result.originalCounts).to.deep.equal([0, 0]);
+    });
+
     it("stops a failing catch-up's retries when its socket drops and catches up on the next one", async function () {
         const h = TestSession.getHarness();
         const proxied = 2;
@@ -369,7 +413,11 @@ describe("E2E: Multiple RPC nodes", function () {
         const h = TestSession.getHarness();
         const proxied = 2;
         await h.lifecycle.start(3, 0, {
-            rpcNodeProxiesByPeer: { [proxied]: 1 }
+            rpcNodeProxiesByPeer: { [proxied]: 1 },
+            // the failing retries and the two backoff windows keep the channel
+            // idle past the default first-block timeout, whose dispute would
+            // reject the later top-up
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [proxy] = h.getRpcNodeProxies(proxied);
         const validation = () => h.control(h.getPeer(proxied)).validation;

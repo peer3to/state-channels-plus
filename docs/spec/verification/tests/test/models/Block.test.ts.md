@@ -1,7 +1,7 @@
-# Block.test.ts — Test Report
+# Block.test.ts
 
-> **Test file:** [test/models/Block.test.ts](../../../../../../test/models/Block.test.ts) > **Status:** Authored; engineer verification pending.
-> **Exercises:** [Block.ts](../../../../implementation/source/src/models/Block.ts.md)
+Test file: [test/models/Block.test.ts](../../../../../../test/models/Block.test.ts)
+Exercises: [Block.ts](../../../../implementation/source/src/models/Block.ts.md)
 
 ## Overview
 
@@ -20,7 +20,7 @@ throwing for a malformed signature, and false when only confirmation signatures 
 `onChainTimestamp`, max of both), and `onChainTimestamp` is shown to be local-only metadata that
 never changes encoding, hash, or equality. Out of scope: validation, storage, and queue behavior
 around blocks (owned by the ValidationService and BlockQueueManager suites). Of the first thirteen
-[`UNIT-TEST-BLOCK-MODEL-1-037DM6`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6) permutations, eleven are covered by single tests here: the round trip
+`UNIT-TEST-BLOCK-MODEL-1-037DM6` permutations, eleven are covered by single tests here: the round trip
 (P1), duplicate-signature dedup (P2), the author-signed (P4) and posted (P6)
 relevant-timestamp selections, the canonical signature-byte cases (P7–P12), and the forged-author
 rejection (P13). P3 targets `didEveryoneSign`, which this file never calls, and
@@ -35,70 +35,68 @@ set (P15), and `isAuthentic` false for every contract-rejected author-signature 
 `SignatureEncodingFixture` (P21). These are Block behavior tests only; the differential parity
 of the signature rule against the contract is the signer-recovery cache suite's. Block decoding is
 `Codec` only, so the file has no decoding-parity cases (the open deviation is
-[`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
+`FIND-DECODE-1-FD1V6V`).
 Unassigned: P24 — no test puts a rejected encoding in a confirmation signature — and with it
-[`INV-MIRROR-1-VAF778.T1.P9`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p9) (confirmation signatures follow the author rule), which is covered by ValidationService.test.ts (normalization of a contract-rejected confirmation encoding).
+`INV-MIRROR-1-VAF778.T1.P9` (confirmation signatures follow the author rule), which is covered by ValidationService.test.ts (normalization of a contract-rejected confirmation encoding).
 The malformed-signature case (`0x1234`) is one wrong-length input, narrower than P21, and stays
 unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                   | Covers                                                                                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [`Block Model > Static factory methods > should create Block from BlockStruct`](../../../../../../test/models/Block.test.ts#L34) (line 34)                                                         | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P1`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p1)   |
-| [`Block Model > Static factory methods > should create Block from BlockConfirmation`](../../../../../../test/models/Block.test.ts#L40) (line 40)                                                   | —                                                                                                                                   |
-| [`Block Model > Hash computation > should compute hash correctly`](../../../../../../test/models/Block.test.ts#L49) (line 49)                                                                      | —                                                                                                                                   |
-| [`Block Model > Hash computation > should have consistent hash for same data`](../../../../../../test/models/Block.test.ts#L55) (line 55)                                                          | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct coordinates`](../../../../../../test/models/Block.test.ts#L63) (line 63)                                                                  | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct height`](../../../../../../test/models/Block.test.ts#L73) (line 73)                                                                       | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct forkId`](../../../../../../test/models/Block.test.ts#L79) (line 79)                                                                       | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct timestamp`](../../../../../../test/models/Block.test.ts#L85) (line 85)                                                                    | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct author`](../../../../../../test/models/Block.test.ts#L91) (line 91)                                                                       | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct channelId`](../../../../../../test/models/Block.test.ts#L97) (line 97)                                                                    | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct previousBlockHash`](../../../../../../test/models/Block.test.ts#L103) (line 103)                                                          | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct stateSnapshotHash`](../../../../../../test/models/Block.test.ts#L109) (line 109)                                                          | —                                                                                                                                   |
-| [`Block Model > Property getters > should return correct transaction`](../../../../../../test/models/Block.test.ts#L115) (line 115)                                                                | —                                                                                                                                   |
-| [`Block Model > Block equality > should identify equal blocks`](../../../../../../test/models/Block.test.ts#L121) (line 121)                                                                       | —                                                                                                                                   |
-| [`Block Model > Block equality > should identify different blocks`](../../../../../../test/models/Block.test.ts#L127) (line 127)                                                                   | —                                                                                                                                   |
-| [`Block Model > Signature operations > should get signer address from signature`](../../../../../../test/models/Block.test.ts#L137) (line 137)                                                     | —                                                                                                                                   |
-| [`Block Model > Signature operations > should find participant signature`](../../../../../../test/models/Block.test.ts#L147) (line 147)                                                            | —                                                                                                                                   |
-| [`Block Model > Signature operations > should handle participant who didn't sign`](../../../../../../test/models/Block.test.ts#L163) (line 163)                                                    | —                                                                                                                                   |
-| [`Block Model > Signature operations > should sign block`](../../../../../../test/models/Block.test.ts#L177) (line 177)                                                                            | —                                                                                                                                   |
-| [`Block Model > Signature operations > should create signed block`](../../../../../../test/models/Block.test.ts#L185) (line 185)                                                                   | —                                                                                                                                   |
-| [`Block Model > Signature management > should return signer address from original signature`](../../../../../../test/models/Block.test.ts#L199) (line 199)                                         | —                                                                                                                                   |
-| [`Block Model > Signature management > should return confirmation signatures`](../../../../../../test/models/Block.test.ts#L210) (line 210)                                                        | —                                                                                                                                   |
-| [`Block Model > Signature management > should return all signatures including original and confirmations`](../../../../../../test/models/Block.test.ts#L215) (line 215)                            | —                                                                                                                                   |
-| [`Block Model > Signature management > should return confirmation signer addresses`](../../../../../../test/models/Block.test.ts#L221) (line 221)                                                  | —                                                                                                                                   |
-| [`Block Model > Signature management > should return all signer addresses`](../../../../../../test/models/Block.test.ts#L226) (line 226)                                                           | —                                                                                                                                   |
-| [`Block Model > Signature management > should expand signatures with new signatures array`](../../../../../../test/models/Block.test.ts#L237) (line 237)                                           | —                                                                                                                                   |
-| [`Block Model > Signature management > should grow cached signer addresses when expanding signatures`](../../../../../../test/models/Block.test.ts#L252) (line 252)                                | —                                                                                                                                   |
-| [`Block Model > Signature management > should expand signatures with new signatures Set`](../../../../../../test/models/Block.test.ts#L264) (line 264)                                             | —                                                                                                                                   |
-| [`Block Model > Signature management > should not duplicate signatures when expanding`](../../../../../../test/models/Block.test.ts#L285) (line 285)                                               | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P2`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p2)   |
-| [`Block Model > Signature management > should remove confirmation signatures`](../../../../../../test/models/Block.test.ts#L300) (line 300)                                                        | —                                                                                                                                   |
-| [`Block Model > Signature management > should shrink cached signer addresses when removing signatures`](../../../../../../test/models/Block.test.ts#L317) (line 317)                               | —                                                                                                                                   |
-| [`Block Model > Signature management > should keep the author's original signature when removing`](../../../../../../test/models/Block.test.ts#L331) (line 331)                                    | —                                                                                                                                   |
-| [`Block Model > Signature management > should ignore removing unknown signatures`](../../../../../../test/models/Block.test.ts#L352) (line 352)                                                    | —                                                                                                                                   |
-| [`Block Model > Authenticity > should be authentic when the author signature recovers to the header participant`](../../../../../../test/models/Block.test.ts#L366) (line 366)                     | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P23`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p23) |
-| [`Block Model > Authenticity > should be inauthentic when another key signed for the declared author`](../../../../../../test/models/Block.test.ts#L376) (line 376)                                | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P13`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p13) |
-| [`Block Model > Authenticity > should be inauthentic for a malformed signature without throwing`](../../../../../../test/models/Block.test.ts#L387) (line 387)                                     | —                                                                                                                                   |
-| [`Block Model > Authenticity > should be inauthentic when confirmation signatures are valid but the author signature is not`](../../../../../../test/models/Block.test.ts#L396) (line 396)         | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P22`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p22) |
-| [`Block Model > Block confirmation struct > should return correct block confirmation struct`](../../../../../../test/models/Block.test.ts#L413) (line 413)                                         | —                                                                                                                                   |
-| [`Block Model > Timestamp utilities > should return block timestamp when participant has signed`](../../../../../../test/models/Block.test.ts#L431) (line 431)                                     | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P4`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p4)   |
-| [`Block Model > Timestamp utilities > should return onChainTimestamp when participant has not signed and onChainTimestamp is set`](../../../../../../test/models/Block.test.ts#L449) (line 449)    | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P6`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p6)   |
-| [`Block Model > Timestamp utilities > should return block timestamp when participant has not signed and onChainTimestamp is not set`](../../../../../../test/models/Block.test.ts#L466) (line 466) | —                                                                                                                                   |
-| [`Block Model > Timestamp utilities > should return max of onChainTimestamp and block timestamp when both are set`](../../../../../../test/models/Block.test.ts#L481) (line 481)                   | —                                                                                                                                   |
-| [`Block Model > Immutability > should not allow modification of underlying data`](../../../../../../test/models/Block.test.ts#L499) (line 499)                                                     | —                                                                                                                                   |
-| [`Block Model > On-chain timestamp > should have undefined onChainTimestamp by default`](../../../../../../test/models/Block.test.ts#L514) (line 514)                                              | —                                                                                                                                   |
-| [`Block Model > On-chain timestamp > should set and get onChainTimestamp`](../../../../../../test/models/Block.test.ts#L518) (line 518)                                                            | —                                                                                                                                   |
-| [`Block Model > On-chain timestamp > should not affect encoding when onChainTimestamp is set`](../../../../../../test/models/Block.test.ts#L525) (line 525)                                        | —                                                                                                                                   |
-| [`Block Model > On-chain timestamp > should not change hash when onChainTimestamp is set`](../../../../../../test/models/Block.test.ts#L534) (line 534)                                            | —                                                                                                                                   |
-| [`Block Model > On-chain timestamp > should consider blocks equal regardless of onChainTimestamp`](../../../../../../test/models/Block.test.ts#L543) (line 543)                                    | —                                                                                                                                   |
-| [`Block Model canonical signature bytes > equivalent byte representations share one recovery-cache entry`](../../../../../../test/models/Block.test.ts#L558) (line 558)                            | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P7`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p7)   |
-| [`Block Model canonical signature bytes > merge uses canonical equality and keeps its original author envelope`](../../../../../../test/models/Block.test.ts#L584) (line 584)                      | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P8`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p8)   |
-| [`Block Model canonical signature bytes > struct construction and author re-signing normalize real signer output`](../../../../../../test/models/Block.test.ts#L595) (line 595)                    | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P9`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p9)   |
-| [`Block Model canonical signature bytes > constructors deduplicate hex casing and byte-array confirmations`](../../../../../../test/models/Block.test.ts#L610) (line 610)                          | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P10`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p10) |
-| [`Block Model canonical signature bytes > expansion and removal use the same byte equality`](../../../../../../test/models/Block.test.ts#L631) (line 631)                                          | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P11`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p11) |
-| [`Block Model canonical signature bytes > keeps malformed envelopes unchanged for authentication failure`](../../../../../../test/models/Block.test.ts#L641) (line 641)                            | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P12`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p12) |
-| [`Block Model confirmation-free copies > authorSignedCopy shares the struct, bytes and hash and drops only the confirmations`](../../../../../../test/models/Block.test.ts#L654) (line 654)        | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P14`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p14) |
-| [`Block Model confirmation-free copies > authorSignedCopy gives the copy its own confirmation set`](../../../../../../test/models/Block.test.ts#L676) (line 676)                                   | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P15`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p15) |
-| [`Block Model confirmation-free copies > isAuthentic is false for every author-signature encoding the contracts reject`](../../../../../../test/models/Block.test.ts#L690) (line 690)              | [`UNIT-TEST-BLOCK-MODEL-1-037DM6.P21`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6.p21) |
+- `should create Block from BlockStruct`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P1
+- `should create Block from BlockConfirmation`: none
+- `should compute hash correctly`: none
+- `should have consistent hash for same data`: none
+- `should return correct coordinates`: none
+- `should return correct height`: none
+- `should return correct forkId`: none
+- `should return correct timestamp`: none
+- `should return correct author`: none
+- `should return correct channelId`: none
+- `should return correct previousBlockHash`: none
+- `should return correct stateSnapshotHash`: none
+- `should return correct transaction`: none
+- `should identify equal blocks`: none
+- `should identify different blocks`: none
+- `should get signer address from signature`: none
+- `should find participant signature`: none
+- `should handle participant who didn't sign`: none
+- `should sign block`: none
+- `should create signed block`: none
+- `should return signer address from original signature`: none
+- `should return confirmation signatures`: none
+- `should return all signatures including original and confirmations`: none
+- `should return confirmation signer addresses`: none
+- `should return all signer addresses`: none
+- `should expand signatures with new signatures array`: none
+- `should grow cached signer addresses when expanding signatures`: none
+- `should expand signatures with new signatures Set`: none
+- `should not duplicate signatures when expanding`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P2
+- `should remove confirmation signatures`: none
+- `should shrink cached signer addresses when removing signatures`: none
+- `should keep the author's original signature when removing`: none
+- `should ignore removing unknown signatures`: none
+- `should be authentic when the author signature recovers to the header participant`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P23
+- `should be inauthentic when another key signed for the declared author`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P13
+- `should be inauthentic for a malformed signature without throwing`: none
+- `should be inauthentic when confirmation signatures are valid but the author signature is not`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P22
+- `should return correct block confirmation struct`: none
+- `should return block timestamp when participant has signed`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P4
+- `should return onChainTimestamp when participant has not signed and onChainTimestamp is set`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P6
+- `should return block timestamp when participant has not signed and onChainTimestamp is not set`: none
+- `should return max of onChainTimestamp and block timestamp when both are set`: none
+- `should not allow modification of underlying data`: none
+- `should have undefined onChainTimestamp by default`: none
+- `should set and get onChainTimestamp`: none
+- `should not affect encoding when onChainTimestamp is set`: none
+- `should not change hash when onChainTimestamp is set`: none
+- `should consider blocks equal regardless of onChainTimestamp`: none
+- `equivalent byte representations share one recovery-cache entry`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P7
+- `merge uses canonical equality and keeps its original author envelope`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P8
+- `struct construction and author re-signing normalize real signer output`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P9
+- `constructors deduplicate hex casing and byte-array confirmations`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P10
+- `expansion and removal use the same byte equality`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P11
+- `keeps malformed envelopes unchanged for authentication failure`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P12
+- `authorSignedCopy shares the struct, bytes and hash and drops only the confirmations`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P14
+- `authorSignedCopy gives the copy its own confirmation set`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P15
+- `isAuthentic is false for every author-signature encoding the contracts reject`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P21

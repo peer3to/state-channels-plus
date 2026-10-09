@@ -189,6 +189,7 @@ function reportLostTasks(tasks, logDir) {
     for (const task of tasks) {
         const reason = task.infrastructureDiagnostics.at(-1);
         console.error(`FAIL ${task.label}: ${reason}`);
+        logging.annotateFailure(task.label, reason);
         fs.appendFileSync(
             logging.getErrorLogPath(logDir, task.logName),
             `##PARALLEL_RUNNER## ${reason}\n`

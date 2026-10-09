@@ -12,11 +12,13 @@ import type {
 import type {
     BlockWorkHoldPoint,
     DisputeSubmissionFailureSpec,
+    RecordedBestEffortEstimate,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
     RecordedReplayGasRead,
     ReductionSimulationErrorName,
+    RefusedUploadKind,
     ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldMembershipReceiptKind,
@@ -44,6 +46,33 @@ export type EvidenceComparisonRecording = {
     /** Ask `shouldAddOwnEvidence` again with the last audited dispute. */
     repeatLastAudit: () => Promise<RecordedEvidenceAudit>;
     restore: () => Promise<void>;
+};
+
+/** Client handle on one peer's held state-manager mutex. */
+export type StateMutexHold = {
+    entered: () => Promise<number>;
+    release: () => Promise<void>;
+};
+
+/** Client handle on one peer's dispute submission recorder. */
+export type DisputeSubmissionRecording = {
+    submissions: () => Promise<RecordedDisputeSubmission[]>;
+    /** Sends parked at the hold so far. */
+    heldCount: () => Promise<number>;
+    waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+    release: () => Promise<void>;
+    restore: () => Promise<void>;
+};
+
+/** Client handle on one peer's `constructDispute` parked at its state proof read. */
+export type ConstructDisputeHold = {
+    waitUntilParked: (timeoutMs?: number) => Promise<void>;
+    parkedCount: () => Promise<number>;
+    /** Constructions `dispute()` started for `forkId`, held or not. */
+    uploadConstructions: () => Promise<number>;
+    /** Let held and later constructions run; counting goes on. */
+    resume: () => Promise<void>;
+    release: () => Promise<void>;
 };
 
 /**
@@ -178,10 +207,7 @@ export class RpcStubActions<
     }
 
     /** Hold the peer's state-manager mutex until released. */
-    async holdStateMutex(peerIndex: number): Promise<{
-        entered: () => Promise<number>;
-        release: () => Promise<void>;
-    }> {
+    async holdStateMutex(peerIndex: number): Promise<StateMutexHold> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().holdStateMutex().request();
         return {
@@ -340,6 +366,21 @@ export class RpcStubActions<
             await this.harness
                 .control(peer)
                 .stub.releaseSetChannelId()
+                .request();
+    }
+
+    async holdEventListenerRemoval(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdEventListenerRemoval()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseEventListenerRemoval()
                 .request();
     }
 
@@ -762,7 +803,11 @@ export class RpcStubActions<
         );
     }
 
-    private async dropEventLogs(
+    /**
+     * Lose a peer's subscribed deliveries of the named events. One selection
+     * per peer: a later call replaces it.
+     */
+    async dropEventLogs(
         peerIndex: number,
         eventNames: (
             | "InboundMessagesProcessed"
@@ -820,7 +865,9 @@ export class RpcStubActions<
     /**
      * Record what `dispute()` uploads on a peer without sending it. With
      * `hold: true` every recorded send parks until `release`, so a second
-     * `dispute()` can be observed queueing behind the dispute mutex.
+     * `dispute()` can be observed queueing behind the dispute mutex. With
+     * `forward`, `refuseUpload` rewrites a best-effort multicall's upload so
+     * the chain refuses it (see RefusedUploadKind).
      */
     async recordDisputeSubmissions(
         peerIndex: number,
@@ -828,21 +875,16 @@ export class RpcStubActions<
             hold?: boolean;
             forward?: boolean;
             failWith?: DisputeSubmissionFailureSpec;
+            refuseUpload?: RefusedUploadKind;
         } = {}
-    ): Promise<{
-        submissions: () => Promise<RecordedDisputeSubmission[]>;
-        /** Sends parked at the hold so far. */
-        heldCount: () => Promise<number>;
-        waitUntilHeld: (timeoutMs?: number) => Promise<void>;
-        release: () => Promise<void>;
-        restore: () => Promise<void>;
-    }> {
+    ): Promise<DisputeSubmissionRecording> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl()
             .stubRecordDisputeSubmissions(
                 options.hold ?? false,
                 options.failWith,
-                options.forward ?? false
+                options.forward ?? false,
+                options.refuseUpload
             )
             .request();
         const recorded = () => ctl().getRecordedDisputeSubmissions().request();
@@ -936,6 +978,61 @@ export class RpcStubActions<
             estimates: () => ctl().getRecordedReplayGasEstimates().request(),
             restore: async () => {
                 await ctl().restoreScaleReplayGasEstimates().request();
+            }
+        };
+    }
+
+    /**
+     * Answer a peer's best-effort dispute multicall estimate so its gas limit
+     * is the least at which the call succeeds; the all-or-nothing estimate
+     * before it is recorded with its refusal.
+     */
+    async answerMinimumBestEffortEstimate(peerIndex: number): Promise<{
+        estimates: () => Promise<RecordedBestEffortEstimate[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubMinimumBestEffortEstimate().request();
+        return {
+            estimates: () => ctl().getRecordedBestEffortEstimates().request(),
+            restore: async () => {
+                await ctl().restoreMinimumBestEffortEstimate().request();
+            }
+        };
+    }
+
+    /**
+     * Count a peer's local outbound-run verdicts in its dispute audits.
+     * `holdFirst` parks the first until `release`; `answerInvalid` answers
+     * every verdict with an invalid run.
+     */
+    async probeOutboundRunVerification(
+        peerIndex: number,
+        options: { holdFirst?: boolean; answerInvalid?: boolean }
+    ): Promise<{
+        calls: () => Promise<number>;
+        waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        release: () => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl()
+            .stubOutboundRunVerification(
+                options.holdFirst ?? false,
+                options.answerInvalid ?? false
+            )
+            .request();
+        const calls = () => ctl().getOutboundRunVerificationCount().request();
+        return {
+            calls,
+            waitUntilHeld: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) => waitFor(async () => (await calls()) > 0, timeoutMs),
+            release: async () => {
+                await ctl().releaseOutboundRunVerification().request();
+            },
+            restore: async () => {
+                await ctl().restoreOutboundRunVerification().request();
             }
         };
     }
@@ -1090,6 +1187,26 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Send a peer's first reduce with too little gas, so it is mined and
+     * reverts out of gas; later sends run for real.
+     */
+    async underfundFirstReducePost(peerIndex: number): Promise<{
+        /** Mined status of each reduce send: 1 success, 0 failure, null not mined. */
+        sendStatuses: () => Promise<(number | null)[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubUnderfundFirstReducePost().request();
+        return {
+            sendStatuses: async () =>
+                await ctl().getReduceSendStatuses().request(),
+            restore: async () => {
+                await ctl().restoreUnderfundedReducePost().request();
+            }
+        };
+    }
+
     async restoreDisputeInitiationAndDispute(
         peerIndex: number,
         forkId: ForkId
@@ -1146,6 +1263,20 @@ export class RpcStubActions<
     }
 
     /**
+     * Resolve once no `dispute()` holds or waits on the peer's dispute mutex
+     * and no dispute event is still being handled.
+     */
+    async waitUntilDisputeMutexIdle(
+        peerIndex: number,
+        timeoutMs = this.harness.event.protocolEventTimeoutMs()
+    ): Promise<void> {
+        await waitFor(
+            () => this.peerStub(peerIndex).isDisputeMutexIdle().request(),
+            timeoutMs
+        );
+    }
+
+    /**
      * Park a peer's `constructDispute` at its first async boundary (the state
      * proof read) for `forkId`. `waitUntilParked` resolves once a construction
      * is actually held, so a test can land a real fraud proof inside the window
@@ -1154,11 +1285,7 @@ export class RpcStubActions<
     async holdConstructDisputeAtStateProof(
         peerIndex: number,
         forkId: ForkId
-    ): Promise<{
-        waitUntilParked: (timeoutMs?: number) => Promise<void>;
-        parkedCount: () => Promise<number>;
-        release: () => Promise<void>;
-    }> {
+    ): Promise<ConstructDisputeHold> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().stubPauseConstructDisputeAtStateProof(forkId).request();
         this.logger.debug(
@@ -1168,9 +1295,15 @@ export class RpcStubActions<
             (await ctl().getPausedConstructDisputeStatus().request()).entered;
         return {
             parkedCount,
+            uploadConstructions: async () =>
+                (await ctl().getPausedConstructDisputeStatus().request())
+                    .uploadConstructions,
             waitUntilParked: (
                 timeoutMs = this.harness.event.protocolEventTimeoutMs()
             ) => waitFor(async () => (await parkedCount()) > 0, timeoutMs),
+            resume: async () => {
+                await ctl().releasePausedConstructDispute().request();
+            },
             release: async () => {
                 await ctl().restorePausedConstructDispute().request();
             }

@@ -1,11 +1,6 @@
-# test/e2e/E2E-SpectateStaleProofGuard.test.ts — Test Report
+# E2E-SpectateStaleProofGuard.test.ts
 
-> **Test file:** [test/e2e/E2E-SpectateStaleProofGuard.test.ts](../../../../../../test/e2e/E2E-SpectateStaleProofGuard.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-SpectateStaleProofGuard.test.ts](../../../../../../test/e2e/E2E-SpectateStaleProofGuard.test.ts)
 
 ## Overview
 
@@ -23,15 +18,8 @@ into one-scenario IDs, so each test now carries the per-step, per-role permutati
 decode failure and the stale short-circuit for both requester roles — alongside the repeated-abort
 cleanliness permutation.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: Spectate stale-proof guard > aborts sync when on-chain snapshot is more advanced than what participant proved`](../../../../../../test/e2e/E2E-SpectateStaleProofGuard.test.ts#L8) (line 8)              | [`INV-SYNC-3-A7A2ED.T1.P2`](../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p2), [`INV-SYNC-3-A7A2ED.T1.P13`](../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p13), [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P3`](../../../../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p3), [`INV-SPC-1-ZV8QM5.T1.P3`](../../../../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-1-zv8qm5.t1.p3), [`INV-SPC-4-WVXS19.T1.P4`](../../../../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-4-wvxs19.t1.p4), [`REQ-MSG-9-BFN9P5.T1.P3`](../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5.t1.p3) |
-| [`E2E: Spectate stale-proof guard > aborts sync when a peer answers with undecodable junk bytes`](../../../../../../test/e2e/E2E-SpectateStaleProofGuard.test.ts#L62) (line 62)                                 | [`INV-SYNC-3-A7A2ED.T1.P1`](../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p1), [`INV-SPC-4-WVXS19.T1.P3`](../../../../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-4-wvxs19.t1.p3), [`REQ-MSG-9-BFN9P5.T1.P2`](../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5.t1.p2)                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| [`E2E: Spectate stale-proof guard > blacklists the responder when a participant receives a proof behind the on-chain snapshot`](../../../../../../test/e2e/E2E-SpectateStaleProofGuard.test.ts#L105) (line 105) | [`INV-SYNC-3-A7A2ED.T1.P14`](../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p14), [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P12`](../../../../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p12)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+- `aborts sync when on-chain snapshot is more advanced than what participant proved`: INV-SYNC-3-A7A2ED.T1.P2, INV-SYNC-3-A7A2ED.T1.P13, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P3, INV-SPC-1-ZV8QM5.T1.P3, INV-SPC-4-WVXS19.T1.P4, REQ-MSG-9-BFN9P5.T1.P3
+- `aborts sync when a peer answers with undecodable junk bytes`: INV-SYNC-3-A7A2ED.T1.P1, INV-SPC-4-WVXS19.T1.P3, REQ-MSG-9-BFN9P5.T1.P2
+- `blacklists the responder when a participant receives a proof behind the on-chain snapshot`: INV-SYNC-3-A7A2ED.T1.P14, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P12

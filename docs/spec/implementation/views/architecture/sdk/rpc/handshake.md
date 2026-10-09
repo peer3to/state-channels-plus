@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/architecture/rpc.md](../../../../../specification/peer-communication/rpc.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The `initHandshakeService` RPC service: the challenge/response protocol that proves a
 > transport-level counterparty controls a claimed EVM key, the only service that runs _before_ the
 > handshake guard admits anything, and the point at which a raw transport becomes an authenticated
@@ -17,12 +16,12 @@ Related: [../components.md](../components.md) §2 (service summary), [./README.m
 
 Code (paths relative to this file; repo root = `../../../../../`):
 
-- [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L4)
-- [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L5)
+- [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L27)
+- [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L12)
 - [src/rpc/network/guards/HandshakeCompletedGuard.ts](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L1)
 - callers: [src/transport/HolepunchTransport.ts](../../../../../../../src/transport/HolepunchTransport.ts#L1),
   [src/transport/WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts#L1),
-  [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L5)
+  [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L74)
 - state consumers: [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1),
   [src/ProfileManager.ts](../../../../../../../src/ProfileManager.ts#L1),
   [src/PeerProfile.ts](../../../../../../../src/PeerProfile.ts#L1)
@@ -35,7 +34,7 @@ Establishing a transport ([`src/transport/`](../../../../../../../src/transport)
 pipe to an unauthenticated counterparty. Nothing about a fresh `HolepunchTransport`,
 `WebRTCTransport`, or `LocalTransport` tells the node _who_ is on the other end: the discovery and
 NAT-traversal layers advertise an EVM address as plaintext registration metadata
-([`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L32) registration carries
+([`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L625) registration carries
 an address string), but they do not write it to `transport.peerAddress` or bind it to control of the
 corresponding private key. `InitHandshakeService` is the mechanism that supplies that proof.
 
@@ -43,9 +42,9 @@ Its place in the lifecycle:
 
 1. A transport is constructed. Every network transport immediately calls
    `initHandshakeService.initHandshake(this)` from its constructor / channel-open hook
-   ([`HolepunchTransport`](../../../../../../../src/transport/HolepunchTransport.ts#L5) line 24,
-   [`WebRTCTransport.startHandshake`](../../../../../../../src/transport/WebRTCTransport.ts#L48) line 51,
-   [`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L32) lines 600/978).
+   ([`HolepunchTransport`](../../../../../../../src/transport/HolepunchTransport.ts#L26) line 26,
+   [`WebRTCTransport.startHandshake`](../../../../../../../src/transport/WebRTCTransport.ts#L57) line 57,
+   [`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L765) lines 765/1310).
    Both peers do this, so **two challenge/response exchanges cross the same transport, one per
    direction**.
 2. The service is the _only_ built-in that carries no `HandshakeCompletedGuard` — it is the
@@ -95,7 +94,7 @@ proof (§4).
 
 ## 3. Algorithm, per method and per role
 
-Two public `RpcMethods` endpoints exist ([`InitHandshakeRpcMethods`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L11)):
+Two public `RpcMethods` endpoints exist ([`InitHandshakeRpcMethods`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L12)):
 `onInitHandshakeRequest` (request/response) and `onInitHandshakeAck` (fire-and-forget). The initiator
 half (`runHandshake`, `handleHandshakeResponse`) lives on the service and is _not_ remotely callable —
 it is driven locally by `initHandshake(transport)`.
@@ -113,7 +112,7 @@ signer           = ethers.verifyMessage(message, signature)
 
 `buildHandshakeChallengeMessage` uses `hexlify` so initiator (local) and responder (wire) derive an
 identical string regardless of input casing. The domain tag is the single versioned identifier on the
-wire (`peer3:init-handshake:v1`, [`REQ-SDK-3-91XMZR`](../components.md#req-sdk-3-91xmzr)); it scopes exactly one message type and is the
+wire (`peer3:init-handshake:v1`, [`REQ-SDK-3-91XMZR` (Domain-tagged handshake signatures)](../components.md#req-sdk-3-91xmzr)); it scopes exactly one message type and is the
 **signing-oracle defense**: protocol blocks are EIP-191 signatures over a _raw 32-byte keccak hash_,
 so a signature over a domain-prefixed string is structurally incapable of colliding with a block
 signature even when the peer sets `challengeHash = keccak256(encodedBlock)` (§4, [`INV-HSK-2-XCP7A2`](handshake.md#inv-hsk-2-xcp7a2), and the
@@ -124,7 +123,7 @@ signature even when the peer sets `challengeHash = keccak256(encodedBlock)` (§4
 Inputs: `challengeHash` (peer-chosen), `time` (peer's claimed clock, seconds). Return: `HandshakeResponse
 = { signature, responseTime, preferredTransport }`.
 
-Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)):
+Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L24)):
 
 1. **Decode / shape validation, before signing.** `!ethers.isHexString(challengeHash, 32)` or
    `!Number.isFinite(time)` → log, `disconnectConnection(senderTransport)`, `throw`. Rejecting a
@@ -360,35 +359,64 @@ across a new SDK handle or process restart is still an open policy decision.
 
 ## 6. Invariants
 
-| ID                                              | Invariant                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-hsk-1-r44cn1"></a>`INV-HSK-1-R44CN1` | A transport receives `peerAddress` only after this node both (a) verified the peer's signature over the domain-tagged challenge _it_ generated and (b) received the peer's ack, with the peer's preferred transport known — i.e. both directions completed on the transport. |
-| <a id="inv-hsk-2-xcp7a2"></a>`INV-HSK-2-XCP7A2` | The responder signs only `peer3:init-handshake:v1:<hexlified challenge>`, never a bare 32-byte hash; a handshake signature cannot collide with a block signature.                                                                                                            |
-| <a id="inv-hsk-3-z4wbjg"></a>`INV-HSK-3-Z4WBJG` | A request with a non-32-byte challenge or non-finite time is rejected before any signing action.                                                                                                                                                                             |
-| <a id="inv-hsk-4-fdm91w"></a>`INV-HSK-4-FDM91W` | The `challengeHash` carried on an ack is diagnostic only and never authenticates or authorizes anything.                                                                                                                                                                     |
-| <a id="inv-hsk-5-3e60dy"></a>`INV-HSK-5-3E60DY` | Request and response are accepted only within one `agreementTime` skew window (request time, RTT, and response-timestamp checks).                                                                                                                                            |
-| <a id="req-hsk-1-y9jqs3"></a>`REQ-HSK-1-Y9JQS3` | `initHandshakeService` carries no guard and every endpoint MUST be safe against wholly unauthenticated, adversarial input (pre-authentication ingress).                                                                                                                      |
-| <a id="req-hsk-2-mdnh4n"></a>`REQ-HSK-2-MDNH4N` | Any message the node signs on behalf of an unauthenticated caller MUST be domain-separated so it cannot be reused in another signature domain (signing-oracle hygiene).                                                                                                      |
+<a id="inv-hsk-1-r44cn1"></a>
+
+### INV-HSK-1-R44CN1 — Address bound only after mutual verification
+
+A transport receives `peerAddress` only after this node both (a) verified the peer's signature over the domain-tagged challenge _it_ generated and (b) received the peer's ack, with the peer's preferred transport known — i.e. both directions completed on the transport.
+
+- [x] `INV-HSK-1-R44CN1.T1.P1` — valid case
+
+<a id="inv-hsk-2-xcp7a2"></a>
+
+### INV-HSK-2-XCP7A2 — Domain-tagged handshake signing
+
+The responder signs only `peer3:init-handshake:v1:<hexlified challenge>`, never a bare 32-byte hash; a handshake signature cannot collide with a block signature.
+
+<a id="inv-hsk-3-z4wbjg"></a>
+
+### INV-HSK-3-Z4WBJG — Malformed requests rejected before signing
+
+A request with a non-32-byte challenge or non-finite time is rejected before any signing action.
+
+<a id="inv-hsk-4-fdm91w"></a>
+
+### INV-HSK-4-FDM91W — Ack challenge hash is diagnostic only
+
+The `challengeHash` carried on an ack is diagnostic only and never authenticates or authorizes anything.
+
+<a id="inv-hsk-5-3e60dy"></a>
+
+### INV-HSK-5-3E60DY — One agreementTime skew window
+
+Request and response are accepted only within one `agreementTime` skew window (request time, RTT, and response-timestamp checks).
+
+- [x] `INV-HSK-5-3E60DY.T1.P1` — valid case
+- [x] `INV-HSK-5-3E60DY.T1.P3` — direct invalid/opposite
+- [x] `INV-HSK-5-3E60DY.T1.P5` — after deadline
+- [x] `INV-HSK-5-3E60DY.T1.P7` — response timestamp outside agreement window
+
+<a id="req-hsk-1-y9jqs3"></a>
+
+### REQ-HSK-1-Y9JQS3 — Unguarded endpoints tolerate adversarial input
+
+`initHandshakeService` carries no guard and every endpoint MUST be safe against wholly unauthenticated, adversarial input (pre-authentication ingress).
+
+- [x] `REQ-HSK-1-Y9JQS3.T1.P1` — valid case
+- [x] `REQ-HSK-1-Y9JQS3.T1.P3` — direct invalid/opposite
+- [x] `REQ-HSK-1-Y9JQS3.T1.P5` — failure/recovery
+
+<a id="req-hsk-2-mdnh4n"></a>
+
+### REQ-HSK-2-MDNH4N — Domain-separated signing for unauthenticated callers
+
+Any message the node signs on behalf of an unauthenticated caller MUST be domain-separated so it cannot be reused in another signature domain (signing-oracle hygiene).
 
 ---
 
 ## 7. Verification
 
 ---
-
-### Implementation test plan
-
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
-
-| Plan item                                             | Requirement / invariant                             | Setup and stimulus                                                                                                      | Expected result                                                                                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-hsk-1-r44cn1.t1"></a>`INV-HSK-1-R44CN1.T1` | [`INV-HSK-1-R44CN1`](handshake.md#inv-hsk-1-r44cn1) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Profile completes only after verify + ack + preferred-transport on the transport (both directions). | <a id="inv-hsk-1-r44cn1.t1.p1"></a>`INV-HSK-1-R44CN1.T1.P1` — valid case<br><a id="inv-hsk-1-r44cn1.t1.p2"></a>`INV-HSK-1-R44CN1.T1.P2` — zero/empty/no-op where meaningful<br><a id="inv-hsk-1-r44cn1.t1.p3"></a>`INV-HSK-1-R44CN1.T1.P3` — direct invalid/opposite<br><a id="inv-hsk-1-r44cn1.t1.p4"></a>`INV-HSK-1-R44CN1.T1.P4` — exact boundary<br><a id="inv-hsk-1-r44cn1.t1.p5"></a>`INV-HSK-1-R44CN1.T1.P5` — failure/recovery<br><a id="inv-hsk-1-r44cn1.t1.p6"></a>`INV-HSK-1-R44CN1.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="inv-hsk-2-xcp7a2.t1"></a>`INV-HSK-2-XCP7A2.T1` | [`INV-HSK-2-XCP7A2`](handshake.md#inv-hsk-2-xcp7a2) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Responder signs the domain-tagged message; no block-signature collision.                            | <a id="inv-hsk-2-xcp7a2.t1.p1"></a>`INV-HSK-2-XCP7A2.T1.P1` — valid case<br><a id="inv-hsk-2-xcp7a2.t1.p2"></a>`INV-HSK-2-XCP7A2.T1.P2` — correct identity/signature<br><a id="inv-hsk-2-xcp7a2.t1.p3"></a>`INV-HSK-2-XCP7A2.T1.P3` — direct invalid/opposite<br><a id="inv-hsk-2-xcp7a2.t1.p4"></a>`INV-HSK-2-XCP7A2.T1.P4` — wrong identity/signature<br><a id="inv-hsk-2-xcp7a2.t1.p5"></a>`INV-HSK-2-XCP7A2.T1.P5` — missing identity/signature<br><a id="inv-hsk-2-xcp7a2.t1.p6"></a>`INV-HSK-2-XCP7A2.T1.P6` — duplicate identity/signature<br><a id="inv-hsk-2-xcp7a2.t1.p7"></a>`INV-HSK-2-XCP7A2.T1.P7` — forged identity/signature<br><a id="inv-hsk-2-xcp7a2.t1.p8"></a>`INV-HSK-2-XCP7A2.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| <a id="inv-hsk-3-z4wbjg.t1"></a>`INV-HSK-3-Z4WBJG.T1` | [`INV-HSK-3-Z4WBJG`](handshake.md#inv-hsk-3-z4wbjg) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Non-hex32 challenge / non-finite time rejected before signing.                                      | <a id="inv-hsk-3-z4wbjg.t1.p1"></a>`INV-HSK-3-Z4WBJG.T1.P1` — valid case<br><a id="inv-hsk-3-z4wbjg.t1.p2"></a>`INV-HSK-3-Z4WBJG.T1.P2` — correct identity/signature<br><a id="inv-hsk-3-z4wbjg.t1.p3"></a>`INV-HSK-3-Z4WBJG.T1.P3` — before deadline<br><a id="inv-hsk-3-z4wbjg.t1.p4"></a>`INV-HSK-3-Z4WBJG.T1.P4` — malformed input<br><a id="inv-hsk-3-z4wbjg.t1.p5"></a>`INV-HSK-3-Z4WBJG.T1.P5` — direct invalid/opposite<br><a id="inv-hsk-3-z4wbjg.t1.p6"></a>`INV-HSK-3-Z4WBJG.T1.P6` — wrong identity/signature<br><a id="inv-hsk-3-z4wbjg.t1.p7"></a>`INV-HSK-3-Z4WBJG.T1.P7` — missing identity/signature<br><a id="inv-hsk-3-z4wbjg.t1.p8"></a>`INV-HSK-3-Z4WBJG.T1.P8` — duplicate identity/signature<br><a id="inv-hsk-3-z4wbjg.t1.p9"></a>`INV-HSK-3-Z4WBJG.T1.P9` — forged identity/signature<br><a id="inv-hsk-3-z4wbjg.t1.p10"></a>`INV-HSK-3-Z4WBJG.T1.P10` — membership boundary<br><a id="inv-hsk-3-z4wbjg.t1.p11"></a>`INV-HSK-3-Z4WBJG.T1.P11` — at deadline<br><a id="inv-hsk-3-z4wbjg.t1.p12"></a>`INV-HSK-3-Z4WBJG.T1.P12` — after deadline<br><a id="inv-hsk-3-z4wbjg.t1.p13"></a>`INV-HSK-3-Z4WBJG.T1.P13` — maximum honest skew<br><a id="inv-hsk-3-z4wbjg.t1.p14"></a>`INV-HSK-3-Z4WBJG.T1.P14` — adversarial input<br><a id="inv-hsk-3-z4wbjg.t1.p15"></a>`INV-HSK-3-Z4WBJG.T1.P15` — partial failure<br><a id="inv-hsk-3-z4wbjg.t1.p16"></a>`INV-HSK-3-Z4WBJG.T1.P16` — retry and recovery |
-| <a id="inv-hsk-4-fdm91w.t1"></a>`INV-HSK-4-FDM91W.T1` | [`INV-HSK-4-FDM91W`](handshake.md#inv-hsk-4-fdm91w) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Ack `challengeHash` is diagnostic only, never trusted.                                              | <a id="inv-hsk-4-fdm91w.t1.p1"></a>`INV-HSK-4-FDM91W.T1.P1` — valid case<br><a id="inv-hsk-4-fdm91w.t1.p2"></a>`INV-HSK-4-FDM91W.T1.P2` — matching commitment<br><a id="inv-hsk-4-fdm91w.t1.p3"></a>`INV-HSK-4-FDM91W.T1.P3` — direct invalid/opposite<br><a id="inv-hsk-4-fdm91w.t1.p4"></a>`INV-HSK-4-FDM91W.T1.P4` — mismatched commitment<br><a id="inv-hsk-4-fdm91w.t1.p5"></a>`INV-HSK-4-FDM91W.T1.P5` — predecessor case<br><a id="inv-hsk-4-fdm91w.t1.p6"></a>`INV-HSK-4-FDM91W.T1.P6` — genesis case<br><a id="inv-hsk-4-fdm91w.t1.p7"></a>`INV-HSK-4-FDM91W.T1.P7` — stale fork<br><a id="inv-hsk-4-fdm91w.t1.p8"></a>`INV-HSK-4-FDM91W.T1.P8` — foreign fork                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| <a id="inv-hsk-5-3e60dy.t1"></a>`INV-HSK-5-3E60DY.T1` | [`INV-HSK-5-3E60DY`](handshake.md#inv-hsk-5-3e60dy) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Request/response accepted only within one `agreementTime` skew window.                              | <a id="inv-hsk-5-3e60dy.t1.p1"></a>`INV-HSK-5-3E60DY.T1.P1` — valid case<br><a id="inv-hsk-5-3e60dy.t1.p2"></a>`INV-HSK-5-3E60DY.T1.P2` — before deadline<br><a id="inv-hsk-5-3e60dy.t1.p3"></a>`INV-HSK-5-3E60DY.T1.P3` — direct invalid/opposite<br><a id="inv-hsk-5-3e60dy.t1.p4"></a>`INV-HSK-5-3E60DY.T1.P4` — at deadline<br><a id="inv-hsk-5-3e60dy.t1.p5"></a>`INV-HSK-5-3E60DY.T1.P5` — after deadline<br><a id="inv-hsk-5-3e60dy.t1.p6"></a>`INV-HSK-5-3E60DY.T1.P6` — maximum honest skew<br><a id="inv-hsk-5-3e60dy.t1.p7"></a>`INV-HSK-5-3E60DY.T1.P7` — response timestamp outside agreement window                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| <a id="req-hsk-1-y9jqs3.t1"></a>`REQ-HSK-1-Y9JQS3.T1` | [`REQ-HSK-1-Y9JQS3`](handshake.md#req-hsk-1-y9jqs3) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Unguarded service; every endpoint safe against unauthenticated adversarial input.                   | <a id="req-hsk-1-y9jqs3.t1.p1"></a>`REQ-HSK-1-Y9JQS3.T1.P1` — valid case<br><a id="req-hsk-1-y9jqs3.t1.p2"></a>`REQ-HSK-1-Y9JQS3.T1.P2` — zero/empty/no-op where meaningful<br><a id="req-hsk-1-y9jqs3.t1.p3"></a>`REQ-HSK-1-Y9JQS3.T1.P3` — direct invalid/opposite<br><a id="req-hsk-1-y9jqs3.t1.p4"></a>`REQ-HSK-1-Y9JQS3.T1.P4` — exact boundary<br><a id="req-hsk-1-y9jqs3.t1.p5"></a>`REQ-HSK-1-Y9JQS3.T1.P5` — failure/recovery<br><a id="req-hsk-1-y9jqs3.t1.p6"></a>`REQ-HSK-1-Y9JQS3.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="req-hsk-2-mdnh4n.t1"></a>`REQ-HSK-2-MDNH4N.T1` | [`REQ-HSK-2-MDNH4N`](handshake.md#req-hsk-2-mdnh4n) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Messages signed for unauthenticated callers are domain-separated.                                   | <a id="req-hsk-2-mdnh4n.t1.p1"></a>`REQ-HSK-2-MDNH4N.T1.P1` — valid case<br><a id="req-hsk-2-mdnh4n.t1.p2"></a>`REQ-HSK-2-MDNH4N.T1.P2` — correct identity/signature<br><a id="req-hsk-2-mdnh4n.t1.p3"></a>`REQ-HSK-2-MDNH4N.T1.P3` — direct invalid/opposite<br><a id="req-hsk-2-mdnh4n.t1.p4"></a>`REQ-HSK-2-MDNH4N.T1.P4` — wrong identity/signature<br><a id="req-hsk-2-mdnh4n.t1.p5"></a>`REQ-HSK-2-MDNH4N.T1.P5` — missing identity/signature<br><a id="req-hsk-2-mdnh4n.t1.p6"></a>`REQ-HSK-2-MDNH4N.T1.P6` — duplicate identity/signature<br><a id="req-hsk-2-mdnh4n.t1.p7"></a>`REQ-HSK-2-MDNH4N.T1.P7` — forged identity/signature<br><a id="req-hsk-2-mdnh4n.t1.p8"></a>`REQ-HSK-2-MDNH4N.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ## Future Work
 
@@ -404,18 +432,6 @@ _Non-normative._
   [./README.md](./README.md) §9), with handshake traffic prioritized above bulk sync.
 
 ---
-
-## Implementation traceability
-
-| Requirement / invariant                             | Statement                                                                                           | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                | Gap / divergence |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-HSK-1-R44CN1`](handshake.md#inv-hsk-1-r44cn1) | Profile completes only after verify + ack + preferred-transport on the transport (both directions). | Covered               | [InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L409)                                                                                                                               | None.            |
-| [`INV-HSK-2-XCP7A2`](handshake.md#inv-hsk-2-xcp7a2) | Responder signs the domain-tagged message; no block-signature collision.                            | Covered               | [InitHandshakeService.buildHandshakeChallengeMessage / HANDSHAKE_DOMAIN](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L72)                                                                                                                      | None.            |
-| [`INV-HSK-3-Z4WBJG`](handshake.md#inv-hsk-3-z4wbjg) | Non-hex32 challenge / non-finite time rejected before signing.                                      | Covered               | [InitHandshakeRpcMethods.onInitHandshakeRequest](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)                                                                                                                                           | None.            |
-| [`INV-HSK-4-FDM91W`](handshake.md#inv-hsk-4-fdm91w) | Ack `challengeHash` is diagnostic only, never trusted.                                              | Covered               | [InitHandshakeRpcMethods.onInitHandshakeAck](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L114)                                                                                                                                              | None.            |
-| [`INV-HSK-5-3E60DY`](handshake.md#inv-hsk-5-3e60dy) | Request/response accepted only within one `agreementTime` skew window.                              | Covered               | [InitHandshakeRpcMethods.onInitHandshakeRequest](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25), [InitHandshakeService.handleHandshakeResponse](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L172) | None.            |
-| [`REQ-HSK-1-Y9JQS3`](handshake.md#req-hsk-1-y9jqs3) | Unguarded service; every endpoint safe against unauthenticated adversarial input.                   | Covered               | [InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L1) (no `this.guards`)                                                                                                                                                   | None.            |
-| [`REQ-HSK-2-MDNH4N`](handshake.md#req-hsk-2-mdnh4n) | Messages signed for unauthenticated callers are domain-separated.                                   | Covered               | [InitHandshakeService.HANDSHAKE_DOMAIN](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L1)                                                                                                                                                        | None.            |
 
 ## Shared operation ownership
 

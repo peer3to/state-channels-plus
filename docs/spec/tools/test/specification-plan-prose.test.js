@@ -89,9 +89,14 @@ test("normalizer restores prose definitions and references and is byte-stable", 
     try {
         const root = path.join(dir, "docs/spec");
         fs.mkdirSync(path.join(root, "specification"), { recursive: true });
+        fs.mkdirSync(path.join(root, "verification"), { recursive: true });
         fs.cpSync(path.join(__dirname, ".."), path.join(root, "tools"), {
             recursive: true
         });
+        fs.symlinkSync(
+            path.resolve(__dirname, "../../../../node_modules"),
+            path.join(dir, "node_modules")
+        );
         const file = path.join(root, "specification/prose.md");
         const requirement = id.split(".T")[0];
         fs.writeFileSync(

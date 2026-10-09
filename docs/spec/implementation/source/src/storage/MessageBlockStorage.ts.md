@@ -1,103 +1,42 @@
-# MessageBlockStorage.ts — Source Report
+# MessageBlockStorage.ts
 
-> **Source:** [src/storage/MessageBlockStorage.ts](../../../../../../src/storage/MessageBlockStorage.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/storage/MessageBlockStorage.ts](../../../../../../src/storage/MessageBlockStorage.ts)
+>
 > **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+  Contradicts: Tip clause: `>=` lets an equal-height store repoint the tip (spec requires strictly newer). See [`FIND-STORAGE-2-NK2XBF`](../../../../audit/open-findings.md#find-storage-2-nk2xbf).
+- [`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)
+- [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../../../../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 
-## Responsibility and observable boundary
+## UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1
 
-One hash-linked message-block chain (the facade instantiates it twice: inbound and outbound):
-blocks keyed by the hash of their canonical encoding, a latest-tip pointer (hash and height),
-and backward `[upper, lower)` range reads following `previousBlockHash` linkage.
+Store and tip semantics
 
-## Key design decisions
+- Setup: Store extending, equal-height, historical, duplicate, and justPersist blocks in both instances
+- Oracle: Addressing exact; duplicates idempotent; tip behavior documented incl. the equal-height divergence; instances isolated
 
-1. **Content addressing with a caller-hash escape.** The key defaults to the canonical-encoding
-   hash; a caller-supplied hash is trusted per the producer-guarantee rule ([#L28](../../../../../../src/storage/MessageBlockStorage.ts#L28)).
-2. **`justPersist` skips the tip.** Backfill imports store without touching the latest pointer
-   ([#L38](../../../../../../src/storage/MessageBlockStorage.ts#L38)).
-3. **Tolerant and strict range surfaces share one linkage walk.** The tolerant read returns the
-   linked suffix plus `missingBlockHash`; the strict read rejects any incomplete range. Completion
-   requires reaching the requested lower boundary ([#L97](../../../../../../src/storage/MessageBlockStorage.ts#L97), [#L138](../../../../../../src/storage/MessageBlockStorage.ts#L138)).
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1` — tip advance on extension
+- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P2` — equal-height store (documents divergence)
+- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P3` — justPersist leaves tip
+- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P4` — duplicate idempotent
+- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P5` — instance isolation
 
-## Inputs, outputs, state, and side effects
+## UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV
 
-| Aspect       | Contents                                                         |
-| ------------ | ---------------------------------------------------------------- |
-| Inputs       | Message blocks (optional hash/justPersist); range/tip queries.   |
-| Outputs      | Blocks by hash; latest tip hash/height; backward linked ranges.  |
-| Owned state  | `blockMap`, `latestBlockHash`, `latestBlockHeight` per instance. |
-| Side effects | None.                                                            |
+Range reads
 
-## Linked requirements
+- Setup: Read complete, gapped, unlinked, zero-boundary, and strict ranges
+- Oracle: Complete ranges are exact; incomplete ranges identify the missing hash; strict reads reject them
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                    | Specification IDs                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [MessageBlockStorage.ts](../../../../../../src/storage/MessageBlockStorage.ts) | [`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7), [`REQ-MSGSTORE-2-8RDXPZ`](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Chain validity (height increments, cumulative totals) is settlement's and enforcement's to verify; this store keeps and returns what was committed.
-- The two facade instances (inbound/outbound) share no state.
-- In-memory medium for this protocol version: durability across restart is not yet provided; the
-  target contract is [durability.md](../../../../specification/storage/durability.md).
-
-## Specification adherence
-
-- Content-addressed storage with idempotent duplicate stores ([`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7), addressing clause).
-- Backward `[upper, lower)` walks follow linkage only, return an explicit incomplete marker on a
-  gap or unmet lower boundary, and let strict callers reject the partial result
-  ([`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)).
-
-## Specification contradictions
-
-One divergence remains:
-
-1. **Tip update uses `>=`.** [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) says the tip advances only when the height
-   _exceeds_ the current tip; the code replaces the tip on equal height too ([#L41](../../../../../../src/storage/MessageBlockStorage.ts#L41)).
-   Benign while heights are unique per honest stream, but an equal-height store silently
-   repoints the tip.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                          | Gap / divergence                                                                            |
-| ---------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | Contradicts           | **Here:** content addressing, idempotent duplicates, `justPersist` opt-out ([#L28](../../../../../../src/storage/MessageBlockStorage.ts#L28)).                                                                                                                                                                                    | Tip clause: `>=` lets an equal-height store repoint the tip (spec requires strictly newer). |
-| [`REQ-MSGSTORE-2-8RDXPZ`](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) | Covered               | **Here:** tolerant linkage walks expose the proven suffix and missing boundary; strict reads reject incomplete ranges ([#L97](../../../../../../src/storage/MessageBlockStorage.ts#L97), [#L104](../../../../../../src/storage/MessageBlockStorage.ts#L104), [#L138](../../../../../../src/storage/MessageBlockStorage.ts#L138)). | None.                                                                                       |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                    | Obligation              | Public entry and setup                                                                         | Oracle and forbidden effects                                                                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-message-block-storage-1-ehbrd1"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1` | Store and tip semantics | Store extending, equal-height, historical, duplicate, and justPersist blocks in both instances | Addressing exact; duplicates idempotent; tip behavior documented incl. the equal-height divergence; instances isolated | <a id="unit-test-message-block-storage-1-ehbrd1.p1"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1` — tip advance on extension; <a id="unit-test-message-block-storage-1-ehbrd1.p2"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P2` — equal-height store (documents divergence); <a id="unit-test-message-block-storage-1-ehbrd1.p3"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P3` — justPersist leaves tip; <a id="unit-test-message-block-storage-1-ehbrd1.p4"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P4` — duplicate idempotent; <a id="unit-test-message-block-storage-1-ehbrd1.p5"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P5` — instance isolation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| <a id="unit-test-message-block-storage-2-9nc6vv"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV` | Range reads             | Read complete, gapped, unlinked, zero-boundary, and strict ranges                              | Complete ranges are exact; incomplete ranges identify the missing hash; strict reads reject them                       | <a id="unit-test-message-block-storage-2-9nc6vv.p1"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P1` — complete range; <a id="unit-test-message-block-storage-2-9nc6vv.p2"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P2` — missing middle block; <a id="unit-test-message-block-storage-2-9nc6vv.p3"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P3` — bound at genesis; <a id="unit-test-message-block-storage-2-9nc6vv.p4"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P4` — unknown upper bound; <a id="unit-test-message-block-storage-2-9nc6vv.p5"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P5` — bound at tip; <a id="unit-test-message-block-storage-2-9nc6vv.p6"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P6` — equal bounds; <a id="unit-test-message-block-storage-2-9nc6vv.p7"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P7` — strict read rejects an incomplete range; <a id="unit-test-message-block-storage-2-9nc6vv.p8"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P8` — zero upper cannot satisfy a nonzero lower; <a id="unit-test-message-block-storage-2-9nc6vv.p9"></a>`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P9` — reaching zero before the requested lower is incomplete |
-
-## Related source reports
-
-- [Storage.ts](./Storage.ts.md) (instantiates inbound/outbound), [StateManager](../stateManager/StateManager.ts.md) and [DisputeManager](../disputeManager/DisputeManager.ts.md) (range consumers).
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P1` — complete range
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P2` — missing middle block
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P3` — bound at genesis
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P4` — unknown upper bound
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P5` — bound at tip
+- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P6` — equal bounds
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P7` — strict read rejects an incomplete range
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P8` — zero upper cannot satisfy a nonzero lower
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P9` — reaching zero before the requested lower is incomplete

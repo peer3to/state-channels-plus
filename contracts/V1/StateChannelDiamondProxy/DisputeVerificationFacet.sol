@@ -14,14 +14,18 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes memory latestStateMachineState,
         MessageBlock[] memory inboundMessageBlocks
     ) public returns (SnapshotData memory) {
-        address[] memory removals = _calculateRemovals(disputeInput);
-        DisputeOutputState memory disputeOutputState = generateDisputeOutputState(
-            latestStateMachineState, disputeInput.onChainSlashes, removals, inboundMessageBlocks, latestStateSnapshot
+        DisputeOutputState memory disputeOutputState = _generateDisputeOutputState(
+            latestStateMachineState,
+            disputeInput.onChainSlashes,
+            _selfRemovals(disputeInput),
+            disputeInput.timeout.participant,
+            inboundMessageBlocks,
+            latestStateSnapshot
         );
 
         bytes32 stateMachineStateHash = keccak256(disputeOutputState.encodedModifiedState);
-        // _getStateMachineParticipants fails
-        address[] memory participants = _getStateMachineParticipants(disputeOutputState.encodedModifiedState);
+        // _generateDisputeOutputState leaves the output state loaded
+        address[] memory participants = stateMachineImplementation.getParticipants();
         Balance memory totalDeposits = disputeOutputState.totalDeposits;
         Balance memory totalWithdrawals = disputeOutputState.totalWithdrawals;
         bytes32 latestOutboundBlockHash = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash;
@@ -51,77 +55,54 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes memory latestStateMachineState,
         MessageBlock[] memory inboundMessageBlocks
     ) public returns (DisputeOutputState memory outputState) {
-        address[] memory removals = _calculateRemovals(disputeInput);
-        return generateDisputeOutputState(
-            latestStateMachineState, disputeInput.onChainSlashes, removals, inboundMessageBlocks, latestStateSnapshot
+        return _generateDisputeOutputState(
+            latestStateMachineState,
+            disputeInput.onChainSlashes,
+            _selfRemovals(disputeInput),
+            disputeInput.timeout.participant,
+            inboundMessageBlocks,
+            latestStateSnapshot
         );
     }
 
+    /// Folds the committed disputes of one fork. `slashedParticipants` holds the slash candidates: the on-chain
+    /// slashes up to the dispute window end and the disputes' listed slashes, deduplicated. The fold reads no
+    /// participant set, so early, late, local and on-chain reducers fold the same candidates; only candidates that
+    /// are participants of the reduced latest state take effect (_generateDisputeOutputState).
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
-        uint256 maxSlashCount;
-        uint256 slashCount;
-        uint256 selfRemovalCount;
-        bool latestBlockInitialized;
-        address[] memory slashParticipants;
-        address[] memory selfRemovalParticipants = new address[](disputes.length);
         require(disputes.length > 0, ErrorNoDisputesProvided());
-        DisputeData storage disputeData = disputeData[disputes[0].input.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
+        bytes32 channelId = disputes[0].input.channelId;
+        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[disputes[0].input.forkId];
         uint256 disputeWindowExpirationTimestamp =
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp + _getEvidenceTime();
-        SnapshotData storage snapshotData = stateSnapshots[disputes[0].input.channelId].snapshotData;
+
+        // ***** on-chain slash candidates (recorded in time order, unique) *****
+        address[] memory onChainSlashes =
+            _getOnChainSlashedParticipantsUpToTimestamp(channelId, disputeWindowExpirationTimestamp);
+        uint256 slashCount = onChainSlashes.length;
+        for (uint256 i = 0; i < disputes.length; i++) {
+            slashCount += disputes[i].input.onChainSlashes.length;
+        }
+        address[] memory slashParticipants = new address[](slashCount);
+        for (slashCount = 0; slashCount < onChainSlashes.length; slashCount++) {
+            slashParticipants[slashCount] = onChainSlashes[slashCount];
+        }
+
+        // ***** reducedOutput.latestInboundMessageBlockHash *****
+        bytes32 inboundHash = channelBalances[channelId].latestInboundMessageBlockHash;
+        MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
+        while (inboundHash != bytes32(0) && inboundBlock.timestamp > disputeWindowExpirationTimestamp) {
+            inboundHash = inboundBlock.previousBlockHash;
+            inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
+        }
+        reducedOutput.latestInboundMessageBlockHash = inboundHash;
+        reducedOutput.latestInboundMessageBlockHeight = inboundBlock.blockHeight;
+
+        uint256 selfRemovalCount;
+        bool latestBlockInitialized;
+        address[] memory selfRemovalParticipants = new address[](disputes.length);
         for (uint256 i = 0; i < disputes.length; i++) {
             Dispute memory dispute = disputes[i];
-
-            // ***** setup / first run *****
-            if (maxSlashCount == 0) {
-                // Slash eligibility spans every signer that ever joined, not
-                // the bounded pending set: a reduction already mined for this
-                // fork moves the channel snapshot past the slashed signers, and
-                // a late reducer must still fold the same on-chain slashes.
-                address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
-                    dispute.input.channelId,
-                    channelBalances[dispute.input.channelId].latestInboundMessageBlockHash,
-                    bytes32(0)
-                );
-                address[] memory snapshotParticipants = snapshotData.participants;
-                maxSlashCount = snapshotParticipants.length + pendingParticipants.length;
-                slashParticipants = new address[](maxSlashCount);
-
-                // On-chain slashes up to dispute window end: only participants in the snapshot ∪ pending set, deduped
-                for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
-                    if (disputeData.onChainSlashes[j].timestamp > disputeWindowExpirationTimestamp) continue;
-                    address participant = disputeData.onChainSlashes[j].participant;
-                    if (
-                        !UtilityFacet(utilityFacetAddress).inParticipantUnion(
-                            participant, snapshotParticipants, pendingParticipants
-                        )
-                    ) {
-                        continue;
-                    }
-                    bool alreadySlashed = false;
-                    for (uint256 k = 0; k < slashCount; k++) {
-                        if (slashParticipants[k] == participant) {
-                            alreadySlashed = true;
-                            break;
-                        }
-                    }
-                    if (!alreadySlashed) {
-                        slashParticipants[slashCount++] = participant;
-                    }
-                }
-                // ***** reducedOutput.latestInboundMessageBlockHash *****
-                bytes32 channelId = dispute.input.channelId;
-                ChannelBalance storage cb = channelBalances[channelId];
-                bytes32 inboundHash = cb.latestInboundMessageBlockHash;
-                MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
-                while (inboundHash != bytes32(0) && inboundBlock.timestamp > disputeWindowExpirationTimestamp) {
-                    inboundHash = inboundBlock.previousBlockHash;
-                    inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
-                }
-                reducedOutput.latestInboundMessageBlockHash = inboundHash;
-                reducedOutput.latestInboundMessageBlockHeight = inboundBlock.blockHeight;
-            }
 
             // ***** reducedOutput.latestBlock *****
             // Extract the latest block from the state proof - it's either the last signed block or the last one in milestones
@@ -158,7 +139,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                         break;
                     }
                 }
-                if (!isAlreadySlashed && slashCount < maxSlashCount) {
+                if (!isAlreadySlashed) {
                     slashParticipants[slashCount++] = dispute.input.onChainSlashes[j];
                 }
             }
@@ -344,17 +325,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
             )
         );
 
-        address[] memory removals = reducedOutput.selfRemovals;
-        if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                removals, reducedOutput.timeout.participant
-            );
-        }
-
-        DisputeOutputState memory outputState = generateDisputeOutputState(
+        DisputeOutputState memory outputState = _generateDisputeOutputState(
             encodedStateMachineState,
             reducedOutput.slashedParticipants,
-            removals,
+            reducedOutput.selfRemovals,
+            reducedOutput.timeout.participant,
             inboundMessageBlocks,
             latestStateSnapshot
         );
@@ -369,7 +344,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
             SnapshotData({
                 originForkId: forkId,
                 stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-                participants: _getStateMachineParticipants(outputState.encodedModifiedState),
+                // _generateDisputeOutputState leaves the output state loaded
+                participants: stateMachineImplementation.getParticipants(),
                 latestInboundMessageBlockHash: reducedOutput.latestInboundMessageBlockHash, // Verified in _verifyInboundMessageBlocks
                 latestInboundMessageBlockHeight: reducedOutput.latestInboundMessageBlockHeight,
                 latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
@@ -382,31 +358,40 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
     }
 
-    // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
-    function generateDisputeOutputState(
+    // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute.
+    // The state is loaded into the state machine once and read back once; the output state stays loaded for the caller.
+    // A slash takes effect only for a participant of the loaded state after its joins: the fork's participant state.
+    // The state machine refuses any other slash, e.g. of a participant an ancestor fork already removed. A timeout
+    // (address(0) for none) removes its participant only when no slash took effect (slashes take precedence).
+    function _generateDisputeOutputState(
         bytes memory encodedStateMachineState,
         address[] memory slashParticipants,
         address[] memory removeParticipants,
+        address timeoutParticipant,
         MessageBlock[] memory inboundMessageBlocks,
         StateSnapshot memory latestStateSnapshot
-    ) public returns (DisputeOutputState memory outputState) {
+    ) internal returns (DisputeOutputState memory outputState) {
         outputState.totalDeposits = latestStateSnapshot.snapshotData.totalDeposits;
         outputState.totalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
 
+        stateMachineImplementation.setState(encodedStateMachineState);
+
         // Apply joins
-        (outputState.encodedModifiedState, outputState.totalDeposits) =
+        outputState.totalDeposits =
             _applyInboundMessages(encodedStateMachineState, inboundMessageBlocks, outputState.totalDeposits);
 
         // Apply slashes
-        // fails
-        ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) =
-            _applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
+        ExitChannel[] memory slashExitChannels = _applySlashesToStateMachine(slashParticipants);
+        if (timeoutParticipant != address(0) && slashExitChannels.length == 0) {
+            removeParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                removeParticipants, timeoutParticipant
+            );
+        }
 
         // Apply removals
-        ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) =
-            _removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
+        ExitChannel[] memory removalExitChannels = _removeParticipantsFromStateMachine(removeParticipants);
+
+        outputState.encodedModifiedState = stateMachineImplementation.getState();
 
         // Combine exit channels and calculate totals
         ExitChannel[] memory allExitChannels =
@@ -449,19 +434,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return totalWithdrawals;
     }
 
-    // =============================== State Proofs Verification  ===============================
-
-    function _verifyDisputeOutboundMessageBlocks(DisputeAuditingData memory disputeAuditingData)
-        internal
-        view
-        returns (bool)
-    {
-        return _verifyOutboundMessageBlocks(
-            disputeAuditingData.outboundMessageBlocks,
-            disputeAuditingData.genesisStateSnapshotData,
-            disputeAuditingData.latestStateSnapshot.snapshotData
-        );
-    }
     /**
      *
      * Useful to spectating/joining participants to prove that the channel has the right amount of funds regardless of the internal agreement of peers within it.
@@ -489,7 +461,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
      * The spectating peer can also request the state at the onChainSnapshot, but it's not needed - only the latestState balance is relevant and only that needs to be checked
      *
      */
-
     function verifyBalanceInvariantCheckSnapshot(
         bytes32 channelId,
         SnapshotData memory snapshotData,
@@ -557,20 +528,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         emit DisputeKilled(dispute.input.channelId, forkId, dispute.input.disputer, commitment);
     }
 
-    function _calculateRemovals(DisputeInput memory disputeInput) internal pure returns (address[] memory removals) {
-        //Try and combine timeout and selfRemoval -> max 2 removals per dispute
-        uint256 removalCount = 0;
-        address[] memory _removals = new address[](2);
-        // Always apply selfRemoval if set
-        if (disputeInput.selfRemoval) {
-            _removals[removalCount++] = disputeInput.disputer;
-        }
-        // Ignore timeout if unset or if there are slashes
-        if (disputeInput.onChainSlashes.length == 0 && disputeInput.timeout.participant != address(0)) {
-            _removals[removalCount++] = disputeInput.timeout.participant;
-        }
-
-        return _shrinkAddressArray(_removals, removalCount);
+    /// The dispute's self-removal: its disputer when `selfRemoval` is set.
+    function _selfRemovals(DisputeInput memory disputeInput) internal pure returns (address[] memory removals) {
+        removals = new address[](disputeInput.selfRemoval ? 1 : 0);
+        if (disputeInput.selfRemoval) removals[0] = disputeInput.disputer;
     }
 
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -603,12 +564,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return (keccak256(abi.encode(outputSnapshotData)) == dispute.outputSnapshotDataHash);
     }
 
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+    /// Slashes the participants in the loaded state machine state.
+    function _applySlashesToStateMachine(address[] memory slashedParticipants)
         internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
+        returns (ExitChannel[] memory exitChannels)
     {
         ExitChannel[] memory _exitChannels = new ExitChannel[](slashedParticipants.length);
-        stateMachineImplementation.setState(encodedState);
         uint256 slashCount = 0;
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             bool success;
@@ -620,16 +581,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
 
         exitChannels = _shrinkExitChannelArray(_exitChannels, slashCount);
-
-        return (stateMachineImplementation.getState(), exitChannels);
     }
 
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+    /// Removes the participants from the loaded state machine state.
+    function _removeParticipantsFromStateMachine(address[] memory participants)
         internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+        returns (ExitChannel[] memory)
     {
         ExitChannel[] memory _exitChannels = new ExitChannel[](participants.length);
-        stateMachineImplementation.setState(encodedState);
         uint256 removalCount = 0;
         for (uint256 i = 0; i < participants.length; i++) {
             bool success;
@@ -640,8 +599,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
 
-        ExitChannel[] memory exitChannels = _shrinkExitChannelArray(_exitChannels, removalCount);
-
-        return (stateMachineImplementation.getState(), exitChannels);
+        return _shrinkExitChannelArray(_exitChannels, removalCount);
     }
 }

@@ -1,12 +1,7 @@
-# test/unit/ContractSize.test.ts — Test Report
+# ContractSize.test.ts
 
-> **Test file:** [test/unit/ContractSize.test.ts](../../../../../../test/unit/ContractSize.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [contractSize.ts](../../../../implementation/source/src/utils/contractSize.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/ContractSize.test.ts](../../../../../../test/unit/ContractSize.test.ts)
+Exercises: [contractSize.ts](../../../../implementation/source/src/utils/contractSize.ts.md)
 
 ## Overview
 
@@ -15,16 +10,14 @@ count constructor data, reject a missing required field, and keep the local/test
 exact. A synthetic two-contract case proves runtime and initcode violations are returned together
 so one oversize contract cannot hide another.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                           | Covers                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`contract size > keeps every compiled production artifact within both deployment limits`](../../../../../../test/unit/ContractSize.test.ts#L31) (line 31) | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P1`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p1), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P1`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p1), [`REQ-CON-2-CBVFV9.T1.P1`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9.t1.p1) |
-| [`contract size > reports every production violation in one result`](../../../../../../test/unit/ContractSize.test.ts#L41) (line 41)                       | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p9), [`REQ-CON-1-ER48S7.T1.P6`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-1-er48s7.t1.p6)                                                                                                                            |
-| [`contract size > accepts 24,576 runtime bytes and rejects 24,577`](../../../../../../test/unit/ContractSize.test.ts#L70) (line 70)                        | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P2`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p2), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P2`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p2), [`REQ-CON-2-CBVFV9.T1.P2`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9.t1.p2) |
-| [`contract size > accepts 49,152 initcode bytes and rejects 49,153`](../../../../../../test/unit/ContractSize.test.ts#L79) (line 79)                       | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P3`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p3), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P3`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p3), [`REQ-CON-2-CBVFV9.T1.P3`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9.t1.p3) |
-| [`contract size > counts constructor arguments in full deployment initcode`](../../../../../../test/unit/ContractSize.test.ts#L94) (line 94)               | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P4`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p4), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P4`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p4), [`REQ-CON-2-CBVFV9.T1.P4`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9.t1.p4) |
-| [`contract size > rejects an artifact missing deployedBytecode as invalid`](../../../../../../test/unit/ContractSize.test.ts#L114) (line 114)              | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P5`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p5), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P5`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p5), [`REQ-CON-2-CBVFV9.T1.P6`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9.t1.p6) |
-| [`contract size > recognizes every explicit local or test-only exemption`](../../../../../../test/unit/ContractSize.test.ts#L131) (line 131)               | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P6`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p6), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P6`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p6), [`REQ-CON-2-CBVFV9.T1.P5`](../../../../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9.t1.p5) |
-| [`contract size > rejects stale contract-size exemptions`](../../../../../../test/unit/ContractSize.test.ts#L145) (line 145)                               | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P7`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p7), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P7`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p7)                                                                                                                             |
-| [`contract size > reports contract name, measured bytes, limit, and excess`](../../../../../../test/unit/ContractSize.test.ts#L164) (line 164)             | [`UNIT-TEST-CONTRACT-SIZE-1-MX797V.P8`](../../../../implementation/source/src/utils/contractSize.ts.md#unit-test-contract-size-1-mx797v.p8), [`REQ-CONTRACT-SIZE-1-881Q6E.T1.P8`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e.t1.p8)                                                                                                                             |
+- `keeps every compiled production artifact within both deployment limits`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P1, REQ-CONTRACT-SIZE-1-881Q6E.T1.P1, REQ-CON-2-CBVFV9.T1.P1
+- `reports every production violation in one result`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9, REQ-CON-1-ER48S7.T1.P6
+- `accepts 24,576 runtime bytes and rejects 24,577`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P2, REQ-CONTRACT-SIZE-1-881Q6E.T1.P2, REQ-CON-2-CBVFV9.T1.P2
+- `accepts 49,152 initcode bytes and rejects 49,153`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P3, REQ-CONTRACT-SIZE-1-881Q6E.T1.P3, REQ-CON-2-CBVFV9.T1.P3
+- `counts constructor arguments in full deployment initcode`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P4, REQ-CONTRACT-SIZE-1-881Q6E.T1.P4, REQ-CON-2-CBVFV9.T1.P4
+- `rejects an artifact missing deployedBytecode as invalid`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P5, REQ-CONTRACT-SIZE-1-881Q6E.T1.P5, REQ-CON-2-CBVFV9.T1.P6
+- `recognizes every explicit local or test-only exemption`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P6, REQ-CONTRACT-SIZE-1-881Q6E.T1.P6, REQ-CON-2-CBVFV9.T1.P5
+- `rejects stale contract-size exemptions`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P7, REQ-CONTRACT-SIZE-1-881Q6E.T1.P7
+- `reports contract name, measured bytes, limit, and excess`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P8, REQ-CONTRACT-SIZE-1-881Q6E.T1.P8

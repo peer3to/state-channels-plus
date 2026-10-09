@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol — Test Report
+# JoinChannelFacet.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [JoinChannelFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol)
+Exercises: [JoinChannelFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md)
 
 ## Overview
 
@@ -32,24 +27,17 @@ revert is matched against that channel and that fork — two constants with diff
 not match. Every gate rejection proves the deposit boundary was not reached; the
 deposit-failure case proves the attempted admission leaves no recorded deposit effect.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_joinChannel_slashedParticipantCannotVetoLaterJoin`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L108) (line 108)               | [`REQ-ENFADM-1-V926CA.T1.P5`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca.t1.p5), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p13) |
-| [`test_topUpBalance_slashedParticipantRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L134) (line 134)                         | [`REQ-ENFADM-2-K6K9SP.T1.P6`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp.t1.p6), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P14`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p14) |
-| [`test_joinChannel_wrongForkPinRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L158) (line 158)                                | [`REQ-ENFADM-1-V926CA.T1.P6`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca.t1.p6), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P4`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p4)   |
-| [`test_topUpBalance_unknownParticipantRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L183) (line 183)                         | [`REQ-ENFADM-2-K6K9SP.T1.P2`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp.t1.p2), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P9`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p9)   |
-| [`test_joinChannel_invalidParticipantSignatureRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L208) (line 208)                 | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P10`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p10)                                                                                                                           |
-| [`test_joinChannel_snapshotParticipantRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L236) (line 236)                         | [`REQ-ENFADM-2-K6K9SP.T1.P1`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp.t1.p1), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P8`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p8)   |
-| [`test_joinChannel_exactDeadlineAccepted`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L263) (line 263)                               | [`REQ-ENFADM-1-V926CA.T1.P3`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca.t1.p3), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P18`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p18) |
-| [`test_joinChannel_depositRevertBubblesUnchanged`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L289) (line 289)                       | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P20`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p20)                                                                                                                           |
-| [`test_joinChannel_confirmationNotThresholdSignedRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L320) (line 320)              | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P21`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p21)                                                                                                                           |
-| [`test_joinChannel_confirmationSignedByOutsiderNamesTheRecoveredSigner`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L361) (line 361) | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P22`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p22)                                                                                                                           |
-| [`test_joinChannel_disputedForkRejectionNamesChannelAndFork`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L403) (line 403)            | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P24`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p24)                                                                                                                           |
-| [`test_topUpBalance_disputedForkRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L438) (line 438)                               | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P26`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p26)                                                                                                                           |
+- `test_joinChannel_slashedParticipantCannotVetoLaterJoin`: REQ-ENFADM-1-V926CA.T1.P5, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P13
+- `test_topUpBalance_slashedParticipantRejected`: REQ-ENFADM-2-K6K9SP.T1.P6, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P14
+- `test_joinChannel_wrongForkPinRejected`: REQ-ENFADM-1-V926CA.T1.P6, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P4
+- `test_topUpBalance_unknownParticipantRejected`: REQ-ENFADM-2-K6K9SP.T1.P2, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P9
+- `test_joinChannel_invalidParticipantSignatureRejected`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P10
+- `test_joinChannel_snapshotParticipantRejected`: REQ-ENFADM-2-K6K9SP.T1.P1, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P8
+- `test_joinChannel_exactDeadlineAccepted`: REQ-ENFADM-1-V926CA.T1.P3, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P18
+- `test_joinChannel_depositRevertBubblesUnchanged`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P20
+- `test_joinChannel_confirmationNotThresholdSignedRejected`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P21
+- `test_joinChannel_confirmationSignedByOutsiderNamesTheRecoveredSigner`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P22
+- `test_joinChannel_disputedForkRejectionNamesChannelAndFork`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P24
+- `test_topUpBalance_disputedForkRejected`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P26

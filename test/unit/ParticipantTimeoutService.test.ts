@@ -10,9 +10,12 @@ import {
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry,
     assertConsecutiveMismatchRetry,
+    assertSkippedHeightNotTimedOut,
     checkTimeoutAfterDeadline,
+    skipHeightOnObserver,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
+import { assertTimeoutCheckWaitsForSyncInstall } from "@test/fixtures/PinnedSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
@@ -107,6 +110,51 @@ describe("Unit: ParticipantTimeoutService", function () {
             ).to.equal(1);
         } finally {
             await h.control(peer).stub.restoreTimeoutBuildRecording().request();
+        }
+    });
+
+    it("a later state installed during timeout construction prevents the late timeout store", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 2);
+        const peer = h.getPeer(0);
+        const forkId = h.activeForkId!;
+        for (const index of [1, 2]) await h.rpcStub.suppressTimeoutCheck(index);
+        const tasks = await h.rpcStub.recordScheduledTasks(peer.index, {
+            suppressPrefix: "participantTimeout("
+        });
+        const writer = await h.control(peer).query.getNextToWrite().request();
+        await h.control(peer).stub.holdTimeoutBuild().request();
+        const construct = h
+            .control(peer)
+            .stub.startTimeoutConstruction(writer, 2)
+            .request();
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(peer)
+                            .stub.getTimeoutBuildObservation()
+                            .request()
+                    ).entered === 1
+            );
+            await skipHeightOnObserver(h, peer.index, forkId, 2);
+            await h.control(peer).stub.releaseTimeoutBuild().request();
+            await construct;
+            expect(
+                (
+                    await h
+                        .control(peer)
+                        .stub.getTimeoutBuildObservation()
+                        .request()
+                ).stored
+            ).to.equal(0);
+            expect(
+                await h.control(peer).query.getTimeout(forkId).request()
+            ).to.equal(null);
+        } finally {
+            await h.control(peer).stub.restoreTimeoutBuildRecording().request();
+            await tasks.restore();
         }
     });
 
@@ -519,6 +567,91 @@ describe("Unit: ParticipantTimeoutService", function () {
             // timeout rather than a forced one
             expect(timeout!.isForced).to.equal(false);
         });
+
+        it("a stale stored timeout at a passed height → the next height's timeout replaces it and is disputed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2); // heights 0..1
+            const forkId = h.activeForkId!;
+            const tasks = await Promise.all(
+                [0, 1, 2].map((index) =>
+                    h.rpcStub.recordScheduledTasks(index, {
+                        suppressPrefix: "participantTimeout("
+                    })
+                )
+            );
+            await h.transition.advanceState(); // height 2
+            const writer = await h
+                .control(h.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            const observer = [0, 1, 2]
+                .map((index) => h.getPeer(index))
+                .find((peer) => peer.address !== writer)!;
+            await waitFor(
+                async () =>
+                    (await h.execOnHost(
+                        observer,
+                        (sm, args) =>
+                            sm.storage.blocks.getNextBlockHeight(args.forkId),
+                        { forkId }
+                    )) === 3
+            );
+            const passed = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 2)
+                .request();
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                // a timeout for height 2 left stored after its block arrived
+                await h.execOnHost(
+                    observer,
+                    (sm, args) =>
+                        sm.storage.timeout.storeTimeout(args.forkId, {
+                            participant: args.author,
+                            blockHeight: 2n,
+                            minTimeStamp: 0n,
+                            isForced: false,
+                            previousBlockProducer: args.zero,
+                            previousBlockProducerPostedCalldata: false,
+                            participantSignatureOnPreviousBlock: "0x"
+                        }),
+                    { forkId, author: passed!.author, zero: ZeroAddress }
+                );
+
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: 3,
+                    writer,
+                    isForced: false
+                });
+
+                const submissions = await recorder.submissions();
+                expect(submissions).to.have.length(1);
+                const { timeout } = Codec.decode(
+                    submissions[0].encodedDispute,
+                    Type.Dispute
+                ).input;
+                expect(timeout.participant).to.equal(writer);
+                expect(Number(timeout.blockHeight)).to.equal(3);
+                expect(
+                    await h.execOnHost(
+                        observer,
+                        (sm, args) => {
+                            const t = sm.storage.timeout.getTimeout(
+                                args.forkId
+                            );
+                            return [t?.participant, Number(t?.blockHeight)];
+                        },
+                        { forkId }
+                    )
+                ).to.deep.equal([writer, 3]);
+            } finally {
+                await recorder.restore();
+                for (const task of tasks) await task.restore();
+            }
+        });
     });
 
     describe("tryTimeoutParticipant → guards", function () {
@@ -608,6 +741,26 @@ describe("Unit: ParticipantTimeoutService", function () {
             );
 
             expect(await recorder.submissions()).to.deep.equal([]);
+        });
+
+        it("an installed later state skipped that height → no stored timeout, no dispute", async function () {
+            await assertSkippedHeightNotTimedOut(
+                TestSession.getHarness(),
+                false
+            );
+        });
+
+        it("a forced check for a height an installed later state skipped → no stored timeout, no dispute", async function () {
+            await assertSkippedHeightNotTimedOut(
+                TestSession.getHarness(),
+                true
+            );
+        });
+
+        it("a check fired while a sync install is held waits for it → the installed fork leaves no stored timeout, no dispute", async function () {
+            await assertTimeoutCheckWaitsForSyncInstall(
+                TestSession.getHarness()
+            );
         });
 
         it("deadline has not passed yet → reschedules instead of disputing", async function () {

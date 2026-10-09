@@ -2,12 +2,31 @@ import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, SignatureUtils, sleep, Type } from "@/utils";
+import { DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS } from "@/utils/config";
+import { prepareFirstJoinDeadline } from "@test/fixtures/JoinDeadlineStaging";
 import { assertJoinSignatureDeadlineBoundary } from "@test/fixtures/node/JoinSignatureDeadlineStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import assert from "node:assert/strict";
 
 describe("JoinChannel signature requests", function () {
+    it("a prepared first join's deadline is its chain time plus the configured lifetime; a later runtime gets the default", async function () {
+        const configured = await prepareFirstJoinDeadline(
+            TestSession.getHarness(),
+            { JOIN_CHANNEL_DEADLINE_SECONDS: 300 }
+        );
+        expect(configured.signatures).to.equal(2);
+        expect(configured.deadline).to.equal(configured.chainTimestamp + 300);
+        await TestSession.reset();
+        const standard = await prepareFirstJoinDeadline(
+            TestSession.getHarness()
+        );
+        expect(standard.signatures).to.equal(2);
+        expect(standard.deadline).to.equal(
+            standard.chainTimestamp + DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS
+        );
+    });
+
     it("rejects a signed zero balance and blacklists the requesting joiner", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);

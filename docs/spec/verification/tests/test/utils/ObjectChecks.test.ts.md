@@ -1,12 +1,7 @@
-# test/utils/ObjectChecks.test.ts — Test Report
+# ObjectChecks.test.ts
 
-> **Test file:** [test/utils/ObjectChecks.test.ts](../../../../../../test/utils/ObjectChecks.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ObjectChecks.ts](../../../../implementation/source/src/utils/ObjectChecks.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/utils/ObjectChecks.test.ts](../../../../../../test/utils/ObjectChecks.test.ts)
+Exercises: [ObjectChecks.ts](../../../../implementation/source/src/utils/ObjectChecks.ts.md)
 
 ## Overview
 
@@ -17,24 +12,22 @@ RPC-service member and value kind; and every ethers Result array/method branch. 
 constructor independence stays in `CrossModuleValues.test.ts`, so compatible cross-graph
 permutations remain assigned there without duplicate evidence.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                   | Covers                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`ObjectChecks > recognizes own and inherited properties on object values`](../../../../../../test/utils/ObjectChecks.test.ts#L19) (line 19)           | [`UNIT-TEST-OBJECT-CHECKS-2-VMPCB5.P1`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-2-vmpcb5.p1)                                                                                                                                                |
-| [`ObjectChecks > rejects missing properties and non-object values`](../../../../../../test/utils/ObjectChecks.test.ts#L26) (line 26)                   | [`UNIT-TEST-OBJECT-CHECKS-2-VMPCB5.P2`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-2-vmpcb5.p2)                                                                                                                                                |
-| [`ObjectChecks > recognizes callable own properties`](../../../../../../test/utils/ObjectChecks.test.ts#L35) (line 35)                                 | [`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P1`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-1-bhaqsx.p1)                                                                                                                                                |
-| [`ObjectChecks > recognizes callable inherited properties`](../../../../../../test/utils/ObjectChecks.test.ts#L41) (line 41)                           | [`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P2`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-1-bhaqsx.p2)                                                                                                                                                |
-| [`ObjectChecks > recognizes Object prototype methods as structural methods`](../../../../../../test/utils/ObjectChecks.test.ts#L47) (line 47)          | [`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P9`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-1-bhaqsx.p9)                                                                                                                                                |
-| [`ObjectChecks > evaluates callable accessors during method checks`](../../../../../../test/utils/ObjectChecks.test.ts#L52) (line 52)                  | [`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P10`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-1-bhaqsx.p10)                                                                                                                                              |
-| [`ObjectChecks > propagates accessor and proxy trap failures`](../../../../../../test/utils/ObjectChecks.test.ts#L62) (line 62)                        | [`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P11`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-1-bhaqsx.p11), [`UNIT-TEST-OBJECT-CHECKS-2-VMPCB5.P3`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-2-vmpcb5.p3) |
-| [`ObjectChecks > rejects non-functions, missing methods, and non-object values`](../../../../../../test/utils/ObjectChecks.test.ts#L71) (line 71)      | [`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P3`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-1-bhaqsx.p3)                                                                                                                                                |
-| [`ObjectChecks > accepts a complete RPC service shape`](../../../../../../test/utils/ObjectChecks.test.ts#L81) (line 81)                               | —                                                                                                                                                                                                                                                                                          |
-| [`ObjectChecks > rejects a missing, null, primitive, or function-valued RPC service`](../../../../../../test/utils/ObjectChecks.test.ts#L87) (line 87) | [`UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P1`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-3-3jxmp5.p1)                                                                                                                                                |
-| [`ObjectChecks > rejects missing and non-callable createRPCMethods members`](../../../../../../test/utils/ObjectChecks.test.ts#L101) (line 101)        | [`UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P2`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-3-3jxmp5.p2)                                                                                                                                                |
-| [`ObjectChecks > rejects missing, null, primitive, and function router members`](../../../../../../test/utils/ObjectChecks.test.ts#L115) (line 115)    | [`UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P3`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-3-3jxmp5.p3)                                                                                                                                                |
-| [`ObjectChecks > rejects missing and non-callable runRPC members`](../../../../../../test/utils/ObjectChecks.test.ts#L139) (line 139)                  | [`UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P4`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-3-3jxmp5.p4)                                                                                                                                                |
-| [`ObjectChecks > accepts an array with the complete ethers Result API`](../../../../../../test/utils/ObjectChecks.test.ts#L153) (line 153)             | —                                                                                                                                                                                                                                                                                          |
-| [`ObjectChecks > rejects non-array values even when they expose Result methods`](../../../../../../test/utils/ObjectChecks.test.ts#L157) (line 157)    | [`UNIT-TEST-OBJECT-CHECKS-4-NVX8KE.P1`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-4-nvx8ke.p1)                                                                                                                                                |
-| [`ObjectChecks > rejects arrays missing each required Result method`](../../../../../../test/utils/ObjectChecks.test.ts#L170) (line 170)               | [`UNIT-TEST-OBJECT-CHECKS-4-NVX8KE.P2`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-4-nvx8ke.p2)                                                                                                                                                |
-| [`ObjectChecks > rejects arrays with non-callable Result methods`](../../../../../../test/utils/ObjectChecks.test.ts#L183) (line 183)                  | [`UNIT-TEST-OBJECT-CHECKS-4-NVX8KE.P3`](../../../../implementation/source/src/utils/ObjectChecks.ts.md#unit-test-object-checks-4-nvx8ke.p3)                                                                                                                                                |
+- `recognizes own and inherited properties on object values`: UNIT-TEST-OBJECT-CHECKS-2-VMPCB5.P1
+- `rejects missing properties and non-object values`: UNIT-TEST-OBJECT-CHECKS-2-VMPCB5.P2
+- `recognizes callable own properties`: UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P1
+- `recognizes callable inherited properties`: UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P2
+- `recognizes Object prototype methods as structural methods`: UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P9
+- `evaluates callable accessors during method checks`: UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P10
+- `propagates accessor and proxy trap failures`: UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P11, UNIT-TEST-OBJECT-CHECKS-2-VMPCB5.P3
+- `rejects non-functions, missing methods, and non-object values`: UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P3
+- `accepts a complete RPC service shape`: none
+- `rejects a missing, null, primitive, or function-valued RPC service`: UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P1
+- `rejects missing and non-callable createRPCMethods members`: UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P2
+- `rejects missing, null, primitive, and function router members`: UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P3
+- `rejects missing and non-callable runRPC members`: UNIT-TEST-OBJECT-CHECKS-3-3JXMP5.P4
+- `accepts an array with the complete ethers Result API`: none
+- `rejects non-array values even when they expose Result methods`: UNIT-TEST-OBJECT-CHECKS-4-NVX8KE.P1
+- `rejects arrays missing each required Result method`: UNIT-TEST-OBJECT-CHECKS-4-NVX8KE.P2
+- `rejects arrays with non-callable Result methods`: UNIT-TEST-OBJECT-CHECKS-4-NVX8KE.P3

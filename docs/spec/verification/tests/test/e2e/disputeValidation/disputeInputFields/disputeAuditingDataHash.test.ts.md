@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts — Test Report
+# disputeAuditingDataHash.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts)
 
 ## Overview
 
@@ -22,13 +17,6 @@ lives in `disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts`. After
 atomization, this negative control is the valid-case demonstration that kill decisions stay
 grounded in the canonical Solidity predicates (no false kill on a field the path never audits).
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                                                                             | Covers                                                                                                                         |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| [`E2E: dispute validation / disputeInputFields / disputeAuditingDataHash > no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof`](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts#L15) (line 15) | [`INV-DVP-2-Q13TVQ.T1.P1`](../../../../../../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-2-q13tvq.t1.p1) |
+- `no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof`: INV-DVP-2-Q13TVQ.T1.P1

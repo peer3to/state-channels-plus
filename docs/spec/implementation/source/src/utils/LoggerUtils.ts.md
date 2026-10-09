@@ -1,106 +1,52 @@
-# LoggerUtils.ts — Source Report
+# LoggerUtils.ts
 
-> **Source:** [src/utils/LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/utils/LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts)
+>
 > **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
-## Contents
+No specified behavior: Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+## UNIT-TEST-LOGGER-UTILS-32-WMBBZA
 
-## Responsibility and observable boundary
+Enum and failed time metadata
 
-Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting). RPC endpoint metadata names an endpoint by scheme and host only, since provider URLs can carry credentials; contract-log metadata gives a log's chain coordinates.
+- Setup: Use a real logger store and captured time; inspect exact enum output, severity, message and metadata including optional prior timestamps.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Key design decisions
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1` — formats known and unknown numeric enum members without changing strings
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2` — logs objective time failure using captured time and previous timestamps
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3` — omits previous timestamp fields for subjective time failures
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P4` — Dispute proof metadata translates chain enum values 0, 1, 19 and 20 into the exact dispute-family names, including the two new counters, without using the overlapping block-fraud names
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P5` — Block-fraud metadata translates chain enum values 0, 1 and 4 into BlockDoubleSign, BlockInvalidStateTransition and ForgedInboundMessageBlock
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P6` — Unknown dispute proof value 99 and unknown block-fraud proof value 5 format as UNKNOWN(99) and UNKNOWN(5) in their separate metadata lookups
 
-Proof metadata projects milestones and latest height, with no separate signed-block count. Block metadata uses acceptedSignerAddresses so malformed evidence does not crash logging. Dispute fraud names resolve only in the dispute enum and ordinary fraud names only in its enum; unknown values display UNKNOWN(n). See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L779).
+## UNIT-TEST-LOGGER-UTILS-33-A11YBZ
 
-Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L458).
+Contract-call metadata names its selector
 
-Time-failure metadata uses the caller's captured clock value and the existing enum formatter. Dependency-free error text coercion lives in errorMessage.ts so low-level loggers and runtime clients need not import this domain graph. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L111).
+- Setup: Call `getContractCallMetadata` with calldata for a function the SDK contract surface declares, for one it does not, and for data too short to hold a selector at all.
+- Oracle: The returned selector, function name and calldata length; no other metadata field changes, and no input throws.
 
-Contract-call metadata is the single owner of selector decoding: it slices the selector and names it
-from one lazily built selector-to-name map over the merged SDK contract surface, so no second map
-exists. The lookup is a `Map.get`, total for any string, because the calldata reaching it on every
-block validation is peer-authored and must not be able to steer an ABI parse; a selector the
-surface does not declare is reported as its own hex. See
-[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L216).
+- [x] `UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P1` — undeclared selector is reported as its own hex
+- [x] `UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P2` — declared selector is reported by name
+- [x] `UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P3` — calldata shorter than a selector is returned unchanged and does not throw
 
-Block-confirmation struct metadata never throws on the bytes it logs. Its callers log refused
-confirmations (dispute replay abort, ingest decode refusal, queue intake), whose encoded block may
-not decode; `getBlockConfirmationStructMetadata` then leaves the block fields out and sets
-`undecodableBlock: true`, keeping the confirmation hash and signatures, instead of raising a decode
-error from inside the log call and replacing the caller's verdict with a throw. See
-[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L562).
+## UNIT-TEST-LOGGER-UTILS-34-HNBMFQ
 
-Dispute metadata includes the signed `requireExistingDisputeWindow` value. Logs distinguish a conditional state contribution from an independently justified dispute without changing either classification.
+Refused block confirmations log without decoding
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+- Setup: Call `getBlockConfirmationStructMetadata` with a confirmation whose block bytes do not decode.
+- Oracle: The metadata marks `undecodableBlock: true`, keeps the confirmation hash and signatures, and has no block fields; the call does not throw.
 
-## Inputs, outputs, state, and side effects
+- [x] `UNIT-TEST-LOGGER-UTILS-34-HNBMFQ.P1` — undecodable block bytes are marked instead of throwing
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+## UNIT-TEST-RPC-NODE-METADATA-1-1WC176
 
-## Linked requirements
+RPC endpoint redaction
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+- Setup: Call getRpcNodeMetadata and getRpcNodesMetadata with credential, path, query and unparseable inputs
+- Oracle: Only scheme and host remain; an unparseable URL is not repeated
 
-| Source file                                                  | Specification IDs |
-| ------------------------------------------------------------ | ----------------- |
-| [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts) |                   |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- Role-consistent with the owning views.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                            | Obligation                                       | Public entry and setup                                                                                                                                                | Oracle and forbidden effects                                                                                                               | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-logger-utils-32-wmbbza"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA`         | Enum and failed time metadata                    | Use a real logger store and captured time; inspect exact enum output, severity, message and metadata including optional prior timestamps.                             | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.                               | <a id="unit-test-logger-utils-32-wmbbza.p1"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1` — formats known and unknown numeric enum members without changing strings; <a id="unit-test-logger-utils-32-wmbbza.p2"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2` — logs objective time failure using captured time and previous timestamps; <a id="unit-test-logger-utils-32-wmbbza.p3"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3` — omits previous timestamp fields for subjective time failures<br><a id="unit-test-logger-utils-32-wmbbza.p4"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P4` — Dispute proof metadata translates chain enum values 0, 1, 19 and 20 into the exact dispute-family names, including the two new counters, without using the overlapping block-fraud names.<br><a id="unit-test-logger-utils-32-wmbbza.p5"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P5` — Block-fraud metadata translates chain enum values 0, 1 and 4 into BlockDoubleSign, BlockInvalidStateTransition and ForgedInboundMessageBlock.<br><a id="unit-test-logger-utils-32-wmbbza.p6"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P6` — Unknown dispute proof value 99 and unknown block-fraud proof value 5 format as UNKNOWN(99) and UNKNOWN(5) in their separate metadata lookups. |
-| <a id="unit-test-logger-utils-33-a11ybz"></a>`UNIT-TEST-LOGGER-UTILS-33-A11YBZ`         | Contract-call metadata names its selector        | Call `getContractCallMetadata` with calldata for a function the SDK contract surface declares, for one it does not, and for data too short to hold a selector at all. | The returned selector, function name and calldata length; no other metadata field changes, and no input throws.                            | <a id="unit-test-logger-utils-33-a11ybz.p1"></a>`UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P1` — undeclared selector is reported as its own hex; <a id="unit-test-logger-utils-33-a11ybz.p2"></a>`UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P2` — declared selector is reported by name; <a id="unit-test-logger-utils-33-a11ybz.p3"></a>`UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P3` — calldata shorter than a selector is returned unchanged and does not throw                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| <a id="unit-test-logger-utils-34-hnbmfq"></a>`UNIT-TEST-LOGGER-UTILS-34-HNBMFQ`         | Refused block confirmations log without decoding | Call `getBlockConfirmationStructMetadata` with a confirmation whose block bytes do not decode.                                                                        | The metadata marks `undecodableBlock: true`, keeps the confirmation hash and signatures, and has no block fields; the call does not throw. | <a id="unit-test-logger-utils-34-hnbmfq.p1"></a>`UNIT-TEST-LOGGER-UTILS-34-HNBMFQ.P1` — undecodable block bytes are marked instead of throwing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| <a id="unit-test-rpc-node-metadata-1-1wc176"></a>`UNIT-TEST-RPC-NODE-METADATA-1-1WC176` | RPC endpoint redaction                           | Call getRpcNodeMetadata and getRpcNodesMetadata with credential, path, query and unparseable inputs                                                                   | Only scheme and host remain; an unparseable URL is not repeated                                                                            | <a id="unit-test-rpc-node-metadata-1-1wc176.p1"></a>`UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P1` — userinfo, path and query dropped; <a id="unit-test-rpc-node-metadata-1-1wc176.p2"></a>`UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P2` — unparseable URL; <a id="unit-test-rpc-node-metadata-1-1wc176.p3"></a>`UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P3` — every endpoint of a list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-
-## Related source reports
-
-- Consumers per the views.
+- [x] `UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P1` — userinfo, path and query dropped
+- [x] `UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P2` — unparseable URL
+- [x] `UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P3` — every endpoint of a list

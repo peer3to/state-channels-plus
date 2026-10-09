@@ -1,12 +1,7 @@
-# test/Clock.test.ts — Test Report
+# Clock.test.ts
 
-> **Test file:** [test/Clock.test.ts](../../../../../test/Clock.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [Clock.ts](../../../implementation/source/src/Clock.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/Clock.test.ts](../../../../../test/Clock.test.ts)
+Exercises: [Clock.ts](../../../implementation/source/src/Clock.ts.md)
 
 ## Overview
 
@@ -24,18 +19,11 @@ transition. Out of scope: chain-time estimation accuracy, skew bounds, and deadl
 handover component permutations. The make-before-break case in which reads continue while a
 replacement synchronization is still pending remains unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                      | Covers                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| [`Clock > initializes idempotently when real-provider calls overlap`](../../../../../test/Clock.test.ts#L13) (line 13)                | [`UNIT-TEST-CLOCK-1-6K546K.P1`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p1)                 |
-| [`Clock > re-initializes when a different provider arrives`](../../../../../test/Clock.test.ts#L29) (line 29)                         | [`UNIT-TEST-CLOCK-1-6K546K.P2`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p2)                 |
-| [`Clock > recovers with a live provider after a failed replacement`](../../../../../test/Clock.test.ts#L63) (line 63)                 | [`UNIT-TEST-CLOCK-1-6K546K.P3`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p3)                 |
-| [`Clock > settles overlapping different-provider initializations on one live owner`](../../../../../test/Clock.test.ts#L84) (line 84) | [`UNIT-TEST-CLOCK-1-6K546K.P5`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p5)                 |
-| [`Clock > destroys a released provider once a replacement takes over`](../../../../../test/Clock.test.ts#L42) (line 42)               | [`UNIT-TEST-CLOCK-RELEASE-1-B836QF.P1`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-release-1-b836qf.p1) |
-| [`Clock > keeps a replaced provider its runtime still owns`](../../../../../test/Clock.test.ts#L53) (line 53)                         | [`UNIT-TEST-CLOCK-RELEASE-1-B836QF.P2`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-release-1-b836qf.p2) |
+- `initializes idempotently when real-provider calls overlap`: UNIT-TEST-CLOCK-1-6K546K.P1
+- `re-initializes when a different provider arrives`: UNIT-TEST-CLOCK-1-6K546K.P2
+- `recovers with a live provider after a failed replacement`: UNIT-TEST-CLOCK-1-6K546K.P3
+- `settles overlapping different-provider initializations on one live owner`: UNIT-TEST-CLOCK-1-6K546K.P5
+- `destroys a released provider once a replacement takes over`: UNIT-TEST-CLOCK-RELEASE-1-B836QF.P1
+- `keeps a replaced provider its runtime still owns`: UNIT-TEST-CLOCK-RELEASE-1-B836QF.P2

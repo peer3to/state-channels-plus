@@ -363,6 +363,49 @@ describe("Unit: ReductionExecutor", function () {
             expect(await chainForkId()).to.equal(reducedForkId);
         });
 
+        it("the reduce is mined out of gas and its resend lands → the reduced fork is adopted and nothing is reported as failed", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
+            const reducer = h.getPeer(0);
+            const underfunded = await h.rpcStub.underfundFirstReducePost(
+                reducer.index
+            );
+            try {
+                await h
+                    .control(reducer)
+                    .stub.restoreReductionTasks(true)
+                    .request();
+
+                const chainForkId = async () =>
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId as ForkId;
+                await waitFor(
+                    async () => (await chainForkId()) !== sourceForkId,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const reducedForkId = (
+                    await h.channelManager.getReducedResult(
+                        h.channelId,
+                        sourceForkId
+                    )
+                ).reducedForkId as ForkId;
+
+                expect(await chainForkId()).to.equal(reducedForkId);
+                // the first reduce is mined and fails; its resend is mined
+                // and succeeds, and the adoption follows it
+                expect(await underfunded.sendStatuses()).to.deep.equal([0, 1]);
+                await TestSession.settleDetached();
+            } finally {
+                await underfunded.restore();
+            }
+        });
+
         it("the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded", async function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =

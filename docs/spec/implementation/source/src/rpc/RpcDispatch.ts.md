@@ -1,80 +1,36 @@
-# RpcDispatch.ts — Source Report
+# RpcDispatch.ts
 
-> **Source:** [src/rpc/RpcDispatch.ts](../../../../../../src/rpc/RpcDispatch.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/rpc/RpcDispatch.ts](../../../../../../src/rpc/RpcDispatch.ts)
+>
 > **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Responsibility and observable boundary
+## Requirements
 
-Resolves endpoint descriptors, executes the captured callable once and owns the single response-send attempt. It awaits endpoint execution, builds the request response and applies the policy supplied by the service. The router awaits the consumed verdict. Network and internal services supply guards, error projection, reply routing and failure policy.
+- [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+- [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
+- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
+- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 
-## Key design decisions
+## UNIT-TEST-RPC-DISPATCH-1-5WY71T
 
-- Invocation, request response construction and failure handling stay together in invokeRpcEndpoint. Service-local callbacks supply error projection, response delivery and the existing synchronous/asynchronous one-way policies. No result union or exception wrapper is needed.
+Descriptor-safe endpoint selection and awaited invocation.
 
-- Descriptor traversal stops at the designated base and Object prototype without evaluating getters ([`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L12)).
-- The service applies the captured function to its receiver through invokeRpcEndpoint ([`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L44)).
-- Requests await the endpoint before preparing one result or error response; sends retain synchronous failure behavior ([`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L44)).
-- A failed reply send invokes its boundary policy once and never creates another response ([`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32)).
+- Setup: Actual SDK-owned roots and connected domain services; narrow controls act on those connections.
+- Oracle: Only captured callable endpoint descriptors execute. Missing or shadowed endpoints reject without invoking accessors. Void requests wait for completion; sends create neither a response nor a pending request.
 
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Boundary                                                                                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Inputs       | RPC, endpoint object, captured method, optional execution context and service-local policies.                                        |
-| Outputs      | Captured endpoint or no match; awaited consumed verdict and request response; a single attempt to send an already prepared response. |
-| Owned state  | No persistent state. Descriptor traversal captures the callable without reading an accessor.                                         |
-| Side effects | Endpoint execution and one response delivery attempt; the service supplies failure policy.                                           |
-
-## Linked requirements
-
-| Source file                                                     | Specification IDs                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L1) | [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RUNTIME-2-KBXKTG`](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg), [`REQ-RUNTIME-1-RSM6MZ`](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) |
-
-- [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j): Only callable endpoint descriptors above the service base are routable
-- [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm): One-attempt response delivery preserves peer request behavior; awaited execution stays in this shared helper
-- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg): Descriptor lookup captures the callable; invokeRpcEndpoint retains the invocation across await
-- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz): Response sending carries the prepared result unchanged; services supply error projection
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-Helpers belong on the service rather than its endpoint methods object. Structural service recognition alone does not authorize a method. Network guards run before endpoint construction in ANetworkRpcService. Runtime invocation wrappers preserve local execution context without serializing a live context object.
-
-## Specification adherence
-
-- [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j): Only callable endpoint descriptors above the service base are routable See [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L12).
-- [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm): One-attempt response delivery preserves peer request behavior; awaited execution stays in this shared helper See [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32).
-- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg): Descriptor lookup captures the callable; invokeRpcEndpoint retains the invocation across await See [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32).
-- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz): Response sending carries the prepared result unchanged; services supply error projection See [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Gap / divergence                         |
-| --------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)    | Covered               | **Here:** Only callable endpoint descriptors above the service base are routable [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L12). **Other files:** [ANetworkRpcService.ts](network/ANetworkRpcService.ts.md) (peer guards, message-only failures and reply routing), [AInternalRpcService.ts](internal/AInternalRpcService.ts.md) (runtime domain errors and sender-bound invocation), [ARpcRouter.ts](router/ARpcRouter.ts.md) (request registration, settlement and service dispatch), [ObjectChecks.ts](../utils/ObjectChecks.ts.md) (structural service recognition across module graphs).                                       | None demonstrated for this contribution. |
-| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)    | Covered               | **Here:** One-attempt response delivery preserves peer request behavior; awaited execution stays in this shared helper [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32). **Other files:** [ANetworkRpcService.ts](network/ANetworkRpcService.ts.md) (peer guards, message-only failures and reply routing), [AInternalRpcService.ts](internal/AInternalRpcService.ts.md) (runtime domain errors and sender-bound invocation), [ARpcRouter.ts](router/ARpcRouter.ts.md) (request registration, settlement and service dispatch), [ObjectChecks.ts](../utils/ObjectChecks.ts.md) (structural service recognition across module graphs). | None demonstrated for this contribution. |
-| [`REQ-RUNTIME-2-KBXKTG`](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg) | Covered               | **Here:** Descriptor lookup captures the callable; invokeRpcEndpoint retains the invocation across await [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32). **Other files:** [ANetworkRpcService.ts](network/ANetworkRpcService.ts.md) (peer guards, message-only failures and reply routing), [AInternalRpcService.ts](internal/AInternalRpcService.ts.md) (runtime domain errors and sender-bound invocation), [ARpcRouter.ts](router/ARpcRouter.ts.md) (request registration, settlement and service dispatch), [ObjectChecks.ts](../utils/ObjectChecks.ts.md) (structural service recognition across module graphs).               | None demonstrated for this contribution. |
-| [`REQ-RUNTIME-1-RSM6MZ`](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** Response sending carries the prepared result unchanged; services supply error projection [`RpcDispatch.ts`](../../../../../../src/rpc/RpcDispatch.ts#L32). **Other files:** [ANetworkRpcService.ts](network/ANetworkRpcService.ts.md) (peer guards, message-only failures and reply routing), [AInternalRpcService.ts](internal/AInternalRpcService.ts.md) (runtime domain errors and sender-bound invocation), [ARpcRouter.ts](router/ARpcRouter.ts.md) (request registration, settlement and service dispatch), [ObjectChecks.ts](../utils/ObjectChecks.ts.md) (structural service recognition across module graphs).                     | None demonstrated for this contribution. |
-
-## Component test obligations
-
-Exact test evidence belongs to verification reports. Existing family identities remain unchanged when their implementation owner moves.
-
-| Unit test ID                                                                  | Obligation                                                 | Public entry and setup                                                                          | Oracle and forbidden effects                                                                                                                                                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-rpc-dispatch-1-5wy71t"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T` | Descriptor-safe endpoint selection and awaited invocation. | Actual SDK-owned roots and connected domain services; narrow controls act on those connections. | Only captured callable endpoint descriptors execute. Missing or shadowed endpoints reject without invoking accessors. Void requests wait for completion; sends create neither a response nor a pending request. | <a id="unit-test-rpc-dispatch-1-5wy71t.p1"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P1`: Invokes an own endpoint.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p2"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P2`: Invokes an inherited endpoint.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p3"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P3`: Rejects a getter shadow without executing it.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p4"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P4`: Rejects a non-function shadow.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p5"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P5`: Rejects a missing service.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p6"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P6`: Rejects a missing method.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p7"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P7`: Rejects a constructor.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p8"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P8`: Rejects an Object base method.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p9"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P9`: Rejects service helpers.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p10"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P10`: Invokes the captured callable.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p11"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P11`: Preserves positional and optional arguments.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p12"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P12`: Supports empty arguments and undefined results.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p13"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P13`: Returns sync endpoint errors.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p14"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P14`: Returns async endpoint errors.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p15"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P15`: Acknowledges void only after the endpoint completes.<br><a id="unit-test-rpc-dispatch-1-5wy71t.p16"></a>`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P16`: Sends without a response or pending entry. |
-
-## Related source reports
-
-- [ANetworkRpcService.ts](network/ANetworkRpcService.ts.md)
-- [AInternalRpcService.ts](internal/AInternalRpcService.ts.md)
-- [ARpcRouter.ts](router/ARpcRouter.ts.md)
-- [ObjectChecks.ts](../utils/ObjectChecks.ts.md)
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P1` — Invokes an own endpoint
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P2` — Invokes an inherited endpoint
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P3` — Rejects a getter shadow without executing it
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P4` — Rejects a non-function shadow
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P5` — Rejects a missing service
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P6` — Rejects a missing method
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P7` — Rejects a constructor
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P8` — Rejects an Object base method
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P9` — Rejects service helpers
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P10` — Invokes the captured callable
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P11` — Preserves positional and optional arguments
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P12` — Supports empty arguments and undefined results
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P13` — Returns sync endpoint errors
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P14` — Returns async endpoint errors
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P15` — Acknowledges void only after the endpoint completes
+- [x] `UNIT-TEST-RPC-DISPATCH-1-5WY71T.P16` — Sends without a response or pending entry

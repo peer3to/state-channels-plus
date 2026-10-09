@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/concepts/state-machines.md](../../specification/protocol-model/state-machines.md)
 
-> **Status:** Draft.
 > **Scope:** The example integrations shipped in [examples/](../../../../examples) and their status.
 > Nothing in this document is normative reference material; examples illustrate SDK usage, they do
 > not define protocol behavior.

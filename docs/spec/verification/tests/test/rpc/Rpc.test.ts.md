@@ -1,7 +1,7 @@
-# test/rpc/Rpc.test.ts — Test Report
+# Rpc.test.ts
 
-> **Test file:** [test/rpc/Rpc.test.ts](../../../../../../test/rpc/Rpc.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [Rpc.ts](../../../../implementation/source/src/rpc/Rpc.ts.md)
+Test file: [test/rpc/Rpc.test.ts](../../../../../../test/rpc/Rpc.test.ts)
+Exercises: [Rpc.ts](../../../../implementation/source/src/rpc/Rpc.ts.md)
 
 The request and response helpers project the single production frame parser. A dual-shape frame is a response only; no independent legacy parser is exercised.
 
@@ -13,27 +13,25 @@ This direct wire-codec suite covers request and response round trips, request-ID
 semantics, invalid JSON and shape rejection, raw-BigInt rejection on both serialization paths, and
 the exact 16 MiB frame constant. Dispatcher consequences remain in the P2PManager suite.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                           | Covers                                                                                                                                                                                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`deserializeRpc - params schema > accepts a well-formed RPC with array params`](../../../../../../test/rpc/Rpc.test.ts#L20) (line 20)                                     | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P1`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p1)                                                                                                             |
-| [`deserializeRpc - params schema > preserves requestId for request-style RPCs`](../../../../../../test/rpc/Rpc.test.ts#L28) (line 28)                                      | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P11`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p11), [`REQ-RPC-1-FF89Z0.T1.P10`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p10) |
-| [`deserializeRpc - params schema > accepts omitted, non-empty, and empty request ids by presence`](../../../../../../test/rpc/Rpc.test.ts#L40) (line 40)                   | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P8`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p8)                                                                                                             |
-| [`deserializeRpc - params schema > rejects every present non-string request id`](../../../../../../test/rpc/Rpc.test.ts#L66) (line 66)                                     | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P9`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p9), [`REQ-RPC-1-FF89Z0.T1.P9`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p9)     |
-| [`deserializeRpc - params schema > rejects every non-array params value`](../../../../../../test/rpc/Rpc.test.ts#L83) (line 83)                                            | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P7`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p7)                                                                                                             |
-| [`deserializeRpc - params schema > rejects when params is missing entirely`](../../../../../../test/rpc/Rpc.test.ts#L103) (line 103)                                       | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P2`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p2)                                                                                                             |
-| [`deserializeRpc - params schema > returns undefined on invalid JSON`](../../../../../../test/rpc/Rpc.test.ts#L112) (line 112)                                             | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P10`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p10)                                                                                                           |
-| [`deserializeRpc - params schema > round-trips a valid RPC response`](../../../../../../test/rpc/Rpc.test.ts#L116) (line 116)                                              | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P5`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p5)                                                                                                             |
-| [`deserializeRpc - params schema > rejects wrong-typed request and response fields`](../../../../../../test/rpc/Rpc.test.ts#L129) (line 129)                               | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P6`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p6)                                                                                                             |
-| [`deserializeRpc - params schema > throws when a request param or response result contains a raw BigInt`](../../../../../../test/rpc/Rpc.test.ts#L154) (line 154)          | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P3`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p3)                                                                                                             |
-| [`deserializeRpc - params schema > defines the exact 16 MiB frame limit`](../../../../../../test/rpc/Rpc.test.ts#L172) (line 172)                                          | [`UNIT-TEST-RPC-WIRE-1-4SDCQE.P4`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1-4sdcqe.p4)                                                                                                             |
-| [`deserializeRpc - params schema > classifies request with response-first precedence`](../../../../../../test/rpc/Rpc.test.ts#L175) (line 175)                             | [`UNIT-TEST-RPC-32-DSTK5A.P1`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p1)                                                                                                                     |
-| [`deserializeRpc - params schema > classifies response with response-first precedence`](../../../../../../test/rpc/Rpc.test.ts#L189) (line 189)                            | [`UNIT-TEST-RPC-32-DSTK5A.P2`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p2)                                                                                                                     |
-| [`deserializeRpc - params schema > classifies dual shape with response-first precedence`](../../../../../../test/rpc/Rpc.test.ts#L201) (line 201)                          | [`UNIT-TEST-RPC-32-DSTK5A.P3`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p3)                                                                                                                     |
-| [`deserializeRpc - params schema > classifies invalid response with valid request with response-first precedence`](../../../../../../test/rpc/Rpc.test.ts#L215) (line 215) | [`UNIT-TEST-RPC-32-DSTK5A.P4`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p4)                                                                                                                     |
-| [`deserializeRpc - params schema > rejects invalid JSON during frame classification`](../../../../../../test/rpc/Rpc.test.ts#L231) (line 231)                              | [`UNIT-TEST-RPC-32-DSTK5A.P5`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p5)                                                                                                                     |
-| [`deserializeRpc - params schema > rejects null during frame classification`](../../../../../../test/rpc/Rpc.test.ts#L234) (line 234)                                      | [`UNIT-TEST-RPC-32-DSTK5A.P6`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p6)                                                                                                                     |
-| [`deserializeRpc - params schema > rejects primitive during frame classification`](../../../../../../test/rpc/Rpc.test.ts#L237) (line 237)                                 | [`UNIT-TEST-RPC-32-DSTK5A.P7`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p7)                                                                                                                     |
-| [`deserializeRpc - params schema > rejects array during frame classification`](../../../../../../test/rpc/Rpc.test.ts#L240) (line 240)                                     | [`UNIT-TEST-RPC-32-DSTK5A.P8`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p8)                                                                                                                     |
-| [`deserializeRpc - params schema > rejects missing fields during frame classification`](../../../../../../test/rpc/Rpc.test.ts#L243) (line 243)                            | [`UNIT-TEST-RPC-32-DSTK5A.P9`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-32-dstk5a.p9)                                                                                                                     |
+- `accepts a well-formed RPC with array params`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P1
+- `preserves requestId for request-style RPCs`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P11, REQ-RPC-1-FF89Z0.T1.P10
+- `accepts omitted, non-empty, and empty request ids by presence`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P8
+- `rejects every present non-string request id`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P9, REQ-RPC-1-FF89Z0.T1.P9
+- `rejects every non-array params value`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P7
+- `rejects when params is missing entirely`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P2
+- `returns undefined on invalid JSON`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P10
+- `round-trips a valid RPC response`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P5
+- `rejects wrong-typed request and response fields`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P6
+- `throws when a request param or response result contains a raw BigInt`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P3
+- `defines the exact 16 MiB frame limit`: UNIT-TEST-RPC-WIRE-1-4SDCQE.P4
+- `classifies request with response-first precedence`: UNIT-TEST-RPC-32-DSTK5A.P1
+- `classifies response with response-first precedence`: UNIT-TEST-RPC-32-DSTK5A.P2
+- `classifies dual shape with response-first precedence`: UNIT-TEST-RPC-32-DSTK5A.P3
+- `classifies invalid response with valid request with response-first precedence`: UNIT-TEST-RPC-32-DSTK5A.P4
+- `rejects invalid JSON during frame classification`: UNIT-TEST-RPC-32-DSTK5A.P5
+- `rejects null during frame classification`: UNIT-TEST-RPC-32-DSTK5A.P6
+- `rejects primitive during frame classification`: UNIT-TEST-RPC-32-DSTK5A.P7
+- `rejects array during frame classification`: UNIT-TEST-RPC-32-DSTK5A.P8
+- `rejects missing fields during frame classification`: UNIT-TEST-RPC-32-DSTK5A.P9

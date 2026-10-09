@@ -1,161 +1,165 @@
-# AStateMachine.sol — Source Report
+# AStateMachine.sol
 
-> **Source:** [contracts/V1/AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol)
+>
 > **Design views:** [architecture/contracts/state-machine-base.md](../../../views/architecture/contracts/state-machine-base.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+  Partial: `stateTransition` stores only `_tx.header` and leaves `_tx.body` empty ([`OQ-21-PEZK9X` (`_tx.body` population and state-encoding versioning)](../../../open-questions.md#oq-21-pezk9x)); keeping ambient EVM context out of the integrator's transition logic is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
+  Partial: canonical serialization in the integrator's `getState`/`_setState` is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- [`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
+- [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+  Partial: determinism of the integrator logic `stateTransition` calls is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+  Partial: the `getState`/`_setState` round-trip is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-SM-3-88RFP2` (Mappings only with complete deterministic key enumeration)](../../../../specification/protocol-model/state-machines.md#req-sm-3-88rfp2)
+  Partial: complete mapping enumeration in the integrator's `getState` is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
+  Partial: underflow rejection in the integrator's `subtractBalance` is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b)
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+  Partial: admission and top-up in the integrator's `_joinChannel` are integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+  Partial: state-machine diamonds MUST route `getNextToWriteOf(bytes)`; it sets the given state and must only be called as a simulated call. An unrouted selector makes every timeout audit throw (`EvmDiamondStateMachine.peekNextToWrite`). Routing is integrator-owned and not checked ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../../../../specification/protocol-model/finality.md#req-fin-5-dh29vz)
+- [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../../../../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
+- [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
+  Partial: `_slashParticipant` must return true for every current participant, because dispute reduction adds the timeout target to the removals only when no slash took effect; the contract is integrator-owned and not enforced, so a machine that returns false for a present participant also removes the timeout target and inverts the slash precedence for that machine ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 
-## Responsibility and observable boundary
+## UNIT-TEST-ASTATE-MACHINE-1-67J5W6
 
-The integrator base contract: the `stateTransition` wrapper injecting the protocol execution
-context (`_tx.header`: logical author, time, position) before dispatching to integrator logic,
-`getState`/`_setState` canonical serialization hooks, `getParticipants`, `getNextToWrite`/
-`peekNextToWrite` turn-taking, `joinChannel`/`removeParticipant` membership entry points, the
-custom-inbound dispatch, and the transition gas guard: `stateTransition` runs a transition only when
-its stipend call can grant the full `gasLimit`, and
-[`getStateTransitionGasRequirement`](../../../../../../contracts/V1/AStateMachine.sol#L37) tells a caller how much gas that needs.
+Context injection and round trips
 
-## Key design decisions
+- Setup: Execute transitions reading injected vs ambient context; serialize/restore cycles
+- Oracle: Injected values govern; ambient reads detectable; byte-exact round trips
 
-Idempotence is an integrator obligation: hooks must leave state unchanged and return false for an absent target. The base delegates membership and penalty rules to the application; it does not infer them from the chain snapshot. See [AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol#L140).
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P1` — injected author field
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P2` — ambient divergence detection
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P3` — round-trip + re-execution equality
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P4` — joinChannel membership entry
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P5` — injected time field
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P6` — injected position field
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P7` — removeParticipant membership entry
 
-1. **Context injection over ambient EVM values:** transitions read `_tx.header.*` set by the wrapper — `msg.sender`/`block.timestamp`/`msg.data` are prohibited in integrator machines because they diverge between direct execution and replay ([`REQ-SM-1-Y72CKX`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx) family).
-2. **`abi.encode` of one state struct is the reference serialization pattern** for the round-trip requirements.
-3. **A transition runs only when it can get its full budget.** A CALL may forward at most 63/64 of
-   the remaining gas and never fails for asking more, so an under-funded caller silently hands the
-   transition less than `gasLimit`. A transition can catch an inner out-of-gas and still succeed
-   with a different result, or fail with its own error, so no outcome of an under-funded run is a
-   verdict — not even a completed one. `stateTransition` first does all work whose cost depends on
-   the transaction: it deletes the previous transition's outbound messages, stores the header,
-   copies the call input into memory and reads the budget ([#L168-L179](../../../../../../contracts/V1/AStateMachine.sol#L168-L179)). Only then does it read
-   `gasleft()`, compute what the stipend call can grant (`available - available/64 -
-STATE_TRANSITION_CALL_RESERVE`), and revert with
-   `ErrorInsufficientGasForStateTransition(gasLimit, granted)` when that is less than `gasLimit`
-   ([#L180-L183](../../../../../../contracts/V1/AStateMachine.sol#L180-L183)). The CALL is written in assembly on the prepared memory, so only
-   fixed opcodes run between the check and the CALL ([#L186-L189](../../../../../../contracts/V1/AStateMachine.sol#L186-L189)): a large input can
-   no longer be copied after the check and shrink the forwarded gas (review item SR1). The
-   manager re-raises that refusal instead of adjudicating
-   ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
-   A transition that then runs out of gas within the full budget returns empty data and hits the
-   "result length 0" revert ([#L196-L199](../../../../../../contracts/V1/AStateMachine.sol#L196-L199)): that is the transition exceeding its budget, an
-   invalid-transition verdict. A bare `revert()` takes the same path; a revert with data is
-   re-raised unchanged ([#L200-L203](../../../../../../contracts/V1/AStateMachine.sol#L200-L203)). Engineer decision SO1 (Luka, 2026-09-26)
-   replaced the earlier post-hoc rule (judge a completed transition whatever it was granted):
-   an attacker must not be able to attach too little gas, make an honest transition fail or take
-   another branch, and turn that into a slash.
-4. **The previous transition's outbound messages are deleted before the gas check, at the
-   caller's cost.** `stateTransition` starts with `delete _outboundMessages`
-   ([#L168](../../../../../../contracts/V1/AStateMachine.sol#L168), [#L127-L129](../../../../../../contracts/V1/AStateMachine.sol#L127-L129)), before it copies the input, reads the budget
-   and checks the gas; `_addOutboundMessage` pushes onto the emptied array
-   ([#L114-L116](../../../../../../contracts/V1/AStateMachine.sol#L114-L116)), and `getOutboundMessages` returns the whole array
-   ([#L59-L61](../../../../../../contracts/V1/AStateMachine.sol#L59-L61)), which is also what `stateTransition` returns ([#L205](../../../../../../contracts/V1/AStateMachine.sol#L205)).
-   Every transition therefore writes its messages into slots that are empty at its start, so what
-   an earlier call left behind cannot raise its cost inside the budget; history can only lower it
-   (EIP-2200: a slot that held data at the start of the transaction is cheaper to write again).
-   The deletion grows with the previous messages and is paid outside the budget, so a sender's
-   estimate covers it, not `STATE_TRANSITION_SETUP_GAS`. Engineer decision (Luka, review 6 FO3):
-   the count-reset optimization of the previous round (a count variable and slot overwrites inside
-   the transition) is removed, because it moved the cleanup of long old payloads into the limited
-   call; the same transition cost 932,855 gas after long old payloads against 399,861 on empty
-   storage (2.3 ×). The storage layout of `AStateMachine` equals `HEAD` again (no count
-   variable), so review 5's base-layout note (FY2) no longer applies.
-5. **The caller funds the replay upfront.** `STATE_TRANSITION_CALL_RESERVE = 20_000` covers the
-   fixed opcodes between the gas reading and the CALL, and `STATE_TRANSITION_SETUP_GAS = 200_000`
-   bounds what the wrapper spends before the reading for a typical input — storing the header and
-   copying the call input; it does not promise to cover deleting the previous messages or copying
-   a larger input ([#L20-L29](../../../../../../contracts/V1/AStateMachine.sol#L20-L29)).
-   [`getStateTransitionGasRequirement`](../../../../../../contracts/V1/AStateMachine.sol#L37) returns
-   `(gasLimit + reserve) * 64 / 63 + 1 + setup`, the gas a caller must forward into the
-   `stateTransition` frame. Both margins only make the check conservative: a refusal that could
-   have been a verdict costs the sender a retry, never a wrong verdict. The manager's
-   `getStateTransitionReplayGas` scales this requirement over the frames above the machine
-   ([UtilityFacet](./StateChannelDiamondProxy/UtilityFacet.sol.md)), and the SDK sends every replay
-   transaction with its estimate plus that value ([DisputeManager](../../src/disputeManager/DisputeManager.ts.md)); the
-   estimate pays for the deletion and the other work around the replay.
+## UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF
 
-## Inputs, outputs, state, and side effects
+Transition runs only with its full budget
 
-| Aspect       | Contents                                                           |
-| ------------ | ------------------------------------------------------------------ |
-| Inputs       | Transactions via the wrapper; encoded states; membership messages. |
-| Outputs      | Post-states, outbound messages, participant/turn views.            |
-| Owned state  | The integrator's application state (scratch during replay).        |
-| Side effects | None outside its own storage.                                      |
+- Setup: Restore a Math state, then call `stateTransition` directly with gas below the requirement, exactly `gasLimit`, exactly `getStateTransitionGasRequirement()`, and ample gas; on a cheap `add`, a never-finishing `burn`, a `guardedAdd` that catches an inner out-of-gas, a bare `revert()`, and a revert with a reason
+- Oracle: Below the requirement every transition reverts with `ErrorInsufficientGasForStateTransition` and state is unchanged; funded, `add` and `guardedAdd` change the sum by one, `burn` and a bare revert revert with "result length 0", and a reason is re-raised unchanged
 
-## Linked requirements
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P1` — a transition that runs out of gas, called with less gas than its requirement, is refused with `ErrorInsufficientGasForStateTransition`
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P2` — a cheap transition called with less gas than its requirement is refused before it runs and changes no state
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P3` — a funded transition that runs out of gas within the full budget reverts with "result length 0"
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P4` — exactly `getStateTransitionGasRequirement()` attached runs the transition
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P5` — exactly `gasLimit` attached is refused (EIP-150 keeps 1/64 in the caller)
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P6` — a funded transition that catches an inner out-of-gas takes its full-budget branch
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P7` — a transition that catches an inner out-of-gas, under-funded, is refused
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P8` — a funded bare `revert()` (empty returndata) reverts with "result length 0"
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P9` — a funded transition's own revert reason is re-raised unchanged
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P11` — a transition that emits fewer messages than the previous one reports only its own messages, and `getOutboundMessages` returns only those
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P12` — for any call-input size up to 128 KiB and any attached gas around the requirement, a transition that runs is granted its full budget
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P13` — after a transition that left many outbound messages, with the machine's storage cold, a transition funded with only its requirement is refused with `ErrorInsufficientGasForStateTransition` (the deletion is not paid from the requirement), and funded for the deletion as well it runs on its full budget and reports no messages
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P14` — the same message-producing transition, run after no previous messages, after a few very long ones and after a few short ones (storage cold each time), returns the same messages and never spends more than on empty storage
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+## UNIT-TEST-SM-ASTATE-1-S1YSJG
 
-| Source file                                                           | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol) | [`REQ-SM-1-Y72CKX`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx), [`REQ-SM-2-PHCRFR`](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-SM-5-3GS7A7`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`INV-ENFSM-1-762ACD`](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd), [`REQ-ENFSM-1-DKJCY2`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2), [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8), [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf) |
+Transition orchestration
 
-## Assumptions, dependencies, trust boundaries, and limits
+- Setup: Restore a Math state with `setState`, run a transition that leaves outbound messages, then call a funded `stateTransition` whose `body.data` dispatches a transition emitting zero, one or many messages.
+- Oracle: The call returns `(true, messages)` where `messages` equal `getOutboundMessages()` and hold only this transition's messages in emission order; the previous transition's messages are gone.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-- One shared deployment serves all channels in the current version — full pre-state restoration is what keeps that sound ([`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)).
-- The gas guard assumes the wrapper spends at most `STATE_TRANSITION_SETUP_GAS` before its gas
-  reading for a typical input. Deleting many previous outbound messages and copying a very large
-  call input cost more; both are paid before the reading, so the effect of exceeding the bound is
-  a refusal of a caller funded with only the requirement (no verdict; retry with more gas, which a
-  sender's estimate covers), never a transition run on less than the full budget, because the
-  check reads the real remaining gas.
-- Storage layout: unchanged from `HEAD` (no outbound-message count variable), so derived machines
-  keep their layout.
-- **Residual (block gas limit):** a replay transaction must carry its own cost plus the full
-  requirement scaled over the call frames, and nothing caps the SDK's replay gas limit at the
-  block gas limit. A budget whose requirement does not fit a block (with the sender's headroom)
-  cannot be replayed on that chain; the send fails before inclusion, never with a wrong verdict
-  ([DisputeManager](../../src/disputeManager/DisputeManager.ts.md) limits).
+- [ ] `UNIT-TEST-SM-ASTATE-1-S1YSJG.P1` — Clear prior messages, inject the header, enforce the gas budget, dispatch calldata, and return success with zero outbound messages
+- [ ] `UNIT-TEST-SM-ASTATE-1-S1YSJG.P2` — a successful transition returns one outbound message
+- [ ] `UNIT-TEST-SM-ASTATE-1-S1YSJG.P3` — a successful transition returns many outbound messages in order
 
-## Specification adherence
+## UNIT-TEST-SM-ASTATE-2-X06ZXW
 
-- The injected-context contract and turn-taking surface ([`REQ-SM-5-3GS7A7`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)).
+Transition rejection
 
-## Specification contradictions
+- Setup: After a transition that changed state and left outbound messages, call a funded `stateTransition` whose dispatched function reverts with a reason or with empty returndata.
+- Oracle: `stateTransition` reverts, re-raising the reason unchanged or reverting with "AStateMachine - Call failed - result length 0", and `getState()` and `getOutboundMessages()` equal their values from before the call.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-None demonstrated at the base (integrator machines can still violate — the static-check/review guidance is future work in the view).
+- [ ] `UNIT-TEST-SM-ASTATE-2-X06ZXW.P1` — A revert with data rejects deterministically and exposes neither partial state nor partial outbound messages
+- [ ] `UNIT-TEST-SM-ASTATE-2-X06ZXW.P2` — a revert without data rejects with the same guarantees
 
-## Missing behavior
+## UNIT-TEST-SM-ASTATE-3-W1VEFR
 
-Automated prohibited-context static checks for integrator machines (spec future work).
+Injected execution context
 
-## Conformance traceability
+- Setup: Run the same `stateTransition` on a concrete subclass while varying `transaction.header.participant` and `timestamp`, the ambient EVM context (`msg.sender`, `block.timestamp`, `block.number`), and the `transaction.body` fields other than `data`.
+- Oracle: Only the header participant and time and the dispatched arguments change the resulting `getState()` and outbound messages; ambient and `_tx.body` changes leave both byte-identical. The base contract has no check that rejects ambient reads, so the oracle is asserted per concrete subclass.
+- Specification: [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+- Specification tests: [`REQ-SM-1-Y72CKX.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx.t1)
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+- [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P1` — Only the injected participant/time and dispatched arguments affect application behavior
+- [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P2` — ambient EVM values do not
+- [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P3` — `_tx.body` does not
 
-| Requirement / invariant                                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Gap / divergence                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-SM-1-Y72CKX`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)            | Covered               | **Here:** wrapper-injected header before dispatch. **Other files:** replay context set by [execution-and-consumer](../../../../specification/enforcement/execution-and-consumer.md) paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | None.                                                                                                                                                                        |
-| [`REQ-SM-5-3GS7A7`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)            | Covered               | **Here:** `getNextToWrite` as the block-author authority.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | None.                                                                                                                                                                        |
-| [`INV-ENFSM-1-762ACD`](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd) | Covered               | **Here:** `_setState` restores the complete supplied pre-state before execution; replay derives nothing from residual storage. **Other files:** replay driver `executeStateTransition` on [StateChannelManagerProxy](./StateChannelDiamondProxy/StateChannelManagerProxy.sol.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Shared single deployment for all channels (documented constraint).                                                                                                           |
-| [`REQ-ENFSM-1-DKJCY2`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) | Covered               | **Here:** the wrapper injects the protocol context before dispatch ([#L169](../../../../../../contracts/V1/AStateMachine.sol#L169)); it deletes the previous outbound messages outside the budget ([#L168](../../../../../../contracts/V1/AStateMachine.sol#L168)) and prepares the call input, then refuses unless the stipend call can grant the full `gasLimit` ([#L178-L183](../../../../../../contracts/V1/AStateMachine.sol#L178-L183)) and CALLs with only fixed opcodes after the check ([#L186-L189](../../../../../../contracts/V1/AStateMachine.sol#L186-L189)); an out-of-gas within the full budget is the "result length 0" invalid-transition revert ([#L196-L199](../../../../../../contracts/V1/AStateMachine.sol#L196-L199)); [`getStateTransitionGasRequirement`](../../../../../../contracts/V1/AStateMachine.sol#L37) states the gas a caller must forward. **Other files:** [StateChannelManagerProxy](./StateChannelDiamondProxy/StateChannelManagerProxy.sol.md) re-raises the refusal, and turns an out-of-gas machine frame into `ErrorStateTransitionFrameOutOfGas`, instead of adjudicating; [UtilityFacet](./StateChannelDiamondProxy/UtilityFacet.sol.md) scales the requirement over the replay call depth (`getStateTransitionReplayGas`); [DisputeManager](../../src/disputeManager/DisputeManager.ts.md) sends each replay with its estimate plus that replay gas; [ContractExecutor](../../src/evm/contractExecutor/ContractExecutor.ts.md) grants every local EVM call at least the replay gas. | Block-gas residual in the limits section.                                                                                                                                    |
-| [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)            | Covered               | **Here:** [removeParticipant](../../../../../../contracts/V1/AStateMachine.sol#L148) and [slashParticipant](../../../../../../contracts/V1/AStateMachine.sol#L140) record and return the hook exit only on success. **Other files:** MathStateMachine implements the membership and balance hooks; dispute processing consumes their returned exits.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Successful removal now records its exit through the same wrapper contract as slashing; hooks retain their balance semantics. The dispute consumer reads returned exits once. |
-| [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)          | Covered               | **Here:** [removeParticipant](../../../../../../contracts/V1/AStateMachine.sol#L148) and [slashParticipant](../../../../../../contracts/V1/AStateMachine.sol#L140) skip recording when the hook returns false. **Other files:** MathStateMachine returns false without mutation for an absent member; the reduction consumer skips failed hook results.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Absent and repeated targets leave state, balances, messages and withdrawals unchanged, including stale chain membership.                                                     |
+## UNIT-TEST-SM-ASTATE-4-25RMFZ
 
-## Component test obligations
+State boundary
 
-Exact test evidence is mapped against these IDs in the verification test reports.
+- Setup: Call `setState` on a concrete subclass with encodings taken from `getState()` of known states, then with truncated bytes and a differently shaped encoding.
+- Oracle: A valid encoding makes `getState()` return the supplied bytes exactly; a malformed encoding reverts in `_setState` and `getState()` keeps its previous bytes.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-| Unit test ID                                                                      | Obligation                                | Public entry and setup                                                                                                                                                                                                                                                                                                 | Oracle and forbidden effects                                                                                                                                                                                                                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-astate-machine-1-67j5w6"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6` | Context injection and round trips         | Execute transitions reading injected vs ambient context; serialize/restore cycles                                                                                                                                                                                                                                      | Injected values govern; ambient reads detectable; byte-exact round trips                                                                                                                                                                                               | <a id="unit-test-astate-machine-1-67j5w6.p1"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P1` — injected author field; <a id="unit-test-astate-machine-1-67j5w6.p2"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P2` — ambient divergence detection; <a id="unit-test-astate-machine-1-67j5w6.p3"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P3` — round-trip + re-execution equality; <a id="unit-test-astate-machine-1-67j5w6.p4"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P4` — joinChannel membership entry; <a id="unit-test-astate-machine-1-67j5w6.p5"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P5` — injected time field; <a id="unit-test-astate-machine-1-67j5w6.p6"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P6` — injected position field; <a id="unit-test-astate-machine-1-67j5w6.p7"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P7` — removeParticipant membership entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| <a id="unit-test-astate-machine-2-z2xxmf"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF` | Transition runs only with its full budget | Restore a Math state, then call `stateTransition` directly with gas below the requirement, exactly `gasLimit`, exactly `getStateTransitionGasRequirement()`, and ample gas; on a cheap `add`, a never-finishing `burn`, a `guardedAdd` that catches an inner out-of-gas, a bare `revert()`, and a revert with a reason | Below the requirement every transition reverts with `ErrorInsufficientGasForStateTransition` and state is unchanged; funded, `add` and `guardedAdd` change the sum by one, `burn` and a bare revert revert with "result length 0", and a reason is re-raised unchanged | <a id="unit-test-astate-machine-2-z2xxmf.p1"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P1` — a transition that runs out of gas, called with less gas than its requirement, is refused with `ErrorInsufficientGasForStateTransition`; <a id="unit-test-astate-machine-2-z2xxmf.p2"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P2` — a cheap transition called with less gas than its requirement is refused before it runs and changes no state; <a id="unit-test-astate-machine-2-z2xxmf.p3"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P3` — a funded transition that runs out of gas within the full budget reverts with "result length 0"; <a id="unit-test-astate-machine-2-z2xxmf.p4"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P4` — exactly `getStateTransitionGasRequirement()` attached runs the transition; <a id="unit-test-astate-machine-2-z2xxmf.p5"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P5` — exactly `gasLimit` attached is refused (EIP-150 keeps 1/64 in the caller); <a id="unit-test-astate-machine-2-z2xxmf.p6"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P6` — a funded transition that catches an inner out-of-gas takes its full-budget branch; <a id="unit-test-astate-machine-2-z2xxmf.p7"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P7` — a transition that catches an inner out-of-gas, under-funded, is refused; <a id="unit-test-astate-machine-2-z2xxmf.p8"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P8` — a funded bare `revert()` (empty returndata) reverts with "result length 0"; <a id="unit-test-astate-machine-2-z2xxmf.p9"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P9` — a funded transition's own revert reason is re-raised unchanged; <a id="unit-test-astate-machine-2-z2xxmf.p11"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P11` — a transition that emits fewer messages than the previous one reports only its own messages, and `getOutboundMessages` returns only those; <a id="unit-test-astate-machine-2-z2xxmf.p12"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P12` — for any call-input size up to 128 KiB and any attached gas around the requirement, a transition that runs is granted its full budget; <a id="unit-test-astate-machine-2-z2xxmf.p13"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P13` — after a transition that left many outbound messages, with the machine's storage cold, a transition funded with only its requirement is refused with `ErrorInsufficientGasForStateTransition` (the deletion is not paid from the requirement), and funded for the deletion as well it runs on its full budget and reports no messages; <a id="unit-test-astate-machine-2-z2xxmf.p14"></a>`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P14` — the same message-producing transition, run after no previous messages, after a few very long ones and after a few short ones (storage cold each time), returns the same messages and never spends more than on empty storage |
+- [ ] `UNIT-TEST-SM-ASTATE-4-25RMFZ.P1` — Concrete subclasses round-trip valid states through `setState`/`getState`
+- [ ] `UNIT-TEST-SM-ASTATE-4-25RMFZ.P2` — malformed encodings reject without partial mutation through `setState`
 
-## Related source reports
+## UNIT-TEST-SM-ASTATE-5-HYC257
 
-- [MathStateMachine](./examples/MathStateMachine/MathStateMachine.sol.md) (reference integration), [EvmDiamondStateMachine](../../src/evm/EvmDiamondStateMachine.ts.md).
+Inbound dispatch
+
+- Setup: Call `processInboundMessage` with a `MESSAGE_TYPE_JOIN` message carrying an encoded `JoinChannel`, a custom message type and an unknown type, against hooks that return false or revert.
+- Oracle: A join message is decoded and handed to `_joinChannel`, so the joiner appears in `getParticipants()` with its deposited balance; every other type reaches only `_processCustomInboundMessage` (the base returns false), and a false or reverting hook leaves `getState()` unchanged.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
+
+- [x] `UNIT-TEST-SM-ASTATE-5-HYC257.P1` — Join messages decode and reach `_joinChannel`
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P2` — custom messages reach only the custom hook
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P3` — hook-false paths are atomic
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P4` — unknown-type messages reach only the custom hook
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P5` — hook-revert paths are atomic
+
+## UNIT-TEST-SM-ASTATE-6-KJSK5V
+
+Removal and slashing wrappers
+
+- Setup: On a Math state, call `removeParticipant` and `slashParticipant` for a present target, an absent target, and the same target a second time.
+- Oracle: A successful call returns `(true, exit)` and appends exactly one `MESSAGE_TYPE_EXIT` message whose participant and balance equal the returned exit; an absent or repeated target returns `false` with an empty exit, appends no message and leaves `getState()` unchanged.
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
+
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P1` — Equivalent successful removal and slashing produce one canonical exit message
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P2` — successful removal records its returned exit exactly once
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P3` — wrapper failure does not leak state or messages
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P4` — retry after failure does not leak state or messages
+
+## UNIT-TEST-SM-ASTATE-7-BMXBKT
+
+Complete public interface
+
+- Setup: Call every public entry point of a concrete subclass (`stateTransition`, `setState`/`getState`, the balance functions, `getNextToWrite`, `processInboundMessage`/`joinChannel`, `removeParticipant`/`slashParticipant`) with canonical and rejected inputs.
+- Oracle: Each entry point exists with its declared mutability, equal inputs give equal results, and a rejected input reverts without changing `getState()` or `getOutboundMessages()`.
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
+
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P1` — The transition entry point is callable with canonical inputs, correct mutability, deterministic rejection, and no undeclared side effects
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P2` — the state hooks satisfy the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P3` — the balance hooks satisfy the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P4` — the next-writer selector satisfies the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P5` — inbound dispatch satisfies the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P6` — the removal/slashing wrappers satisfy the same oracle

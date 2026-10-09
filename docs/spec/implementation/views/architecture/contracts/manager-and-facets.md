@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/architecture/contracts.md](../../../../specification/enforcement/contracts.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The manager's external surface, timing configuration, facet-by-facet reference,
 > on-chain storage, events, and errors — the ABI-level contract. Protocol _behavior_ is kept thin
 > here; the binding semantics live in [../protocol/disputes.md](../../../../specification/disputes/disputes.md),
@@ -53,17 +52,18 @@ which declares the complete surface, and against the implementing proxy/facet bo
 ### 2.0 How a call reaches its contract
 
 - Seven functions are declared on the proxy and dispatch directly:
-  [`open`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L192),
-  [`postBlockCalldata`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L159),
-  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L287),
-  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L331),
-  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L337),
-  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L353), and
-  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L147).
+  [`open`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L194),
+  [`postBlockCalldata`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L161),
+  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L289),
+  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L333),
+  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L339),
+  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355),
+  [`multicallBestEffortLast`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L373), and
+  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L149).
 - Everything else reaches
-  [`fallback()`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L134),
+  [`fallback()`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L136),
   which delegatecalls the facet that the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L396)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L419)
   returns for `msg.sig`, passing raw `msg.data`.
 - The constructor installs routes with `_registerRoute(Facet.fn.selector, facetAddress)`. Duplicate
   registration and codeless route targets revert, lookup is constant-time, and runtime mutation is not exposed. Mutable
@@ -72,17 +72,20 @@ which declares the complete surface, and against the implementing proxy/facet bo
   where the fallback would send a selector. Selectors the proxy declares itself never reach the
   fallback, so they are not in the table and this view reports the consumer facet for them.
 - **Unconfigured selectors** resolve to `consumerFacetAddress`
-  ([#L398](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L398)) —
+  ([#L421](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L421)) —
   the fallback of last resort, which is how the integrator's consumer functions are reachable.
 - **Deliberate exclusions (`notRouted`).** Some `public`/`external` facet functions are internal
   steps of a larger operation and are intentionally kept off the diamond surface, so they fall
   through to the consumer facet like any unknown selector. The authoritative list, with the reason
   per function, is
-  [test/fixtures/ProxySelectorRoutingFixture.ts](../../../../../../test/fixtures/ProxySelectorRoutingFixture.ts#L33):
+  [test/fixtures/ProxySelectorRoutingFixture.ts](../../../../../../test/fixtures/ProxySelectorRoutingFixture.ts#L38):
     - `DisputeVerificationFacet`: `checkDisputeAuditingDataCommitment`,
-      `computeDisputeOutputSnapshotData`, `computeDisputeOutputState`, `generateDisputeOutputState`,
+      `computeDisputeOutputSnapshotData`, `computeDisputeOutputState`,
       `isDisputeOutputCorrect` (internal verification/computation steps; `LocalDiamond` delegatecalls
-      the computation helpers with its own gas budget) and `killDispute` (driven from inside the
+      the computation helpers with the dispute execution gas budget and reverts
+      `ErrorDisputeExecutionOutOfGas(gasLimit, gasUsed)` when a computation uses it up, also when the
+      out-of-gas happens inside a nested state-machine call; any other failure keeps its own revert
+      data) and `killDispute` (driven from inside the
       dispute pipeline; exposing it would widen the attack surface).
     - `FraudProofFacet`: `runFraudProof` — a single step driven by `applyFraudProofs`, not callable
       on its own.
@@ -98,6 +101,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
 | `topUpBalance(JoinChannelConfirmation memory, bytes32 expectedSnapshotHash, bytes32 expectedForkId)` | `JoinChannelFacet`        | Balance top-up for an existing participant. See §4.1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `postBlockCalldata(SignedBlock memory, uint256 maxTimestamp)`                                        | (self)                    | Persists the commitment `keccak256(abi.encode(signedBlock, block.timestamp))` under `[channelId][msg.sender][forkId][transactionCnt]`. Guards: `block.timestamp <= maxTimestamp` (`RaceConditionBlockCalldataTimestampTooLate`), no overwrite (`ErrorBlockCalldataAlreadyPosted`), `msg.sender` must equal the block's author (`ErrorBlockCalldataMsgSenderNotBlockAuthor`). Does **not** verify the block — the sender vouches for the data; junk is later slashable against the commitment. Emits `BlockCalldataPosted`. Data-availability role: [../security/data-availability.md](../../../../specification/security/data-availability.md). |
 | `multicall(bytes[] calldata)`                                                                        | (self, delegatecall loop) | Executes each call against the proxy itself, bubbling the first revert. Enables atomic compositions (e.g. upload dispute + reduce). A routed selector inside a call still reaches its facet, via the proxy's own fallback.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `multicallBestEffortLast(bytes[] calldata)`                                                          | (self, delegatecall loop) | The same loop, except that a revert of the last call keeps the earlier effects and emits `MulticallLastCallFailed(revertData)` instead of reverting. The SDK sends a dispute upload last behind the kill and fraud proofs it carries.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `facetAddressForSelector(bytes4 sig) returns (address)`                                              | (self, view)              | Read-only introspection: the facet the fallback would delegatecall for `sig`, or the consumer facet when `sig` is unrouted. See §2.0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `fallback()`                                                                                         | routed facet / consumer   | Delegatecalls `_facetForSelector(msg.sig)` with raw `msg.data`; an unrouted selector lands on the integrator consumer facet (custom functions, `deposit`, `withdraw`, `openChannelGenesis`). Reachability caveat: [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).                                                                                                                                                                                                                                                                                                                        |
 
@@ -127,23 +131,25 @@ Behavior: [../protocol/disputes.md](../../../../specification/disputes/disputes.
 Behavior: [../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md),
 [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md).
 
-| Function                                                                                                                                                   | Routes to                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                        | `StateProofFacet`          |
-| `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                | `StateProofFacet`          |
-| `verifyMilestones(ProofWalkInput memory) returns (ProofWalkResult memory)`                                                                                 | `StateProofFacet`          |
-| `getAnchorSnapshot`                                                                                                                                        | `StateProofFacet`          |
-| `isStateProofStepInvalid`                                                                                                                                  | `StateProofFacet`          |
-| `isBlockChallengeEligible`                                                                                                                                 | `StateProofFacet`          |
-| `isStateProofBelowOnChainAnchor`                                                                                                                           | `StateProofFacet`          |
-| `isTimeoutSupersededByFinalState`                                                                                                                          | `StateProofFacet`          |
-| `isDisputeConflictingWithFinalState`                                                                                                                       | `StateProofFacet`          |
-| `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)` | `StateProofFacet`          |
-| `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                           | `StateSnapshotFacet`       |
-| `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`             | `StateSnapshotFacet`       |
-| `verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory, bytes memory encodedStateMachineState) returns (bool)`                        | `DisputeVerificationFacet` |
-| `verifyOutboundMessageBlocks(MessageBlock[] memory, SnapshotData memory lowerSnapshot, SnapshotData memory upperSnapshot) returns (bool)`                  | `UtilityFacet` (view)      |
-| `pruneOutboundMessageBlocks(MessageBlock[] memory, bytes32 lowerHash) returns (MessageBlock[] memory)`                                                     | `UtilityFacet` (pure)      |
+| Function                                                                                                                                                                        | Routes to                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                                             | `StateProofFacet`          |
+| `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                                     | `StateProofFacet`          |
+| `verifyMilestones(ProofWalkInput memory) returns (ProofWalkResult memory)`                                                                                                      | `StateProofFacet`          |
+| `getAnchorSnapshot`                                                                                                                                                             | `StateProofFacet`          |
+| `isStateProofStepInvalid`                                                                                                                                                       | `StateProofFacet`          |
+| `isBlockChallengeEligible`                                                                                                                                                      | `StateProofFacet`          |
+| `isStateProofBelowOnChainAnchor`                                                                                                                                                | `StateProofFacet`          |
+| `isTimeoutSupersededByFinalState`                                                                                                                                               | `StateProofFacet`          |
+| `isDisputeConflictingWithFinalState`                                                                                                                                            | `StateProofFacet`          |
+| `isDisputeOutboundRunInvalid(Dispute memory, DisputeInvalidOutboundRun memory) returns (bool)`                                                                                  | `StateProofFacet`          |
+| `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)`                      | `StateProofFacet`          |
+| `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                                                | `StateSnapshotFacet`       |
+| `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`                                  | `StateSnapshotFacet`       |
+| `verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory, bytes memory encodedStateMachineState) returns (bool)`                                             | `DisputeVerificationFacet` |
+| `verifyOutboundMessageBlocks(MessageBlock[] memory, SnapshotData memory lowerSnapshot, SnapshotData memory upperSnapshot) returns (bool)`                                       | `UtilityFacet` (view)      |
+| `verifyOutboundRunAboveAnchor(MessageBlock[] memory, SnapshotData memory anchorData, SnapshotData memory latestData) returns (bool isValid, MessageBlock[] memory aboveAnchor)` | `UtilityFacet` (view)      |
+| `pruneOutboundMessageBlocks(MessageBlock[] memory, bytes32 lowerHash) returns (MessageBlock[] memory)`                                                                          | `UtilityFacet` (pure)      |
 
 ### 2.4 Views
 
@@ -194,7 +200,7 @@ All three are declared on the proxy and callable only via its self-CALL, which f
 
 Constructor parameters; a `0` argument selects the default. Values are seconds
 (`gasLimit` is gas). Held as `internal` storage on
-[`StateChannelManagerStorage`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L9)
+[`StateChannelManagerStorage`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L14-L19)
 and read externally through the routed views in §2.4.
 
 | Parameter                                | Default (verified constant) | Role (thin — see protocol docs)                                                                                                                                                                                                                                                                                               |
@@ -228,7 +234,7 @@ declaration and the implementation in sync.
 
 ### 4.1 `JoinChannelFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L1).
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L7).
 `joinChannel` / `topUpBalance` share `_processJoinChannel(…, isTopUp)`:
 
 - `msg.sender` must be the joining participant (`ErrorJoinChannelInvalidSubmitter`); the join must
@@ -245,13 +251,14 @@ declaration and the implementation in sync.
 - Effect on-chain is an appended inbound `JOIN` message block; the channel applies it off-chain via
   the inbound stream ([../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md)),
   landing in the state machine's `_joinChannel`
-  ([state-machine-base.md §2.3](./state-machine-base.md#23-_joinchannel-handles-both-admission-and-top-up)).
+  ([state-machine-base.md §2.3](./state-machine-base.md)).
 
 ### 4.2 `StateSnapshotFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L1). Advances the
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L8). Advances the
 canonical on-chain snapshot; both paths prune already-processed outbound blocks, verify the
-outbound chain between old and new snapshot (`_verifyOutboundMessageBlocks`), process each
+outbound chain between old and new snapshot (`_verifyOutboundMessageBlocks`: links, heights and
+the endpoint first, then the balance sum, so a forged balance is refused, not a panic), process each
 outbound message (`EXIT` → consumer `withdraw`; unknown types revert
 `ErrorOutboundMessageTypeUnsupported`), and enforce `withdrawals ≤ deposits`
 (`CantWithdrawMoreThanDeposits`). Emits `StateSnapshotUpdated`, `OutboundMessagesProcessed`,
@@ -276,13 +283,14 @@ outbound message (`EXIT` → consumer `withdraw`; unknown types revert
 `getAnchorSnapshot` exposes that start; the local-only trusted-start entry belongs to LocalDiamond.
 `isCorrectLatestState` binds the latest claim. The facet also owns `isStateProofStepInvalid`,
 `isStateProofBelowOnChainAnchor`, `isTimeoutSupersededByFinalState`,
-`isDisputeConflictingWithFinalState`, and `isBlockChallengeEligible`. Block-structure and
+`isDisputeConflictingWithFinalState`, `isDisputeOutboundRunInvalid` (the posted outbound run judged
+from the stored anchor; a forged balance gives an invalid verdict, not a revert), and `isBlockChallengeEligible`. Block-structure and
 single-milestone checks reuse the same common mechanics. The proof contains milestones only;
 its last milestone carries the tail. No XOR format or separate signed-block path remains.
 
 ### 4.4 `DisputeManagerFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L1). Opens and
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L8). Opens and
 extends dispute windows. `uploadDispute` (no calldata; `postedAuditingData` must be false) and
 `uploadDisputeWithCalldata` (auditing data must hash to `disputeAuditingDataHash`) share
 `_uploadDispute`:
@@ -305,28 +313,33 @@ extends dispute windows. `uploadDispute` (no calldata; `postedAuditingData` must
 
 ### 4.5 `DisputeVerificationFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L1). The
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L10). The
 reduction engine ([../protocol/disputes.md](../../../../specification/disputes/disputes.md)): `reduce` (deterministic,
 order-independent fold of the committed disputes: latest block by height with hash tie-break,
-slash-set union filtered to snapshot ∪ pending, lowest-height timeout, self-removals,
-inbound tip as of window expiry), `reduceOutputToSnapshotData` (verifies linkage of the supplied
-latest snapshot/state/inbound blocks, applies slashes > timeout precedence, produces the successor
+slash-candidate union of on-chain and listed slashes with no participant filter, lowest-height
+timeout, self-removals, inbound tip as of window expiry), `reduceOutputToSnapshotData` (verifies
+linkage of the supplied latest snapshot/state/inbound blocks, applies slashes > timeout precedence:
+the timeout joins the removals only when no slash took effect, which relies on the state machine's
+`_slashParticipant` returning true for every current participant; produces the successor
 `SnapshotData` + modified state + outbound block), `reduceAndFinalize` (commit with
-`expectedReducedForkId` idempotence), `challengeDisputeReduction` (recompute; wrong stored result →
+`expectedReducedForkId` idempotence; no caller eligibility check, open per
+[`OQ-27-GT4W09` (Reducer eligibility is disabled)](../../../../specification/open-questions.md#oq-27-gt4w09)), `challengeDisputeReduction` (recompute; wrong stored result →
 slash the reducer and replace it; correct stored result → slash the challenger),
 `killDispute` (remove a committed dispute during the kill period and slash its disputer),
-`computeDisputeOutputSnapshotData` / `computeDisputeOutputState` / `generateDisputeOutputState`
-(output-state construction helpers, also used by honest provers), `isDisputeOutputCorrect`, and
+`computeDisputeOutputSnapshotData` / `computeDisputeOutputState`
+(output-state construction helpers, also used by honest provers; their internal `_generateDisputeOutputState` loads
+the state machine state once, applies joins, slashes and removals to it, reads it back once and
+leaves it loaded, so the callers read the output participants without a second `setState`), `isDisputeOutputCorrect`, and
 `verifyBalanceInvariantCheckSnapshot` (the aggregate `totalDeposits == totalWithdrawals +
 getTotalStateBalance()` check protecting late joiners —
 [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md)). Contains live
-`console.log` calls. At 19,945 deployed bytes it is the second-largest production deployable
+`console.log` calls. At 19,228 deployed bytes (hardhat paris build profile) it is the second-largest production deployable
 ([architecture.md §3](./architecture.md#3-deployment-size-constraint)). Six of its functions are
 deliberately unrouted (§2.0).
 
 ### 4.6 `FraudProofFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L1). Block-level fraud
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L9). Block-level fraud
 ([../protocol/fraud-proofs.md](../../../../specification/disputes/fraud-proofs.md)). `applyFraudProofs(proofs, context)`:
 for each not-yet-slashed target, `runFraudProof` dispatches on `FraudProofType`
 (`BlockDoubleSign`, `BlockInvalidStateTransition` — full re-execution via
@@ -339,16 +352,16 @@ later reductions.
 
 ### 4.7 `DisputeFraudProofFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L1). Proves a
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L15). Proves a
 _dispute_ fraudulent during its kill period. `applyDisputeFraudProofs(proofs)`: skips
 uncommitted (already-killed) disputes, requires the kill period open, dispatches on
 `DisputeFraudProofType` (17 types across dispute-content and timeout families —
-[DisputeFraudProofTypes.sol](../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L3) /
-[ProofTypes.sol](../../../../../../contracts/V1/types/ProofTypes.sol#L3)). A valid proof kills the dispute
+[DisputeFraudProofTypes.sol](../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L5) /
+[ProofTypes.sol](../../../../../../contracts/V1/types/ProofTypes.sol#L79)). A valid proof kills the dispute
 and slashes its disputer (`killDispute` → `DisputeKilled`); an invalid proof slashes the submitter.
 Also exposes `validateTimeoutCalldataPostedProof` and the helper predicates routed to it (§2.2).
-At 22,716 deployed bytes it is the largest deployable and the one closest to the EIP-170 ceiling —
-1,860 bytes of headroom ([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
+At 24,289 deployed bytes (hardhat paris build profile) it is the largest deployable and the one closest to the EIP-170 ceiling —
+287 bytes of headroom ([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
 
 ### 4.8 `UtilityFacet`
 
@@ -362,8 +375,9 @@ deployment with two surfaces, which is why it is
   `retrieveSignerAddress`, `decodeBlock` / `tryDecodeBlock`, and the address/bytes/exit-channel
   array operations. They need no storage context, so the facet's own storage is irrelevant to them.
 - **Proxy-storage views, reached by delegatecall** through the routing table
-  ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)):
-  the whole of §2.4 plus `verifyOutboundMessageBlocks` / `pruneOutboundMessageBlocks` (§2.3). Each
+  ([#L272 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L272)):
+  the whole of §2.4 plus `verifyOutboundMessageBlocks` / `verifyOutboundRunAboveAnchor` /
+  `pruneOutboundMessageBlocks` (§2.3). Each
   is a thin wrapper over a `StateChannelCommon` `internal` accessor or a direct read of
   `disputeData`, so they need the shared layout and read the **proxy's** storage under
   delegatecall. That requirement is what makes the `StateChannelCommon` base necessary.
@@ -371,12 +385,12 @@ deployment with two surfaces, which is why it is
 `isGenesisSnapshotWithoutTimeCheck` and `isSnapshotNewer` are `pure`, so the storage context is
 irrelevant to them; both are routed, and `isGenesisSnapshotWithoutTimeCheck` is additionally
 declared on `UtilityFacetInterface`. Observed inconsistency in
-[`StateChannelCommon._getGenesisTimestamp`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L73):
+[`StateChannelCommon._getGenesisTimestamp`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L90):
 one branch reaches it through the routed self-call
 `StateChannelManagerInterface(address(this))`
-([#L85](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L85)) while
+([#L102](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L102)) while
 another reaches the same `pure` function by plain CALL on the facet
-([#L102](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L102)).
+([#L119](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L119)).
 The results agree; the routed path just costs an extra CALL plus a delegatecall.
 
 ### 4.9 Consumer facet & test-only contracts
@@ -390,7 +404,7 @@ forwarder for library tests) are test-support only and MUST NOT be deployed to p
 
 Block authenticity has no external selector: `_isBlockAuthentic` is internal on
 `StateChannelCommon`, used by the fraud-proof and state-proof facets. `LocalDiamond` keeps its
-debug [`_isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444) override for mirrored proof checks and adds no client-facing
+debug [`_isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L465) override for mirrored proof checks and adds no client-facing
 decoding entry: the client decodes blocks with `Codec` and checks author signatures under the
 signature carve-out of [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) (decoding parity is open,
 [`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
@@ -446,7 +460,7 @@ SDK's chain listener consumes these. All verified:
 
 ## 7. Errors
 
-[`Errors.sol`](../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L1) — custom errors in two
+[`Errors.sol`](../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L4) — custom errors in two
 families:
 
 - **Validation errors (`Error*`)** — the submitted argument is invalid regardless of timing: bad
@@ -484,17 +498,40 @@ enums by discovery order and a new enum would renumber `FraudProofType` /
 
 Concrete test evidence is owned by the downstream verification layer. This section defines implementation-specific obligations only.
 
-### Implementation test plan
+## Design invariants
 
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
+<a id="req-con-11-vdgjya"></a>
 
-| Plan item                                               | Requirement / invariant                           | Setup and stimulus                                                                                                      | Expected result                                                                                                                                                                                                                                                                                                                                                                                      | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-con-11-vdgjya.t1"></a>`REQ-CON-11-VDGJYA.T1` | <a id="req-con-11-vdgjya"></a>`REQ-CON-11-VDGJYA` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | `open` MUST reject duplicate participants and already-open channels, reject terms whose deadline is before block time (valid at the deadline, [`REQ-ENFADM-4-2NN96F`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)), verify a unanimous threshold signature over `encodedOpenChannel`, and require ≥ 2 successful deposits before storing the genesis snapshot. | <a id="req-con-11-vdgjya.t1.p1"></a>`REQ-CON-11-VDGJYA.T1.P1` — valid case<br><a id="req-con-11-vdgjya.t1.p2"></a>`REQ-CON-11-VDGJYA.T1.P2` — matching commitment<br><a id="req-con-11-vdgjya.t1.p3"></a>`REQ-CON-11-VDGJYA.T1.P3` — correct identity/signature<br><a id="req-con-11-vdgjya.t1.p4"></a>`REQ-CON-11-VDGJYA.T1.P4` — zero value<br><a id="req-con-11-vdgjya.t1.p5"></a>`REQ-CON-11-VDGJYA.T1.P5` — duplicate delivery<br><a id="req-con-11-vdgjya.t1.p6"></a>`REQ-CON-11-VDGJYA.T1.P6` — malformed input<br><a id="req-con-11-vdgjya.t1.p7"></a>`REQ-CON-11-VDGJYA.T1.P7` — direct invalid/opposite case<br><a id="req-con-11-vdgjya.t1.p8"></a>`REQ-CON-11-VDGJYA.T1.P8` — mismatched commitment<br><a id="req-con-11-vdgjya.t1.p9"></a>`REQ-CON-11-VDGJYA.T1.P9` — predecessor linkage<br><a id="req-con-11-vdgjya.t1.p10"></a>`REQ-CON-11-VDGJYA.T1.P10` — genesis linkage<br><a id="req-con-11-vdgjya.t1.p11"></a>`REQ-CON-11-VDGJYA.T1.P11` — stale fork<br><a id="req-con-11-vdgjya.t1.p12"></a>`REQ-CON-11-VDGJYA.T1.P12` — foreign fork<br><a id="req-con-11-vdgjya.t1.p13"></a>`REQ-CON-11-VDGJYA.T1.P13` — wrong identity/signature<br><a id="req-con-11-vdgjya.t1.p14"></a>`REQ-CON-11-VDGJYA.T1.P14` — missing identity/signature<br><a id="req-con-11-vdgjya.t1.p15"></a>`REQ-CON-11-VDGJYA.T1.P15` — duplicate identity/signature<br><a id="req-con-11-vdgjya.t1.p16"></a>`REQ-CON-11-VDGJYA.T1.P16` — forged identity/signature<br><a id="req-con-11-vdgjya.t1.p17"></a>`REQ-CON-11-VDGJYA.T1.P17` — membership boundary<br><a id="req-con-11-vdgjya.t1.p18"></a>`REQ-CON-11-VDGJYA.T1.P18` — exact balance/boundary<br><a id="req-con-11-vdgjya.t1.p19"></a>`REQ-CON-11-VDGJYA.T1.P19` — one beyond the boundary<br><a id="req-con-11-vdgjya.t1.p20"></a>`REQ-CON-11-VDGJYA.T1.P20` — maximum value<br><a id="req-con-11-vdgjya.t1.p21"></a>`REQ-CON-11-VDGJYA.T1.P21` — value conservation<br><a id="req-con-11-vdgjya.t1.p22"></a>`REQ-CON-11-VDGJYA.T1.P22` — replay delivery<br><a id="req-con-11-vdgjya.t1.p23"></a>`REQ-CON-11-VDGJYA.T1.P23` — concurrent delivery<br><a id="req-con-11-vdgjya.t1.p24"></a>`REQ-CON-11-VDGJYA.T1.P24` — adversarial input<br><a id="req-con-11-vdgjya.t1.p25"></a>`REQ-CON-11-VDGJYA.T1.P25` — partial failure<br><a id="req-con-11-vdgjya.t1.p26"></a>`REQ-CON-11-VDGJYA.T1.P26` — retry and recovery<br><a id="req-con-11-vdgjya.t1.p27"></a>`REQ-CON-11-VDGJYA.T1.P27` — terms submitted at their deadline accepted<br><a id="req-con-11-vdgjya.t1.p28"></a>`REQ-CON-11-VDGJYA.T1.P28` — terms submitted after their deadline rejected before any write |
-| <a id="inv-con-12-mxrtgg.t1"></a>`INV-CON-12-MXRTGG.T1` | <a id="inv-con-12-mxrtgg"></a>`INV-CON-12-MXRTGG` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).                                                                                                                                                                                                                | <a id="inv-con-12-mxrtgg.t1.p1"></a>`INV-CON-12-MXRTGG.T1.P1` — valid case<br><a id="inv-con-12-mxrtgg.t1.p2"></a>`INV-CON-12-MXRTGG.T1.P2` — zero value<br><a id="inv-con-12-mxrtgg.t1.p3"></a>`INV-CON-12-MXRTGG.T1.P3` — direct invalid/opposite case<br><a id="inv-con-12-mxrtgg.t1.p4"></a>`INV-CON-12-MXRTGG.T1.P4` — exact balance/boundary<br><a id="inv-con-12-mxrtgg.t1.p5"></a>`INV-CON-12-MXRTGG.T1.P5` — one beyond the boundary<br><a id="inv-con-12-mxrtgg.t1.p6"></a>`INV-CON-12-MXRTGG.T1.P6` — maximum value<br><a id="inv-con-12-mxrtgg.t1.p7"></a>`INV-CON-12-MXRTGG.T1.P7` — value conservation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| <a id="req-con-13-c7acx2.t1"></a>`REQ-CON-13-C7ACX2.T1` | <a id="req-con-13-c7acx2"></a>`REQ-CON-13-C7ACX2` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Block-calldata commitments are append-only and author-bound: no overwrite, `msg.sender` must be the block's author, and posting must beat `maxTimestamp`.                                                                                                                                                                                                                                            | <a id="req-con-13-c7acx2.t1.p1"></a>`REQ-CON-13-C7ACX2.T1.P1` — valid case<br><a id="req-con-13-c7acx2.t1.p2"></a>`REQ-CON-13-C7ACX2.T1.P2` — matching commitment<br><a id="req-con-13-c7acx2.t1.p3"></a>`REQ-CON-13-C7ACX2.T1.P3` — correct identity/signature<br><a id="req-con-13-c7acx2.t1.p4"></a>`REQ-CON-13-C7ACX2.T1.P4` — before deadline<br><a id="req-con-13-c7acx2.t1.p5"></a>`REQ-CON-13-C7ACX2.T1.P5` — direct invalid/opposite case<br><a id="req-con-13-c7acx2.t1.p6"></a>`REQ-CON-13-C7ACX2.T1.P6` — mismatched commitment<br><a id="req-con-13-c7acx2.t1.p7"></a>`REQ-CON-13-C7ACX2.T1.P7` — predecessor linkage<br><a id="req-con-13-c7acx2.t1.p8"></a>`REQ-CON-13-C7ACX2.T1.P8` — genesis linkage<br><a id="req-con-13-c7acx2.t1.p9"></a>`REQ-CON-13-C7ACX2.T1.P9` — stale fork<br><a id="req-con-13-c7acx2.t1.p10"></a>`REQ-CON-13-C7ACX2.T1.P10` — foreign fork<br><a id="req-con-13-c7acx2.t1.p11"></a>`REQ-CON-13-C7ACX2.T1.P11` — wrong identity/signature<br><a id="req-con-13-c7acx2.t1.p12"></a>`REQ-CON-13-C7ACX2.T1.P12` — missing identity/signature<br><a id="req-con-13-c7acx2.t1.p13"></a>`REQ-CON-13-C7ACX2.T1.P13` — duplicate identity/signature<br><a id="req-con-13-c7acx2.t1.p14"></a>`REQ-CON-13-C7ACX2.T1.P14` — forged identity/signature<br><a id="req-con-13-c7acx2.t1.p15"></a>`REQ-CON-13-C7ACX2.T1.P15` — membership boundary<br><a id="req-con-13-c7acx2.t1.p16"></a>`REQ-CON-13-C7ACX2.T1.P16` — at deadline<br><a id="req-con-13-c7acx2.t1.p17"></a>`REQ-CON-13-C7ACX2.T1.P17` — after deadline<br><a id="req-con-13-c7acx2.t1.p18"></a>`REQ-CON-13-C7ACX2.T1.P18` — maximum honest skew                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| <a id="req-con-14-mbv0sv.t1"></a>`REQ-CON-14-MBV0SV.T1` | <a id="req-con-14-mbv0sv"></a>`REQ-CON-14-MBV0SV` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Dispute uploads are participant-gated and throttled: disputer == `msg.sender`, disputer eligible (snapshot ∪ pending − slashed), one window-opening upload per `evidenceTime` per address, one evidence post per participant per window.                                                                                                                                                             | <a id="req-con-14-mbv0sv.t1.p1"></a>`REQ-CON-14-MBV0SV.T1.P1` — valid case<br><a id="req-con-14-mbv0sv.t1.p2"></a>`REQ-CON-14-MBV0SV.T1.P2` — matching commitment<br><a id="req-con-14-mbv0sv.t1.p3"></a>`REQ-CON-14-MBV0SV.T1.P3` — correct identity/signature<br><a id="req-con-14-mbv0sv.t1.p4"></a>`REQ-CON-14-MBV0SV.T1.P4` — before deadline<br><a id="req-con-14-mbv0sv.t1.p5"></a>`REQ-CON-14-MBV0SV.T1.P5` — new participant<br><a id="req-con-14-mbv0sv.t1.p6"></a>`REQ-CON-14-MBV0SV.T1.P6` — malformed input<br><a id="req-con-14-mbv0sv.t1.p7"></a>`REQ-CON-14-MBV0SV.T1.P7` — direct invalid/opposite case<br><a id="req-con-14-mbv0sv.t1.p8"></a>`REQ-CON-14-MBV0SV.T1.P8` — mismatched commitment<br><a id="req-con-14-mbv0sv.t1.p9"></a>`REQ-CON-14-MBV0SV.T1.P9` — predecessor linkage<br><a id="req-con-14-mbv0sv.t1.p10"></a>`REQ-CON-14-MBV0SV.T1.P10` — genesis linkage<br><a id="req-con-14-mbv0sv.t1.p11"></a>`REQ-CON-14-MBV0SV.T1.P11` — stale fork<br><a id="req-con-14-mbv0sv.t1.p12"></a>`REQ-CON-14-MBV0SV.T1.P12` — foreign fork<br><a id="req-con-14-mbv0sv.t1.p13"></a>`REQ-CON-14-MBV0SV.T1.P13` — wrong identity/signature<br><a id="req-con-14-mbv0sv.t1.p14"></a>`REQ-CON-14-MBV0SV.T1.P14` — missing identity/signature<br><a id="req-con-14-mbv0sv.t1.p15"></a>`REQ-CON-14-MBV0SV.T1.P15` — duplicate identity/signature<br><a id="req-con-14-mbv0sv.t1.p16"></a>`REQ-CON-14-MBV0SV.T1.P16` — forged identity/signature<br><a id="req-con-14-mbv0sv.t1.p17"></a>`REQ-CON-14-MBV0SV.T1.P17` — membership boundary<br><a id="req-con-14-mbv0sv.t1.p18"></a>`REQ-CON-14-MBV0SV.T1.P18` — at deadline<br><a id="req-con-14-mbv0sv.t1.p19"></a>`REQ-CON-14-MBV0SV.T1.P19` — after deadline<br><a id="req-con-14-mbv0sv.t1.p20"></a>`REQ-CON-14-MBV0SV.T1.P20` — maximum honest skew<br><a id="req-con-14-mbv0sv.t1.p21"></a>`REQ-CON-14-MBV0SV.T1.P21` — existing participant<br><a id="req-con-14-mbv0sv.t1.p22"></a>`REQ-CON-14-MBV0SV.T1.P22` — removed participant<br><a id="req-con-14-mbv0sv.t1.p23"></a>`REQ-CON-14-MBV0SV.T1.P23` — slashed participant<br><a id="req-con-14-mbv0sv.t1.p24"></a>`REQ-CON-14-MBV0SV.T1.P24` — concurrent membership change<br><a id="req-con-14-mbv0sv.t1.p25"></a>`REQ-CON-14-MBV0SV.T1.P25` — adversarial input<br><a id="req-con-14-mbv0sv.t1.p26"></a>`REQ-CON-14-MBV0SV.T1.P26` — partial failure<br><a id="req-con-14-mbv0sv.t1.p27"></a>`REQ-CON-14-MBV0SV.T1.P27` — retry and recovery                                                                                                                                                         |
-| <a id="req-con-15-6m91qc.t1"></a>`REQ-CON-15-6M91QC.T1` | <a id="req-con-15-6m91qc"></a>`REQ-CON-15-6M91QC` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.                                                                                                                                                                                                                       | <a id="req-con-15-6m91qc.t1.p1"></a>`REQ-CON-15-6M91QC.T1.P1` — valid case<br><a id="req-con-15-6m91qc.t1.p2"></a>`REQ-CON-15-6M91QC.T1.P2` — matching commitment<br><a id="req-con-15-6m91qc.t1.p3"></a>`REQ-CON-15-6M91QC.T1.P3` — before deadline<br><a id="req-con-15-6m91qc.t1.p4"></a>`REQ-CON-15-6M91QC.T1.P4` — new participant<br><a id="req-con-15-6m91qc.t1.p5"></a>`REQ-CON-15-6M91QC.T1.P5` — malformed input<br><a id="req-con-15-6m91qc.t1.p6"></a>`REQ-CON-15-6M91QC.T1.P6` — direct invalid/opposite case<br><a id="req-con-15-6m91qc.t1.p7"></a>`REQ-CON-15-6M91QC.T1.P7` — mismatched commitment<br><a id="req-con-15-6m91qc.t1.p8"></a>`REQ-CON-15-6M91QC.T1.P8` — predecessor linkage<br><a id="req-con-15-6m91qc.t1.p9"></a>`REQ-CON-15-6M91QC.T1.P9` — genesis linkage<br><a id="req-con-15-6m91qc.t1.p10"></a>`REQ-CON-15-6M91QC.T1.P10` — stale fork<br><a id="req-con-15-6m91qc.t1.p11"></a>`REQ-CON-15-6M91QC.T1.P11` — foreign fork<br><a id="req-con-15-6m91qc.t1.p12"></a>`REQ-CON-15-6M91QC.T1.P12` — at deadline<br><a id="req-con-15-6m91qc.t1.p13"></a>`REQ-CON-15-6M91QC.T1.P13` — after deadline<br><a id="req-con-15-6m91qc.t1.p14"></a>`REQ-CON-15-6M91QC.T1.P14` — maximum honest skew<br><a id="req-con-15-6m91qc.t1.p15"></a>`REQ-CON-15-6M91QC.T1.P15` — existing participant<br><a id="req-con-15-6m91qc.t1.p16"></a>`REQ-CON-15-6M91QC.T1.P16` — removed participant<br><a id="req-con-15-6m91qc.t1.p17"></a>`REQ-CON-15-6M91QC.T1.P17` — slashed participant<br><a id="req-con-15-6m91qc.t1.p18"></a>`REQ-CON-15-6M91QC.T1.P18` — concurrent membership change<br><a id="req-con-15-6m91qc.t1.p19"></a>`REQ-CON-15-6M91QC.T1.P19` — adversarial input<br><a id="req-con-15-6m91qc.t1.p20"></a>`REQ-CON-15-6M91QC.T1.P20` — partial failure<br><a id="req-con-15-6m91qc.t1.p21"></a>`REQ-CON-15-6M91QC.T1.P21` — retry and recovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+### REQ-CON-11-VDGJYA — Channel open validation
+
+`open` MUST reject duplicate participants and already-open channels, reject terms whose deadline is before block time (valid at the deadline, [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)), verify a unanimous threshold signature over `encodedOpenChannel`, and require ≥ 2 successful deposits before storing the genesis snapshot.
+
+- [x] `REQ-CON-11-VDGJYA.T1.P27` — terms submitted at their deadline accepted
+- [x] `REQ-CON-11-VDGJYA.T1.P28` — terms submitted after their deadline rejected before any write
+
+<a id="inv-con-12-mxrtgg"></a>
+
+### INV-CON-12-MXRTGG — Withdrawals never exceed resolved deposits
+
+Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).
+
+<a id="req-con-13-c7acx2"></a>
+
+### REQ-CON-13-C7ACX2 — Append-only, author-bound calldata commitments
+
+Block-calldata commitments are append-only and author-bound: no overwrite, `msg.sender` must be the block's author, and posting must beat `maxTimestamp`.
+
+<a id="req-con-14-mbv0sv"></a>
+
+### REQ-CON-14-MBV0SV — Participant-gated, throttled dispute uploads
+
+Dispute uploads are participant-gated and throttled: disputer == `msg.sender`, disputer eligible (snapshot ∪ pending − slashed), one window-opening upload per `evidenceTime` per address, one evidence post per participant per window.
+
+<a id="req-con-15-6m91qc"></a>
+
+### REQ-CON-15-6M91QC — Fraudulent disputes are killed in the kill period
+
+A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.
 
 ## Future Work
 
@@ -508,17 +545,7 @@ _Non-normative._
   `OutboundMessagesProcessed` event (§6); gas-limiting `verifyMilestones`/`verifyStateProof`
   against unverifiable oversized proofs (`StateProofFacet` comment).
 - Replace the `hasPosted` address array with a participant bitmask (source comment in
-  [DisputeTypes.sol](../../../../../../contracts/V1/types/DisputeTypes.sol#L3)).
+  [DisputeTypes.sol](../../../../../../contracts/V1/types/DisputeTypes.sol#L96)).
 - Rename `ErrorDisputeThrottled` into one family consistently.
 - Per-channel state-machine mapping (today one implementation serves all channels).
 - Unit coverage for the gaps in §8.
-
-## Implementation traceability
-
-| Requirement / invariant                                        | Statement                                                                                                                                                                                                                                                                                                                                                                                            | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                     | Gap / divergence |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CON-11-VDGJYA`](manager-and-facets.md#req-con-11-vdgjya) | `open` MUST reject duplicate participants and already-open channels, reject terms whose deadline is before block time (valid at the deadline, [`REQ-ENFADM-4-2NN96F`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)), verify a unanimous threshold signature over `encodedOpenChannel`, and require ≥ 2 successful deposits before storing the genesis snapshot. | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L192) (`open`)                                                                                                                                                          | None.            |
-| [`INV-CON-12-MXRTGG`](manager-and-facets.md#inv-con-12-mxrtgg) | Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).                                                                                                                                                                                                                | Covered               | [StateSnapshotFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L148) (`_applyOutboundMessageBlocks`)                                                                                                                                               | None.            |
-| [`REQ-CON-13-C7ACX2`](manager-and-facets.md#req-con-13-c7acx2) | Block-calldata commitments are append-only and author-bound: no overwrite, `msg.sender` must be the block's author, and posting must beat `maxTimestamp`.                                                                                                                                                                                                                                            | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L159) (`postBlockCalldata`)                                                                                                                                             | None.            |
-| [`REQ-CON-14-MBV0SV`](manager-and-facets.md#req-con-14-mbv0sv) | Dispute uploads are participant-gated and throttled: disputer == `msg.sender`, disputer eligible (snapshot ∪ pending − slashed), one window-opening upload per `evidenceTime` per address, one evidence post per participant per window.                                                                                                                                                             | Covered               | [DisputeManagerFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L40) (`_uploadDispute`); [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L57) (`disputerThrottle`)        | None.            |
-| [`REQ-CON-15-6M91QC`](manager-and-facets.md#req-con-15-6m91qc) | A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.                                                                                                                                                                                                                       | Covered               | [DisputeFraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17) (`applyDisputeFraudProofs`); [DisputeVerificationFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L285) (`killDispute`) | None.            |

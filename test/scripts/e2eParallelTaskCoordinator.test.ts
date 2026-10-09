@@ -956,6 +956,81 @@ describe("distributed task coordinator", function () {
         expect(results).to.deep.equal([0]);
     });
 
+    it("lets a running speculative copy retry a starved attempt instead of queueing the task again", function () {
+        const coordinator = new TaskCoordinator([task("one")], {
+            speculative: true
+        });
+        const starved = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+
+        expect(
+            coordinator.completeAttempt("a", {
+                attemptId: starved.attemptId,
+                code: 0,
+                stdout: "",
+                stderr: "",
+                reduced: {
+                    oomCount: 0,
+                    starveCount: 1,
+                    timing: {
+                        startupMs: 1,
+                        deployMs: 1,
+                        workerBootMs: 1,
+                        runtimeReadyMs: 1,
+                        maxEventLoopDelayMs: 1200,
+                        el: { main: 0, sdk: 0, vm: 0, watchdog: 1200 },
+                        found: true
+                    }
+                }
+            }).disposition
+        ).to.equal("retry-starvation");
+        expect(coordinator.finish().done).to.equal(false);
+
+        expect(
+            coordinator.completeAttempt("b", {
+                attemptId: copy.attemptId,
+                code: 0,
+                stdout: "passed",
+                stderr: "",
+                durationMs: 1
+            }).disposition
+        ).to.equal("complete");
+        expect(coordinator.finish().done).to.equal(true);
+        expect(coordinator.finish().failed).to.be.empty;
+    });
+
+    it("lets a running speculative copy retry an attempt killed by a signal instead of queueing the task again", function () {
+        const coordinator = new TaskCoordinator([task("one")], {
+            speculative: true
+        });
+        const killed = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+
+        expect(
+            coordinator.completeAttempt("a", {
+                attemptId: killed.attemptId,
+                code: null,
+                signal: "SIGKILL",
+                stdout: "",
+                stderr: "",
+                durationMs: 1
+            }).disposition
+        ).to.equal("retry-infrastructure");
+        expect(coordinator.finish().done).to.equal(false);
+
+        expect(
+            coordinator.completeAttempt("b", {
+                attemptId: copy.attemptId,
+                code: 0,
+                stdout: "passed",
+                stderr: "",
+                durationMs: 1
+            }).disposition
+        ).to.equal("complete");
+        expect(coordinator.finish().done).to.equal(true);
+        expect(coordinator.finish().failed).to.be.empty;
+    });
+
     it("ignores a later successful speculative result", function () {
         const results: number[] = [];
         const coordinator = new TaskCoordinator([task("one")], {

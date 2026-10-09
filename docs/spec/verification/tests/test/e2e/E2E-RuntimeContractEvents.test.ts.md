@@ -1,11 +1,6 @@
-# test/e2e/E2E-RuntimeContractEvents.test.ts — Test Report
+# E2E-RuntimeContractEvents.test.ts
 
-> **Test file:** [test/e2e/E2E-RuntimeContractEvents.test.ts](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-RuntimeContractEvents.test.ts](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts)
 
 ## Overview
 
@@ -21,9 +16,7 @@ subscription so forwarded events reached no listener. Everything else about the 
 (request settlement, disposal, signing confinement) is out of scope and covered by the runtime
 suites.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                                | Covers                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: Runtime contract events > delivers a real Addition event to a main-thread .on subscriber over the runtime port`](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts#L22) (line 22) | [`UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P4`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-1-tjywgm.p4) |
-| [`E2E: Runtime contract events > delivers a real Addition event from an SDK worker`](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts#L25) (line 25)                                    | —                                                                                                                                                                    |
+- `delivers a real Addition event to a main-thread .on subscriber over the runtime port`: UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P4
+- `delivers a real Addition event from an SDK worker`: none

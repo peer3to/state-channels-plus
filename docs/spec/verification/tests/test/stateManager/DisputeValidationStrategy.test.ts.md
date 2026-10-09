@@ -1,12 +1,7 @@
-# test/stateManager/DisputeValidationStrategy.test.ts — Test Report
+# DisputeValidationStrategy.test.ts
 
-> **Test file:** [test/stateManager/DisputeValidationStrategy.test.ts](../../../../../../test/stateManager/DisputeValidationStrategy.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [DisputeValidationStrategy.ts](../../../../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/stateManager/DisputeValidationStrategy.test.ts](../../../../../../test/stateManager/DisputeValidationStrategy.test.ts)
+Exercises: [DisputeValidationStrategy.ts](../../../../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md)
 
 ## Overview
 
@@ -23,9 +18,7 @@ outsider author/signature-union checks proceed to `SUCCESS` when participant sna
 unavailable. The deviation hooks' dispute-evidence construction is out of scope (owned by the
 `disputeValidation` e2e suites), as is live-strategy behavior.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                    | Covers                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`DisputeValidationStrategy > returns false only for DISPUTE and throws impossible results`](../../../../../../test/stateManager/DisputeValidationStrategy.test.ts#L5) (line 5)                                     | [`UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P3`](../../../../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md#unit-test-disputevalidation-strategy-1-4tztj6.p3) |
-| [`DisputeValidationStrategy > outsider author without the executed participant snapshots -> the signature-union check throws`](../../../../../../test/stateManager/DisputeValidationStrategy.test.ts#L22) (line 22) | —                                                                                                                                                                                                            |
+- `returns false only for DISPUTE and throws impossible results`: UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P3
+- `outsider author without the executed participant snapshots -> the signature-union check throws`: none

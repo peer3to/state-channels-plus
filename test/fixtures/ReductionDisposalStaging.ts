@@ -1,8 +1,9 @@
 // @spec-test-coverage-ignore: shared reduction disposal staging exercised by the mapped ReductionManager test declarations
 
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
-import { inlineHostFor } from "./RuntimeRootObservation";
+import { inlineHostFor, runtimeEndpointFor } from "./RuntimeRootObservation";
 import { Status } from "@/types";
+import { DetachedPromises } from "@/utils/DetachedPromises";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -109,6 +110,74 @@ export async function assertReadFailureDuringGenesisApplication(
     await waitFor(() => host.connections.size === 0);
     await expect(manager.stateManager.diamondStateMachine.getParticipants()).to
         .be.rejected;
+}
+
+/**
+ * Stage a reducible disputed fork on peer 0, hold its reduce send after the
+ * local install, abort while it is held, and release the send while the
+ * teardown is parked before the chain provider closes. The disposal does not
+ * intercept a send already started: it goes out once, and its detached
+ * submission settles without a rejection or a reported failure.
+ */
+export async function assertDisposalDuringHeldReduceSend(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await stageDisposalFork(h);
+    const target = h.getPeer(0);
+    const { host, sm, stub } = runtimeEndpointFor(target.p2pInstance);
+    const executor = sm.reductionManager["reductionExecutor"];
+    const submitDetached = executor["submitDetached"];
+    const logFailure = executor["logUnclassifiedSubmissionFailure"];
+    let reportedFailures = 0;
+    let submission: Promise<unknown> | undefined;
+    executor["logUnclassifiedSubmissionFailure"] = () => {
+        reportedFailures++;
+    };
+    executor["submitDetached"] = (...args) => {
+        const collect = DetachedPromises.collect;
+        DetachedPromises.collect = (promise) => {
+            submission = promise;
+            collect.call(DetachedPromises, promise);
+        };
+        try {
+            submitDetached.apply(executor, args);
+        } finally {
+            DetachedPromises.collect = collect;
+        }
+    };
+    // stop() parks on the custom RPC disposal, after it set isDisposed and
+    // before the root closes the chain provider
+    const localRpc = sm.p2pManager.localRpc;
+    const disposeLocalRpc = localRpc.dispose;
+    let releaseTeardown!: () => void;
+    const teardown = new Promise<void>((resolve) => {
+        releaseTeardown = resolve;
+    });
+    localRpc.dispose = async () => {
+        await teardown;
+        return disposeLocalRpc.call(localRpc);
+    };
+    const hold = await h.rpcStub.holdReductionAttempt(0, "submit");
+    try {
+        stub.startTryReduce(sourceForkId);
+        // the send is reached only after the local install
+        await waitFor(async () => (await hold.entered()) === 1);
+        await waitFor(async () => stub.getTryReduceOutcome()?.settled === true);
+        expect(stub.getTryReduceOutcome()?.result).to.be.a("string");
+        stub.abortDetached();
+        await waitFor(async () => sm.isDisposed);
+        stub.restoreReductionAttempt();
+        await submission;
+        expect(stub.getReductionSubmitCallCount()).to.equal(1);
+        expect(reportedFailures).to.equal(0);
+    } finally {
+        stub.restoreReductionAttempt();
+        executor["submitDetached"] = submitDetached;
+        executor["logUnclassifiedSubmissionFailure"] = logFailure;
+        releaseTeardown();
+        localRpc.dispose = disposeLocalRpc;
+    }
+    await host.dispose();
 }
 
 export async function stageDisposalFork(h: MathPeerTestHarness) {

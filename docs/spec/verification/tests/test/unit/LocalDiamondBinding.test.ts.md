@@ -1,12 +1,7 @@
-# test/unit/LocalDiamondBinding.test.ts — Test Report
+# LocalDiamondBinding.test.ts
 
-> **Test file:** [test/unit/LocalDiamondBinding.test.ts](../../../../../../test/unit/LocalDiamondBinding.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [localDiamond.ts](../../../../implementation/source/src/utils/localDiamond.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/LocalDiamondBinding.test.ts](../../../../../../test/unit/LocalDiamondBinding.test.ts)
+Exercises: [localDiamond.ts](../../../../implementation/source/src/utils/localDiamond.ts.md)
 
 ## Overview
 
@@ -32,18 +27,11 @@ ABI the binding carries, not that the deployed mirror answers it — that half i
 `test/V1/UniversalDeployment.test.ts`, which drives real routed and `LocalDiamond`-only calls
 through `connectLocalDiamond` against a deployed mirror.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                               | Covers                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`localDiamond binding > carries every fragment of both generated ABIs`](../../../../../../test/unit/LocalDiamondBinding.test.ts#L21) (line 21)                | [`UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P1`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-local-diamond-binding-1-w8atc1.p1) |
-| [`localDiamond binding > keeps one fragment for a signature declared by both ABIs`](../../../../../../test/unit/LocalDiamondBinding.test.ts#L33) (line 33)     | [`UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P2`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-local-diamond-binding-1-w8atc1.p2) |
-| [`localDiamond binding > includes every manager error once`](../../../../../../test/unit/LocalDiamondBinding.test.ts#L37) (line 37)                            | [`UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P8`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-local-diamond-binding-1-w8atc1.p8) |
-| [`localDiamond binding > encodes a call to a function the proxy routes to a facet`](../../../../../../test/unit/LocalDiamondBinding.test.ts#L43) (line 43)     | [`UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P3`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-local-diamond-binding-1-w8atc1.p3) |
-| [`localDiamond binding > encodes a call to a function only the local diamond declares`](../../../../../../test/unit/LocalDiamondBinding.test.ts#L59) (line 59) | [`UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P4`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-local-diamond-binding-1-w8atc1.p4) |
-| [`localDiamond binding > connects a read-only binding when no runner is given`](../../../../../../test/unit/LocalDiamondBinding.test.ts#L75) (line 75)         | [`UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P5`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-local-diamond-binding-1-w8atc1.p5) |
+- `carries every fragment of both generated ABIs`: UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P1
+- `keeps one fragment for a signature declared by both ABIs`: UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P2
+- `includes every manager error once`: UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P8
+- `encodes a call to a function the proxy routes to a facet`: UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P3
+- `encodes a call to a function only the local diamond declares`: UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P4
+- `connects a read-only binding when no runner is given`: UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P5

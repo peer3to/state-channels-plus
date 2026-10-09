@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/protocol/dispute-processing.md](../../../../specification/disputes/dispute-processing.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The SDK side of disputes: intake from local escalation and chain
 > events, dispute construction, audit (validity/authorization checks, state
 > proofs, replay), dispute fraud proofs and kills, timeout and forced-inclusion
@@ -25,8 +24,10 @@ The pipeline has three roles, all embodied by every honest participant:
   period; a valid one is persisted and, if the auditor holds more evidence, is
   answered with the auditor's own dispute.
 - **Reducer** — after the window's kill period, deterministically reduces the
-  window's disputes to one successor fork, installs its genesis locally, and
-  submits `reduceAndFinalize` + the fork snapshot update on-chain.
+  window's disputes to one successor fork, installs its genesis locally,
+  submits `reduceAndFinalize` alone at the signer's estimate (no fixed gas
+  limit), and once it is mined posts the fork adoption as a separate snapshot
+  update.
 
 Guarantee: every dispute path ends in a canonical successor fork adopted by
 `unsafeSetGenesisState` ([`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0)), with valid
@@ -46,7 +47,7 @@ sequenceDiagram
 
     SM->>DM: dispute(forkId) [fraud / timeout / self-removal / force-join]
     DM->>DM: constructDispute: stateProof, slashes,<br/>fraud proofs, timeout, auditing data, output hash
-    DM->>SCM: multicall(applyFraudProofs, uploadDispute[WithCalldata])
+    DM->>SCM: multicallBestEffortLast(applyFraudProofs, uploadDispute[WithCalldata])
     SCM-->>EH: DisputeCommitted[WithAuditingData]
     EH->>EH: mirror into LocalDiamond, dedup by dispute hash
     alt final dispute
@@ -76,19 +77,19 @@ sequenceDiagram
 
 ### 3.1 Local escalation (disputer role)
 
-Every trigger calls [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L1),
+Every trigger calls [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L115),
 which is mutexed and idempotent per fork (`didIDispute` flag):
 
-| Trigger                                                                                                         | Site                                                                                                   | Dispute input it contributes                                                                                                                              |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)      | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
-| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L483) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
-| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
-| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                        | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
-| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
-| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
-| Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
-| Auditor holds more evidence than a valid observed dispute                                                       | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                 | merged evidence                                                                                                                                           |
+| Trigger                                                                                                         | Site                                                                                                                                          | Dispute input it contributes                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)                                             | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
+| Participant timeout                                                                                             | [`ParticipantTimeoutService.tryTimeoutParticipant`](../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L54) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
+| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                                                             | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
+| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                                                               | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
+| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                                                                 | `onChainSlashes`                                                                                                                                          |
+| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                                                                | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
+| Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                                                           | own view of the fork                                                                                                                                      |
+| Auditor holds more evidence than a valid observed dispute                                                       | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                                                        | merged evidence                                                                                                                                           |
 
 ### 3.2 Timeout detection detail
 
@@ -118,7 +119,7 @@ committed block and after `setLatestState`):
 Disputes never arrive over peer RPC; the chain is the source of truth. The
 listener pipeline ([components.md](./components.md) §6) delivers
 `DisputeCommitted` / `DisputeCommittedWithAuditingData` to
-[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L322),
+[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L311),
 deduplicated per dispute hash by an in-flight promise map. The handler first
 mirrors the event into the `LocalDiamond`, then applies a relevance gate: the
 dispute's fork must be the current fork, or (for final disputes) a fork with an
@@ -130,10 +131,10 @@ the acknowledged dead fork are blacklisted).
 
 ## 4. Dispute construction
 
-[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L646)
-assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`:
+[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L711)
+assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply, observedOnChainSlashes }`:
 
-1. **State proof.** [`AgreementManager.getStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L67)
+1. **State proof.** [`AgreementManager.buildStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L164)
    for the fork's latest stored height: milestones at every participant-set
    change point plus a latest-state milestone when threshold coverage exists;
    with any linked tail inside its last milestone
@@ -145,10 +146,12 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    the dispute's claimed set is a subset of the on-chain set when it executes
    (separation of fraud-proof enforcement from reduction, [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq)).
 3. **Timeout** from storage, or the empty struct.
-4. **Auditing data** (`getAuditingData`): genesis `SnapshotData`, one snapshot
+4. **Auditing data** ([`buildAuditingData`](../../../../../../src/disputeManager/DisputeManager.ts#L958)): genesis `SnapshotData`, one snapshot
    per milestone, the latest state snapshot, the latest _finalized_ state's
-   encoded machine state, and the inbound/outbound message-block ranges linking
-   snapshot tips. `isPartial` (anything missing locally) aborts construction.
+   encoded machine state, the inbound message-block range linking snapshot tips,
+   and the outbound blocks above the on-chain snapshot's outbound head up to the
+   latest state's. Missing local data throws, so construction fails; no
+   partial dispute is submitted.
 5. **Output commitment.** `LocalDiamond.computeDisputeOutputSnapshotData.staticCall(input, latestSnapshot, latestState, inboundBlocks)`
    computes the successor-fork genesis `SnapshotData`; its hash becomes
    `outputSnapshotDataHash`. The dispute thereby pre-commits to its own
@@ -162,15 +165,25 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
 7. Sign the encoded dispute (`SignatureUtils.signDispute`) →
    `DisputeConfirmation` with an empty co-signature list.
 
-**Submission.** With fraud proofs: `SCM.multicall([applyFraudProofs, uploadDispute[WithCalldata]])`;
-without: the plain or calldata upload. No upload passes a gas limit: the chain signer sends each
-with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest dispute that lands
-between estimate and inclusion cannot push a late disputer out of gas (and past the evidence
-window). Race reverts are classified:
+**Submission.** With a kill or fraud proofs:
+`SCM.multicallBestEffortLast([applyDisputeFraudProofs?, applyFraudProofs?, uploadDispute[WithCalldata]])`.
+The kill and fraud proofs must succeed; the upload, last, is best effort, so they land even when
+it is refused. The proxy then emits `MulticallLastCallFailed(revertData)`; DisputeManager reads it
+from the receipt, decodes it and classifies it as a refused lone upload, and does not send the kill
+again alone. A refusal with no reason (bare `0x`, or the proxy's `Delegatecall failed`
+`Error(string)`) takes the custom error the all-or-nothing estimate reverted with; without one it
+is a fatal `Error`. The multicall's gas limit is the all-or-nothing `multicall` estimate plus the replay
+requirement; only when that estimate reverts (the upload already fails) is the best-effort call
+estimated, so a searching estimator never funds the kill alone while the upload could still land.
+Without a kill or fraud proofs: the plain or calldata upload, sent with no gas limit: the chain
+signer sends it with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest
+dispute that lands between estimate and inclusion cannot push a late disputer out of gas (and past
+the evidence window). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
-`RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
-closed), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
+`RaceConditionDisputeEvidencePeriodExpired` (a lost evidence race: a no-op, with or without a kill
+in front of it; a leave whose exit fallback this was waits for the window to settle;
+[`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../../../../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj)), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
 the chain's inbound head -> load the missing inbound run up to that head and
 rebuild). On failure the `didIDispute` flag is rolled back so a later attempt
 can retry.
@@ -213,7 +226,7 @@ walk checks and do not repeat the whole earlier walk.
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L352):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L341):
 
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, load the required inbound run if not posted, compute the successor genesis via
@@ -223,9 +236,11 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   cannot assemble the data abort (spectators fail closed).
 - **Kill period expired:** committed peers still audit and replay to persist reduction data, warn on invalidity, and schedule reduction. They cannot kill after expiry. Thrown audit failures propagate; late-challenge recovery remains open.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L547)
-  with canonical preflight. A peer that already disputed only kills; otherwise the owner sends
-  kill then its own replacement in one multicall with expected-slash accounting. Known expired
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L606)
+  with canonical preflight. A peer that already disputed only kills, at once and
+  concurrently with its own upload; otherwise the owner sends
+  kill then its own replacement in one best-effort multicall with expected-slash accounting: the
+  kill lands even when the replacement is refused. Known expired
   kill preflight sends nothing; a late transaction failure propagates rather than becoming a
   successful kill.
   Valid → persist the confirmation, notify (`notifyDisputeUpdate`), then
@@ -245,11 +260,12 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   its own paths (§3.1). Reduction is scheduled at `killPeriodEnd` in every
   case.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L821)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L818)):
 drop the fork's cached evidence comparison, record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
-is current, upload replacement evidence (first honest peer wins).
+is current, upload replacement evidence (first honest peer wins; a lost race is a no-op inside
+`DisputeManager.dispute`).
 
 **`ChainSlashed` event**: mirror the slash, blacklist the peer, and open a
 dispute on the current fork if it is not yet disputed and the slashed address
@@ -257,8 +273,8 @@ is still a participant.
 
 ## 7. Reduction and successor-fork creation
 
-[`ReductionManager`](../../../../../../src/stateManager/reduction/ReductionManager.ts#L42) /
-[`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L52) /
+[`ReductionManager`](../../../../../../src/stateManager/reduction/ReductionManager.ts#L44) /
+[`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L53) /
 [`ReductionComputationService`](../../../../../../src/stateManager/reduction/ReductionComputationService.ts#L20):
 
 1. **Trigger.** Scheduled at `killPeriodEnd` per §6; also from the block
@@ -269,7 +285,7 @@ is still a participant.
 2. **Preconditions** (re-checked at run time): fork still current; window
    exists on-chain; kill period expired (memoized per `(channel, fork)` —
    "not expired until `killPeriodEnd`" is reused, "expired" is terminal).
-3. **Dispute set.** [`EventSyncService.loadSynchronizedWindowCommitments`](../../../../../../src/stateManager/EventSyncService.ts#L268):
+3. **Dispute set.** [`EventSyncService.loadSynchronizedWindowCommitments`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L388):
    the window's commitments from the chain, with any dispute whose event never
    reached us recovered by targeted log queries (3 attempts, widening span)
    — a reducer never reads a window its storage cannot back. Empty window →
@@ -282,7 +298,7 @@ is still a participant.
    into the successor genesis `SnapshotData`, encoded state, and terminal
    outbound message block. `reducedForkId = keccak(encode(reducedSnapshotData))`.
 5. **Simulate then install then submit.**
-   `multicall.staticCall([reduceAndFinalize, updateStateSnapshotFork])` first;
+   `multicall.staticCall([reduceAndFinalize])` first;
    races classify as `already-reduced` (`RaceConditionDisputeAlreadyReduced`,
    `RaceConditionBlockHeightTooOld` — deterministic reduction means another
    reducer installed the same result) or `superseded` (a final dispute's
@@ -290,14 +306,16 @@ is still a participant.
    `completeWithGenesis` installs the successor genesis under the
    `StateManager` mutex via `unsafeSetGenesisState` — the point where the fork
    transitions, queues drain, status and timeout scheduling restart — and only
-   then is the transaction submitted **detached**. A completion that resolves
+   then is the transaction submitted **detached**. The disposal check runs
+   before the send starts; a disposal during the signer's send does not stop
+   the broadcast, only the fork adoption post after it is mined. A completion that resolves
    to a different `reducedForkId` than expected is fatal (`abort`).
 6. **Final-dispute fast path.** A final dispute completes the same per-fork
    operation directly with its pre-committed output (§6), skipping compute and
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L699)):
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L696)):
 drop the fork's cached evidence comparison (`DisputeManager.forgetEvidenceComparison`), mirror
 into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute the reduction on `SCM`
@@ -309,7 +327,7 @@ reducer is blacklisted. A locally unavailable dispute set means the reduction
 was already consumed — treated as processed.
 
 **Snapshot advancement.** After the successor fork is uncontestable,
-[`SnapshotUpdateService`](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L37)
+[`SnapshotUpdateService`](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L39)
 walks the on-chain snapshot's fork through `getReducedResult` /
 `isReduceChallengePeriodExpired` hops to the first undisputed fork, builds
 `updateStateSnapshotFork` calldata (with the outbound message-block range the
@@ -356,54 +374,92 @@ multicalls both. This is also the N/N exit path of the block pipeline.
 
 ## 10. Invariants & failure behavior
 
-- **[`INV-DVP-1-A6BYJR`](dispute-pipeline.md#inv-dvp-1-a6byjr)** — `dispute(forkId)` is idempotent per fork per instance
-  (`didIDispute`), and a failed upload rolls the flag back.
+<a id="inv-dvp-1-a6byjr"></a>
 
-- **[`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq)** — The auditor never submits a proof the contracts would
-  reject: every kill decision is grounded in the canonical Solidity predicate
-  (staticCall), and self-slashing proof types are preflighted
-  (`validateTimeoutCalldataPostedProof`).
+### INV-DVP-1-A6BYJR — Per-fork dispute idempotence with rollback
 
-- **[`INV-DVP-3-ZMF1HA`](dispute-pipeline.md#inv-dvp-3-zmf1ha)** — An audit that returns "invalid" has stored exactly one
-  dispute fraud proof; returning invalid without one is an internal error
-  (throws), never a silent kill attempt.
+`dispute(forkId)` is idempotent per fork per instance
+(`didIDispute`), and a failed upload rolls the flag back.
 
-- **[`INV-DVP-4-Z530JD`](dispute-pipeline.md#inv-dvp-4-z530jd)** — Reduction is deterministic and order-independent over the
-  window's dispute set; concurrent reducers converge on one `reducedForkId`,
-  and race reverts are classified as convergence, not failure.
+<a id="inv-dvp-2-q13tvq"></a>
 
-- **[`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0)** — Every initiated dispute path terminates in a successor fork
-  installed via `unsafeSetGenesisState` (final dispute, own reduction, or
-  adoption of another's finalized reduction).
+### INV-DVP-2-Q13TVQ — Kill decisions use canonical predicates
 
-- **[`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq)** — Fraud-proof enforcement is separate from reduction: proofs
-  slash into the on-chain set (multicall before upload, or immediate kill);
-  the dispute consumes the set, it does not re-execute proofs ([`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq)).
+The auditor never submits a proof the contracts would
+reject: every kill decision is grounded in the canonical Solidity predicate
+(staticCall), and self-slashing proof types are preflighted
+(`validateTimeoutCalldataPostedProof`).
+
+- [x] `INV-DVP-2-Q13TVQ.T1.P1` — valid case
+
+<a id="inv-dvp-3-zmf1ha"></a>
+
+### INV-DVP-3-ZMF1HA — Invalid audit stores exactly one fraud proof
+
+An audit that returns "invalid" has stored exactly one
+dispute fraud proof; returning invalid without one is an internal error
+(throws), never a silent kill attempt.
+
+- [x] `INV-DVP-3-ZMF1HA.T1.P1` — valid case
+
+<a id="inv-dvp-4-z530jd"></a>
+
+### INV-DVP-4-Z530JD — Deterministic, order-independent reduction
+
+Reduction is deterministic and order-independent over the
+window's dispute set; concurrent reducers converge on one `reducedForkId`,
+and race reverts are classified as convergence, not failure.
+
+<a id="inv-dvp-5-najrb0"></a>
+
+### INV-DVP-5-NAJRB0 — Every dispute path installs a successor fork
+
+Every initiated dispute path terminates in a successor fork
+installed via `unsafeSetGenesisState` (final dispute, own reduction, or
+adoption of another's finalized reduction).
+
+- [x] `INV-DVP-5-NAJRB0.T1.P6` — predecessor linkage
+
+<a id="inv-dvp-6-rfsbrq"></a>
+
+### INV-DVP-6-RFSBRQ — Fraud-proof enforcement is separate from reduction
+
+Fraud-proof enforcement is separate from reduction: proofs
+slash into the on-chain set (multicall before upload, or immediate kill);
+the dispute consumes the set, it does not re-execute proofs ([`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq)).
+
+- [x] `INV-DVP-6-RFSBRQ.T1.P1` — valid case
+
 - **Failure behavior.** Fatal reduction errors, unpreparable final-dispute
   genesis as a participant, or a completed reduction that mismatches the
   expected fork call `stateManager.abort()`. Non-participants abort instead of
   throwing. Unclassified submission reverts are logged with the candidate's
   inbound chain and rethrown.
 
+<a id="req-dvp-1-mqjtyr"></a>
+
+### REQ-DVP-1-MQJTYR — Timeout submission respects race guards
+
+Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts).
+
+- [x] `REQ-DVP-1-MQJTYR.T1.P1` — valid case
+- [x] `REQ-DVP-1-MQJTYR.T1.P3` — direct invalid/opposite case
+
+<a id="req-dvp-2-rg8qr3"></a>
+
+### REQ-DVP-2-RG8QR3 — Reducer reads event-synchronized windows
+
+The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).
+
+<a id="req-dvp-3-cffaw1"></a>
+
+### REQ-DVP-3-CFFAW1 — Incorrect reductions are challenged in time
+
+An incorrect committed reduction is challenged within the challenge period.
+
 ## 11. Verification
 
 Concrete test evidence is owned by the downstream verification layer. This section defines implementation-specific obligations only.
-
-### Implementation test plan
-
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
-
-| Plan item                                             | Requirement / invariant                         | Setup and stimulus                                                                                                      | Expected result                                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-dvp-1-a6byjr.t1"></a>`INV-DVP-1-A6BYJR.T1` | <a id="inv-dvp-1-a6byjr"></a>`INV-DVP-1-A6BYJR` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Per-fork dispute idempotence with rollback on failed upload.                                                | <a id="inv-dvp-1-a6byjr.t1.p1"></a>`INV-DVP-1-A6BYJR.T1.P1` — valid case<br><a id="inv-dvp-1-a6byjr.t1.p2"></a>`INV-DVP-1-A6BYJR.T1.P2` — matching commitment<br><a id="inv-dvp-1-a6byjr.t1.p3"></a>`INV-DVP-1-A6BYJR.T1.P3` — duplicate delivery<br><a id="inv-dvp-1-a6byjr.t1.p4"></a>`INV-DVP-1-A6BYJR.T1.P4` — malformed input<br><a id="inv-dvp-1-a6byjr.t1.p5"></a>`INV-DVP-1-A6BYJR.T1.P5` — direct invalid/opposite case<br><a id="inv-dvp-1-a6byjr.t1.p6"></a>`INV-DVP-1-A6BYJR.T1.P6` — mismatched commitment<br><a id="inv-dvp-1-a6byjr.t1.p7"></a>`INV-DVP-1-A6BYJR.T1.P7` — predecessor linkage<br><a id="inv-dvp-1-a6byjr.t1.p8"></a>`INV-DVP-1-A6BYJR.T1.P8` — genesis linkage<br><a id="inv-dvp-1-a6byjr.t1.p9"></a>`INV-DVP-1-A6BYJR.T1.P9` — stale fork<br><a id="inv-dvp-1-a6byjr.t1.p10"></a>`INV-DVP-1-A6BYJR.T1.P10` — foreign fork<br><a id="inv-dvp-1-a6byjr.t1.p11"></a>`INV-DVP-1-A6BYJR.T1.P11` — replay delivery<br><a id="inv-dvp-1-a6byjr.t1.p12"></a>`INV-DVP-1-A6BYJR.T1.P12` — concurrent delivery<br><a id="inv-dvp-1-a6byjr.t1.p13"></a>`INV-DVP-1-A6BYJR.T1.P13` — adversarial input<br><a id="inv-dvp-1-a6byjr.t1.p14"></a>`INV-DVP-1-A6BYJR.T1.P14` — partial failure<br><a id="inv-dvp-1-a6byjr.t1.p15"></a>`INV-DVP-1-A6BYJR.T1.P15` — retry and recovery |
-| <a id="inv-dvp-2-q13tvq.t1"></a>`INV-DVP-2-Q13TVQ.T1` | <a id="inv-dvp-2-q13tvq"></a>`INV-DVP-2-Q13TVQ` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | <a id="inv-dvp-2-q13tvq.t1.p1"></a>`INV-DVP-2-Q13TVQ.T1.P1` — valid case<br><a id="inv-dvp-2-q13tvq.t1.p2"></a>`INV-DVP-2-Q13TVQ.T1.P2` — new participant<br><a id="inv-dvp-2-q13tvq.t1.p3"></a>`INV-DVP-2-Q13TVQ.T1.P3` — direct invalid/opposite case<br><a id="inv-dvp-2-q13tvq.t1.p4"></a>`INV-DVP-2-Q13TVQ.T1.P4` — existing participant<br><a id="inv-dvp-2-q13tvq.t1.p5"></a>`INV-DVP-2-Q13TVQ.T1.P5` — removed participant<br><a id="inv-dvp-2-q13tvq.t1.p6"></a>`INV-DVP-2-Q13TVQ.T1.P6` — slashed participant<br><a id="inv-dvp-2-q13tvq.t1.p7"></a>`INV-DVP-2-Q13TVQ.T1.P7` — concurrent membership change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| <a id="inv-dvp-3-zmf1ha.t1"></a>`INV-DVP-3-ZMF1HA.T1` | <a id="inv-dvp-3-zmf1ha"></a>`INV-DVP-3-ZMF1HA` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Invalid audit ⇔ exactly one stored dispute fraud proof.                                                     | <a id="inv-dvp-3-zmf1ha.t1.p1"></a>`INV-DVP-3-ZMF1HA.T1.P1` — valid case<br><a id="inv-dvp-3-zmf1ha.t1.p2"></a>`INV-DVP-3-ZMF1HA.T1.P2` — malformed input<br><a id="inv-dvp-3-zmf1ha.t1.p3"></a>`INV-DVP-3-ZMF1HA.T1.P3` — direct invalid/opposite case<br><a id="inv-dvp-3-zmf1ha.t1.p4"></a>`INV-DVP-3-ZMF1HA.T1.P4` — adversarial input<br><a id="inv-dvp-3-zmf1ha.t1.p5"></a>`INV-DVP-3-ZMF1HA.T1.P5` — partial failure<br><a id="inv-dvp-3-zmf1ha.t1.p6"></a>`INV-DVP-3-ZMF1HA.T1.P6` — retry and recovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| <a id="inv-dvp-4-z530jd.t1"></a>`INV-DVP-4-Z530JD.T1` | <a id="inv-dvp-4-z530jd"></a>`INV-DVP-4-Z530JD` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Deterministic, order-independent reduction; races classified as convergence.                                | <a id="inv-dvp-4-z530jd.t1.p1"></a>`INV-DVP-4-Z530JD.T1.P1` — valid case<br><a id="inv-dvp-4-z530jd.t1.p2"></a>`INV-DVP-4-Z530JD.T1.P2` — duplicate delivery<br><a id="inv-dvp-4-z530jd.t1.p3"></a>`INV-DVP-4-Z530JD.T1.P3` — direct invalid/opposite case<br><a id="inv-dvp-4-z530jd.t1.p4"></a>`INV-DVP-4-Z530JD.T1.P4` — replay delivery<br><a id="inv-dvp-4-z530jd.t1.p5"></a>`INV-DVP-4-Z530JD.T1.P5` — concurrent delivery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="inv-dvp-5-najrb0.t1"></a>`INV-DVP-5-NAJRB0.T1` | <a id="inv-dvp-5-najrb0"></a>`INV-DVP-5-NAJRB0` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Every dispute path installs a successor fork via `unsafeSetGenesisState`.                                   | <a id="inv-dvp-5-najrb0.t1.p1"></a>`INV-DVP-5-NAJRB0.T1.P1` — valid case<br><a id="inv-dvp-5-najrb0.t1.p2"></a>`INV-DVP-5-NAJRB0.T1.P2` — matching commitment<br><a id="inv-dvp-5-najrb0.t1.p3"></a>`INV-DVP-5-NAJRB0.T1.P3` — malformed input<br><a id="inv-dvp-5-najrb0.t1.p4"></a>`INV-DVP-5-NAJRB0.T1.P4` — direct invalid/opposite case<br><a id="inv-dvp-5-najrb0.t1.p5"></a>`INV-DVP-5-NAJRB0.T1.P5` — mismatched commitment<br><a id="inv-dvp-5-najrb0.t1.p6"></a>`INV-DVP-5-NAJRB0.T1.P6` — predecessor linkage<br><a id="inv-dvp-5-najrb0.t1.p7"></a>`INV-DVP-5-NAJRB0.T1.P7` — genesis linkage<br><a id="inv-dvp-5-najrb0.t1.p8"></a>`INV-DVP-5-NAJRB0.T1.P8` — stale fork<br><a id="inv-dvp-5-najrb0.t1.p9"></a>`INV-DVP-5-NAJRB0.T1.P9` — foreign fork<br><a id="inv-dvp-5-najrb0.t1.p10"></a>`INV-DVP-5-NAJRB0.T1.P10` — adversarial input<br><a id="inv-dvp-5-najrb0.t1.p11"></a>`INV-DVP-5-NAJRB0.T1.P11` — partial failure<br><a id="inv-dvp-5-najrb0.t1.p12"></a>`INV-DVP-5-NAJRB0.T1.P12` — retry and recovery                                                                                                                                                                                                                                                                 |
-| <a id="inv-dvp-6-rfsbrq.t1"></a>`INV-DVP-6-RFSBRQ.T1` | <a id="inv-dvp-6-rfsbrq"></a>`INV-DVP-6-RFSBRQ` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Fraud proofs slash before/independently of the dispute that consumes the slash set.                         | <a id="inv-dvp-6-rfsbrq.t1.p1"></a>`INV-DVP-6-RFSBRQ.T1.P1` — valid case<br><a id="inv-dvp-6-rfsbrq.t1.p2"></a>`INV-DVP-6-RFSBRQ.T1.P2` — new participant<br><a id="inv-dvp-6-rfsbrq.t1.p3"></a>`INV-DVP-6-RFSBRQ.T1.P3` — malformed input<br><a id="inv-dvp-6-rfsbrq.t1.p4"></a>`INV-DVP-6-RFSBRQ.T1.P4` — direct invalid/opposite case<br><a id="inv-dvp-6-rfsbrq.t1.p5"></a>`INV-DVP-6-RFSBRQ.T1.P5` — existing participant<br><a id="inv-dvp-6-rfsbrq.t1.p6"></a>`INV-DVP-6-RFSBRQ.T1.P6` — removed participant<br><a id="inv-dvp-6-rfsbrq.t1.p7"></a>`INV-DVP-6-RFSBRQ.T1.P7` — slashed participant<br><a id="inv-dvp-6-rfsbrq.t1.p8"></a>`INV-DVP-6-RFSBRQ.T1.P8` — concurrent membership change<br><a id="inv-dvp-6-rfsbrq.t1.p9"></a>`INV-DVP-6-RFSBRQ.T1.P9` — adversarial input<br><a id="inv-dvp-6-rfsbrq.t1.p10"></a>`INV-DVP-6-RFSBRQ.T1.P10` — partial failure<br><a id="inv-dvp-6-rfsbrq.t1.p11"></a>`INV-DVP-6-RFSBRQ.T1.P11` — retry and recovery                                                                                                                                                                                                                                                                                                                                |
-| <a id="req-dvp-1-mqjtyr.t1"></a>`REQ-DVP-1-MQJTYR.T1` | <a id="req-dvp-1-mqjtyr"></a>`REQ-DVP-1-MQJTYR` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts). | <a id="req-dvp-1-mqjtyr.t1.p1"></a>`REQ-DVP-1-MQJTYR.T1.P1` — valid case<br><a id="req-dvp-1-mqjtyr.t1.p2"></a>`REQ-DVP-1-MQJTYR.T1.P2` — before deadline<br><a id="req-dvp-1-mqjtyr.t1.p3"></a>`REQ-DVP-1-MQJTYR.T1.P3` — direct invalid/opposite case<br><a id="req-dvp-1-mqjtyr.t1.p4"></a>`REQ-DVP-1-MQJTYR.T1.P4` — at deadline<br><a id="req-dvp-1-mqjtyr.t1.p5"></a>`REQ-DVP-1-MQJTYR.T1.P5` — after deadline<br><a id="req-dvp-1-mqjtyr.t1.p6"></a>`REQ-DVP-1-MQJTYR.T1.P6` — maximum honest skew                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="req-dvp-2-rg8qr3.t1"></a>`REQ-DVP-2-RG8QR3.T1` | <a id="req-dvp-2-rg8qr3"></a>`REQ-DVP-2-RG8QR3` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | <a id="req-dvp-2-rg8qr3.t1.p1"></a>`REQ-DVP-2-RG8QR3.T1.P1` — valid case<br><a id="req-dvp-2-rg8qr3.t1.p2"></a>`REQ-DVP-2-RG8QR3.T1.P2` — before deadline<br><a id="req-dvp-2-rg8qr3.t1.p3"></a>`REQ-DVP-2-RG8QR3.T1.P3` — malformed input<br><a id="req-dvp-2-rg8qr3.t1.p4"></a>`REQ-DVP-2-RG8QR3.T1.P4` — direct invalid/opposite case<br><a id="req-dvp-2-rg8qr3.t1.p5"></a>`REQ-DVP-2-RG8QR3.T1.P5` — at deadline<br><a id="req-dvp-2-rg8qr3.t1.p6"></a>`REQ-DVP-2-RG8QR3.T1.P6` — after deadline<br><a id="req-dvp-2-rg8qr3.t1.p7"></a>`REQ-DVP-2-RG8QR3.T1.P7` — maximum honest skew<br><a id="req-dvp-2-rg8qr3.t1.p8"></a>`REQ-DVP-2-RG8QR3.T1.P8` — adversarial input<br><a id="req-dvp-2-rg8qr3.t1.p9"></a>`REQ-DVP-2-RG8QR3.T1.P9` — partial failure<br><a id="req-dvp-2-rg8qr3.t1.p10"></a>`REQ-DVP-2-RG8QR3.T1.P10` — retry and recovery                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="req-dvp-3-cffaw1.t1"></a>`REQ-DVP-3-CFFAW1.T1` | <a id="req-dvp-3-cffaw1"></a>`REQ-DVP-3-CFFAW1` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | An incorrect committed reduction is challenged within the challenge period.                                 | <a id="req-dvp-3-cffaw1.t1.p1"></a>`REQ-DVP-3-CFFAW1.T1.P1` — valid case<br><a id="req-dvp-3-cffaw1.t1.p2"></a>`REQ-DVP-3-CFFAW1.T1.P2` — matching commitment<br><a id="req-dvp-3-cffaw1.t1.p3"></a>`REQ-DVP-3-CFFAW1.T1.P3` — before deadline<br><a id="req-dvp-3-cffaw1.t1.p4"></a>`REQ-DVP-3-CFFAW1.T1.P4` — direct invalid/opposite case<br><a id="req-dvp-3-cffaw1.t1.p5"></a>`REQ-DVP-3-CFFAW1.T1.P5` — mismatched commitment<br><a id="req-dvp-3-cffaw1.t1.p6"></a>`REQ-DVP-3-CFFAW1.T1.P6` — predecessor linkage<br><a id="req-dvp-3-cffaw1.t1.p7"></a>`REQ-DVP-3-CFFAW1.T1.P7` — genesis linkage<br><a id="req-dvp-3-cffaw1.t1.p8"></a>`REQ-DVP-3-CFFAW1.T1.P8` — stale fork<br><a id="req-dvp-3-cffaw1.t1.p9"></a>`REQ-DVP-3-CFFAW1.T1.P9` — foreign fork<br><a id="req-dvp-3-cffaw1.t1.p10"></a>`REQ-DVP-3-CFFAW1.T1.P10` — at deadline<br><a id="req-dvp-3-cffaw1.t1.p11"></a>`REQ-DVP-3-CFFAW1.T1.P11` — after deadline<br><a id="req-dvp-3-cffaw1.t1.p12"></a>`REQ-DVP-3-CFFAW1.T1.P12` — maximum honest skew                                                                                                                                                                                                                                                                       |
 
 ## Future Work
 
@@ -417,20 +473,6 @@ _Non-normative._
 - Re-evaluate `postedAuditingData` under early finalization, and the
   cross-audit race where calldata is posted after a kill decision (code TODOs).
 
-## Implementation traceability
-
-| Requirement / invariant                                    | Statement                                                                                                   | Implementation status | Implementation evidence                                                                                                                                                                                                                                  | Gap / divergence |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-DVP-1-A6BYJR`](dispute-pipeline.md#inv-dvp-1-a6byjr) | Per-fork dispute idempotence with rollback on failed upload.                                                | Covered               | [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts#L1) (`dispute`)                                                                                                                                            | None.            |
-| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L26) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                   | None.            |
-| [`INV-DVP-3-ZMF1HA`](dispute-pipeline.md#inv-dvp-3-zmf1ha) | Invalid audit ⇔ exactly one stored dispute fraud proof.                                                     | Covered               | `validateDispute` + `hasStoredDisputeFraudProof` throw paths                                                                                                                                                                                             | None.            |
-| [`INV-DVP-4-Z530JD`](dispute-pipeline.md#inv-dvp-4-z530jd) | Deterministic, order-independent reduction; races classified as convergence.                                | Covered               | [src/stateManager/reduction](../../../../../../src/stateManager/reduction) (`classifyReductionRace`, `compute`)                                                                                                                                          | None.            |
-| [`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0) | Every dispute path installs a successor fork via `unsafeSetGenesisState`.                                   | Covered               | [src/stateManager/reduction/ReductionManager.ts](../../../../../../src/stateManager/reduction/ReductionManager.ts#L52) (`completeWithGenesis`), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (final path) | None.            |
-| [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq) | Fraud proofs slash before/independently of the dispute that consumes the slash set.                         | Covered               | `constructDispute` multicall ordering; `killDispute`                                                                                                                                                                                                     | None.            |
-| [`REQ-DVP-1-MQJTYR`](dispute-pipeline.md#req-dvp-1-mqjtyr) | Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts). | Covered               | [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1) (`tryTimeoutParticipant`)                                                                                                                                      | None.            |
-| [`REQ-DVP-2-RG8QR3`](dispute-pipeline.md#req-dvp-2-rg8qr3) | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | Covered               | [src/stateManager/EventSyncService.ts](../../../../../../src/stateManager/EventSyncService.ts#L1) (`loadSynchronizedWindowCommitments`, `ensureDisputesProcessed`)                                                                                       | None.            |
-| [`REQ-DVP-3-CFFAW1`](dispute-pipeline.md#req-dvp-3-cffaw1) | An incorrect committed reduction is challenged within the challenge period.                                 | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`validateDisputeReductionAndChallenge`)                                                                                                                     | None.            |
-
 ## Dispute admission and state contributions
 
 The [DisputeManager source report](../../../source/src/disputeManager/DisputeManager.ts.md) owns the
@@ -443,3 +485,14 @@ and [canonical reason validator](../../../source/contracts/V1/StateChannelDiamon
 A specific closed-window refusal refreshes slashes through [EventSyncService](../../../source/src/stateManager/eventSync/EventSyncService.ts.md)
 and re-enters normal construction only for observation changed since construction. The flag supplies a
 reason after acceptance even if the opener is later killed; it never bypasses the remaining audit checks.
+
+## INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9
+
+- Specification: [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../../../../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81), [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7), [`REQ-DISPUTE-PIPE-2-MJRJV1` (Ordered complete verification)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1), [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq), [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
+- Specification tests: All applicable specification permutations
+- Setup: Exercise the complete concrete subsystem through each documented entry and failure boundary.
+- Oracle: The subsystem preserves the neutral behavior and contains failure without partial state.
+
+- [x] `INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9.P1` — success
+- [x] `INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9.P2` — validation rejection
+- [x] `INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9.P4` — operational failure
