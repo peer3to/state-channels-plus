@@ -27,4 +27,4 @@ Exercises channel discovery, terminal leave, authoritative initial-sync eligibil
 - `RO2: reduction seats the pending join on a successor fork while its old deadline read is held`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P48
 - `AO4: a force-join deadline reads a real expired evidence window and retains the pending join without submitting`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P49, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P9, INV-TJOIN-2-H7JSQM.T1.P7, INV-TJOIN-2-H7JSQM.T2.P10, UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P5
 - `U130: a leave of another topic during the handoff → the join still rematches on its own topic`: REQ-LOBBY-9-N894C0.T1.P27
-- `U130: a new join after a leave during the handoff → its failed negotiation rematches again`: REQ-LOBBY-9-N894C0.T1.P27
+- `U130: a new join after a leave during the handoff → its failed negotiation rematches again`: REQ-LOBBY-9-N894C0.T1.P29
