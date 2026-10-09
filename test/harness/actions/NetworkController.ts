@@ -4,7 +4,6 @@ import { compareAddresses } from "@/rpc/network/services/openChannelNegotiation/
 import { Codec, Logger, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { waitFor } from "@test/utils/waitFor";
 
 /**
  * Handles network connectivity and P2P connections between peers.
@@ -175,22 +174,8 @@ export class NetworkController<
         };
         try {
             await this.joinLobby(peerIndices, rendezvousTopic);
-            const peers = this.harness.getFilteredPeers(peerIndices);
-            await waitFor(
-                async () =>
-                    (
-                        await Promise.all(
-                            peers.map((peer) =>
-                                this.harness
-                                    .control(peer)
-                                    .stub.getHeldMatchedNegotiationCount()
-                                    .request()
-                            )
-                        )
-                    ).every((count) => count === 1),
-                this.harness.event.protocolEventTimeoutMs({
-                    withFirstBlockGrace: true
-                })
+            await this.harness.rpcStub.waitForHeldMatchedNegotiation(
+                peerIndices
             );
         } catch (error) {
             await release();
