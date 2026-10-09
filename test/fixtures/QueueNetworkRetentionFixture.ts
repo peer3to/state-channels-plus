@@ -566,15 +566,24 @@ export async function assertStoredCopyQuota(network: boolean) {
         ).to.equal(null);
         await deliver(variants.slice(8));
         await hold.release();
-        await waitFor(
-            async () =>
-                (
-                    await h
-                        .control(observer)
-                        .query.getBlockByHash(block.hash)
-                        .request()
-                )?.confirmationSignatures.includes(variants[1]) ?? false
-        );
+        // each copy merges as its own task after release; wait for both before
+        // asserting that nothing past either copy's quota was stored
+        const expected = [
+            ...new Set([
+                ...block.confirmationSignatures,
+                ...variants.slice(0, 2),
+                ...variants.slice(8, 10)
+            ])
+        ];
+        await waitFor(async () => {
+            const stored = (
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(block.hash)
+                    .request()
+            )?.confirmationSignatures;
+            return expected.every((signature) => stored?.includes(signature));
+        });
         await waitFor(
             async () =>
                 (await h
@@ -586,13 +595,7 @@ export async function assertStoredCopyQuota(network: boolean) {
             .control(observer)
             .query.getBlockByHash(block.hash)
             .request();
-        expect(after?.confirmationSignatures).to.have.members([
-            ...new Set([
-                ...block.confirmationSignatures,
-                ...variants.slice(0, 2),
-                ...variants.slice(8, 10)
-            ])
-        ]);
+        expect(after?.confirmationSignatures).to.have.members(expected);
         expect(after?.height).to.equal(block.height);
         // The quota bounds each copy; the nonce variants are also double
         // signatures by the source's key, so the source is blacklisted.
