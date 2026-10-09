@@ -49,3 +49,5 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P36` — an injected mismatch refusal before a verified fork replacement leaves its re-arm nothing to do
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P37` — send mismatch false to true rechecks and commits
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P38` — a predecessor posted only in the local view yields a claim with the chain's posting state that commits
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P39` — the writer signed a predecessor whose post the stored block has not applied yet → no wait for the post and no raised minimum; the timeout is submitted against the block's own deadline
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P40` — the writer never signed a predecessor whose post the stored block has not applied yet → the check itself waits for the post time plus the wait, and the claim it then submits takes that as its minimum

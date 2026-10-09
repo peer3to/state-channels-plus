@@ -4,9 +4,10 @@ import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
 import {
     EARLY_TIMEOUT_RECHECK_REASON,
-    MISMATCH_TIMEOUT_RECHECK_REASON
+    MISMATCH_TIMEOUT_RECHECK_REASON,
+    PREDECESSOR_POSTED_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { timeoutWaitTime } from "@/types";
+import { TimeConfig, timeoutWaitTime } from "@/types";
 import type { Address, BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type, sleep } from "@/utils";
 import type { CustomErrorArg } from "@test/factory";
@@ -15,6 +16,7 @@ import type {
     RecordedDisputeSubmission
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress, hexlify } from "ethers";
@@ -752,6 +754,175 @@ export async function assertSkippedHeightNotTimedOut(
         expect(
             await h.control(observer).query.getTimeout(forkId).request()
         ).to.equal(null);
+    } finally {
+        await recorder.restore();
+        await tasks.restore();
+    }
+}
+
+/**
+ * Stores the predecessor's posted calldata on the observer the way the
+ * posted-event handler does before validating it, so the stored block keeps
+ * no on-chain timestamp yet. Returns whether the writer signed that block.
+ */
+async function storeUnappliedPost(
+    h: MathPeerTestHarness,
+    observerIndex: number,
+    args: {
+        forkId: ForkId;
+        height: BlockHeight;
+        writer: Address;
+        onChainTimestamp: number;
+    }
+): Promise<boolean> {
+    const { applied, writerSigned } = await h.execOnHost(
+        h.getPeer(observerIndex),
+        (sm, args) => {
+            const block = sm.storage.blocks.getBlock(args.forkId, args.height)!;
+            sm.storage.blockCalldata.storeBlockCalldata({
+                signedBlock: block.signedBlock,
+                onChainTimestamp: args.onChainTimestamp
+            });
+            return {
+                applied: Boolean(block.onChainTimestamp),
+                writerSigned: Boolean(block.findSignature(args.writer))
+            };
+        },
+        args
+    );
+    expect(applied, "the stored predecessor already applied the post").to.equal(
+        false
+    );
+    return writerSigned;
+}
+
+/**
+ * The writer signed the predecessor, whose post lands after the block reached
+ * the observer. The observer's own check must neither wait for the post nor
+ * raise the claim's minimum: it submits before the post could have moved the
+ * deadline, against the block's own deadline.
+ */
+export async function assertSignedPredecessorPostGrantsNoTime(
+    h: MathPeerTestHarness,
+    timeConfig: TimeConfig
+): Promise<void> {
+    await h.lifecycle.start(3, 1, { timeConfig });
+    const forkId = h.activeForkId!;
+    await h.transition.advanceState();
+    const leader = h.getPeer(0);
+    const writer = await h.control(leader).query.getNextToWrite().request();
+    const height = await h
+        .control(leader)
+        .query.getNextBlockHeight(forkId)
+        .request();
+    const previous = (await h
+        .control(leader)
+        .query.getBlockByHeight(forkId, height - 1)
+        .request())!;
+    const author = h.peers.find((p) => p.address === previous.author)!;
+    const observer = h.peers.find(
+        (p) => p.address !== writer && p.index !== author.index
+    )!;
+    await h.rpcStub.suppressTimeoutCheck(author.index);
+    await h.rpcStub.holdCalldataPostedEventsExceptLeader(author.index);
+    // post strictly after the block reached the observer
+    await sleep(3000);
+    const { onChainTimestamp } = await h
+        .control(author)
+        .validation.postBlockCalldataOnChain(previous.encodedSignedBlock)
+        .request();
+    await h.control(observer).stub.waitForHeldCalldataPostedEvent().request();
+    expect(
+        await storeUnappliedPost(h, observer.index, {
+            forkId,
+            height: previous.height,
+            writer,
+            onChainTimestamp
+        }),
+        "the writer signed the predecessor"
+    ).to.equal(true);
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    try {
+        await waitFor(
+            async () => (await recorder.submissions()).length > 0,
+            protocolEventTimeoutMs(timeConfig)
+        );
+        expect(
+            Clock.getTimeInSeconds(),
+            "submitted only after the post-based deadline"
+        ).to.be.lessThan(
+            onChainTimestamp + timeoutWaitTime(timeConfig, height)
+        );
+        expect(
+            (await tasks.tasks()).filter((task) =>
+                task.taskName.startsWith(PREDECESSOR_POSTED_RECHECK_REASON)
+            )
+        ).to.deep.equal([]);
+        const [first] = await recorder.submissions();
+        const { timeout } = Codec.decode(
+            first.encodedDispute,
+            Type.Dispute
+        ).input;
+        expect(timeout.participant).to.equal(writer);
+        expect(timeout.previousBlockProducerPostedCalldata).to.equal(true);
+        expect(Number(timeout.minTimeStamp)).to.equal(
+            previous.timestamp + timeoutWaitTime(timeConfig, height)
+        );
+    } finally {
+        await recorder.restore();
+        await tasks.restore();
+    }
+}
+
+/**
+ * The writer never signed the predecessor, whose post lands after the block
+ * reached the observer. The observer's own check must wait for the post time
+ * plus the wait itself, so the claim it then submits follows the post with no
+ * predecessor-posted recheck at construction.
+ */
+export async function assertUnsignedPredecessorPostDelaysCheck(
+    h: MathPeerTestHarness,
+    timeConfig: TimeConfig
+): Promise<void> {
+    const { observer, author, parentAuthor, previous, forkId, postParent } =
+        await h.scenario.unpostedParentUnsignedByNextWriter({ timeConfig });
+    await h.rpcStub.suppressTimeoutCheck(parentAuthor.index);
+    const onChainTimestamp = await postParent();
+    expect(
+        await storeUnappliedPost(h, observer.index, {
+            forkId,
+            height: previous.height,
+            writer: author.address,
+            onChainTimestamp
+        }),
+        "the writer signed the predecessor"
+    ).to.equal(false);
+    const postedDeadline =
+        onChainTimestamp + timeoutWaitTime(timeConfig, previous.height + 1);
+    const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    try {
+        await waitFor(
+            async () => (await recorder.submissions()).length > 0,
+            protocolEventTimeoutMs(timeConfig)
+        );
+        expect(
+            Clock.getTimeInSeconds(),
+            "submitted before the post-based deadline"
+        ).to.be.at.least(postedDeadline);
+        expect(
+            (await tasks.tasks()).filter((task) =>
+                task.taskName.startsWith(PREDECESSOR_POSTED_RECHECK_REASON)
+            )
+        ).to.deep.equal([]);
+        const [first] = await recorder.submissions();
+        const { timeout } = Codec.decode(
+            first.encodedDispute,
+            Type.Dispute
+        ).input;
+        expect(timeout.participant).to.equal(author.address);
+        expect(Number(timeout.minTimeStamp)).to.equal(postedDeadline);
     } finally {
         await recorder.restore();
         await tasks.restore();

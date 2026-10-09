@@ -10,7 +10,9 @@ import {
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry,
     assertConsecutiveMismatchRetry,
+    assertSignedPredecessorPostGrantsNoTime,
     assertSkippedHeightNotTimedOut,
+    assertUnsignedPredecessorPostDelaysCheck,
     checkTimeoutAfterDeadline,
     skipHeightOnObserver,
     stageWindowBeforeTimeoutDeadline
@@ -959,6 +961,22 @@ describe("Unit: ParticipantTimeoutService", function () {
                 await uploads.restore();
                 await tasks.restore();
             }
+        });
+    });
+
+    describe("predecessor post not yet applied", function () {
+        it("a writer that signed the predecessor gains no time from its post → the timeout is submitted at the block's own deadline", async function () {
+            await assertSignedPredecessorPostGrantsNoTime(
+                TestSession.getHarness(),
+                RECHECK_TIME_CONFIG
+            );
+        });
+
+        it("a writer that never signed the predecessor waits for its post → the timeout follows the post-based deadline", async function () {
+            await assertUnsignedPredecessorPostDelaysCheck(
+                TestSession.getHarness(),
+                RECHECK_TIME_CONFIG
+            );
         });
     });
 
