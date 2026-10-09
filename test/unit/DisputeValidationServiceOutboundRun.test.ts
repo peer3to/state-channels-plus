@@ -1,7 +1,9 @@
 import StateSnapshot from "@/models/StateSnapshot";
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import {
     expectInvalidOutboundRun,
+    overflowingLatestHead,
     stageOutboundDispute
 } from "@test/fixtures/DisputeAuditStaging";
 import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
@@ -43,6 +45,29 @@ describe("Unit: DisputeValidationService outbound run", function () {
         staged.commit();
 
         await expectInvalidOutboundRun(h, staged);
+    });
+
+    it("the disputer signs a last block above its head that commits a forged latest snapshot whose outbound head is an overflowing block (message balance MaxUint256) right above the chain anchor -> false without an error + DisputeInvalidBlockInStateProofApplyFraudProof; the outbound run is never judged", async function () {
+        const h = TestSession.getHarness();
+        const staged = await stageOutboundDispute(h);
+        await overflowingLatestHead(h)(staged.auditingData, staged.dispute);
+        staged.commit();
+        const verdicts = await h.rpcStub.probeOutboundRunVerification(
+            staged.auditorIndex,
+            {}
+        );
+
+        const run = await h.dispute.auditDispute(
+            staged.auditorIndex,
+            staged.dispute,
+            staged.auditingData
+        );
+        expect(run).to.include({ outcome: "returned", isValid: false });
+        expect(run.storedProof?.disputeFraudProofType).to.equal(
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+        );
+        expect(await verdicts.calls()).to.equal(0);
+        await verdicts.restore();
     });
 
     it("the posted run also carries the chain anchor's own outbound block (built while the anchor was lower) and the auditor holds neither block -> true; only the block above the anchor is stored, and the stored anchor-to-latest range is the run the chain's snapshot update accepts", async function () {

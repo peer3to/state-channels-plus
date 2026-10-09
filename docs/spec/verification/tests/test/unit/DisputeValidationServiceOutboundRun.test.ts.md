@@ -17,6 +17,12 @@ the anchor head to the latest head is the one block above the anchor, which the 
 `verifyOutboundMessageBlocks` accepts from the anchor's snapshot data to the latest state's — the check a
 snapshot advance from that anchor applies.
 
+One case forges the latest state with `overflowingLatestHead`: the disputer signs a new last block above its
+head that commits a latest snapshot whose outbound head is the block above the anchor with its first message
+balance set to MaxUint256. A probe on the local run verification counts its calls. The audit returns false
+without throwing, the stored proof is `DisputeInvalidBlockInStateProofApplyFraudProof` (the replay rejects the
+forged latest state), and the probe saw no call: the outbound run is never judged.
+
 Two cases cover the counter check after the local verdict (a probe on the local run verification). In the
 first, the posted run is empty, so it is invalid from the first exit's anchor; the probe holds the first
 verdict, the held second snapshot post is released so the chain anchor moves to the second exit, and then
@@ -30,6 +36,7 @@ call.
 
 - `auditingData.outboundMessageBlocks = [] while the latest outbound head is above the chain anchor, committed by the dispute -> false + DisputeInvalidOutboundRun, which the chain accepts`: REQ-DIS-12-AXY60R.T1.P14
 - `auditingData.outboundMessageBlocks[0].messages[0].balance.amount += 1, committed by the dispute -> false + DisputeInvalidOutboundRun, which the chain accepts`: REQ-DIS-12-AXY60R.T1.P15
+- `the disputer signs a last block above its head that commits a forged latest snapshot whose outbound head is an overflowing block (message balance MaxUint256) right above the chain anchor -> false without an error + DisputeInvalidBlockInStateProofApplyFraudProof; the outbound run is never judged`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134
 - `the posted run also carries the chain anchor's own outbound block (built while the anchor was lower) and the auditor holds neither block -> true; only the block above the anchor is stored, and the stored anchor-to-latest range is the run the chain's snapshot update accepts`: REQ-DIS-12-AXY60R.T1.P16
 - `the chain anchor advances to the second exit between the audit's anchor read and its counter check, and the posted run is the empty run built from that exit -> the chain refuses the counter, the audit judges again from the new anchor and returns true with no counter and nothing to store above it`: REQ-DIS-12-AXY60R.T1.P18
 - `the local verdict calls the honest posted run invalid while the chain anchor stays put -> the chain refuses the counter from the anchor it was judged on: the audit throws, stores no counter, and does not judge again`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P133

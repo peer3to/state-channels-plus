@@ -115,13 +115,13 @@ Get/set state
 
 Simulated next-writer query
 
-- Setup: Call `peekNextToWrite(encodedState)` on a machine that holds a different live state: once with a `getNextToWriteOf` that succeeds, once with one that reverts, and once while a replay holds the state mutex with its predecessor state installed.
+- Setup: Call `peekNextToWrite(encodedState)` on a machine that holds a different live state: once with a state whose `getNextToWriteOf` succeeds, once with an undecodable state that makes it revert, and once while a replay holds the state mutex with its predecessor state installed.
 - Oracle: `peekNextToWrite` sends one `getNextToWriteOf` simulated call and no `setState`; after each call `getState` equals the live state from before it; a revert throws `StateMachineInterface.peekNextToWrite: …`; under a held state mutex the call settles without the mutex and returns the next writer of the given state, not of the installed one.
 - Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P1` — the live state is unchanged after a successful call
-- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P4` — the live state is unchanged after a reverted `getNextToWriteOf`, and the call throws with operation context
+- [x] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P1` — the live state is unchanged after a successful call
+- [x] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P4` — the live state is unchanged after a reverted `getNextToWriteOf`, and the call throws with operation context
 - [x] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P5` — while a replay holds the state mutex with another state installed, the call settles without the mutex and returns the next writer of the given state
 
 ## UNIT-TEST-SM-EVM-ADAPTER-6-QATHFT

@@ -153,7 +153,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P131` — Concurrent audits reach persistence with the real head first: only that head is stored, the forged-head audit is countered after its walk, only the forged submitter is slashed, and the real-head disputes reduce
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P132` — Participants already holding the real final block audit a conflicting forged-balance head: final conflict kills the forged dispute, its submitter is slashed, and the channel resolves
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P133` — The local outbound-run verdict calls an honest posted run invalid while the chain anchor stays where the audit read it: the chain refuses the counter, the audit throws naming the refusal, stores no counter and does not judge the run again.
-- [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134` — A dispute whose last block, signed only by its disputer, commits a forged latest state with its outbound head at an overflowing block: the replay stores `DisputeInvalidBlockInStateProofApplyFraudProof`, the outbound run is never judged, and the audit returns false without throwing.
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134` — A dispute whose last block, signed only by its disputer, commits a forged latest state with its outbound head at an overflowing block: the replay stores `DisputeInvalidBlockInStateProofApplyFraudProof`, the outbound run is never judged, and the audit returns false without throwing.
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 

@@ -4969,6 +4969,18 @@
       "peakRssGb": 0.59,
       "measurementReason": null
     },
+    "hardhat|test/evm/EvmDiamondStateMachinePeek.test.ts|Unit: EvmDiamondStateMachine peekNextToWrite a state whose second participant is next, peeked on a machine whose live state has another next writer -> returns that second participant; getState and getNextToWrite still return the live state's": {
+      "durationMs": 1680,
+      "avgCores": 0.804,
+      "peakRssGb": 0.317,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/EvmDiamondStateMachinePeek.test.ts|Unit: EvmDiamondStateMachine peekNextToWrite an undecodable state, so getNextToWriteOf reverts -> rejects with StateMachineInterface.peekNextToWrite: …; getState still returns the live state": {
+      "durationMs": 1504,
+      "avgCores": 0.293,
+      "peakRssGb": 0.185,
+      "measurementReason": null
+    },
     "hardhat|test/evm/EvmFactory.test.ts|EvmFactory abandons an admitted call stuck past the drain limit, closes the child, and reports no error": {
       "durationMs": 19267,
       "avgCores": 0.228,
@@ -17363,6 +17375,12 @@
       "durationMs": 16730,
       "avgCores": 0.594,
       "peakRssGb": 1.041,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeValidationServiceOutboundRun.test.ts|Unit: DisputeValidationService outbound run the disputer signs a last block above its head that commits a forged latest snapshot whose outbound head is an overflowing block (message balance MaxUint256) right above the chain anchor -> false without an error + DisputeInvalidBlockInStateProofApplyFraudProof; the outbound run is never judged": {
+      "durationMs": 13220,
+      "avgCores": 0.687,
+      "peakRssGb": 1.05,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeValidationServiceOutboundRun.test.ts|Unit: DisputeValidationService outbound run the local verdict calls the honest posted run invalid while the chain anchor stays put -> the chain refuses the counter from the anchor it was judged on: the audit throws, stores no counter, and does not judge again": {
