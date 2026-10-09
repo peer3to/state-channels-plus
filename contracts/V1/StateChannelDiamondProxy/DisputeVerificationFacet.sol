@@ -14,14 +14,15 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes memory latestStateMachineState,
         MessageBlock[] memory inboundMessageBlocks
     ) public returns (SnapshotData memory) {
-        DisputeOutputState memory disputeOutputState = _generateDisputeOutputState(
-            latestStateMachineState,
-            disputeInput.onChainSlashes,
-            _selfRemovals(disputeInput),
-            disputeInput.timeout.participant,
-            inboundMessageBlocks,
-            latestStateSnapshot
-        );
+        DisputeOutputState memory disputeOutputState =
+            _generateDisputeOutputState(
+                latestStateMachineState,
+                disputeInput.onChainSlashes,
+                _selfRemovals(disputeInput),
+                disputeInput.timeout.participant,
+                inboundMessageBlocks,
+                latestStateSnapshot
+            );
 
         bytes32 stateMachineStateHash = keccak256(disputeOutputState.encodedModifiedState);
         // _generateDisputeOutputState leaves the output state loaded
@@ -307,8 +308,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             ErrorInvalidLatestState(latestStateSnapshot.snapshotData.stateMachineStateHash, actualStateMachineStateHash)
         );
         //verify inbound message blocks
-        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) =
-        _verifyInboundMessageBlocks(
+        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) = _verifyInboundMessageBlocks(
             latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             reducedOutput.latestInboundMessageBlockHash,
             inboundMessageBlocks
@@ -383,9 +383,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // Apply slashes
         ExitChannel[] memory slashExitChannels = _applySlashesToStateMachine(slashParticipants);
         if (timeoutParticipant != address(0) && slashExitChannels.length == 0) {
-            removeParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                removeParticipants, timeoutParticipant
-            );
+            removeParticipants = UtilityFacet(utilityFacetAddress)
+                .insertIntoAddressArrayNoDuplicates(removeParticipants, timeoutParticipant);
         }
 
         // Apply removals
@@ -486,12 +485,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (
-            !stateMachineImplementation.areBalancesEqual(
+        if (!stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )
-        ) return false;
+            )) return false;
         console.log("BALANCE 5");
         return true;
     }

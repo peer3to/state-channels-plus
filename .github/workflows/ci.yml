@@ -109,10 +109,14 @@ jobs:
             - name: Check import order
               run: yarn lint:imports
 
+            - name: Read the pinned Foundry version
+              id: forge
+              run: echo "version=$(cat .forge-version)" >> "$GITHUB_OUTPUT"
+
             - name: Install Foundry
               uses: foundry-rs/foundry-toolchain@v1
               with:
-                  version: v1.2.3
+                  version: ${{ steps.forge.outputs.version }}
 
             - name: Check Solidity formatting
               run: forge fmt --check
@@ -130,6 +134,17 @@ jobs:
                     echo "::error::SCP_TEST_ORCHESTRATOR_SEED must be a 64-character lowercase hex repository secret"
                     exit 1
                   fi
+
+            # The runner builds forge before shipping it to the workers; a fresh
+            # checkout restores the last build so unchanged Solidity skips solc.
+            - name: Restore the Foundry build
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      out
+                      cache_forge
+                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  restore-keys: forge-${{ steps.forge.outputs.version }}-
 
             - name: Compile contracts and generated artifacts
               run: yarn compile

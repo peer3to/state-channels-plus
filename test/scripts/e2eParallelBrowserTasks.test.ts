@@ -484,14 +484,15 @@ describe("browser warm-up selection", function () {
         expect(resolveWarmUps([MOCHA_TASK])).to.deep.equal([]);
     });
 
-    it("warms only the browser typecheck in distributed mode when a gate is scheduled", function () {
-        // Workers build forge in their prepare script and carry Chromium in
-        // their image; the typecheck runs once here instead of in every prepare.
+    it("warms the Foundry build and the browser typecheck in distributed mode", function () {
+        // The orchestrator builds forge and ships it with the workspace;
+        // workers carry Chromium in their image.
         expect(
             resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK], true).map(
                 (warmUp) => warmUp.message
             )
         ).to.deep.equal([
+            "Warming the Foundry build before the forge tier...",
             "Typechecking the browser sources before the browser tier..."
         ]);
     });
@@ -500,8 +501,10 @@ describe("browser warm-up selection", function () {
         expect(resolveWarmUps([MOCHA_TASK], true)).to.deep.equal([]);
     });
 
-    it("skips the browser typecheck in distributed mode for a forge-only run", function () {
-        expect(resolveWarmUps([FORGE_TASK], true)).to.deep.equal([]);
+    it("warms only the Foundry build in distributed mode for a forge-only run", function () {
+        expect(
+            resolveWarmUps([FORGE_TASK], true).map((warmUp) => warmUp.runner)
+        ).to.deep.equal([TASK_RUNNERS.FORGE]);
     });
 });
 

@@ -33,42 +33,58 @@ abstract contract DiamondHarness is Test {
     /// @dev Returns the diamond typed as its full external surface: the proxy
     /// implements only a few selectors itself and routes the rest to facets.
     function deployDiamond() internal returns (StateChannelManagerInterface diamond) {
-        return deployDiamondWith(new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS));
+        return deployDiamondWith(
+            MathStateMachine(
+                vm.deployCode(
+                    "MathStateMachine.sol:MathStateMachine", abi.encode(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS)
+                )
+            )
+        );
     }
 
     /// @dev Same deployment behind a caller-supplied machine (a Math variant), for suites that
     /// need transitions the reference machine does not have.
     function deployDiamondWith(MathStateMachine machine) internal returns (StateChannelManagerInterface diamond) {
         stateMachine = machine;
-        DisputeManagerFacet disputeManager = new DisputeManagerFacet();
-        DisputeVerificationFacet disputeVerification = new DisputeVerificationFacet();
-        fraudProofFacet = new FraudProofFacet();
-        DisputeFraudProofFacet disputeFraudProof = new DisputeFraudProofFacet();
-        StateSnapshotFacet stateSnapshot = new StateSnapshotFacet();
-        JoinChannelFacet joinChannel = new JoinChannelFacet();
-        StateProofFacet stateProof = new StateProofFacet();
-        utilityFacet = new UtilityFacet();
-        consumerFacet = new MathConsumerFacet();
+        // deployCode deploys the built contracts/ artifacts; `new` would embed and
+        // re-optimize every facet inside each via_ir test contract
+
+        DisputeManagerFacet disputeManager =
+            DisputeManagerFacet(vm.deployCode("DisputeManagerFacet.sol:DisputeManagerFacet"));
+        DisputeVerificationFacet disputeVerification =
+            DisputeVerificationFacet(vm.deployCode("DisputeVerificationFacet.sol:DisputeVerificationFacet"));
+        fraudProofFacet = FraudProofFacet(vm.deployCode("FraudProofFacet.sol:FraudProofFacet"));
+        DisputeFraudProofFacet disputeFraudProof =
+            DisputeFraudProofFacet(vm.deployCode("DisputeFraudProofFacet.sol:DisputeFraudProofFacet"));
+        StateSnapshotFacet stateSnapshot =
+            StateSnapshotFacet(vm.deployCode("StateSnapshotFacet.sol:StateSnapshotFacet"));
+        JoinChannelFacet joinChannel = JoinChannelFacet(vm.deployCode("JoinChannelFacet.sol:JoinChannelFacet"));
+        StateProofFacet stateProof = StateProofFacet(vm.deployCode("StateProofFacet.sol:StateProofFacet"));
+        utilityFacet = UtilityFacet(vm.deployCode("UtilityFacet.sol:UtilityFacet"));
+        consumerFacet = MathConsumerFacet(vm.deployCode("MathConsumerFacet.sol:MathConsumerFacet"));
 
         diamond = StateChannelManagerInterface(
             address(
-                new StateChannelManagerProxy(
-                    address(stateMachine),
-                    address(disputeManager),
-                    address(disputeVerification),
-                    address(fraudProofFacet),
-                    address(disputeFraudProof),
-                    address(stateSnapshot),
-                    address(joinChannel),
-                    address(stateProof),
-                    address(utilityFacet),
-                    address(consumerFacet),
-                    P2P_TIME,
-                    0, // agreementTime  -> contract default
-                    0, // chainFallbackTime -> default
-                    0, // evidenceTime -> default
-                    0, // disputeExecutionGasLimit -> default
-                    MAX_CHANNEL_PARTICIPANTS
+                vm.deployCode(
+                    "StateChannelManagerProxy.sol:StateChannelManagerProxy",
+                    abi.encode(
+                        address(stateMachine),
+                        address(disputeManager),
+                        address(disputeVerification),
+                        address(fraudProofFacet),
+                        address(disputeFraudProof),
+                        address(stateSnapshot),
+                        address(joinChannel),
+                        address(stateProof),
+                        address(utilityFacet),
+                        address(consumerFacet),
+                        P2P_TIME,
+                        0, // agreementTime  -> contract default
+                        0, // chainFallbackTime -> default
+                        0, // evidenceTime -> default
+                        0, // disputeExecutionGasLimit -> default
+                        MAX_CHANNEL_PARTICIPANTS
+                    )
                 )
             )
         );

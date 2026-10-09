@@ -56,9 +56,8 @@ contract JoinChannelFacet is StateChannelCommon {
             RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, expectedSnapshotHash)
         );
 
-        address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
-        );
+        address[] memory participantUnion = UtilityFacet(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(_getSnapshotParticipants(channelId), _getPendingParticipants(channelId));
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         require(
@@ -90,18 +89,16 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check threshold from the current eligibility set
         address[] memory thresholdParticipants = _getOnChainThresholdSet(channelId);
-        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
-        );
+        (bool isValid,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures);
         // `if (!isValid) revert` so the signer set is only recovered on the
         // failure path - `require` would recover on every successful join.
         if (!isValid) {
             revert ErrorJoinChannelConfirmationNotThresholdSigned(
                 jc.participant,
                 thresholdParticipants,
-                UtilityFacet(utilityFacetAddress).retrieveSignerAddresses(
-                    sjc.encodedJoinChannel, joinChannelConfirmation.signatures
-                )
+                UtilityFacet(utilityFacetAddress)
+                    .retrieveSignerAddresses(sjc.encodedJoinChannel, joinChannelConfirmation.signatures)
             );
         }
 

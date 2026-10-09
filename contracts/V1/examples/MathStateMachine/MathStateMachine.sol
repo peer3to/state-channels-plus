@@ -189,12 +189,7 @@ contract MathStateMachine is AStateMachine {
         return balance1.amount == balance2.amount;
     }
 
-    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2)
-        public
-        pure
-        override
-        returns (bool)
-    {
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
         return balance1.amount < balance2.amount;
     }
 

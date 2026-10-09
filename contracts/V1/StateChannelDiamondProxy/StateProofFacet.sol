@@ -174,9 +174,8 @@ contract StateProofFacet is StateChannelCommon {
         // a block the dispute's walk does not check (history below the anchor) is no conflict
         (bool isKept, bool hasHeight, uint256 fromIndex) = _checkedRunStart(milestone, cursor);
         if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
-        (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
-            milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock
-        );
+        (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress)
+            .tryDecodeBlock(milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock);
         return decoded && conflicting.transaction.header.channelId == dispute.input.channelId
             && conflicting.transaction.header.forkId == dispute.input.forkId
             && conflicting.transaction.header.transactionCnt == finalPoint.blockHeight
@@ -194,10 +193,11 @@ contract StateProofFacet is StateChannelCommon {
             return (false, finalPoint);
         }
         ProofWalkResult memory walk = _walkStateProof(finalProof, stateSnapshots[finalProof.channelId]);
-        return (
-            walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
-            walk.finalizedSnapshot
-        );
+        return
+            (
+                walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
+                walk.finalizedSnapshot
+            );
     }
 
     /**

@@ -300,9 +300,8 @@ contract DisputeInvalidOutboundRunTest is StateProofStaging {
         (Dispute memory dispute, DisputeAuditingData memory auditingData) =
             _committedDisputeTo(_forgedLatest(), _overflowingRun());
         assertTrue(
-            StateProofFacet(address(harness)).isDisputeOutboundRunInvalid(
-                dispute, DisputeInvalidOutboundRun({auditingData: auditingData})
-            )
+            StateProofFacet(address(harness))
+                .isDisputeOutboundRunInvalid(dispute, DisputeInvalidOutboundRun({auditingData: auditingData}))
         );
         _allege(dispute, auditingData);
         _assertKilled(dispute);

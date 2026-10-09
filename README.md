@@ -123,8 +123,9 @@ yarn test:parallel --test-pattern 'V1/**' # filter every tier
 Mocha tests are discovered from their TypeScript sources but run from the
 compiled tree under `dist/` by default, so no test child or worker thread
 transpiles anything, while `--enable-source-maps` keeps every stack trace on
-the `.ts` lines. The distributed workers build that tree in their prepare step
-(`yarn test:parallel:build`, a clean build). The local runner keeps it current
+the `.ts` lines. The runner builds that tree before scheduling, locally and
+for distributed runs alike; a distributed run ships it to the workers. The
+runner keeps it current
 from a stamp the build writes: when only file contents changed it re-emits in
 place without deleting anything, because a runner can itself be a task of an
 outer run that is loading from the same tree; when a source was added, removed
@@ -146,8 +147,9 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--browser-test-pattern` when only one tier needs a filename filter.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
-account partition. Local runs build the contracts once before scheduling;
-distributed runs rely on the worker's prepare script for that.
+account partition. Local and distributed runs build the contracts and the
+scheduled forge test files once before scheduling; unselected test files are
+not compiled.
 
 Forge tasks run through the Hardhat CLI like every other task. A forge task's
 arguments invoke the `forge-test` Hardhat task in `tasks/forgeTest.ts`, which
@@ -194,7 +196,7 @@ on.
 The gates load `src` through Vite, so the tier needs only a typecheck of
 `tsconfig.browser.json` (`yarn typecheck:browser`), not a build. Local runs
 and distributed runs both perform it once before scheduling, and only when the
-run holds a gate; distributed workers never run it in their prepare script.
+run holds a gate.
 
 ```shell
 yarn test:parallel --browser-only
@@ -350,7 +352,11 @@ before anything is built, in either schedule. The defaults are placeholders in
 
 The worker and orchestrator can run on different devices. They do not need a
 direct IP address for each other when the default Hyperswarm DHT is reachable.
-The orchestrator sends source files, not `node_modules` or local build output.
+The orchestrator sends source files and the build outputs its project declares
+in `peer3TestDistribution.buildOutputs` (built locally before the run), never
+`node_modules`. Only files whose content changed since a worker's last run are
+transferred. Workers then install dependencies and run; they build only linked
+repositories, whose outputs the orchestrator does not ship.
 
 Put the same long, randomly generated secret in the ignored `.env` file on
 every device:

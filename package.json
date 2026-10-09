@@ -132,8 +132,8 @@
     "test:parallel:docker:benchmark": "node scripts/e2e-parallel/distributed/isolatedEnvironmentBenchmark.js",
     "test:parallel:prepare": "hardhat compile && hardhat typechain && node scripts/generate-artifacts.js && yarn test:parallel:prepare:cached-contracts",
     "test:parallel:prepare:cached-contracts": "ts-node scripts/generate-enums.ts && yarn test:parallel:build && forge build",
-    "test:parallel:build": "rimraf dist && mkdir -p dist && node scripts/e2e-parallel/shared/compiledTree.js begin && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && node scripts/e2e-parallel/shared/compiledTree.js finish",
-    "test:parallel:refresh": "node scripts/e2e-parallel/shared/compiledTree.js begin && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && node scripts/e2e-parallel/shared/compiledTree.js finish",
+    "test:parallel:build": "rimraf dist cache/test-tree.tsbuildinfo && mkdir -p dist && node scripts/e2e-parallel/shared/compiledTree.js begin && tsc --incremental --tsBuildInfoFile cache/test-tree.tsbuildinfo && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && node scripts/e2e-parallel/shared/compiledTree.js finish",
+    "test:parallel:refresh": "node scripts/e2e-parallel/shared/compiledTree.js begin && tsc --incremental --tsBuildInfoFile cache/test-tree.tsbuildinfo && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && node scripts/e2e-parallel/shared/compiledTree.js finish",
     "test:parallel:debug": "LOG_LEVEL=debug node scripts/test-e2e-parallel.js",
     "test:parallel:verbose": "LOG_LEVEL=verbose node scripts/test-e2e-parallel.js",
     "test:coverage": "nyc --reporter=html yarn test",
@@ -222,6 +222,15 @@
     "onlyBuiltDependencies": []
   },
   "peer3TestDistribution": {
+    "buildOutputs": [
+      "artifacts",
+      "typechain-types",
+      "src/types/sol-enums.ts",
+      "src/utils/GeneratedArtifacts.ts",
+      "dist",
+      "out",
+      "cache_forge"
+    ],
     "prepareScript": "test:parallel:prepare",
     "cachedPrepareScript": "test:parallel:prepare:cached-contracts",
     "verifyNativeModules": [],

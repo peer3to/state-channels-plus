@@ -170,11 +170,7 @@ abstract contract AStateMachine {
 
     // Implementations must reject a transaction whose participant is not
     // getNextToWrite(); wrong-turn fraud-proof soundness depends on it.
-    function stateTransition(Transaction calldata transaction)
-        external
-        _nonReentrant
-        returns (bool, Message[] memory)
-    {
+    function stateTransition(Transaction calldata transaction) external _nonReentrant returns (bool, Message[] memory) {
         _clearOutboundMessages();
         _tx.header = transaction.header;
         // EIP-150 lets a CALL forward at most 63/64 of the remaining gas and never fails for

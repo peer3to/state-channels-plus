@@ -33,13 +33,13 @@ import "../../../contracts/V1/types/ProofTypes.sol";
 /// reached by delegatecall like the proxy routes them. A test places the chain snapshot, inbound blocks, withdrawals,
 /// slashes and the committed dispute directly.
 contract StateProofHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
-    constructor() {
+    constructor(address utilityFacet, address stateProofFacet, address fraudProofFacet, address stateMachine) {
         evidenceTime = 10;
-        utilityFacetAddress = address(new UtilityFacet());
-        stateProofFacetAddress = address(new StateProofFacet());
-        fraudProofFacetAddress = address(new FraudProofFacet());
+        utilityFacetAddress = utilityFacet;
+        stateProofFacetAddress = stateProofFacet;
+        fraudProofFacetAddress = fraudProofFacet;
         disputeVerificationFacetAddress = address(this);
-        stateMachineImplementation = new MathStateMachine(3_000_000, 32);
+        stateMachineImplementation = MathStateMachine(stateMachine);
     }
 
     /// the routed StateProofFacet reads and the `isGenesisSnapshotWithoutTimeCheck` self-call, answered by the facet
@@ -140,7 +140,19 @@ abstract contract StateProofStaging is DiamondHarness {
     /// a fresh pipeline whose chain snapshot is the fork genesis {A, B}
     function _stageGenesisChannel() internal {
         vm.warp(1_000_000);
-        harness = new StateProofHarness();
+        // deployCode deploys the built artifacts instead of embedding them in every
+        // test contract that extends this staging
+        harness = StateProofHarness(
+            vm.deployCode(
+                "StateProofStaging.sol:StateProofHarness",
+                abi.encode(
+                    vm.deployCode("UtilityFacet.sol:UtilityFacet"),
+                    vm.deployCode("StateProofFacet.sol:StateProofFacet"),
+                    vm.deployCode("FraudProofFacet.sol:FraudProofFacet"),
+                    vm.deployCode("MathStateMachine.sol:MathStateMachine", abi.encode(uint256(3_000_000), uint256(32)))
+                )
+            )
+        );
         genesisData.stateMachineStateHash = keccak256(GENESIS_STATE);
         genesisData.participants.push(alice);
         genesisData.participants.push(bob);
@@ -265,10 +277,7 @@ abstract contract StateProofStaging is DiamondHarness {
         inbound.totalBalance.amount = deposit;
         inbound.messages = new Message[](1);
         inbound.messages[0] = Message({
-            messageType: MESSAGE_TYPE_JOIN,
-            participant: participant,
-            balance: join.balance,
-            data: abi.encode(join)
+            messageType: MESSAGE_TYPE_JOIN, participant: participant, balance: join.balance, data: abi.encode(join)
         });
     }
 
@@ -349,8 +358,7 @@ abstract contract StateProofStaging is DiamondHarness {
             bytes memory encoded = abi.encode(next);
             milestone.blockConfirmations[i] = BlockConfirmation({
                 signedBlock: SignedBlock({
-                    encodedBlock: encoded,
-                    signature: _sign(_keyOf(next.transaction.header.participant), encoded)
+                    encodedBlock: encoded, signature: _sign(_keyOf(next.transaction.header.participant), encoded)
                 }),
                 signatures: new bytes[](0)
             });
@@ -489,10 +497,7 @@ abstract contract StateProofStaging is DiamondHarness {
     ) internal {
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
         proofs[0] = DisputeFraudProof({
-            proofType: proofType,
-            participant: dispute.input.disputer,
-            dispute: dispute,
-            encodedProof: encodedProof
+            proofType: proofType, participant: dispute.input.disputer, dispute: dispute, encodedProof: encodedProof
         });
         vm.prank(challenger);
         harness.applyDisputeFraudProofs(proofs);
@@ -530,8 +535,7 @@ abstract contract StateProofStaging is DiamondHarness {
     {
         return abi.encode(
             DisputeInvalidBalanceInvariant({
-                latestStateSnapshot: latestStateSnapshot,
-                latestStateMachineState: latestStateMachineState
+                latestStateSnapshot: latestStateSnapshot, latestStateMachineState: latestStateMachineState
             })
         );
     }
@@ -714,15 +718,16 @@ abstract contract StateProofStaging is DiamondHarness {
         if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(auditingData.latestStateSnapshot))) {
             return false;
         }
-        ProofWalkResult memory walk = _diamond().verifyMilestones(
-            ProofWalkInput(
-                dispute.input.channelId,
-                dispute.input.forkId,
-                dispute.input.stateProof,
-                auditingData.genesisStateSnapshotData,
-                auditingData.milestoneSnapshots
-            )
-        );
+        ProofWalkResult memory walk = _diamond()
+            .verifyMilestones(
+                ProofWalkInput(
+                    dispute.input.channelId,
+                    dispute.input.forkId,
+                    dispute.input.stateProof,
+                    auditingData.genesisStateSnapshotData,
+                    auditingData.milestoneSnapshots
+                )
+            );
         return walk.valid && _diamond().isCorrectLatestState(dispute, auditingData.genesisStateSnapshotData);
     }
 
@@ -732,8 +737,8 @@ abstract contract StateProofStaging is DiamondHarness {
         view
         returns (ProofWalkResult memory)
     {
-        return
-            _diamond().verifyMilestones(ProofWalkInput(CHANNEL, forkId, StateProof(milestones), genesisData, snapshots));
+        return _diamond()
+            .verifyMilestones(ProofWalkInput(CHANNEL, forkId, StateProof(milestones), genesisData, snapshots));
     }
 
     function _assertFinalized(ProofWalkResult memory result, StateSnapshot memory expected, uint256 replayBlockIndex)

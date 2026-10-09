@@ -115,8 +115,9 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -165,8 +166,9 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -216,8 +218,7 @@ contract JoinChannelFacetTest is Test {
 
         JoinChannelConfirmation memory confirmation;
         confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel,
-            signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
         });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
@@ -244,8 +245,7 @@ contract JoinChannelFacetTest is Test {
 
         JoinChannelConfirmation memory confirmation;
         confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel,
-            signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
         });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
@@ -270,8 +270,9 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -296,8 +297,9 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -332,8 +334,9 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         // only one of the two threshold participants countersigned, so the
         // confirmation stays under threshold: required 2, supplied 1
         confirmation.signatures = new bytes[](1);
@@ -372,8 +375,9 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         // as many signatures as the threshold has members, but the second one is
         // the joiner signing for itself - counting alone cannot tell this apart
         // from a valid confirmation, only the recovered addresses can
@@ -417,8 +421,9 @@ contract JoinChannelFacetTest is Test {
         // fully countersigned by both threshold members, so the only thing left
         // that can reject this join is the undisputed-fork gate
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel =
-            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
         confirmation.signatures = new bytes[](2);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
         confirmation.signatures[1] = _sign(SLASHED_PK, encodedJoinChannel);

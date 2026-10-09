@@ -187,8 +187,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
     // Same undatable genesis, reached through the second timeout-proof pipeline:
     // the posted block's calldata is genuinely on chain, the state proof holds no
     // block, and nothing dates the fork's genesis.
-    function test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks(
-    ) public {
+    function test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks()
+        public
+    {
         TimeoutCalldataPosted memory proof;
         proof.genesisStateSnapshotData.originForkId = ORIGIN_FORK_ID;
         bytes32 forkId = keccak256(abi.encode(proof.genesisStateSnapshotData));
@@ -226,8 +227,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
     // timed-out block but denies one for the previous block, so the pipeline must
     // report the previous block's own fork, height, author and stored commitment -
     // never the timed-out block's, which differ in every position.
-    function test_validateTimeoutCalldataPostedProof_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment(
-    ) public {
+    function test_validateTimeoutCalldataPostedProof_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment()
+        public
+    {
         address timedOut = vm.addr(TIMED_OUT_PK);
         address previousAuthor = vm.addr(PREVIOUS_AUTHOR_PK);
         assertTrue(timedOut != previousAuthor);

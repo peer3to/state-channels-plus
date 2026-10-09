@@ -228,9 +228,12 @@ contract StateChannelManagerProxy is StateChannelCommon {
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -270,10 +273,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;

@@ -183,9 +183,7 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         proof.genesisSnapshot.snapshotData = genesisSnapshotData;
 
         fraudProof = FraudProof({
-            proofType: FraudProofType.WrongGenesis,
-            participant: vm.addr(AUTHOR_PK),
-            encodedProof: abi.encode(proof)
+            proofType: FraudProofType.WrongGenesis, participant: vm.addr(AUTHOR_PK), encodedProof: abi.encode(proof)
         });
     }
 
@@ -324,11 +322,12 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         FraudProof[] memory proofs = new FraudProof[](1);
         proofs[0] = fraudProof;
         vm.prank(submitter);
-        (ok,) = address(diamond).call(
-            abi.encodeCall(
-                diamond.applyFraudProofs, (proofs, FraudProofVerificationContext({channelId: HONEST_CHANNEL_ID}))
-            )
-        );
+        (ok,) = address(diamond)
+            .call(
+                abi.encodeCall(
+                    diamond.applyFraudProofs, (proofs, FraudProofVerificationContext({channelId: HONEST_CHANNEL_ID}))
+                )
+            );
     }
 
     function _isSlashed(uint256 pk) internal view returns (bool) {
