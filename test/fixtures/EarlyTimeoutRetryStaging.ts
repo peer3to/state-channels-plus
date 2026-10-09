@@ -796,20 +796,21 @@ async function storeUnappliedPost(
     return writerSigned;
 }
 
-/**
- * The recorded checks that waited for the predecessor's post. That wait lasts
- * about as long as the post lagged the block; a reschedule rounding up to the
- * block's own deadline lasts a second or so, so half the lag tells them apart.
- */
-async function waitsForPost(
-    tasks: { tasks: () => Promise<{ taskName: string; delayMs: number }[]> },
-    postLagSeconds: number
-): Promise<number[]> {
+// A check that waits for the predecessor's post waits about as long as the
+// post lagged the block; a reschedule rounding up to the block's own deadline
+// waits a second or two. Both stagings post well over this bound after the
+// block, so a check running several seconds late still clears it.
+const POST_WAIT_MIN_MS = 3000;
+
+/** The recorded checks that waited for the predecessor's post. */
+async function waitsForPost(tasks: {
+    tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
+}): Promise<number[]> {
     return (await tasks.tasks())
         .filter(
             (task) =>
                 task.taskName.startsWith("timeoutParticipantDelayed") &&
-                task.delayMs >= (postLagSeconds * 1000) / 2
+                task.delayMs >= POST_WAIT_MIN_MS
         )
         .map((task) => task.delayMs);
 }
@@ -866,7 +867,7 @@ export async function assertSignedPredecessorPostGrantsNoTime(
             protocolEventTimeoutMs(timeConfig)
         );
         expect(
-            await waitsForPost(tasks, onChainTimestamp - previous.timestamp),
+            await waitsForPost(tasks),
             "the check waited for the post"
         ).to.deep.equal([]);
         expect(
@@ -903,6 +904,8 @@ export async function assertUnsignedPredecessorPostDelaysCheck(
     const { observer, author, parentAuthor, previous, forkId, postParent } =
         await h.scenario.unpostedParentUnsignedByNextWriter({ timeConfig });
     await h.rpcStub.suppressTimeoutCheck(parentAuthor.index);
+    // post well after the block reached the observer
+    await sleep(timeConfig.agreementTime * 1000);
     const onChainTimestamp = await postParent();
     expect(
         await storeUnappliedPost(h, observer.index, {
@@ -923,7 +926,7 @@ export async function assertUnsignedPredecessorPostDelaysCheck(
             protocolEventTimeoutMs(timeConfig)
         );
         expect(
-            await waitsForPost(tasks, onChainTimestamp - previous.timestamp),
+            await waitsForPost(tasks),
             "the check waited for the post"
         ).to.not.deep.equal([]);
         expect(
