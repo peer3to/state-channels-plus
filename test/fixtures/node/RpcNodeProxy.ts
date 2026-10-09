@@ -251,6 +251,9 @@ export class RpcNodeProxy {
             release: () => {
                 if (this.heldReplyMethods.get(method) === sends)
                     this.heldReplyMethods.delete(method);
+                // replies still in flight pass straight through
+                for (const [id, held] of this.heldReplyIds)
+                    if (held === sends) this.heldReplyIds.delete(id);
                 for (const send of sends.splice(0)) send();
             }
         };

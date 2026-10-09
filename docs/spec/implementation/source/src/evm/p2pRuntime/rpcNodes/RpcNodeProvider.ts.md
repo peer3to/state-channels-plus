@@ -27,3 +27,4 @@ Connection lifecycle of one endpoint
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P9` — destroyed during a pending attempt: no log, no unhandled rejection
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P10` — heartbeat answered with an error keeps the socket
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P11` — a socket's unsubscribe answered after destroy: no unhandled rejection
+- [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P12` — a socket's unsubscribe answered with an error by a live node: no unhandled rejection, reads continue

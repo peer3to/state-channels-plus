@@ -22,10 +22,10 @@
 
 ## UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2
 
-Intake gates and lifetime
+Intake gates, lifetime and drain scheduling
 
-- Setup: Ingest across channel/fork/dup/dead-fork cases; expire entries in each state
-- Oracle: Gates apply in order; lifetime fixed under duplicates/restores; a probed source is kept when its same-fork proof carries the block or a verified successor makes the old-fork absence inconclusive; admitted-source expiry probes remain separate from ordinary unknown-source sync
+- Setup: Ingest across channel/fork/dup/dead-fork cases; expire entries in each state; hold a sync while queued copies wait on the unsynced fork, queue timeouts suppressed
+- Oracle: Gates apply in order; after a dequeued entry runs, the next eligible height applies without its queue timeout; lifetime fixed under duplicates/restores; a probed source is kept when its same-fork proof carries the block or a verified successor makes the old-fork absence inconclusive; admitted-source expiry probes remain separate from ordinary unknown-source sync
 
 - [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P1` — gate order
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P2` — lifetime never extends
@@ -64,4 +64,3 @@ Intake gates and lifetime
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45` — a fork recovery held in flight when `stop()` starts: `stop()` stays pending with the recovery scheduled and the timeout manager alive; after release nothing stays in flight, the recovery state is cleared and the timeout manager is disposed
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46` — a fork recovery scheduled after `stop()` began, or whose scheduled run fires after it began, never runs: nothing enters recovery and nothing stays in flight
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47` — a drain that dequeues a queued copy of a block a sync already stored still drains the queued next block, with no queue timeout armed
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P48` — a spectator whose sync stores a queued copy of its tip applies the next block it received by gossip during the sync, with no queue timeout armed

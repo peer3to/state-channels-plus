@@ -56,8 +56,8 @@ export type ExpectedChain = { chainId?: bigint };
 /** A node's WebSocket. */
 class NodeSocket extends WebSocketProvider {
     // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
-    // eth_unsubscribe unawaited, so its failure (the socket destroyed before
-    // the answer) is settled here; the subscription ends with the socket.
+    // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
+    // before the answer) is settled here; the subscription ends with the socket.
     override send(
         method: string,
         params: unknown[] | Record<string, unknown>

@@ -68,7 +68,7 @@ by the participants' gossip. Once the sync stores the tip, the spectator must ap
 - `junk supplier is excluded even when another sync toward it is in flight at queue timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P12
 - `future block at a height its source never reached at queue timeout is dropped and the source struck`: REQ-BLOCK-PIPE-4-CF52J6.T1.P9, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P11
 - `queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P6
-- `a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P48
+- `a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P7
 - `recovers the first reduced-fork block by reducing locally at ingest`: REQ-BLOCK-PIPE-9-QA66GT.T1.P5
 - `queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier`: REQ-BLOCK-PIPE-4-CF52J6.T1.P3, REQ-BLOCK-PIPE-4-CF52J6.T1.P6
 - `a queue timeout accepts a proved successor fork without excluding the supplier or author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P13, REQ-SYNC-1-T2589H.T1.P8

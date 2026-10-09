@@ -758,6 +758,30 @@ export async function assertUnsubscribeAnsweredAfterDestroyStaysQuiet(): Promise
     });
 }
 
+export async function assertUnsubscribeErrorAnswerStaysQuiet(): Promise<void> {
+    await withProxiedNodes(1, async ({ proxies: [proxy], nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            const listener = () => undefined;
+            await provider.on("block", listener);
+            await waitFor(() =>
+                proxy.forwardedMethods.includes("eth_subscribe")
+            );
+            proxy.failNextRequest("eth_unsubscribe");
+            const rejections = await recordUnhandledRejections(async () => {
+                // the live node answers the unawaited unsubscribe with an error
+                await provider.off("block", listener);
+                await waitFor(() => proxy.failedCount("eth_unsubscribe") === 1);
+            });
+
+            expect(rejections).to.deep.equal([]);
+            expect(await provider.getBlockNumber()).to.be.a("number");
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
 export async function assertHeartbeatErrorAnswerKeepsNode(): Promise<void> {
     await withProxiedNodes(
         1,

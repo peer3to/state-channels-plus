@@ -23,7 +23,9 @@ wider reads, window by window, and answers the failed window for a retry.
 
 The unsubscribe case removes the last block listener with the proxy holding the node's answer to
 the socket's `eth_unsubscribe`, then releases the answer and destroys the provider in the same turn;
-no unhandled rejection may surface.
+no unhandled rejection may surface. A second unsubscribe case has the proxy answer the
+`eth_unsubscribe` with an error on a live socket; no unhandled rejection may surface and the
+provider keeps answering reads.
 
 ## Tests
 
@@ -41,6 +43,7 @@ no unhandled rejection may surface.
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6
 - `leaves no unhandled rejection when a node socket's unsubscribe is answered after destroy`: UNIT-TEST-RPC-NODE-1-VTXH1M.P11
+- `leaves no unhandled rejection and keeps reading when a node answers an unsubscribe with an error`: UNIT-TEST-RPC-NODE-1-VTXH1M.P12
 - `starts the runtime chain context while one of its nodes is unreachable`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P5, REQ-CHAINOBS-1-5JTHY8.T1.P5
 - `fails runtime startup when no node is reachable and names every node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P6, REQ-CHAINOBS-1-5JTHY8.T1.P6
 - `refuses a node that serves another chain than the first connected node`: UNIT-TEST-RPC-NODE-1-VTXH1M.P8, REQ-CHAINOBS-1-5JTHY8.T1.P8
