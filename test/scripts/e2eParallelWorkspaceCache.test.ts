@@ -325,12 +325,52 @@ describe("distributed workspace cache", function () {
         }
     });
 
-    it("trusts a committed file whose size and mtime are unchanged without hashing it", async function () {
+    it("trusts a file left untouched since its commit without hashing it", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
-        const contents = "source";
         const manifest = {
             workspaceId: "5".repeat(64),
             sourceDigest: "source-five",
+            files: [
+                {
+                    path: "repo/a.ts",
+                    bytes: 6,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update("source")
+                        .digest("hex"),
+                    mode: 420
+                }
+            ]
+        };
+        try {
+            const cache = await inspectWorkspace(
+                root,
+                manifest,
+                orchestratorPublicKey
+            );
+            const file = path.join(cache.workspace, "repo/a.ts");
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            // other bytes than the manifest's hash: only a hash could tell
+            fs.writeFileSync(file, "poison");
+            // past the racy window, so the commit records the stat
+            await new Promise((resolve) => setTimeout(resolve, 2100));
+            commitSourceManifest(cache, manifest);
+
+            expect(
+                (await inspectWorkspace(root, manifest, orchestratorPublicKey))
+                    .changed
+            ).to.deep.equal([]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("requests a same-size rewrite again even when its mtime is put back", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
+        const contents = "source";
+        const manifest = {
+            workspaceId: "7".repeat(64),
+            sourceDigest: "source-seven",
             files: [
                 {
                     path: "repo/a.ts",
@@ -352,19 +392,18 @@ describe("distributed workspace cache", function () {
             const file = path.join(cache.workspace, "repo/a.ts");
             fs.mkdirSync(path.dirname(file), { recursive: true });
             fs.writeFileSync(file, contents);
-            // whole seconds: a Date round-trip keeps them exactly
             const committedTime = 1_700_000_000;
             fs.utimesSync(file, committedTime, committedTime);
+            await new Promise((resolve) => setTimeout(resolve, 2100));
             commitSourceManifest(cache, manifest);
-            // same size, other bytes, the committed mtime put back: only a
-            // hash could tell, and the stat match skips it
+            // same size, mtime put back: the rewrite still moves ctime
             fs.writeFileSync(file, "poison");
             fs.utimesSync(file, committedTime, committedTime);
 
             expect(
                 (await inspectWorkspace(root, manifest, orchestratorPublicKey))
                     .changed
-            ).to.deep.equal([]);
+            ).to.deep.equal(["repo/a.ts"]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

@@ -6,6 +6,10 @@ const { sha256File } = require("../shared/fileHash");
 
 const PREPARATION_VERSION = 2;
 
+// Timestamps advance once per clock tick on older kernels, so a write within
+// this window of the commit may leave the recorded stat unchanged.
+const RACY_STAT_WINDOW_MS = 2000;
+
 function assertWorkspaceId(workspaceId) {
     if (!/^[a-f0-9]{64}$/.test(workspaceId)) {
         throw new Error("Invalid workspace ID");
@@ -143,10 +147,16 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
             changed.add(entry.path);
             continue;
         }
-        // Unchanged size and mtime since this host committed the file: its
-        // content is the committed one. Any write moves the mtime.
+        // Unchanged since this host committed the file: its content is the
+        // committed one. A writer can put mtime back, but every write, chmod
+        // and utimes moves ctime, and a replacement gets a new inode.
         const recorded = recordedStats.get(entry.path);
-        if (recorded?.mtimeMs === stat.mtimeMs && recorded.size === stat.size) {
+        if (
+            recorded?.size === stat.size &&
+            recorded.mtimeMs === stat.mtimeMs &&
+            recorded.ctimeMs === stat.ctimeMs &&
+            recorded.ino === stat.ino
+        ) {
             continue;
         }
         const digest = await sha256File(target);
@@ -413,17 +423,21 @@ function removeDeletedFiles(workspaceRoot, deleted) {
     }
 }
 
-// Records each file's on-disk size and mtime next to its offered hash, so the
-// next inspection hashes only files whose stat moved.
+// Records each file's on-disk stat next to its offered hash, so the next
+// inspection hashes only files whose stat moved. A file written within the
+// racy window gets no stat and is hashed next time (git's racily-clean rule).
 function commitSourceManifest(cache, manifest) {
     fs.mkdirSync(cache.root, { recursive: true });
+    const racyAfterMs = Date.now() - RACY_STAT_WINDOW_MS;
     const files = manifest.files.map((entry) => {
         let stat;
         try {
-            const { size, mtimeMs } = fs.statSync(
+            const { size, mtimeMs, ctimeMs, ino } = fs.statSync(
                 resolveWorkspaceFile(cache.workspace, entry.path)
             );
-            stat = { size, mtimeMs };
+            if (mtimeMs < racyAfterMs && ctimeMs < racyAfterMs) {
+                stat = { size, mtimeMs, ctimeMs, ino };
+            }
         } catch {
             stat = undefined;
         }
