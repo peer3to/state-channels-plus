@@ -1,16 +1,8 @@
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
-import type Block from "@/models/Block";
 
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
-import {
-    Address,
-    BlockCalldata,
-    BlockHeight,
-    Bytes,
-    ForkId,
-    Timestamp
-} from "@/types/types";
+import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -146,16 +138,23 @@ export default class ParticipantTimeoutService {
             return;
         }
 
+        // A timeout added to an existing dispute window is judged against the
+        // window's original creation time, not the new transaction timestamp.
+        // Do not submit if that window opened before this timeout became valid;
+        // the on-chain race-condition guard repeats this check authoritatively.
         if (
-            await this.windowPredatesTimeout(
+            await this.doesWindowPredateTimeout(
                 sm.diamondStateMachine.localDiamondContract,
                 forkId,
-                blockHeight,
-                participantAddress,
                 timeoutMinTimestamp
             )
-        )
+        ) {
+            this.logger.info(
+                "tryTimeoutParticipant - existing dispute window predates timeout deadline; not submitting",
+                { forkId, blockHeight, participantAddress, timeoutMinTimestamp }
+            );
             return;
+        }
 
         // (race condition) check did previous participant post on-chain granting this one extra time
         if (
@@ -197,18 +196,15 @@ export default class ParticipantTimeoutService {
                 sm.storage.blockCalldata.getMatchingBlockCalldata(
                     previousBlockOrSnapshot.block
                 );
+            // a writer that signed the predecessor gains no time from its post
             if (
                 matchingPreviousCalldata &&
-                this.writerGainsTimeFromPost(
-                    previousBlockOrSnapshot.block,
-                    participantAddress
-                )
+                !previousBlockOrSnapshot.block.findSignature(participantAddress)
             ) {
                 difference =
-                    this.postedTimeoutMinimum(
-                        matchingPreviousCalldata,
-                        blockHeight
-                    ) - Clock.getTimeInSeconds();
+                    matchingPreviousCalldata.onChainTimestamp +
+                    timeoutWaitTime -
+                    Clock.getTimeInSeconds();
                 if (difference > 0) {
                     // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
                     // This is not a problem since on the next run difference < 0 -> force timeout
@@ -392,12 +388,11 @@ export default class ParticipantTimeoutService {
         });
 
         const previousBlock = previousBlockOrSnapshot.block;
-        // The chain judges this claim against its own commitment, so read it
-        // there: a local on-chain timestamp or mirror can disagree with it
-        // (e.g. after a reorg), and a recheck must not rebuild a refused claim.
         let previousBlockProducerPostedCalldata = false;
-        if (previousBlock) {
-            try {
+        let postedMinimum: Timestamp | undefined;
+        try {
+            // the chain judges the claim, so read the predecessor's post there
+            if (previousBlock)
                 previousBlockProducerPostedCalldata = (
                     await sm.stateChannelManagerContract.getBlockCallDataCommitment(
                         sm.channelId,
@@ -406,83 +401,82 @@ export default class ParticipantTimeoutService {
                         previousBlock.author
                     )
                 ).found;
-            } catch (error) {
-                this.recheckAfterFailedChainRead(
-                    "predecessor commitment",
-                    error,
+            // a post not applied here moves the deadline unless the writer signed it
+            if (
+                previousBlock &&
+                previousBlockProducerPostedCalldata &&
+                !previousBlock.onChainTimestamp &&
+                !previousBlock.findSignature(participantAddress)
+            ) {
+                const post = sm.storage.blockCalldata.getBlockCalldata(
+                    forkId,
+                    previousBlock.height,
+                    previousBlock.author
+                );
+                postedMinimum =
+                    post &&
+                    post.onChainTimestamp +
+                        timeoutWaitTimeSeconds(sm.timeConfig, blockHeight);
+                const remainingMs = postedMinimum
+                    ? (postedMinimum - Clock.getTimeInSeconds()) * 1000
+                    : 0;
+                // post not recovered yet or its deadline still ahead -> check again
+                if (!postedMinimum || remainingMs > 0) {
+                    this.scheduleCheck(
+                        forkId,
+                        blockHeight,
+                        participantAddress,
+                        Math.max(TIMEOUT_RECHECK_DELAY_MS, remainingMs),
+                        PREDECESSOR_POSTED_RECHECK_REASON,
+                        isForced
+                    );
+                    return;
+                }
+                // the mirror may not have the window yet, so ask the chain
+                if (
+                    await this.doesWindowPredateTimeout(
+                        sm.stateChannelManagerContract,
+                        forkId,
+                        Math.max(timeoutMinTimestamp, postedMinimum)
+                    )
+                ) {
+                    this.logger.info(
+                        "createTimeOutDispute - existing dispute window predates the moved deadline; not submitting",
+                        {
+                            forkId,
+                            blockHeight,
+                            participantAddress,
+                            postedMinimum
+                        }
+                    );
+                    return;
+                }
+            }
+        } catch (error) {
+            this.logger.warn(
+                "createTimeOutDispute - chain read failed; rechecking",
+                {
                     forkId,
                     blockHeight,
                     participantAddress,
-                    isForced
-                );
-                return;
-            }
-        }
-        // A predecessor post this check has not applied yet may grant the
-        // writer extra time (only if the writer did not sign that block, as
-        // the timeout-too-early proof judges it). Never pair the post with a
-        // stale minimum: claim no earlier than the post time plus the wait. A
-        // junk post would grant nothing, so waiting for it only costs time.
-        let minTimeStamp = timeoutMinTimestamp;
-        if (
-            previousBlockProducerPostedCalldata &&
-            !previousBlock!.onChainTimestamp &&
-            this.writerGainsTimeFromPost(previousBlock!, participantAddress)
-        ) {
-            const recovered = sm.storage.blockCalldata.getBlockCalldata(
-                forkId,
-                previousBlock!.height,
-                previousBlock!.author
+                    error: errorMessage(error)
+                }
             );
-            const postedMinimum =
-                recovered && this.postedTimeoutMinimum(recovered, blockHeight);
-            // not recovered yet, or the post's deadline is still ahead
-            // -> re-run the check instead of claiming a stale minimum
-            const remainingMs = postedMinimum
-                ? (postedMinimum - Clock.getTimeInSeconds()) * 1000
-                : 0;
-            if (!postedMinimum || remainingMs > 0) {
-                this.scheduleCheck(
-                    forkId,
-                    blockHeight,
-                    participantAddress,
-                    Math.max(TIMEOUT_RECHECK_DELAY_MS, remainingMs),
-                    PREDECESSOR_POSTED_RECHECK_REASON,
-                    isForced
-                );
-                return;
-            }
-            minTimeStamp = Math.max(minTimeStamp, postedMinimum);
-            // a window opened before the moved deadline makes the claim one
-            // the chain refuses; never store it. Read the chain, not the
-            // mirror: the window's event may not have reached us yet.
-            let windowPredates: boolean;
-            try {
-                windowPredates = await this.windowPredatesTimeout(
-                    sm.stateChannelManagerContract,
-                    forkId,
-                    blockHeight,
-                    participantAddress,
-                    minTimeStamp
-                );
-            } catch (error) {
-                this.recheckAfterFailedChainRead(
-                    "dispute window",
-                    error,
-                    forkId,
-                    blockHeight,
-                    participantAddress,
-                    isForced
-                );
-                return;
-            }
-            if (windowPredates) return;
+            this.scheduleCheck(
+                forkId,
+                blockHeight,
+                participantAddress,
+                TIMEOUT_RECHECK_DELAY_MS,
+                CHAIN_READ_FAILED_RECHECK_REASON,
+                isForced
+            );
+            return;
         }
 
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp,
+            minTimeStamp: Math.max(timeoutMinTimestamp, postedMinimum ?? 0),
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()
@@ -514,92 +508,21 @@ export default class ParticipantTimeoutService {
         await sm.disputeManager.dispute(forkId);
     }
 
-    // A timeout added to an existing dispute window is judged against the
-    // window's original creation time, not the new transaction timestamp.
-    // Do not submit if that window opened before this timeout became valid;
-    // the on-chain race-condition guard repeats this check authoritatively.
-    private async windowPredatesTimeout(
-        windows: Pick<
-            StateChannelManagerInterface,
-            "getDisputeWindowCreationTimestamp"
-        >,
+    // whether a dispute window on the fork opened before the timeout became valid
+    private async doesWindowPredateTimeout(
+        contract: StateChannelManagerInterface,
         forkId: ForkId,
-        blockHeight: BlockHeight,
-        participantAddress: Address,
         timeoutMinTimestamp: Timestamp
     ): Promise<boolean> {
-        const sm = this.stateManager;
         const disputeWindowCreationTimestamp = Number(
-            await windows.getDisputeWindowCreationTimestamp(
-                sm.channelId,
+            await contract.getDisputeWindowCreationTimestamp(
+                this.stateManager.channelId,
                 forkId
             )
         );
-        if (
+        return (
             disputeWindowCreationTimestamp !== 0 &&
             disputeWindowCreationTimestamp < timeoutMinTimestamp
-        ) {
-            this.logger.info(
-                "tryTimeoutParticipant - existing dispute window predates timeout deadline; not submitting",
-                {
-                    forkId,
-                    blockHeight,
-                    participantAddress,
-                    disputeWindowCreationTimestamp,
-                    timeoutMinTimestamp
-                }
-            );
-            return true;
-        }
-        return false;
-    }
-
-    // a failed chain read must not drop a due timeout -> check again
-    private recheckAfterFailedChainRead(
-        read: string,
-        error: unknown,
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        participantAddress: Address,
-        isForced: boolean
-    ): void {
-        this.logger.warn(
-            `createTimeOutDispute - ${read} read failed; rechecking`,
-            {
-                forkId,
-                blockHeight,
-                participantAddress,
-                error: errorMessage(error)
-            }
-        );
-        this.scheduleCheck(
-            forkId,
-            blockHeight,
-            participantAddress,
-            TIMEOUT_RECHECK_DELAY_MS,
-            CHAIN_READ_FAILED_RECHECK_REASON,
-            isForced
-        );
-    }
-
-    // Whether a predecessor's on-chain post can extend the writer's deadline,
-    // as the timeout-too-early proof judges it: a writer that signed the
-    // predecessor forfeited that extra time.
-    private writerGainsTimeFromPost(
-        previousBlock: Block,
-        participantAddress: Address
-    ): boolean {
-        return !previousBlock.findSignature(participantAddress);
-    }
-
-    // The earliest valid timeout minimum after a predecessor post.
-    private postedTimeoutMinimum(
-        post: BlockCalldata,
-        blockHeight: BlockHeight
-    ): Timestamp {
-        return (
-            post.onChainTimestamp +
-            timeoutWaitTimeSeconds(this.stateManager.timeConfig, blockHeight)
         );
     }
 }
