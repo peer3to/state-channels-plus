@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { parse, visit } from "@solidity-parser/parser";
@@ -85,6 +86,23 @@ function main() {
     const outputFile = path.join(__dirname, "../src/types/sol-enums.ts");
 
     const solFiles = findSolFiles(contractsDir);
+    // parsing every contract takes seconds; skip it when no contract (and not
+    // this generator) changed since the last run
+    const inputs = createHash("sha256").update(fs.readFileSync(__filename));
+    for (const file of solFiles) {
+        inputs
+            .update(path.relative(contractsDir, file))
+            .update(fs.readFileSync(file));
+    }
+    const digest = inputs.digest("hex");
+    const stampFile = path.join(__dirname, "../cache/sol-enums.sha256");
+    if (
+        fs.existsSync(outputFile) &&
+        fs.existsSync(stampFile) &&
+        fs.readFileSync(stampFile, "utf8") === digest
+    ) {
+        return;
+    }
     const allEnums: EnumDef[] = [];
 
     for (const file of solFiles) {
@@ -100,6 +118,8 @@ function main() {
     const generatedCode = `// Auto-generated from Solidity contracts. Do not edit manually.\n\n${tsEnums.join("\n\n")}\n\n${helperFunctions}\n`;
 
     writeFileIfChanged(outputFile, generatedCode);
+    fs.mkdirSync(path.dirname(stampFile), { recursive: true });
+    fs.writeFileSync(stampFile, digest);
 }
 
 main();
