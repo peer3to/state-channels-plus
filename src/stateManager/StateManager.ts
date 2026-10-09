@@ -56,6 +56,7 @@ import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { runCleanup } from "@/utils/runCleanup";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -356,32 +357,25 @@ class StateManager<
 
         // Event handlers may still need the local EVM while draining already
         // scheduled contract logs. Dispose their dependencies only afterward.
-        this.stoppingPromise = (async () => {
+        // Every step runs even when an earlier one fails; the first failure
+        // is rethrown after the rest of the teardown.
+        this.stoppingPromise = runCleanup(
             // The custom RPC root disposes first so it can settle waits that
-            // depend on the timeout manager and p2p below. A broken root must
-            // never skip runtime teardown: its error is captured and rethrown
-            // only after the remaining cleanup finished.
-            let customRpcError: Error | undefined;
-            try {
-                await this.p2pManager.localRpc.dispose();
-            } catch (error) {
-                customRpcError =
-                    error instanceof Error ? error : new Error(String(error));
-            }
-            try {
-                await this.stateChannelEventListener.stop();
-            } finally {
-                // Drain scheduled work (queued block applications) before its
-                // dependencies disappear: a queued entry mid-execution still
-                // needs the EVM executor and p2p below. The drain is bounded
-                // by the timeout manager's dispose wait.
-                await this.timeoutManager.dispose();
-                this.blockQueueManager.dispose();
-            }
-            if (customRpcError) {
-                throw customRpcError;
-            }
-        })();
+            // depend on the timeout manager and p2p below.
+            () => this.p2pManager.localRpc.dispose(),
+            () => this.stateChannelEventListener.stop(),
+            // `isDisposed` above already stops the block queue from starting
+            // probes or recoveries. Its work in flight still needs p2p, the
+            // timeout manager and the EVM executor, so it drains first. The
+            // sync timeout bounds only a probe's request; a probe whose
+            // response arrives after disposal installs nothing.
+            () => this.blockQueueManager.dispose(),
+            // Drain scheduled work (queued block applications) before its
+            // dependencies disappear: a queued entry mid-execution still
+            // needs the EVM executor and p2p below. The drain is bounded by
+            // the timeout manager's dispose wait.
+            () => this.timeoutManager.dispose()
+        );
         return this.stoppingPromise;
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {

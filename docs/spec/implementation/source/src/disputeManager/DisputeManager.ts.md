@@ -27,6 +27,8 @@
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
 - [`REQ-IX-5-6XHJJB` (On-chain adjudication)](../../../../specification/interactions.md#req-ix-5-6xhjjb)
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
+- [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
+- [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 
 ## UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD
 
@@ -40,11 +42,9 @@ Escalation guard: once per fork, rollback on failure, serialized
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P3` — concurrent calls serialize to one upload
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P4` — ErrorCantParticipateInDispute revert warns
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P5` — RaceConditionDisputeTimeoutWindowCreatedTooEarly revert no-op
-- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P6` — send-time RaceConditionDisputeEvidencePeriodExpired rethrows and rolls the marker back
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P7` — after that rollback a retry submits, and its marker closes the fork to this node's block work
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P8` — a dispute in flight: the node's own turn produces no block
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P9` — a dispute parked in construction: a delivered block gets no signature and is dropped
-- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P10` — receipt-time evidence expiry rethrows after marker rollback
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P11` — admitted authoring signs and stores before dispute capture
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P12` — admitted commit completes before dispute capture
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P13` — pending signer call and storage complete before dispute capture
@@ -77,6 +77,15 @@ Escalation guard: once per fork, rollback on failure, serialized
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P42` — After one valid first dispute causes a negative evidence comparison, a later valid lower-state dispute is audited without repeating the comparison or submitting a redundant own dispute
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P43` — An invalid reasonless first dispute causes one successful multicall with fraud-proof application first and replacement upload last; the replacement includes the expected spammer slash and lands in chain commitments with that slash
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P44` — A held kill-and-replacement multicall carries the expected slash; before it lands another peer rejects the replacement slash subset, then successful execution establishes the slash and a fresh auditor accepts the same replacement without a counter
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P46` — send-time RaceConditionDisputeEvidencePeriodExpired is a no-op: `dispute` resolves and the marker rolls back
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P47` — receipt-time RaceConditionDisputeEvidencePeriodExpired is a no-op: `dispute` resolves and the marker rolls back
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P48` — a slow auditor's kill-and-dispute lands after another auditor's kill and replacement closed the evidence period: the best-effort multicall lands its kill, the upload refusal is read from the receipt and is a no-op, no kill is sent alone, the marker rolls back, no contract-event block fails, and the runtime is not aborted
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P49` — a kill lands alone while a slow auditor's kill-and-dispute is in construction: after the evidence period closed with a replacement in the window, both the multicall's upload and the queued lone replacement are refused with RaceConditionDisputeEvidencePeriodExpired, both are no-ops, and the node stays live
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P50` — a slow auditor past the evidence period whose best-effort multicall gets only the least gas at which the multicall succeeds (a searching estimator): the all-or-nothing estimate is refused with RaceConditionDisputeEvidencePeriodExpired, the mined upload still reaches its evidence check and is refused with that race, which is a no-op; the kill landed in the multicall and none is sent alone
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P51` — a slow auditor past the evidence period whose mined upload refusal carries no revert data (`0x`): the decoded refusal of the failed all-or-nothing estimate classifies it as the lost evidence race, a no-op; the kill landed in the multicall, none is sent alone and the event pipeline stays live
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P52` — the same with the upload facet reverting without data, which the proxy reports as its "Delegatecall failed" `Error(string)`: classified by the estimate refusal as the lost evidence race, a no-op
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P53` — the upload of a mined kill-and-dispute multicall is refused with a custom error no dispute handler takes (`ErrorDisputerNotMsgSender`): the kill landed once in the multicall, the marker rolls back, `dispute` rejects with that refusal and no kill is sent alone
+- [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P54` — the upload of a mined kill-and-dispute multicall is refused without revert data while its all-or-nothing estimate succeeded: nothing classifies the refusal, so `dispute` rejects, the marker rolls back, the kill landed once in the multicall and none is sent alone
 
 ## UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R
 
@@ -120,12 +129,12 @@ Submission composition
 Kill preconditions and races
 
 - Setup: `killDispute(dispute)` with/without a stored proof; window states open/expired/absent
-- Oracle: Submits only with a stored proof and an open window; expired/absent window is a logged no-op; the four named race reverts are benign; missing proof is an error, never a bare submission
+- Oracle: Submits only with a stored proof and an open window; expired/absent window is a logged no-op; three named race reverts are benign and a late kill (`RaceConditionDisputeKillPeriodExpired`) is fatal; missing proof is an error, never a bare submission
 
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P1` — valid kill
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P2` — missing stored proof
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P3` — window absent no-op
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P4` — RaceConditionDisputeKillPeriodExpired revert tolerated
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P4` — RaceConditionDisputeKillPeriodExpired revert is fatal: logged and rethrown
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P5` — window expired no-op
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P6` — RaceConditionOnChainSlashes revert tolerated
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P7` — RaceConditionGenesisTimestampNotAvailable revert tolerated
@@ -138,25 +147,26 @@ Kill preconditions and races
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 
-Auditing-data assembly and partiality
+Auditing-data assembly; missing local data throws
 
-- Setup: `getAuditingData(forkId, stateProof)` with each element present and absent
-- Oracle: Complete fixtures yield exact ranges and snapshots; each locally missing element sets `isPartial` (placeholder documented); construction throws on partial
+- Setup: `constructDispute(forkId)` (its `buildAuditingData`) with each element present and absent
+- Oracle: Complete fixtures yield exact ranges and snapshots; each locally missing element makes construction throw; no partial dispute is submitted
 
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P1` — complete assembly
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P2` — missing milestone snapshot flags partial
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P2` — missing milestone snapshot: construction throws and no dispute is built
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P3` — inbound range bounds incl. pinned upper hash
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P4` — genesis-anchored fork (no milestones)
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P5` — missing latest-state snapshot flags partial
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P6` — missing finalized state-machine state flags partial
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P7` — outbound range bounds
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P5` — missing latest-state snapshot: construction throws and no dispute is built
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P6` — missing finalized state-machine state: construction throws and no dispute is built
+- [x] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P8` — the outbound range holds only the blocks above the on-chain snapshot's outbound head, up to the latest state's, and the chain accepts the dispute.
+- [x] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P18` — a successor fork while the chain anchor is still on the parent fork (no successor snapshot posted): the dispute built on the successor carries auditing data cut at that parent-fork anchor, the chain accepts its proof and an honest auditor accepts it without a counter.
 
 ## UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9
 
 Replay sends funded upfront
 
 - Setup: `dispute(forkId)` with a held fraud proof and `killDispute(dispute)` with a stored proof and an open window on a running peer; record-only stubs record each send's overrides, scale the `estimateGas` answer of the replay sends to a fraction of the real estimate (standing in for an estimator that reports only the gas spent) or leave it real (`stubScaleReplayGasEstimates`), and record or fail the `getStateTransitionReplayGas` reads (`stubRecordReplayGasReads`); the read succeeding, failing once, shared by sequential and concurrent sends
-- Oracle: The batched `multicall` and `applyDisputeFraudProofs` carry `gasLimit` = estimate + replay gas and land (the spammer is slashed on a kill); the plain and calldata uploads carry no `gasLimit`; one read serves every later send; a failed read sends nothing and the next send reads again
+- Oracle: The batched `multicallBestEffortLast` and `applyDisputeFraudProofs` carry `gasLimit` = estimate + replay gas and land (the spammer is slashed on a kill); the plain and calldata uploads carry no `gasLimit`; one read serves every later send; a failed read sends nothing and the next send reads again
 
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P3` — an upload without fraud proofs (plain or calldata) carries no gas limit and reads no replay gas
 - [x] `UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14` — a dispute whose `multicall` estimate is a fraction of the real one is sent at that estimate plus the replay gas
@@ -179,7 +189,7 @@ Once-per-fork evidence comparison
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P2` — a node that has not disputed the fork audits two disputes of it and runs the comparison once
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P3` — a rejected comparison is not kept: that audit fails with the rejection, and the next audit of the fork compares again
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P4` — a positive comparison stays positive: after its upload failed, the next audit uploads again without a new comparison
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P5` — a comparison ended by partial own auditing data is not kept: that audit completes as if the answer were negative, and the next audit of the fork compares again
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P5` — a comparison that fails (own construction or the local reduction comparison throws) is not kept: that audit fails with the error, and the next audit of the fork compares again
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P6` — a dispute of the fork is killed after a negative comparison: the next audit compares again and, when its own evidence now changes the outcome, uploads its dispute
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P7` — the fork's reduced result is committed: the kept comparison is dropped and the next request for the fork compares again
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P8` — concurrent audits of one fork share one in-flight comparison: while the first is held the second starts no construction, and both get its answer

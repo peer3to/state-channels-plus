@@ -17,19 +17,19 @@ the marker is self-contained?
 The **base layer is the sole author** of inbound blocks, so their authenticity needs no
 signatures — existence in chain storage is the proof.
 
-- **Append.** [`StateChannelCommon._appendInboundMessages`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L1)
+- **Append.** [`StateChannelCommon._appendInboundMessages`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L281)
   builds the next block (parent = current `ChannelBalance` tip, height = tip height + 1,
   `totalBalance` = previous `totalDeposits` plus each message balance via the state machine's
   `addBalance`), persists it in `inboundMessageBlockMap[channelId][hash]`
   (`ErrorInboundMessageBlockAlreadyPersisted` guards duplicates), advances
   `ChannelBalance.latestInboundMessageBlockHash/Height` and `totalDeposits`, and emits
   `InboundMessagesProcessed`. Callers: `open` and `joinChannel`/`topUpBalance` via
-  `depositAssetsComposable` ([`StateChannelManagerProxy`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L25)).
+  `depositAssetsComposable` ([`StateChannelManagerProxy`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L24)).
 - **Channel-side consumption.** The channel's processed tip is the latest snapshot's
   `latestInboundMessageBlockHash`. A block author packages the pending inbound range into its
   next channel block (`Block.messageBlocks`); applying the block applies each message in order
   through `processInboundMessage` and rolls `totalDeposits` forward to the last inbound block's
-  `totalBalance` ([`StateManager.applyInboundMessageBlocksToState` / `createStateSnapshot`](../../../../../src/stateManager/StateManager.ts#L483)).
+  `totalBalance` ([`SnapshotAssemblyService.applyInboundMessageBlocksToState`](../../../../../src/stateManager/block/SnapshotAssemblyService.ts#L263) / [`createStateSnapshot`](../../../../../src/stateManager/block/SnapshotAssemblyService.ts#L148)).
 - **Validation by peers.** Every validator checks (a) the packaged inbound blocks chain correctly
   from the previous snapshot's inbound tip (`findBrokenInboundMessageChainBlock` → treated as an
   invalid state transition), and (b) every packaged inbound block exists locally or on-chain
@@ -57,16 +57,19 @@ established separately (finality proof or finalized dispute reduction — §2).
   (`AStateMachine.getOutboundMessages`), the author packages them into exactly one outbound
   message block per channel block: parent = previous snapshot's outbound tip, height + 1,
   `totalBalance` = previous `totalWithdrawals` plus the new message balances
-  ([`StateManager.createStateSnapshot`](../../../../../src/stateManager/StateManager.ts#L483)). The new
+  ([`SnapshotAssemblyService.createStateSnapshot`](../../../../../src/stateManager/block/SnapshotAssemblyService.ts#L148)). The new
   snapshot (committed by the channel block) carries the new outbound tip. Dispute reduction
   appends at most one deterministic outbound block the same way (`timestamp = 0` for determinism;
-  [`DisputeVerificationFacet.generateDisputeOutputState`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L18)).
+  [`DisputeVerificationFacet._generateDisputeOutputState`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L366)).
 - **Range verification (on-chain).**
-  [`StateChannelCommon._verifyOutboundMessageBlocks`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L1)
-  checks, between a lower and an upper snapshot: hash linkage starting at the lower tip, height
-  contiguity (+1 per block), the recomputed running balance equals the upper snapshot's
-  `totalWithdrawals`, the final height equals the upper snapshot's height, and the final hash
-  equals the upper snapshot's tip. A non-descendant or otherwise invalid range fails this check.
+  [`StateChannelCommon._verifyOutboundMessageBlocks`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L393)
+  checks, between a lower and an upper snapshot, in this order: hash linkage starting at the lower
+  tip and height contiguity (+1 per block), then the final height equals the upper snapshot's
+  height and the final hash equals the upper snapshot's tip; only then does it sum the message
+  balances and require the sum to equal the upper snapshot's `totalWithdrawals`. Each failed check
+  returns false. A non-descendant or otherwise invalid range fails this check. Because the chain
+  is checked first, a forged balance that would overflow returns false and does not revert.
+  **Residual:** a range authenticated by the upper tip whose balances overflow still reverts.
 - **Duplicate skipping.** `_pruneOutboundMessageBlocks` drops the already-processed prefix of a
   supplied range: it discards blocks up to the first block whose `previousBlockHash` equals the
   chain's processed tip. If nothing links to the tip, the range verification decides (a fully
@@ -91,7 +94,7 @@ not used` in code).
 
 - **Current:** `_updateStateSnapshot` does **not** run the channel-balance invariant check (§6).
   A code comment in
-  [`DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L481)
+  [`DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L464)
   states the check is trivial and _"we'll add [it] as the last check onSnapshotUpdate"_.
   **Intended:** run it on every snapshot update so the on-chain snapshot is always a
   non-poisonous single source of truth. **Open question:** confirm and implement, or record the
@@ -153,7 +156,7 @@ retained verified data is not a channel commitment. No rollback of all local sto
 
 ### 6.2 Definition (Current)
 
-[`DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot(channelId, snapshotData, encodedState)`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L27)
+[`DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot(channelId, snapshotData, encodedState)`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L464)
 returns true iff, using the state machine's balance algebra:
 
 1. `snapshotData.stateMachineStateHash == keccak256(encodedState)` (state binding);
@@ -174,12 +177,12 @@ assumes the caller verified those chains — the spectate flow does exactly that
 
 ### 6.3 When it is checked (Current) and gaps
 
-| Site                            | Mechanism                                                                                                                                                                                                                                                                          | Status                                                                                                                                     |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Spectate-before-join, step 2.11 | `verifyBalanceInvariantCheckSnapshot` via `staticCall` on the latest finalized snapshot; abort on failure                                                                                                                                                                          | Implemented ([SpectateService](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L36))                                   |
-| Dispute fraud proof             | `DisputeInvalidBalanceInvariant`: a dispute whose proven latest finalized state violates the invariant slashes the disputer ([`DisputeFraudProofFacet._handleDisputeInvalidBalanceInvariant`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L1)) | Implemented                                                                                                                                |
-| On-chain snapshot update        | none — code comment declares the intent to add it as the last check on snapshot update                                                                                                                                                                                             | **Gap** (`Current:` not checked; `Intended:` checked — open question in §2.3)                                                              |
-| Join submission (`joinChannel`) | none — the joiner is expected to have spectated (fail-closed) first                                                                                                                                                                                                                | **Gap / by design?** **Open question:** whether an on-chain check at join time is wanted given the spectate-path check is client-side only |
+| Site                            | Mechanism                                                                                                                                                                                                                                                                            | Status                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Spectate-before-join, step 2.11 | `verifyBalanceInvariantCheckSnapshot` via `staticCall` on the latest finalized snapshot; abort on failure                                                                                                                                                                            | Implemented ([SpectateService](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L547))                                  |
+| Dispute fraud proof             | `DisputeInvalidBalanceInvariant`: a dispute whose proven latest finalized state violates the invariant slashes the disputer ([`DisputeFraudProofFacet._handleDisputeInvalidBalanceInvariant`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L343)) | Implemented                                                                                                                                |
+| On-chain snapshot update        | none — code comment declares the intent to add it as the last check on snapshot update                                                                                                                                                                                               | **Gap** (`Current:` not checked; `Intended:` checked — open question in §2.3)                                                              |
+| Join submission (`joinChannel`) | none — the joiner is expected to have spectated (fail-closed) first                                                                                                                                                                                                                  | **Gap / by design?** **Open question:** whether an on-chain check at join time is wanted given the spectate-path check is client-side only |
 
 - **[`REQ-MSG-12-1RRB0W` (Anyone MUST be able to verify the balance invariant trustlessly for a claimed…)](../../../specification/settlement/cross-layer-messages.md#req-msg-12-1rrb0w).** Any party MUST be able to verify the invariant for a claimed snapshot using
   only on-chain data plus the snapshot's state and linked ranges — i.e. without trusting any

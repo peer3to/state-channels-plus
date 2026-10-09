@@ -14,14 +14,7 @@ import {
     ForkId,
     Bytes
 } from "@/types/types";
-import {
-    Codec,
-    DetachedPromises,
-    hash,
-    Logger,
-    tryDecodeCustomError,
-    Type
-} from "@/utils";
+import { Codec, DetachedPromises, hash, Logger, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -178,7 +171,7 @@ export class EventHandler {
                         const inLocal =
                             await this.stateManager.membershipService.isSignerInLocalState();
                         if (!inLocal) {
-                            this.stateManager.setStatus(Status.SYNCED);
+                            this.stateManager.membershipService.dropMembership();
                             await this.stateManager.leaveChannelService.onSettledStateObserved();
                             return;
                         }
@@ -228,7 +221,6 @@ export class EventHandler {
             }
         }
 
-        const signerAddress = this.stateManager.signerAddress;
         const snapshotParticipants = stateSnapshot.snapshotData
             .participants as Address[];
         const status = this.stateManager.status;
@@ -238,23 +230,21 @@ export class EventHandler {
                 snapshotParticipants
             );
 
-        // Detect when we've fully left the channel: PARTICIPATING → SYNCED
-        if (status === Status.PARTICIPATING) {
-            const localParticipants =
-                await this.stateManager.getParticipantsCurrent();
-            const inLocal =
-                this.stateManager.membershipService.includesSigner(
-                    localParticipants
-                );
-            if (!snapshotHasSigner && !inLocal) {
-                if (!(await this.isSignerPendingOnChain(channelId))) {
-                    this.logger.info(
-                        "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
-                        { channelId }
-                    );
-                    this.stateManager.setStatus(Status.SYNCED);
-                }
-            }
+        // Detect when we've fully left the channel: the chain drops a seat or
+        // a landed pending join after the local state already dropped it.
+        const membership = this.stateManager.membershipService;
+        if (
+            isCommittedParticipantStatus(status) &&
+            !snapshotHasSigner &&
+            !(await membership.isSignerInLocalState()) &&
+            !(await this.isSignerPendingOnChain(channelId)) &&
+            !(await membership.canOwnJoinStillLand())
+        ) {
+            this.logger.info(
+                "onStateSnapshotUpdated - signer left channel, transitioning to SYNCED",
+                { channelId, status: LoggerUtils.enumToString(Status, status) }
+            );
+            membership.dropMembership();
         }
 
         // Check if channel should be closed (0 participants remaining)
@@ -561,7 +551,19 @@ export class EventHandler {
             return;
         }
 
-        // not final - validate dispute and challenge if invalid
+        // not final - validate dispute and challenge if invalid. The kill
+        // period end is the one read before the audit; later evidence only
+        // extends it.
+        const deadlines = {
+            killPeriodEnd: Number(killPeriodEnd),
+            evidencePeriodEnd:
+                Number(windowCreationTimestamp) +
+                this.stateManager.timeConfig.evidenceTime
+        };
+        this.logger.info(
+            `Dispute audit start ${formattedHash}`,
+            LoggerUtils.getDisputeDeadlineMetadata(deadlines)
+        );
         const isValid =
             await this.stateManager.disputeValidationService.validateDispute(
                 dispute,
@@ -590,13 +592,16 @@ export class EventHandler {
             this.logger.warn(
                 `❌ Dispute auditing failed - killing dispute ${formattedHash}`,
                 {
-                    killReason
+                    killReason,
+                    ...LoggerUtils.getDisputeDeadlineMetadata(deadlines)
                 }
             );
 
             // Our own evidence goes in at once: the kill and our dispute, which
             // counts the killed submitter's slash, land in one multicall. A peer
-            // that already disputed this fork only kills.
+            // that already disputed this fork only kills, at once and
+            // concurrently with its own upload. Slashes its own dispute misses
+            // are applied in the next fork.
             if (this.storage.disputes.didIDispute(forkId))
                 await this.stateManager.disputeManager.killDispute(dispute);
             else
@@ -606,7 +611,10 @@ export class EventHandler {
             return;
         }
 
-        this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
+        this.logger.info(
+            `✅ Dispute auditing successful ${formattedHash}`,
+            LoggerUtils.getDisputeDeadlineMetadata(deadlines)
+        );
         await this.persistDisputeAndNotify(
             channelId,
             forkId,
@@ -856,24 +864,8 @@ export class EventHandler {
         if (!isRelevant) return;
 
         // All honest peers can observe the kill and attempt to replace the
-        // dispute. Only the first upload wins; the others keep the intentional
-        // DisputeManager throw contained to this expected redispute race.
-        try {
-            await this.stateManager.disputeManager.dispute(forkId);
-        } catch (error) {
-            const customError = tryDecodeCustomError(error);
-            if (
-                customError?.name ===
-                "RaceConditionDisputeEvidencePeriodExpired"
-            ) {
-                this.logger.info(
-                    "onDisputeKilled: another participant supplied replacement evidence",
-                    { forkId, channelId }
-                );
-                return;
-            }
-            throw error;
-        }
+        // dispute. Only the first upload wins.
+        await this.stateManager.disputeManager.dispute(forkId);
     }
 
     async onInboundMessagesProcessed(

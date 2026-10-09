@@ -76,7 +76,8 @@ implementation mirrors, exact test mappings, generated reports, and any invalida
 The selected kill rules are specified in [disputes](disputes/disputes.md) and
 [fraud proofs](disputes/fraud-proofs.md). A valid counter kills the invalid commitment;
 invalid eligible challenges have the specified challenger penalty. An invalid first dispute
-is killed before replacement in one atomic operation. Those choices are no longer open.
+is killed before replacement in one atomic operation. The node does not send its kill alone ahead of
+its own dispute to gain time (engineer decision 2026-10-08). Those choices are no longer open.
 
 Remaining questions concern a dispute bond, the destination of slash value, the policy for
 repeatedly emptied windows, and calldata arrival after a kill decision. No additional policy
@@ -691,3 +692,45 @@ Owner: [synchronization](peer-communication/synchronization.md), its requester-a
 rules. Alternatives are retaining current exclusion or defining a distinct stale/racing-response outcome with
 specified retry and attribution rules. Requested engineer decision: whether either honest stale case should
 avoid blacklisting, and under what evidence. This blocks a softer policy, not the current rejection behavior.
+
+<a id="oq-spec-clock-1-z8tbfe"></a>
+
+## OQ-SPEC-CLOCK-1-Z8TBFE — Keeping runtime clocks in agreement over a session
+
+Each runtime takes its offset to the chain head timestamp once per session and never again
+([time](protocol-model/time.md) §2). When chain time drifts from wall time during a session,
+runtimes that took their offsets at different moments hold different estimates of chain time.
+Once two runtimes differ by more than `agreementTime`, the handshake time check rejects every
+request between them, and subjective block validation refuses valid blocks for lack of time, so a
+late runtime cannot reach the others and a pending joiner can drop a valid block.
+
+Owner: [time](protocol-model/time.md), the estimated chain time and its skew bound
+([`REQ-TIME-2-VG94S7`](protocol-model/time.md#req-time-2-vg94s7)). Alternatives: periodic or
+event-driven re-sync of every runtime's offset (cadence, and how a jump interacts with timers already
+armed); a process- or node-level offset taken once and shared by every runtime of that process; or an
+explicit maximum skew that honest runtimes must hold, with the windows sized from it. Requested
+engineer decision: which clock model the protocol requires. Until then, the guarantee holds only
+while chain time tracks wall time within `agreementTime` for the whole session.
+
+<a id="oq-spec-evidence-race-1-tknwbj"></a>
+
+## OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ — Interpreting a lost evidence race
+
+Raised 2026-10-08. A kill-and-dispute (or fraud proofs and a dispute) goes out in one transaction
+whose upload is best effort: the kill lands even when the upload is refused. An upload refused
+because the evidence period already expired lost the race to another participant's evidence. For now
+that refusal is a no-op, with or without a kill in front of it
+([dispute processing](disputes/dispute-processing.md), [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+
+A leaver's self-removal upload can lose the same race, and today the leave outcome depends on the
+path that sent it (recorded 2026-10-08, no behavior change). When the leave's exit-post fallback
+ends in a self-removal dispute that loses the race, the leave still settles: the committed window's
+reduction removes the leaver. When the leave starts the self-removal dispute directly as its fallback,
+either bound to a block or from the leave watchdog, the lost race fails the leave. Whether both paths
+should settle the leave is part of this decision.
+
+Owner: [dispute processing](disputes/dispute-processing.md), the kill-and-dispute and replacement rules.
+Requested engineer decision: whether the node should do more after a lost race. Examples: rebuild
+and upload when a kill emptied the window after the evidence end, check that the committed evidence
+covers its own, or record a metric for lost races. Until the decision, the no-op stands and no
+recovery is implied. This blocks a recovery guarantee for a lost race, not the selected no-op.

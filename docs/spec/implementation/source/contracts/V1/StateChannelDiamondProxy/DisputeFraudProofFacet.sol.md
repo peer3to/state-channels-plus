@@ -20,6 +20,7 @@
 - [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
 - [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
+- [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7
 

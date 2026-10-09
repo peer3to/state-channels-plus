@@ -743,3 +743,125 @@ are empty.
 The proof owner now separates an exact final height from later virtual-voting support, including stored evidence above a frozen view. Verification returns its actual trusted start atomically with the verdict. Audit rechecks conflicting final history after asynchronous verification and refused persistence. The invalid-step handler no longer walks an unrelated final milestone to decide omission permission. Membership deadline work retains a join generation and fork across reads and scheduling, and missing old history uses an explicit validation-strategy deviation. These repairs preserve the existing finality, checked-region persistence and lifecycle rules.
 
 The exact-height participant-change follow-up adds no production behavior. Its owner-level coverage checks join and exit union evidence beyond the requested final height, removal of the sole later required vote, and both single-hop and two-hop construction from audit evidence above a frozen view. The original whole-plan review inventory remains separate from this scoped correction.
+
+## Dispute output state load, local budget exhaustion, and reduce gas — 2026-10-07
+
+**Dispute output computation loads the state once.** `_generateDisputeOutputState` now calls
+`setState` once, applies joins, slashes and removals to the loaded machine, and calls `getState`
+once; its callers and the two fraud-proof facets read the output participants from the loaded
+machine instead of loading the same encoded state again (the deleted `_getStateMachineParticipants`).
+Each removed load was of exactly the state the previous step read back, so outputs are unchanged;
+the change only removes gas that grew with the application state's size and pushed a dispute over a
+large poker state past the poker deployment's 10M dispute execution budget (this repository's
+default is 3M,
+[StateChannelManagerProxy.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L30)). Mirrors:
+[DisputeVerificationFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md),
+[StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md),
+[FraudProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md),
+[DisputeFraudProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md).
+Residual: correctness now depends on no call between the load and the read changing the loaded
+state; the existing forge reduction and fraud-proof suites passed on the new code.
+
+**A used-up local dispute budget is named.** `LocalDiamond` reverts
+`ErrorDisputeExecutionOutOfGas(gasLimit, gasUsed)` when a gas-capped dispute computation used up
+the gas it was forwarded and returned no data, and re-throws every other failure unchanged
+([LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)).
+The error stays an error, never an answer
+([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The
+detection counts the 1/64 that the facet keeps when a nested call runs out of gas
+([LocalDiamond.sol](../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L414):
+`returnData.length == 0 && gasUsed + forwarded / 64 + 5_000 >= forwarded`), so an exhausted budget
+is never an empty revert, also when the gas runs out inside a state machine call. A facet revert
+within the budget keeps its bytes, and an empty revert within the budget stays an empty revert,
+which is still an error. Forge cases in `DisputeVerificationFacet.t.sol` cover the nested
+out-of-gas, a facet revert within the budget, and an empty revert within the budget. Whether the SDK
+sync path classifies this error as invalid served evidence is part of the deferred
+[`FIND-SYNC-REDUCTION-GAS-1-AJE985`](open-findings.md#find-sync-reduction-gas-1-aje985).
+
+**The reduce is sent at the signer's estimate.** `ReductionExecutor.submitDetached` no longer sends
+the reduce at the fixed dispute execution gas limit, which conforms to
+[`REQ-SDK-ARCH-5-AAM7YK` (Chain submissions survive concurrent inclusion)](../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk); a reduce resent
+by the EVM error handler and mined is adopted like a first send
+([ReductionExecutor.ts.md](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)).
+The disposal check runs once, before `submitDetached`
+([ReductionExecutor.ts](../../../src/stateManager/reduction/ReductionExecutor.ts#L275)); there is no
+pre-send disposal guard any more, so a disposal during the signer's send is not intercepted: the
+broadcast goes out and only the adoption after it is skipped
+([ReductionExecutor.ts](../../../src/stateManager/reduction/ReductionExecutor.ts#L413), engineer
+decision 2026-10-08). The harness `holdReductionAttempt(..., "submit")` parks the reduce's own chain
+write (the multicall that carries `reduceAndFinalize`) and counts every chain write
+([StubRpcMethods.ts](../../../test/fixtures/customRpc/harnessControl/services/stub/StubRpcMethods.ts#L1497)).
+The two `ReductionManager` cases that proved the removed guard were deleted with it; the
+`ReductionManager` case "disposal while the reduce send is held surfaces no rejection and reports no
+failure" replaces them
+([ReductionManager.test.ts.md](../verification/tests/test/stateManager/ReductionManager.test.ts.md)).
+Residual: a reduce send released after a full host teardown never settles (the destroyed ethers
+`WebSocketProvider` hangs at populate or estimate), so its detached promise stays pending until
+`DetachedPromises.awaitAllAndClear` times out; recorded under
+[`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).
+
+## Slash eligibility per fork — 2026-10-07
+
+**Only participants of the disputed fork's participant state can be slashed by a dispute or a
+reduction** ([`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2)). The on-chain slash set is channel-wide, so a
+successor fork's reduction used to fold the slash of a participant an ancestor fork already
+removed, and a slash set that was not empty suppressed the successor fork's timeout. Now
+`_hasDisputeReason` invalidates a dispute that lists a slash outside its latest state's
+participants (killed through the existing `InvalidDisputeReason` proof), construction lists only
+those participants, `reduce` folds slash candidates without reading any participant set, and the
+output transition applies only slashes of participants of the loaded latest state with its pending
+joins; the timeout is suppressed only when such a slash took effect
+([`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). The per-dispute output uses the same rule, so `_calculateRemovals` and
+the unused `UtilityFacet.inParticipantUnion` are deleted. Mirrors:
+[DisputeUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md),
+[DisputeVerificationFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md),
+[DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md).
+Residual: a reduction's eligibility relies on the state machine refusing to slash a non-participant
+(`slashParticipant` returns false), as the MathStateMachine does; an integrator's machine that
+reports success for an absent target would suppress the timeout again. Residual in the other
+direction: the output transition adds the timeout target to the removals when no slash took effect
+([DisputeVerificationFacet.sol](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L385)),
+so a consumer machine whose `_slashParticipant` returns false for a present participant also removes
+the timeout target, which inverts [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine.
+[AStateMachine.sol](../../../contracts/V1/AStateMachine.sol#L108-L112) now documents the contract:
+`_slashParticipant` must return true for every current participant.
+
+## Outbound run totality, best-effort upload classification, and shutdown drain — 2026-10-08
+
+**The outbound verifier checks links before balances.** `_verifyOutboundMessageBlocks` walks the
+hash chain (predecessor, height + 1), then checks the end height and end hash against the upper
+snapshot, and only then sums balances through the state machine's `addBalance`, each call in a
+`try`/`catch` (`_verifyOutboundMessageBlocks` in
+[StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol)).
+A sum that cannot be computed returns false on every path: the auditor's
+`verifyOutboundRunAboveAnchor`, the on-chain counter `isDisputeOutboundRunInvalid`, the snapshot post
+(`ErrorOutboundMessageBlocksInvalid`) and the sync check. This holds also when the upper head
+authenticates the overflowing block, which a latest state signed only by its author can do. An
+out-of-gas in `addBalance` (the caller keeps at most 1/64 of its gas) reverts
+`ErrorOutboundBalanceSumOutOfGas`: no verdict, so a caller-chosen low gas limit never judges an honest
+run invalid. The verdict assumes `addBalance` fails within bounded gas on a balance it cannot add.
+The auditor judges the run only after its replay proved the latest state
+(`verifyAndReplay` in
+[DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts)), so a
+forged latest state is countered as an invalid state proof first
+([StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md),
+[DisputeValidationService.ts.md](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
+
+**A reasonless upload refusal is classified by the estimate.** When the mined best-effort multicall
+reports a last-call refusal with no reason (bare `0x`, or the proxy's `Delegatecall failed`),
+`DisputeManager` uses the decoded refusal of the failed all-or-nothing estimate, and the refusal is
+fatal when that estimate decoded none
+([DisputeManager.ts](../../../src/disputeManager/DisputeManager.ts#L513-L517)). The
+`MulticallLastCallFailed` log has one decoder, which reads only logs of the manager address with that
+event's topic ([evmErrorHandler.ts](../../../src/utils/evmErrorHandler.ts#L156)). Mirrors:
+[DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md),
+[evmErrorHandler.ts.md](../implementation/source/src/utils/evmErrorHandler.ts.md).
+
+**Block queue disposal drains its own work.** `BlockQueueManager.dispose` waits for every in-flight
+probe and recovery with `Promise.allSettled`, clears the queues and the recovery state only after
+all settle, and rethrows the first rejection, so a probe failure rejects `stop()`; a fork recovery
+scheduled after stop never runs
+([BlockQueueManager.ts](../../../src/stateManager/ingest/BlockQueueManager.ts#L632-L644)). The sync
+timeout bounds only a probe's request. `SpectateService` returns early once disposed and does not
+blame the responder for a disposal. Both are instances of
+[`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).

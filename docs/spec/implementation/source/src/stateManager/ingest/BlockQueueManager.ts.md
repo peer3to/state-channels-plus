@@ -18,6 +18,7 @@
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
   Partial: Intake decoding is not at parity with the contracts' decoder ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 
 ## UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2
 
@@ -57,3 +58,8 @@ Intake gates and lifetime
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P39` — a chain-committed entry parked above the next height keeps that context across its restore and is judged once its height is next
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P40` — a network copy whose author signature is each contract-rejected encoding of the author's real signature (compact 64-byte, `v` of 0/1, EIP-155 `v`, high `s`, zero `r`, zero `s`, `r` at the group order, 66 bytes, 63 bytes, empty) is refused at intake with `keepConnection` false and the block is not stored; the same bytes with the canonical signature are then committed and countersigned by the observer
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P41` — After an older valid sync and future gossip, a queue-timeout probe installs a newer compact proof that omits the probed block, keeps every honest source unblacklisted, and allows later progress
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P42` — a source probe held at its sync when `stop()` starts: `stop()` stays pending while the probe is held and resolves only after the probe settled; no detached failure is reported
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43` — a queue timeout that fires after `stop()` set `isDisposed` (stop held at the custom RPC disposal) starts no source probe: zero `sync` calls
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P44` — two source probes in flight when `stop()` starts and one rejects: `stop()` stays pending with the other probe still tracked and the timeout manager alive; after that probe settles the queue and the recovery state are cleared and `stop()` rejects with the first failure
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45` — a fork recovery held in flight when `stop()` starts: `stop()` stays pending with the recovery scheduled and the timeout manager alive; after release nothing stays in flight, the recovery state is cleared and the timeout manager is disposed
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46` — a fork recovery scheduled after `stop()` began, or whose scheduled run fires after it began, never runs: nothing enters recovery and nothing stays in flight

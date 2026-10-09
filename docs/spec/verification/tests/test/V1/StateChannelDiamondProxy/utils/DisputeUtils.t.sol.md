@@ -19,6 +19,6 @@ These utility tests do not establish signature validity or execute state transit
 - `test_reason_timeoutStillCountsWhenFlagFalse`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P3, UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P3
 - `test_reason_selfRemovalStillCountsWhenFlagFalse`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P4, UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P4
 - `test_reason_forcedInboundStillCountsWhenFlagFalse`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P5, UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P5
-- `test_reason_falseRequiresEverySlashToBeEligible`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P6, UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P6
+- `test_reason_slashOfNonParticipantInvalidatesEveryReason`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P6, UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P6
 - `test_latestSignedBlock_emptyProof_hasNoBlock`: none
 - `testFuzz_latestSignedBlock_neverReverts`: none

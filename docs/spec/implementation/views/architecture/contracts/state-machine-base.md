@@ -20,7 +20,7 @@ two places:
 
 1. **Off-chain**, inside every participant's SDK EVM, on every proposed block.
 2. **On-chain**, inside the manager's dispute and fraud-proof re-execution
-   (`executeStateTransition`, `generateDisputeOutputState`, milestone/state-proof checks).
+   (`executeStateTransition`, `_generateDisputeOutputState`, milestone/state-proof checks).
 
 Both executions MUST produce identical results from identical inputs. Everything in this document
 serves that one property: the fraud-proof system works only because a claimed transition can be
@@ -58,19 +58,19 @@ manager during re-execution, and the abstract hooks the integrator implements.
 Reference example used below:
 [`MathStateMachine`](../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L16).
 
-| Hook                                                                          | Signature (verified)                                                                       | Contract                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `_setState`                                                                   | `function _setState(bytes memory encodedState) internal virtual`                           | Restore the full contract state from its canonical encoding.                                                                                                                                   |
-| `getState`                                                                    | `function getState() public view virtual returns (bytes memory)`                           | Serialize the full contract state to its canonical encoding.                                                                                                                                   |
-| `getParticipants`                                                             | `function getParticipants() public view virtual returns (address[] memory)`                | The channel's current **participant identities** (addresses). Membership only — a participant may have an associated balance, but membership and balance representation are separate concerns. |
-| `getNextToWrite`                                                              | `function getNextToWrite() public view virtual returns (address)`                          | The address authorized to author the next **block** (see below).                                                                                                                               |
-| `_joinChannel`                                                                | `function _joinChannel(JoinChannel memory) internal virtual returns (bool)`                | Admission **and** top-up (see below).                                                                                                                                                          |
-| `_slashParticipant`                                                           | `function _slashParticipant(address) internal virtual returns (bool, ExitChannel memory)`  | Punitive removal for provable fraud. Defines how the penalty is applied; returns the resulting `ExitChannel`.                                                                                  |
-| `_removeParticipant`                                                          | `function _removeParticipant(address) internal virtual returns (bool, ExitChannel memory)` | Soft removal (timeout, self-removal). No punishment implied; returns the resulting `ExitChannel`.                                                                                              |
-| `addBalance` / `subtractBalance` / `areBalancesEqual` / `isBalanceLesserThan` | `pure virtual`, over `Balance {uint256 amount; bytes data;}`                               | The application-defined balance algebra.                                                                                                                                                       |
-| `getTotalStateBalance`                                                        | `function getTotalStateBalance() public view virtual returns (Balance memory)`             | Total value accounted inside the current state (feeds the channel-balance invariant — [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md)).    |
-| `getZeroBalance`                                                              | `function getZeroBalance() public pure virtual returns (Balance memory)`                   | The algebra's zero element.                                                                                                                                                                    |
-| `_processCustomInboundMessage`                                                | `function _processCustomInboundMessage(Message calldata) internal virtual returns (bool)`  | Optional: handle inbound message types beyond `JOIN`. Default returns `false` (message rejected).                                                                                              |
+| Hook                                                                          | Signature (verified)                                                                       | Contract                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_setState`                                                                   | `function _setState(bytes memory encodedState) internal virtual`                           | Restore the full contract state from its canonical encoding.                                                                                                                                                                                                                                                                                                                                        |
+| `getState`                                                                    | `function getState() public view virtual returns (bytes memory)`                           | Serialize the full contract state to its canonical encoding.                                                                                                                                                                                                                                                                                                                                        |
+| `getParticipants`                                                             | `function getParticipants() public view virtual returns (address[] memory)`                | The channel's current **participant identities** (addresses). Membership only — a participant may have an associated balance, but membership and balance representation are separate concerns.                                                                                                                                                                                                      |
+| `getNextToWrite`                                                              | `function getNextToWrite() public view virtual returns (address)`                          | The address authorized to author the next **block** (see below).                                                                                                                                                                                                                                                                                                                                    |
+| `_joinChannel`                                                                | `function _joinChannel(JoinChannel memory) internal virtual returns (bool)`                | Admission **and** top-up (see below).                                                                                                                                                                                                                                                                                                                                                               |
+| `_slashParticipant`                                                           | `function _slashParticipant(address) internal virtual returns (bool, ExitChannel memory)`  | Punitive removal for provable fraud. Defines how the penalty is applied; returns the resulting `ExitChannel`. Must return true for every current participant: dispute reduction removes the timeout target only when no slash took effect, so a false return for a present participant also removes the timeout target ([AStateMachine.sol.md](../../../source/contracts/V1/AStateMachine.sol.md)). |
+| `_removeParticipant`                                                          | `function _removeParticipant(address) internal virtual returns (bool, ExitChannel memory)` | Soft removal (timeout, self-removal). No punishment implied; returns the resulting `ExitChannel`.                                                                                                                                                                                                                                                                                                   |
+| `addBalance` / `subtractBalance` / `areBalancesEqual` / `isBalanceLesserThan` | `pure virtual`, over `Balance {uint256 amount; bytes data;}`                               | The application-defined balance algebra.                                                                                                                                                                                                                                                                                                                                                            |
+| `getTotalStateBalance`                                                        | `function getTotalStateBalance() public view virtual returns (Balance memory)`             | Total value accounted inside the current state (feeds the channel-balance invariant — [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md)).                                                                                                                                                                                                         |
+| `getZeroBalance`                                                              | `function getZeroBalance() public pure virtual returns (Balance memory)`                   | The algebra's zero element.                                                                                                                                                                                                                                                                                                                                                                         |
+| `_processCustomInboundMessage`                                                | `function _processCustomInboundMessage(Message calldata) internal virtual returns (bool)`  | Optional: handle inbound message types beyond `JOIN`. Default returns `false` (message rejected).                                                                                                                                                                                                                                                                                                   |
 
 ### 2.1 `_setState` / `getState` are exact inverses
 
@@ -104,14 +104,14 @@ built on this hook.
 Turn authorization is enforced by the protocol layer, not by the state machine:
 the SDK validation pipeline rejects a block whose author (`_tx.header.participant`) is not
 `getNextToWrite()` for the pre-state before executing it, generically for every state machine
-([`ValidationService`](../../../../../../src/stateManager/ingest/ValidationService.ts#L28) leader check). The base
+([`ValidationService`](../../../../../../src/stateManager/ingest/ValidationService.ts#L197-L198) leader check). The base
 contract does not enforce it either — `stateTransition` executes whatever calldata it is given.
 In-contract wrong-turn `require`s (as in the examples) are optional defense in depth, never a
 soundness requirement. _(Corrected 2026-08-10 on engineer review; previously stated as a
 mandatory in-contract check.)_
 
 Current: the source comment above `stateTransition`
-([`AStateMachine.sol`](../../../../../../contracts/V1/AStateMachine.sol#L3)) still claims wrong-turn
+([`AStateMachine.sol`](../../../../../../contracts/V1/AStateMachine.sol#L171-L172)) still claims wrong-turn
 fraud-proof soundness depends on the implementation's check, and the on-chain
 `BlockInvalidStateTransition` handler indeed performs no author check of its own — the comment
 matches today's on-chain behavior but contradicts the decided design. See
@@ -163,7 +163,7 @@ Exact semantics from source:
 ### 3.1 `stateTransition(Transaction calldata) external _nonReentrant returns (bool, Message[] memory)`
 
 1. `_clearOutboundMessages()` — `delete _outboundMessages`
-   ([#L168](../../../../../../contracts/V1/AStateMachine.sol#L168), [#L127-L129](../../../../../../contracts/V1/AStateMachine.sol#L127-L129)): the previous run's messages are deleted
+   ([#L178](../../../../../../contracts/V1/AStateMachine.sol#L178), [#L130-L132](../../../../../../contracts/V1/AStateMachine.sol#L130-L132)): the previous run's messages are deleted
    before the gas check, at the caller's cost outside the budget, so every transition writes its
    messages into empty slots and what an earlier run left cannot raise its cost inside the budget
    (engineer decision, review 6 FO3). The deletion grows with the previous messages; a sender's
@@ -171,8 +171,8 @@ Exact semantics from source:
 2. `_tx.header = transaction.header` — injects the execution context (§4). Only the header is
    stored; `_tx.body` is never assigned.
 3. Copies the call input (`transaction.body.data`) into memory and reads the budget
-   ([#L178-L179](../../../../../../contracts/V1/AStateMachine.sol#L178-L179)). This work grows with the input, so it is paid before the gas check.
-4. Gas guard ([#L180-L183](../../../../../../contracts/V1/AStateMachine.sol#L180-L183)): reads `gasleft()`, computes what the stipend call
+   ([#L188-L189](../../../../../../contracts/V1/AStateMachine.sol#L188-L189)). This work grows with the input, so it is paid before the gas check.
+4. Gas guard ([#L190-L193](../../../../../../contracts/V1/AStateMachine.sol#L190-L193)): reads `gasleft()`, computes what the stipend call
    can grant (`available - available/64 - STATE_TRANSITION_CALL_RESERVE`), and reverts with
    `ErrorInsufficientGasForStateTransition(gasLimit, granted)` when that is less than `gasLimit`.
    The transition has not run, so the refusal is no verdict: a CALL never fails for asking more gas
@@ -180,7 +180,7 @@ Exact semantics from source:
    so any run on less than the full budget could be wrong. The manager re-raises the refusal
    instead of adjudicating.
 5. `call(gasLimit, address(), 0, input, …)` in assembly on the prepared memory
-   ([#L186-L189](../../../../../../contracts/V1/AStateMachine.sol#L186-L189)) — executes the transaction body as a self-call, so the target is one
+   ([#L196-L199](../../../../../../contracts/V1/AStateMachine.sol#L196-L199)) — executes the transaction body as a self-call, so the target is one
    of the state machine's own public functions. Only fixed opcodes run between the check and the
    CALL, so the transition receives the full `gasLimit`.
 6. On failure: bubbles the inner revert data verbatim; if the inner call returned no data (it ran
@@ -196,7 +196,7 @@ revert; and messages accumulate only within a single transition, never across tr
 ### 3.2 `processInboundMessage(Message calldata) external _nonReentrant returns (bool)`
 
 Dispatch: `messageType == MESSAGE_TYPE_JOIN` (`keccak256("JOIN_CHANNEL_MESSAGE")`,
-[MessageTypeHashes.sol](../../../../../../contracts/V1/types/MessageTypeHashes.sol#L1)) → decode
+[MessageTypeHashes.sol](../../../../../../contracts/V1/types/MessageTypeHashes.sol#L4)) → decode
 `JoinChannel` → `_joinChannel`. Anything else → `_processCustomInboundMessage` (default `false`).
 The manager calls this during dispute output generation (`_applyInboundMessages`) and requires
 success — a `false` return reverts the manager with
@@ -206,12 +206,13 @@ message was refused.
 
 ### 3.3 Guarded wrappers used during on-chain re-execution
 
-| Wrapper                                                                                 | Behavior (verified)                                                                                                                                                             |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setState(bytes) external _nonReentrant`                                                | Calls `_setState`. The manager's precursor to every re-execution.                                                                                                               |
-| `joinChannel(JoinChannel) external _nonReentrant returns (bool)`                        | Calls `_joinChannel` directly. Part of the state-machine public ABI; the manager has no on-chain caller for it — joins reach the state machine through `processInboundMessage`. |
-| `slashParticipant(address) external _nonReentrant returns (bool, ExitChannel)`          | Calls `_slashParticipant`; on success **also** appends the `ExitChannel` to `_outboundMessages` via `_addExitChannel`.                                                          |
-| `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; on success appends the exit through `_addExitChannel`.                                                                                              |
+| Wrapper                                                                                 | Behavior (verified)                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setState(bytes) external _nonReentrant`                                                | Calls `_setState`. The manager's precursor to every re-execution.                                                                                                                                                    |
+| `getNextToWriteOf(bytes) external _nonReentrant returns (address)`                      | Calls `_setState`, then returns `getNextToWrite()`. State-machine diamonds MUST route it; it sets the given state and must only be called as a simulated call. An unrouted selector makes every timeout audit throw. |
+| `joinChannel(JoinChannel) external _nonReentrant returns (bool)`                        | Calls `_joinChannel` directly. Part of the state-machine public ABI; the manager has no on-chain caller for it — joins reach the state machine through `processInboundMessage`.                                      |
+| `slashParticipant(address) external _nonReentrant returns (bool, ExitChannel)`          | Calls `_slashParticipant`; on success **also** appends the `ExitChannel` to `_outboundMessages` via `_addExitChannel`.                                                                                               |
+| `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; on success appends the exit through `_addExitChannel`.                                                                                                                                   |
 
 Both wrappers return and record a successful exit through `_addExitChannel`. This implements [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) and closes [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../../../../specification/open-questions.md#oq-18-2nk97t). Application hooks retain their balance semantics. The dispute pipeline builds its outbound block from returned exits and does not read the buffer. The SDK clears the buffer before its next state transition, preventing duplicate delivery. Absent or repeated targets add no exit under [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf).
 
@@ -303,7 +304,7 @@ required fields (participants, inbound/outbound stream tips and heights, deposit
 totals) — the hash of the encoded state-machine state. The serialized state is therefore committed
 through `block → stateSnapshotHash → snapshotData.stateMachineStateHash`. Agreement and dispute
 verification operate at the snapshot level and descend to the state hash only when the full state
-is supplied (types: [DataTypes.sol](../../../../../../contracts/V1/types/DataTypes.sol#L3); full hierarchy:
+is supplied (types: [DataTypes.sol](../../../../../../contracts/V1/types/DataTypes.sol#L30); full hierarchy:
 [../concepts/history-and-commitments.md](../../../../specification/protocol-model/history-and-commitments.md)).
 
 ## 6. Invariants (summary)
@@ -324,7 +325,7 @@ post-state, outbound messages)` in every environment.
 integrator-provided facet reached through the proxy's fallback
 ([architecture.md §2](./architecture.md#2-current-topology)). It defines how the channel touches
 world state (tokens, external contracts). Reference:
-[`MathConsumerFacet`](../../../../../../contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol#L9).
+[`MathConsumerFacet`](../../../../../../contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol#L12).
 
 | Function             | Signature (verified)                                                                                                                                                                                         | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

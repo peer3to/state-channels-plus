@@ -31,6 +31,7 @@ Collector unanimity
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P9` — deadline at or before collector time rejects before signature requests
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P10` — pending threshold member without a transport fails preflight
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P11` — returned snapshot and fork pins equal the collector's current chain view
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P13` — with `JOIN_CHANNEL_DEADLINE_SECONDS` configured, a prepared first-join confirmation carries `deadlineTimestamp` equal to the chain time read during preparation plus that lifetime
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ
 

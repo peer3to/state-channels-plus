@@ -724,7 +724,8 @@ describe("task cost cache", function () {
                     JSON.stringify({ [key]: { durationMs: null } }),
                     JSON.stringify(key)
                 ],
-                [JSON.stringify({ [key]: 1 }), JSON.stringify(key)]
+                [JSON.stringify({ [key]: 1 }), JSON.stringify(key)],
+                [JSON.stringify({ [key]: { comment: 1 } }), JSON.stringify(key)]
             ]) {
                 fs.writeFileSync(overridesPath, content);
                 expect(() => new CostCache({ projectRoot: root }))
@@ -734,7 +735,9 @@ describe("task cost cache", function () {
             }
             fs.writeFileSync(
                 overridesPath,
-                JSON.stringify({ [key]: { durationMs: 777 } })
+                JSON.stringify({
+                    [key]: { durationMs: 777, comment: "why it is set by hand" }
+                })
             );
             expect(
                 new CostCache({ projectRoot: root }).resolve(example).durationMs

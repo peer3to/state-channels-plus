@@ -36,6 +36,7 @@ import {
     InvalidDisputeReasonProofEthersType,
     TimeoutSupersededByFinalStateProofEthersType,
     DisputeConflictsWithFinalStateProofEthersType,
+    DisputeInvalidOutboundRunProofEthersType,
     TimeoutThresholdProofEthersType,
     TimeoutCalldataPostedProofEthersType,
     TimeoutNotLinkedToLatestStateProofEthersType,
@@ -90,7 +91,8 @@ import {
     DisputeInboundAnchorBehindLatestStateStruct,
     DisputeStateProofBelowOnChainAnchorStruct,
     TimeoutSupersededByFinalStateStruct,
-    DisputeConflictsWithFinalStateStruct
+    DisputeConflictsWithFinalStateStruct,
+    DisputeInvalidOutboundRunStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeStruct,
@@ -135,7 +137,8 @@ export type DisputeFraudStruct =
     | DisputeInboundAnchorBehindLatestStateStruct
     | DisputeStateProofBelowOnChainAnchorStruct
     | TimeoutSupersededByFinalStateStruct
-    | DisputeConflictsWithFinalStateStruct;
+    | DisputeConflictsWithFinalStateStruct
+    | DisputeInvalidOutboundRunStruct;
 
 type StructType =
     | FraudStruct
@@ -308,6 +311,10 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeConflictsWithFinalState,
             DisputeConflictsWithFinalStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidOutboundRun,
+            DisputeInvalidOutboundRunProofEthersType
         ]
     ]);
 
@@ -552,6 +559,10 @@ export class Codec {
         encoded: Bytes,
         type: DisputeFraudProofType.DisputeConflictsWithFinalState
     ): DisputeConflictsWithFinalStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidOutboundRun
+    ): DisputeInvalidOutboundRunStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,

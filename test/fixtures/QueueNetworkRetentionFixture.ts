@@ -566,33 +566,30 @@ export async function assertStoredCopyQuota(network: boolean) {
         ).to.equal(null);
         await deliver(variants.slice(8));
         await hold.release();
-        await waitFor(
-            async () =>
-                (
-                    await h
-                        .control(observer)
-                        .query.getBlockByHash(block.hash)
-                        .request()
-                )?.confirmationSignatures.includes(variants[1]) ?? false
-        );
-        await waitFor(
-            async () =>
-                (await h
-                    .control(observer)
-                    .query.getQueuedRetention(block.hash)
-                    .request()) === null
-        );
-        const after = await h
-            .control(observer)
-            .query.getBlockByHash(block.hash)
-            .request();
-        expect(after?.confirmationSignatures).to.have.members([
+        // the hold pauses only the first merge; the second copy merges in its
+        // own task in either order -> wait for both before asserting quotas
+        const expected = [
             ...new Set([
                 ...block.confirmationSignatures,
                 ...variants.slice(0, 2),
                 ...variants.slice(8, 10)
             ])
-        ]);
+        ];
+        // on timeout fall through -> the members assertion names what is missing
+        await waitFor(async () => {
+            const stored = (
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(block.hash)
+                    .request()
+            )?.confirmationSignatures;
+            return expected.every((signature) => stored?.includes(signature));
+        }).catch(() => undefined);
+        const after = await h
+            .control(observer)
+            .query.getBlockByHash(block.hash)
+            .request();
+        expect(after?.confirmationSignatures).to.have.members(expected);
         expect(after?.height).to.equal(block.height);
         // The quota bounds each copy; the nonce variants are also double
         // signatures by the source's key, so the source is blacklisted.

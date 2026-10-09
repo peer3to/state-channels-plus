@@ -41,7 +41,7 @@ Position in the end-to-end flow (owned by the protocol doc; here for orientation
 sync (§3) → **collect signatures (this service)** → on-chain `joinChannel` submit + deposit →
 off-chain inbound inclusion → forced inclusion via dispute if ignored. This service owns exactly
 the "collect signatures" hop. The on-chain submission, deposit, inclusion, and force-join dispute
-live in [`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L66) and the contracts, not
+live in [`MembershipService`](../../../../../../../src/stateManager/membership/MembershipService.ts#L251) and the contracts, not
 here.
 
 **Observable contract.** `collectJoinChannelConfirmation(joinChannel)` returns a
@@ -64,7 +64,7 @@ of chain/state-manager state at call time:
   resolution.
 - **Writes:** none to service or state-manager storage. The only side effect is producing
   signatures and issuing outbound RPC requests. The collector's result is handed back to the
-  caller (`StateManager.joinChannel`), which owns the on-chain submission and
+  caller (`MembershipService.joinChannel`), which owns the on-chain submission and
   [`ForceJoinStorage`](../../../../../../../src/storage/ForceJoinStorage.ts#L3) — not this service.
 
 Lifetime/cleanup: nothing to clean up. The service is a long-lived singleton constructed once per
@@ -77,7 +77,7 @@ the manager contract's `getOnChainThresholdSet` instead of reconstructing eligib
 is (snapshot participants ∪ pending participants) − on-chain-slashed. `JoinChannelFacet` uses the
 same helper for countersignature verification while retaining the full snapshot ∪ pending union
 for the separate existing-participant check
-([`JoinChannelFacet`](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L51)).
+([`JoinChannelFacet`](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L62)).
 The collector, responder, and on-chain verifier therefore use one slash-excluding eligibility
 source, and a slashed participant cannot veto a later join.
 
@@ -86,10 +86,10 @@ source, and a slashed participant cannot veto a later join.
 ### 3.1 `collectJoinChannelConfirmation(joinChannel)` — collector (local)
 
 Runs on the joiner. Not an RPC endpoint; invoked through the signer facade
-([`LocalP2pSigner`](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L8) /
-[`ClientP2pSigner`](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L33) → `hostRpc`, §3 of
+([`LocalP2pSigner`](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L402) /
+[`ClientP2pSigner`](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L255) → `hostRpc`, §3 of
 [./README.md](./README.md)). Ordered stages
-([`JoinChannelService`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L28)):
+([`JoinChannelService`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L24)):
 
 1. **Self-authorization guard.** `joinChannel.participant` must equal the local signer address;
    else throw. The collector only ever collects for the local node's own join.
@@ -237,9 +237,8 @@ decision pending.)
 **Observed fact.** Joins pin `expectedSnapshotHash`; a second join invalidates the first only once
 the snapshot advances. Two simultaneous joiners each collect against the current snapshot; whichever
 submits first advances the chain, and the other's pinned snapshot goes stale → its on-chain submit
-reverts `RaceCondition*` and `StateManager.joinChannel` aborts
-([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L66), lines ~512-528; SDK TODO:
-"support concurrent joins by collecting safe extra signatures before submission"). At the RPC layer,
+reverts `RaceCondition*` and `MembershipService.joinChannel` aborts
+([`MembershipService.joinChannel`](../../../../../../../src/stateManager/membership/MembershipService.ts#L340)). At the RPC layer,
 a responder signing two concurrent requests is not itself a fault — it signs both; the contention is
 resolved on-chain. Consequence: concurrent admissions are serialized by chain races, not
 coordinated; honest concurrent joiners can waste a full signature-collection round.

@@ -55,7 +55,7 @@ Cached source checks are optimistic. Misses refresh once, including concurrent m
 - `replayed after the joiner is already PARTICIPATING → rejected on status, membership untouched`: none
 - `a synced non-participant tops up → rejected on status`: none
 - `no recorded join submission height → nothing disputed`: none
+- `force join waits for its JOIN to land and submits only once at the block bound`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P50, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P8, INV-TJOIN-2-H7JSQM.T1.P6, INV-TJOIN-2-H7JSQM.T2.P9, UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P6
 - `U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1`: INV-TJOIN-2-H7JSQM.T2.P7, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P41
 - `a clean leave everyone signed → snapshot path, no force-exit flag`: none
 - `I did not leave → returns without scheduling an exit`: none
-- `force join waits for its JOIN to land and submits only once at the block bound`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P50, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P8, INV-TJOIN-2-H7JSQM.T1.P6, INV-TJOIN-2-H7JSQM.T2.P9, UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P6

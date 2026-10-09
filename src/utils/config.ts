@@ -35,6 +35,9 @@ export type Config = {
     SIGNER_RECOVERY_CACHE_MAX: number;
     // Local liveness deadline before terminal leave starts self-removal.
     LEAVE_CHANNEL_WATCHDOG_MS: number;
+    // Chain seconds a join authorization stays valid after it is prepared;
+    // no block after its deadline admits the join.
+    JOIN_CHANNEL_DEADLINE_SECONDS: number;
     // How long a gas-usage read (the public table read and the disposal
     // report) waits for outstanding receipts before it answers with the rows
     // already recorded. A receipt still pending then shows up on a later
@@ -49,6 +52,9 @@ export type Config = {
     // upper bound of the random per-upload jitter that spreads realms apart
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: number;
 };
+
+/** Default lifetime of a prepared join authorization, in chain seconds. */
+export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
@@ -71,6 +77,7 @@ const DEFAULT_CONFIG: Config = {
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
+    JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
     GAS_USAGE_SETTLE_MS: 2_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",

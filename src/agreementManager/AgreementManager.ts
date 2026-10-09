@@ -69,6 +69,12 @@ export enum ProofTier {
     Chain = "chain"
 }
 
+type VerifiedProofOptions = {
+    replayFromIndex?: number;
+    /** sync installs final history; a dispute replay only persists */
+    advanceView?: boolean;
+};
+
 /** One tier's walk of a proof. */
 export type ProofTierWalk = {
     tier: ProofTier;
@@ -417,12 +423,25 @@ class AgreementManager {
         stateProof: StateProofStruct,
         evidence: StateProofEvidence,
         walk: ProofTierWalk,
-        options?: {
-            replayFromIndex?: number;
-            /** sync installs final history; a dispute replay only persists */
-            advanceView?: boolean;
-        }
+        options?: VerifiedProofOptions
     ): boolean {
+        return (
+            this.stageVerifiedProof(stateProof, evidence, walk, options)?.() ??
+            false
+        );
+    }
+
+    /**
+     * `persistVerifiedProof` in two steps: the conflict check now (undefined
+     * on a conflict), and the write for later. The write checks again and
+     * stores nothing on a conflict found then (false).
+     */
+    public stageVerifiedProof(
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk,
+        options?: VerifiedProofOptions
+    ): (() => boolean) | undefined {
         const replayFromIndex =
             options?.replayFromIndex ?? walk.replayBlockIndex;
         const start = walk.start;
@@ -458,43 +477,45 @@ class AgreementManager {
         });
         const verified = kept.filter((block) => !tail.has(block.hash));
         const blocks = this.storage.blocks;
-        if (
+        const conflicts = () =>
             verified.some((block) => {
                 const stored = blocks.getBlock(block.forkId, block.height);
                 return stored && !stored.equals(block);
-            })
-        )
-            return false;
-        for (const block of verified)
-            blocks.storeBlock(block, {
-                hash: block.hash,
-                coordinates: block.coordinates,
-                justPersist: !options?.advanceView
             });
-        if (start) this.storage.stateSnapshots.storeStateSnapshot(start);
-        // each proven hop: its snapshot, and a change point where the set changes
-        let participants = new Set(
-            (
-                start?.snapshotData ?? evidence.genesisStateSnapshotData
-            ).participants.map(String)
-        );
-        for (const { block, snapshot } of hops) {
-            if (snapshot.hash !== block.stateSnapshotHash) continue;
-            this.storage.stateSnapshots.storeStateSnapshot(snapshot);
-            const next = new Set(
-                snapshot.snapshotData.participants.map(String)
+        if (conflicts()) return undefined;
+        return () => {
+            if (conflicts()) return false;
+            for (const block of verified)
+                blocks.storeBlock(block, {
+                    hash: block.hash,
+                    coordinates: block.coordinates,
+                    justPersist: !options?.advanceView
+                });
+            if (start) this.storage.stateSnapshots.storeStateSnapshot(start);
+            // each proven hop: its snapshot, and a change point where the set changes
+            let participants = new Set(
+                (
+                    start?.snapshotData ?? evidence.genesisStateSnapshotData
+                ).participants.map(String)
             );
-            if (
-                next.size !== participants.size ||
-                difference(next, participants).size
-            )
-                this.storage.participantSetChanges.storeChangePoint(
-                    block.forkId,
-                    block.height
+            for (const { block, snapshot } of hops) {
+                if (snapshot.hash !== block.stateSnapshotHash) continue;
+                this.storage.stateSnapshots.storeStateSnapshot(snapshot);
+                const next = new Set(
+                    snapshot.snapshotData.participants.map(String)
                 );
-            participants = next;
-        }
-        return true;
+                if (
+                    next.size !== participants.size ||
+                    difference(next, participants).size
+                )
+                    this.storage.participantSetChanges.storeChangePoint(
+                        block.forkId,
+                        block.height
+                    );
+                participants = next;
+            }
+            return true;
+        };
     }
 
     /** The resulting snapshot of the milestone's first block. */

@@ -37,7 +37,7 @@ describe("E2E: kill then dispute, and challenge timing", function () {
         const [submission] = submissions;
         const own = Codec.decode(submission.encodedDispute, Type.Dispute);
         // the kill and the replacement are one transaction, the kill first
-        expect(submission.method).to.equal("multicall");
+        expect(submission.method).to.equal("multicallBestEffortLast");
         expect(submission.innerMethods).to.deep.equal([
             "applyDisputeFraudProofs",
             own.postedAuditingData
@@ -97,7 +97,7 @@ describe("E2E: kill then dispute, and challenge timing", function () {
         await replacement.waitUntilHeld();
         const [held] = await replacement.submissions();
         const claimed = Codec.decode(held.encodedDispute, Type.Dispute);
-        expect(held.method).to.equal("multicall");
+        expect(held.method).to.equal("multicallBestEffortLast");
         expect(held.innerMethods[0]).to.equal("applyDisputeFraudProofs");
         expect(claimed.input.onChainSlashes).to.include(spammer.address);
 

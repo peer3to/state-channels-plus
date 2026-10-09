@@ -23,7 +23,7 @@ second attempt deferred). The `terminal disposal` block disposes the peer's stat
 harness at each reduction stage (attempt held, candidate computation held, direct completion waiting for the
 state mutex, genesis application held at each of the three state-machine calls) and asserts, while the hold is still closed, that the caller's attempt settled as cancelled and no outbound
 block, head move, fork change, status change, or installation happened; two cases make a read reject after the
-canonical `setState` and assert the state manager aborts without committing; one holds the submission's gas-limit read after the local install and proves disposal stops the chain write; one makes that released read fail after the host is fully torn down and proves the failure ends as the disposal outcome (no chain write, no detached error; the runtime-level detached-settlement permutation is owned by the `RuntimeLifecycle` suite); one makes the candidate computation throw and proves the caller's promise rejects once with that error while the runtime aborts; two release a held dispute read or candidate computation as unavailable after disposal and prove no reduction timer is added. The `reduction application control boundary` block sends crafted JSON controls through the control port and proves they are rejected before any wrapper is installed; those tests carry no ID because the control is harness-only. Reduction computation itself (successor equivalence across orders) and
+canonical `setState` and assert the state manager aborts without committing; one holds the reduce send after the local install, stops the runtime while it is held and proves the started send is not intercepted but settles without a rejection or a reported failure; one makes the candidate computation throw and proves the caller's promise rejects once with that error while the runtime aborts; two release a held dispute read or candidate computation as unavailable after disposal and prove no reduction timer is added. The `reduction application control boundary` block sends crafted JSON controls through the control port and proves they are rejected before any wrapper is installed; those tests carry no ID because the control is harness-only. Reduction computation itself (successor equivalence across orders) and
 completion-mismatch handling are out of scope. The duplicate-terminal-trigger case demonstrates
 the manager's single-completion convergence permutation; the mismatch-fatal and restart
 permutations, and the executor's convergence-classification permutations, are not demonstrated
@@ -42,12 +42,14 @@ observed the commitment. After leave completion it waits for the reduction attem
 to settle before recording membership reads. The zero-read and zero-submission
 oracles remain unchanged; sibling uploads cannot exhaust the evidence window first.
 
-The post-install disposal case waits for the held gas-limit read and then the
-detached caller's settled outcome before disposal. Reaching the hold alone does
-not prove that the result callback has run. The existing no-chain-write oracle
-and permutation assignments are unchanged.
-
-The submission-disposal cases hold the completed real gas-limit read until disposal, then release its result into the production disposal check. They do not start a provider read after the provider has closed. The no-write case waits for detached work to settle and rejects any detached failure instead of relying on a fixed sleep.
+The held-send disposal case (staging in `test/fixtures/ReductionDisposalStaging.ts`) holds the reduce
+multicall through `holdReductionAttempt(0, "submit")`, waits until the send was entered and the detached
+caller's outcome settled with a result, aborts the runtime and waits for `isDisposed`, with the teardown
+parked before the chain provider closes. It then releases the send and awaits the collected submission:
+the reduce was sent exactly once and the executor reported no failure. The disposal check runs before the
+send, and a disposal during the signer's send is not intercepted; this case replaces the two earlier
+submission-disposal cases, whose pre-send guard was removed, and their permutations (P7 and P14 of the
+reduction executor's attempt discipline, and P22 of the dispute-pipeline reduction plan) stay deleted.
 
 ## Tests
 
@@ -73,8 +75,7 @@ The submission-disposal cases hold the completed real gas-limit read until dispo
 - `disposal held at getNextToWrite during genesis application commits nothing`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P6, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P16
 - `a getParticipants failure after the canonical setState aborts without committing`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P7, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P17
 - `a getNextToWrite failure after the canonical setState aborts without committing`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P8, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P18
-- `disposal after the local install and before the chain write submits nothing`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P7, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P22
-- `a chain-write read that fails after the runtime is torn down is dropped as the disposal outcome`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P14
+- `disposal while the reduce send is held surfaces no rejection and reports no failure`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P20, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P25
 - `an ordinary attempt that completes a window the chain already finalized converges without a chain write`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P9
 - `a fatal attempt error rejects the caller once with the original error and aborts`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P7, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P21
 - `a stale dispute read after disposal reschedules nothing`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P8, REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P23

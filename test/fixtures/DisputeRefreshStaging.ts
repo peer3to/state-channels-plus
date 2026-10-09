@@ -134,10 +134,6 @@ export async function assertDisputeRefreshPolicy(
         );
         if (mode === "read-failure")
             expect(result.error).to.contain("authoritative slash read failed");
-        else if (mode === "unrelated")
-            expect(result.error).to.contain(
-                "RaceConditionDisputeEvidencePeriodExpired"
-            );
         else expect(result.error).to.equal(null);
         expect(await recorder.submissions()).to.have.length(
             mode === "repeat" || mode === "concurrent" ? 2 : 1
@@ -241,15 +237,25 @@ export async function assertInboundHeadMovedDuringUpload(
     for (const peer of h.peers)
         await h.control(peer).stub.stubHoldReductionTasks().request();
     await h.dispute.suppressDisputeInitiation([1, 2]);
-    // a stored fraud proof puts the upload in a multicall with applyFraudProofs,
-    // so the refusal below reverts the whole batch, not just the upload
+    // a stored fraud proof puts the upload last in a best-effort multicall
+    // with applyFraudProofs: the refusal below is read from the receipt, and
+    // the fraud proof lands anyway
     const offender = await h.byzantine.storeInvalidTransitionFraudProof(
         disputer.index
     );
+    // the disputer loses that slash log, so no slash-driven dispute of its own
+    // races the dispute under test
     const lost =
         staging === "recoverable"
-            ? await h.rpcStub.dropInboundMessageLogs(disputer.index)
+            ? await h.rpcStub.dropEventLogs(disputer.index, [
+                  "InboundMessagesProcessed",
+                  "ChainSlashed"
+              ])
             : await h.rpcStub.holdInboundMessageEvents(disputer.index);
+    const lostSlashes =
+        staging === "recoverable"
+            ? undefined
+            : await h.rpcStub.dropSlashLogs(disputer.index);
     const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
         hold: true,
         forward: true
@@ -333,12 +339,12 @@ export async function assertInboundHeadMovedDuringUpload(
                 stale.latestInboundMessageBlockHash
             );
             expect(await committed()).to.have.length(0);
-            // the refused multicall carried the fraud proof, so nobody is slashed
+            // only the upload was refused: the fraud proof in front of it landed
             expect([
                 ...(await h.channelManager.getOnChainSlashedParticipants(
                     h.channelId
                 ))
-            ]).to.deep.equal([]);
+            ]).to.deep.equal([offender.address]);
             return;
         }
 
@@ -373,6 +379,7 @@ export async function assertInboundHeadMovedDuringUpload(
         await recorder.restore();
         if ("droppedCount" in lost) await lost.release();
         else await lost.release({ replay: false });
+        await lostSlashes?.release();
     }
 }
 
@@ -573,7 +580,7 @@ export async function assertInboundRefusalOfKillCarryingDispute(
         const [refused, retried] = submissions;
 
         // the refused multicall carried the kill in front of the upload
-        expect(refused.method).to.equal("multicall");
+        expect(refused.method).to.equal("multicallBestEffortLast");
         expect(refused.innerMethods[0]).to.equal("applyDisputeFraudProofs");
         expect(refused.waited).to.equal(false);
 

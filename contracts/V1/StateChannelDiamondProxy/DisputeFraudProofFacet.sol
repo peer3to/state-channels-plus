@@ -99,6 +99,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
             return _handleDisputeConflictsWithFinalState;
         }
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutboundRun) return _handleDisputeInvalidOutboundRun;
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -294,6 +295,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _delegatedVerdict(
             dispute, abi.encodeCall(StateProofFacet.isDisputeConflictingWithFinalState, (dispute, proof))
         );
+    }
+
+    function _handleDisputeInvalidOutboundRun(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeInvalidOutboundRun memory proof = abi.decode(encodedFraudProof, (DisputeInvalidOutboundRun));
+        return _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isDisputeOutboundRunInvalid, (dispute, proof)));
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -679,7 +688,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData = SnapshotData({
             originForkId: latestStateSnapshot.snapshotData.originForkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
-            participants: _getStateMachineParticipants(encodedModifiedState),
+            // executeStateTransition left this state loaded
+            participants: stateMachineImplementation.getParticipants(),
             latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             latestInboundMessageBlockHeight: latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight,
             latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,

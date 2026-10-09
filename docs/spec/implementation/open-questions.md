@@ -31,6 +31,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs) | Earliest on-chain timestamp is not enforced in the block store                                                                    | Code            | [BlockStorage](source/src/storage/BlockStorage.ts.md), [QueueStorage](source/src/storage/QueueStorage.ts.md)                                                                                          | Open                              |
 | [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM`](open-questions.md#oq-impl-executor-drain-1-5d71ym)                 | Executor admission drain bound at shutdown                                                                                        | Engineer review | [Owner](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)                                                                                                              | Resolved                          |
 | [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                                 | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
+| [`OQ-IMPL-CLOCK-1-R6W7FM`](open-questions.md#oq-impl-clock-1-r6w7fm)                                   | The runtime clock offset is taken once at host start, so runtimes started at different moments drift apart when chain time drifts | Code            | [Clock.ts.md](source/src/Clock.ts.md), [time.md](../specification/protocol-model/time.md)                                                                                                             | Open                              |
 
 <a id="oq-impl-strike-1-b10cbb"></a>
 
@@ -83,7 +84,7 @@ Decide whether this is a bug (likely) or intended "any non-timeout dispute cance
 semantics, then fix and test accordingly. See [protocol/disputes.md](../specification/disputes/disputes.md) §6.
 
 **Resolved (2026-08-14, engineer decision — implementation pending):** only a slash cancels a
-proposed timeout ([`INV-DIS-7-9GGZSD` (In a fork whose reduction contains any on-chain slashes, timeout removal is not…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)); a slash-free dispute with no timeout
+proposed timeout ([`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)); a slash-free dispute with no timeout
 claim MUST NOT cancel a real timeout ([`OQ-9-XR1MFS` (Timeout precedence edge rules)](../specification/open-questions.md#oq-9-xr1mfs),
 [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) amended). The fold's empty-timeout reset is therefore
 confirmed a **bug**: the fold must skip candidates with an unset `participant`, keeping the
@@ -316,6 +317,21 @@ add a second snapshot publisher or claim a submitted transaction already grants 
 Concurrent membership misses now share one in-flight refresh. Should chain-membership and other on-demand queries toward RPC nodes also have a cooldown for performance? The engineer requested this question for later review. No cooldown or retry window is introduced here; the shared promise bounds simultaneous refreshes, not sequential query rate.
 
 Owner: [implementation report](source/src/stateManager/membership/MembershipService.ts.md). Decision recorded in the 2026-09-17 implementation review.
+
+<a id="oq-impl-clock-1-r6w7fm"></a>
+
+## OQ-IMPL-CLOCK-1-R6W7FM — Runtime clock offset taken once at host start
+
+`Clock.syncClock` sets the runtime's offset to the chain head timestamp when the runtime host starts
+and is not called again during the session ([Clock](source/src/Clock.ts.md)). On a loaded Hardhat node
+chain time fell about 7 s behind wall time within about 70 s, so a runtime started a minute after the
+seated ones held a different offset: its handshake requests were refused as outside the agreement window,
+and a pending joiner refused a valid block for lack of time (`NOT_ENOUGH_TIME`) and aborted on a snapshot
+that did not list it. The mechanism follows the protocol clock model, which is the open specification
+question [`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe); the implementation choices (periodic or
+event-driven re-sync, a process-wide offset, or an enforced skew bound) wait on that decision.
+
+Owner: [Clock implementation report](source/src/Clock.ts.md).
 
 <a id="oq-impl-sync-boundary-1-4afpkm"></a>
 

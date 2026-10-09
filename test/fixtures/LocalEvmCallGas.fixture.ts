@@ -28,6 +28,26 @@ export function addOneCalldata(inputBytes = 0): string {
     );
 }
 
+/** The Math machine's ABI-encoded state. */
+export function encodeMathState(state: {
+    number: bigint;
+    participants: string[];
+    balances: bigint[];
+    currentTurnIndex: bigint;
+}): string {
+    return ethers.AbiCoder.defaultAbiCoder().encode(
+        ["tuple(uint256,address[],uint256[],uint256)"],
+        [
+            [
+                state.number,
+                state.participants,
+                state.balances,
+                state.currentTurnIndex
+            ]
+        ]
+    );
+}
+
 /**
  * A Math machine deployed into `executor` with a transition budget of
  * `gasLimit`, holding one participant whose `add(1)` turn is next. The
@@ -50,10 +70,12 @@ export async function deployMathMachine(
     const address = deployment.createdAddress!.toString();
     await executor.executeCall(
         machineInterface.encodeFunctionData("setState", [
-            ethers.AbiCoder.defaultAbiCoder().encode(
-                ["tuple(uint256,address[],uint256[],uint256)"],
-                [[0n, [participant], [0n], 0n]]
-            )
+            encodeMathState({
+                number: 0n,
+                participants: [participant],
+                balances: [0n],
+                currentTurnIndex: 0n
+            })
         ]),
         address
     );

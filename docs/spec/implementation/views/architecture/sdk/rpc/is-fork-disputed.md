@@ -10,11 +10,11 @@
 > The off-chain dispute flow around it: [../dispute-pipeline.md](../dispute-pipeline.md).
 
 Implementation:
-[`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9),
-[`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
-Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L356).
+[`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L10),
+[`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L7).
+Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L341).
 Evidence consumer:
-[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220).
+[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L240).
 
 ## 1. Purpose & position in the protocol
 
@@ -57,7 +57,7 @@ sequenceDiagram
 
 The round is **relevance-gated**: it fires only when the disputed fork is the node's current
 fork, or the dispute is final and the node has a pending reduction operation for that fork
-([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L356)); late non-final
+([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L379)); late non-final
 events for already-resolved forks do not restart it. Dispute-event ordering and
 kill/counter-dispute sequencing around this trigger have known lifecycle races —
 [`OQ-25-E09XFR` (Minor SDK lifecycle races)](../../../../open-questions.md#oq-25-e09xfr).
@@ -71,7 +71,7 @@ survive the WebRTC transport upgrade, [./README.md](./README.md) §6.8):
 | ---------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `disputedForks: Set<ForkId>`                               | Forks for which this node already ran its outgoing round. | `requestDisputeAcknowledgment` (add-only)        | same method (dedup of the whole round)                                                                                                                                |
 | `myAcknowledgementsByAddress: Map<address, Set<ForkId>>`   | Forks **I acknowledged to** each peer (responder side).   | `IAcknowledgeDisputedFork` via the handler       | handler duplicate check                                                                                                                                               |
-| `peerAcknowledgementsByAddress: Map<address, Set<ForkId>>` | Forks **each peer acknowledged to me** (requester side).  | `peerAcknowledgesDisputedFork` on a `true` reply | [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220) — the Byzantine-build check |
+| `peerAcknowledgementsByAddress: Map<address, Set<ForkId>>` | Forks **each peer acknowledged to me** (requester side).  | `peerAcknowledgesDisputedFork` on a `true` reply | [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L240) — the Byzantine-build check |
 
 **Lifetime and cleanup: none.** All three structures are add-only for the life of the process;
 nothing prunes entries on fork resolution, channel close, peer blacklisting, or disposal.
@@ -143,7 +143,7 @@ its only effect is the same record a truthful `true` produces).
 ## 5. The evidence chain: what an ack buys
 
 The point of the bookkeeping is stage-gating the punishment for dead-fork gossip. In
-[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220):
+[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L240):
 for a block arriving on a disputed fork, every source peer with a recorded
 `didPeerAcknowledgeDisputedFork(peer, forkId)` is disconnected + blacklisted; if **all**
 suppliers had acknowledged, the block is judged `DISCONNECT` (nothing honest to wait for),
@@ -157,7 +157,7 @@ attributable_ misbehavior → local disconnect/blacklist, one tier below the pro
 fraud-proof evidence ([../../protocol/fraud-proofs.md](../../../../../specification/disputes/fraud-proofs.md)).
 Whether acknowledgments should be signed statements (making dead-fork building slashable
 evidence rather than a local opinion) is an engineer decision; until then the wording
-"provable" overstates. (Observed: [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6)
+"provable" overstates. (Observed: [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L7)
 returns a bare boolean.)
 
 ## 6. Byzantine assessment

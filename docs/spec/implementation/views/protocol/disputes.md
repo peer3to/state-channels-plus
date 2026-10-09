@@ -36,7 +36,8 @@ is slashable if the lagging mirror was wrong, so the chain manager answers the s
 answer decides ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
 A thrown local or chain failure aborts construction; only a completed local answer can select fallback.
 
-The two sends that can replay a transition — the fraud-proof `multicall` in front of an upload and
+The two sends that can replay a transition — the fraud-proof `multicallBestEffortLast` in front of an upload
+(estimated as the all-or-nothing `multicall` while the upload still succeeds) and
 `applyDisputeFraudProofs` in `killDispute` — carry their estimate (with the signer's headroom) plus
 the manager's `getStateTransitionReplayGas()`, so the replayed transition always gets its full
 budget and an honest proof that is sent is never refused for gas, whether the estimator searches
@@ -70,7 +71,7 @@ against committed disputes. Per proof:
 
 `killDispute` on `DisputeVerificationFacet` is reachable only through the
 `applyDisputeFraudProofs` delegatecall — the proxy does not expose it as an external entry point
-([`StateChannelManagerProxy`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L25)).
+([`StateChannelManagerProxy`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L24)).
 
 **Open question:** the intended kill-period rule needs engineer confirmation (who is slashed on a
 valid vs. invalid dispute fraud proof, whether an ineligible outsider submitting an invalid proof

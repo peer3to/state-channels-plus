@@ -17,7 +17,10 @@ import { hash, isSubset, Logger } from "@/utils";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeInvalidStateProofStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeAuditingDataStruct,
@@ -221,9 +224,11 @@ export default class DisputeValidationService {
 
     /**
      * Walks the proof and replays the last milestone's unfinalized tail tier
-     * by tier. The first tier whose walk and replay both succeed is accepted
-     * and its verified material persisted. A failure at a lower tier falls
-     * through; at the chain tier it stores the counter (false).
+     * by tier. The first tier whose walk and replay both succeed is accepted:
+     * the latest state is then proved, so its posted outbound run is judged
+     * (`verifyOutboundRun`) and the verified material persisted. A failure at
+     * a lower tier falls through; at the chain tier it stores the counter
+     * (false).
      */
     private async verifyAndReplay(
         dispute: DisputeStruct,
@@ -252,11 +257,23 @@ export default class DisputeValidationService {
                 isChain
             );
             if (outcome === ReplayOutcome.Valid) {
+                // a forged latest state never reaches this check: the walk or
+                // the replay already stored its counter
+                const outboundRun = data
+                    ? await this.verifyOutboundRun(dispute, data)
+                    : [];
+                if (!outboundRun) return false;
                 // audits of one window run concurrently: a final block another
                 // audit verified after this audit's conflict check can be
                 // stored now, so a conflicting proof is judged again
                 if (
-                    !this.persistVerifiedProof(dispute, evidence, walk, data) &&
+                    !this.persistVerifiedProof(
+                        dispute,
+                        evidence,
+                        walk,
+                        outboundRun,
+                        data
+                    ) &&
                     (await this.tryCreateConflictsWithFinalStateProof(dispute))
                 )
                     return false;
@@ -274,7 +291,8 @@ export default class DisputeValidationService {
 
     /**
      * Stores the proof material the accepted walk verified, and with posted
-     * data its message runs and the finalized state the walk ends at. False
+     * data its inbound run, the verified outbound run above the chain anchor
+     * (`verifyOutboundRun`) and the finalized state the walk ends at. False
      * when a verified block conflicts with this peer's stored history (its
      * blocks are then not stored).
      */
@@ -282,6 +300,7 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         evidence: StateProofEvidence,
         walk: ProofTierWalk,
+        outboundRun: MessageBlockStruct[],
         data?: DisputeAuditingDataStruct
     ): boolean {
         // a verified block conflicting with this peer's history is not stored
@@ -310,7 +329,7 @@ export default class DisputeValidationService {
                 justPersist: true
             });
         }
-        for (const messageBlock of data.outboundMessageBlocks) {
+        for (const messageBlock of outboundRun) {
             this.storage.outboundMessages.store(messageBlock, {
                 justPersist: true
             });
@@ -525,6 +544,67 @@ export default class DisputeValidationService {
             dispute,
             evidence.genesisStateSnapshotData
         );
+    }
+
+    /**
+     * The posted outbound run above the chain's anchor, verified up to the
+     * dispute's latest state, which the walk and the replay proved
+     * (`verifyOutboundRunAboveAnchor`): the part this peer persists for a
+     * later snapshot post and its withdrawals. A run that
+     * does not verify stores `DisputeInvalidOutboundRun` once the chain
+     * accepts it (undefined). The anchor is read from the chain; a counter the
+     * chain refuses means the anchor moved after that read, so the run is
+     * judged again from the new anchor. The anchor moves when the audit runs
+     * while the chain's anchor advances, e.g. a slow auditor audits after a
+     * snapshot post or a reduction moved it, not only on RPC view skew. A
+     * refusal from the same anchor is a bug.
+     */
+    private async verifyOutboundRun(
+        dispute: DisputeStruct,
+        data: DisputeAuditingDataStruct
+    ): Promise<MessageBlockStruct[] | undefined> {
+        const readAnchor = async () =>
+            StateSnapshot.from(
+                await this.stateChannelManagerContract.getStateSnapshot(
+                    dispute.input.channelId
+                )
+            );
+        const anchor = await readAnchor();
+        const run = data.outboundMessageBlocks;
+        const { isValid, aboveAnchor } =
+            await this.diamondStateMachine.localDiamondContract.verifyOutboundRunAboveAnchor(
+                run,
+                anchor.snapshotData,
+                data.latestStateSnapshot.snapshotData
+            );
+        // the part above the anchor is a suffix of the posted run
+        if (isValid) return run.slice(run.length - aboveAnchor.length);
+        const proof = { auditingData: data };
+        if (
+            !(await this.stateChannelManagerContract.isDisputeOutboundRunInvalid.staticCall(
+                dispute,
+                proof
+            ))
+        ) {
+            if ((await readAnchor()).hash === anchor.hash)
+                throw new Error(
+                    "Dispute audit: the chain rejects the invalid-outbound-run counter from the anchor it was judged on"
+                );
+            // the anchor advanced while this audit ran: judge from the new one
+            return this.verifyOutboundRun(dispute, data);
+        }
+        this.logger.warn(
+            "Dispute outbound run does not link the chain anchor to its latest state",
+            {
+                dispute: LoggerUtils.getDisputeMetadata(dispute),
+                anchor: LoggerUtils.getSnapshotMetadata(anchor)
+            }
+        );
+        this.disputeFraudProofService.createDisputeInvalidOutboundRun(
+            dispute,
+            proof
+        );
+        return undefined;
     }
 
     /**
@@ -840,7 +920,8 @@ export default class DisputeValidationService {
             return false;
         }
 
-        // [check] isParticipantNext
+        // [check] isParticipantNext. The peek is one simulated call, so it
+        // needs no lock.
         if (latestStateSnapshot && latestStateMachineState !== undefined) {
             const nextToWrite = await this.diamondStateMachine.peekNextToWrite(
                 latestStateMachineState

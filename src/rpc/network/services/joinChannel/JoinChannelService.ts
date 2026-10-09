@@ -7,14 +7,13 @@ import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
 import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
+import { config } from "@/utils/config";
 import type {
     BalanceStruct,
     JoinChannelConfirmationStruct,
     JoinChannelStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
 export type PreparedJoinChannelConfirmation = {
     confirmation: JoinChannelConfirmationStruct;
@@ -48,7 +47,7 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
             participant: this.p2pManager.stateManager.signerAddress,
             balance,
             deadlineTimestamp: BigInt(
-                chainTime.timestamp + DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS
+                chainTime.timestamp + config.JOIN_CHANNEL_DEADLINE_SECONDS
             )
         });
     }

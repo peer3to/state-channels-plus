@@ -103,7 +103,9 @@ describe("E2E: Dispute Manager", function () {
                     await h.channelManager.getStateTransitionReplayGas();
                 for (const recorder of recorders)
                     for (const submission of await recorder.submissions()) {
-                        expect(submission.method).to.equal("multicall");
+                        expect(submission.method).to.equal(
+                            "multicallBestEffortLast"
+                        );
                         expect(submission.gasLimit).to.not.equal(null);
                         expect(
                             BigInt(submission.gasLimit!) > replayGas

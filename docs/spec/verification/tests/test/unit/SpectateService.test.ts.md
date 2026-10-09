@@ -20,6 +20,8 @@ Six inbound cases stage the disputed window so that its reduce applies a top-up 
 
 One `applySyncResponse` case stubs the requester's local diamond so the unfinalized blocks of an honest payload start with a block whose bytes do not decode; the sync returns false and records only the "block confirmation rejected" reason, so neither the pipeline log nor the pipeline throws.
 
+Two install cases stage a reducible disputed fork and sync an observer onto the successor. In the first, a read inside the install throws after the VM write: the sync throws, the VM keeps its state, the successor genesis is not stored and the fork stays. In the second, the install is held at its entry while a successor block authored after the payload was served waits in the observer's queue; its held queue timeout runs inside that window, sees an unknown fork (not a known stale one) and probes its source, and after the install the block is stored on the successor without a blacklist.
+
 ## Tests
 
 - `concurrent identical sync requests share the completed result`: none
@@ -30,6 +32,8 @@ One `applySyncResponse` case stubs the requester's local diamond so the unfinali
 - `sync batches finality reads for two supplied windows before rejection`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P25
 - `old-fork sync succeeds while successor installation is held without either blacklist`: REQ-SYNC-1-T2589H.T1.P10
 - `successor sync succeeds before its genesis is installed without either blacklist`: REQ-SYNC-1-T2589H.T1.P11
+- `a successor sync whose install read fails after the VM write → throws, the VM is restored, nothing of the payload is stored, the fork stays`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P102
+- `a successor block's queue timeout running while the sync install is held → the fork is unknown, not known stale: the block is probed, then stored on the successor`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P103
 - `pinned sync serves the exact current height`: REQ-SYNC-1-T2589H.T1.P12
 - `pinned sync serves a newer proof than the requested height`: REQ-SYNC-1-T2589H.T1.P13
 - `pinned sync refuses a height above the available proof`: REQ-SYNC-1-T2589H.T1.P14
@@ -43,7 +47,7 @@ One `applySyncResponse` case stubs the requester's local diamond so the unfinali
 - `a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28
 - `the same-fork target snapshot lands before validation → accepts the proof`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P13, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8, REQ-SPC-1-H10R5K.T1.P6
 - `a last-milestone block whose bytes do not decode → milestones invalid, the sync does not throw`: none
-- `on-chain snapshot ahead of the payload genesis on the same fork → milestones and outbound verified from it, accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P34
+- `on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P34
 - `a milestone prepended wholly below the on-chain anchor carrying a snapshot above it → sync accepted, neither its block nor the snapshot is stored`: none
 - `milestone snapshot at the requester's own finalized point altered → accepted from that point, the altered snapshot is not stored`: none
 - `every milestone below the on-chain anchor with a forged newer snapshot → rejected, milestones invalid`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P33

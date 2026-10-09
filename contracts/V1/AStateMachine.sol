@@ -105,7 +105,10 @@ abstract contract AStateMachine {
     // Adds a new participant, or tops up an existing participant on a repeated join.
     function _joinChannel(JoinChannel memory joinChannel) internal virtual returns (bool);
 
-    // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
+    /// @dev Define the logic that punishes a participant for misbehaving (can also remove the participant from the
+    /// state channel). Must return true for every current participant: dispute reduction adds the timeout target to
+    /// the removals only when no slash took effect, so a false return for a present participant also removes the
+    /// timeout target.
     function _slashParticipant(address adr) internal virtual returns (bool, ExitChannel memory exitChannel);
 
     // similar to _slashParticipant, but doesn't have to punish the player - just removes them from the state channel
@@ -131,6 +134,13 @@ abstract contract AStateMachine {
     function setState(bytes memory encodedState) external _nonReentrant {
         _setState(encodedState);
         // emit SetStateA(encodedState);
+    }
+
+    /// @notice The next writer of `encodedState`.
+    /// @dev Sets that state, so callers run it as a simulated call and the change is not kept.
+    function getNextToWriteOf(bytes memory encodedState) external _nonReentrant returns (address) {
+        _setState(encodedState);
+        return getNextToWrite();
     }
 
     function joinChannel(JoinChannel memory jc) external _nonReentrant returns (bool) {

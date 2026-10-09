@@ -87,6 +87,27 @@ contract StateProofFacet is StateChannelCommon {
         return isFault || (snapshotMismatch && dispute.postedAuditingData);
     }
 
+    /// The committed posted auditing data's outbound run does not link the chain anchor's outbound head to the
+    /// dispute's latest state (`_outboundRunAboveAnchor`): a block above the anchor is missing, forged or extra. Data
+    /// that is not posted, not committed, or whose latest state is not the dispute's is no evidence here.
+    function isDisputeOutboundRunInvalid(Dispute memory dispute, DisputeInvalidOutboundRun memory proof)
+        public
+        view
+        returns (bool)
+    {
+        DisputeAuditingData memory data = proof.auditingData;
+        if (!dispute.postedAuditingData || dispute.input.disputeAuditingDataHash != keccak256(abi.encode(data))) {
+            return false;
+        }
+        if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(data.latestStateSnapshot))) return false;
+        (bool isValid,) = _outboundRunAboveAnchor(
+            data.outboundMessageBlocks,
+            stateSnapshots[dispute.input.channelId].snapshotData,
+            data.latestStateSnapshot.snapshotData
+        );
+        return !isValid;
+    }
+
     /// The on-chain anchor of `forkId`; see `_getAnchorSnapshot`.
     function getAnchorSnapshot(bytes32 channelId, bytes32 forkId)
         public
