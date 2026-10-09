@@ -461,6 +461,14 @@ function result({
                 `${tag} FAIL [${reason}] [${label}]${timingStr}${elMaxStr}${starveStr}`
             )
         );
+        // github annotation -> the failure shows on the run page while the suite keeps going
+        if (process.env.GITHUB_ACTIONS === "true") {
+            const message = `${label} [${reason}]`
+                .replace(/%/g, "%25")
+                .replace(/\r/g, "%0D")
+                .replace(/\n/g, "%0A");
+            console.log(`::error title=Test failed::${message}`);
+        }
     }
 }
 
