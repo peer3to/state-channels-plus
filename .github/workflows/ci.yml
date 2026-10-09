@@ -131,6 +131,17 @@ jobs:
                     exit 1
                   fi
 
+            # The runner builds forge before shipping it to the workers; a fresh
+            # checkout restores the last build so unchanged Solidity skips solc.
+            - name: Restore the Foundry build
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      out
+                      cache_forge
+                  key: forge-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  restore-keys: forge-
+
             - name: Compile contracts and generated artifacts
               run: yarn compile
 
