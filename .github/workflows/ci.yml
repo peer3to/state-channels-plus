@@ -136,8 +136,9 @@ jobs:
                   fi
 
             # The runner builds incrementally before shipping the build to the
-            # workers; restoring the last build (dispute's, or this PR's previous
-            # run) leaves it only what changed. Each tool re-checks what it restores.
+            # workers. A PR into dispute restores dispute's build, any PR its own
+            # previous run. Hardhat and forge rebuild what changed; dist is reused
+            # only while its file set is unchanged. Each tool re-checks what it restores.
             - name: Restore the Foundry build
               id: forge-cache
               uses: actions/cache/restore@v4
@@ -149,6 +150,7 @@ jobs:
                   restore-keys: forge-${{ steps.forge.outputs.version }}-
 
             - name: Restore the contract and test-tree build
+              id: build-cache
               uses: actions/cache/restore@v4
               with:
                   path: |
@@ -157,8 +159,13 @@ jobs:
                       typechain-types
                       dist
                       src/utils/GeneratedArtifacts.ts
-                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-${{ github.sha }}
-                  restore-keys: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-
+                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json', 'contracts/**/*.sol') }}-${{ github.sha }}
+                  restore-keys: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json', 'contracts/**/*.sol') }}-
+
+            # Built before the tests so a saved forge entry is always a finished build.
+            - name: Build forge
+              id: forge-build
+              run: forge build
 
             - name: Run full test suite on the distributed pool
               env:
@@ -169,16 +176,16 @@ jobs:
 
             # Saved even when tests fail, so a flaky run still leaves its build.
             - name: Save the Foundry build
-              if: always() && steps.forge-cache.outputs.cache-hit != 'true'
+              if: always() && steps.forge-build.outcome == 'success' && steps.forge-cache.outputs.cache-hit != 'true'
               uses: actions/cache/save@v4
               with:
                   path: |
                       out
                       cache_forge
-                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  key: ${{ steps.forge-cache.outputs.cache-primary-key }}
 
             - name: Save the contract and test-tree build
-              if: always()
+              if: always() && steps.build-cache.outcome == 'success'
               uses: actions/cache/save@v4
               with:
                   path: |
@@ -187,7 +194,7 @@ jobs:
                       typechain-types
                       dist
                       src/utils/GeneratedArtifacts.ts
-                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-${{ github.sha }}
+                  key: ${{ steps.build-cache.outputs.cache-primary-key }}
 
             - name: Upload run logs
               if: always()

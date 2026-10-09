@@ -1,11 +1,16 @@
 name: Build cache
 
 # PR runs can restore caches saved on their base branch, but CI runs only on
-# pull requests. This saves dispute's build so every PR starts from it.
+# pull requests. This saves dispute's build so every PR into dispute starts from it.
 on:
     push:
         branches:
             - dispute
+
+# a newer push supersedes the running build; a cancelled run saves nothing
+concurrency:
+    group: build-cache-${{ github.ref }}
+    cancel-in-progress: true
 
 permissions:
     contents: read
@@ -49,6 +54,7 @@ jobs:
                   restore-keys: forge-${{ steps.forge.outputs.version }}-
 
             - name: Restore the contract and test-tree build
+              id: build-cache
               uses: actions/cache/restore@v4
               with:
                   path: |
@@ -57,8 +63,8 @@ jobs:
                       typechain-types
                       dist
                       src/utils/GeneratedArtifacts.ts
-                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-${{ github.sha }}
-                  restore-keys: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-
+                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json', 'contracts/**/*.sol') }}-${{ github.sha }}
+                  restore-keys: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json', 'contracts/**/*.sol') }}-
 
             - name: Build contracts, the compiled test tree and forge
               run: yarn test:parallel:prepare
@@ -70,7 +76,7 @@ jobs:
                   path: |
                       out
                       cache_forge
-                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  key: ${{ steps.forge-cache.outputs.cache-primary-key }}
 
             - name: Save the contract and test-tree build
               uses: actions/cache/save@v4
@@ -81,4 +87,4 @@ jobs:
                       typechain-types
                       dist
                       src/utils/GeneratedArtifacts.ts
-                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-${{ github.sha }}
+                  key: ${{ steps.build-cache.outputs.cache-primary-key }}
