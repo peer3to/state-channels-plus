@@ -783,9 +783,10 @@ export async function postForgedOutboundRunDispute(
         dispute: DisputeStruct
     ) => void | Promise<void>
 ) {
-    const { forkId, remaining, heldPost } = await stageOutboundAroundAnchor(h, {
-        finalBlocks: 2
-    });
+    const { forkId, remaining, heldLeaver, heldPost } =
+        await stageOutboundAroundAnchor(h, {
+            finalBlocks: 2
+        });
     const [disputerIndex, auditorIndex] = remaining;
     const disputer = h.getPeer(disputerIndex).address;
     // self-removal is the dispute's stated reason
@@ -815,7 +816,10 @@ export async function postForgedOutboundRunDispute(
             ).some((log) => log.args.disputer === disputer),
         h.event.protocolEventTimeoutMs()
     );
-    return { forkId, remaining, auditorIndex, disputer, heldPost };
+    // the held leaver's exit is not on chain yet: it is still a participant
+    // and audits (and may kill) like the remaining peers
+    const auditors = [...remaining, heldLeaver];
+    return { forkId, remaining, auditors, auditorIndex, disputer, heldPost };
 }
 
 /**

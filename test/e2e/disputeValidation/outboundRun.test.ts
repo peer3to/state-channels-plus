@@ -12,16 +12,16 @@ import { MaxUint256 } from "ethers";
 // the chain anchor holds outbound block 1 (the first leave), the latest state
 // outbound block 2 (the second leave, its snapshot post held)
 describe("E2E: dispute validation / outbound run", function () {
-    it("a committed dispute posts auditing data whose outbound run misses the block above the chain anchor -> an auditing remaining peer kills it with DisputeInvalidOutboundRun", async function () {
+    it("a committed dispute posts auditing data whose outbound run misses the block above the chain anchor -> an auditing participant kills it with DisputeInvalidOutboundRun", async function () {
         const h = TestSession.getHarness();
-        const { forkId, remaining, auditorIndex, disputer, heldPost } =
+        const { forkId, auditors, auditorIndex, disputer, heldPost } =
             await postForgedOutboundRunDispute(h, (auditingData) => {
                 auditingData.outboundMessageBlocks = [];
             });
 
         const kill = await readDisputeKill(h, disputer);
         // the poster's own SDK audits the bypassing upload too
-        expect(remaining.map((index) => h.getPeer(index).address)).to.include(
+        expect(auditors.map((index) => h.getPeer(index).address)).to.include(
             kill.killer
         );
         expect(kill.appliedProofTypes).to.deep.equal([
@@ -38,29 +38,35 @@ describe("E2E: dispute validation / outbound run", function () {
 
     it("a committed dispute posts auditing data whose outbound block above the chain anchor (which holds the first leave's withdrawal) carries a message balance of MaxUint256 -> every auditing remaining peer's audit returns false without an error, a DisputeInvalidOutboundRun kill is accepted by the chain, and no event pipeline fails", async function () {
         const h = TestSession.getHarness();
-        const { forkId, remaining, auditorIndex, disputer, heldPost } =
-            await postForgedOutboundRunDispute(h, (auditingData) => {
-                const [block] = auditingData.outboundMessageBlocks;
-                auditingData.outboundMessageBlocks = [
-                    {
-                        ...block,
-                        messages: block.messages.map((message, index) =>
-                            index === 0
-                                ? {
-                                      ...message,
-                                      balance: {
-                                          ...message.balance,
-                                          amount: MaxUint256
-                                      }
+        const {
+            forkId,
+            remaining,
+            auditors,
+            auditorIndex,
+            disputer,
+            heldPost
+        } = await postForgedOutboundRunDispute(h, (auditingData) => {
+            const [block] = auditingData.outboundMessageBlocks;
+            auditingData.outboundMessageBlocks = [
+                {
+                    ...block,
+                    messages: block.messages.map((message, index) =>
+                        index === 0
+                            ? {
+                                  ...message,
+                                  balance: {
+                                      ...message.balance,
+                                      amount: MaxUint256
                                   }
-                                : message
-                        )
-                    }
-                ];
-            });
+                              }
+                            : message
+                    )
+                }
+            ];
+        });
 
         const kill = await readDisputeKill(h, disputer);
-        expect(remaining.map((index) => h.getPeer(index).address)).to.include(
+        expect(auditors.map((index) => h.getPeer(index).address)).to.include(
             kill.killer
         );
         expect(kill.appliedProofTypes).to.deep.equal([
@@ -84,11 +90,17 @@ describe("E2E: dispute validation / outbound run", function () {
 
     it("the disputer signs a last block above its head that commits a forged latest snapshot whose outbound head is an overflowing block (message balance MaxUint256) right above the chain anchor -> the replay rejects the forged latest state before the outbound run is judged: a DisputeInvalidBlockInStateProofApplyFraudProof kill is accepted by the chain and no event pipeline fails", async function () {
         const h = TestSession.getHarness();
-        const { forkId, remaining, auditorIndex, disputer, heldPost } =
-            await postForgedOutboundRunDispute(h, overflowingLatestHead(h));
+        const {
+            forkId,
+            remaining,
+            auditors,
+            auditorIndex,
+            disputer,
+            heldPost
+        } = await postForgedOutboundRunDispute(h, overflowingLatestHead(h));
 
         const kill = await readDisputeKill(h, disputer);
-        expect(remaining.map((index) => h.getPeer(index).address)).to.include(
+        expect(auditors.map((index) => h.getPeer(index).address)).to.include(
             kill.killer
         );
         expect(kill.appliedProofTypes).to.deep.equal([
