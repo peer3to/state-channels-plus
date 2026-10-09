@@ -590,37 +590,40 @@ export default class BlockQueueManager {
     }
 
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
-        if (this.isBlockStored(entry.block)) {
-            await this.handleStoredBlockConfirmationMerge(
-                entry,
-                this.stateManager.getActiveValidationStrategy(entry.block)
-            );
-            // a drain dequeues one height and a stored one advances nothing:
-            // drain the next queued height now, not at its queue timeout
+        try {
+            if (this.isBlockStored(entry.block)) {
+                await this.handleStoredBlockConfirmationMerge(
+                    entry,
+                    this.stateManager.getActiveValidationStrategy(entry.block)
+                );
+                return;
+            }
+
+            // The pipeline handles a fork that moved out from under this entry (as a
+            // side effect: it restores the entry for a timeout sync, or drops it if
+            // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
+            // genuine validation failure on the current fork.
+            const shouldKeepConnection =
+                await this.stateManager.blockIngestService.onBlockConfirmation(
+                    entry
+                );
+
+            if (!shouldKeepConnection) {
+                this.logger.warn(
+                    "tryExecuteFromQueue - queued block failed canonical validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            entry.block,
+                            this.stateManager.storage
+                        ),
+                        sourcePeers: Array.from(getSourcePeers(entry))
+                    }
+                );
+            }
+        } finally {
+            // a drain takes one height: whatever this entry did, the next
+            // queued height drains now, not at its queue timeout
             this.scheduleQueueExecution(entry.block.forkId);
-            return;
-        }
-
-        // The pipeline handles a fork that moved out from under this entry (as a
-        // side effect: it restores the entry for a timeout sync, or drops it if
-        // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
-        // genuine validation failure on the current fork.
-        const shouldKeepConnection =
-            await this.stateManager.blockIngestService.onBlockConfirmation(
-                entry
-            );
-
-        if (!shouldKeepConnection) {
-            this.logger.warn(
-                "tryExecuteFromQueue - queued block failed canonical validation",
-                {
-                    block: LoggerUtils.getBlockMetadata(
-                        entry.block,
-                        this.stateManager.storage
-                    ),
-                    sourcePeers: Array.from(getSourcePeers(entry))
-                }
-            );
         }
     }
 
