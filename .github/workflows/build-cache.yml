@@ -1,0 +1,84 @@
+name: Build cache
+
+# PR runs can restore caches saved on their base branch, but CI runs only on
+# pull requests. This saves dispute's build so every PR starts from it.
+on:
+    push:
+        branches:
+            - dispute
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "yarn"
+
+            - name: Install dependencies
+              run: yarn install --frozen-lockfile
+
+            - name: Read the pinned Foundry version
+              id: forge
+              run: echo "version=$(cat .forge-version)" >> "$GITHUB_OUTPUT"
+
+            - name: Install Foundry
+              uses: foundry-rs/foundry-toolchain@v1
+              with:
+                  version: ${{ steps.forge.outputs.version }}
+
+            - name: Restore the Foundry build
+              id: forge-cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: |
+                      out
+                      cache_forge
+                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  restore-keys: forge-${{ steps.forge.outputs.version }}-
+
+            - name: Restore the contract and test-tree build
+              uses: actions/cache/restore@v4
+              with:
+                  path: |
+                      artifacts
+                      cache
+                      typechain-types
+                      dist
+                      src/utils/GeneratedArtifacts.ts
+                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-${{ github.sha }}
+                  restore-keys: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-
+
+            - name: Build contracts, the compiled test tree and forge
+              run: yarn test:parallel:prepare
+
+            - name: Save the Foundry build
+              if: steps.forge-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      out
+                      cache_forge
+                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+
+            - name: Save the contract and test-tree build
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      artifacts
+                      cache
+                      typechain-types
+                      dist
+                      src/utils/GeneratedArtifacts.ts
+                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json') }}-${{ github.sha }}
