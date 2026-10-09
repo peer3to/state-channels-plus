@@ -38,7 +38,9 @@ contract DisputeUtilsTest is Test {
         assertTrue(_hasDisputeReason(input, snapshot));
     }
 
-    function test_reason_falseRequiresEverySlashToBeEligible() public pure {
+    // a listed slash must be of a participant of the latest state; any other slash, e.g. of a participant an
+    // ancestor fork removed, invalidates the dispute whatever its other reasons
+    function test_reason_slashOfNonParticipantInvalidatesEveryReason() public pure {
         DisputeInput memory input;
         StateSnapshot memory snapshot;
         snapshot.snapshotData.participants = new address[](1);
@@ -49,7 +51,10 @@ contract DisputeUtilsTest is Test {
         input.onChainSlashes[0] = address(2);
         assertFalse(_hasDisputeReason(input, snapshot));
         input.requireExistingDisputeWindow = true;
-        assertTrue(_hasDisputeReason(input, snapshot));
+        input.timeout.participant = address(1);
+        input.selfRemoval = true;
+        input.lastInboundMessageBlockHeight = 1;
+        assertFalse(_hasDisputeReason(input, snapshot));
     }
 
     function _stateProofWithLastMilestone(uint256 confirmations) internal pure returns (StateProof memory sp) {

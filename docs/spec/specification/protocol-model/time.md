@@ -80,7 +80,7 @@ accurate to a band of about one block interval. This lag is a feature for safety
 the re-adjustment trigger be one average block time, two, or a fixed bound independent of block
 time?
 
-**Open question:** For this protocol version: the clock syncs once per session (at init and on provider
+**Open question ([`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../open-questions.md#oq-spec-clock-1-z8tbfe)):** For this protocol version: the clock syncs once per session (at init and on provider
 replacement) and is never re-synced periodically. Wall-clock drift, chain block-time changes, and
 reorganizations during a long session are not corrected. Is a periodic or event-driven re-sync
 (e.g. on each observed chain block) required, and with what cadence?

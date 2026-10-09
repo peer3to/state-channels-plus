@@ -30,6 +30,16 @@ harness disposal. This prevents late on-chain events from restarting a deferred
 reduction during teardown; the failed-attempt and participation assertions remain
 unchanged. Runtime verification of this cleanup adjustment is pending.
 
+The out-of-gas resend case stages a reducible disputed fork, suppresses timeout checks, and
+installs `underfundFirstReducePost` on the reducer: its first reduce multicall is sent with gas
+for its calldata and little else, so it is mined and reverts out of gas, and later sends run for
+real. After the reduction tasks are released, the test waits until the chain snapshot leaves the
+source fork, asserts that the chain fork equals the reduced fork the chain records for the source
+fork, and settles detached work, which fails the test on any rejected detached promise. It also reads
+the recorded reduce receipts: their statuses are `[0, 1]`, so the first send was mined with a failure
+and the resend was mined successfully. The adoption on the chain is the oracle that the executor
+treated the mined resend as mined.
+
 ## Tests
 
 - `no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes`: none
@@ -38,5 +48,6 @@ unchanged. Runtime verification of this cleanup adjustment is pending.
 - `a re-dispatched dispute log that fails again → failed attempt, not a fatal`: none
 - `unreadable dispute window → the reduction is not challenged`: none
 - `the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17
+- `the reduce is mined out of gas and its resend lands → the reduced fork is adopted and nothing is reported as failed`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P19
 - `the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P18
 - `committed dispute missing locally → recovers via event replay, then reduces`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2

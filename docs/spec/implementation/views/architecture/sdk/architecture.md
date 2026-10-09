@@ -21,13 +21,13 @@ const p2p = await EvmStateMachine.p2pSetup(scmProxy, stateMachine, deployStateMa
 ```
 
 The application never touches the internal managers directly. It observes and
-drives the runtime only through the returned [`P2pInstance`](../../../../../../src/evm/P2pInstance.ts#L18)
+drives the runtime only through the returned [`P2pInstance`](../../../../../../src/evm/P2pInstance.ts#L13)
 surface: the enshrined contract, two client-side signers, the `EventBus`, and
 `hostRpc`. `getStateManager()` throws by design in every mode.
 
 ### 1.1 `p2pSetup` — verified signature
 
-Implemented by [`EvmDiamondStateMachine.p2pSetup`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L487)
+Implemented by [`EvmDiamondStateMachine.p2pSetup`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L506)
 (the class is exported as `EvmStateMachine`).
 
 Parameters:
@@ -39,9 +39,9 @@ Parameters:
 | `deployStateMachine`                   | `LocalStateMachineDeployer`      | Async deployer `(signer) => address` that deploys one state-machine instance into the local EVM. Called **twice** (§4).                                                                                                                   |
 | `options.peerId`                       | `number?`                        | Logger tag only.                                                                                                                                                                                                                          |
 | `options.peerLogger`                   | `Logger?`                        | Replaces the default logger.                                                                                                                                                                                                              |
-| `options.config`                       | `Partial<Config>?`               | Runtime config overrides; precedence in [`createConfig`](../../../../../../src/utils/config.ts#L158) is overrides > `process.env` > `peer3.config.ts` > defaults. See [../reference/configuration.md](../../operations/configuration.md). |
+| `options.config`                       | `Partial<Config>?`               | Runtime config overrides; precedence in [`createConfig`](../../../../../../src/utils/config.ts#L205) is overrides > `process.env` > `peer3.config.ts` > defaults. See [../reference/configuration.md](../../operations/configuration.md). |
 | `options.signerSecret`                 | `string?`                        | Private key (`0x` + 64 hex) or mnemonic. **A random private key is generated when omitted.**                                                                                                                                              |
-| `options.customRpcManifest`            | `CustomRpcManifest?`             | Integrator RPC root, resolved on the host via [`resolveCustomRpcManifest`](../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L1) and typed through [`registry.ts`](../../../../../../src/rpc/network/registry.ts#L1).         |
+| `options.customRpcManifest`            | `CustomRpcManifest?`             | Integrator RPC root, resolved on the host via [`resolveCustomRpcConstructor`](../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L8) and typed through [`registry.ts`](../../../../../../src/rpc/network/registry.ts#L24).     |
 | `options.customPrecompiles`            | `EvmCustomPrecompileManifest[]?` | Integrator precompiles installed into the local EVM executor.                                                                                                                                                                             |
 | `options.handlerExecutionContext`      | `HostHandlerExecutionContext?`   | Wraps every inline-host handler invocation (port messages, incoming p2p RPC). Ignored in threaded mode — a worker runs exactly one peer's host.                                                                                           |
 
@@ -63,8 +63,8 @@ Return: `P2pInstance<T, TCustomRpc>` with members:
 **Signer ownership ([`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7)).** The runtime host owns the signing key.
 `p2pSetup` accepts only `signerSecret`; injected `ethers.Signer` objects are
 intentionally unsupported. The host builds its own `Wallet` on its own provider
-([`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L4))
-and wraps it in [`HostNonceManager`](../../../../../../src/evm/signer/HostNonceManager.ts#L15)
+([`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L10))
+and wraps it in [`HostNonceManager`](../../../../../../src/evm/signer/HostNonceManager.ts#L16)
 for every on-chain manager send, so concurrent async flows cannot race on the
 account nonce. The client realm holds only proxy signers that forward over the
 port.
@@ -79,7 +79,7 @@ Top to bottom:
    owns host communication, domain adapters and cleanup. setupP2pRuntime owns configuration and the two application deployments after communication startup.
    P2pInstance holds a direct local reference to this initialized root. Its host
    connection carries RPC and mirrors bus events into the client EventBus.
-3. **Runtime host.** [`startP2pRuntimeHost`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205)
+3. **Runtime host.** [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L170)
    constructs the live graph: provider + wallet, `Clock` sync, time config from
    the chain (`getAllTimes` → `p2pTime`, `agreementTime`, `chainFallbackTime`,
    `evidenceTime`), the local EVM contract executor, `Storage`, `StateManager`
@@ -124,14 +124,14 @@ returned. Application setup owns this sequence; the root owns communication.
   chain through the ordered endpoints of `PROVIDER_URLS`, or the single
   `PROVIDER_URL` when that list is empty. The host converts `http(s)` to
   `ws(s)` and **requires one reachable WebSocket endpoint** at startup
-  ([`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L4)
+  ([`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L10)
   throws otherwise); the others connect in the background. `Clock`, event
   recovery, all local validation staticCalls against the manager, and every
   on-chain send go to the first connected endpoint and fail over when it drops;
   the event listener subscribes on every endpoint
   (rpcNodes). Every
   listed endpoint is trusted and answers are not cross-checked;
-  [`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L61)
+  [`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L53)
   documents in code that reduction treats provider failure as fatal. _Intended:_
   redundancy across independent RPC providers reduces availability failures, but
   the trust assumption remains — correct operation is not guaranteed if every
@@ -153,13 +153,13 @@ returned. Application setup owns this sequence; the root owns communication.
 1. **Live instance** — drives the replicated channel state. All happy-path
    execution (`stateTransition`, `getState`/`setState`, `getNextToWrite`,
    balance algebra, `processInboundMessage`) runs against it through
-   [`EvmDiamondStateMachine`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L67).
+   [`EvmDiamondStateMachine`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L51).
 2. **Diamond instance** — embedded in the locally deployed
-   [`LocalDiamond`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L459) (see
+   [`LocalDiamond`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L471) (see
    `deployLocalDiamondWithStateMachineAddress`). The `LocalDiamond` is a local
    mirror of the on-chain manager's dispute/fraud-proof logic plus per-channel
    chain state, kept in sync by the
-   [`EventHandler`](../../../../../../src/eventHandlers/EventHandler.ts#L48) replaying
+   [`EventHandler`](../../../../../../src/eventHandlers/EventHandler.ts#L38) replaying
    observed chain events (`onChannelOpened`, `onStateSnapshotUpdated`,
    `onBlockCalldataPosted`, `onDisputeCommitted`, `onOnChainSlashAdded`, ...).
    Dispute re-execution, replay positioning, and canonical validation
@@ -179,7 +179,7 @@ the channel state under the working pipeline.
 
 ## 5. Event surface
 
-[`EventBus`](../../../../../../src/events/EventBus.ts#L43) is the one event class on both
+[`EventBus`](../../../../../../src/events/EventBus.ts#L74) is the one event class on both
 sides of the port. It carries three kinds:
 
 | Kind             | Producer                                                                                                          | Payload typing                                                                  |

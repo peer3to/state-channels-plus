@@ -46,8 +46,6 @@ const notRoutedByFacet: Record<
             "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
         computeDisputeOutputState:
             "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
-        generateDisputeOutputState:
-            "internal step of the dispute pipeline, not part of the diamond surface",
         isDisputeOutputCorrect:
             "dispute verification helper - LocalDiamond delegatecalls it with its own gas budget",
         killDispute:
@@ -67,7 +65,6 @@ const notRoutedByFacet: Record<
         concatExitChannelArrays:
             "stateless helper called on the facet directly",
         decodeBlock: "stateless helper called on the facet directly",
-        inParticipantUnion: "stateless helper called on the facet directly",
         insertBytesInByteArray: "stateless helper called on the facet directly",
         insertIntoAddressArrayNoDuplicates:
             "stateless helper called on the facet directly",

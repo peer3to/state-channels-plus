@@ -1407,6 +1407,7 @@ export class ValidationProbeService extends ANetworkRpcService<
         if (disputeManager) {
             disputeManager.dispute = async (forkId: ForkId) => {
                 recorded.disputedForkIds.push(String(forkId));
+                return {};
             };
         }
         const p2pManager = this.p2pManager;

@@ -252,3 +252,7 @@ export const DisputeConflictsWithFinalStateProofEthersType = `tuple(
     uint256 milestoneIndex,
     uint256 blockIndex
 )`;
+
+export const DisputeInvalidOutboundRunProofEthersType = `tuple(
+    ${DisputeAuditingDataEthersType} auditingData
+)`;

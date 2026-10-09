@@ -49,7 +49,10 @@ describe("Dispute commit reduction schedule", function () {
                         args.extraSlashedAddress as string
                     ];
                 },
-                { args: { extraSlashedAddress: h.getPeer(3).address } }
+                {
+                    markMalicious: false,
+                    args: { extraSlashedAddress: h.getPeer(3).address }
+                }
             );
 
             const before = await reductionTasks();

@@ -8,9 +8,11 @@ Synchronizes peers against differing proof starts and final points. Cases check 
 
 ## Tests
 
+- `RR1: sync persists only the checked region when the chain anchor advances across malformed skipped history`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P92
 - `U26: a participant requester whose local finalized state verifies the proof → accepted at that tier, the local diamond and chain walks never run`: REQ-SP-9-RNXP56.T3.P10, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P44
 - `U26: the local finalized tier accepts the proof but a forged latest-fork outbound block still fails its independent check → rejected, latest-fork outbound blocks invalid`: REQ-SP-9-RNXP56.T3.P11, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P45
 - `U27: a fresh requester with no local finalized state → the tier is skipped, the local diamond walk accepts, the chain walk never runs`: REQ-SP-9-RNXP56.T3.P12, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46
+- `U27: a fresh requester whose chain anchor holds the fork's first outbound block and a later exit sits above it → served and stored is only the block above the anchor; its dispute carries that block and the chain accepts it`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P104
 - `U28: a fresh requester whose local diamond missed a consumed top-up → the local diamond walk is false, the chain walk accepts, the sync completes`: REQ-SP-9-RNXP56.T3.P13, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P47
 - `U27: a participant requester whose local finalized walk returns false (an authentic block conflicting with its local final point) → the local diamond walk accepts the proof, the chain walk never runs; replaying the conflicting block then rejects the sync`: REQ-SP-9-RNXP56.T3.P14, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48
 - `U28: a requester whose local diamond holds no anchor (the chain's anchor follows a top-up its mirror missed) → the local diamond walks from the genesis and fails, the chain's anchor walk accepts, the sync completes`: REQ-SP-9-RNXP56.T3.P15, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49
@@ -27,4 +29,3 @@ Synchronizes peers against differing proof starts and final points. Cases check 
 - `U120: a served proof missing a milestone snapshot entry → rejected, milestones invalid, responder blacklisted, nothing of the proof stored`: REQ-SP-7-70EMAT.T3.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P59
 - `U120: a served proof with exactly one snapshot entry per milestone → accepted, its blocks stored, the rebuilt proof verifies`: REQ-SP-7-70EMAT.T3.P5, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P60
 - `U120: the valid empty genesis proof (no milestones, no snapshot entries) → accepted, the genesis state installed, no block stored`: REQ-SP-4-NCSEX4.T3.P6, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P61
-- `RR1: sync persists only the checked region when the chain anchor advances across malformed skipped history`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P92

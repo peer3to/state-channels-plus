@@ -51,6 +51,25 @@ export class QueueIntakeFixture {
         await this.control.stub.observeAdmission(options).request();
     }
 
+    /** Another future block by the same author on the active fork. */
+    async encodeFutureBlock(transactionCnt: number) {
+        const encoded = await factory.buildAndEncodeBlock(
+            this.h.getPeer(1).signer,
+            {
+                header: {
+                    channelId: this.h.channelId,
+                    forkId: this.h.activeForkId!,
+                    transactionCnt,
+                    participant: this.h.getPeer(1).address
+                }
+            }
+        );
+        const block = Block.fromBlockConfirmation(
+            Codec.decode(encoded, Type.BlockConfirmation)
+        );
+        return { encoded, hash: block.hash };
+    }
+
     get control() {
         return this.h.control(this.h.getPeer(0));
     }

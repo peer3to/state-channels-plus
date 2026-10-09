@@ -32,7 +32,8 @@ import {
     DisputeBlockAuthorNotParticipantStruct,
     DisputeInboundAnchorBehindLatestStateStruct,
     TimeoutSupersededByFinalStateStruct,
-    DisputeConflictsWithFinalStateStruct
+    DisputeConflictsWithFinalStateStruct,
+    DisputeInvalidOutboundRunStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeAuditingDataStruct,
@@ -292,6 +293,16 @@ export default class DisputeFraudProofService {
     ): Hash {
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.DisputeConflictsWithFinalState,
+            struct: proof
+        });
+    }
+
+    createDisputeInvalidOutboundRun(
+        dispute: DisputeStruct,
+        proof: DisputeInvalidOutboundRunStruct
+    ): Hash {
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeInvalidOutboundRun,
             struct: proof
         });
     }

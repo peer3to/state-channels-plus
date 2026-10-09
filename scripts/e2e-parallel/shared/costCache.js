@@ -139,13 +139,15 @@ function readOverrides(overridesPath) {
     for (const [key, entry] of Object.entries(overrides)) {
         if (
             !object(entry) ||
-            Object.entries(entry).some(
-                ([field, value]) =>
-                    !OVERRIDE_FIELDS.includes(field) || !numeric(value)
+            Object.entries(entry).some(([field, value]) =>
+                // `comment` records why the cost is set by hand
+                field === "comment"
+                    ? typeof value !== "string"
+                    : !OVERRIDE_FIELDS.includes(field) || !numeric(value)
             )
         )
             throw new Error(
-                `Invalid cost overrides ${overridesPath}: entry ${JSON.stringify(key)} may hold only non-negative ${OVERRIDE_FIELDS.join(", ")}`
+                `Invalid cost overrides ${overridesPath}: entry ${JSON.stringify(key)} may hold only non-negative ${OVERRIDE_FIELDS.join(", ")} and a string comment`
             );
     }
     return overrides;

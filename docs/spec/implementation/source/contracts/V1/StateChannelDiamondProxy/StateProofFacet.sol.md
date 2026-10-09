@@ -16,6 +16,7 @@
 - [`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the…)](../../../../../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
+- [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR
 
@@ -53,3 +54,5 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P28` — Latest-state verification accepts a decodable authentic block committing the claimed latest snapshot
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P29` — A milestone walk accepts the decodable genesis-linked block-zero control with snapshotMismatch false
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P30` — Standalone milestone finality accepts the authentic block-zero control when its author is the entire supplied threshold set, returning the latest snapshot hash
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P84` — `isDisputeOutboundRunInvalid` judges a committed run whose block keeps its predecessor and height but carries a `MaxUint256` message balance invalid without reverting, so the counter kills the dispute.
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P85` — `isDisputeOutboundRunInvalid` judges a committed run invalid without reverting when the latest state (signed only by its author) has its outbound head at an overflowing block right above the anchor, so the counter kills the dispute.

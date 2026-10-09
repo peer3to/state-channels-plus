@@ -14,6 +14,7 @@
 - [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../../../../../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
+  Partial: `startSelfRemovalDispute` throws a lost evidence race that `DisputeManager.dispute` returns as a no-op, so the exit fallback settles the leave while the leave's own dispute fallback (`startDisputeFallback`) fails it; the intended reading is open per [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../../../../../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj).
 
 ## UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF
 

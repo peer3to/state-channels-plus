@@ -75,8 +75,9 @@ or returned early because the window was already reduced.
 Milestone verification calls `AgreementManager.verifyStateProof`: local finalized state, local
 diamond, then chain. Missing starts or false results permit the next tier; throws do not. The
 proof endpoint must reach the known final point. The verified walk determines the replay base;
-the supplied full state must match that finalized snapshot's hash. Outbound and balance checks
-use the corresponding verified state.
+the supplied full state must match that finalized snapshot's hash. The latest-fork outbound run is
+checked from the on-chain snapshot when it is on the proven fork (else from the fork genesis) to that
+state, and only the blocks above the on-chain snapshot are stored; the balance check uses the same state.
 
 Persistence reconstructs retained milestone support, merging matching overlapping blocks and their
 signatures. It does not require skipped historical blocks. It stores final snapshot and full state,
@@ -85,6 +86,14 @@ predecessor. A milestone crossing an anchor retains its verified suffix. Conflic
 or a failed payload check rejects the response. A window's inbound blocks are stored only when this
 request's own local reduction executed, since only that call checked them; no other window persists
 its inbound list, and chain events or chain-log recovery deliver its genuine blocks.
+
+`persistSyncPayload` runs under the state-manager mutex and aborts at mutex entry when the runtime
+is disposed. When this peer already holds the replay base or a later point on that fork, it keeps
+its local state and writes only the served history. A sync conflict found while staging or
+committing the verified history aborts persistence; `applySyncResponse` then blacklists the
+responder (`rejectSync`) and returns false. A persistence abort while the runtime is disposed
+returns false with no `rejectSync`. A disposed runtime makes `applySyncResponse` return false at
+entry, with no verdict on the peer.
 
 ## 4. Failure and threat boundaries
 

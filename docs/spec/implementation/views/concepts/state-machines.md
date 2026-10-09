@@ -20,11 +20,12 @@ serialized bytes as opaque and restores them before replay. This preserves appli
 but makes deterministic encoding, complete mapping enumeration, and balance algebra explicit
 integrator obligations rather than properties the base class can prove.
 
-`peekNextToWrite` is implemented by saving the live state, installing supplied state, querying,
-and restoring the live state. The sequence currently has no `finally` restoration. If the query
-throws after temporary state is installed, the adapter can leave the live state replaced. That is
-an implementation-specific atomicity defect and must be fixed and tested independently of the
-protocol-level next-writer rule.
+`peekNextToWrite` is one simulated call of `AStateMachine.getNextToWriteOf(encodedState)`, which
+sets the supplied state and returns its next writer. The executor runs the call alone and reverts
+its state change, so the live state is never replaced, a failed read leaves nothing to restore, and
+callers such as the timeout audit in
+[DisputeValidationService](../../source/src/stateManager/dispute/DisputeValidationService.ts.md)
+need no lock.
 
 ### Validation and replay
 
@@ -38,7 +39,7 @@ design is one shared rule across both paths.
 
 The base contract owns dispatch and outbound-message buffering; the application owns admission,
 top-up, removal, slashing, and balance semantics. A join message is routed to `_joinChannel`, and
-all other message types are routed to the custom hook. Successful slashing and removal each record one exit message and return it. The dispute facet consumes only the returned exits; the SDK clears the buffer before its next state transition.
+all other message types are routed to the custom hook. Successful slashing and removal each record one exit message and return it. `_slashParticipant` must return true for every current participant, because dispute reduction joins the timeout target to the removals only when no slash took effect; a machine that returns false for a present participant also removes the timeout target ([AStateMachine.sol.md](../../source/contracts/V1/AStateMachine.sol.md)). The dispute facet consumes only the returned exits; the SDK clears the buffer before its next state transition.
 
 The bundled Math state machine is useful as the repository's concrete executable integration, but
 it implements only the simple `Balance.amount` model. It cannot establish correctness for custom
@@ -54,7 +55,7 @@ ambient EVM context. There is currently no static enforcement for that restricti
 
 ## INTEGRATION-TEST-SM-1-5QXMFK
 
-- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX` (Author = _tx.header.participant, time = _tx.header.timestamp)](../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`REQ-SM-1-Y72CKX.T1`](../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx.t1)
 - Setup: Drive one transition through `StateManager`, the EVM adapter, the application contract, state persistence, and block-result construction without crossing a peer or base-layer boundary.
 - Oracle: The subsystem commits exactly the contract result and ordered outbound messages; rejection advances no state, queue, or snapshot.
@@ -68,7 +69,7 @@ ambient EVM context. There is currently no static enforcement for that restricti
 
 ## INTEGRATION-TEST-SM-2-BD2TK6
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1), [`REQ-SM-2-PHCRFR.T1`](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr.t1), [`REQ-SM-4-Z32M0W.T1`](../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w.t1)
 - Setup: Move serialized state among the live adapter, state storage, temporary next-writer inspection, and the separate replay instance.
 - Oracle: Each consumer sees identical bytes and logical state; temporary and replay work cannot mutate the live instance.
@@ -113,7 +114,7 @@ ambient EVM context. There is currently no static enforcement for that restricti
 
 ## INTEGRATION-TEST-SM-5-W15FWG
 
-- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 - Setup: Process an inbound join/custom message through state-manager selection, adapter dispatch, application mutation, persistence, and snapshot construction.
 - Oracle: Membership, balance, state bytes, and inbound cursor advance together exactly once.

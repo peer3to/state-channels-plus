@@ -71,11 +71,9 @@ export default class ParticipantTimeoutService {
             return;
         }
 
-        // if a block exist in storage (regardless of own signature on it) -> it was accepted
-        const block = sm.storage.blocks.getBlock(forkId, blockHeight);
-        if (block) {
-            return;
-        }
+        // a stored block at this height (own signature or not) was accepted;
+        // a sync that installed a later state skipped it
+        if (!(await this.isNextHeight(forkId, blockHeight))) return;
 
         const previousBlockOrSnapshot = sm.storage.getPreviousBlockOrSnapshot({
             forkId,
@@ -304,6 +302,33 @@ export default class ParticipantTimeoutService {
         );
     }
 
+    /**
+     * Linkage: a timeout names the height right after the latest state this
+     * node holds. Read under the state mutex, so an install in flight
+     * completes first.
+     */
+    private isNextHeight(
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): Promise<boolean> {
+        return this.stateManager.withMutex(
+            () => this.isNextHeightUnsafe(forkId, blockHeight),
+            { taskName: "timeout height check" }
+        );
+    }
+
+    /** Caller holds the state mutex. */
+    private isNextHeightUnsafe(
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): boolean {
+        const sm = this.stateManager;
+        return (
+            sm.isActiveFork(forkId) &&
+            sm.storage.blocks.getNextBlockHeight(forkId) === blockHeight
+        );
+    }
+
     private scheduleTimeoutParticipantRetry(
         forkId: ForkId,
         blockHeight: BlockHeight,
@@ -349,7 +374,7 @@ export default class ParticipantTimeoutService {
         }
         const isWritersTurn = await sm.withMutex(
             async () =>
-                sm.storage.blocks.getNextBlockHeight(forkId) === blockHeight &&
+                this.isNextHeightUnsafe(forkId, blockHeight) &&
                 (await sm.diamondStateMachine.getNextToWrite()) ===
                     participantAddress,
             { taskName: "forced timeout writer check" }
@@ -416,14 +441,17 @@ export default class ParticipantTimeoutService {
             timeout
         );
 
-        if (
-            !sm.isActiveFork(forkId) ||
-            sm.storage.blocks.getBlock(forkId, blockHeight)
-        )
-            return;
-
-        // persist timeout locally
-        sm.storage.timeout.storeTimeout(forkId, timeout);
+        // persist timeout locally, unless a block or an installed later state
+        // passed this height during construction
+        const stored = await sm.withMutex(
+            () => {
+                if (!this.isNextHeightUnsafe(forkId, blockHeight)) return false;
+                sm.storage.timeout.storeTimeout(forkId, timeout);
+                return true;
+            },
+            { taskName: "timeout store" }
+        );
+        if (!stored) return;
 
         // Time has fully elapsed - create dispute immediately
         await sm.disputeManager.dispute(forkId);

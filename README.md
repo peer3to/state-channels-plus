@@ -12,6 +12,7 @@ We recommend waiting for the Full Feature Set before using it in production.
   - [Videos](#videos)
   - [Installation](#installation)
   - [Getting Started](#getting-started)
+    - [Upgrade notes](#upgrade-notes)
   - [Examples](#examples)
   - [Configuration](#configuration)
   - [Run Tests](#run-tests)
@@ -53,6 +54,10 @@ The implemented contract executes p2p with shared security enforced by a blockch
 The TypeScript part of the SDK currently builds on top of [ethers](https://github.com/ethers-io/ethers.js).
 
 The SDK abstracts away most of the complexities of the system and is designed to have the same development experience as if the contracts were executing on-chain. It takes an ethers contract instance and enshrines it during [setup](./src/evm/EvmStateMachine.ts#L205). The enshrined contract has the same type and functionality as the original contract, but it executes p2p. The setup also wraps the ethers signer by giving it more functionality that's used within the system.
+
+### Upgrade notes
+
+- State-machine diamonds MUST route `getNextToWriteOf(bytes)` from `AStateMachine` to the state-machine facet. It sets the given state, so call it only as a simulated call (`eth_call`). The SDK uses it to read the next writer of a given state. An unrouted selector makes every timeout audit throw.
 
 ## Examples
 
@@ -334,8 +339,9 @@ without writing if the cache is missing or either file cannot be read.
 To correct a test's cost by hand, add it to the optional
 `test-costs.overrides.json`, keyed by
 `runner|file|full title`, e.g.
-`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
-are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run
+`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4, "comment": "why" } }`;
+the fields are `durationMs`, `cores` and `rssGb`, plus an optional string
+`comment` that records why the cost is set by hand. An invalid overrides file fails the run
 before anything is built, in either schedule. The defaults are placeholders in
 `scripts/e2e-parallel/shared/constants.js`, to be tuned from
 `run-metrics.json`. Workers on protocol 13/14 keep the old admission.

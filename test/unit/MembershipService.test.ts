@@ -156,8 +156,9 @@ describe("Unit: MembershipService", function () {
         );
         expect(observed.result).to.equal(SourceEligibility.ABSENT);
         expect(observed.reads.chainReads).to.equal(1);
-        // Snapshot event processing checks local participation after updating the mirrors.
-        expect(observed.reads.localMembershipReads).to.equal(1);
+        // The replayed snapshot lists this signer, so its event processing
+        // reads no local participation.
+        expect(observed.reads.localMembershipReads).to.equal(0);
     });
 
     it("concurrent cache misses share one refresh and decide from chain membership", async () => {

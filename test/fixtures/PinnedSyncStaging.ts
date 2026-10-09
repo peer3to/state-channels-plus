@@ -20,23 +20,11 @@ export async function assertComputedSuccessorSync(
         at: "setState"
     });
     try {
-        await h.control(source).stub.startTryReduce(sourceForkId).request();
-        await waitFor(async () => (await hold.entered()) === 1);
-        const successor = await h.execOnHost(
+        const successor = await holdComputedSuccessor(
+            h,
             source,
-            async (sm, { forkId }) => {
-                const disputes = await sm.agreementManager.getForkDisputes(
-                    (await sm.eventSyncService.loadSynchronizedWindowCommitments(
-                        sm.channelId,
-                        forkId
-                    ))!
-                );
-                return (await sm.reductionManager.computeReductionLocally(
-                    forkId,
-                    disputes
-                ))!.reducedForkId;
-            },
-            { forkId: sourceForkId }
+            sourceForkId,
+            hold
         );
         expect(
             await h.execOnHost(
@@ -79,6 +67,262 @@ export async function assertComputedSuccessorSync(
         ).to.equal(false);
     } finally {
         await hold.release();
+    }
+}
+
+/**
+ * Start `source`'s reduction of `forkId` with its genesis application held
+ * at `setState`, and return the successor fork it computed: `source` serves
+ * that fork without having installed it.
+ */
+async function holdComputedSuccessor(
+    h: MathPeerTestHarness,
+    source: ReturnType<MathPeerTestHarness["getPeer"]>,
+    forkId: ForkId,
+    hold: { entered: () => Promise<number> }
+): Promise<ForkId> {
+    await h.control(source).stub.startTryReduce(forkId).request();
+    await waitFor(async () => (await hold.entered()) === 1);
+    return await h.execOnHost(
+        source,
+        async (sm, args) => {
+            const disputes = await sm.agreementManager.getForkDisputes(
+                (await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                    sm.channelId,
+                    args.forkId
+                ))!
+            );
+            return (await sm.reductionManager.computeReductionLocally(
+                args.forkId,
+                disputes
+            ))!.reducedForkId;
+        },
+        { forkId }
+    );
+}
+
+/**
+ * The observer syncs onto a successor fork and a read of its install fails
+ * after the VM write: the sync throws, and none of the payload's history is
+ * stored, the VM keeps its state and the fork stays.
+ */
+export async function assertFailedSyncInstallPersistsNothing(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const source = h.getPeer(0);
+    const observer = h.getPeer(2);
+    const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
+        outcome: "hold",
+        at: "setState"
+    });
+    try {
+        const successor = await holdComputedSuccessor(
+            h,
+            source,
+            sourceForkId,
+            hold
+        );
+        const outcome = await h.execOnHost(
+            observer,
+            async (sm, args) => {
+                const application = sm.stateApplicationService;
+                const machine = sm.diamondStateMachine;
+                const install = application.unsafeSetLatestState;
+                const read = machine.getNextToWrite;
+                let installing = false;
+                application.unsafeSetLatestState = async (...parameters) => {
+                    installing = true;
+                    try {
+                        return await install.apply(application, parameters);
+                    } finally {
+                        installing = false;
+                    }
+                };
+                machine.getNextToWrite = async () => {
+                    if (installing)
+                        throw new Error("Injected install read failure");
+                    return await read.call(machine);
+                };
+                const stateBefore = String(await machine.getState());
+                let threw = "";
+                try {
+                    await sm.p2pManager.localRpc.spectateService.sync(
+                        args.source,
+                        sm.channelId,
+                        args.forkId
+                    );
+                } catch (error) {
+                    threw = String(error);
+                } finally {
+                    application.unsafeSetLatestState = install;
+                    machine.getNextToWrite = read;
+                }
+                return {
+                    threw,
+                    forkId: sm.forkId,
+                    vmRestored:
+                        String(await machine.getState()) === stateBefore,
+                    successorGenesisStored:
+                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            args.successor
+                        ) !== undefined
+                };
+            },
+            {
+                source: source.address,
+                forkId: sourceForkId,
+                successor
+            }
+        );
+        expect(outcome).to.deep.equal({
+            threw: "Error: Injected install read failure",
+            forkId: sourceForkId,
+            vmRestored: true,
+            successorGenesisStored: false
+        });
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(source.address)
+                .request()
+        ).to.equal(false);
+    } finally {
+        await hold.release();
+    }
+}
+
+/**
+ * The observer's sync onto the successor is held at its install entry while
+ * a successor block, authored after the payload was served, waits in its
+ * queue. The block's queue timeout runs inside that window and must see an
+ * unknown fork (probe), not a known stale one (silent drop): no successor
+ * history is visible before the fork swap. After the install the probe
+ * stores the block on the successor.
+ */
+export async function assertQueuedSuccessorBlockSurvivesSyncInstall(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const source = h.getPeer(0);
+    const followers = [h.getPeer(2), h.getPeer(3)];
+    const races = await Promise.all(
+        followers.map((peer) => h.rpcStub.holdReductionRace(peer.index))
+    );
+    const reduce = async (peer: typeof source) => {
+        await h.control(peer).stub.startTryReduce(sourceForkId).request();
+        await waitFor(
+            async () =>
+                (await h.control(peer).query.getForkId().request()) !==
+                sourceForkId
+        );
+    };
+    await reduce(source);
+    const successor = await h.control(source).query.getForkId().request();
+    const writerAddress = await h
+        .control(source)
+        .query.getNextToWrite()
+        .request();
+    const writer = [source, ...followers].find(
+        (peer) => peer.address === writerAddress
+    );
+    // premise: an honest peer writes the successor's first block
+    expect(writer, "successor writer").to.not.be.undefined;
+    if (writer !== source) await reduce(writer!);
+    // the observer stays on the source fork until its sync
+    const observer = followers.find((peer) => peer !== writer)!;
+    const stub = h.control(observer).stub;
+    const recovery = await h.rpcStub.holdScheduledTasks(
+        observer.index,
+        "BlockQueueManager.runForkRecovery"
+    );
+    const timeouts = await h.rpcStub.holdScheduledTasks(
+        observer.index,
+        "BlockQueueManager.queueTimeout"
+    );
+    try {
+        await stub.holdSyncInstall().request();
+        const sync = h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
+            { source: source.address, forkId: sourceForkId }
+        );
+        await waitFor(
+            async () => (await stub.getSyncInstallEntered().request()) === 1
+        );
+        await h.transition.submit(writer!, (contract) => contract.add(1), {
+            waitForTurn: true,
+            waitForSync: false
+        });
+        let blockHash: string | null = null;
+        await waitFor(async () => {
+            blockHash = await h
+                .control(writer!)
+                .query.getBlockHashAt(successor, 0)
+                .request();
+            return (
+                blockHash !== null &&
+                (await h
+                    .control(observer)
+                    .query.isBlockQueued(blockHash)
+                    .request())
+            );
+        });
+        // each copy of the block re-arms its timeout: every arm is held
+        await waitFor(async () => (await timeouts.heldCount()) > 0);
+
+        // the queue timeout runs while the install is held
+        await timeouts.release(true);
+        await waitFor(
+            async () =>
+                (await h.execOnHost(
+                    observer,
+                    async (sm) => sm.blockQueueManager["inFlight"].size
+                )) > 0
+        );
+        expect(
+            await h.execOnHost(
+                observer,
+                async (sm, args) => ({
+                    forkId: sm.forkId,
+                    knownStale: await sm.validationService.isKnownStaleFork(
+                        args.successor
+                    )
+                }),
+                { successor }
+            )
+        ).to.deep.equal({ forkId: sourceForkId, knownStale: false });
+
+        await stub.releaseSyncInstall().request();
+        expect(await sync).to.equal(true);
+        await waitFor(
+            async () =>
+                (await h
+                    .control(observer)
+                    .query.getBlockByHash(blockHash!)
+                    .request()) !== null
+        );
+        expect(await h.control(observer).query.getForkId().request()).to.equal(
+            successor
+        );
+        for (const peer of [source, writer!])
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(peer.address)
+                    .request()
+            ).to.equal(false);
+    } finally {
+        await stub.releaseSyncInstall().request();
+        await timeouts.release(false);
+        await recovery.release(false);
+        for (const race of races)
+            await race.release({ replayEvents: false, keepTasksHeld: true });
     }
 }
 
@@ -650,5 +894,86 @@ export async function applySyncPayloadServedBeforeAdoption(
         };
     } finally {
         await stub.restoreRecordedSyncRejections().request();
+    }
+}
+
+/**
+ * A follower stays on the disputed source fork while the source peer serves
+ * the successor. The follower's sync onto the successor is held at its
+ * install entry, and a timeout check for the follower's next source-fork
+ * height fires in that window: it waits for the install on the state mutex.
+ * After the install the source fork is no longer active, so the check
+ * stores no timeout and submits nothing.
+ */
+export async function assertTimeoutCheckWaitsForSyncInstall(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const source = h.getPeer(0);
+    const followers = [h.getPeer(2), h.getPeer(3)];
+    const races = await Promise.all(
+        followers.map((peer) => h.rpcStub.holdReductionRace(peer.index))
+    );
+    await h.control(source).stub.startTryReduce(sourceForkId).request();
+    await waitFor(
+        async () =>
+            (await h.control(source).query.getForkId().request()) !==
+            sourceForkId
+    );
+    const { height, writer } = await h.execOnHost(followers[0], async (sm) => ({
+        height: sm.storage.blocks.getNextBlockHeight(sm.forkId),
+        writer: await sm.diamondStateMachine.getNextToWrite()
+    }));
+    // the check judges another participant
+    const observer = followers.find((peer) => peer.address !== writer)!;
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    const stub = h.control(observer).stub;
+    try {
+        await stub.holdSyncInstall().request();
+        const sync = h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
+            { source: source.address, forkId: sourceForkId }
+        );
+        await waitFor(
+            async () => (await stub.getSyncInstallEntered().request()) === 1
+        );
+        const waiting = await stub.getStateMutexWaiterCount().request();
+        const check = h.execOnHost(
+            observer,
+            (sm, args) =>
+                sm.participantTimeoutService["tryTimeoutParticipant"](
+                    args.forkId,
+                    args.height,
+                    args.writer
+                ),
+            { forkId: sourceForkId, height, writer },
+            { timeoutMs: h.event.hostExecTimeoutMs() }
+        );
+        // the check waits for the held install on the state mutex
+        await waitFor(
+            async () =>
+                (await stub.getStateMutexWaiterCount().request()) > waiting
+        );
+        await stub.releaseSyncInstall().request();
+        expect(await sync).to.equal(true);
+        await check;
+        expect(
+            await h.control(observer).query.getForkId().request()
+        ).to.not.equal(sourceForkId);
+        expect(await recorder.submissions()).to.deep.equal([]);
+        expect(
+            await h.control(observer).query.getTimeout(sourceForkId).request()
+        ).to.equal(null);
+    } finally {
+        await stub.releaseSyncInstall().request();
+        await recorder.restore();
+        for (const race of races)
+            await race.release({ replayEvents: false, keepTasksHeld: true });
     }
 }

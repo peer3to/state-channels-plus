@@ -80,8 +80,9 @@ participation.
 4. **Assemble the payload:** the target fork's genesis snapshot and encoded genesis state; the
    linked outbound message-block range from the on-chain tip to that genesis; a state proof
    (milestones containing finality evidence and the last milestone's tail) up to the target height; the latest
-   finalized encoded state; and the outbound range from fork genesis to the latest finalized
-   snapshot. A height above the responder's provable latest is unprovable — never silently
+   finalized encoded state; and the latest-fork outbound range to the latest finalized snapshot,
+   starting at the responder's view of the on-chain snapshot when that snapshot is on the target fork
+   and at the fork genesis otherwise. A height above the responder's provable latest is unprovable — never silently
    substituted with a different height.
 5. **Refuse explicitly** when any element cannot be produced; otherwise return the payload in the
    canonical encoding.
@@ -98,8 +99,8 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
    window. Initial channel loading explicitly supplies two windows. Payload application adds no
    second round-trip deadline.
 3. **Anchor on chain truth.** Fetch the current on-chain snapshot through the requester's own chain
-   view. Fork lineage is anchored there; same-fork proof and latest-fork outbound checks may use a newer
-   trusted final start established by the verification tiers.
+   view. Fork lineage and the latest-fork outbound range are anchored there; same-fork proof checks
+   may use a newer trusted final start established by the verification tiers.
 4. **Verify the fork lineage.** The claimed dispute windows must form one unbroken chain: the
    first on the anchor's fork, each later one on the fork the previous window reduced to. A
    responder whose view lags the chain may lead with windows the chain already adopted. Such a
@@ -123,8 +124,11 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
    the requester's own final point or newer. A proof ending below that point is rejected and the
    responder blacklisted under the current policy. The policy for honest stale responders remains
    open. Empty proofs claim genesis; a proof claiming the anchor itself contains its block.
-7. **Verify the outbound ranges** linking on-chain tip → fork genesis → latest finalized snapshot; on the proven fork
-   the latest-fork range starts at the successful trusted start selected by finality verification.
+7. **Verify the outbound ranges** linking on-chain tip → fork genesis → latest finalized snapshot. The
+   latest-fork range starts at the on-chain snapshot when it is on the target fork, else at the fork
+   genesis; served blocks below that start are dropped. Only blocks above the on-chain snapshot are
+   retained: later snapshot posts and disputes carry nothing below it, and it only moves forward.
+   An on-chain snapshot above the installed state leaves nothing to retain.
 8. **Check dispute status.** Latest-mode: the target fork must not be disputed on-chain.
    Pinned-mode: prove the pinned fork or a successor whose verified reduction lineage contains the pinned fork.
 9. **Verify finality.** Try the latest local final state, local mirror, then chain. Missing or
@@ -137,15 +141,19 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
     deposits and withdrawals — the defense that even a unanimous colluding participant set cannot
     make a newcomer adopt an undercollateralized snapshot
     ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §6).
-11. **No adoption is simulated.** Verification is historic: finality uses the successful trusted start from step 9; latest-fork outbound blocks
-    use that same trusted start, while cross-fork evidence remains anchored to the chain. Skipped history is not rechecked. For a
+11. **No adoption is simulated.** Verification is historic: finality uses the successful trusted start from step 9; outbound blocks, latest-fork
+    and cross-fork, remain anchored to the chain. Skipped history is not rechecked. For a
     pinned request, a dispute landing after the proof was served does not change what it proves. A latest-mode request
     still aborts at step 8 when the final fork is disputed by then
     . A responder answers with the latest
     provable state.
 12. **Persist** the verified payload atomically through the storage system
-    ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
-    any conflict with locally finalized blocks. After a different fork is successfully installed,
+    ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)). When local knowledge already holds the
+    installed point or a later one on the same fork, the local state is kept and only the verified
+    served history is stored. Otherwise the installed state and the served history become visible in
+    one step. Abort on any conflict with locally stored blocks, whether it is found before the install
+    or appears between preparing the install and making it visible; an abort found that late restores
+    the prior state, and nothing of the payload is published. After a different fork is successfully installed,
     terminate pending normal reduction work for the fork left behind without an outcome, as required by
     [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa).
     This lineage verification remains separate from normal reduction; it does not supply that operation's
@@ -156,7 +164,7 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
     older than one window still applies (a recovering participant's replay is judged the same way).
 14. **Pinned-height completion.** In pinned mode the proof must reach at least the requested height. The height applies only when the pinned fork itself is proved; a verified successor need not carry the old fork's requested height.
 
-**Failure semantics.** Invalid peer evidence returns `false` with the specified peer consequence. Internal execution, required-state and RPC failures are logged and propagated as fatal errors; they are not proof verdicts. The initial-load caller aborts an uncommitted runtime. Exact block recovery keeps the
+**Failure semantics.** Invalid peer evidence returns `false` with the specified peer consequence. Internal execution, required-state and RPC failures are logged and propagated as fatal errors; they are not proof verdicts. A requester that stops while a response is being applied installs nothing and records no verdict against the responder. The initial-load caller aborts an uncommitted runtime. Exact block recovery keeps the
 established runtime and applies its existing queue recovery. The sync service does not choose
 between those consequences.
 
@@ -191,6 +199,7 @@ to its queue owner without disposing a synchronized observer.
 | Responder | Cannot prove target (lagging, unknown fork, above-latest height) | Explicit refusal. Whether refusal may carry a penalty for the _requester_ is an open decision — see [Security considerations](#security-considerations).                                                                                             |
 | Requester | Transport failure, timeout, or refusal                           | Sync fails; the selected peer takes a counted close under [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j): honest peers observe the same reality within agreementTime, but silence or refusal is not proof, so no verdict is recorded below the bound. |
 | Requester | Any verification failure (steps 1–11, 13–14)                     | Abort: full stop for a fresh spectator, peer cut for a recovering participant; the failed payload is Byzantine evidence against the responder.                                                                                                       |
+| Requester | Persistence conflict at step 12                                  | Abort; the local state is kept or restored and no served history is stored. The payload is treated as a verification failure, so the responder is blacklisted and cut, even when the conflicting local block was stored by another path.             |
 | Requester | Proof endpoint below local final state                           | Reject and blacklist under the current too-old sync policy; an earlier start with a sufficiently new endpoint remains acceptable.                                                                                                                    |
 
 ## Requirements and invariants

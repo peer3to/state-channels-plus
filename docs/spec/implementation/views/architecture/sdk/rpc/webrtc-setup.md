@@ -20,7 +20,7 @@ Code (paths relative to this file; repo root = `../../../../../`):
 - [src/rpc/network/services/WebRTCSetup/connection](../../../../../../../src/rpc/network/services/WebRTCSetup/connection)
   (`WebRTCConnectionFactory`, `LocalWebRTCConnectionFactory`, worker-bridge factory, provider)
 - [src/transport/WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts#L1)
-- callers / consumers: [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L4)
+- callers / consumers: [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L466)
   (`initiateWebRTC` trigger), [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1),
   [src/ProfileManager.ts](../../../../../../../src/ProfileManager.ts#L1)
 
@@ -34,7 +34,7 @@ authenticated, the node can attempt a **direct** peer-to-peer WebRTC data channe
 onto it. `WebRTCSetupService` carries the SDP offer/answer and ICE-candidate signaling for that
 negotiation; the resulting `RTCDataChannel` is wrapped in a `WebRTCTransport`, which then runs its own
 handshake and, on completion, replaces the old transport in the peer's profile
-([`ProfileManager.updateTransport`](../../../../../../../src/ProfileManager.ts#L44), [./README.md](./README.md)
+([`ProfileManager.updateTransport`](../../../../../../../src/ProfileManager.ts#L162), [./README.md](./README.md)
 §6.8).
 
 `PeerProfile` keeps the bootstrap handle from transport creation through authentication and cutover, while `ProfileManager` owns
@@ -48,7 +48,7 @@ Transport preference does not define authentication. During the upgrade grace wi
 new open transports that completed their own handshake may carry guarded RPCs until retirement.
 
 Position: strictly **after** authentication. The service carries a `HandshakeCompletedGuard`
-([`WebRTCSetupService` constructor](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts#L1)
+([`WebRTCSetupService` constructor](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts#L45)
 line 45), so every remote signaling method is refused unless the sender transport already maps to a
 completed `PeerProfile`. The upgrade is _initiated_ from
 [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L409):
@@ -65,7 +65,7 @@ simply keeps using its existing transport. That framing is why every failure is 
 
 | State                                 | Where                          | Written / read                                                                                                     | Lifetime / cleanup                                                                                                                                                                                                                                                                 |
 | ------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connectionFactory`                   | `WebRTCSetupService`           | lazily created on first offer/answer/ICE (`getConnectionFactory`)                                                  | service-owned factory; the RuntimeHost supplies its independent fallback bridge, otherwise native `LocalWebRTCConnectionFactory` is loaded ([`createWebRTCConnectionFactory`](../../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts#L6)) |
+| `connectionFactory`                   | `WebRTCSetupService`           | lazily created on first offer/answer/ICE (`getConnectionFactory`)                                                  | service-owned factory; the RuntimeHost supplies its independent fallback bridge, otherwise native `LocalWebRTCConnectionFactory` is loaded ([`createWebRTCConnectionFactory`](../../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts#L5)) |
 | `connectionMap`                       | `LocalWebRTCConnectionFactory` | `Map<checksumAddress, RTCPeerConnection>`                                                                          | **strong** map keyed by EVM address; an entry is replaced (old one `close()`d) when a new offer/answer for the same address arrives, and deleted by `close(peerAddress)`. Leaks if `close` is never reached (§4.4).                                                                |
 | per-connection callbacks              | created per `createConnection` | `onIceCandidate` / `onDataChannel` / `onConnectionStateChange` / `onError` closures bound to a fixed `peerAddress` | live for the `RTCPeerConnection` lifetime                                                                                                                                                                                                                                          |
 | `WebRTCTransport.pendingOutboundRpcs` | `WebRTCTransport`              | buffered sends before the channel opens; flushed on open, cleared on close                                         | per transport                                                                                                                                                                                                                                                                      |

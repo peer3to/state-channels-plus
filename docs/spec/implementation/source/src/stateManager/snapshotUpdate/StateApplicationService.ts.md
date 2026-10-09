@@ -7,6 +7,7 @@
 - [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
 - [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
+  Partial: the staged install writes the candidate into the VM before its commit, so a reader outside the state mutex can see the new VM state together with the old fork ([`FIND-STATE-2-4BH3Y1`](../../../../../audit/open-findings.md#find-state-2-4bh3y1)).
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 
 ## UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR
@@ -31,3 +32,4 @@ Canonical snapshot application
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P13` — successful same-fork snapshot replacement publishes its participant set atomically
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P14` — failed snapshot inspection restores the VM without publishing eligibility
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P15` — failed chain membership inspection restores VM state without publishing storage, fork or eligibility
+- [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P18` — a sync install whose commit callback throws after the VM write restores the VM to the pre-install state, keeps the fork and stored state, and rethrows the error

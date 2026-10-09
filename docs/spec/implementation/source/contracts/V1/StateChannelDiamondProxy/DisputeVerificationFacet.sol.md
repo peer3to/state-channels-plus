@@ -8,12 +8,13 @@
 
 - [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../../../../../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt)
 - [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../../../../../specification/disputes/disputes.md#req-dis-4-6j6yyg)
-- [`INV-DIS-7-9GGZSD` (In a fork whose reduction contains any on-chain slashes, timeout removal is not…)](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
+- [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)
 - [`INV-DIS-8-1GY6Q5` (A fork applies at most one timeout, targeting the participant at the lowest…)](../../../../../specification/disputes/disputes.md#inv-dis-8-1gy6q5)
   Contradicts: Empty-timeout struct (height 0) suppresses real timeouts. Slash-carrying case intended (slash precedence, decision 2026-08-14); slash-free case still cancels order-dependently — open per [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../../../../../specification/open-questions.md#oq-9-xr1mfs).
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
+  Partial: `reduceAndFinalize` checks no eligibility, so anyone can reduce; only `challengeDisputeReduction` admits by bounded chain eligibility. Who may reduce is open per [`OQ-27-GT4W09` (Reducer eligibility is disabled)](../../../../../specification/open-questions.md#oq-27-gt4w09).
 - [`INV-MSG-6-1C22RD` (Balance invariant)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-6-1c22rd)
 - [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 - [`REQ-MSG-11-VS3ZGC` (A deposited-but-unincluded joiner MUST be able to force inclusion via the…)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc)
@@ -26,6 +27,7 @@
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 - [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical…)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
+- [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
 
 ## UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3
 
@@ -42,7 +44,7 @@ Reduction algebra
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P6` — order permutations (documents [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../verification/open-questions.md#oq-4-jgdcnx))
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P7` — idempotent finalize
 - [ ] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P8` — exact-set matching
-- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P9` — snapshot already past the slashed signer (bounded pending set empty) still folds its on-chain slash
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P9` — snapshot already past the slashed signer still folds its on-chain slash: the fold reads no participant set
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P10` — test_computeDisputeOutputState_absentSlashPreservesStateAndEmitsNoExit
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P11` — test_computeDisputeOutputState_absentRemovalPreservesStateAndEmitsNoExit
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P18` — a stale-admitted departed signer receives a real chain slash record; applying that recorded slash to absent local state preserves balances and emits no exit
@@ -54,6 +56,7 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P25` — an inbound message the state machine refuses during dispute output generation reverts naming its block and message index, participant, message type, and the hash of the state the walk was seeded with rather than the state reached by the preceding message
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P26` — a refused inbound message in a later block reverts naming a non-zero block index and a different non-zero message index, so the two indices cannot be swapped or confused, alongside its participant, message type and the seed state hash
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P27` — `challengeDisputeReduction` by an eligible participant after the reduce-challenge period ended reverts naming the computed period end and the strictly later call timestamp
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P28` — a child fork whose reduction sees the parent fork's already applied slash as a candidate plus a timeout removes the timed-out participant: the slashed signer is no participant of the child fork, so the slash is not applied and does not suppress the timeout
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 

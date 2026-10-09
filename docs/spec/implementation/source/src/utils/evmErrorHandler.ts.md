@@ -48,6 +48,10 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P30` — generated artifact inputs include every routed facet
 - [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P31` — a local revert as the local signer wraps it is an EVM execution failure
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P32` — an error without the revert marker is not an EVM execution failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P34` — a mined best-effort upload refused with no revert data (`0x`) is reasonless and takes the decoded refusal of the failed all-or-nothing estimate (the evidence race), so it is handled as that race
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P35` — a mined best-effort upload whose facet reverted without data, which the proxy reports as `Error("StateChannelManagerProxy - Delegatecall failed")`, is reasonless and takes the estimate refusal the same way
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P36` — the `MulticallLastCallFailed` revert data is read only from the manager's own receipt log with that topic, and a decoded custom error no handler takes is rethrown
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P37` — a reasonless refusal while the all-or-nothing estimate succeeded has no estimate refusal to take and is rethrown as "dispute upload reverted: 0x"
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W
 

@@ -12,9 +12,9 @@
 
 Implementation:
 [`StateTransitionService`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionService.ts#L7),
-[`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6).
-Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L66)
-via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L498).
+[`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L8).
+Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L69),
+called directly from [`StateTransitionRpcMethods.onBlockConfirmation`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L28).
 
 ## 1. Purpose & position in the protocol
 
@@ -29,11 +29,11 @@ Position in the flow:
 
 - **Sending side** (local, typed proxy — never through this service's handler): the success path
   gossips after persistence
-  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L483) step 7, only when
+  ([`BlockCommitService.success`](../../../../../../../src/stateManager/block/BlockCommitService.ts#L138) step 7, only when
   `PARTICIPATING` and not dispute replay), the stored-merge path re-broadcasts grown signature
-  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L483) →
+  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/ingest/StoredBlockMergeService.ts#L25) →
   `BROADCAST`), and the strategies re-broadcast on `goodNewSignaturesOnExistingBlock`
-  ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)).
+  ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L129)).
   All use `.broadcast()` — fire-and-forget to every open connection, no delivery receipt.
 - **Receiving side**: this service. It performs _no protocol validation of the payload itself_;
   it is deliberately a thin attribution-and-penalty shim in front of the pipeline. The
@@ -54,9 +54,9 @@ All state a frame touches lives downstream and is specified there:
 
 | State                                                         | Owner                                                                  | Written by                     | Spec                                                                            |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------- |
-| Retained entries, per-source N-value allowances, N-source cap | [`QueueStorage`](../../../../../../../src/storage/QueueStorage.ts#L27) | pipeline intake                | [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, §4 |
+| Retained entries, per-source N-value allowances, N-source cap | [`QueueStorage`](../../../../../../../src/storage/QueueStorage.ts#L68) | pipeline intake                | [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, §4 |
 | Stored blocks / merged signatures                             | [`BlockStorage`](../../../../../../../src/storage/BlockStorage.ts#L15) | pipeline merge/success         | ibid. §4.1, §8                                                                  |
-| Peer profiles, blacklist                                      | [`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7)      | this service's penalty mapping | [./README.md](./README.md) §8                                                   |
+| Peer profiles, blacklist                                      | [`ProfileManager`](../../../../../../../src/ProfileManager.ts#L24)     | this service's penalty mapping | [./README.md](./README.md) §8                                                   |
 
 Statelessness is load-bearing: the handler runs without the `StateManager` mutex
 ([./README.md](./README.md) §6.6, [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and can be dispatched concurrently for many frames;
@@ -75,7 +75,7 @@ Ordered stages, with the RPC-layer / pipeline split marked:
    guard exists: **any** handshake-authenticated identity, participant or not, may invoke this
    method (see §4.2, §4.7).
 2. **Sender attribution** _(RPC layer,
-   [`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6))_:
+   [`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L8))_:
    read `senderTransport.peerAddress` (written onto the transport by handshake completion). If
    absent — unreachable behind the guard, kept as a defensive check — `disconnectConnection(transport, DisconnectPolicy.BLACKLIST, "state transition from an unauthenticated sender")`
    and return. The addressless transport profile still records the verdict and bans its Holepunch
@@ -90,7 +90,7 @@ Ordered stages, with the RPC-layer / pipeline split marked:
    channel gate, disputed-fork gate, non-current-fork recovery scheduling, queueing with the
    fixed `firstSeenAt + agreementTime` lifetime and per-entry structural caps. Intake wraps all
    of this in a try/catch: any exception becomes a `false` verdict
-   ([`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L66),
+   ([`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L69),
    catch block) — decode failure is a handled protocol failure, never an escaping rejection.
 4. **Verdict-to-penalty mapping** _(RPC layer)_: the boolean keep-connection verdict is the
    pipeline's entire answer to the RPC layer.
@@ -225,7 +225,7 @@ at this ingress.
   supplier may be an honest straggler that has not yet observed the dispute. Escalation to
   punishment is **acknowledgment-aware** and happens at validation, not ingress: suppliers who
   previously acknowledged the dispute are **knowingly** building/relaying on a dead fork and
-  are cut ([`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220));
+  are cut ([`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L240));
   see [./is-fork-disputed.md](./is-fork-disputed.md) §5 for that evidence chain.
 - **Unknown fork:** queued; an admitted source uses the queue-timeout probe; a failed sync punishes the
   suppliers ([../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §4.2 — note
