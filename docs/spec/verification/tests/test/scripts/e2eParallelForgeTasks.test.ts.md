@@ -11,6 +11,7 @@ Checks Forge task discovery against the configured contract test inventory. This
 - `does not invoke Foundry when parity artifacts are cold`: none
 - `runs parity only when warm artifacts and Foundry are present`: none
 - `skips parity when Solidity sources are newer than Forge artifacts`: none
+- `skips parity when a Foundry test file was not built`: none
 - `discovers one task per Foundry test contract in the repository test tree`: none
 - `includes a test contract declared in a .test.sol file`: none
 - `skips harness contracts that declare no test function`: none
