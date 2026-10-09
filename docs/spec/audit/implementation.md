@@ -555,7 +555,7 @@ Construction starts from the mirrored chain anchor. Omission follows the empty-g
 milestone anchor/everyone rule. Reduction and committed-result validation retain their chain-owned
 computation. A different trusted start may skip older history; this is not proof that all auditors
 must check identical bytes. Concrete source owners and exact permutation evidence are linked from
-[state proofs](../implementation/views/protocol/state-proofs.md). The full source/test gate passed
+[disputes/state-proofs.md](../specification/disputes/state-proofs.md). The full source/test gate passed
 before documentation edits; individual Covers assignments still require semantic inspection.
 
 ## Signature-parity authentication, upfront replay funding, and local EVM call gas — 2026-09-27

@@ -13,7 +13,7 @@ so one oversize contract cannot hide another.
 ## Tests
 
 - `keeps every compiled production artifact within both deployment limits`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P1, REQ-CONTRACT-SIZE-1-881Q6E.T1.P1
-- `reports every production violation in one result`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9
+- `reports every production violation in one result`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9, REQ-CONTRACT-SIZE-1-881Q6E.T1.P11
 - `accepts 24,576 runtime bytes and rejects 24,577`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P2, REQ-CONTRACT-SIZE-1-881Q6E.T1.P2
 - `accepts 49,152 initcode bytes and rejects 49,153`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P3, REQ-CONTRACT-SIZE-1-881Q6E.T1.P3
 - `counts constructor arguments in full deployment initcode`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P4, REQ-CONTRACT-SIZE-1-881Q6E.T1.P4

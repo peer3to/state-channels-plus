@@ -16,6 +16,8 @@
 - [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
+  Contradicts: `fallback` delegatecalls every unregistered selector to the consumer facet, so its `deposit`/`withdraw` are externally callable ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)

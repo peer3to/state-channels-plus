@@ -19,4 +19,4 @@ grounded in the canonical Solidity predicates (no false kill on a field the path
 
 ## Tests
 
-- `no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof`: none
+- `no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof`: REQ-DISPUTE-PIPE-5-RZZB48.T1.P22

@@ -48,8 +48,8 @@ The two chain-final window cases lose participant 2's InboundMessagesProcessed d
 - `full-capacity insertion advances the turn without promoting a spectator`: REQ-SM-11-VVP01C.T1.P16
 - `should NOT allow spectate RPC before handshake completes`: INV-RPC-1-SJS2T6.T1.P3, INV-RPC-1-SJS2T6.T1.P6, UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P3, REQ-RPC-7-9CBSHK.T1.P4, INTEGRATION-TEST-RPC-2-PBZ4QY.P2, INTEGRATION-TEST-RPC-4-EXZ35F.P4
 - `should spectate successfully when on-chain snapshot is already on the same fork`: INV-SYNC-1-XCQZ28.T1.P2, UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P1, REQ-SYNC-1-T2589H.T1.P1, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P1, REQ-MSG-9-BFN9P5.T1.P1
-- `spectate atomic persistence and setState`: none
-- `skips latest state persistence when local storage is already ahead`: none
+- `spectate atomic persistence and setState`: INV-SYNC-3-A7A2ED.T1.P29
+- `skips latest state persistence when local storage is already ahead`: INV-SYNC-3-A7A2ED.T1.P30
 - `aborts spectating when a finalized sync block conflicts with storage`: INV-SYNC-3-A7A2ED.T1.P3
 - `should spectate successfully even when it must traverse forks (dispute -> reduced fork)`: none
 - `responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it`: INV-SYNC-1-XCQZ28.T1.P11
@@ -66,7 +66,7 @@ The two chain-final window cases lose participant 2's InboundMessagesProcessed d
 - `collapses two concurrent sync() calls for the same peer into a single on-the-wire request`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P6, INV-SPC-3-EP3TPG.T1.P1, REQ-RPC-4-9VX0B9.T1.P3, REQ-RPC-4-9VX0B9.T1.P8, INTEGRATION-TEST-RPC-6-009EGG.P9
 - `an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P3, UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P2, REQ-SYNC-1-T2589H.T1.P6
 - `serves the latest sync payload for minimum height 0 while ahead`: REQ-SYNC-1-T2589H.T1.P3, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2
-- `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7
+- `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17
 - `serves a newer sync payload across a leave above the minimum height`: REQ-SYNC-1-T2589H.T1.P5
 - `suppressed dispute event on the responder → the on-chain window is recovered and its successor is proved`: none
 - `a spectator sees posted junk calldata → no forced timeout check and it stays synced`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P19

@@ -673,6 +673,64 @@ test("a requirement defined outside the specification fails check", () =>
         );
     }));
 
+test("a requirement statement in a verification report fails check", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/verification/tests/test/notes.md",
+            `# notes\n\n**\`${local}\` — Local subject.** The local statement.\n`
+        );
+        const check = f.ids();
+        assert.notEqual(check.status, 0);
+        assert.match(
+            check.stderr,
+            new RegExp(
+                `verification/tests/test/notes\\.md:3: ${local} is defined outside specification/`
+            )
+        );
+    }));
+
+test("a requirement case bullet in a file report fails check", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/implementation/source/src/notes.ts.md",
+            `# notes.ts\n\n- \`${local}.T1.P1\` — orphan case\n`
+        );
+        const check = f.ids();
+        assert.notEqual(check.status, 0);
+        assert.match(
+            check.stderr,
+            new RegExp(`${local}\\.T1\\.P1 is defined outside specification/`)
+        );
+    }));
+
+test("a question defined at a heading gets an anchor and a glossed reference", () =>
+    fixture((f) => {
+        const question = "OQ-IMPL-FIX-1-AAAAA5";
+        const questions = "docs/spec/implementation/open-questions.md";
+        f.write(
+            questions,
+            `# Questions\n\n## ${question} — Question subject\n\nOpen.\n`
+        );
+        f.write(
+            "docs/spec/implementation/source/src/notes.ts.md",
+            `# notes.ts\n\nSee \`${question}\`.\n`
+        );
+        f.ids("--write");
+        assert.match(
+            f.read(questions),
+            new RegExp(
+                `<a id="${question.toLowerCase()}"></a>\\n\\n## ${question} — Question subject`
+            )
+        );
+        assert.match(
+            f.read("docs/spec/implementation/source/src/notes.ts.md"),
+            new RegExp(
+                `\\[\`${question}\` \\(Question subject\\)\\]\\(../../open-questions\\.md#${question.toLowerCase()}\\)`
+            )
+        );
+        assert.equal(f.ids().status, 0);
+    }));
+
 test("a wrapped untitled statement is labelled by its whole first clause", () =>
     fixture((f) => {
         const wrapped = "REQ-FIX-4-AAAAA5";

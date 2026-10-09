@@ -115,7 +115,7 @@ nor the specification says:
 A sentence that restates the code does not belong in this layer: no responsibility summaries,
 design decisions, input/output lists, assumptions, or related-file lists. Do not link source line
 anchors (`#L…`); name the function in backticks. Design, know-how and requirements live only in
-the specification; `yarn spec:ids:check` fails on a requirement defined anywhere else. A view's
+the specification; `yarn spec:ids:check` fails on a requirement defined in `implementation/` or `verification/`. A view's
 `## Gaps` bullet is a divergence no single file owns, in the file-report bullet shape. Cross-subsystem
 and E2E cases belong to verification. If a requirement is integrator-owned or cannot be enforced generically, say so in
 the divergence line.

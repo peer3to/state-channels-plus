@@ -76,16 +76,17 @@ chain storage is the proof of authenticity.
 - **Append.** Each base-layer deposit (open, join, top-up) appends one block whose parent is the
   current inbound tip, whose height is the tip height plus one, and whose `totalBalance` is the
   previous deposit total plus each message balance under the balance algebra. The block is
-  persisted, a duplicate block is rejected, and the chain's inbound tip and deposit total advance.
+  persisted, a duplicate block is rejected, and the chain's inbound tip and deposit total advance
+  ([`INV-MSG-1-36Y41Q`](cross-layer-messages.md#inv-msg-1-36y41q), [`INV-MSG-3-PCR3KT`](cross-layer-messages.md#inv-msg-3-pcr3kt)).
 - **Consumption.** The channel's processed inbound tip is the one committed by its latest snapshot.
   A block author packages the pending inbound range into its next channel block; applying the block
   applies each message in order and rolls the deposit total forward to the last packaged block's
   `totalBalance`.
 - **Validation.** Every validator checks that the packaged inbound blocks chain from the previous
   snapshot's inbound tip (a break is an invalid state transition) and that every packaged block is
-  persisted on chain (a fabricated block is provable fraud).
-- **Dispute anchor.** A dispute's claimed inbound tip must equal the chain's inbound head at upload,
-  in hash and height, so a committed dispute's tip is always an ancestor of (or equal to) the later
+  persisted on chain (a fabricated block is provable fraud) ([`REQ-MSG-3-YY569F`](cross-layer-messages.md#req-msg-3-yy569f)).
+- **Dispute anchor.** A dispute's claimed inbound tip equals the chain's inbound head at upload,
+  in hash and height ([`REQ-MSG-2-7YAD1A`](cross-layer-messages.md#req-msg-2-7yad1a)), so a committed dispute's tip is always an ancestor of (or equal to) the later
   chain tip.
 - **Pruning.** A snapshot advance deletes persisted inbound blocks from the new snapshot's tip
   backwards. Where the tip block itself is pruned, the deposit total at that tip is the snapshot's
@@ -111,9 +112,9 @@ established separately (finality proof or finalized reduction, §2).
 - **Duplicate skipping.** The already-processed prefix of a supplied range is dropped: blocks are
   discarded up to the first whose parent is the chain's processed tip. If nothing links to that tip,
   range verification decides; a fully processed range prunes to empty and verifies only when the
-  tips already match.
+  tips already match ([`REQ-MSG-4-SC1FEX`](cross-layer-messages.md#req-msg-4-sc1fex)).
 - **Processing.** Messages apply in order; an `EXIT` releases funds through the application's
-  withdrawal boundary. After each message `totalWithdrawals ≤ totalDeposits` must hold, then the
+  withdrawal boundary. After each message `totalWithdrawals ≤ totalDeposits` holds ([`INV-MSG-4-6E5G7V`](cross-layer-messages.md#inv-msg-4-6e5g7v)), then the
   withdrawal total and processed height advance and a withdrawal event is emitted. An outbound type
   other than `EXIT` is rejected and reverts the whole advance.
 
@@ -424,11 +425,11 @@ A claimed snapshot satisfies the invariant iff, under the application's balance 
    un-process a withdrawal the chain already paid out;
 4. `totalDeposits == totalWithdrawals + totalStateBalance(state)`, the invariant proper
    ([`INV-MSG-6-1C22RD`](cross-layer-messages.md#inv-msg-6-1c22rd)); the integrator supplies the
-   total state balance per balance model, and a composite or multi-asset model must make its balance
-   algebra encode the aggregate.
+   total state balance per balance model, and a composite or multi-asset model encodes the aggregate in
+   its balance algebra.
 
 Inputs are the snapshot data, its full encoded state, and inbound/outbound ranges connecting the
-snapshot's tips to the chain; the ranges must be verified before the invariant is evaluated. The
+snapshot's tips to the chain; the ranges are verified before the invariant is evaluated. The
 check needs only on-chain data plus those inputs, so any party can run it without trusting a
 participant ([`REQ-MSG-12-1RRB0W`](cross-layer-messages.md#req-msg-12-1rrb0w)).
 
@@ -437,8 +438,8 @@ participant ([`REQ-MSG-12-1RRB0W`](cross-layer-messages.md#req-msg-12-1rrb0w)).
 - A spectator checks the latest finalized snapshot before joining and aborts on failure.
 - A dispute whose proven latest finalized state violates the invariant is disproved by fraud proof
   and its disputer slashed.
-- Neither a base-layer snapshot update nor a join submission is required to check it; a joiner is
-  expected to have spectated first.
+- Whether a base-layer snapshot update or a join submission must also check it is undecided
+  ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx)); until then neither does, and a joiner is expected to have spectated first.
 
 ### 6.4 Verification
 

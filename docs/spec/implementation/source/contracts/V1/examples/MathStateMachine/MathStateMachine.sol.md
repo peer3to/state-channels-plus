@@ -5,7 +5,7 @@
 ## Requirements
 
 - [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
-- [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../../../../../../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
 - [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
@@ -124,7 +124,7 @@ Removal and slashing policy
 
 - Setup: Call `removeParticipant` and `slashParticipant` for a member before, at and after the current turn index, for a non-member, and twice for the same member.
 - Oracle: Removing a member returns `(true, exit)` with its balance, shifts later participants and balances down together, and decrements `currentTurnIndex` only when the removed index was before the turn; `slashParticipant` gives the same result as `removeParticipant`, and a non-member or second removal returns `false` and leaves `getState()` unchanged.
-- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-8-8CHSQ8` (Slashing a current participant MUST succeed)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [ ] `UNIT-TEST-SM-MATH-6-37SRDX.P1` — Existing-member removal adjusts the current index, returns the balance, and preserves aligned state

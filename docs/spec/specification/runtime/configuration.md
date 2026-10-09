@@ -46,7 +46,7 @@ numbers must parse to a finite number; string lists accept a JSON array of strin
 space-separated list; strings are taken as given. A value that does not coerce MUST NOT be guessed and
 does not replace the lower-precedence value.
 
-**<a id="req-cfg-3-9nknsv"></a>`REQ-CFG-3-9NKNSV` — Environment configuration is Node.js-only.** The host environment is a
+**<a id="req-cfg-3-9nknsv"></a>`REQ-CFG-3-9NKNSV` — Environment configuration only in Node hosts.** The host environment is a
 configuration source only in Node.js hosts; a browser host ignores it. Explicit overrides apply on both.
 
 **<a id="req-cfg-4-8chk0c"></a>`REQ-CFG-4-8CHK0C` — One resolved configuration per runtime.** A participant runtime MUST resolve

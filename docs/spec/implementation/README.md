@@ -18,11 +18,11 @@ this layer records only what neither the code nor the specification says.
 
 ## Layer structure
 
-| Location | Holds |
-| --- | --- |
-| `source/` | One report per production file under `src/` and `contracts/`, mirroring the repository layout with the source extension retained (`source/src/storage/QueueStorage.ts.md`). |
-| [views/](./views/) | `INTEGRATION-TEST-*` families and `Gaps` for flows that span several source files. Each names its specification owner. |
-| [open-questions.md](./open-questions.md) | Implementation-owned open decisions: mechanism, conformance, and platform choices. |
+| Location                                 | Holds                                                                                                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source/`                                | One report per production file under `src/` and `contracts/`, mirroring the repository layout with the source extension retained (`source/src/storage/QueueStorage.ts.md`). |
+| [views/](./views/)                       | `INTEGRATION-TEST-*` families and `Gaps` for flows that span several source files. Each names its specification owner.                                                      |
+| [open-questions.md](./open-questions.md) | Implementation-owned open decisions: mechanism, conformance, and platform choices.                                                                                          |
 
 ## File reports
 
@@ -72,7 +72,7 @@ the case IDs.
 A view holds only its `> **Specification subject:**` header, its `INTEGRATION-TEST-*` families and a
 `## Gaps` section: a divergence that no single file owns is a bullet there, in the same shape as a
 file report's requirement bullet. Design, know-how and requirements live only in the
-specification; `yarn spec:ids:check` fails on a requirement defined anywhere else.
+specification; `yarn spec:ids:check` fails on a requirement defined in `implementation/` or `verification/`.
 
 ## Tested status
 

@@ -29,12 +29,12 @@ honest skew, window edges) and malformed shapes that no test here drives.
 
 ## Tests
 
-- `should complete handshake successfully and create peer profile`: INV-AUTH-1-J0PRYA.T1.P1, UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P1
+- `should complete handshake successfully and create peer profile`: INV-AUTH-1-J0PRYA.T1.P1, UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P1, REQ-AUTH-3-ZV74KB.T1.P6, REQ-AUTH-6-E7SSH3.T1.P1, REQ-AUTH-1-RF901K.T1.P7
 - `should update existing profile transport on WebRTC upgrade`: UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P2, REQ-UPG-2-WH7BC7.T1.P1
-- `should suspend peer only once its handshake request time skew reaches the retry bound`: REQ-AUTH-4-JWCF71.T1.P4, REQ-AUTH-4-JWCF71.T1.P5
-- `should disconnect without punishing a peer that doesn't respond within agreementTime`: none
-- `should disconnect without punishing a peer whose handshake response time doesn't match init time`: none
-- `should blacklist peer answering with an undecodable (junk) signature`: none
+- `should suspend peer only once its handshake request time skew reaches the retry bound`: REQ-AUTH-4-JWCF71.T1.P4, REQ-AUTH-4-JWCF71.T1.P5, REQ-AUTH-6-E7SSH3.T1.P10
+- `should disconnect without punishing a peer that doesn't respond within agreementTime`: REQ-AUTH-6-E7SSH3.T1.P11, REQ-AUTH-4-JWCF71.T1.P8
+- `should disconnect without punishing a peer whose handshake response time doesn't match init time`: REQ-AUTH-6-E7SSH3.T1.P12, REQ-AUTH-4-JWCF71.T1.P9
+- `should blacklist peer answering with an undecodable (junk) signature`: REQ-AUTH-1-RF901K.T1.P6, REQ-AUTH-4-JWCF71.T1.P7
 - `should disconnect + blacklist a peer that sends a duplicate handshake ack`: REQ-AUTH-3-ZV74KB.T1.P2, REQ-RPC-4-9VX0B9.T1.P6, INTEGRATION-TEST-RPC-6-009EGG.P4
 
 Targeted setup uses detached connect dispatch and explicit terminal settlement. Initial-load evidence proves

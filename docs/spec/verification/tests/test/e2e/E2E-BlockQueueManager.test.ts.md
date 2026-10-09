@@ -72,6 +72,6 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `still recovers via local reduction when the raced block is on yet another unknown fork`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P20
 - `drains an early reduced-fork block once the fork transition catches up`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P4
 - `missing genesis: no proof to build, sources blacklisted, no dispute`: REQ-BLOCK-PIPE-8-N529VH.T1.P3
-- `present genesis: builds the WrongGenesis proof and disputes the fork`: none
-- `never validates an entry whose fork is not current`: none
+- `present genesis: builds the WrongGenesis proof and disputes the fork`: REQ-BLOCK-PIPE-8-N529VH.T1.P10
+- `never validates an entry whose fork is not current`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P7
 - `schedules the full window fresh, only the remainder after aging, and nothing at the deadline`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P2

@@ -8,30 +8,34 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                                                                                     | Question                                                                                                                          | Source          | Affected documents                                                                                                                                                                                    | Status                            |
-| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| [`OQ-13-FE5CT4`](open-questions.md#oq-13-fe5ct4)                                                       | State proofs reject the intended mixed shape (milestones + non-final suffix)                                                      | Code            | [protocol/state-proofs.md](../specification/disputes/state-proofs.md), [protocol/finality.md](../specification/protocol-model/finality.md)                                                            | Open                              |
-| [`OQ-14-5C8KV7`](open-questions.md#oq-14-5c8kv7)                                                       | `reduce()` timeout fold: a dispute without a timeout can suppress a real timeout                                                  | Code            | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                         | Resolved (implementation pending) |
-| [`OQ-15-2J4Y1Z`](open-questions.md#oq-15-2j4y1z)                                                       | Back-dated reduced-result timestamp makes `challengeDisputeReduction` unreachable                                                 | Code            | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                         | Open                              |
-| [`OQ-17-6Z5Q0J`](open-questions.md#oq-17-6z5q0j)                                                       | Proxy fallback exposes the consumer facet's `deposit`/`withdraw` externally                                                       | Code            | [contracts/state-machine-base.md](./views/architecture/contracts/state-machine-base.md)                                                                                                               | Open                              |
-| [`OQ-19-Y8FDQX`](open-questions.md#oq-19-y8fdqx)                                                       | Channel-balance invariant not enforced on snapshot update or join                                                                 | Code            | [protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                                                               | Open                              |
-| [`OQ-21-PEZK9X`](open-questions.md#oq-21-pezk9x)                                                       | `_tx.body` is never populated; no state-encoding version marker                                                                   | Code            | [concepts/state-machines.md](../specification/protocol-model/state-machines.md)                                                                                                                       | Partially resolved                |
-| [`OQ-22-99DDSZ`](open-questions.md#oq-22-99ddsz)                                                       | Inauthentic on-chain block calldata: escalation is signalled but no proof is built                                                | Code            | [sdk/block-confirmation-pipeline.md](./views/architecture/sdk/block-confirmation-pipeline.md), [security/open-security-review.md](../audit/security-assessment.md)                                    | Open                              |
-| [`OQ-23-SDBGYB`](open-questions.md#oq-23-sdbgyb)                                                       | SDK restart/recovery semantics: storage is fully in-memory                                                                        | Code            | [sdk/components.md](./views/architecture/sdk/components.md)                                                                                                                                           | Open                              |
-| [`OQ-24-A4XRTB`](open-questions.md#oq-24-a4xrtb)                                                       | `shouldSignBlock` refuses to sign an on-chain-posted block when the local node is next-to-write                                   | Code            | [protocol/finality.md](../specification/protocol-model/finality.md), [protocol/block-processing.md](../specification/block-progression/block-processing.md)                                           | Open                              |
-| [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr)                                                       | Minor SDK lifecycle races: TS snapshot-event ordering, kill/counter-dispute sequencing                                            | Code            | [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md) | Open                              |
-| [`OQ-30-2G0Q5M`](open-questions.md#oq-30-2g0q5m)                                                       | Chain-reorg handling and canonical per-channel event ordering in the SDK                                                          | Code            | [sdk/components.md](./views/architecture/sdk/components.md), [security/open-security-review.md](../audit/security-assessment.md)                                                                      | Open                              |
-| [`OQ-35-E5RRDF`](open-questions.md#oq-35-e5rrdf)                                                       | Handshake has no channel/identity binding — relay/reflection MITM; the signature is the whole root of trust                       | Code            | [sdk/rpc/handshake.md](./views/architecture/sdk/rpc/handshake.md), [security/trust-model.md](../specification/security/trust-model.md)                                                                | Open                              |
-| [`OQ-36-WEN9T1`](open-questions.md#oq-36-wen9t1)                                                       | `onDisputeAcknowledgmentRequest` never binds `channelId` to the local channel — cross-channel ack pollution and chain-read oracle | Code            | [sdk/rpc/is-fork-disputed.md](./views/architecture/sdk/rpc/is-fork-disputed.md)                                                                                                                       | Open                              |
-| [`OQ-37-0Y7YWS`](open-questions.md#oq-37-0y7yws)                                                       | Harness-control RPC root: unguarded, network-reachable, and published in the package                                              | Code            | [sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4, [security/open-security-review.md](../audit/security-assessment.md)                                      | Open                              |
-| [`OQ-38-1RBXV3`](open-questions.md#oq-38-1rbxv3)                                                       | Production transport deduplication during targeted derived-to-raw topic handoff lacks automated evidence                          | Code            | [targeted-channel-join.md](../specification/peer-communication/targeted-channel-join.md)                                                                                                              | Accepted evidence gap             |
-| [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062)   | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
-| [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                     | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
-| [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM`](open-questions.md#oq-impl-sync-boundary-1-4afpkm)                   | Same-fork outbound range in the sync payload                                                                                      | Code            | [synchronization.md](../specification/peer-communication/synchronization.md), [SpectateService](source/src/rpc/network/services/spectate/SpectateService.ts.md)                                       | Open                              |
-| [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs) | Earliest on-chain timestamp is not enforced in the block store                                                                    | Code            | [BlockStorage](source/src/storage/BlockStorage.ts.md), [QueueStorage](source/src/storage/QueueStorage.ts.md)                                                                                          | Open                              |
-| [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM`](open-questions.md#oq-impl-executor-drain-1-5d71ym)                 | Executor admission drain bound at shutdown                                                                                        | Engineer review | [Owner](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)                                                                                                              | Resolved                          |
-| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                                 | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
-| [`OQ-IMPL-CLOCK-1-R6W7FM`](open-questions.md#oq-impl-clock-1-r6w7fm)                                   | The runtime clock offset is taken once at host start, so runtimes started at different moments drift apart when chain time drifts | Code            | [Clock.ts.md](source/src/Clock.ts.md), [time.md](../specification/protocol-model/time.md)                                                                                                             | Open                              |
+| ID                                                                                                     | Question                                                                                                                          | Source          | Affected documents                                                                                                                                                                      | Status                            |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| [`OQ-13-FE5CT4`](open-questions.md#oq-13-fe5ct4)                                                       | State proofs reject the intended mixed shape (milestones + non-final suffix)                                                      | Code            | [protocol/state-proofs.md](../specification/disputes/state-proofs.md), [protocol/finality.md](../specification/protocol-model/finality.md)                                              | Open                              |
+| [`OQ-14-5C8KV7`](open-questions.md#oq-14-5c8kv7)                                                       | `reduce()` timeout fold: a dispute without a timeout can suppress a real timeout                                                  | Code            | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                           | Resolved (implementation pending) |
+| [`OQ-15-2J4Y1Z`](open-questions.md#oq-15-2j4y1z)                                                       | Back-dated reduced-result timestamp makes `challengeDisputeReduction` unreachable                                                 | Code            | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                           | Open                              |
+| [`OQ-17-6Z5Q0J`](open-questions.md#oq-17-6z5q0j)                                                       | Proxy fallback exposes the consumer facet's `deposit`/`withdraw` externally                                                       | Code            | [enforcement/contracts.md](../specification/enforcement/contracts.md)                                                                                                                   | Open                              |
+| [`OQ-19-Y8FDQX`](open-questions.md#oq-19-y8fdqx)                                                       | Channel-balance invariant not enforced on snapshot update or join                                                                 | Code            | [protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                                                 | Open                              |
+| [`OQ-21-PEZK9X`](open-questions.md#oq-21-pezk9x)                                                       | `_tx.body` is never populated; no state-encoding version marker                                                                   | Code            | [concepts/state-machines.md](../specification/protocol-model/state-machines.md)                                                                                                         | Partially resolved                |
+| [`OQ-22-99DDSZ`](open-questions.md#oq-22-99ddsz)                                                       | Inauthentic on-chain block calldata: escalation is signalled but no proof is built                                                | Code            | [block-progression/block-processing.md](../specification/block-progression/block-processing.md), [security/open-security-review.md](../audit/security-assessment.md)                    | Open                              |
+| [`OQ-23-SDBGYB`](open-questions.md#oq-23-sdbgyb)                                                       | SDK restart/recovery semantics: storage is fully in-memory                                                                        | Code            | [runtime/sdk.md](../specification/runtime/sdk.md)                                                                                                                                       | Open                              |
+| [`OQ-24-A4XRTB`](open-questions.md#oq-24-a4xrtb)                                                       | `shouldSignBlock` refuses to sign an on-chain-posted block when the local node is next-to-write                                   | Code            | [protocol/finality.md](../specification/protocol-model/finality.md), [protocol/block-processing.md](../specification/block-progression/block-processing.md)                             | Open                              |
+| [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr)                                                       | Minor SDK lifecycle races: TS snapshot-event ordering, kill/counter-dispute sequencing                                            | Code            | [runtime/sdk.md](../specification/runtime/sdk.md), [runtime/sdk.md](../specification/runtime/sdk.md), [disputes/dispute-processing.md](../specification/disputes/dispute-processing.md) | Open                              |
+| [`OQ-30-2G0Q5M`](open-questions.md#oq-30-2g0q5m)                                                       | Chain-reorg handling and canonical per-channel event ordering in the SDK                                                          | Code            | [runtime/sdk.md](../specification/runtime/sdk.md), [security/open-security-review.md](../audit/security-assessment.md)                                                                  | Open                              |
+| [`OQ-35-E5RRDF`](open-questions.md#oq-35-e5rrdf)                                                       | Handshake has no channel/identity binding — relay/reflection MITM; the signature is the whole root of trust                       | Code            | [peer-communication/handshake.md](../specification/peer-communication/handshake.md), [security/trust-model.md](../specification/security/trust-model.md)                                | Open                              |
+| [`OQ-36-WEN9T1`](open-questions.md#oq-36-wen9t1)                                                       | `onDisputeAcknowledgmentRequest` never binds `channelId` to the local channel — cross-channel ack pollution and chain-read oracle | Code            | [peer-communication/dispute-acknowledgment.md](../specification/peer-communication/dispute-acknowledgment.md)                                                                           | Open                              |
+| [`OQ-37-0Y7YWS`](open-questions.md#oq-37-0y7yws)                                                       | Harness-control RPC root: unguarded, network-reachable, and published in the package                                              | Code            | [runtime/execution.md](../specification/runtime/execution.md), [security/open-security-review.md](../audit/security-assessment.md)                                                      | Open                              |
+| [`OQ-38-1RBXV3`](open-questions.md#oq-38-1rbxv3)                                                       | Production transport deduplication during targeted derived-to-raw topic handoff lacks automated evidence                          | Code            | [targeted-channel-join.md](../specification/peer-communication/targeted-channel-join.md)                                                                                                | Accepted evidence gap             |
+| [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062)   | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                          | Future; non-blocking              |
+| [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                     | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                     | Future; non-blocking              |
+| [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM`](open-questions.md#oq-impl-sync-boundary-1-4afpkm)                   | Same-fork outbound range in the sync payload                                                                                      | Code            | [synchronization.md](../specification/peer-communication/synchronization.md), [SpectateService](source/src/rpc/network/services/spectate/SpectateService.ts.md)                         | Open                              |
+| [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs) | Earliest on-chain timestamp is not enforced in the block store                                                                    | Code            | [BlockStorage](source/src/storage/BlockStorage.ts.md), [QueueStorage](source/src/storage/QueueStorage.ts.md)                                                                            | Open                              |
+| [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM`](open-questions.md#oq-impl-executor-drain-1-5d71ym)                 | Executor admission drain bound at shutdown                                                                                        | Engineer review | [Owner](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)                                                                                                | Resolved                          |
+| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                                 | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                           | Open                              |
+| [`OQ-IMPL-CLOCK-1-R6W7FM`](open-questions.md#oq-impl-clock-1-r6w7fm)                                   | The runtime clock offset is taken once at host start, so runtimes started at different moments drift apart when chain time drifts | Code            | [Clock.ts.md](source/src/Clock.ts.md), [time.md](../specification/protocol-model/time.md)                                                                                               | Open                              |
+| [`OQ-IMPL-ACK-PRUNE-1-VT05KB`](open-questions.md#oq-impl-ack-prune-1-vt05kb)                           | Pruning dispute-acknowledgment records                                                                                            | Code            | [IsForkDisputedService](source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md)                                                                              | Open                              |
+| [`OQ-IMPL-OUTBOUND-MARKER-1-DJXPMF`](open-questions.md#oq-impl-outbound-marker-1-djxpmf)               | Outbound processed tip split across two storage locations                                                                         | Code            | [StateSnapshotFacet](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)                                                                                            | Open                              |
+| [`OQ-IMPL-FORK-NOOP-1-KCSCZ7`](open-questions.md#oq-impl-fork-noop-1-kcscz7)                           | Silent success when the snapshot is already on the target fork                                                                    | Code            | [StateSnapshotFacet](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)                                                                                            | Open                              |
+| [`OQ-IMPL-CLOSE-RESIDUAL-1-W05638`](open-questions.md#oq-impl-close-residual-1-w05638)                 | Residual funds when a channel closes                                                                                              | Code            | [StateSnapshotFacet](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)                                                                                            | Open                              |
 
 <a id="oq-impl-strike-1-b10cbb"></a>
 
@@ -118,7 +122,7 @@ fresh `evidenceTime` challenge period at the replacement transaction's timestamp
 The proxy's fallback forwards every unmatched selector to the integrator's consumer facet, so
 `deposit`/`withdraw` are directly externally callable; an unguarded `withdraw` implementation
 would be drainable. Decide: a framework-level guard, or a documented integrator obligation with
-review guidance. See [contracts/state-machine-base.md](./views/architecture/contracts/state-machine-base.md).
+review guidance. See [enforcement/contracts.md](../specification/enforcement/contracts.md).
 
 <a id="oq-19-y8fdqx"></a>
 
@@ -158,7 +162,7 @@ When a block delivered via a `BlockCalldataPosted` event fails authenticity chec
 fault committed on-chain — `CalldataCommittedStrategy` signals escalation but builds no fraud
 proof and opens no dispute (two code TODOs). The required proof type is unresolved. Feeds the
 completeness review ([`OQ-5-4Q38M5` (Fraud-proof completeness security review)](../audit/open-questions.md#oq-5-4q38m5)). See
-[sdk/block-confirmation-pipeline.md](./views/architecture/sdk/block-confirmation-pipeline.md) §4.1.
+[block-progression/block-processing.md](../specification/block-progression/block-processing.md).
 
 <a id="oq-23-sdbgyb"></a>
 
@@ -173,7 +177,7 @@ activity since early August; separately, the unmerged `persistence` branch proto
 LevelDB/IndexedDB write-behind commits with no PR. The blocking decision is the storage approach
 as much as the recovery semantics. This
 also bounds unbounded-memory growth over channel lifetime. See
-[sdk/components.md](./views/architecture/sdk/components.md) (storage) and the watchtower assumption in
+[runtime/sdk.md](../specification/runtime/sdk.md) (storage) and the watchtower assumption in
 [security/trust-model.md](../specification/security/trust-model.md).
 
 Related running-node case: when a still-participating node observes a
@@ -202,8 +206,8 @@ next-author refusal clause marked as this open decision.
 Grouped smaller items, each a code TODO or observed race: the TypeScript
 `onStateSnapshotUpdated` handler is not `(blockNumber, logIndex)`-ordered, unlike the
 LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1` (Remaining dispute economics and timing policy)](../specification/open-questions.md#oq-1-ntjba1)). See
-[sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), and
-[sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md).
+[runtime/sdk.md](../specification/runtime/sdk.md), [runtime/sdk.md](../specification/runtime/sdk.md), and
+[disputes/dispute-processing.md](../specification/disputes/dispute-processing.md).
 
 <a id="oq-30-2g0q5m"></a>
 
@@ -215,7 +219,7 @@ concurrently with no cross-log ordering, so any two same-channel events can appl
 canonical order ([`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr) flagged one handler; the problem is general). Candidate rule: a canonical
 `(blockNumber, blockHash, txIndex, logIndex)` cursor, one ordered application per channel, and
 reorg rollback. Affects join, dispute, reduction, and withdrawal decisions — a reorg attack
-surface the security review must cover. See [sdk/components.md](./views/architecture/sdk/components.md) and
+surface the security review must cover. See [runtime/sdk.md](../specification/runtime/sdk.md) and
 [security/open-security-review.md](../audit/security-assessment.md). This supersedes the
 event-ordering item of [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr).
 
@@ -233,7 +237,7 @@ skew window. Decide the binding: include the two EVM identities and a transport/
 the signed payload (EIP-712 or a domain-tagged struct), coordinated with [`OQ-29-EFY4NF` (Signature domain separation)](../specification/open-questions.md#oq-29-efy4nf) (signature domains)
 and [`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2) (protocol versioning) so one scheme covers all three. Until resolved, the trust model
 MUST state that peer authentication assumes no on-path adversary between two honest peers — a
-strong assumption for a p2p system. See [sdk/rpc/handshake.md](./views/architecture/sdk/rpc/handshake.md) §4.1 and
+strong assumption for a p2p system. See [peer-communication/handshake.md](../specification/peer-communication/handshake.md) and
 [security/trust-model.md](../specification/security/trust-model.md).
 
 <a id="oq-36-wen9t1"></a>
@@ -246,7 +250,7 @@ who opens a throwaway channel and disputes it can get victims to acknowledge and
 record forks belonging to a foreign channel, and use the endpoint as a free chain-read oracle. The
 duplicate-key check keys on `forkId` only, ignoring channel. Decide the channel-binding check and
 the ack-record keying; also whether acks should be signed (see the documentation-debt note below).
-See [sdk/rpc/is-fork-disputed.md](./views/architecture/sdk/rpc/is-fork-disputed.md) §6.6.
+See [peer-communication/dispute-acknowledgment.md](../specification/peer-communication/dispute-acknowledgment.md).
 
 Related (documentation debt / decision pending): dispute acknowledgments are **unsigned**, so the
 model doc's "building on an acknowledged dead fork is provably byzantine" overstates — the ack
@@ -270,9 +274,9 @@ default root for any downstream consumer building peers with the harness.
 
 Today the blast radius is bounded only by production `p2pSetup` registering the bare
 `MainRpcService`. Decide: restrict harness services to the trusted loopback transport and exclude
-them from the published artifact ([`REQ-RUN-10-FSD184` (Test control unreachable by peers)](../specification/runtime/execution.md#req-run-10-fsd184)'s intended rule), or accept "test peers only run on
+them from the published artifact, or accept "test peers only run on
 closed networks" as an explicit, documented limitation. See
-[sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4. This is a production gate.
+[runtime/execution.md](../specification/runtime/execution.md). This is a production gate.
 
 <a id="oq-impl-sync-1-hjc60d"></a>
 
@@ -360,3 +364,43 @@ Owner: [implementation report](source/src/storage/BlockStorage.ts.md).
 Engineer decision, recorded 2026-09-29: the executor's admission drain at shutdown is bounded by the same constant as the in-flight reply drain, `IN_FLIGHT_REPLY_DRAIN_MS` (five seconds), now exported from [AInternalRpcRoot](source/src/rpc/internal/AInternalRpcRoot.ts.md). Work still admitted at the limit is abandoned internally, children are disposed, and no host error is raised. Engineer decision, recorded 2026-09-29 after the second implementation review (option a): every caller still waiting at the limit always receives the disposal rejection `Contract executor shut down before the operation finished`, and the operation's later success or failure is dropped internally, so it never replaces that rejection; work that finishes within the limit keeps its own result or error. Strongest rejected alternative: keep the drain unbounded, so admitted work always finishes before its children close; it was rejected because one precompile call that never returns would keep executor disposal, and every owner disposal that waits for it, pending indefinitely. A separate executor constant and a worker-only bound were also rejected: one shutdown limit keeps both disposal waits aligned. Consequences: an admitted operation that runs past the limit may later succeed, or fail against a closed child, and either outcome is discarded while its caller keeps the disposal rejection; the `RuntimeLifecycle` worker disposal case with a held executor call completes again. Affected layers: specification ([`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)), the [ContractExecutorService report](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) and [ContractExecutorRoot](source/src/rpc/internal/roots/ContractExecutorRoot.ts.md), the runtime view, the verification reports for `EvmFactory` and `RuntimeLifecycle`, and the implementation, verification, and security audits.
 
 Owner: [implementation report](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md).
+
+<a id="oq-impl-ack-prune-1-vt05kb"></a>
+
+## OQ-IMPL-ACK-PRUNE-1-VT05KB — Pruning dispute-acknowledgment records
+
+Acknowledgment records are add-only for the life of the process: nothing prunes them on fork resolution, channel close, blacklisting or disposal. Growth is bounded by the number of forks really disputed on-chain.
+
+Requested decision: prune a fork's records once its successor finalizes on-chain, or keep them because they may serve as evidence input.
+
+Owner: [implementation report](source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md).
+
+<a id="oq-impl-outbound-marker-1-djxpmf"></a>
+
+## OQ-IMPL-OUTBOUND-MARKER-1-DJXPMF — Outbound processed tip split across two storage locations
+
+The processed outbound tip hash is read from the current on-chain snapshot while the rest of the processed marker lives in the channel balance. Both are written in the same transaction, so they cannot diverge, but the marker is not self-contained.
+
+Requested decision: mirror the outbound tip hash into the channel balance, or record the split as deliberate.
+
+Owner: [implementation report](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md).
+
+<a id="oq-impl-fork-noop-1-kcscz7"></a>
+
+## OQ-IMPL-FORK-NOOP-1-KCSCZ7 — Silent success when the snapshot is already on the target fork
+
+`updateStateSnapshotFork` returns without reverting or emitting when the chain is already on the target fork, so a caller cannot tell "already done" from "did nothing".
+
+Requested decision: keep silent success for batch composability, or revert or emit on the no-op.
+
+Owner: [implementation report](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md).
+
+<a id="oq-impl-close-residual-1-w05638"></a>
+
+## OQ-IMPL-CLOSE-RESIDUAL-1-W05638 — Residual funds when a channel closes
+
+A channel that reaches zero participants is closed and its storage cleared; funds nobody withdrew have no destination.
+
+Requested decision: where unwithdrawn residual funds go on close.
+
+Owner: [implementation report](source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md).

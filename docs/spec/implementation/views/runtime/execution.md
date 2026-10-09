@@ -9,4 +9,4 @@
 - Setup: Exercise the complete concrete subsystem through each documented entry and failure boundary.
 - Oracle: The subsystem preserves the neutral behavior and contains failure without partial state.
 
-- [ ] `INTEGRATION-TEST-RUNTIME-1-G147DN.P7` — boundary integration. Root creation and startup failure: [RootCreation cases](../../../verification/tests/test/rpc/RootCreation.test.ts.md)
+- [ ] `INTEGRATION-TEST-RUNTIME-1-G147DN.P7` — boundary integration. Root creation and startup failure

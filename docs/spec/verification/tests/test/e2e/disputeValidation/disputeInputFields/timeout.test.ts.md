@@ -27,9 +27,9 @@ whose deadline is later than that window. Its refusal therefore exercises the ti
 
 - `dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P15, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P15, REQ-DISPUTE-PIPE-5-RZZB48.T1.P11
 - `dispute.input.timeout.participant != next writer → TimeoutParticipantNotNext`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P16, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P16, REQ-DISPUTE-PIPE-5-RZZB48.T1.P12
-- `existing window predates timeout deadline → upload reverts with race-condition guard`: none
+- `existing window predates timeout deadline → upload reverts with race-condition guard`: REQ-DIS-10-SAHJBN.T1.P21
 - `dispute.input.timeout posted before wait period elapses → honest peers store TimeoutTooEarly`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P17, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P17, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P14, REQ-DISPUTE-PIPE-5-RZZB48.T1.P13, REQ-DIS-3-C4KYSF.T1.P6, REQ-DIS-10-SAHJBN.T1.P5
-- `valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)`: REQ-DIS-10-SAHJBN.T1.P1
+- `valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)`: REQ-DIS-10-SAHJBN.T1.P1, REQ-DISPUTE-PIPE-5-RZZB48.T1.P23
 - `forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed`: none
 - `leaver does not dispute a timeout after leaving the channel`: none
 - `dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted`: REQ-ENFFP-1-BREACW.T1.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P19, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P18, REQ-DISPUTE-PIPE-5-RZZB48.T1.P10

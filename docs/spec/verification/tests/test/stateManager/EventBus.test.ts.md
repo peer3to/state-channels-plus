@@ -33,8 +33,8 @@ The custom-root disposal cases observe the real inline endpoint locally. They pr
 - `mirrors contract events to the main thread: typed contract listeners and the generic bus subscription both fire`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P3
 - `delivers the same eventHandler event to a worker subscriber and a main-thread subscriber`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P4
 - `keeps a replaced worker hook target and the main-thread bus both firing after setP2pEventHooks`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P5
-- `surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P6
-- `surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P7
+- `surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P6, REQ-RUNTIME-1-RSM6MZ.T1.P10
+- `surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P7, REQ-RUNTIME-1-RSM6MZ.T1.P11
 - `delivers nothing to the client after runtime disposal`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P8
 - `disposes the custom RPC root before runtime teardown`: UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1
 - `still tears the runtime down when the custom root dispose rejects`: UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2
