@@ -11,16 +11,18 @@ import { ethers } from "ethers";
 import { once } from "node:events";
 import WebSocket, { type WebSocketServer } from "ws";
 
-/** The real private listener registry; read only, never replaced. */
-function localDiscoveryListeners(): Set<WebSocketServer> {
-    const servers = Reflect.get(LocalDiscoveryServer, "peerServers");
-    if (!(servers instanceof Set))
-        throw new Error("LocalDiscoveryServer.peerServers is not a Set");
-    return servers as Set<WebSocketServer>;
+/** A real private socket registry of the discovery server; read only. */
+function discoverySockets<T>(
+    field: "peerServers" | "activeClientConnections"
+): Set<T> {
+    const sockets = Reflect.get(LocalDiscoveryServer, field);
+    if (!(sockets instanceof Set))
+        throw new Error(`LocalDiscoveryServer.${field} is not a Set`);
+    return sockets as Set<T>;
 }
 
 export async function stageLocalDiscoveryReady() {
-    const servers = localDiscoveryListeners();
+    const servers = discoverySockets<WebSocketServer>("peerServers");
     if (servers.size !== 1)
         throw new Error("Expected one local discovery listener");
     const server = [...servers][0];
@@ -137,7 +139,7 @@ export async function assertDiscoveryEndpointReplacement(
     await h.control(acceptor).network.joinSelectedKey(topic).request();
     // Observe the real private listener and registry sockets, without replacing
     // announcement handling, dial admission, handshakes, or retry behavior.
-    const servers = localDiscoveryListeners();
+    const servers = discoverySockets<WebSocketServer>("peerServers");
     const oldServer = [...servers][0];
     const oldAddress = oldServer.address();
     if (!oldAddress || typeof oldAddress === "string")
@@ -155,10 +157,9 @@ export async function assertDiscoveryEndpointReplacement(
         .control(dialer)
         .network.getTransportToken(acceptor.address)
         .request();
-    const registrySockets = Reflect.get(
-        LocalDiscoveryServer,
+    const registrySockets = discoverySockets<WebSocket>(
         "activeClientConnections"
-    ) as Set<WebSocket>;
+    );
     let announced = false;
     const observe = (data: WebSocket.RawData) => {
         const announcement = JSON.parse(data.toString());
@@ -216,7 +217,7 @@ export async function assertDiscoveryEndpointReplacement(
  */
 export function holdAcceptedSocketReads() {
     // Pause the real private sockets; do not replace their behavior.
-    const listeners = [...localDiscoveryListeners()];
+    const listeners = [...discoverySockets<WebSocketServer>("peerServers")];
     const held = listeners.flatMap((server) => [...server.clients]);
     if (held.length === 0) throw new Error("No accepted socket to hold");
     // peer dials target a listener port; registry sockets do not
@@ -229,10 +230,7 @@ export function holdAcceptedSocketReads() {
         })
     );
     const outbound = [
-        ...(Reflect.get(
-            LocalDiscoveryServer,
-            "activeClientConnections"
-        ) as Set<WebSocket>)
+        ...discoverySockets<WebSocket>("activeClientConnections")
     ].filter((socket) => listenerPorts.has(new URL(socket.url).port));
     for (const socket of held) socket.pause();
     return {
