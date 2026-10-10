@@ -25,11 +25,11 @@ jobs:
             issues: read
             actions: read
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   ref: ${{ github.event.pull_request.head.sha }}
                   persist-credentials: false
-            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: 22.12.0
             - run: yarn install --frozen-lockfile --ignore-scripts
@@ -45,11 +45,11 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:
-            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   ref: ${{ github.event.pull_request.head.sha }}
                   persist-credentials: false
-            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: 22.12.0
             - run: yarn install --frozen-lockfile --ignore-scripts
@@ -61,12 +61,12 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
               with:
                   fetch-depth: 0
 
             - name: Set up Node.js
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v7
               with:
                   node-version: 20
                   cache: "yarn"
@@ -93,12 +93,12 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
               with:
                   submodules: recursive
 
             - name: Set up Node.js
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v7
               with:
                   node-version: 20
                   cache: "yarn"
@@ -141,7 +141,7 @@ jobs:
             # only while its file set is unchanged. Each tool re-checks what it restores.
             - name: Restore the Foundry build
               id: forge-cache
-              uses: actions/cache/restore@v4
+              uses: actions/cache/restore@v6
               with:
                   path: |
                       out
@@ -151,7 +151,7 @@ jobs:
 
             - name: Restore the contract and test-tree build
               id: build-cache
-              uses: actions/cache/restore@v4
+              uses: actions/cache/restore@v6
               with:
                   path: |
                       artifacts
@@ -177,7 +177,7 @@ jobs:
             # Saved even when tests fail, so a flaky run still leaves its build.
             - name: Save the Foundry build
               if: always() && steps.forge-build.outcome == 'success' && steps.forge-cache.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v4
+              uses: actions/cache/save@v6
               with:
                   path: |
                       out
@@ -186,7 +186,7 @@ jobs:
 
             - name: Save the contract and test-tree build
               if: always() && steps.build-cache.outcome == 'success'
-              uses: actions/cache/save@v4
+              uses: actions/cache/save@v6
               with:
                   path: |
                       artifacts
@@ -198,7 +198,7 @@ jobs:
 
             - name: Upload run logs
               if: always()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: distributed-run-logs
                   path: ./logs/
@@ -210,7 +210,7 @@ jobs:
         timeout-minutes: 30
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
               with:
                   submodules: recursive
             - name: Build the distributed runner image
@@ -250,7 +250,7 @@ jobs:
                   exit "$status"
             - name: Upload browser logs
               if: always()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: browser-run-logs
                   path: ./logs/
