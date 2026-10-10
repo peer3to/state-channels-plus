@@ -12,17 +12,19 @@ import { once } from "node:events";
 import WebSocket, { type WebSocketServer } from "ws";
 
 /** A real private socket registry of the discovery server; read only. */
-function discoverySockets<T>(
-    field: "peerServers" | "activeClientConnections"
-): Set<T> {
-    const sockets = Reflect.get(LocalDiscoveryServer, field);
+function discoverySockets<K extends "peerServers" | "activeClientConnections">(
+    field: K
+): Set<K extends "peerServers" ? WebSocketServer : WebSocket> {
+    const sockets: unknown = Reflect.get(LocalDiscoveryServer, field);
     if (!(sockets instanceof Set))
         throw new Error(`LocalDiscoveryServer.${field} is not a Set`);
-    return sockets as Set<T>;
+    return sockets as Set<
+        K extends "peerServers" ? WebSocketServer : WebSocket
+    >;
 }
 
 export async function stageLocalDiscoveryReady() {
-    const servers = discoverySockets<WebSocketServer>("peerServers");
+    const servers = discoverySockets("peerServers");
     if (servers.size !== 1)
         throw new Error("Expected one local discovery listener");
     const server = [...servers][0];
@@ -139,7 +141,7 @@ export async function assertDiscoveryEndpointReplacement(
     await h.control(acceptor).network.joinSelectedKey(topic).request();
     // Observe the real private listener and registry sockets, without replacing
     // announcement handling, dial admission, handshakes, or retry behavior.
-    const servers = discoverySockets<WebSocketServer>("peerServers");
+    const servers = discoverySockets("peerServers");
     const oldServer = [...servers][0];
     const oldAddress = oldServer.address();
     if (!oldAddress || typeof oldAddress === "string")
@@ -157,9 +159,7 @@ export async function assertDiscoveryEndpointReplacement(
         .control(dialer)
         .network.getTransportToken(acceptor.address)
         .request();
-    const registrySockets = discoverySockets<WebSocket>(
-        "activeClientConnections"
-    );
+    const registrySockets = discoverySockets("activeClientConnections");
     let announced = false;
     const observe = (data: WebSocket.RawData) => {
         const announcement = JSON.parse(data.toString());
@@ -217,7 +217,7 @@ export async function assertDiscoveryEndpointReplacement(
  */
 export function holdAcceptedSocketReads() {
     // Pause the real private sockets; do not replace their behavior.
-    const listeners = [...discoverySockets<WebSocketServer>("peerServers")];
+    const listeners = [...discoverySockets("peerServers")];
     const held = listeners.flatMap((server) => [...server.clients]);
     if (held.length === 0) throw new Error("No accepted socket to hold");
     // peer dials target a listener port; registry sockets do not
@@ -229,9 +229,9 @@ export function holdAcceptedSocketReads() {
             return String(address.port);
         })
     );
-    const outbound = [
-        ...discoverySockets<WebSocket>("activeClientConnections")
-    ].filter((socket) => listenerPorts.has(new URL(socket.url).port));
+    const outbound = [...discoverySockets("activeClientConnections")].filter(
+        (socket) => listenerPorts.has(new URL(socket.url).port)
+    );
     for (const socket of held) socket.pause();
     return {
         closingDials: () =>
