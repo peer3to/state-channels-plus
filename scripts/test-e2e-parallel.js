@@ -269,14 +269,17 @@ async function main(options = {}) {
                       packageJson.peer3TestDistribution?.buildOutputs
               )
             : [];
-        for (const { root } of linked) {
+        for (const { root, packageJson } of linked) {
             const failure =
                 contractBuildFailure(root) ??
                 (compiledTestTreeAvailable(root)
                     ? refreshCompiledTestTree(root)
                     : undefined);
             if (failure) {
-                console.error(failure);
+                console.error(
+                    `Building linked repository ${packageJson.name} (${root}) failed:`,
+                    failure
+                );
                 process.exit(1);
             }
         }

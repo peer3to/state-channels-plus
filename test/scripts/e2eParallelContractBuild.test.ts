@@ -1,9 +1,11 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
     contractProject,
+    linkedContractProjects,
     runContractProject
 } from "../fixtures/node/ContractBuildProjectFixture";
 import { expect } from "chai";
+import fs from "fs";
 
 describe("parallel runner contract build", function () {
     it("distributed CLI compiles missing bindings before the TypeScript build and discovery", function () {
@@ -60,27 +62,67 @@ describe("parallel runner contract build", function () {
         }
     });
 
-    it("distributed CLI builds a linked repository that declares build outputs", function () {
-        const linked = contractProject();
-        // the consumer declares no build scripts of its own
-        const project = contractProject();
+    it("distributed CLI builds a linked repository that declares build outputs, and skips it when warm", function () {
+        const { linked, project, dispose } = linkedContractProjects();
         try {
-            linked.write(
-                "package.json",
-                JSON.stringify({
-                    ...JSON.parse(linked.read("package.json")),
-                    peer3TestDistribution: { buildOutputs: ["dist"] }
-                })
+            const args = [
+                "--distributed",
+                "--no-forge",
+                "--no-browser",
+                "--grep",
+                "no matching test"
+            ];
+            const cold = runContractProject(project, args);
+            expect(
+                cold.stdout + cold.stderr,
+                cold.stdout + cold.stderr
+            ).to.contain("No selected tests matched --grep");
+            expect(linked.exists("dist/src/index.js")).to.equal(true);
+            expect(linked.read("generator-runs")).to.equal("11");
+            const warm = runContractProject(project, args);
+            expect(
+                warm.stdout + warm.stderr,
+                warm.stdout + warm.stderr
+            ).to.contain("No selected tests matched --grep");
+            expect(warm.stdout).to.contain("Nothing to compile");
+            expect(warm.stdout).not.to.contain(
+                "Building the compiled test tree"
             );
-            project.write(
-                "package.json",
-                JSON.stringify({
-                    name: "consumer",
-                    dependencies: { linked: `link:${linked.root}` }
-                })
+            expect(warm.stdout).not.to.contain(
+                "Refreshing the compiled test tree"
             );
+            expect(linked.read("generator-runs")).to.equal("1111");
+        } finally {
+            dispose();
+        }
+    });
+
+    it("distributed CLI stops and names the linked repository when its contracts fail", function () {
+        const { linked, project, dispose } = linkedContractProjects();
+        try {
+            linked.write("contracts/Value.sol", "invalid Solidity");
             const result = runContractProject(project, [
                 "--distributed",
+                "--no-forge",
+                "--no-browser"
+            ]);
+            expect(result.status).to.equal(1);
+            expect(result.stderr).to.contain(
+                `Building linked repository linked-contracts (${fs.realpathSync(linked.root)}) failed`
+            );
+            expect(result.stderr).to.contain(
+                "Fix contract compilation before building the TypeScript test tree."
+            );
+            expect(linked.exists("dist/src/index.js")).to.equal(false);
+        } finally {
+            dispose();
+        }
+    });
+
+    it("local CLI leaves a linked repository's build alone", function () {
+        const { linked, project, dispose } = linkedContractProjects();
+        try {
+            const result = runContractProject(project, [
                 "--no-forge",
                 "--no-browser",
                 "--grep",
@@ -90,11 +132,10 @@ describe("parallel runner contract build", function () {
                 result.stdout + result.stderr,
                 result.stdout + result.stderr
             ).to.contain("No selected tests matched --grep");
-            expect(linked.exists("dist/src/index.js")).to.equal(true);
-            expect(linked.read("generator-runs")).to.equal("11");
+            expect(linked.exists("generator-runs")).to.equal(false);
+            expect(linked.exists("dist")).to.equal(false);
         } finally {
-            project.dispose();
-            linked.dispose();
+            dispose();
         }
     });
 
