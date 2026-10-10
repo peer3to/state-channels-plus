@@ -74,15 +74,17 @@ export function observeDiscoveryLogger() {
 export async function waitForPendingLocalDial(
     managers: P2PManager[]
 ): Promise<P2PManager> {
-    // Read the real private dial registry; do not replace its behavior.
-    const dialing = Reflect.get(
+    // Read the real private topic sessions; do not replace their behavior.
+    const sessions = Reflect.get(
         LocalDiscoveryServer,
-        "dialingPeers"
-    ) as WeakMap<P2PManager, Set<string>>;
+        "discoverySessions"
+    ) as WeakMap<P2PManager, Map<string, { dialingPeers: Set<string> }>>;
     let owner: P2PManager | undefined;
     await waitFor(() => {
-        owner = managers.find(
-            (manager) => (dialing.get(manager)?.size ?? 0) > 0
+        owner = managers.find((manager) =>
+            [...(sessions.get(manager)?.values() ?? [])].some(
+                (session) => session.dialingPeers.size > 0
+            )
         );
         return owner !== undefined;
     });
@@ -199,4 +201,21 @@ export async function assertDiscoveryEndpointReplacement(
         for (const socket of observedSockets) socket.off("message", observe);
         for (const socket of oldServer.clients) socket.terminate();
     }
+}
+
+/**
+ * Stops every listener from reading its accepted sockets, so a dialer's close
+ * of one of them completes only after the returned release.
+ */
+export function holdAcceptedSocketReads() {
+    // Pause the real private listeners' sockets; do not replace their behavior.
+    const servers = Reflect.get(
+        LocalDiscoveryServer,
+        "peerServers"
+    ) as Set<WebSocketServer>;
+    const held = [...servers].flatMap((server) => [...server.clients]);
+    for (const socket of held) socket.pause();
+    return () => {
+        for (const socket of held) socket.resume();
+    };
 }

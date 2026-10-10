@@ -1,6 +1,7 @@
 import { sleep } from "@/utils";
 import {
     assertDiscoveryEndpointReplacement,
+    holdAcceptedSocketReads,
     stageLocalDiscoveryReady,
     observeDiscoveryLogger,
     observeLocalDialRetries,
@@ -222,6 +223,55 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 "the held reconnect must not blacklist either side"
             ).to.equal(false);
         }
+    });
+
+    it("dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const topic = ethers.id("local-discovery-rejoin-pending-close");
+        const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
+        const acceptor = h.getPeer(1 - dialer.index);
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        const dialerToken = () =>
+            h
+                .control(dialer)
+                .network.getTransportToken(acceptor.address)
+                .request();
+        const firstToken = await dialerToken();
+        expect(firstToken).to.be.a("number");
+
+        // the acceptor stops reading, so the dialer's old socket stays closing
+        const release = holdAcceptedSocketReads();
+        try {
+            await h.control(dialer).network.leaveSelectedKey(topic).request();
+            expect(
+                await h
+                    .control(dialer)
+                    .network.closePeerTransportByAddress(acceptor.address)
+                    .request()
+            ).to.equal(true);
+            await h.control(dialer).network.joinSelectedKey(topic).request();
+            // the rejoined topic dials the announced acceptor on a new socket
+            await waitFor(async () => {
+                const token = await dialerToken();
+                return token !== null && token !== firstToken;
+            }, h.event.protocolEventTimeoutMs());
+        } finally {
+            release();
+        }
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.leaveSelectedKey(topic).request()
+            )
+        );
     });
 
     it("does not redial a peer blacklisted before its transport closes", async function () {
