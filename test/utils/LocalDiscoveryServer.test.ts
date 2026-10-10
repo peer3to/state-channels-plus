@@ -1,6 +1,7 @@
 import { sleep } from "@/utils";
 import {
     assertDiscoveryEndpointReplacement,
+    holdAcceptedSocketReads,
     stageLocalDiscoveryReady,
     observeDiscoveryLogger,
     observeLocalDialRetries,
@@ -222,6 +223,204 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 "the held reconnect must not blacklist either side"
             ).to.equal(false);
         }
+    });
+
+    it("dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const topic = ethers.id("local-discovery-rejoin-pending-close");
+        const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
+        const acceptor = h.getPeer(1 - dialer.index);
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        const dialerToken = () =>
+            h
+                .control(dialer)
+                .network.getTransportToken(acceptor.address)
+                .request();
+        const firstToken = await dialerToken();
+        expect(firstToken).to.be.a("number");
+
+        // the acceptor stops reading, so the dialer's old socket stays closing
+        const hold = holdAcceptedSocketReads();
+        try {
+            await h.control(dialer).network.leaveSelectedKey(topic).request();
+            expect(
+                await h
+                    .control(dialer)
+                    .network.closePeerTransportByAddress(acceptor.address)
+                    .request()
+            ).to.equal(true);
+            await h.control(dialer).network.joinSelectedKey(topic).request();
+            // the rejoined topic dials the announced acceptor on a new socket
+            await waitFor(async () => {
+                const token = await dialerToken();
+                return token !== null && token !== firstToken;
+            }, h.event.protocolEventTimeoutMs());
+            expect(hold.closingDials()).to.equal(1);
+        } finally {
+            hold.release();
+        }
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.leaveSelectedKey(topic).request()
+            )
+        );
+    });
+
+    it("keeps a rejoined topic's pending dial deduplicated across topics after the left topic's old socket finishes closing", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const topics = [
+            ethers.id("local-discovery-rejoin-dedupe-first"),
+            ethers.id("local-discovery-rejoin-dedupe-second")
+        ];
+        const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
+        const acceptor = h.getPeer(1 - dialer.index);
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topics[0]).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        const heldCounts = () =>
+            Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).stub.getHeldHandshakeCount().request()
+                )
+            );
+
+        const hold = holdAcceptedSocketReads();
+        try {
+            for (const peer of h.peers)
+                await h.control(peer).stub.holdInitHandshakes().request();
+            await h
+                .control(dialer)
+                .network.leaveSelectedKey(topics[0])
+                .request();
+            expect(
+                await h
+                    .control(dialer)
+                    .network.closePeerTransportByAddress(acceptor.address)
+                    .request()
+            ).to.equal(true);
+            await h
+                .control(dialer)
+                .network.joinSelectedKey(topics[0])
+                .request();
+            // the rejoined dial waits on its held handshake
+            await waitFor(async () =>
+                (await heldCounts()).every((count) => count === 1)
+            );
+            // the left topic's old socket now finishes closing
+            hold.release();
+            await waitFor(() => hold.closingDials() === 0);
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.joinSelectedKey(topics[1]).request()
+                )
+            );
+            // Observe repeated discovery announcements while authentication is held.
+            await sleep(600);
+            expect(await heldCounts()).to.deep.equal([1, 1]);
+            expect(
+                await h.control(dialer).query.getOpenConnectionCount().request()
+            ).to.equal(0);
+        } finally {
+            hold.release();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).stub.releaseInitHandshakes().request()
+                )
+            );
+        }
+        await h.network.waitForP2PConnections();
+        for (const peer of h.peers)
+            expect(
+                await h.control(peer).query.getOpenConnectionCount().request()
+            ).to.equal(1);
+        await Promise.all(
+            h.peers.flatMap((peer) =>
+                topics.map((topic) =>
+                    h.control(peer).network.leaveSelectedKey(topic).request()
+                )
+            )
+        );
+    });
+
+    it("dials the peer again after a rejoin while the pending dial the leave closed has not finished closing", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const topic = ethers.id("local-discovery-rejoin-pending-dial-close");
+        const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
+        const acceptor = h.getPeer(1 - dialer.index);
+        for (const peer of h.peers)
+            await h.control(peer).stub.holdInitHandshakes().request();
+        let hold: ReturnType<typeof holdAcceptedSocketReads> | undefined;
+        try {
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.joinSelectedKey(topic).request()
+                )
+            );
+            // the dial is accepted but its handshake is held
+            await waitFor(async () =>
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.getHeldHandshakeCount()
+                                .request()
+                        )
+                    )
+                ).every((count) => count === 1)
+            );
+            hold = holdAcceptedSocketReads();
+            // the leave closes the pending dial, which stays closing
+            await h.control(dialer).network.leaveSelectedKey(topic).request();
+            expect(hold.closingDials()).to.equal(1);
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).stub.releaseInitHandshakes().request()
+                )
+            );
+            await h.control(dialer).network.joinSelectedKey(topic).request();
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(dialer)
+                        .network.getTransportToken(acceptor.address)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(hold.closingDials()).to.equal(1);
+        } finally {
+            hold?.release();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).stub.releaseInitHandshakes().request()
+                )
+            );
+        }
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.leaveSelectedKey(topic).request()
+            )
+        );
     });
 
     it("does not redial a peer blacklisted before its transport closes", async function () {
