@@ -198,8 +198,10 @@ counter punishing the submitter.
    the finalization detached at the signer's estimate, and once it is mined submit the snapshot
    advance separately. A completed reduction that resolves to a
    different successor than computed is a fatal inconsistency, not a retry. Membership recomputes
-   from the successor's participant set: a node the successor dropped as slashed falls back to
-   `SYNCED` standing, and a node the successor excludes entirely aborts its channel session.
+   from the installed successor's participant set: a node it no longer lists keeps a pending join
+   that can still land, and otherwise becomes `SYNCED` once the chain no longer lists it either; a
+   committed node that is not leaving aborts its channel session when a snapshot it did not produce
+   drops it.
 6. **Foreign reductions observed on-chain:** recompute; a mismatch is challenged within the
    challenge period and the dishonest reducer penalized; a match with an expired period is adopted.
 

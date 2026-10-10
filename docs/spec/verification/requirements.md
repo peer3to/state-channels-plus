@@ -231,7 +231,7 @@ Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
 Specification cases tested: 7/10. Untested: T1.P2, T1.P4, T1.P5.
 
 [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)
-Specification cases tested: 0/10.
+Specification cases tested: 0/11.
 
 [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)
 Specification cases tested: 3/9. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P9.
@@ -303,7 +303,7 @@ Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
 Specification cases tested: 0/6.
 
 [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../specification/enforcement/contracts.md#req-contract-size-1-881q6e)
-Specification cases tested: 11/11.
+Specification cases tested: 11/12. Untested: T1.P12.
 
 [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../specification/security/data-availability.md#req-da-1-nvv85z)
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5.

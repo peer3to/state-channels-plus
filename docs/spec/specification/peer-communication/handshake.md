@@ -203,7 +203,7 @@ live relay can forward one peer's challenge to a third party and return that par
 transports supply no channel binding of their own, and only the agreement-window bounds limit the relay.
 The handshake signature is the entire root of identity trust, so this lack of channel binding is its
 largest residual risk. Binding the peer identities or a transport-derived key into the signed message
-is a pending decision ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)). Each request costs the responder a signature before any guard applies; that
+is a pending decision ([`OQ-35-E5RRDF`](../../implementation/open-questions.md#oq-35-e5rrdf)). Each request costs the responder a signature before any guard applies; that
 flood is unbounded until rate limiting is decided ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). A response discloses only the
 responder's transport preference and clock reading. Exclusion durability and its interaction with deferred-call queues are
 open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
