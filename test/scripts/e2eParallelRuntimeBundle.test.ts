@@ -223,7 +223,7 @@ describe("distributed source workspace", function () {
         }
     });
 
-    it("ships the root's declared build outputs and drops its worker prepare", async function () {
+    it("ships the declared build outputs of the root and its linked repository and drops their worker prepare", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "build-outputs-"));
         const project = path.join(root, "project");
         const linked = path.join(root, "linked");
@@ -265,7 +265,10 @@ describe("distributed source workspace", function () {
                 JSON.stringify({
                     name: "linked",
                     scripts: { compile: "true" },
-                    peer3TestDistribution: { buildOutputs: ["dist"] }
+                    peer3TestDistribution: {
+                        prepareScript: "compile",
+                        buildOutputs: ["dist"]
+                    }
                 })
             );
             fs.writeFileSync(path.join(linked, ".gitignore"), "dist\n");
@@ -293,7 +296,8 @@ describe("distributed source workspace", function () {
                 "project/dist/a.js",
                 "project/dist/nested/b.js",
                 "project/artifacts/C.json",
-                "project/generated.ts"
+                "project/generated.ts",
+                "linked/dist/l.js"
             ]) {
                 expect(byPath.has(output), output).to.equal(true);
             }
@@ -305,8 +309,6 @@ describe("distributed source workspace", function () {
                     entry.path.includes("missing")
                 )
             ).to.equal(false);
-            // Linked repositories are not built by the orchestrator.
-            expect(byPath.has("linked/dist/l.js")).to.equal(false);
             const repositories = Object.fromEntries(
                 manifest.repositories.map(
                     (entry: {
@@ -318,7 +320,8 @@ describe("distributed source workspace", function () {
             );
             expect(repositories.project.prepareScript).to.equal(null);
             expect(repositories.project.cachedPrepareScript).to.equal(null);
-            expect(repositories.linked.prepareScript).to.equal("compile");
+            expect(repositories.linked.prepareScript).to.equal(null);
+            expect(repositories.linked.cachedPrepareScript).to.equal(null);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

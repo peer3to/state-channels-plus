@@ -200,7 +200,6 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
     const sourceFilesManifest = [];
     const repositoryManifest = [];
     let expandedBytes = 0;
-    const projectRealRoot = fs.realpathSync(projectRoot);
 
     for (const repository of repositories) {
         const repositoryPath = path.relative(workspaceRoot, repository.root);
@@ -209,12 +208,10 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
                 "Source workspace cannot preserve repository paths safely"
             );
         }
-        // The orchestrator builds the project it runs from before manifesting,
-        // so that project ships its declared build outputs and workers never
-        // rebuild it. Linked repositories are not built here: they keep their
-        // worker-side prepare script.
+        // The orchestrator builds every repository that declares build outputs
+        // before manifesting, so those outputs ship and workers never rebuild
+        // them. A repository without the declaration keeps its worker prepare.
         const builtHere =
-            repository.root === projectRealRoot &&
             !!repository.packageJson.peer3TestDistribution?.buildOutputs;
         const sourceFiles = [
             ...new Set([

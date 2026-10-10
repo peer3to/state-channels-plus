@@ -55,7 +55,8 @@ const {
 } = require("./e2e-parallel/distributed/orchestratorIdentity");
 const logging = require("./e2e-parallel/shared/logging");
 const {
-    buildRuntimeManifest
+    buildRuntimeManifest,
+    discoverRepositories
 } = require("./e2e-parallel/distributed/runtimeBundle");
 const {
     buildRemoteEnvironment
@@ -150,6 +151,39 @@ function resolveWarmUps(tasks, distributed) {
 }
 
 /**
+ * Compile a project's contracts and generate the TypeScript read from them. A
+ * project without the generator scripts has nothing to build. Returns the
+ * failure, or null.
+ */
+function contractBuildFailure(root) {
+    const manifestPath = path.join(root, "package.json");
+    const scripts = fs.existsSync(manifestPath)
+        ? (JSON.parse(fs.readFileSync(manifestPath, "utf8")).scripts ?? {})
+        : {};
+    if (!scripts["generate-enums"] || !scripts["generate-artifacts"]) {
+        return null;
+    }
+    for (const args of [
+        ["hardhat", "compile"],
+        // Hardhat's compile task already updates TypeChain for changed contracts.
+        // Recover a missing generated tree even when Solidity's cache is warm.
+        ...(!fs.existsSync(path.join(root, "typechain-types", "index.ts"))
+            ? [["hardhat", "typechain"]]
+            : []),
+        ["generate-enums"],
+        ["generate-artifacts"]
+    ]) {
+        const failure = tierBuildFailure("yarn", args, {
+            missing: "Install the project dependencies before running tests.",
+            failed: "Fix contract compilation before building the TypeScript test tree.",
+            cwd: root
+        });
+        if (failure) return failure;
+    }
+    return null;
+}
+
+/**
  * The order tasks are admitted in. Browser gates run for minutes each, so they
  * start first instead of stretching the end of the run; and the coordinator
  * copies the most recently admitted task onto an idle worker, so gates admitted
@@ -223,38 +257,37 @@ async function main(options = {}) {
     // A broken overrides file fails the run before anything is built.
     readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
 
-    // Contracts supply the types read by the local build, including distributed discovery.
-    const manifestPath = path.join(process.cwd(), "package.json");
-    const scripts = fs.existsSync(manifestPath)
-        ? (JSON.parse(fs.readFileSync(manifestPath, "utf8")).scripts ?? {})
-        : {};
-    if (
-        scripts["generate-enums"] &&
-        scripts["generate-artifacts"] &&
-        !cli.skipBuild &&
-        !cli.dryRun
-    ) {
-        for (const args of [
-            ["hardhat", "compile"],
-            // Hardhat's compile task already updates TypeChain for changed contracts.
-            // Recover a missing generated tree even when Solidity's cache is warm.
-            ...(!fs.existsSync(
-                path.join(process.cwd(), "typechain-types", "index.ts")
-            )
-                ? [["hardhat", "typechain"]]
-                : []),
-            ["generate-enums"],
-            ["generate-artifacts"]
-        ]) {
-            const failure = tierBuildFailure("yarn", args, {
-                missing:
-                    "Install the project dependencies before running tests.",
-                failed: "Fix contract compilation before building the TypeScript test tree."
-            });
+    if (!cli.skipBuild && !cli.dryRun) {
+        // A distributed run ships the build outputs its linked repositories
+        // declare, so it builds them here, dependencies first: the project's
+        // own build reads them.
+        const projectRoot = fs.realpathSync(process.cwd());
+        const linked = cli.distributed
+            ? discoverRepositories(projectRoot).filter(
+                  ({ root, packageJson }) =>
+                      root !== projectRoot &&
+                      packageJson.peer3TestDistribution?.buildOutputs
+              )
+            : [];
+        for (const { root, packageJson } of linked) {
+            const failure =
+                contractBuildFailure(root) ??
+                (compiledTestTreeAvailable(root)
+                    ? refreshCompiledTestTree(root)
+                    : undefined);
             if (failure) {
-                console.error(failure);
+                console.error(
+                    `Building linked repository ${packageJson.name} (${root}) failed:`,
+                    failure
+                );
                 process.exit(1);
             }
+        }
+        // Contracts supply the types read by the local build, including distributed discovery.
+        const failure = contractBuildFailure(process.cwd());
+        if (failure) {
+            console.error(failure);
+            process.exit(1);
         }
     }
 
