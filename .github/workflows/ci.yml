@@ -93,12 +93,12 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   submodules: recursive
 
             - name: Set up Node.js
-              uses: actions/setup-node@v7
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: 20
                   cache: "yarn"
@@ -114,7 +114,7 @@ jobs:
               run: echo "version=$(cat .forge-version)" >> "$GITHUB_OUTPUT"
 
             - name: Install Foundry
-              uses: foundry-rs/foundry-toolchain@v1
+              uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
               with:
                   version: ${{ steps.forge.outputs.version }}
 
@@ -141,7 +141,7 @@ jobs:
             # only while its file set is unchanged. Each tool re-checks what it restores.
             - name: Restore the Foundry build
               id: forge-cache
-              uses: actions/cache/restore@v6
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: |
                       out
@@ -151,7 +151,7 @@ jobs:
 
             - name: Restore the contract and test-tree build
               id: build-cache
-              uses: actions/cache/restore@v6
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: |
                       artifacts
@@ -177,7 +177,7 @@ jobs:
             # Saved even when tests fail, so a flaky run still leaves its build.
             - name: Save the Foundry build
               if: always() && steps.forge-build.outcome == 'success' && steps.forge-cache.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v6
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: |
                       out
@@ -186,7 +186,7 @@ jobs:
 
             - name: Save the contract and test-tree build
               if: always() && steps.build-cache.outcome == 'success'
-              uses: actions/cache/save@v6
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: |
                       artifacts
@@ -198,7 +198,7 @@ jobs:
 
             - name: Upload run logs
               if: always()
-              uses: actions/upload-artifact@v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: distributed-run-logs
                   path: ./logs/
