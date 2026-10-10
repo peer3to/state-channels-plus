@@ -1,5 +1,4 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
-import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawnSync } from "child_process";
 import fs from "fs";
@@ -209,6 +208,18 @@ describe("task cost cache", function () {
             expect(
                 cache.key({
                     ...example,
+                    sourceFile: "test/unit/example.test.ts",
+                    args: [
+                        "--require",
+                        "setup.js",
+                        "test",
+                        "dist/test/unit/example.test.js"
+                    ]
+                })
+            ).to.equal("hardhat|test/unit/example.test.ts|one");
+            expect(
+                cache.key({
+                    ...example,
                     runner: "browser",
                     args: [
                         "browser-test",
@@ -225,52 +236,49 @@ describe("task cost cache", function () {
         }
     });
 
-    it("keys a compiled-config task by its test file like the committed costs", function () {
-        const repo = repoRoot();
-        const committedKey =
-            "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache adds new costs but keeps existing baselines despite ordinary measurement drift";
-        expect(readTasks(path.join(repo, "test-costs.json"))).to.have.property(
-            committedKey
-        );
+    it("keys a compiled-config task by its test file and finds its committed cost", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "compiled-key-"));
         const cwd = process.cwd();
         try {
-            const testFile = "test/scripts/e2eParallelCostCache.test.ts";
-            fs.mkdirSync(path.join(root, "test/scripts"), { recursive: true });
-            fs.copyFileSync(
-                path.join(repo, testFile),
-                path.join(root, testFile)
+            fs.mkdirSync(path.join(root, "test/unit"), { recursive: true });
+            fs.writeFileSync(
+                path.join(root, "test/unit/example.test.ts"),
+                'describe("suite", function () { it("case", function () {}); });\n'
             );
-            fs.mkdirSync(path.join(root, "dist/test/scripts"), {
+            fs.mkdirSync(path.join(root, "dist/test/unit"), {
                 recursive: true
             });
             fs.writeFileSync(
-                path.join(
-                    root,
-                    "dist/test/scripts/e2eParallelCostCache.test.js"
-                ),
+                path.join(root, "dist/test/unit/example.test.js"),
                 ""
             );
             fs.writeFileSync(path.join(root, "hardhat.compiled.config.js"), "");
+            // the pre-compiled-config key shape test-costs.json is keyed by
+            const committedKey = "hardhat|test/unit/example.test.ts|suite case";
+            writeCosts(root, { [committedKey]: costEntry(4321, 1) });
             process.chdir(root);
-            const grep = "adds new costs but keeps existing baselines";
             const [compiled] = discoverTasks(
                 "test",
-                grep,
                 undefined,
                 undefined,
-                {
-                    compiled: true
-                }
+                undefined,
+                { compiled: true }
             ).tasks;
-            const [source] = discoverTasks("test", grep).tasks;
+            const [source] = discoverTasks("test").tasks;
             expect(compiled.args.slice(0, 2)).to.deep.equal([
                 "--config",
                 "hardhat.compiled.config.js"
             ]);
+            expect(path.resolve(compiled.sourceFile)).to.equal(
+                path.join(fs.realpathSync(root), "test/unit/example.test.ts")
+            );
             const cache = new CostCache({ projectRoot: root });
             expect(cache.key(compiled)).to.equal(committedKey);
             expect(cache.key(source)).to.equal(committedKey);
+            expect(cache.resolve(compiled)).to.include({
+                durationMs: 4321,
+                known: true
+            });
         } finally {
             process.chdir(cwd);
             fs.rmSync(root, { recursive: true, force: true });

@@ -277,13 +277,8 @@ class CostCache {
         if (runner === "browser") {
             const index = task.args?.indexOf("--script") ?? -1;
             file = index >= 0 ? task.args[index + 1] : undefined;
-        } else if (runner === "hardhat") {
-            // the test file, not the `--config` value before it
-            file = task.args?.find(
-                (arg, index) =>
-                    task.args[index - 1] !== "--config" &&
-                    /\.(?:[cm]?js|ts)$/.test(arg)
-            );
+        } else if (runner === "hardhat" && !file) {
+            file = task.args?.find((arg) => /\.(?:[cm]?js|ts)$/.test(arg));
         }
         let relative = file
             ? path
