@@ -1,7 +1,7 @@
 import { ContractExecutorRpcMethods } from "./ContractExecutorRpcMethods";
 import ContractExecutor from "../../../../evm/contractExecutor/ContractExecutor";
 import Clock from "@/Clock";
-import { createEvm, type EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import { IN_FLIGHT_REPLY_DRAIN_MS } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 import type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
@@ -51,6 +51,8 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
 
     public async init(request: ContractExecutorInitialization) {
         const logger = this.logger;
+        // loaded here -> a host that only proxies to a worker executor never loads the evm
+        const { createEvm } = await import("@/evm/EvmFactory");
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
