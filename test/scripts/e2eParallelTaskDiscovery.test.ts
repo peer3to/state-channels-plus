@@ -21,6 +21,7 @@ const { discoverTasks } =
                 fullTitle: string;
                 isE2E: boolean;
                 args: string[];
+                sourceFile: string;
                 requires?: string[];
             }>;
         };
@@ -312,6 +313,9 @@ describe("parallel Mocha task discovery", function () {
             expect(
                 tasks.every((task) => task.args.includes("--grep"))
             ).to.equal(true);
+            expect(tasks.every((task) => task.sourceFile === file)).to.equal(
+                true
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
