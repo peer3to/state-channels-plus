@@ -5,6 +5,7 @@
 ## Requirements
 
 - [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e)
+  Missing: the scan checks bytecode sizes only and does not reject a development console import ([`FIND-CONTRACT-DEVLOG-1-S97S2H`](../../../../audit/open-findings.md#find-contract-devlog-1-s97s2h)).
 
 ## UNIT-TEST-CONTRACT-SIZE-1-MX797V
 
