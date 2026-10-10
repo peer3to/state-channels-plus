@@ -4,4 +4,5 @@
 
 ## Requirements
 
+- [`REQ-ENFSM-3-JZK0FB` (Genesis derivation)](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-3-jzk0fb)
 - [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)

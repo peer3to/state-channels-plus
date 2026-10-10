@@ -95,6 +95,13 @@ operation: after commitment it reports that handoff is complete and does not can
 observation; an outcome other than opening then ends the join instead of retrying. Successful chain observation leaves the caller topic before the opened-channel result is
 returned to the client.
 
+Channel-open observation reuses the participant's single chain-event pipeline
+([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)): the attempt learns of the opening from a
+runtime-internal event published only after the ordinary chain-event handling has completed, so
+negotiation adds no second chain subscription with its own filter lifetime, replay, ordering, or
+cleanup races. That internal subscription is scoped to the attempt and removed on failure cleanup or
+successful opening.
+
 Final loss of the matched profile before signing is a neutral abort without exclusion. Timeout, malformed
 or mismatched protocol input, admission violation, or abandonment after commitment excludes the peer before
 recovery. A healthy transport replacement is not profile loss.

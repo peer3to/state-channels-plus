@@ -44,6 +44,12 @@ transaction field, MUST be rejected at the producer before it crosses.
 same ordered domain MUST execute in causal order without late or duplicate completion. Another context
 reaches an owner's state only by request. Isolating execution adds latency, not concurrency of live-state
 mutation: live-state application stays totally ordered across the executor boundary.
+A paired channel delivers its messages in send order, and the event and error streams rely on that
+order. Request correlation across this internal boundary needs no authenticity check, because the
+paired context is the only writer of the channel; a network settlement, by contrast, must come from the
+addressed peer ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../peer-communication/rpc.md#req-rpc-2-szdttm)). An inline runtime
+host may serve several participants in one context, so it scopes every handler invocation to its
+participant; an isolated host serves exactly one participant and needs no such scoping.
 
 One connect operation crosses the runtime boundary with a channel identifier and an optional serializable
 record containing independent opening permission, membership intent, full balance, and unmatched matcher
@@ -111,6 +117,9 @@ inter-context interaction is a serialized message. This is a design constraint, 
 the execution engine are both the intended defaults, uniformly on every host; placement MUST NOT branch by
 environment profile. Inline placement is the fallback for hosts without usable workers. Isolation is a
 client-side performance strategy, not server scaling.
+Rejected alternatives (2026-08-10): per-environment placement profiles, because profile branching
+multiplies the configuration matrix the equivalence criterion must cover; and keeping inline as the
+default until measured, because it treats the target architecture as speculative.
 
 **<a id="req-run-14-yahyr4"></a>`REQ-RUN-14-YAHYR4` — Mid-range mobile browser envelope.** A channel of about six participants MUST
 run within a mid-range mobile browser: on the order of 4 GB device RAM, a few hundred MB of usable

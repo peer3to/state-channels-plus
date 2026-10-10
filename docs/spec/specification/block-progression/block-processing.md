@@ -58,7 +58,9 @@ For each arriving confirmation:
    signs nothing more on it. A block on a fork with an observed dispute is ignored and that fork's queued
    work purged — dead-fork state is recovered through the dispute path, never gossip. If the node's
    _own_ current fork is disputed, fork recovery is scheduled (bounded: repeated junk must cost
-   O(1) chain reads per window).
+   O(1) chain reads per window). Recovery runs detached from intake: intake may already hold the
+   state boundary through a dispute re-ingest path, and reduction takes that boundary, so running
+   it inline would deadlock.
 6. **Queue** ([`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg), [queue store](../storage/queue.md)). Queue the block into the
    pre-execution layer with copy-scoped source attribution, and arm the entry's **fixed lifetime**:
    one agreement window from first sight, never extended by duplicates or restores.
@@ -317,7 +319,9 @@ state-machine execution. Admitted contribution history MUST grow monotonically w
 retention limits supplied signature counts per source. Signature validity is checked during normal
 processing. These count limits do not establish a fixed-byte or total-memory bound. An entry's queue
 deadline is fixed at first sight and MUST NOT be extended by duplicates or restores; a not-ready entry
-restored after its deadline already elapsed MUST be handled as expired at once.
+restored after its deadline already elapsed MUST be handled as expired at once. A restore may run while
+its caller holds the state boundary, so it only mutates storage or schedules work; expiry handling runs
+as a scheduled task, never inline in the restore.
 
 **<a id="req-block-pipe-6-xq0rtt"></a>`REQ-BLOCK-PIPE-6-XQ0RTT` — Total-order application.** Blocks leave the pre-execution layer in total order by fork
 identity and block height, and at most one block per channel MAY be in state-machine execution at a time,

@@ -458,6 +458,9 @@ Specification cases tested: 19/22. Untested: T1.P1, T1.P2, T1.P3.
 [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
 Specification cases tested: 0/4.
 
+[`REQ-ENFSM-3-JZK0FB` (Genesis derivation)](../specification/enforcement/execution-and-consumer.md#req-enfsm-3-jzk0fb)
+Specification cases tested: 0/2.
+
 [`REQ-ENFSNAP-1-FYN3BW` (Coupled adoption and outbound processing)](../specification/enforcement/snapshot-adoption.md#req-enfsnap-1-fyn3bw)
 Specification cases tested: 1/6. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 

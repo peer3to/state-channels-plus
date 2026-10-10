@@ -133,8 +133,8 @@ security model is complete.
 the RPC level**, shared across all RPC services (possibly scoped per peer) — deliberately not
 per-service limits — so one clean mechanism protects everything. This limiter is also what
 bounds the pre-execution block queue: a finite admission rate times the fixed entry lifetime
-gives a bounded queue, so the queue needs no cap of its own (see
-sdk/block-confirmation-pipeline.md §3.1). Still open:
+gives a bounded queue, so the queue needs no cap of its own
+([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](block-progression/block-processing.md#req-block-pipe-5-wj31rg)). Still open:
 the thresholds, burst/backpressure behavior, prioritization, and whether an additional fixed
 per-peer limit is wanted. Implementation is required before production.
 
@@ -145,6 +145,12 @@ per-peer limit is wanted. Implementation is required before production.
 The planned Diamond refactor (selector-based routing, focused facets, versioned diamond storage)
 changes the call topology the `onlySelf` self-call guard was designed for. Whether the guard
 remains necessary must be re-evaluated from first principles before it is preserved or removed.
+
+The guard exists because the composable deposit, withdraw, and state-transition entry points are
+public on the proxy yet must only run as internal steps of a larger operation; the self-call also gives
+them a fresh call frame (memory and return-data isolation) that an in-frame delegation would not.
+Options: make them internal to the proxy, route them but keep the guard, or keep the self-call for
+frame isolation. The refactor must pick one and state why.
 
 <a id="oq-8-peyaaq"></a>
 
@@ -379,8 +385,21 @@ it in `open`/`join` (and RPC) rather than degrading without bound. See
 ## OQ-34-FY08V2 — RPC boundary decisions
 
 Grouped decisions surfaced while specifying the peer-RPC model
-(sdk/rpc/README.md); each is marked in place in that document:
+([peer-communication/rpc.md](./peer-communication/rpc.md)); each is marked in place in that document:
 
+- **Deferred retry of request-style calls.** A guard failure that defers the call for replay after
+  authentication still sends its declared rejection to a request-style caller at once, so the caller
+  settles that correlation identity on the early rejection and the replayed copy's second response is
+  ignored as unmatched ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](peer-communication/rpc.md#req-rpc-2-szdttm)). Deferral
+  therefore only benefits one-way calls. Decide whether request-style calls are held without an early
+  rejection or never deferred. A second wrinkle: on a transport that is not negotiating, the failure
+  handler closes the transport before the rejection is attempted on it.
+- **Handshake channel binding.** The signed challenge binds no transport, session, or peer identity,
+  so a live relay can forward one peer's challenge to a third party and return that party's signature
+  ([handshake.md](./peer-communication/handshake.md) security considerations). Decide whether the
+  signed message should bind both peer identities (domain, challenge, local and remote identity) or a
+  transport-derived key; couples to the signature-domain decision
+  ([`OQ-29-EFY4NF`](open-questions.md#oq-29-efy4nf)).
 - **Protocol versioning.** No version negotiation or compatibility scheme exists anywhere in the
   RPC layer (only the `peer3:init-handshake:v1` domain tag). Couples to [`OQ-29-EFY4NF`](open-questions.md#oq-29-efy4nf) (signature
   domains): one versioning decision should cover both.
@@ -443,6 +462,10 @@ Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T` (Isolated p
   latency, and sustained rate at six participants.
 - **Default-flip prerequisites.** Whether flipping the worker defaults requires runtime
   feature-detection with automatic inline fallback (browsers that deny workers).
+- **Cross-kind message ordering.** A paired channel delivers in send order and the event and error
+  streams rely on it ([`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](runtime/execution.md#req-runtime-2-kbxktg)), but no
+  rule states the relative order between a request's settlement and the events or host errors emitted
+  around it on the same channel. Decide whether that order is guaranteed.
 - **Equivalence oracle scope.** Whether event _ordering_ must match exactly or only the emitted
   multiset ([`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](runtime/execution.md#inv-runtime-1-akrhak) currently says same events).
 - **Test scheduling and isolation.** No cross-peer deterministic scheduler exists — coordination is
@@ -450,8 +473,6 @@ Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T` (Isolated p
   chain and discovery registry per machine, with concurrent tests separated only by account-range
   slots and a stamped channel id. Decide whether to commit to a determinism mechanism and whether
   the isolation guarantee should be one chain per test process.
-
-See sdk/runtime-and-concurrency.md §6 and §11.5.
 
 <a id="oq-39-c3eamn"></a>
 

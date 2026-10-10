@@ -20,7 +20,9 @@
 
 - **Calldata store.** Signed blocks observed as on-chain calldata, with their on-chain posting
   timestamp, keyed by (fork id, height, author) — the same coordinates the enforcement commitment
-  uses ([data-availability.md](../security/data-availability.md)).
+  uses ([data-availability.md](../security/data-availability.md)). The observing handler persists the
+  record before yielding to any other work, so a recovery re-read of the store observes it; mirroring
+  the event, notifying listeners, and block ingest follow that persistence in this order.
 - **Timeout store.** At most one timeout candidate per fork: the participant/height pair the node
   would submit if it escalates ([disputes.md](../disputes/disputes.md) §6).
 

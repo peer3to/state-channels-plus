@@ -100,7 +100,9 @@ proof semantics. Threats include selector collision, storage collision, direct i
 operations, partial deployment, inconsistent duplicate validators, malicious replacement, and reentrancy
 across modules. Every public path must fail atomically (the best-effort-last batch excepted, as stated in
 [`REQ-CONTRACT-ARCH-5-QT17P1`](contracts.md#req-contract-arch-5-qt17p1)), and internal decomposition must not enlarge the
-trusted caller set.
+trusted caller set. A production module or state machine MUST NOT depend on development-only logging
+or precompiles: such calls are ambient context the equivalence rules forbid and dead weight against the
+module size limit.
 
 Rejections distinguish an invalid argument from a lost ordering race against a competing on-chain action
 (an expired deadline, a moved snapshot, an already-reduced window), so a submitter can tell a retryable race

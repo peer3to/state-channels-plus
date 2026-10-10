@@ -194,6 +194,11 @@ Don't add `as unknown as` at call sites to reach control services — route thro
   the real code path; the recorded call proves the boundary was reached, and
   the real side effect must have its own coverage on an e2e path where it can
   run for real.
+- **Stubs patch instance members, never prototypes or module-level singletons.**
+  Inline peers co-located in one process share the module graph; a patch on an
+  instance dies with its peer, a patch on a prototype leaks the fault into every
+  other peer in the process. Process-global state such as `Clock` is off limits
+  for the same reason.
 - **Test files contain tests, not helpers.** Any staging used (or usable) by
   more than one test lives in the harness where other tests can discover it:
   host-side manipulations as concrete `stubX`/`restoreX` pairs on the `stub`

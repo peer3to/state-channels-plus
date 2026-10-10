@@ -77,7 +77,10 @@ one, and escalate.
 6. **Sign and submit in one transaction** (evidence applications + upload). Every evidence
    application must succeed or nothing lands; the upload, sent last, is best effort: when it is
    refused, the evidence applications before it still land and the refusal is classified as a
-   refused lone upload would be. Classify races: ineligibility (the node was slashed), a window
+   refused lone upload would be. The batch's gas is estimated on its all-or-nothing form plus the
+   replay requirement; only when that estimate is refused, so the upload already fails, is the
+   best-effort form estimated, which keeps a searching estimator from funding the evidence
+   applications alone while the upload could still land. Classify races: ineligibility (the node was slashed), a window
    opened too early for the timeout, or an expired evidence window (a lost evidence race: a no-op reported to the caller,
    [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../open-questions.md#oq-spec-evidence-race-1-tknwbj)); roll back the once-per-fork guard on failure. An upload carries the signer's estimate plus headroom, not a fixed gas limit, so a concurrent dispute landing between estimate and inclusion cannot push a late disputer out of gas and past the evidence window.
 
@@ -89,6 +92,9 @@ local mirror, deduplicate by dispute identity, and gate by relevance (the disput
 node's current fork, or a decided dispute for a fork with in-progress recovery — late events for
 resolved forks are ignored). Relevant disputes purge the dead fork's queued blocks and trigger the
 one-round [dispute acknowledgment](../peer-communication/dispute-acknowledgment.md).
+Participants and pending participants then run the audit of Stage 4, which needs the evidence for
+their retained region; an uncommitted observer only persists the dispute and schedules the reduction
+of Stage 6 without the participant audit.
 
 ### Stage 4 — Audit (auditor role)
 
@@ -191,7 +197,9 @@ counter punishing the submitter.
    queues drain, membership status recomputes, author-timeout scheduling restarts), then submit
    the finalization detached at the signer's estimate, and once it is mined submit the snapshot
    advance separately. A completed reduction that resolves to a
-   different successor than computed is a fatal inconsistency, not a retry.
+   different successor than computed is a fatal inconsistency, not a retry. Membership recomputes
+   from the successor's participant set: a node the successor dropped as slashed falls back to
+   `SYNCED` standing, and a node the successor excludes entirely aborts its channel session.
 6. **Foreign reductions observed on-chain:** recompute; a mismatch is challenged within the
    challenge period and the dishonest reducer penalized; a match with an expired period is adopted.
 

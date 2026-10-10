@@ -130,7 +130,9 @@ participation, no synchronization eligibility, no authorization, and no subjecti
 proven identity. An identity's channel role never changes the handshake outcome.
 
 **<a id="req-auth-1-rf901k"></a>`REQ-AUTH-1-RF901K` — Validate before signing.** A responder MUST fully validate challenge shape and time
-bounds before creating any signature for an unauthenticated caller. Every handshake endpoint accepts
+bounds before creating any signature for an unauthenticated caller. A non-finite claimed time MUST be
+rejected explicitly: every comparison against it is false, so it would pass the window check and let
+the caller choose what gets signed with an out-of-window time. Every handshake endpoint accepts
 pre-authentication traffic and MUST tolerate wholly unauthenticated, adversarial input without an
 escaping failure.
 
@@ -200,7 +202,8 @@ signing and the domain tag. The signed message binds no transport, session, or p
 live relay can forward one peer's challenge to a third party and return that party's signature; the
 transports supply no channel binding of their own, and only the agreement-window bounds limit the relay.
 The handshake signature is the entire root of identity trust, so this lack of channel binding is its
-largest residual risk. Each request costs the responder a signature before any guard applies; that
+largest residual risk. Binding the peer identities or a transport-derived key into the signed message
+is a pending decision ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)). Each request costs the responder a signature before any guard applies; that
 flood is unbounded until rate limiting is decided ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). A response discloses only the
 responder's transport preference and clock reading. Exclusion durability and its interaction with deferred-call queues are
 open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
