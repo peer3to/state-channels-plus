@@ -299,6 +299,7 @@ function discoverTasks(
                         `${path.basename(f, path.extname(f))}__${fullTitle}`
                     ),
                     fullTitle,
+                    sourceFile: f,
                     runner: TASK_RUNNERS.HARDHAT,
                     isE2E,
                     ...requires
@@ -316,6 +317,7 @@ function discoverTasks(
                 args: [...hardhatArgs, runFile, "--grep", taskGrep],
                 logName,
                 fullTitle,
+                sourceFile: f,
                 runner: TASK_RUNNERS.HARDHAT,
                 isE2E,
                 ...requires
