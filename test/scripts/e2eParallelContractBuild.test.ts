@@ -60,6 +60,44 @@ describe("parallel runner contract build", function () {
         }
     });
 
+    it("distributed CLI builds a linked repository that declares build outputs", function () {
+        const linked = contractProject();
+        // the consumer declares no build scripts of its own
+        const project = contractProject();
+        try {
+            linked.write(
+                "package.json",
+                JSON.stringify({
+                    ...JSON.parse(linked.read("package.json")),
+                    peer3TestDistribution: { buildOutputs: ["dist"] }
+                })
+            );
+            project.write(
+                "package.json",
+                JSON.stringify({
+                    name: "consumer",
+                    dependencies: { linked: `link:${linked.root}` }
+                })
+            );
+            const result = runContractProject(project, [
+                "--distributed",
+                "--no-forge",
+                "--no-browser",
+                "--grep",
+                "no matching test"
+            ]);
+            expect(
+                result.stdout + result.stderr,
+                result.stdout + result.stderr
+            ).to.contain("No selected tests matched --grep");
+            expect(linked.exists("dist/src/index.js")).to.equal(true);
+            expect(linked.read("generator-runs")).to.equal("11");
+        } finally {
+            project.dispose();
+            linked.dispose();
+        }
+    });
+
     it("distributed CLI stops before TypeScript compilation when contracts fail", function () {
         const project = contractProject();
         try {
