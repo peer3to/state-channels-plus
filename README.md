@@ -352,11 +352,12 @@ before anything is built, in either schedule. The defaults are placeholders in
 
 The worker and orchestrator can run on different devices. They do not need a
 direct IP address for each other when the default Hyperswarm DHT is reachable.
-The orchestrator sends source files and the build outputs its project declares
-in `peer3TestDistribution.buildOutputs` (built locally before the run), never
-`node_modules`. Only files whose content changed since a worker's last run are
-transferred. Workers then install dependencies and run; they build only linked
-repositories, whose outputs the orchestrator does not ship.
+The orchestrator sends source files and the build outputs each repository
+declares in `peer3TestDistribution.buildOutputs`, never `node_modules`. It
+builds those repositories locally before the run, linked ones included. Only
+files whose content changed since a worker's last run are transferred. Workers
+then install dependencies and run; they build only the repositories that
+declare no build outputs.
 
 Put the same long, randomly generated secret in the ignored `.env` file on
 every device:
