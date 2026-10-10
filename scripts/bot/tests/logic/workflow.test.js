@@ -93,6 +93,7 @@ describe("review CI workflow", function () {
             const checkout = job.steps.find((s) =>
                 s.uses?.startsWith("actions/checkout@")
             );
+            assert.match(checkout.uses, /^actions\/checkout@[0-9a-f]{40}$/);
             assert.equal(
                 checkout.with.ref,
                 "${{ github.event.pull_request.head.sha }}"
