@@ -1,8 +1,6 @@
 # errorMessage.ts
 
-> **Source:** [errorMessage.ts](../../../../../../src/utils/errorMessage.ts#L1)
->
-> **Design views:** [components.md](../../../views/architecture/sdk/components.md)
+> **Source:** [errorMessage.ts](../../../../../../src/utils/errorMessage.ts)
 
 ## Requirements
 

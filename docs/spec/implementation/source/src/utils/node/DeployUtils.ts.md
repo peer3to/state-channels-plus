@@ -1,8 +1,6 @@
 # DeployUtils.ts
 
 > **Source:** [src/utils/node/DeployUtils.ts](../../../../../../../src/utils/node/DeployUtils.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

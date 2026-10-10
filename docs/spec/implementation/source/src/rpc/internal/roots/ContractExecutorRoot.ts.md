@@ -1,8 +1,6 @@
 # ContractExecutorRoot.ts
 
 > **Source:** [src/rpc/internal/roots/ContractExecutorRoot.ts](../../../../../../../../src/rpc/internal/roots/ContractExecutorRoot.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

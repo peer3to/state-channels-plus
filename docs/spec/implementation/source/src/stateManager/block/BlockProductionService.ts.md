@@ -1,8 +1,6 @@
 # BlockProductionService.ts
 
 > **Source:** [src/stateManager/block/BlockProductionService.ts](../../../../../../../src/stateManager/block/BlockProductionService.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

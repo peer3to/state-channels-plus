@@ -1,8 +1,6 @@
 # DisputeFraudProofService.ts
 
 > **Source:** [src/stateManager/dispute/DisputeFraudProofService.ts](../../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts)
->
-> **Design views:** [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

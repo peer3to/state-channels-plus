@@ -45,7 +45,7 @@ Two install cases stage a reducible disputed fork and sync an observer onto the 
 - `one sync request supports initial load and exact recovery`: INV-SYNC-2-AT3RXE.T1.P1
 - `exact recovery failure preserves a synced observer runtime`: INV-SYNC-3-A7A2ED.T1.P4
 - `a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28
-- `the same-fork target snapshot lands before validation → accepts the proof`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P13, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8, REQ-SPC-1-H10R5K.T1.P6
+- `the same-fork target snapshot lands before validation → accepts the proof`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P13, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8, INV-SYNC-2-AT3RXE.T1.P3
 - `a last-milestone block whose bytes do not decode → milestones invalid, the sync does not throw`: none
 - `on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P34
 - `a milestone prepended wholly below the on-chain anchor carrying a snapshot above it → sync accepted, neither its block nor the snapshot is stored`: none

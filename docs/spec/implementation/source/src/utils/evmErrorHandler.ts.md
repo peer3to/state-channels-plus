@@ -1,8 +1,6 @@
 # evmErrorHandler.ts
 
 > **Source:** [src/utils/evmErrorHandler.ts](../../../../../../src/utils/evmErrorHandler.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

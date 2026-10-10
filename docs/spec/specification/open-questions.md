@@ -38,7 +38,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-32-5NDD24`](open-questions.md#oq-32-5ndd24)                                         | Proof and audit size bounds (milestones, tail blocks, signatures, auditing bytes, replay gas)                                                               | Specification analysis | [protocol/state-proofs.md](./disputes/state-proofs.md), [security/data-availability.md](./security/data-availability.md)                                                                                                   | Open                              |
 | [`OQ-33-1N5BY1`](open-questions.md#oq-33-1n5by1)                                         | Maximum participant count and required enforcement boundary                                                                                                 | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                                                                                       | Open                              |
 | [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2)                                         | RPC boundary decisions: protocol versioning, ban persistence, and failure-outcome policy                                                                    | Code and specification | [peer-communication/rpc.md](./peer-communication/rpc.md)                                                                                                                                                                   | Open                              |
-| [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5)                                         | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation                                        | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                                                                                                   | Open                              |
+| [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5)                                         | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation                                        | Code and specification | runtime/execution.md                                                                                                                                                                                                       | Open                              |
 | [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn)                                         | Reduce: stateful (reads on-chain slashes / inbound tip) vs stateless fold over the committed dispute inputs                                                 | Engineer question      | [protocol/disputes.md](./disputes/disputes.md)                                                                                                                                                                             | Open                              |
 | [`OQ-40-M12S72`](open-questions.md#oq-40-m12s72)                                         | `challengeDisputeReduction`: dormant scaffolding for optimistic reduction, or dead code to remove                                                           | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                                                                                                             | Open                              |
 | [`OQ-43-HWRTNF`](open-questions.md#oq-43-hwrtnf)                                         | Delegated contest authorization: a keyless watchtower can only kill invalid disputes via fraud proofs - opening contests requires the participant's own key | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                                                                                                       | Open                              |
@@ -133,8 +133,8 @@ security model is complete.
 the RPC level**, shared across all RPC services (possibly scoped per peer) — deliberately not
 per-service limits — so one clean mechanism protects everything. This limiter is also what
 bounds the pre-execution block queue: a finite admission rate times the fixed entry lifetime
-gives a bounded queue, so the queue needs no cap of its own (see
-sdk/block-confirmation-pipeline.md §3.1). Still open:
+gives a bounded queue, so the queue needs no cap of its own
+([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](block-progression/block-processing.md#req-block-pipe-5-wj31rg)). Still open:
 the thresholds, burst/backpressure behavior, prioritization, and whether an additional fixed
 per-peer limit is wanted. Implementation is required before production.
 
@@ -145,6 +145,12 @@ per-peer limit is wanted. Implementation is required before production.
 The planned Diamond refactor (selector-based routing, focused facets, versioned diamond storage)
 changes the call topology the `onlySelf` self-call guard was designed for. Whether the guard
 remains necessary must be re-evaluated from first principles before it is preserved or removed.
+
+The guard exists because the composable deposit, withdraw, and state-transition entry points are
+public on the proxy yet must only run as internal steps of a larger operation; the self-call also gives
+them a fresh call frame (memory and return-data isolation) that an in-frame delegation would not.
+Options: make them internal to the proxy, route them but keep the guard, or keep the self-call for
+frame isolation. The refactor must pick one and state why.
 
 <a id="oq-8-peyaaq"></a>
 
@@ -295,7 +301,7 @@ outbound value, slash proceeds, dispute-data retention, and who may submit final
 **Decided (2026-08-10):** turn authorization is a protocol-layer responsibility, enforced
 generically for all state machines — the SDK validation pipeline rejects a wrong-author block
 before it reaches `stateTransition`, and in-contract turn checks are optional defense in depth
-([`REQ-SM-6-BJZVQ5`](protocol-model/state-machines.md#req-sm-6-bjzvq5) / [`REQ-CON-7-DXVW98` (Turn authorization is protocol-enforced)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-7-dxvw98) corrected accordingly).
+([`REQ-SM-6-BJZVQ5`](protocol-model/state-machines.md#req-sm-6-bjzvq5)).
 
 **Remaining question — the on-chain side.** Observed facts: the
 `BlockInvalidStateTransition` handler (`FraudProofFacet._handleBlockInvalidStateTransition`)
@@ -379,8 +385,16 @@ it in `open`/`join` (and RPC) rather than degrading without bound. See
 ## OQ-34-FY08V2 — RPC boundary decisions
 
 Grouped decisions surfaced while specifying the peer-RPC model
-(sdk/rpc/README.md); each is marked in place in that document:
+([peer-communication/rpc.md](./peer-communication/rpc.md)); each is marked in place in that document:
 
+- **Deferred retry of request-style calls.** A guard failure that defers the call for replay after
+  authentication still sends its declared rejection to a request-style caller at once, so the caller
+  settles that correlation identity on the early rejection and the replayed copy's second response is
+  ignored as unmatched ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](peer-communication/rpc.md#req-rpc-2-szdttm)). Deferral
+  therefore only benefits one-way calls. Decide whether request-style calls are held without an early
+  rejection or never deferred. A second wrinkle: on a transport that is not negotiating, the failure
+  handler closes the transport before the rejection is attempted on it.
+- **Handshake channel binding.** Tracked in [`OQ-35-E5RRDF`](../implementation/open-questions.md#oq-35-e5rrdf).
 - **Protocol versioning.** No version negotiation or compatibility scheme exists anywhere in the
   RPC layer (only the `peer3:init-handshake:v1` domain tag). Couples to [`OQ-29-EFY4NF`](open-questions.md#oq-29-efy4nf) (signature
   domains): one versioning decision should cover both.
@@ -427,9 +441,9 @@ message count for pre-readiness traffic.
 
 ## OQ-38-EY27T5 — Runtime budgets, scheduling determinism, and test isolation
 
-Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T` (Worker boundaries are the defaults)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)/14/15):
+Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T` (Isolated placement is the default)](runtime/execution.md#req-run-13-27ye2t)/14/15):
 
-- **Memory budget under the phone envelope (blocks [`REQ-RUN-13-27YE2T` (Worker boundaries are the defaults)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)).** Default-on workers put three
+- **Memory budget under the phone envelope (blocks [`REQ-RUN-13-27YE2T` (Isolated placement is the default)](runtime/execution.md#req-run-13-27ye2t)).** Default-on workers put three
   execution contexts per peer on a device with a few hundred MB of usable heap. _Resolved
   2026-08-10:_ placement does not vary by device — no profile branching; the envelope is a hard
   budget the implementation must meet. _Still open:_ the concrete per-context budget, the
@@ -438,20 +452,22 @@ Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T` (Worker bou
 - **Worker capability detection.** Flipping the defaults requires detecting runtimes that deny
   workers and falling back inline; the mechanism and its failure behavior are undesigned. This is
   a fallback path, not a device profile.
-- **Throughput/latency targets.** None exist, so [`REQ-RUN-14-YAHYR4` (Six participants on a mid-range mobile browser)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-14-yahyr4) is a memory envelope only and the
+- **Throughput/latency targets.** None exist, so [`REQ-RUN-14-YAHYR4` (Mid-range mobile browser envelope)](runtime/execution.md#req-run-14-yahyr4) is a memory envelope only and the
   measurement §44 requires cannot be defined. Decide block-confirmation round-trip, dispute-path
   latency, and sustained rate at six participants.
 - **Default-flip prerequisites.** Whether flipping the worker defaults requires runtime
   feature-detection with automatic inline fallback (browsers that deny workers).
+- **Cross-kind message ordering.** A paired channel delivers in send order and the event and error
+  streams rely on it ([`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](runtime/execution.md#req-runtime-2-kbxktg)), but no
+  rule states the relative order between a request's settlement and the events or host errors emitted
+  around it on the same channel. Decide whether that order is guaranteed.
 - **Equivalence oracle scope.** Whether event _ordering_ must match exactly or only the emitted
-  multiset ([`REQ-RUN-15-8CBVKB` (Inline and worker equivalence)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-15-8cbvkb) currently says same set/payloads).
+  multiset ([`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](runtime/execution.md#inv-runtime-1-akrhak) currently says same events).
 - **Test scheduling and isolation.** No cross-peer deterministic scheduler exists — coordination is
   polling plus event barriers and cooperative hold/release stubs; and the default is one shared
   chain and discovery registry per machine, with concurrent tests separated only by account-range
   slots and a stamped channel id. Decide whether to commit to a determinism mechanism and whether
   the isolation guarantee should be one chain per test process.
-
-See sdk/runtime-and-concurrency.md §6 and §11.5.
 
 <a id="oq-39-c3eamn"></a>
 

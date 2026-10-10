@@ -1,8 +1,6 @@
 # MultiRpcProvider.ts
 
 > **Source:** [src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts)
->
-> **Design views:** [runtime/chain-observation.md](../../../../../views/runtime/chain-observation.md)
 
 ## Requirements
 

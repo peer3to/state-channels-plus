@@ -1,8 +1,6 @@
 # index.ts
 
 > **Source:** [src/index.ts](../../../../../src/index.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../views/architecture/sdk/components.md)
 
 ## Requirements
 

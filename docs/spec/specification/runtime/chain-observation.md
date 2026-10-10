@@ -81,6 +81,8 @@ progress marker is dropped: its block is fully processed.
 ## Assumptions and constraints
 
 - Every listed endpoint serves the same chain; the participant does not merge different chains.
+- The configured log-query window maximum is at or below every endpoint's own log-query range limit; a
+  reconnected endpoint that refuses its windows hands its re-read to the first connected endpoint.
 - Every listed endpoint is trusted, a backup included: a listed endpoint can forge events on its
   subscription and advance the progress marker. Verifying one endpoint's events against another is
   out of scope ([../security/trust-model.md](../security/trust-model.md)).

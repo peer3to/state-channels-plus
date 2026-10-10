@@ -405,7 +405,19 @@ function check() {
             }
         }
     }
+    const requirementOrChild = new RegExp(`^${REQUIREMENT_PATTERN}`);
     for (const [id, definition] of registry.definitions) {
+        // implementation and verification only account for tests: design and
+        // requirements live in the specification
+        if (
+            requirementOrChild.test(id) &&
+            /^(?:implementation|verification)\//.test(
+                specRelative(definition.document)
+            )
+        )
+            issues.push(
+                `${specRelative(definition.document)}:${definition.line + 1}: ${id} is defined outside specification/`
+            );
         if (headingAnchored(definition)) {
             // its links use the heading slug, so the heading must be the bare ID
             if (definition.kind === "heading") {

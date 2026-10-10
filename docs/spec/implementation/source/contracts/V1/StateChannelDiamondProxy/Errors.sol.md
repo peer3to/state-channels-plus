@@ -1,8 +1,6 @@
 # Errors.sol
 
 > **Source:** [contracts/V1/StateChannelDiamondProxy/Errors.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
 ## Requirements
 

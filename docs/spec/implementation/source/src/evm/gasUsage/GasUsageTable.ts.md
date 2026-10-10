@@ -1,8 +1,6 @@
 # GasUsageTable.ts
 
 > **Source:** [src/evm/gasUsage/GasUsageTable.ts](../../../../../../../src/evm/gasUsage/GasUsageTable.ts)
->
-> **Design views:** [architecture/sdk/architecture.md](../../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

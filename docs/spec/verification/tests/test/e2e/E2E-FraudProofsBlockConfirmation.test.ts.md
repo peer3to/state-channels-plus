@@ -29,7 +29,7 @@ applies a proof); the remaining contract-side handler permutations (`REQ-FP-2-CH
 
 ## Tests
 
-- `queued future block accepts later calldata event and executes after predecessor`: REQ-BLOCK-PIPE-4-CF52J6.T1.P1, REQ-BCP-1-X3J4KY.T1.P1, REQ-RPC-4-9VX0B9.T1.P2, REQ-GOSSIP-4-J5Z4DF.T1.P23
+- `queued future block accepts later calldata event and executes after predecessor`: REQ-BLOCK-PIPE-4-CF52J6.T1.P1, REQ-RPC-4-9VX0B9.T1.P2, REQ-GOSSIP-4-J5Z4DF.T1.P23, REQ-BLOCK-PIPE-1-SS24D1.T1.P6
 - `queued duplicate block does not fall through to double sign`: INV-FIN-2-MK27J6.T1.P7
 - `stored duplicate merges trusted timestamp without replaying transition`: REQ-BLOCK-PIPE-1-SS24D1.T1.P2, REQ-RPC-4-9VX0B9.T1.P1, REQ-RPC-4-9VX0B9.T1.P5
 - `stored duplicate drops a new signature from a non-participant without dropping or replaying the block`: REQ-BLOCK-PIPE-1-SS24D1.T1.P5, INTEGRATION-TEST-RPC-6-009EGG.P6, INTEGRATION-TEST-RPC-6-009EGG.P8
@@ -41,4 +41,4 @@ applies a proof); the remaining contract-side handler permutations (`REQ-FP-2-CH
 - `broken inbound chain → BlockInvalidStateTransition`: REQ-BLOCK-PIPE-8-N529VH.T1.P8
 - `forged inbound message → ForgedInboundMessageBlock`: REQ-BLOCK-PIPE-8-N529VH.T1.P7, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P9
 - `applyTransaction failure → BlockInvalidStateTransition`: REQ-BLOCK-PIPE-8-N529VH.T1.P9
-- `stateSnapshotHash mismatch → BlockInvalidStateTransition`: REQ-BLOCK-PIPE-8-N529VH.T1.P4, INV-BCP-2-BVPQF4.T1.P1
+- `stateSnapshotHash mismatch → BlockInvalidStateTransition`: REQ-BLOCK-PIPE-8-N529VH.T1.P4, INV-BLOCK-PIPE-1-1AB2ME.T1.P12

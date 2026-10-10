@@ -1,8 +1,6 @@
 # DisputeStorage.ts
 
 > **Source:** [src/storage/DisputeStorage.ts](../../../../../../src/storage/DisputeStorage.ts)
->
-> **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

@@ -29,7 +29,7 @@ selects proved history and creates a mandatory successor fork.
 | Layer | Question answered | Maintained contents |
 | --- | --- | --- |
 | [Specification](./specification/README.md) | What must every conforming implementation do, and what must be tested? | Neutral requirements/invariants, assumptions, limits, security model, and exhaustive black-box test plans. |
-| [Implementation](./implementation/README.md) | How does this repository implement those rules? | Repository-shaped: one file report per production source file under `implementation/source/` — the requirements it contributes to, its divergences, and its test cases — plus cross-directory design views. |
+| [Implementation](./implementation/README.md) | How does this repository implement those rules? | Repository-shaped: one file report per production source file under `implementation/source/` — the requirements it contributes to, its divergences, and its test cases — plus integration views holding cross-file test cases. |
 | [Verification](./verification/README.md) | How are the real tests judged? | Repository-shaped: one report per test file under `verification/tests/` — a short overview plus a table assigning each declaration the test IDs it covers in full — and the tool-written per-requirement test status in `verification/requirements.md`. |
 | [Audit](./audit/README.md) | Is the complete system structurally complete, semantically correct, sufficiently tested, and approved? | Current specification, implementation, verification, and security assessments; findings; questions; and engineer approvals. |
 
@@ -51,10 +51,10 @@ Knowledge flows only from left to right:
 - **Specification** exists before any particular implementation. It contains requirements and invariants,
   assumptions and constraints, security consequences, and numbered black-box test-plan permutations. It
   never cites this repository's source or tests.
-- **Implementation** is authored after source exists. One report per production file explains that
-  file's responsibility, conformance, and divergences and links its requirements by ID; directory
-  READMEs own subsystem-shared design and integration cases; design views narrate cross-directory
-  flows. It may cite the specification, but not concrete test evidence.
+- **Implementation** is authored after source exists. One report per production file links the
+  requirements that file contributes to, its divergences, and its unit test cases; integration views
+  hold the cases that span several files. It holds no design, which lives only in the
+  specification. It may cite the specification, but not concrete test evidence.
 - **Verification** is authored after tests exist. One report per test file inspects the actual test
   bodies, classifies each declaration (unit/integration/system/end-to-end), and judges whether it
   proves its assigned permutations. It owns all exact test-declaration mappings and records good,
@@ -146,9 +146,9 @@ the requirement identity ([`INV-DA-1-TS7HX2.T1`](specification/security/data-ava
 ([`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1) … `.PN`).
 
 Every file report contains its `Source` header, one bullet per requirement the file contributes to (with a
-hand-written divergence line where the code departs), and its `UNIT-TEST-*` families; a design view holds its
-`INTEGRATION-TEST-*` families and a `Gaps` section. Narrative and view-local requirements still in views are
-legacy awaiting a move into the specification; no new design content goes into a view. Each family is a
+hand-written divergence line where the code departs), and its `UNIT-TEST-*` families; an integration view holds its
+`INTEGRATION-TEST-*` families and a `Gaps` section, nothing else. Design and requirements live only in the
+specification. Each family is a
 heading with one checkbox bullet per `.P1` … `.PN` case; the checkboxes are written by `yarn spec:ids:fix`.
 
 Every verification test report contains only a short overview and the tests table: one row per
@@ -290,8 +290,7 @@ For a design, implementation, contract, or test change affecting specified behav
 
 1. identify affected requirements, planned tests, mirrors, scenarios, questions, findings, and approvals;
 2. update or raise the neutral specification decision before choosing behavior;
-3. update the implementation subject's overview, design, source reports, unit/integration plans, and
-   conformance rows;
+3. update the affected file reports' requirement bullets, divergence lines, and unit/integration cases;
 4. inspect real test bodies and update the affected test reports' test bullets honestly;
 5. run affected tests, `yarn spec:refresh`, and inspect all generated gaps;
 6. reset or allow fingerprints to invalidate affected approvals; and

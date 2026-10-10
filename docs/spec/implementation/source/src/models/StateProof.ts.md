@@ -1,8 +1,6 @@
 # StateProof.ts
 
 > **Source:** [src/models/StateProof.ts](../../../../../../src/models/StateProof.ts)
->
-> **Design views:** [architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

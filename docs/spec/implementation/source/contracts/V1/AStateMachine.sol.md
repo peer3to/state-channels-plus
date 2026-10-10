@@ -1,8 +1,6 @@
 # AStateMachine.sol
 
 > **Source:** [contracts/V1/AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol)
->
-> **Design views:** [architecture/contracts/state-machine-base.md](../../../views/architecture/contracts/state-machine-base.md)
 
 ## Requirements
 

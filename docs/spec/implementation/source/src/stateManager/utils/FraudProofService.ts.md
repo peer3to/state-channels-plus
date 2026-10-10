@@ -1,8 +1,6 @@
 # FraudProofService.ts
 
 > **Source:** [src/stateManager/utils/FraudProofService.ts](../../../../../../../src/stateManager/utils/FraudProofService.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md), [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # types.ts
 
 > **Source:** [src/evm/p2pRuntime/types.ts](../../../../../../../src/evm/p2pRuntime/types.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

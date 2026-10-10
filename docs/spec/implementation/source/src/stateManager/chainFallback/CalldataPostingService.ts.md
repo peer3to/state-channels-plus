@@ -1,8 +1,6 @@
 # CalldataPostingService.ts
 
 > **Source:** [src/stateManager/chainFallback/CalldataPostingService.ts](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts)
->
-> **Design views:** [Block confirmation pipeline](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

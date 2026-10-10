@@ -1,8 +1,6 @@
 # index.ts
 
 > **Source:** [src/evm/index.ts](../../../../../../src/evm/index.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

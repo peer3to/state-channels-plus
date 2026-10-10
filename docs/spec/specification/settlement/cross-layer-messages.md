@@ -68,6 +68,56 @@ The chain's own progress markers live in
 `latestInboundMessageBlockHash/Height`, `latestOutboundMessageBlockHeight`, `totalDeposits`,
 `totalWithdrawals`.
 
+### 1.2 Inbound stream
+
+The base layer is the sole author of inbound blocks, so they need no signatures: existence in
+chain storage is the proof of authenticity.
+
+- **Append.** Each base-layer deposit (open, join, top-up) appends one block whose parent is the
+  current inbound tip, whose height is the tip height plus one, and whose `totalBalance` is the
+  previous deposit total plus each message balance under the balance algebra. The block is
+  persisted, a duplicate block is rejected, and the chain's inbound tip and deposit total advance
+  ([`INV-MSG-1-36Y41Q`](cross-layer-messages.md#inv-msg-1-36y41q), [`INV-MSG-3-PCR3KT`](cross-layer-messages.md#inv-msg-3-pcr3kt)).
+- **Consumption.** The channel's processed inbound tip is the one committed by its latest snapshot.
+  A block author packages the pending inbound range into its next channel block; applying the block
+  applies each message in order and rolls the deposit total forward to the last packaged block's
+  `totalBalance`.
+- **Validation.** Every validator checks that the packaged inbound blocks chain from the previous
+  snapshot's inbound tip (a break is an invalid state transition) and that every packaged block is
+  persisted on chain (a fabricated block is provable fraud) ([`REQ-MSG-3-YY569F`](cross-layer-messages.md#req-msg-3-yy569f)).
+- **Dispute anchor.** A dispute's claimed inbound tip equals the chain's inbound head at upload,
+  in hash and height ([`REQ-MSG-2-7YAD1A`](cross-layer-messages.md#req-msg-2-7yad1a)), so a committed dispute's tip is always an ancestor of (or equal to) the later
+  chain tip.
+- **Pruning.** A snapshot advance deletes persisted inbound blocks from the new snapshot's tip
+  backwards. Where the tip block itself is pruned, the deposit total at that tip is the snapshot's
+  committed `totalDeposits`.
+
+### 1.3 Outbound stream
+
+The channel is the author of outbound blocks; the base layer never stores them. It stores only its
+processed tip and totals, and verifies a claimed range against a snapshot whose validity is
+established separately (finality proof or finalized reduction, §2).
+
+- **Append.** A channel block whose transitions emit outbound messages carries exactly one outbound
+  block: parent is the previous snapshot's outbound tip, height plus one, and `totalBalance` is the
+  previous withdrawal total plus the new message balances. The snapshot the block commits carries
+  the new outbound tip. Dispute reduction appends at most one outbound block the same way, with a
+  zero timestamp so the output is deterministic.
+- **Range verification.** Between a lower and an upper snapshot, checks run in this order: hash
+  linkage from the lower tip and height contiguity, then the final height and hash equal the upper
+  snapshot's tip, and only then the sum of message balances equals the upper snapshot's
+  `totalWithdrawals`. Each failed check rejects the range without reverting, so a forged range whose
+  balances would overflow is rejected cleanly. A range authenticated by the upper tip whose balances
+  overflow still reverts.
+- **Duplicate skipping.** The already-processed prefix of a supplied range is dropped: blocks are
+  discarded up to the first whose parent is the chain's processed tip. If nothing links to that tip,
+  range verification decides; a fully processed range prunes to empty and verifies only when the
+  tips already match ([`REQ-MSG-4-SC1FEX`](cross-layer-messages.md#req-msg-4-sc1fex)).
+- **Processing.** Messages apply in order; an `EXIT` releases funds through the application's
+  withdrawal boundary. After each message `totalWithdrawals ≤ totalDeposits` holds ([`INV-MSG-4-6E5G7V`](cross-layer-messages.md#inv-msg-4-6e5g7v)), then the
+  withdrawal total and processed height advance and a withdrawal event is emitted. An outbound type
+  other than `EXIT` is rejected and reverts the whole advance.
+
 ### 1.4 Incremental catch-up and batching
 
 The recursive hash linkage permits incremental catch-up. If the base layer has processed outbound
@@ -245,6 +295,12 @@ trusted starts, replay-state selection and failure consequences. Proof verificat
 local-final, local-mirror and chain tiers. Lineage and channel balances remain anchored to chain
 facts; successful sync creates no on-chain obligation for the requester.
 
+Verified material is persisted before the unfinalized tail is replayed in order. If a later replay
+block fails, earlier verified progress may remain; retained verified data is not a channel
+commitment, and no rollback of all local storage is promised. Sync itself submits no transaction and
+creates no deposit or signing obligation, which is what makes it fail-closed
+([`REQ-MSG-9-BFN9P5`](cross-layer-messages.md#req-msg-9-bfn9p5)).
+
 ---
 
 ## 4. Join and admission (inbound-stream consumer)
@@ -311,6 +367,10 @@ applied by `_joinChannel`, which — per its contract
 (`the corresponding state-machine operation`) — adds a new
 participant _or_ credits an existing participant's balance without changing membership.
 
+**Deadline and concurrency.** The joiner chooses the join deadline; the base layer only rejects a
+submission after it. Because every join pins the expected snapshot, any snapshot advance between
+signature collection and submission invalidates the join, so concurrent admissions race.
+
 ### 4.3 Verification
 
 ---
@@ -353,6 +413,33 @@ it does not care whether Bob has 4 and Alice 6 or Bob 8 and Alice 2 — only tha
 **The attack it prevents:** colluding participants finalize a snapshot whose in-channel balances
 sum to more than the channel controls, induce a newcomer to deposit, withdraw the real collateral
 through valid-looking exits, and leave the newcomer holding an unpayable in-channel balance.
+
+### 6.2 Definition
+
+A claimed snapshot satisfies the invariant iff, under the application's balance algebra:
+
+1. its state hash equals the hash of the supplied encoded state;
+2. its `totalDeposits` equals the on-chain deposit total at the snapshot's inbound tip — deposits
+   happen only on chain, so a snapshot cannot claim deposits the chain has not seen;
+3. its `totalWithdrawals` is at least the on-chain processed withdrawal total — a snapshot cannot
+   un-process a withdrawal the chain already paid out;
+4. `totalDeposits == totalWithdrawals + totalStateBalance(state)`, the invariant proper
+   ([`INV-MSG-6-1C22RD`](cross-layer-messages.md#inv-msg-6-1c22rd)); the integrator supplies the
+   total state balance per balance model, and a composite or multi-asset model encodes the aggregate in
+   its balance algebra.
+
+Inputs are the snapshot data, its full encoded state, and inbound/outbound ranges connecting the
+snapshot's tips to the chain; the ranges are verified before the invariant is evaluated. The
+check needs only on-chain data plus those inputs, so any party can run it without trusting a
+participant ([`REQ-MSG-12-1RRB0W`](cross-layer-messages.md#req-msg-12-1rrb0w)).
+
+### 6.3 Where it is checked
+
+- A spectator checks the latest finalized snapshot before joining and aborts on failure.
+- A dispute whose proven latest finalized state violates the invariant is disproved by fraud proof
+  and its disputer slashed.
+- Whether a base-layer snapshot update or a join submission must also check it is undecided
+  ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx)); until then neither does, and a joiner is expected to have spectated first.
 
 ### 6.4 Verification
 
@@ -418,7 +505,7 @@ failure.
 
 **<a id="req-msg-11-vs3zgc"></a>`REQ-MSG-11-VS3ZGC`.** A deposited-but-unincluded joiner MUST be able to force inclusion via the dispute game and then be covered by leader election
 
-**<a id="req-msg-12-1rrb0w"></a>`REQ-MSG-12-1RRB0W`.** Anyone MUST be able to verify the balance invariant trustlessly for a claimed snapshot
+**<a id="req-msg-12-1rrb0w"></a>`REQ-MSG-12-1RRB0W`.** Anyone MUST be able to verify the balance invariant trustlessly for a claimed snapshot, using only on-chain data plus the snapshot's state and linked stream ranges
 
 ## Verification and test plan
 
@@ -467,15 +554,15 @@ _Non-normative._
 - **Per-message failure isolation.** Explore skip/quarantine semantics so one wedged consumer
   `withdraw` cannot block the whole outbound stream (§1.5).
 - **Admission policy.** The configurable admission filter and snapshot-scoped consent for
-  `signJoinRequest`; possibly protocol-visible declines (§4.2).
+  `signJoinRequest`; possibly protocol-visible declines (§4.1).
 - **Refund path for stranded deposits.** A first-class refund for acknowledged-but-never-included
-  joins, instead of relying on force-join disputes (§4.2).
+  joins, instead of relying on force-join disputes (§4.1).
 - **Batched joins.** `depositAssetsComposable` already accepts arrays and `JoinChannelBlock`
   exists in the types; specifying multi-join batching could amortize inbound-stream costs.
 - **Spectate simulation stubs.** Dummy consumer contracts so spectators can simulate snapshot
-  advances whose withdrawals touch external assets (§3.2).
-- **Invariant on snapshot update.** Implement the declared intent to run the balance-invariant
-  check as the last step of every snapshot update (§2.3, §6.3).
+  advances whose withdrawals touch external assets (§3.1).
+- **Invariant on snapshot update.** If [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx) selects snapshot-update enforcement, run the
+  balance-invariant check as the last step of every snapshot update (§2.2, §6.3).
 - **Marker consolidation.** Mirror the outbound tip hash into `ChannelBalance` (§1.1).
 
 ---

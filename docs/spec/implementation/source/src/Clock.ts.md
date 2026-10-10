@@ -1,8 +1,6 @@
 # Clock.ts
 
 > **Source:** [src/Clock.ts](../../../../../src/Clock.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../views/architecture/sdk/components.md)
 
 ## Requirements
 

@@ -60,8 +60,8 @@ For every affected behavior:
 
 The three layers do NOT share a filesystem structure (review objective 46). The specification is
 organized by protocol system; the implementation mirrors the production tree under
-`implementation/source/` (one file report per `src/`/`contracts/` file) plus cross-directory design
-views under `implementation/views/`; the verification mirrors the test tree under
+`implementation/source/` (one file report per `src/`/`contracts/` file) plus integration views
+under `implementation/views/`; the verification mirrors the test tree under
 `verification/tests/` (one report per test file with executable declarations) plus the
 tool-written `verification/requirements.md`. Traceability runs only through stable IDs and exact
 test declarations — path equality is never evidence.
@@ -70,8 +70,8 @@ Every `src/`/`contracts/` file has exactly one file report at `implementation/so
 its `> **Source:**` header is how the tools find it. Never clear a generated gap with a broad
 directory link or a file-level ignore that hides specification evidence.
 
-Every implementation design view explicitly names exactly one `> **Specification subject:**` owner
-near its title; views link file reports and never duplicate or replace them. If concrete
+Every integration view names exactly one `> **Specification subject:**` owner under its title and
+holds nothing else but its `INTEGRATION-TEST-*` families and a `## Gaps` section. If concrete
 documentation exposes behavior with no neutral requirement, add or amend the specification first.
 
 Specification test plans preserve their owning requirement ID: [`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1), with required
@@ -102,8 +102,8 @@ Each file report (`implementation/source/<path>.md`, exemplar
 `implementation/source/src/disputeManager/DisputeManager.ts.md`) holds only what neither the code
 nor the specification says:
 
-- a header: `> **Source:**` (required), `> **Replaces:**` when the file takes over a removed
-  source, and `> **Design views:**` linking the views that narrate its flows;
+- a header: `> **Source:**` (required) and `> **Replaces:**` when the file takes over a removed
+  source;
 - `## Requirements`: one bullet per requirement the file contributes to, the bare ID link. A bare
   bullet means "this file contributes" and nothing more. Where the code departs from the
   requirement, add an indented hand-written line under the bullet — `Contradicts: …`,
@@ -114,12 +114,10 @@ nor the specification says:
 
 A sentence that restates the code does not belong in this layer: no responsibility summaries,
 design decisions, input/output lists, assumptions, or related-file lists. Do not link source line
-anchors (`#L…`); name the function in backticks. Design and know-how belong in the
-specification; a design view holds only its `INTEGRATION-TEST-*` families and a `## Gaps` section
-(a divergence no single file owns, in the file-report bullet shape). The narrative, diagrams and
-view-local requirements still in the views are legacy, pending a move into the specification:
-add no new design prose or requirements to a view, and do not grow the legacy content. Cross-subsystem and E2E cases belong to
-verification. If a requirement is integrator-owned or cannot be enforced generically, say so in
+anchors (`#L…`); name the function in backticks. Design, know-how and requirements live only in
+the specification; `yarn spec:ids:check` fails on a requirement defined in `implementation/` or `verification/`. A view's
+`## Gaps` bullet is a divergence no single file owns, in the file-report bullet shape. Cross-subsystem
+and E2E cases belong to verification. If a requirement is integrator-owned or cannot be enforced generically, say so in
 the divergence line.
 
 One family, one heading. Add new cases as bullets under the family's existing heading; never
@@ -132,7 +130,7 @@ a word an author writes: tested status is derived, and a requirement bullet carr
 unless the code departs from it.
 
 Tested status of a requirement: grep its ID in `verification/requirements.md`. Of a unit or
-integration case: its checkbox in the file report or view. Which test covers a case: grep the case
+integration case: its checkbox in the file report or integration view. Which test covers a case: grep the case
 ID in `verification/tests/`. Specification documents carry no test evidence.
 
 Make every requirement, plan, and permutation reference navigable without losing its code styling:

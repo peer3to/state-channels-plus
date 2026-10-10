@@ -3,8 +3,6 @@
 > **Source:** [src/rpc/network/guards/index.ts](../../../../../../../../src/rpc/network/guards/index.ts)
 >
 > **Replaces:** `src/rpc/guards/index.ts`
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

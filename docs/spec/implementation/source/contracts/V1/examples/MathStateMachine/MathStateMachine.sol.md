@@ -1,11 +1,11 @@
 # MathStateMachine.sol
 
 > **Source:** [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol)
->
-> **Design views:** [architecture/contracts/state-machine-base.md](../../../../../views/architecture/contracts/state-machine-base.md)
 
 ## Requirements
 
+- [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e)
+  Contradicts: `leaveChannel` imports the development console and keeps a live logging call in the example state machine ([`FIND-CONTRACT-DEVLOG-1-S97S2H`](../../../../../../audit/open-findings.md#find-contract-devlog-1-s97s2h)).
 - [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)

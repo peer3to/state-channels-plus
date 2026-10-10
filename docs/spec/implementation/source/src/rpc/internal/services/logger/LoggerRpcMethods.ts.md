@@ -1,8 +1,6 @@
 # LoggerRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/logger/LoggerRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/logger/LoggerRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

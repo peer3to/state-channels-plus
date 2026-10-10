@@ -1,8 +1,6 @@
 # kernelCounters.ts
 
 > **Source:** [src/utils/logging/node/kernelCounters.ts](../../../../../../../../src/utils/logging/node/kernelCounters.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

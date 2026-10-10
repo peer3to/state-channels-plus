@@ -1,8 +1,6 @@
 # MembershipService.ts
 
 > **Source:** [src/stateManager/membership/MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts)
->
-> **Design views:** [join channel](../../../../views/architecture/sdk/rpc/join-channel.md)
 
 ## Requirements
 

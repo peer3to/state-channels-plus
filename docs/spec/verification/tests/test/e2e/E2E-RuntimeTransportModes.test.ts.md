@@ -36,7 +36,7 @@ results and domain state. Each placement also runs the same real two-peer channe
 - `enters a custom RPC handler without the state mutex in worker mode`: INTEGRATION-TEST-RPC-5-ACP2QT.P3
 - `rejects and cleans up failed custom root readiness in inline mode`: REQ-RUNTIME-3-VQXW59.T1.P5, UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P6, UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P6
 - `rejects and cleans up failed custom root readiness in worker mode`: REQ-RUNTIME-3-VQXW59.T1.P7, UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P8, UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P11
-- `generates a host-owned signer when no secret is supplied`: REQ-SDK-1-JKC9W7.T1.P1
+- `generates a host-owned signer when no secret is supplied`: REQ-ID-3-KR0BE3.T1.P6
 - `uploads both threads when the sdk thread crashes`: UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P12, REQ-LOG-8-B7VN3J.T1.P4
 - `report-a-bug returns its local result and reaches the SDK receiver`: none
 - `a closed session releases its roots and detaches its logger service`: none

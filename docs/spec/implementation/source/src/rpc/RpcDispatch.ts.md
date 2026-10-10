@@ -1,8 +1,6 @@
 # RpcDispatch.ts
 
 > **Source:** [src/rpc/RpcDispatch.ts](../../../../../../src/rpc/RpcDispatch.ts)
->
-> **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

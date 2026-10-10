@@ -1,8 +1,6 @@
 # AGuard.ts
 
 > **Source:** [src/rpc/network/guards/AGuard.ts](../../../../../../../../src/rpc/network/guards/AGuard.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

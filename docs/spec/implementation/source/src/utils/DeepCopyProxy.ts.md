@@ -1,8 +1,6 @@
 # DeepCopyProxy.ts
 
 > **Source:** [src/utils/DeepCopyProxy.ts](../../../../../../src/utils/DeepCopyProxy.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

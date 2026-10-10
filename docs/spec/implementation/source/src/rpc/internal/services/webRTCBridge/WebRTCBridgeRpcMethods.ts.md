@@ -1,8 +1,6 @@
 # WebRTCBridgeRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/webRTCBridge/WebRTCBridgeRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/webRTCBridge/WebRTCBridgeRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

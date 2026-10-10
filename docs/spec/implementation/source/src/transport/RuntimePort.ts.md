@@ -1,8 +1,6 @@
 # RuntimePort.ts
 
 > **Source:** [src/transport/RuntimePort.ts](../../../../../../src/transport/RuntimePort.ts)
->
-> **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

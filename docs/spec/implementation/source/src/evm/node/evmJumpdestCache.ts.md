@@ -1,8 +1,6 @@
 # evmJumpdestCache.ts
 
 > **Source:** [src/evm/node/evmJumpdestCache.ts](../../../../../../../src/evm/node/evmJumpdestCache.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # Block.ts
 
 > **Source:** [src/models/Block.ts](../../../../../../src/models/Block.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # TimeoutStorage.ts
 
 > **Source:** [src/storage/TimeoutStorage.ts](../../../../../../src/storage/TimeoutStorage.ts)
->
-> **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # LobbyMatchingValidation.ts
 
-> **Source:** [LobbyMatchingValidation.ts](../../../../../../../../../src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts#L1)
->
-> **Design views:** [components.md](../../../../../../views/architecture/sdk/components.md)
+> **Source:** [LobbyMatchingValidation.ts](../../../../../../../../../src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts)
 
 ## Requirements
 

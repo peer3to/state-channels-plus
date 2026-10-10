@@ -13,16 +13,16 @@ this layer records only what neither the code nor the specification says.
 - [Layer structure](#layer-structure)
 - [File reports](#file-reports)
 - [Test families](#test-families)
-- [Design views](#design-views)
+- [Integration views](#integration-views)
 - [Tested status](#tested-status)
 
 ## Layer structure
 
-| Location | Holds |
-| --- | --- |
-| `source/` | One report per production file under `src/` and `contracts/`, mirroring the repository layout with the source extension retained (`source/src/storage/QueueStorage.ts.md`). |
-| [views/](./views/) | Cross-directory views: `INTEGRATION-TEST-*` families and `Gaps` for flows that span several source directories (legacy narrative pending a move into the specification). Each names its specification owner. |
-| [open-questions.md](./open-questions.md) | Implementation-owned open decisions: mechanism, conformance, and platform choices. |
+| Location                                 | Holds                                                                                                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source/`                                | One report per production file under `src/` and `contracts/`, mirroring the repository layout with the source extension retained (`source/src/storage/QueueStorage.ts.md`). |
+| [views/](./views/)                       | `INTEGRATION-TEST-*` families and `Gaps` for flows that span several source files. Each names its specification owner.                                                      |
+| [open-questions.md](./open-questions.md) | Implementation-owned open decisions: mechanism, conformance, and platform choices.                                                                                          |
 
 ## File reports
 
@@ -30,8 +30,6 @@ this layer records only what neither the code nor the specification says.
 # <file name>
 
 > **Source:** [src/<path>](<relative link>)
->
-> **Design views:** [<view>](<relative link>)
 
 ## Requirements
 
@@ -58,7 +56,7 @@ this layer records only what neither the code nor the specification says.
   `No specified behavior: <reason>.`, and keeps any families it has. `yarn spec:impact` accounts such
   a file; a file with neither a requirement nor that line blocks it.
 - **Headers.** `Source` is required: the tools find a file's report through it. `Replaces` names a
-  removed source this file takes over; `Design views` points to the narrative.
+  removed source this file takes over.
 - No `#L` source line anchors: they go stale on every edit. Name the function in backticks.
 
 ## Test families
@@ -69,13 +67,12 @@ heading; add new cases under it after the highest number. A reference to a case 
 family heading. Exact test evidence lives only in the verification test reports, mapped against
 the case IDs.
 
-## Design views
+## Integration views
 
-A view holds its `INTEGRATION-TEST-*` families and a `## Gaps` section: a divergence that no
-single file owns is a bullet there, in the same shape as a file report's requirement bullet.
-Design and know-how belong in the specification. The narrative prose, diagrams, `Future Work` and
-view-local requirements (`### <REQ-or-INV-ID> — <subject>` headings) still in the views are legacy
-awaiting a move into the specification; add no new design content or requirements to a view.
+A view holds only its `> **Specification subject:**` header, its `INTEGRATION-TEST-*` families and a
+`## Gaps` section: a divergence that no single file owns is a bullet there, in the same shape as a
+file report's requirement bullet. Design, know-how and requirements live only in the
+specification; `yarn spec:ids:check` fails on a requirement defined in `implementation/` or `verification/`.
 
 ## Tested status
 

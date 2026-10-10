@@ -1,8 +1,6 @@
 # InitHandshakeRpcMethods.ts
 
 > **Source:** [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/handshake.md](../../../../../../views/architecture/sdk/rpc/handshake.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # TimeoutManager.ts
 
 > **Source:** [src/utils/TimeoutManager.ts](../../../../../../src/utils/TimeoutManager.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

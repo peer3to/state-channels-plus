@@ -1,8 +1,6 @@
 # HandshakeCompletedGuard.ts
 
 > **Source:** [src/rpc/network/guards/HandshakeCompletedGuard.ts](../../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

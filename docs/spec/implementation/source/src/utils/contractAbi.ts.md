@@ -1,8 +1,6 @@
 # contractAbi.ts
 
 > **Source:** [src/utils/contractAbi.ts](../../../../../../src/utils/contractAbi.ts)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../views/architecture/contracts/manager-and-facets.md)
 
 ## Requirements
 

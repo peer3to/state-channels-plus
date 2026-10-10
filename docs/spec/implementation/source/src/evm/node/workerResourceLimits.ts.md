@@ -1,8 +1,6 @@
 # workerResourceLimits.ts
 
 > **Source:** [src/evm/node/workerResourceLimits.ts](../../../../../../../src/evm/node/workerResourceLimits.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 No specified behavior: Node worker resource-limit configuration.
 
