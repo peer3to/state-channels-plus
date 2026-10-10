@@ -34,3 +34,4 @@ Topic-owned local discovery lifecycle
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14` — a dial whose handshake is still pending when its runtime begins shutdown schedules no retry and logs no retry warning
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15` — a replacement endpoint advertised during the old endpoint handshake is retained; after the old socket closes, real retry authenticates a new transport with no blacklist
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16` — the same replacement advertisement while the old authenticated transport is live is retained and used after its close
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17` — after a topic leave, a rejoin dials the announced peer again while the left topic's closed dial socket has not finished closing
