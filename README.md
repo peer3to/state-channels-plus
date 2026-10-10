@@ -134,7 +134,11 @@ linger and run. Outside a project with that build script the runner falls back
 to the sources. Compiled children load `hardhat.compiled.config.js` from the
 project root, which re-exports `dist/hardhat.config.js`, so hardhat skips
 ts-node for its config too; without that file they load `hardhat.config.ts`
-under ts-node. Every child also gets `NODE_COMPILE_CACHE` at
+under ts-node. With the shim nothing registers `tsconfig-paths`, so `dist`
+must hold no path aliases: the build mirrors non-TypeScript files into `dist`
+before `tsc-alias` runs, and code that resolves module paths itself
+(`require.resolve`) uses relative paths, which `tsc-alias` does not rewrite.
+Every child also gets `NODE_COMPILE_CACHE` at
 `cache/node-compile-cache` (node 22.1+, an exported value wins), so its main
 and worker threads reuse compiled code across tasks; a worker host picks this
 up only after it updates its runner checkout and restarts
