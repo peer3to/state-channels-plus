@@ -49,7 +49,8 @@ const {
     processScanStats
 } = require("../../scripts/e2e-parallel/shared/resourceGate.js");
 const {
-    nextSampleDelayMs
+    nextSampleDelayMs,
+    runTask
 } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const {
     allowsWorkerAssignment,
@@ -1948,6 +1949,35 @@ describe("distributed worker scheduler", function () {
         for (let index = 0; index < 5; index++)
             delays.push(nextSampleDelayMs(delays[delays.length - 1]));
         expect(delays).to.deep.equal([100, 200, 400, 800, 1000, 1000]);
+    });
+
+    it("gives a test child and its worker threads the project's compile cache", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "compile-cache-"));
+        try {
+            const logPath = path.join(root, "child.ansi");
+            const result = await runTask(
+                process.execPath,
+                [
+                    "-e",
+                    'const { Worker } = require("worker_threads");' +
+                        'console.log(require("module").getCompileCacheDir());' +
+                        "new Worker('console.log(require(\"module\").getCompileCacheDir())', { eval: true });"
+                ],
+                {},
+                "compile-cache",
+                logPath
+            );
+            expect(result.code).to.equal(0);
+            const cacheDirs = fs
+                .readFileSync(logPath, "utf8")
+                .trim()
+                .split("\n")
+                .map((dir) => path.dirname(dir));
+            const projectCache = path.resolve("cache", "node-compile-cache");
+            expect(cacheDirs).to.deep.equal([projectCache, projectCache]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("parses fractional and day-prefixed ps CPU times", async function () {
