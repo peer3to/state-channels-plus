@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawnSync } from "child_process";
 import fs from "fs";
@@ -13,6 +14,9 @@ const {
 const {
     TaskCoordinator
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
+const {
+    discoverTasks
+} = require("../../scripts/e2e-parallel/shared/taskDiscovery.js");
 const example = {
     runner: "hardhat",
     label: "one",
@@ -217,6 +221,58 @@ describe("task cost cache", function () {
                 "hardhat||legacy"
             );
         } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keys a compiled-config task by its test file like the committed costs", function () {
+        const repo = repoRoot();
+        const committedKey =
+            "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache adds new costs but keeps existing baselines despite ordinary measurement drift";
+        expect(readTasks(path.join(repo, "test-costs.json"))).to.have.property(
+            committedKey
+        );
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "compiled-key-"));
+        const cwd = process.cwd();
+        try {
+            const testFile = "test/scripts/e2eParallelCostCache.test.ts";
+            fs.mkdirSync(path.join(root, "test/scripts"), { recursive: true });
+            fs.copyFileSync(
+                path.join(repo, testFile),
+                path.join(root, testFile)
+            );
+            fs.mkdirSync(path.join(root, "dist/test/scripts"), {
+                recursive: true
+            });
+            fs.writeFileSync(
+                path.join(
+                    root,
+                    "dist/test/scripts/e2eParallelCostCache.test.js"
+                ),
+                ""
+            );
+            fs.writeFileSync(path.join(root, "hardhat.compiled.config.js"), "");
+            process.chdir(root);
+            const grep = "adds new costs but keeps existing baselines";
+            const [compiled] = discoverTasks(
+                "test",
+                grep,
+                undefined,
+                undefined,
+                {
+                    compiled: true
+                }
+            ).tasks;
+            const [source] = discoverTasks("test", grep).tasks;
+            expect(compiled.args.slice(0, 2)).to.deep.equal([
+                "--config",
+                "hardhat.compiled.config.js"
+            ]);
+            const cache = new CostCache({ projectRoot: root });
+            expect(cache.key(compiled)).to.equal(committedKey);
+            expect(cache.key(source)).to.equal(committedKey);
+        } finally {
+            process.chdir(cwd);
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
