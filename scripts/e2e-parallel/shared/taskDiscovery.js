@@ -150,6 +150,9 @@ function extractMochaDeclarations(sourceFile, filePath, includeInactive) {
 // with source maps keeping stack traces on the .ts lines. `--source-tests`
 // runs the sources under ts-node as before.
 const COMPILED_ROOT = "dist";
+// loads dist/hardhat.config.js from the project root -> hardhat never starts
+// ts-node and the project root stays the root
+const COMPILED_HARDHAT_CONFIG = "hardhat.compiled.config.js";
 
 function compiledTestPath(filePath) {
     const relative = path.relative(process.cwd(), path.resolve(filePath));
@@ -269,6 +272,10 @@ function discoverTasks(
         )
         .sort();
     const resolvedE2eDir = path.resolve(e2eDir);
+    const hardhatArgs =
+        compiled && fs.existsSync(COMPILED_HARDHAT_CONFIG)
+            ? ["--config", COMPILED_HARDHAT_CONFIG, "test", "--no-compile"]
+            : ["test", "--no-compile"];
     const tasks = [];
     for (const f of files) {
         const resolvedFile = path.resolve(f);
@@ -287,7 +294,7 @@ function discoverTasks(
                 const taskGrep = `^${escapeRegex(fullTitle)}$`;
                 tasks.push({
                     label: `test:${path.basename(f)}:${fullTitle}`,
-                    args: ["test", "--no-compile", runFile, "--grep", taskGrep],
+                    args: [...hardhatArgs, runFile, "--grep", taskGrep],
                     logName: sanitizeFileName(
                         `${path.basename(f, path.extname(f))}__${fullTitle}`
                     ),
@@ -306,7 +313,7 @@ function discoverTasks(
             );
             tasks.push({
                 label: `test:${path.basename(f)}:${test}`,
-                args: ["test", "--no-compile", runFile, "--grep", taskGrep],
+                args: [...hardhatArgs, runFile, "--grep", taskGrep],
                 logName,
                 fullTitle,
                 runner: TASK_RUNNERS.HARDHAT,

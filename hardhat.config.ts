@@ -122,10 +122,21 @@ task(TASK_TEST)
         undefined,
         types.string
     )
-    .setAction(async (taskArgs, _hre, runSuper) => {
+    .setAction(async (taskArgs, hre, runSuper) => {
         if (taskArgs.excludeTags) {
             process.env.LOG_EXCLUDE_TAGS = taskArgs.excludeTags;
         }
+        // the base task reads the in-process network's stack-trace failure
+        // count after mocha -> on a network no test touched that builds a whole
+        // EDR provider (~1 s) just to read 0
+        const provider = hre.network.provider;
+        const send = provider.send.bind(provider);
+        provider.send = (method, params) =>
+            method === "hardhat_getStackTraceFailuresCount" &&
+            (provider as unknown as { provider?: unknown }).provider ===
+                undefined
+                ? Promise.resolve(0)
+                : send(method, params);
         return runSuper(taskArgs);
     });
 
