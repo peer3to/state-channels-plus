@@ -1953,6 +1953,9 @@ describe("distributed worker scheduler", function () {
 
     it("gives a test child and its worker threads the project's compile cache", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "compile-cache-"));
+        // the test process may itself be a runner child -> drop the inherited path
+        const inherited = process.env.NODE_COMPILE_CACHE;
+        delete process.env.NODE_COMPILE_CACHE;
         try {
             const logPath = path.join(root, "child.ansi");
             const result = await runTask(
@@ -1960,8 +1963,8 @@ describe("distributed worker scheduler", function () {
                 [
                     "-e",
                     'const { Worker } = require("worker_threads");' +
-                        'console.log(require("module").getCompileCacheDir());' +
-                        "new Worker('console.log(require(\"module\").getCompileCacheDir())', { eval: true });"
+                        "console.log(process.env.NODE_COMPILE_CACHE);" +
+                        "new Worker('console.log(process.env.NODE_COMPILE_CACHE)', { eval: true });"
                 ],
                 {},
                 "compile-cache",
@@ -1971,11 +1974,12 @@ describe("distributed worker scheduler", function () {
             const cacheDirs = fs
                 .readFileSync(logPath, "utf8")
                 .trim()
-                .split("\n")
-                .map((dir) => path.dirname(dir));
+                .split("\n");
             const projectCache = path.resolve("cache", "node-compile-cache");
             expect(cacheDirs).to.deep.equal([projectCache, projectCache]);
         } finally {
+            if (inherited !== undefined)
+                process.env.NODE_COMPILE_CACHE = inherited;
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
