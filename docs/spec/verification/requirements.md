@@ -405,7 +405,7 @@ Specification cases tested: 7/10. Untested: T1.P2, T1.P4, T1.P5.
 Specification cases tested: 0/9.
 
 [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)
-Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
+Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-BLOCK-PIPE-7-FYE9VJ` (Commit before publish)](../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj)
 Specification cases tested: 0/3.

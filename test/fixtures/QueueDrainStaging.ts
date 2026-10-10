@@ -4,7 +4,10 @@ import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { QueueIntakeFixture } from "./QueueIntakeFixture";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * Two future blocks each get a source probe from their queue timeout; both
@@ -309,4 +312,111 @@ export async function scheduleForkRecoveryAroundStop() {
         },
         { otherForkId: factory.hash() as ForkId }
     );
+}
+
+/**
+ * A spectator's sync is held with the channel tip in its payload while a
+ * copy of that tip and the next block queue on its not yet synced fork, with
+ * no queue timeout armed to rescue them. The sync then stores the tip, so
+ * the drain it schedules dequeues the stored tip copy: the next block must
+ * still drain and apply. `next` arrives by direct ingest or by gossip.
+ */
+export async function assertStoredTipCopyDrainsNextBlock(
+    h: MathPeerTestHarness,
+    next: "ingested" | "gossiped"
+): Promise<void> {
+    // the queued next block is applied well inside its agreement window
+    await h.lifecycle.start(3, 1, {
+        timeConfig: {
+            p2pTime: 2,
+            agreementTime: 12,
+            chainFallbackTime: 3,
+            evidenceTime: 6
+        }
+    });
+    const forkId = h.activeForkId!;
+    for (const index of [0, 1, 2]) await h.rpcStub.suppressTimeoutCheck(index);
+    const author = h.getPeer(0);
+    const spectator = await h.join.createSpectatorPeer();
+    const queueTimeouts = await h.rpcStub.recordScheduledTasks(
+        spectator.index,
+        { suppressPrefix: "BlockQueueManager.queueTimeout" }
+    );
+    const sync = await h.rpcStub.holdSpectateSyncApplication(spectator.index);
+    const ingest = async (hash: Hash) => {
+        const latest = await h
+            .control(author)
+            .query.getLatestBlockConfirmation(forkId)
+            .request();
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: spectator.index,
+            blockConfirmation: Codec.decode(
+                latest!.encodedBlockConfirmation,
+                Type.BlockConfirmation
+            ),
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: author.address
+            },
+            keepConnection: true,
+            waitForProcessed: false
+        });
+        expect(
+            await h.control(spectator).query.isBlockQueued(hash).request()
+        ).to.equal(true);
+    };
+    try {
+        await h.join.connectSpectator(spectator);
+        await waitFor(
+            async () => (await sync.entered()) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        const tipHeight = (await h
+            .control(author)
+            .query.getLatestBlockHeight(forkId)
+            .request())!;
+        await ingest(
+            (await h
+                .control(author)
+                .query.getLatestBlockHash(forkId)
+                .request())!
+        );
+        await h.transition.advanceState({ count: 1, waitForPeers: [0, 1, 2] });
+        const nextHash = (await h
+            .control(author)
+            .query.getLatestBlockHash(forkId)
+            .request())!;
+        if (next === "ingested") await ingest(nextHash);
+        else
+            await waitFor(
+                async () =>
+                    await h
+                        .control(spectator)
+                        .query.isBlockQueued(nextHash)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+
+        await sync.release();
+        await waitFor(
+            async () =>
+                (await h
+                    .control(spectator)
+                    .query.getLatestBlockHash(forkId)
+                    .request()) === nextHash,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            await h
+                .control(spectator)
+                .query.getLatestBlockHeight(forkId)
+                .request()
+        ).to.equal(tipHeight + 1);
+        expect(
+            await h.control(spectator).query.isBlockQueued(nextHash).request()
+        ).to.equal(false);
+    } finally {
+        await sync.release();
+        await queueTimeouts.restore();
+    }
 }
