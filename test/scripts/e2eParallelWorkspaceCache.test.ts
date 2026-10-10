@@ -325,6 +325,140 @@ describe("distributed workspace cache", function () {
         }
     });
 
+    it("trusts a file left untouched since its commit without hashing it", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
+        const manifest = {
+            workspaceId: "5".repeat(64),
+            sourceDigest: "source-five",
+            files: [
+                {
+                    path: "repo/a.ts",
+                    bytes: 6,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update("source")
+                        .digest("hex"),
+                    mode: 420
+                }
+            ]
+        };
+        try {
+            const cache = await inspectWorkspace(
+                root,
+                manifest,
+                orchestratorPublicKey
+            );
+            const file = path.join(cache.workspace, "repo/a.ts");
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            // other bytes than the manifest's hash: only a hash could tell
+            fs.writeFileSync(file, "poison");
+            // past the racy window, so the commit records the stat
+            await new Promise((resolve) => setTimeout(resolve, 2100));
+            commitSourceManifest(cache, manifest);
+
+            expect(
+                (await inspectWorkspace(root, manifest, orchestratorPublicKey))
+                    .changed
+            ).to.deep.equal([]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("requests a same-size rewrite again even when its mtime is put back", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
+        const contents = "source";
+        const manifest = {
+            workspaceId: "7".repeat(64),
+            sourceDigest: "source-seven",
+            files: [
+                {
+                    path: "repo/a.ts",
+                    bytes: contents.length,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(contents)
+                        .digest("hex"),
+                    mode: 420
+                }
+            ]
+        };
+        try {
+            const cache = await inspectWorkspace(
+                root,
+                manifest,
+                orchestratorPublicKey
+            );
+            const file = path.join(cache.workspace, "repo/a.ts");
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, contents);
+            const committedTime = 1_700_000_000;
+            fs.utimesSync(file, committedTime, committedTime);
+            await new Promise((resolve) => setTimeout(resolve, 2100));
+            commitSourceManifest(cache, manifest);
+            // same size, mtime put back: the rewrite still moves ctime
+            fs.writeFileSync(file, "poison");
+            fs.utimesSync(file, committedTime, committedTime);
+
+            expect(
+                (await inspectWorkspace(root, manifest, orchestratorPublicKey))
+                    .changed
+            ).to.deep.equal(["repo/a.ts"]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("hashes every file of a manifest committed without recorded stats", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
+        const contents = "source";
+        const manifest = {
+            workspaceId: "6".repeat(64),
+            sourceDigest: "source-six",
+            files: [
+                {
+                    path: "repo/a.ts",
+                    bytes: contents.length,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(contents)
+                        .digest("hex"),
+                    mode: 420
+                }
+            ]
+        };
+        try {
+            const cache = await inspectWorkspace(
+                root,
+                manifest,
+                orchestratorPublicKey
+            );
+            const file = path.join(cache.workspace, "repo/a.ts");
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, contents);
+            // the manifest an older host committed: no stat per entry
+            fs.mkdirSync(cache.root, { recursive: true });
+            fs.writeFileSync(
+                cache.sourceManifest,
+                JSON.stringify({
+                    sourceDigest: manifest.sourceDigest,
+                    files: manifest.files
+                })
+            );
+            const committedTime = 1_700_000_000;
+            fs.utimesSync(file, committedTime, committedTime);
+            fs.writeFileSync(file, "poison");
+            fs.utimesSync(file, committedTime, committedTime);
+
+            expect(
+                (await inspectWorkspace(root, manifest, orchestratorPublicKey))
+                    .changed
+            ).to.deep.equal(["repo/a.ts"]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("invalidates dependency preparation from an older worker policy", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
         try {

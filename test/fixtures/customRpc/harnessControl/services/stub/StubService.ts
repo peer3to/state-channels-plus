@@ -335,7 +335,7 @@ async function withRevertData(
 export type DisputeSubmissionFailureSpec = {
     /** Solidity custom error to revert with (its selector is the revert data). */
     customError?: RaceConditionErrorName;
-    customErrorArgs?: string[];
+    customErrorArgs?: factory.CustomErrorArg[];
     /** Fail only this many submissions; later submissions follow `forward`. */
     times?: number;
     /** Failure message when the failure is not a decodable custom error. */
@@ -565,6 +565,9 @@ export class StubService extends ANetworkRpcService<
     private originalQueueProbe?: SpectateService["sync"];
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
+    private restoreChainReads?: () => void;
+    // reads of the stubbed chain method: rejected, then passed through
+    private chainReadObservation = { failed: 0, passed: 0 };
     private timeoutStoreCalls = 0;
     private heldHandshakeTransports: NetworkTransport[] = [];
     private releaseHandshakes?: () => void;
@@ -1778,9 +1781,16 @@ export class StubService extends ANetworkRpcService<
         return true;
     }
 
-    public holdTimeoutBuild(): void {
+    public holdTimeoutBuild(seam: "chain" | "mirror" = "chain"): void {
         const sm = this.p2pManager.stateManager;
-        const contract = sm.diamondStateMachine.localDiamondContract;
+        // "chain": the read createTimeOutDispute performs for the predecessor;
+        // "mirror": the check's own slot read, after its deadline is computed.
+        // One-shot, because block-calldata recovery shares the chain read and
+        // must keep flowing while the construction is parked.
+        const contract =
+            seam === "mirror"
+                ? sm.diamondStateMachine.localDiamondContract
+                : sm.stateChannelManagerContract;
         const original = contract.getBlockCallDataCommitment;
         const store = sm.storage.timeout.storeTimeout.bind(sm.storage.timeout);
         const hold = this.createRpcHold("timeoutBuild");
@@ -1791,6 +1801,7 @@ export class StubService extends ANetworkRpcService<
             "getBlockCallDataCommitment",
             async (...args: Parameters<typeof original>) => {
                 const result = await original(...args);
+                if (hold.entered > 0) return result;
                 hold.entered += 1;
                 await hold.gate;
                 return result;
@@ -1821,6 +1832,41 @@ export class StubService extends ANetworkRpcService<
     public restoreTimeoutBuildRecording(): void {
         this.restoreTimeoutBuild?.();
         this.restoreTimeoutBuild = undefined;
+    }
+
+    // the next `times` chain reads of `method` reject (an RPC outage); later
+    // reads, and every read after restore, reach the chain
+    public stubFailChainReads(
+        method:
+            | "getBlockCallDataCommitment"
+            | "getDisputeWindowCreationTimestamp",
+        times: number
+    ): void {
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
+        const original = contract[method];
+        let remaining = times;
+        const observation = { failed: 0, passed: 0 };
+        this.chainReadObservation = observation;
+        Reflect.set(contract, method, async (...args: unknown[]) => {
+            if (remaining > 0) {
+                remaining -= 1;
+                observation.failed += 1;
+                throw new Error(`stubbed chain read failure: ${method}`);
+            }
+            observation.passed += 1;
+            return Reflect.apply(original, contract, args);
+        });
+        this.restoreChainReads = () => Reflect.set(contract, method, original);
+    }
+
+    public getChainReadObservation(): { failed: number; passed: number } {
+        return { ...this.chainReadObservation };
+    }
+
+    public restoreChainReadFailures(): void {
+        this.restoreChainReads?.();
+        this.restoreChainReads = undefined;
     }
 
     public holdInitHandshakes(): void {

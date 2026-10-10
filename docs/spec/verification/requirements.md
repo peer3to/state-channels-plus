@@ -234,7 +234,7 @@ Specification cases tested: 7/10. Untested: T1.P2, T1.P4, T1.P5.
 Specification cases tested: 0/10.
 
 [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)
-Specification cases tested: 2/8. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P8.
+Specification cases tested: 3/9. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P9.
 
 [`REQ-BLOCK-PIPE-7-FYE9VJ` (Commit before publish)](../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj)
 Specification cases tested: 0/3.
@@ -393,7 +393,7 @@ Specification cases tested: 10/10.
 Specification cases tested: 39/41. Untested: T1.P37, T1.P39.
 
 [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
-Specification cases tested: 8/8.
+Specification cases tested: 23/23.
 
 [`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)
 Specification cases tested: 5/5.

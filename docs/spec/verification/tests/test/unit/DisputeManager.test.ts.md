@@ -60,7 +60,7 @@ The plain and calldata upload tests of the submission branch also record the rep
 assert none happened (`6.P3`, credited to the plain upload). One test holds the replay-gas read
 (`disputeAndKillSharingHeldRead`), starts a dispute and a kill against it, and asserts one pending
 read and no send while it is held, then one resolved read and both sends at their own recorded
-estimate plus the replay gas, the kill mined without error (`6.P11`).
+estimate plus the replay gas, the kill mined without error (`6.P11`). A non-timeout dispute refused as a previous-producer mismatch queues no mismatch retry: the ZeroAddress participant guard suppresses the re-arm, so no mismatch task exists without a nonzero submitted timeout.
 
 ## Tests
 
@@ -145,3 +145,4 @@ estimate plus the replay gas, the kill mined without error (`6.P11`).
 - `a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again`: none
 - `a rejected replay requirement read rejects the kill without sending it and the next kill reads again`: none
 - `fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1
+- `a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P45, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P17

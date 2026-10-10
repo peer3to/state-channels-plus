@@ -4,6 +4,11 @@ import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import P2pEventHooks from "@/P2pEventHooks";
+import {
+    EARLY_TIMEOUT_RECHECK_REASON,
+    MISMATCH_TIMEOUT_RECHECK_REASON,
+    TIMEOUT_RECHECK_DELAY_MS
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
@@ -120,7 +125,7 @@ class DisputeManager {
         let rethrow: unknown;
         let refreshSlashes = false;
         let submittedTimeout: TimeoutStruct | undefined;
-        let timeoutRetryDelaySeconds: number | undefined;
+        let timeoutRetry: { delayMs: number; reason: string } | undefined;
         let postedTimeout: TimeoutStruct | undefined;
         let uploadFailed = false;
         let observedOnChainSlashes: Address[] = [];
@@ -278,11 +283,29 @@ class DisputeManager {
                     },
                     RaceConditionDisputeTimeoutNotMinTimestamp: (error) => {
                         const [minimum, current] = error.errorDescription.args;
-                        timeoutRetryDelaySeconds = Math.max(
-                            1,
-                            Number(minimum) - Number(current)
-                        );
+                        timeoutRetry = {
+                            delayMs: Math.max(
+                                TIMEOUT_RECHECK_DELAY_MS,
+                                (Number(minimum) - Number(current)) * 1000
+                            ),
+                            reason: EARLY_TIMEOUT_RECHECK_REASON
+                        };
                     },
+                    // the predecessor's posting state moved the deadline ->
+                    // drop the refused claim so later disputes on the fork do
+                    // not carry it; the recheck rebuilds it from current evidence
+                    RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch:
+                        () => {
+                            if (submittedTimeout)
+                                this.storage.timeout.deleteTimeout(
+                                    forkId,
+                                    submittedTimeout
+                                );
+                            timeoutRetry = {
+                                delayMs: TIMEOUT_RECHECK_DELAY_MS,
+                                reason: MISMATCH_TIMEOUT_RECHECK_REASON
+                            };
+                        },
                     // the writer posted first -> drop the refused timeout so
                     // later disputes on the fork do not carry it
                     RaceConditionDisputeTimeoutCalldataPosted: () => {
@@ -358,7 +381,7 @@ class DisputeManager {
         // The failed upload has released both the signing marker and dispute
         // mutex. Recheck the timeout through its owner instead of resending it.
         if (
-            timeoutRetryDelaySeconds !== undefined &&
+            timeoutRetry &&
             submittedTimeout &&
             submittedTimeout.participant !== ethers.ZeroAddress
         ) {
@@ -366,8 +389,8 @@ class DisputeManager {
                 forkId,
                 Number(submittedTimeout.blockHeight),
                 submittedTimeout.participant,
-                timeoutRetryDelaySeconds * 1000,
-                "timeoutParticipantAfterEarlySubmission"
+                timeoutRetry.delayMs,
+                timeoutRetry.reason
             );
         }
         // our marker dropped any posted block at ingest -> hand it back once

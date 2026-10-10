@@ -1,16 +1,25 @@
+import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
+    EARLY_TIMEOUT_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertEarlyTimeoutRetry,
+    assertMismatchRetryAfterForkSwitch,
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry,
+    assertConsecutiveMismatchRetry,
+    assertSignedPredecessorPostGrantsNoTime,
     assertSkippedHeightNotTimedOut,
+    assertUnsignedPredecessorPostDelaysCheck,
     checkTimeoutAfterDeadline,
     skipHeightOnObserver,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { assertTimeoutCheckWaitsForSyncInstall } from "@test/fixtures/PinnedSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
@@ -19,6 +28,14 @@ import { ZeroAddress } from "ethers";
 // submission recorder installed, so a guard that failed to hold would show up
 // as a recorded submission. the real timeout at the top is the positive
 // control: the same code path does submit when the deadline really passed.
+
+// short windows, so the staged parent post lands inside one test
+const RECHECK_TIME_CONFIG = {
+    p2pTime: 2,
+    agreementTime: 8,
+    chainFallbackTime: 10,
+    evidenceTime: 20
+};
 
 describe("Unit: ParticipantTimeoutService", function () {
     it("a block arriving during timeout construction prevents the late timeout store", async function () {
@@ -168,9 +185,7 @@ describe("Unit: ParticipantTimeoutService", function () {
             expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
             expect(
                 (await tasks.tasks()).filter((task) =>
-                    task.taskName.startsWith(
-                        "timeoutParticipantAfterEarlySubmission"
-                    )
+                    task.taskName.startsWith(EARLY_TIMEOUT_RECHECK_REASON)
                 )
             ).to.have.length(0);
         } finally {
@@ -799,6 +814,214 @@ describe("Unit: ParticipantTimeoutService", function () {
             await scheduled.restore();
             expect(rescheduled.length).to.equal(1);
             expect(rescheduled[0].delayMs).to.be.greaterThan(0);
+        });
+    });
+
+    describe("previous-producer mismatch refusal", function () {
+        it("M1 send mismatch false to true rechecks and commits", async function () {
+            const h = TestSession.getHarness();
+            await assertEarlyTimeoutRetry(h, "send", 1, 1, {
+                expectedPosted: false,
+                foundPosted: true
+            });
+        });
+
+        it("M1 a refusal reporting the true-to-false direction re-arms the same way", async function () {
+            const h = TestSession.getHarness();
+            // the handler must not branch on the refusal's direction arguments
+            await assertEarlyTimeoutRetry(h, "send", 1, 1, {
+                expectedPosted: true,
+                foundPosted: false
+            });
+        });
+
+        it("M1 a predecessor posted only in the local view → the claim carries the chain's answer and commits", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            // peer 0 authors height 0; observer 2 will time out writer 1
+            await h.transition.advanceState();
+            const observer = h.getPeer(2);
+            const forkId = h.activeForkId!;
+            await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
+            // The observer alone believes height 0 was posted (e.g. a reorg
+            // dropped the post); the chain holds no commitment for it.
+            await h.execOnHost(
+                observer,
+                (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.forkId, 0)!;
+                    return sm.storage.blocks.setOnChainTimestamp(
+                        args.forkId,
+                        0,
+                        block.timestamp + 1
+                    );
+                },
+                { forkId }
+            );
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            try {
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+                const [first] = await uploads.submissions();
+                expect(first.revert).to.equal(null);
+                expect(
+                    Codec.decode(first.encodedDispute, Type.Dispute).input
+                        .timeout.previousBlockProducerPostedCalldata
+                ).to.equal(false);
+            } finally {
+                await uploads.restore();
+            }
+        });
+
+        it("M2 receipt mismatch rolls back and commits the retry", async function () {
+            const h = TestSession.getHarness();
+            await assertEarlyTimeoutRetry(h, "wait", 1, 1, {
+                expectedPosted: false,
+                foundPosted: true
+            });
+        });
+
+        it("M3 consecutive mismatches each rearm and then commit", async function () {
+            await assertConsecutiveMismatchRetry(TestSession.getHarness());
+        });
+    });
+
+    describe("obsolete mismatch retry", function () {
+        it("M4 an injected mismatch refusal before a verified fork replacement leaves its re-arm nothing to do", async function () {
+            await assertMismatchRetryAfterForkSwitch(TestSession.getHarness());
+        });
+
+        it("M4 writer block obsoletes mismatch retry", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "block",
+                "mismatch"
+            );
+        });
+
+        it("M4 disposal obsoletes mismatch retry", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "disposed",
+                "mismatch"
+            );
+        });
+    });
+
+    describe("predecessor commitment read failure", function () {
+        it("a failed predecessor commitment read re-arms the check and the timeout still commits", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            // peer 0 authors height 0; observer 2 will time out writer 1
+            await h.transition.advanceState();
+            const observer = h.getPeer(2);
+            await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            await h
+                .control(observer)
+                .stub.stubFailChainReads(
+                    "getBlockCallDataCommitment",
+                    Number.MAX_SAFE_INTEGER
+                )
+                .request();
+            try {
+                await waitFor(
+                    async () =>
+                        (await tasks.tasks()).some((task) =>
+                            task.taskName.startsWith(
+                                CHAIN_READ_FAILED_RECHECK_REASON
+                            )
+                        ),
+                    h.event.hostExecTimeoutMs()
+                );
+                expect(await uploads.submissions()).to.deep.equal([]);
+                await h
+                    .control(observer)
+                    .stub.restoreChainReadFailures()
+                    .request();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+            } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreChainReadFailures()
+                    .request();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("predecessor post not yet applied", function () {
+        it("a writer that signed the predecessor gains no time from its post → the timeout is submitted at the block's own deadline", async function () {
+            await assertSignedPredecessorPostGrantsNoTime(
+                TestSession.getHarness(),
+                RECHECK_TIME_CONFIG
+            );
+        });
+
+        it("a writer that never signed the predecessor waits for its post → the timeout follows the post-based deadline", async function () {
+            await assertUnsignedPredecessorPostDelaysCheck(
+                TestSession.getHarness(),
+                RECHECK_TIME_CONFIG
+            );
+        });
+    });
+
+    describe("shared retry delay", function () {
+        it("M5 a check waiting on the predecessor's on-chain validation re-arms after one second", async function () {
+            const h = TestSession.getHarness();
+            // the parent is posted on chain but its event is held from the
+            // observer, so the check must schedule its recovered validation
+            const { observer, author, previous, forkId } =
+                await h.scenario.previousBlockUnsignedByNextWriter({
+                    timeConfig: RECHECK_TIME_CONFIG
+                });
+            const height = previous.height + 1;
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const validationRetries = async () =>
+                (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith(
+                        "timeoutParticipantAfterOnChainValidation - previousOnChainBlockValidation"
+                    )
+                );
+            try {
+                await h.execOnHost(
+                    observer,
+                    (sm, args) => {
+                        sm.participantTimeoutService.scheduleCheck(
+                            args.forkId,
+                            args.height,
+                            args.writer,
+                            0,
+                            "m5Probe"
+                        );
+                        return true;
+                    },
+                    { forkId, height, writer: author.address }
+                );
+                // an early check first waits out the writer's deadline (the
+                // protocol budget for this time config covers it)
+                await waitFor(
+                    async () => (await validationRetries()).length > 0,
+                    protocolEventTimeoutMs(RECHECK_TIME_CONFIG)
+                );
+                expect((await validationRetries())[0].delayMs).to.equal(1000);
+            } finally {
+                await tasks.restore();
+            }
         });
     });
 });

@@ -429,10 +429,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 }
                 try {
                     try {
-                        // Destroy first so ethers marks the provider closed before its
-                        // listener cleanup schedules unsubscribe microtasks. Explicitly
-                        // removing listeners first leaves eth_unsubscribe requests that
-                        // destroy then rejects as unhandled.
+                        // Destroy first so ethers sends no eth_unsubscribe the destroy
+                        // would cancel; node sockets settle any that are sent (NodeSocket).
                         if (provider && !Clock.ownsProvider(provider))
                             await provider.destroy();
                         // The Clock keeps reading through it, but this

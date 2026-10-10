@@ -4,9 +4,24 @@ import Clock from "@/Clock";
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { StateChannelManagerInterface } from "@typechain-types";
 import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers } from "ethers";
+
+export const TIMEOUT_RECHECK_DELAY_MS = 1000;
+// scheduleCheck reasons for a check re-armed after a refused timeout upload
+export const EARLY_TIMEOUT_RECHECK_REASON =
+    "timeoutParticipantAfterEarlySubmission";
+export const MISMATCH_TIMEOUT_RECHECK_REASON =
+    "timeoutParticipantAfterPreviousProducerMismatch";
+// scheduleCheck reason when the predecessor posted during timeout construction
+export const PREDECESSOR_POSTED_RECHECK_REASON =
+    "timeoutParticipantAfterPredecessorPosted";
+// scheduleCheck reason when the predecessor commitment read failed
+export const CHAIN_READ_FAILED_RECHECK_REASON =
+    "timeoutParticipantAfterChainReadFailure";
 
 /**
  * Owns the participant-timeout check: schedules it, decides whether the
@@ -125,25 +140,16 @@ export default class ParticipantTimeoutService {
         // window's original creation time, not the new transaction timestamp.
         // Do not submit if that window opened before this timeout became valid;
         // the on-chain race-condition guard repeats this check authoritatively.
-        const disputeWindowCreationTimestamp = Number(
-            await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                sm.channelId,
-                forkId
-            )
-        );
         if (
-            disputeWindowCreationTimestamp !== 0 &&
-            disputeWindowCreationTimestamp < timeoutMinTimestamp
+            await this.doesWindowPredateTimeout(
+                sm.diamondStateMachine.localDiamondContract,
+                forkId,
+                timeoutMinTimestamp
+            )
         ) {
             this.logger.info(
                 "tryTimeoutParticipant - existing dispute window predates timeout deadline; not submitting",
-                {
-                    forkId,
-                    blockHeight,
-                    participantAddress,
-                    disputeWindowCreationTimestamp,
-                    timeoutMinTimestamp
-                }
+                { forkId, blockHeight, participantAddress, timeoutMinTimestamp }
             );
             return;
         }
@@ -188,10 +194,14 @@ export default class ParticipantTimeoutService {
                 sm.storage.blockCalldata.getMatchingBlockCalldata(
                     previousBlockOrSnapshot.block
                 );
-            if (matchingPreviousCalldata) {
+            // a writer that signed the predecessor gains no time from its post
+            if (
+                matchingPreviousCalldata &&
+                !previousBlockOrSnapshot.block.findSignature(participantAddress)
+            ) {
                 difference =
                     matchingPreviousCalldata.onChainTimestamp +
-                    timeoutWaitTimeSeconds(sm.timeConfig, blockHeight) -
+                    timeoutWaitTime -
                     Clock.getTimeInSeconds();
                 if (difference > 0) {
                     // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
@@ -340,7 +350,7 @@ export default class ParticipantTimeoutService {
             forkId,
             blockHeight,
             participantAddress,
-            1000,
+            TIMEOUT_RECHECK_DELAY_MS,
             `timeoutParticipantAfterOnChainValidation - ${reason}`,
             isForced
         );
@@ -404,25 +414,94 @@ export default class ParticipantTimeoutService {
 
         const previousBlock = previousBlockOrSnapshot.block;
         let previousBlockProducerPostedCalldata = false;
-        if (previousBlock) {
-            if (previousBlock.onChainTimestamp) {
-                previousBlockProducerPostedCalldata = true;
-            } else {
+        let postedMinimum: Timestamp | undefined;
+        try {
+            // the chain judges the claim, so read the predecessor's post there
+            if (previousBlock)
                 previousBlockProducerPostedCalldata = (
-                    await sm.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
+                    await sm.stateChannelManagerContract.getBlockCallDataCommitment(
                         sm.channelId,
                         forkId,
                         previousBlock.height,
                         previousBlock.author
                     )
                 ).found;
+            // a post not applied here moves the deadline unless the writer signed it
+            if (
+                previousBlock &&
+                previousBlockProducerPostedCalldata &&
+                !previousBlock.onChainTimestamp &&
+                !previousBlock.findSignature(participantAddress)
+            ) {
+                const post = sm.storage.blockCalldata.getBlockCalldata(
+                    forkId,
+                    previousBlock.height,
+                    previousBlock.author
+                );
+                postedMinimum =
+                    post &&
+                    post.onChainTimestamp +
+                        timeoutWaitTimeSeconds(sm.timeConfig, blockHeight);
+                const remainingMs = postedMinimum
+                    ? (postedMinimum - Clock.getTimeInSeconds()) * 1000
+                    : 0;
+                // post not recovered yet or its deadline still ahead -> check again
+                if (!postedMinimum || remainingMs > 0) {
+                    this.scheduleCheck(
+                        forkId,
+                        blockHeight,
+                        participantAddress,
+                        Math.max(TIMEOUT_RECHECK_DELAY_MS, remainingMs),
+                        PREDECESSOR_POSTED_RECHECK_REASON,
+                        isForced
+                    );
+                    return;
+                }
+                // the mirror may not have the window yet, so ask the chain
+                if (
+                    await this.doesWindowPredateTimeout(
+                        sm.stateChannelManagerContract,
+                        forkId,
+                        Math.max(timeoutMinTimestamp, postedMinimum)
+                    )
+                ) {
+                    this.logger.info(
+                        "createTimeOutDispute - existing dispute window predates the moved deadline; not submitting",
+                        {
+                            forkId,
+                            blockHeight,
+                            participantAddress,
+                            postedMinimum
+                        }
+                    );
+                    return;
+                }
             }
+        } catch (error) {
+            this.logger.warn(
+                "createTimeOutDispute - chain read failed; rechecking",
+                {
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    error: errorMessage(error)
+                }
+            );
+            this.scheduleCheck(
+                forkId,
+                blockHeight,
+                participantAddress,
+                TIMEOUT_RECHECK_DELAY_MS,
+                CHAIN_READ_FAILED_RECHECK_REASON,
+                isForced
+            );
+            return;
         }
 
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp: timeoutMinTimestamp,
+            minTimeStamp: Math.max(timeoutMinTimestamp, postedMinimum ?? 0),
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()
@@ -455,5 +534,23 @@ export default class ParticipantTimeoutService {
 
         // Time has fully elapsed - create dispute immediately
         await sm.disputeManager.dispute(forkId);
+    }
+
+    // whether a dispute window on the fork opened before the timeout became valid
+    private async doesWindowPredateTimeout(
+        contract: StateChannelManagerInterface,
+        forkId: ForkId,
+        timeoutMinTimestamp: Timestamp
+    ): Promise<boolean> {
+        const disputeWindowCreationTimestamp = Number(
+            await contract.getDisputeWindowCreationTimestamp(
+                this.stateManager.channelId,
+                forkId
+            )
+        );
+        return (
+            disputeWindowCreationTimestamp !== 0 &&
+            disputeWindowCreationTimestamp < timeoutMinTimestamp
+        );
     }
 }
