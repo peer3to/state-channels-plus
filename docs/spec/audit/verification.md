@@ -39,6 +39,18 @@ submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
 
+## Test timing inputs — 2026-10-12
+
+Engineer decision (Luka, 2026-10-12): `evidenceTime` 4 → 6 in `assertHonestPeersContributeAfterSelfRemoval`
+([HonestLeaverDisputeStaging](../../../test/fixtures/HonestLeaverDisputeStaging.ts)), the selfRemoval
+contribution case. The staging's other tests keep 4 s. The remaining founders audit the leaver's self-removal
+dispute and then contribute their newer state into its window. Under full-gate load that path took about 5 s:
+the audit took about 2 s, and the contributions were sent 3 s after the window opened and mined after the 4 s
+evidence period, so all three were refused with `RaceConditionDisputeWindowNotOpen`. The value reaches the
+staging through a new `evidenceTime` option of `stageOmittedInboundJoin` and a `timeConfig` override of
+`syncSpectator`. This is a protocol input chosen for the test host's load, not a wait budget; no oracle
+changed.
+
 ## Test timing inputs — 2026-10-10
 
 Engineer decision (Luka, 2026-10-10): the harness baseline `MIN_TEST_TIME_CONFIG.p2pTime` is 5 instead of 2
