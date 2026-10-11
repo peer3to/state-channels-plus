@@ -1135,6 +1135,12 @@
       "peakRssGb": 0.812,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout": {
+      "durationMs": 9423,
+      "avgCores": 0.707,
+      "peakRssGb": 0.948,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager an authoritative slash refresh discards a cache-miss copy without sync": {
       "durationMs": 17200,
       "avgCores": 0.94,
@@ -3505,6 +3511,12 @@
       "peakRssGb": 0.8,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Timeouts.test.ts|E2E: Timeouts Dispute Window Opened Before A Moved Deadline M9 a window opened before the post-moved deadline keeps the observer from storing a claim the chain refuses": {
+      "durationMs": 60117,
+      "avgCores": 0.231,
+      "peakRssGb": 0.755,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Timeouts.test.ts|E2E: Timeouts Forced Timeout (Junk Calldata) authentic calldata not linked to the head, posted at the writer's own turn → the forced timeout commits and no honest peer is slashed": {
       "durationMs": 23319,
       "avgCores": 0.584,
@@ -3563,6 +3575,24 @@
       "durationMs": 16495,
       "avgCores": 0.786,
       "peakRssGb": 0.809,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Timeouts.test.ts|E2E: Timeouts Previous-Producer Mismatch Moves The Deadline M7 a real post of a parent the writer never signed refuses the upload, and the recheck waits for the moved deadline": {
+      "durationMs": 65865,
+      "avgCores": 0.281,
+      "peakRssGb": 0.758,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Timeouts.test.ts|E2E: Timeouts Previous-Producer Mismatch Recheck M6 a real predecessor post refuses the first upload and the recheck commits rebuilt evidence": {
+      "durationMs": 26226,
+      "avgCores": 0.429,
+      "peakRssGb": 0.769,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Timeouts.test.ts|E2E: Timeouts Previous-Producer Post During Timeout Construction M8 a parent post landing during timeout construction re-runs the check instead of submitting the stale deadline": {
+      "durationMs": 63372,
+      "avgCores": 0.284,
+      "peakRssGb": 0.756,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-WorkerShutdown.test.ts|E2E: worker shutdown drains and tears down multiple threaded peers promptly": {
@@ -5807,6 +5837,18 @@
       "durationMs": 10723,
       "avgCores": 0.903,
       "peakRssGb": 1.148,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider leaves no unhandled rejection and keeps reading when a node answers an unsubscribe with an error": {
+      "durationMs": 4667,
+      "avgCores": 0.688,
+      "peakRssGb": 0.602,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider leaves no unhandled rejection when a node socket's unsubscribe is answered after destroy": {
+      "durationMs": 4781,
+      "avgCores": 0.684,
+      "peakRssGb": 0.597,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider marks a node whose socket stops answering as dead and fails the read over": {
@@ -10063,6 +10105,12 @@
       "peakRssGb": 0.23,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache a test that starved and then passed in one run overrides its committed cost with the passing measurement plus 30%, which later clean runs keep": {
+      "durationMs": 235,
+      "avgCores": 0.511,
+      "peakRssGb": 0.07,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache adds new costs but keeps existing baselines despite ordinary measurement drift": {
       "durationMs": 1781,
       "avgCores": 1.033,
@@ -10225,10 +10273,10 @@
       "peakRssGb": 0.164,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache stores a starved attempt's cores and memory 50% higher until a clean retry replaces it": {
-      "durationMs": 1879,
-      "avgCores": 0.926,
-      "peakRssGb": 0.225,
+    "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache stores a starved attempt's cores and memory 30% higher, and a test that starved then passed keeps its passing cost 30% higher": {
+      "durationMs": 508,
+      "avgCores": 0.591,
+      "peakRssGb": 0.182,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache stores nothing for a starved attempt that has no duration": {
@@ -10337,12 +10385,6 @@
       "durationMs": 5487,
       "avgCores": 0.204,
       "peakRssGb": 0.169,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelDistributedE2E.test.ts|distributed parallel runner runs a real worker from the shipped build outputs without the project's prepare script": {
-      "durationMs": 18658,
-      "avgCores": 0.374,
-      "peakRssGb": 0.456,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelDistributedE2E.test.ts|distributed parallel runner runs cost-scheduled tests on a real worker and records its measurements and admission statistics": {
@@ -11993,12 +12035,6 @@
       "durationMs": 2038,
       "avgCores": 0.868,
       "peakRssGb": 0.233,
-      "measurementReason": null
-    },
-    "hardhat|test/scripts/e2eParallelRuntimeBundle.test.ts|distributed source workspace ships the root's declared build outputs and drops its worker prepare": {
-      "durationMs": 2423,
-      "avgCores": 0.685,
-      "peakRssGb": 0.192,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelSetupFailureCap.test.ts|distributed setup failure cap counts only consecutive failures with the same normalized reason and resets on admission": {
@@ -15937,6 +15973,12 @@
       "peakRssGb": 0.787,
       "measurementReason": null
     },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager a drain that dequeues a stored copy still drains the queued next block": {
+      "durationMs": 13442,
+      "avgCores": 0.87,
+      "peakRssGb": 0.942,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager a failed unknown copy preserves the existing honest contribution": {
       "durationMs": 14159,
       "avgCores": 0.915,
@@ -16265,6 +16307,12 @@
       "durationMs": 24365,
       "avgCores": 0.793,
       "peakRssGb": 1.054,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes own-join observation and join authorization expiry U75h: a join authorization expiry timer that fires while the joiner's clock is still at or before the deadline arms the expiry timer again → once the chain passes the deadline the unlanded join ends SYNCED with one onLeftChannel": {
+      "durationMs": 25144,
+      "avgCores": 0.399,
+      "peakRssGb": 0.953,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes terminal leave settlement U71: both founders leave and the last exit closes the channel → both get onLeftChannel on NOT_OPENED": {
@@ -16847,6 +16895,12 @@
       "durationMs": 24179,
       "avgCores": 0.741,
       "peakRssGb": 1.031,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry": {
+      "durationMs": 11263,
+      "avgCores": 0.809,
+      "peakRssGb": 0.743,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager a refused contribution does not turn an already removed on-chain slash into a reason": {
@@ -18673,6 +18727,24 @@
       "peakRssGb": 1.036,
       "measurementReason": null
     },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService obsolete mismatch retry M4 an injected mismatch refusal before a verified fork replacement leaves its re-arm nothing to do": {
+      "durationMs": 25210,
+      "avgCores": 0.896,
+      "peakRssGb": 0.995,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService obsolete mismatch retry M4 disposal obsoletes mismatch retry": {
+      "durationMs": 6826,
+      "avgCores": 0.901,
+      "peakRssGb": 0.481,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService obsolete mismatch retry M4 writer block obsoletes mismatch retry": {
+      "durationMs": 12403,
+      "avgCores": 0.889,
+      "peakRssGb": 0.754,
+      "measurementReason": null
+    },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService posted block → forced only on rejection a bad-signature block posted into a dispute window opened before the deadline → no forced timeout": {
       "durationMs": 29685,
       "avgCores": 0.792,
@@ -18709,10 +18781,64 @@
       "peakRssGb": 0.795,
       "measurementReason": null
     },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService predecessor commitment read failure a failed predecessor commitment read re-arms the check and the timeout still commits": {
+      "durationMs": 21458,
+      "avgCores": 0.296,
+      "peakRssGb": 0.775,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService predecessor post not yet applied a writer that never signed the predecessor waits for its post → the timeout follows the post-based deadline": {
+      "durationMs": 43766,
+      "avgCores": 0.248,
+      "peakRssGb": 0.763,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService predecessor post not yet applied a writer that signed the predecessor gains no time from its post → the timeout is submitted at the block's own deadline": {
+      "durationMs": 37466,
+      "avgCores": 0.359,
+      "peakRssGb": 0.759,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService previous-producer mismatch refusal M1 a predecessor posted only in the local view → the claim carries the chain's answer and commits": {
+      "durationMs": 25283,
+      "avgCores": 0.551,
+      "peakRssGb": 0.762,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService previous-producer mismatch refusal M1 a refusal reporting the true-to-false direction re-arms the same way": {
+      "durationMs": 27999,
+      "avgCores": 0.528,
+      "peakRssGb": 0.768,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService previous-producer mismatch refusal M1 send mismatch false to true rechecks and commits": {
+      "durationMs": 23845,
+      "avgCores": 0.579,
+      "peakRssGb": 0.775,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService previous-producer mismatch refusal M2 receipt mismatch rolls back and commits the retry": {
+      "durationMs": 27448,
+      "avgCores": 0.529,
+      "peakRssGb": 0.774,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService previous-producer mismatch refusal M3 consecutive mismatches each rearm and then commit": {
+      "durationMs": 27971,
+      "avgCores": 0.546,
+      "peakRssGb": 0.77,
+      "measurementReason": null
+    },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService scheduleCheck composes the task label from the reason, fork, height and participant": {
       "durationMs": 10289,
       "avgCores": 1.07,
       "peakRssGb": 0.784,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService shared retry delay M5 a check waiting on the predecessor's on-chain validation re-arms after one second": {
+      "durationMs": 30514,
+      "avgCores": 0.317,
+      "peakRssGb": 0.76,
       "measurementReason": null
     },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService timeout construction stores one timeout when no block arrives during the hold": {
@@ -20779,10 +20905,16 @@
       "peakRssGb": 0.591,
       "measurementReason": null
     },
-    "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle dials the peer again from a later observation of a left topic while the left dial's close still lags": {
-      "durationMs": 6484,
-      "avgCores": 0.532,
-      "peakRssGb": 0.65,
+    "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing": {
+      "durationMs": 7556,
+      "avgCores": 0.59,
+      "peakRssGb": 0.374,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle dials the peer again after a rejoin while the pending dial the leave closed has not finished closing": {
+      "durationMs": 6147,
+      "avgCores": 0.654,
+      "peakRssGb": 0.371,
       "measurementReason": null
     },
     "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle does not dial a peer that already has a live authenticated transport on another topic": {
@@ -20803,10 +20935,10 @@
       "peakRssGb": 0.595,
       "measurementReason": null
     },
-    "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle keeps a later session's dial mark when a left session's dial closes late, so another topic starts no second dial": {
-      "durationMs": 6069,
-      "avgCores": 0.572,
-      "peakRssGb": 0.683,
+    "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle keeps a rejoined topic's pending dial deduplicated across topics after the left topic's old socket finishes closing": {
+      "durationMs": 3849,
+      "avgCores": 0.933,
+      "peakRssGb": 0.376,
       "measurementReason": null
     },
     "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave": {
