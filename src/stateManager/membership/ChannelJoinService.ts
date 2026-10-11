@@ -417,7 +417,10 @@ export default class ChannelJoinService {
         const sm = this.stateManager;
         if (await sm.membershipService.isSignerPendingInMirror())
             return this.onJoinObserved(join);
-        if (Clock.getTimeInSeconds() <= join.authorizationDeadline) return;
+        // a timer that fires early (or a check run before the deadline)
+        // waits for the deadline again rather than ending the check
+        if (Clock.getTimeInSeconds() <= join.authorizationDeadline)
+            return this.armUntilJoinExpiry(join);
         const { timestamp } = await Clock.getBlockchainTime();
         if (timestamp <= join.authorizationDeadline)
             return this.armUntilJoinExpiry(join);

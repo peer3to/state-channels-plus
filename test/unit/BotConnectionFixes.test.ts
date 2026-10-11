@@ -1862,6 +1862,69 @@ describe("Unit: bot-connection fixes", function () {
                     .calledBefore(spies.onAbort!.getCall(0))
             ).to.equal(true);
         });
+
+        it("U75h: a join authorization expiry timer that fires while the joiner's clock is still at or before the deadline arms the expiry timer again → once the chain passes the deadline the unlanded join ends SYNCED with one onLeftChannel", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await prepareJoinWithAuthorization(h, 15);
+            const joiner = h.getPeer(prepared.joiner.index);
+            const control = h.control(joiner);
+            // record-only: the expiry timer the early check arms again
+            await control.stub.stubRecordScheduledTasks().request();
+            // the first expiry timer is held when armed and fired early below
+            const expiry = await h.rpcStub.holdScheduledTasks(
+                joiner.index,
+                "join authorization expiry"
+            );
+            const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+                joiner.index,
+                "joinChannel"
+            );
+            try {
+                expect(
+                    await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(false);
+                expect(await expiry.heldCount()).to.equal(1);
+
+                expect(await expiry.runHeld()).to.deep.equal({
+                    ran: 1,
+                    errors: []
+                });
+                await waitForJoinChecks(h, joiner);
+                // the check ran with the joiner's clock not past the deadline
+                expect(
+                    await control.query.getClockTimeInSeconds().request()
+                ).to.be.at.most(prepared.joinDeadline);
+                const rearmed = (
+                    await control.stub.getRecordedScheduledTasks().request()
+                ).tasks.filter(
+                    (task) => task.taskName === "join authorization expiry"
+                );
+                expect(rearmed.length).to.equal(1);
+                expect(rearmed[0].delayMs).to.be.at.least(1000);
+                expect(await isJoinPending(h, joiner)).to.equal(true);
+                expect(
+                    prepared.joiner.eventSpies.onLeftChannel?.called
+                ).to.not.equal(true);
+
+                await chainBlockPastWait(h, prepared.joinDeadline);
+                await h.event.waitUntilLeftChannel(joiner.index);
+                expect(await control.query.getStatus().request()).to.equal(
+                    Status.SYNCED
+                );
+                expect(await isJoinPending(h, joiner)).to.equal(false);
+                expect(
+                    prepared.joiner.eventSpies.onLeftChannel?.callCount
+                ).to.equal(1);
+            } finally {
+                await restore();
+                await expiry.release(false);
+                await control.stub.restoreRecordScheduledTasks().request();
+            }
+        });
     });
 
     describe("force-join block bound grace", function () {

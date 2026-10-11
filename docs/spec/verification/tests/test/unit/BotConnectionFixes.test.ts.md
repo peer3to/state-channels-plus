@@ -6,7 +6,7 @@ Test file: [test/unit/BotConnectionFixes.test.ts](../../../../../../test/unit/Bo
 
 Exercises channel discovery, terminal leave, authoritative initial-sync eligibility and force-join timing through runtime APIs and real channel state.
 
-The own-join cases carry the IDs `U75a`…`U75g`. `U75e` holds the joiner's force-join deadline task
+The own-join cases carry the IDs `U75a`…`U75h`. `U75e` holds the joiner's force-join deadline task
 and parks every snapshot post; the founders omit the joiner's landed join and author nothing, so a
 founder's participant-timeout dispute opens the window and the leaving joiner answers it with its own
 self-removal dispute while its force-join record shows no dispute started. After the reduction the joiner
@@ -28,7 +28,11 @@ disposal. `U75f` makes a prepared first join's submission
 uncertain (its authorization stays open for 120 seconds), then a founder posts a snapshot that lists no
 pending join; after the joiner handled that snapshot event its status is still `PENDING_PARTICIPANT` and
 its join is still pending. `U75b` lets an uncertain join pass its authorization deadline on chain and
-waits for the joiner's `onLeftChannel`; the oracles are the `SYNCED` status and the ended join.
+waits for the joiner's `onLeftChannel`; the oracles are the `SYNCED` status and the ended join. `U75h`
+makes a first join's submission uncertain with a 15-second authorization, holds its expiry timer and
+fires it while the joiner's clock is still at or before the deadline; a record-only scheduling probe
+shows the check armed the `join authorization expiry` timer again, and once the chain passed the
+deadline the joiner ends `SYNCED` with one `onLeftChannel`.
 
 The `U72` exit cases stage an exit, with a leave call or without one (an exit block the application
 authors on its own turn), and most of them block its same-fork post with a JOIN the founders omit (the
@@ -88,6 +92,7 @@ is timed out.
 - `U75e: a leaving joiner whose landed join a founder's timeout dispute reduces away while the chain still lists it → once the chain drops it, its force-join check starts no dispute and lowers it to SYNCED with one onLeftChannel`: REQ-LIF-10-QR8NQ9.T2.P4, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P81
 - `U75f: a pending joiner whose uncertain join can still land handles a snapshot event that does not list it → it stays PENDING_PARTICIPANT with its join open`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P18
 - `U75g: a finally refused first join emits onLeftChannel once and does not abort; a later join of the same runtime refused for its expired authorization emits its onLeftChannel before onAbort, each once`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P40, REQ-LIF-10-QR8NQ9.T1.P22
+- `U75h: a join authorization expiry timer that fires while the joiner's clock is still at or before the deadline arms the expiry timer again → once the chain passes the deadline the unlanded join ends SYNCED with one onLeftChannel`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P88
 - `U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it`: INV-TJOIN-2-H7JSQM.T2.P6, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P40
 - `U130: a leave of another topic during the handoff → the join still rematches on its own topic`: REQ-LOBBY-9-N894C0.T1.P27
 - `U130: a new join after a leave during the handoff → its failed negotiation rematches again`: REQ-LOBBY-9-N894C0.T1.P29
