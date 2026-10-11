@@ -531,7 +531,7 @@ Specification cases tested: 7/10. Untested: T1.P1, T1.P2, T1.P3.
 Specification cases tested: 32/33. Untested: T1.P37.
 
 [`REQ-GOSSIP-5-2EQ7P6` (Live gossip waits for the initial sync)](../specification/peer-communication/block-gossip.md#req-gossip-5-2eq7p6)
-Specification cases tested: 3/3.
+Specification cases tested: 5/5.
 
 [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../specification/protocol-model/identity.md#req-id-1-3q2kb9)
 Specification cases tested: 0/9.

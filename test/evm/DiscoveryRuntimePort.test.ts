@@ -1105,8 +1105,8 @@ describe("discovery runtime port", function () {
         ).to.equal(false);
     });
 
-    it("authored leave watchdog fallback is fatal on missing-marker", async function () {
-        await assertAuthoredLeaveFallback("missing-marker");
+    it("authored leave watchdog fallback is fatal on unrecognized-upload-failure", async function () {
+        await assertAuthoredLeaveFallback("unrecognized-upload-failure");
     });
     it("authored leave watchdog fallback on evidence-expired waits for the reduction and emits onLeftChannel", async function () {
         await assertAuthoredLeaveFallback("evidence-expired");

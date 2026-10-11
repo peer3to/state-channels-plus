@@ -4969,7 +4969,7 @@
       "peakRssGb": 1.213,
       "measurementReason": null
     },
-    "hardhat|test/evm/DiscoveryRuntimePort.test.ts|discovery runtime port authored leave watchdog fallback is fatal on missing-marker": {
+    "hardhat|test/evm/DiscoveryRuntimePort.test.ts|discovery runtime port authored leave watchdog fallback is fatal on unrecognized-upload-failure": {
       "durationMs": 25243,
       "avgCores": 0.466,
       "peakRssGb": 0.847,
@@ -8359,6 +8359,18 @@
       "peakRssGb": 0.842,
       "measurementReason": null
     },
+    "hardhat|test/rpc/guards/WaitForSyncStatusGuard.test.ts|WaitForSyncStatusGuard a live block retained while a founder's genesis install is held is released by the direct move to PARTICIPATING and applied": {
+      "durationMs": 11431,
+      "avgCores": 0.472,
+      "peakRssGb": 0.737,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/guards/WaitForSyncStatusGuard.test.ts|WaitForSyncStatusGuard a retained block sent as a request gets no failure response while held and exactly one response after SYNCED": {
+      "durationMs": 8486,
+      "avgCores": 0.671,
+      "peakRssGb": 0.648,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/guards/WaitForSyncStatusGuard.test.ts|WaitForSyncStatusGuard a retained stale block and a retained wrong-fork block go through normal validation after SYNCED and are not applied": {
       "durationMs": 10431,
       "avgCores": 0.676,
@@ -10075,6 +10087,12 @@
       "peakRssGb": 0.241,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelContractBuild.test.ts|parallel runner contract build distributed CLI builds a linked repository that declares build outputs, and skips it when warm": {
+      "durationMs": 8502,
+      "avgCores": 0.587,
+      "peakRssGb": 0.527,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelContractBuild.test.ts|parallel runner contract build distributed CLI compiles missing bindings before the TypeScript build and discovery": {
       "durationMs": 8464,
       "avgCores": 0.767,
@@ -10085,6 +10103,12 @@
       "durationMs": 12468,
       "avgCores": 0.613,
       "peakRssGb": 0.656,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelContractBuild.test.ts|parallel runner contract build distributed CLI stops and names the linked repository when its contracts fail": {
+      "durationMs": 1738,
+      "avgCores": 0.593,
+      "peakRssGb": 0.297,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelContractBuild.test.ts|parallel runner contract build distributed CLI stops before TypeScript compilation when contracts fail": {
@@ -10103,6 +10127,12 @@
       "durationMs": 3486,
       "avgCores": 0.525,
       "peakRssGb": 0.23,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelContractBuild.test.ts|parallel runner contract build local CLI leaves a linked repository's build alone": {
+      "durationMs": 1719,
+      "avgCores": 0.396,
+      "peakRssGb": 0.145,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache a test that starved and then passed in one run overrides its committed cost with the passing measurement plus 30%, which later clean runs keep": {
@@ -10205,6 +10235,12 @@
       "durationMs": 2379,
       "avgCores": 0.622,
       "peakRssGb": 0.183,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache keys a compiled-config task by its test file and finds its committed cost": {
+      "durationMs": 888,
+      "avgCores": 0.811,
+      "peakRssGb": 0.141,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelCostCache.test.ts|task cost cache keys forge tasks by their full source path": {
@@ -10385,6 +10421,12 @@
       "durationMs": 5487,
       "avgCores": 0.204,
       "peakRssGb": 0.169,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelDistributedE2E.test.ts|distributed parallel runner runs a real worker from the shipped build outputs of the project and its linked repository without their prepare scripts": {
+      "durationMs": 15465,
+      "avgCores": 0.169,
+      "peakRssGb": 0.361,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelDistributedE2E.test.ts|distributed parallel runner runs cost-scheduled tests on a real worker and records its measurements and admission statistics": {
@@ -12013,6 +12055,12 @@
       "peakRssGb": 0.203,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelRuntimeBundle.test.ts|distributed source workspace gives a cached file the archived mode when a delta rewrites it": {
+      "durationMs": 843,
+      "avgCores": 0.712,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelRuntimeBundle.test.ts|distributed source workspace preserves linked repository layout and excludes non-runtime files": {
       "durationMs": 2659,
       "avgCores": 1.106,
@@ -12035,6 +12083,12 @@
       "durationMs": 2038,
       "avgCores": 0.868,
       "peakRssGb": 0.233,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelRuntimeBundle.test.ts|distributed source workspace ships the declared build outputs of the root and its linked repository and drops their worker prepare": {
+      "durationMs": 706,
+      "avgCores": 0.482,
+      "peakRssGb": 0.076,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelSetupFailureCap.test.ts|distributed setup failure cap counts only consecutive failures with the same normalized reason and resets on admission": {
@@ -12617,6 +12671,12 @@
       "durationMs": 3346,
       "avgCores": 0.601,
       "peakRssGb": 0.212,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelWorkerScheduler.test.ts|distributed worker scheduler gives a test child and its worker threads the project's compile cache": {
+      "durationMs": 685,
+      "avgCores": 0.482,
+      "peakRssGb": 0.077,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelWorkerScheduler.test.ts|distributed worker scheduler holds a busy worker until its first CPU reading and keeps a reading for sooner checks": {
@@ -16765,6 +16825,12 @@
       "peakRssGb": 0.848,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeBuilder.test.ts|Unit: DisputeBuilder constructDispute → reuse a cached dispute that omits its auditing data, then the chain no longer allows the omission → the next construction builds again and posts the data": {
+      "durationMs": 11172,
+      "avgCores": 0.788,
+      "peakRssGb": 0.976,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeBuilder.test.ts|Unit: DisputeBuilder constructDispute → reuse a newer latest block after a cached construction → the next dispute proves the later block": {
       "durationMs": 18926,
       "avgCores": 0.914,
@@ -16793,6 +16859,12 @@
       "durationMs": 10592,
       "avgCores": 1.21,
       "peakRssGb": 0.839,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeBuilder.test.ts|Unit: DisputeBuilder constructDispute → reuse the fork's reduced result committed after a cached construction → the built dispute is dropped": {
+      "durationMs": 16001,
+      "avgCores": 0.471,
+      "peakRssGb": 0.796,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeBuilder.test.ts|Unit: DisputeBuilder constructDispute → reuse unchanged inputs → the second construction returns the cached result": {

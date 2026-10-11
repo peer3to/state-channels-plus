@@ -174,8 +174,8 @@ describe("distributed task coordinator", function () {
             const retry = coordinator.requestTask("worker");
             expect(retry.task.cost).to.deep.equal({
                 durationMs: 1000,
-                cores: 3,
-                rssGb: 1.5,
+                cores: 2.6,
+                rssGb: 1.3,
                 known: true
             });
             // Run metrics keep the first assignment, not the retry's.

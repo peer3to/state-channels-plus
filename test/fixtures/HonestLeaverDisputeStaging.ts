@@ -245,7 +245,11 @@ export async function assertHonestPeersContributeAfterSelfRemoval(
         includeInboundAgain
     } = await stageInboundBlockedExit(h, {
         watchdogMs: 60_000,
-        forwardDisputes: true
+        forwardDisputes: true,
+        // engineer decision (Luka, 2026-10-12): 6s, not the staging's 4s. The
+        // others audit the leaver's dispute, then contribute into its window;
+        // under load that path can outlast a 4s evidence period.
+        evidenceTime: 6
     });
     const forkId = h.activeForkId!;
     const honest = [...remainingPeerIndices, joiner.index];

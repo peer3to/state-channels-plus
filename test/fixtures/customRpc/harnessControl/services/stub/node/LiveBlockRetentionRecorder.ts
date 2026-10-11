@@ -3,6 +3,7 @@ import { Block } from "@/models";
 import type { AGuard } from "@/rpc/network/guards/AGuard";
 import { WaitForSyncStatusGuard } from "@/rpc/network/guards/WaitForSyncStatusGuard";
 import type Rpc from "@/rpc/Rpc";
+import type { RpcResponse } from "@/rpc/Rpc";
 import type StateManager from "@/stateManager";
 import type { Status } from "@/types";
 
@@ -20,14 +21,28 @@ export type RecordedLiveBlockDelivery = {
      * intakes, its run and the status then.
      */
     intakes: { sequence: number; run: number; status: Status }[];
+    /** The RPC carried a request id, so a response was due. */
+    request: boolean;
+    /** Each response the service sent for this RPC, in order. */
+    responses: { ok: boolean; error?: string }[];
+};
+
+// The private dispatcher member the probe wraps record-only.
+type ResponsePath = {
+    sendRpcResponseSafely(
+        rpc: Rpc,
+        response: RpcResponse,
+        transport: unknown
+    ): void;
 };
 
 /**
  * Record-only probe on the live block RPC path of one runtime: every
  * `stateTransitionService.runRPC` of `onBlockConfirmation` (the network
- * arrival and each re-run by a guard) and the queue intake each run reaches.
- * Every call is forwarded. `retainedCount` reads how many RPCs the
- * `WaitForSyncStatusGuard` still retains.
+ * arrival and each re-run by a guard), the queue intake each run reaches and
+ * each response the service sends for it. Every call is forwarded.
+ * `retainedCount` reads how many RPCs the `WaitForSyncStatusGuard` still
+ * retains.
  */
 export class LiveBlockRetentionRecorder {
     readonly deliveries: RecordedLiveBlockDelivery[] = [];
@@ -39,6 +54,8 @@ export class LiveBlockRetentionRecorder {
         const service = sm.p2pManager.localRpc.stateTransitionService;
         const queue = sm.blockQueueManager;
         const runRPC = service.runRPC;
+        const responsePath = service as unknown as ResponsePath;
+        const sendResponse = responsePath.sendRpcResponseSafely;
         const ingest = queue.ingestBlockConfirmation;
         const byRpc = new WeakMap<Rpc, RecordedLiveBlockDelivery>();
         let current: RecordedLiveBlockDelivery | undefined;
@@ -58,7 +75,9 @@ export class LiveBlockRetentionRecorder {
                     height: Number(block.height),
                     arrivalStatus: sm.status,
                     runs: 0,
-                    intakes: []
+                    intakes: [],
+                    request: rpc.requestId !== undefined,
+                    responses: []
                 };
                 byRpc.set(rpc, delivery);
                 this.deliveries.push(delivery);
@@ -81,9 +100,19 @@ export class LiveBlockRetentionRecorder {
             });
             return ingest.apply(queue, args);
         };
+        responsePath.sendRpcResponseSafely = function (rpc, response, ...rest) {
+            byRpc.get(rpc)?.responses.push({
+                ok: response.ok,
+                ...(response.error === undefined
+                    ? {}
+                    : { error: String(response.error) })
+            });
+            return sendResponse.call(this, rpc, response, ...rest);
+        };
         this.restoreProbe = () => {
             service.runRPC = runRPC;
             queue.ingestBlockConfirmation = ingest;
+            responsePath.sendRpcResponseSafely = sendResponse;
         };
     }
 

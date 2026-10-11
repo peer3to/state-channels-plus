@@ -683,7 +683,10 @@ export class MathScenarioActions extends ScenarioActions {
      */
     async syncSpectator(
         initialTransitions: number = 4,
-        options?: { configOverrides?: HarnessOptions["configOverrides"] }
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+        }
     ): Promise<TestPeer> {
         const h = this.harness;
         await h.lifecycle.start(3, 0, {
@@ -691,7 +694,8 @@ export class MathScenarioActions extends ScenarioActions {
                 p2pTime: 5,
                 agreementTime: 4,
                 chainFallbackTime: 2,
-                evidenceTime: 4
+                evidenceTime: 4,
+                ...options?.timeConfig
             },
             configOverrides: options?.configOverrides
         });
@@ -707,7 +711,10 @@ export class MathScenarioActions extends ScenarioActions {
 
     async syncSpectatorAndPrepareJoin(
         initialTransitions: number = 4,
-        options?: { configOverrides?: HarnessOptions["configOverrides"] }
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+        }
     ) {
         const h = this.harness;
         const joiner = await this.syncSpectator(initialTransitions, options);

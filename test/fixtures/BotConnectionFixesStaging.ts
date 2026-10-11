@@ -259,21 +259,27 @@ export function countFinalizedBlocks(peer: HarnessPeer): () => number {
  * Founder 1's snapshot posts are recorded; its self-removal disputes are
  * recorded and, with `forwardDisputes`, also sent.
  */
+type InboundJoinStagingOptions = {
+    watchdogMs?: number;
+    forwardDisputes?: boolean;
+    evidenceTime?: number;
+};
+
 async function stageOmittedInboundJoin(
     h: MathPeerTestHarness,
-    options: { watchdogMs?: number; forwardDisputes?: boolean }
+    options: InboundJoinStagingOptions
 ) {
     const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
-        await h.scenario.syncSpectatorAndPrepareJoin(
-            4,
-            options.watchdogMs === undefined
-                ? undefined
-                : {
-                      configOverrides: {
-                          LEAVE_CHANNEL_WATCHDOG_MS: options.watchdogMs
-                      }
-                  }
-        );
+        await h.scenario.syncSpectatorAndPrepareJoin(4, {
+            configOverrides:
+                options.watchdogMs === undefined
+                    ? undefined
+                    : { LEAVE_CHANNEL_WATCHDOG_MS: options.watchdogMs },
+            timeConfig:
+                options.evidenceTime === undefined
+                    ? undefined
+                    : { evidenceTime: options.evidenceTime }
+        });
     const leaver = h.getPeer(1);
     // the omitted join is staging: the joiner's force-join dispute is recorded, not started
     await h.control(joiner).stub.stubSuppressForceJoinDispute().request();
@@ -317,7 +323,7 @@ async function stageOmittedInboundJoin(
  */
 export async function stageInboundBlockedExit(
     h: MathPeerTestHarness,
-    options: { watchdogMs?: number; forwardDisputes?: boolean } = {}
+    options: InboundJoinStagingOptions = {}
 ) {
     const staged = await stageOmittedInboundJoin(h, options);
     const { leaver, posts } = staged;
@@ -341,7 +347,7 @@ export async function stageInboundBlockedExit(
  */
 export async function stageLeaveAwaitingTurn(
     h: MathPeerTestHarness,
-    options: { watchdogMs?: number; forwardDisputes?: boolean } = {}
+    options: InboundJoinStagingOptions = {}
 ) {
     const staged = await stageOmittedInboundJoin(h, options);
     await staged.leaver.p2pInstance.p2pSigner.leaveChannel();
@@ -354,7 +360,7 @@ export async function stageLeaveAwaitingTurn(
  */
 export async function stageInboundBlockedProtocolExit(
     h: MathPeerTestHarness,
-    options: { watchdogMs?: number; forwardDisputes?: boolean } = {}
+    options: InboundJoinStagingOptions = {}
 ) {
     const staged = await stageOmittedInboundJoin(h, options);
     await h.transition.participantLeaveStateTransition({

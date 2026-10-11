@@ -395,6 +395,9 @@ describe("Unit: bot-connection fixes", function () {
                     async () => (await posts.started()) === started + 1,
                     h.event.protocolEventTimeoutMs()
                 );
+                await posts.resultsWait(started + 1);
+                // absence window: a second queued post would have started by
+                // now, right after the queued post returned
                 await sleep(2_000);
                 expect(await posts.started()).to.equal(started + 1);
 

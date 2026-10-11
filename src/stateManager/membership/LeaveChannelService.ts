@@ -88,7 +88,7 @@ export default class LeaveChannelService {
         ];
     }
 
-    public get isLeaving(): boolean {
+    private get isLeaving(): boolean {
         return this.exit?.isLeaveRequested === true;
     }
 

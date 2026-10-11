@@ -374,8 +374,6 @@ export class EventHandler {
         if (!knownSnapshot) {
             const status = this.stateManager.status;
             if (status === Status.SYNCED) {
-                // the leave observes its own settlement
-                if (this.stateManager.leaveChannelService.isLeaving) return;
                 // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
                 // but no resync path exists yet.
 

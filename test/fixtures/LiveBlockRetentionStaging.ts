@@ -139,6 +139,44 @@ export async function addObserverWithHeldInitialSync(
     };
 }
 
+/**
+ * Opens a channel of founders 0, 1 and 2 where founder 2 records its live
+ * block RPCs and holds the install of the genesis from the `ChannelOpened`
+ * event: the founders 0 and 1 hold the genesis and author, founder 2 is not
+ * engaged until `release` lets the install run, which lists it and moves it
+ * from its pre-open status straight to `PARTICIPATING`.
+ */
+export async function openWithHeldFounderGenesis(
+    h: MathPeerTestHarness
+): Promise<{
+    founder: Peer;
+    forkId: ForkId;
+    /** Ends the hold; idempotent. */
+    release: () => Promise<void>;
+}> {
+    await h.setup(3);
+    const founder = h.getPeer(2);
+    const stub = h.control(founder).stub;
+    await stub.stubRecordLiveBlockRetention().request();
+    await stub.holdSyncInstall().request();
+    const forkId = await h.lifecycle.openChannelForParticipants([0, 1, 2], {
+        observePeerIndices: [0, 1]
+    });
+    await waitFor(
+        async () => (await stub.getSyncInstallEntered().request()) === 1
+    );
+    let released = false;
+    return {
+        founder,
+        forkId,
+        release: async () => {
+            if (released) return;
+            released = true;
+            await stub.releaseSyncInstall().request();
+        }
+    };
+}
+
 /** The observer's recorded live block RPCs and the guard's retained count. */
 export async function readLiveBlockRetention(
     h: MathPeerTestHarness,

@@ -2,6 +2,7 @@ import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
+import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -295,6 +296,99 @@ describe("Unit: DisputeBuilder", function () {
                 onChainSlashes: [offender.address],
                 fraudProofCount: 1
             });
+        });
+        it("a cached dispute that omits its auditing data, then the chain no longer allows the omission → the next construction builds again and posts the data", async function () {
+            const h = TestSession.getHarness();
+            // the chain has a join the head milestone waits on; peer 0's
+            // mirror missed it, so locally the omission stays allowed
+            await stageMirrorMissingJoin(h, 0);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const read = "isAuditingDataOmissionAllowed";
+            const before = await h.mirror.observe(peer.index, read);
+            // the first construction reads the chain from before the join
+            await h.mirror.serveChainReadsBefore(
+                peer.index,
+                read,
+                "InboundMessagesProcessed"
+            );
+            const first = await h.execOnHost(
+                peer,
+                async (sm, args) =>
+                    (await sm.disputeManager.constructDispute(args.forkId))
+                        .dispute.postedAuditingData,
+                { forkId }
+            );
+            expect(first).to.equal(false);
+            expect((await before.observation()).chain.answers).to.deep.equal([
+                true
+            ]);
+            // the chain view moves to the join; local inputs stay unchanged
+            await before.restore();
+            const after = await h.mirror.observe(peer.index, read);
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const builder = sm.disputeManager["disputeBuilder"];
+                    const cached = builder["built"].get(args.forkId)!;
+                    const second = await sm.disputeManager.constructDispute(
+                        args.forkId
+                    );
+                    const third = await sm.disputeManager.constructDispute(
+                        args.forkId
+                    );
+                    return {
+                        isSameFingerprint:
+                            builder["built"].get(args.forkId)!.fingerprint ===
+                            cached.fingerprint,
+                        // a build returns new objects: identity is reuse
+                        isRebuilt: second !== cached.result,
+                        postedAuditingData: second.dispute.postedAuditingData,
+                        isPostedReused: third === second
+                    };
+                },
+                { forkId }
+            );
+
+            expect(r).to.deep.equal({
+                isSameFingerprint: true,
+                isRebuilt: true,
+                postedAuditingData: true,
+                isPostedReused: true
+            });
+            // the re-check and the build's confirmation read the chain; the
+            // posted dispute is reused with no read
+            const { local, chain } = await after.observation();
+            expect(chain.answers).to.deep.equal([false, false]);
+            expect(local.answers).to.deep.equal([true]);
+        });
+
+        it("the fork's reduced result committed after a cached construction → the built dispute is dropped", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            const auditor = h.getPeer(1);
+            const hasBuilt = () =>
+                h.execOnHost(
+                    auditor,
+                    async (sm, args) =>
+                        sm.disputeManager["disputeBuilder"]["built"].has(
+                            args.forkId
+                        ),
+                    { forkId }
+                );
+            await h.dispute.fetchConstructedDispute(auditor.index, forkId);
+            expect(await hasBuilt()).to.equal(true);
+
+            await h.dispute.selfRemoveViaDisputeWait({ leaverIndex: 0 });
+            await h.event.waitForPeers(
+                "onDisputeReducedResultCommitted",
+                [auditor.index],
+                1
+            );
+
+            expect(await hasBuilt()).to.equal(false);
         });
     });
 

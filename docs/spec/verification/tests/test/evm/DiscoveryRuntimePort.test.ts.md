@@ -90,7 +90,7 @@ block that carries the join is the first one whose author has already received t
 - `joinLobby starts ordinary negotiation from the returned match`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P6
 - `settles joinLobby when the runtime is disposed after local signing`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9, REQ-NEG-4-ZQ0985.T1.P11
 - `disposal during a held watchdog upload stops the runtime and the late completion reports nothing`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
-- `authored leave watchdog fallback is fatal on missing-marker`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16, REQ-LIF-10-QR8NQ9.T1.P7
+- `authored leave watchdog fallback is fatal on unrecognized-upload-failure`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16, REQ-LIF-10-QR8NQ9.T1.P7
 - `authored leave watchdog fallback on evidence-expired waits for the reduction and emits onLeftChannel`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17, REQ-LIF-10-QR8NQ9.T1.P8, REQ-TJOIN-7-NNGTAY.T1.P10
 
 The held-watchdog disposal case retains the actual inline test endpoint before disposal. After disposal it reads and releases that recorder through the retained endpoint, without sending new network RPCs through the disposed P2PManager. No `onLeftChannel` fires and the late completion adds no detached error.

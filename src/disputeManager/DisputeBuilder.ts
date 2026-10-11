@@ -56,7 +56,8 @@ type DisputeInputs = {
 /**
  * Builds this peer's dispute of a fork and decides whether it adds evidence to
  * another peer's dispute. The inputs are its fingerprint: while a fork's
- * inputs are unchanged, the dispute built from them is reused.
+ * inputs are unchanged, the dispute built from them is reused, unless it
+ * omits its auditing data and the chain no longer allows that.
  */
 function fingerprintOf(inputs: DisputeInputs): string {
     return ethers.id(
@@ -124,9 +125,10 @@ export default class DisputeBuilder {
         return check;
     }
 
-    /** After a kill (the compared dispute may be gone) or the fork's committed reduced result. */
+    /** Drops the fork's evidence comparison and built dispute: after a kill (the compared dispute may be gone) or the fork's committed reduced result. */
     public clearCache(forkId: ForkId): void {
         this.evidenceChecks.delete(forkId);
+        this.built.delete(forkId);
     }
 
     /**
@@ -140,7 +142,11 @@ export default class DisputeBuilder {
     ): Promise<ConstructDisputeResult> {
         const inputs = await this.readInputs(forkId, options?.expectedSlashes);
         const built = this.built.get(forkId);
-        if (built?.fingerprint === fingerprintOf(inputs)) return built.result;
+        if (
+            built?.fingerprint === fingerprintOf(inputs) &&
+            (await this.isReusable(built.result))
+        )
+            return built.result;
         const builtStateProof = await this.agreementManager.buildStateProof(
             forkId,
             inputs.latestBlockHeight
@@ -181,6 +187,23 @@ export default class DisputeBuilder {
             built,
             latestStateSnapshot,
             String(input.latestInboundMessageBlockHash) as Hash
+        );
+    }
+
+    /**
+     * Whether a built dispute still holds on chain. Posted auditing data stays
+     * valid. An omission holds only while the chain still allows it: a moved
+     * anchor or threshold set can take it back. Only the chain answers: a
+     * lagging mirror cannot confirm an omission.
+     */
+    private async isReusable({
+        dispute
+    }: ConstructDisputeResult): Promise<boolean> {
+        return (
+            dispute.postedAuditingData ||
+            (await this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
+                dispute
+            ))
         );
     }
 

@@ -3563,7 +3563,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Record every live `onBlockConfirmation` RPC run (arrival and guard
-     * re-runs) and the queue intake each run reaches; forward all.
+     * re-runs), the queue intake each run reaches and each response sent
+     * for it; forward all.
      */
     public stubRecordLiveBlockRetention(): boolean {
         this.service.liveBlockRetention.install(this.service.sm);
@@ -3578,7 +3579,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return {
             deliveries: recorder.deliveries.map((delivery) => ({
                 ...delivery,
-                intakes: delivery.intakes.map((intake) => ({ ...intake }))
+                intakes: delivery.intakes.map((intake) => ({ ...intake })),
+                responses: delivery.responses.map((response) => ({
+                    ...response
+                }))
             })),
             retainedCount: recorder.retainedCount
         };

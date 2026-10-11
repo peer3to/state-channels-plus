@@ -7,11 +7,12 @@ import { expect } from "chai";
 /**
  * A leaver authors its exit while each of its snapshot posts fails, so the
  * leave watchdog's self-removal dispute is the fallback. That dispute's send
- * fails: with no marker the failure is fatal for the runtime; with an
- * expired evidence period the leave waits for the window's reduction.
+ * fails: an unrecognized failure is fatal for the runtime and leaves no
+ * dispute marker; with an expired evidence period the leave waits for the
+ * window's reduction.
  */
 export async function assertAuthoredLeaveFallback(
-    failure: "missing-marker" | "evidence-expired"
+    failure: "unrecognized-upload-failure" | "evidence-expired"
 ) {
     const h = TestSession.getHarness();
     await h.lifecycle.start(3, 0, {
