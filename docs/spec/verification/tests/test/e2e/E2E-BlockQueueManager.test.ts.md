@@ -39,6 +39,12 @@ runs the shared `assertSlashAdmission("failed-recovery")` helper; no permutation
 yet.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 
+The spectator drain case holds a fresh spectator's sync with the channel tip in its payload and
+suppresses its queue timeouts; a copy of the tip is ingested and queues, and the next block reaches the
+spectator by the participants' gossip, which `WaitForSyncStatusGuard` retains (recorded, not yet at queue
+intake) while the sync is held. Once the sync stores the tip, the spectator must apply the gossiped block
+and hold no queued entry for it.
+
 ## Tests
 
 - `known slashes reject network contributions even when slash log recovery fails`: none
@@ -63,6 +69,7 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `junk supplier is excluded even when another sync toward it is in flight at queue timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P12
 - `future block at a height its source never reached at queue timeout is dropped and the source struck`: REQ-BLOCK-PIPE-4-CF52J6.T1.P9, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P11
 - `queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P6
+- `a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P7
 - `recovers the first reduced-fork block by reducing locally at ingest`: REQ-BLOCK-PIPE-9-QA66GT.T1.P5
 - `queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier`: REQ-BLOCK-PIPE-4-CF52J6.T1.P3, REQ-BLOCK-PIPE-4-CF52J6.T1.P6
 - `a queue timeout accepts a proved successor fork without excluding the supplier or author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P13, REQ-SYNC-1-T2589H.T1.P8
@@ -70,7 +77,7 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `unknown fork: both the supplier and the author are asked and both are cut`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P19
 - `still recovers via local reduction when the raced block is on yet another unknown fork`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P20
 - `drains an early reduced-fork block once the fork transition catches up`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P4
-- `missing genesis: no proof to build, sources blacklisted, no dispute`: REQ-BLOCK-PIPE-8-N529VH.T1.P3, INV-BCP-6-1E943Z.T1.P3
-- `present genesis: builds the WrongGenesis proof and disputes the fork`: INV-BCP-6-1E943Z.T1.P1
-- `never validates an entry whose fork is not current`: REQ-BCP-4-MS5VVZ.T1.P10
+- `missing genesis: no proof to build, sources blacklisted, no dispute`: REQ-BLOCK-PIPE-8-N529VH.T1.P3
+- `present genesis: builds the WrongGenesis proof and disputes the fork`: REQ-BLOCK-PIPE-8-N529VH.T1.P10
+- `never validates an entry whose fork is not current`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P8
 - `schedules the full window fresh, only the remainder after aging, and nothing at the deadline`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P2

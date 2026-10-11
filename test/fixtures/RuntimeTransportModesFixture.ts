@@ -446,9 +446,11 @@ export async function assertGeneratedHostSigner(): Promise<void> {
         generateSigner: true
     });
     try {
-        expect(await p2pInstance.chainSigner.getAddress()).to.match(
-            /^0x[0-9a-fA-F]{40}$/
-        );
+        const address = await p2pInstance.chainSigner.getAddress();
+        expect(address).to.match(/^0x[0-9a-fA-F]{40}$/);
+        // the forwarded signature recovers to the generated host key
+        const signature = await p2pInstance.chainSigner.signMessage("probe");
+        expect(ethers.verifyMessage("probe", signature)).to.equal(address);
         expect(
             await p2pInstance.stateChannelManagerContract.getAllTimes()
         ).to.have.length(4);

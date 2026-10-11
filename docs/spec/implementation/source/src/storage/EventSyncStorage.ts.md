@@ -1,8 +1,6 @@
 # EventSyncStorage.ts
 
 > **Source:** [src/storage/EventSyncStorage.ts](../../../../../../src/storage/EventSyncStorage.ts)
->
-> **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

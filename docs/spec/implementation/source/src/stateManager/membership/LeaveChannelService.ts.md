@@ -1,8 +1,6 @@
 # LeaveChannelService.ts
 
 > **Source:** [LeaveChannelService.ts](../../../../../../../src/stateManager/membership/LeaveChannelService.ts)
->
-> **Design views:** [architecture.md](../../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # errorWire.ts
 
 > **Source:** [src/rpc/internal/errorWire.ts](../../../../../../../src/rpc/internal/errorWire.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

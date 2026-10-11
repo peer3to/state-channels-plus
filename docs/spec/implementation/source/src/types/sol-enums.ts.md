@@ -1,8 +1,6 @@
 # sol-enums.ts
 
 > **Source:** [src/types/sol-enums.ts](../../../../../../src/types/sol-enums.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # P2pSignerRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

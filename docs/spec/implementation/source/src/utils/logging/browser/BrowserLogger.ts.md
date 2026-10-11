@@ -1,8 +1,6 @@
 # BrowserLogger.ts
 
 > **Source:** [src/utils/logging/browser/BrowserLogger.ts](../../../../../../../../src/utils/logging/browser/BrowserLogger.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 No specified behavior: Browser logger implementation (console adapters).
 

@@ -1,8 +1,6 @@
 # EventBarrier.ts
 
 > **Source:** [src/utils/EventBarrier.ts](../../../../../../src/utils/EventBarrier.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

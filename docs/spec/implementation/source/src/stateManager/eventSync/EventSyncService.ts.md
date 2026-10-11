@@ -1,8 +1,6 @@
 # EventSyncService.ts
 
 > **Source:** [src/stateManager/eventSync/EventSyncService.ts](../../../../../../../src/stateManager/eventSync/EventSyncService.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md), [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md), [runtime/chain-observation.md](../../../../views/runtime/chain-observation.md)
 
 ## Requirements
 

@@ -74,9 +74,9 @@ function logSpan(params: unknown): number {
  * A WebSocket proxy in front of one RPC node, so a test can stand it in for
  * a separate node. `cut()` drops every socket through it and refuses new ones
  * until `restore()`; `blackhole()` keeps sockets open but forwards nothing.
- * Per-method faults hold, swallow or fail requests, or swallow replies. It
- * acts only on the sockets through it: the node's state and every other
- * client of the node are untouched.
+ * Per-method faults hold, swallow or fail requests, or hold or swallow
+ * replies. It acts only on the sockets through it: the node's state and
+ * every other client of the node are untouched.
  */
 export class RpcNodeProxy {
     /** JSON-RPC methods clients sent to this proxy, in order, forwarded or not. */
@@ -93,6 +93,13 @@ export class RpcNodeProxy {
     private readonly swallowedReplyMethods = new Set<JsonRpcMethod>();
     /** Ids of forwarded requests whose replies are dropped. */
     private readonly swallowedReplyIds = new Set<JsonRpcId>();
+    /** Method -> the replies to its requests waiting here until released. */
+    private readonly heldReplyMethods = new Map<
+        JsonRpcMethod,
+        (() => void)[]
+    >();
+    /** Request id -> the held replies it joins when it is answered. */
+    private readonly heldReplyIds = new Map<JsonRpcId, (() => void)[]>();
     /** Method -> how many of its next requests this proxy answers with an error. */
     private readonly failingMethods = new Map<JsonRpcMethod, number>();
     /** Method -> how many of its next requests pass before one fails. */
@@ -229,6 +236,29 @@ export class RpcNodeProxy {
         };
     }
 
+    /**
+     * Keep the node's replies to `method` at the proxy until the returned
+     * release sends them; `heldReplies` counts the ones waiting.
+     */
+    holdReplies(method: JsonRpcMethod): {
+        heldReplies: () => number;
+        release: () => void;
+    } {
+        const sends: (() => void)[] = [];
+        this.heldReplyMethods.set(method, sends);
+        return {
+            heldReplies: () => sends.length,
+            release: () => {
+                if (this.heldReplyMethods.get(method) === sends)
+                    this.heldReplyMethods.delete(method);
+                // replies still in flight pass straight through
+                for (const [id, held] of this.heldReplyIds)
+                    if (held === sends) this.heldReplyIds.delete(id);
+                for (const send of sends.splice(0)) send();
+            }
+        };
+    }
+
     /** Keep every socket open but forward nothing in either direction. */
     blackhole(): void {
         this.isBlackholed = true;
@@ -321,6 +351,11 @@ export class RpcNodeProxy {
                 this.swallowedReplyMethods.has(method)
             )
                 this.swallowedReplyIds.add(id);
+            const heldReplies = method
+                ? this.heldReplyMethods.get(method)
+                : undefined;
+            if (heldReplies && id !== undefined)
+                this.heldReplyIds.set(id, heldReplies);
             const hold = method ? this.heldMethods.get(method) : undefined;
             if (hold && hold.remaining > 0) {
                 hold.remaining -= 1;
@@ -336,8 +371,18 @@ export class RpcNodeProxy {
             const { method, id } = readJsonRpcFrame(data);
             if (!method && id !== undefined && this.swallowedReplyIds.has(id))
                 return;
-            if (client.readyState === WebSocket.OPEN)
-                client.send(data, { binary: isBinary });
+            const send = () => {
+                if (client.readyState === WebSocket.OPEN)
+                    client.send(data, { binary: isBinary });
+            };
+            const heldReplies =
+                !method && id !== undefined
+                    ? this.heldReplyIds.get(id)
+                    : undefined;
+            if (heldReplies && id !== undefined) {
+                this.heldReplyIds.delete(id);
+                heldReplies.push(send);
+            } else send();
         });
         client.on("close", end);
         client.on("error", end);

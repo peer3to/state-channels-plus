@@ -1,8 +1,6 @@
 # time.ts
 
 > **Source:** [src/types/time.ts](../../../../../../src/types/time.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

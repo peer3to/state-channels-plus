@@ -1,8 +1,6 @@
 # workerShutdown.ts
 
 > **Source:** [src/evm/node/workerShutdown.ts](../../../../../../../src/evm/node/workerShutdown.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

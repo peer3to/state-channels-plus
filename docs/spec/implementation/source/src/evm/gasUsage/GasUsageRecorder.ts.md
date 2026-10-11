@@ -1,8 +1,6 @@
 # GasUsageRecorder.ts
 
 > **Source:** [src/evm/gasUsage/GasUsageRecorder.ts](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts)
->
-> **Design views:** [architecture/sdk/architecture.md](../../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

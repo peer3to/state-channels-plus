@@ -1,8 +1,6 @@
 # RelayerPool.ts
 
 > **Source:** [src/transport/relay/RelayerPool.ts](../../../../../../../src/transport/relay/RelayerPool.ts)
->
-> **Design views:** [transport upgrade](../../../../views/architecture/sdk/rpc/webrtc-setup.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # WebRTCSetupService.ts
 
 > **Source:** [src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts](../../../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts)
->
-> **Design views:** [architecture/sdk/rpc/webrtc-setup.md](../../../../../../views/architecture/sdk/rpc/webrtc-setup.md)
 
 ## Requirements
 

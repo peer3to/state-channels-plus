@@ -683,5 +683,10 @@
         "hash": "929fae3c97e8c6b6",
         "reviewer": "Luka-discovery-v1",
         "date": "2026-08-30"
+    },
+    "specification/disputes/dispute-processing.md": {
+        "hash": "8206c89d80c51467",
+        "reviewer": "momosh",
+        "date": "2026-10-07"
     }
 }

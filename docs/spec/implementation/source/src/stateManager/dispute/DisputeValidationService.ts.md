@@ -1,8 +1,6 @@
 # DisputeValidationService.ts
 
 > **Source:** [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../../src/stateManager/dispute/DisputeValidationService.ts)
->
-> **Design views:** [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

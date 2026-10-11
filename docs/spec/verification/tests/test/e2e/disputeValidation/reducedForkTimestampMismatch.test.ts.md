@@ -18,4 +18,4 @@ reduction covers: the second window runs on a fork that is itself a reduction pr
 
 ## Tests
 
-- `fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync`: REQ-DIS-6-Y92H1M.T1.P7, INV-DVP-5-NAJRB0.T1.P6
+- `fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync`: REQ-DIS-6-Y92H1M.T1.P7, REQ-DISPUTE-PIPE-4-3YVDSA.T1.P16

@@ -1,8 +1,6 @@
 # DeploySignerRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/deploySigner/DeploySignerRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/deploySigner/DeploySignerRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

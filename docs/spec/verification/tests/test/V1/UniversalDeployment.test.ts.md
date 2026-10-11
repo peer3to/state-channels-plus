@@ -30,8 +30,8 @@ replication only, so no single Exercises component is named.
 ## Tests
 
 - `deploys a local state machine directly with the signer`: none
-- `rejects the real oversized LocalDiamond before submitting a production deployment`: REQ-CON-2-CBVFV9.T1.P7, REQ-CONTRACT-SIZE-1-881Q6E.T1.P9
-- `deploys the oversized LocalDiamond through the exempt local path`: REQ-CON-2-CBVFV9.T1.P8, REQ-CONTRACT-SIZE-1-881Q6E.T1.P10
+- `rejects the real oversized LocalDiamond before submitting a production deployment`: REQ-CONTRACT-SIZE-1-881Q6E.T1.P9
+- `deploys the oversized LocalDiamond through the exempt local path`: REQ-CONTRACT-SIZE-1-881Q6E.T1.P10
 - `ignores stale overwrite events and deduplicates on-chain slashes`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P1, UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P2, REQ-MIRROR-2-E9F3TM.T1.P1, UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P6, UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P7
 - `deploys with consumer facet`: none
 - `deploys with a custom dispute execution gas limit`: none

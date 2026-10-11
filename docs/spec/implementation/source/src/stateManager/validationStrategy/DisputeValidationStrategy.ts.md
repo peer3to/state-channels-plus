@@ -1,8 +1,6 @@
 # DisputeValidationStrategy.ts
 
 > **Source:** [src/stateManager/validationStrategy/DisputeValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md), [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

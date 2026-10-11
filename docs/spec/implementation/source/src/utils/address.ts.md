@@ -1,8 +1,6 @@
 # address.ts
 
 > **Source:** [src/utils/address.ts](../../../../../../src/utils/address.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

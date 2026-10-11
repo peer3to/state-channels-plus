@@ -749,6 +749,16 @@ describe("E2E: join snapshot guard", function () {
             // the expiry check passes its entry guard and reads the chain
             // after the deadline: the joiner is absent
             await chainBlockPastWait(h, prepared.joinDeadline);
+            // the real timer fires once the joiner's own clock passed the
+            // deadline; that clock can lag the chain's block timestamps
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(joiner)
+                        .query.getClockTimeInSeconds()
+                        .request()) > prepared.joinDeadline,
+                h.event.protocolEventTimeoutMs()
+            );
             isExpiryReleased = true;
             await expiry.release(true);
             await waitFor(read.entered, h.event.protocolEventTimeoutMs());

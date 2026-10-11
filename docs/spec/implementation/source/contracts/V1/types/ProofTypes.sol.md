@@ -1,8 +1,6 @@
 # ProofTypes.sol
 
 > **Source:** [contracts/V1/types/ProofTypes.sol](../../../../../../../contracts/V1/types/ProofTypes.sol)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md)
 
 ## Requirements
 

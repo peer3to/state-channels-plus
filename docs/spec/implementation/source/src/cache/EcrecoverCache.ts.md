@@ -1,8 +1,6 @@
 # EcrecoverCache.ts
 
 > **Source:** [src/cache/EcrecoverCache.ts](../../../../../../src/cache/EcrecoverCache.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

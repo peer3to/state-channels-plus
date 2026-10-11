@@ -13,7 +13,7 @@ Provider cleanup also covers no subscriptions, an active block subscription and 
 
 - `accepts WebSocket URLs and optimistically converts HTTP URLs`: none
 - `rejects non-WebSocket-compatible provider URLs`: none
-- `destroys the host provider and reports the original startup error`: REQ-RUNTIME-3-VQXW59.T1.P1, INV-RUN-3-1AKG2E.T1.P1
+- `destroys the host provider and reports the original startup error`: REQ-RUNTIME-3-VQXW59.T1.P1
 - `lets the host own the quiesce timeout`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P10
 - `lets an uncancellable P2P signer mutation outlive the request timeout`: none
 - `destroys its provider without subscriptions and permits repeated cleanup`: UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3

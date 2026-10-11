@@ -1,8 +1,6 @@
 # RuntimeChainContext.ts
 
 > **Source:** [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md), [runtime/chain-observation.md](../../../../views/runtime/chain-observation.md)
 
 ## Requirements
 

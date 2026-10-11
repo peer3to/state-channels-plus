@@ -1,8 +1,6 @@
 # Codec.ts
 
 > **Source:** [src/utils/Codec.ts](../../../../../../src/utils/Codec.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # DetachedPromises.ts
 
 > **Source:** [src/utils/DetachedPromises.ts](../../../../../../src/utils/DetachedPromises.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

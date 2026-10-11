@@ -1,8 +1,6 @@
 # createLoggerFoundation.ts
 
-> **Source:** [createLoggerFoundation.ts](../../../../../../../src/utils/logging/createLoggerFoundation.ts#L1)
->
-> **Design views:** [components.md](../../../../views/architecture/sdk/components.md)
+> **Source:** [createLoggerFoundation.ts](../../../../../../../src/utils/logging/createLoggerFoundation.ts)
 
 ## Requirements
 

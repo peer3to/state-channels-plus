@@ -76,10 +76,9 @@ neither the code nor the specification says: its `> **Source:**` header, one `##
 bullet per requirement the file contributes to (with an indented hand-written `Contradicts:`,
 `Partial:` or `Missing:` line where the code departs from it), or a single
 `No specified behavior: <reason>.` line, and its `UNIT-TEST-*` families. A sentence that restates the
-code does not belong in the layer. Design views under `implementation/views/` narrate
-cross-directory flows, each naming its specification owner; they hold the `INTEGRATION-TEST-*`
-families, view-local requirements as `### <ID> — <subject>` headings, and a `## Gaps` section for
-divergences no single file owns. Layer relationships are carried by stable IDs, never by path
+code does not belong in the layer. Integration views under `implementation/views/` each name their
+specification owner and hold only `INTEGRATION-TEST-*` families and a `## Gaps` section for
+divergences no single file owns; requirements and design live only in the specification. Layer relationships are carried by stable IDs, never by path
 equality.
 
 Each test family is one `## <family ID>` heading: its obligation, `- Setup:` and `- Oracle:`

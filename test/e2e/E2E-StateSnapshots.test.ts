@@ -92,6 +92,10 @@ describe("E2E: State Snapshots", function () {
         await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
+        // the reduction's adoption post moves the chain snapshot to the
+        // reduced fork once the reduce is mined; the stub below also drops
+        // adoption posts, so it must land first
+        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         // the leaver posts at its exit block's finality; failing its posts
         // keeps this case's post the only one
         for (const peer of h.getActiveHonestPeers())
@@ -102,8 +106,6 @@ describe("E2E: State Snapshots", function () {
         await h.transition.fromHonestPeersOnly((c) => c.add(3));
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
-
-        await await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         h.event.resetEventSpies();
@@ -121,6 +123,10 @@ describe("E2E: State Snapshots", function () {
         await h.scenario.fourPeersDisputeResolution({
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
+        // the reduction's adoption post moves the chain snapshot to the
+        // reduced fork once the reduce is mined; the stub below also drops
+        // adoption posts, so it must land first
+        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         // the leaver posts at its exit block's finality; failing its posts
         // keeps this case's post the only one
         for (const peer of h.getActiveHonestPeers())
@@ -130,7 +136,6 @@ describe("E2E: State Snapshots", function () {
         await h.transition.fromHonestPeersOnly((c) => c.add(3));
 
         await h.assert.sync.onlyHonestPeersInSync();
-        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         h.event.resetEventSpies();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();

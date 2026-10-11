@@ -22,4 +22,4 @@ follows an idle window.
 
 ## Tests
 
-- `join/leave sequence and fork resolution`: REQ-MSG-9-BFN9P5.T1.P4, INV-SPC-4-WVXS19.T1.P10
+- `join/leave sequence and fork resolution`: REQ-MSG-9-BFN9P5.T1.P4

@@ -1,8 +1,6 @@
 # SdkClientRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/sdkClient/SdkClientRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/sdkClient/SdkClientRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

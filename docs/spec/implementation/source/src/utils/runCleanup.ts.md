@@ -1,8 +1,6 @@
 # runCleanup.ts
 
 > **Source:** [src/utils/runCleanup.ts](../../../../../../src/utils/runCleanup.ts)
->
-> **Design views:** [Runtime execution](../../../views/runtime/execution.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # AInternalRpcService.ts
 
 > **Source:** [src/rpc/internal/AInternalRpcService.ts](../../../../../../../src/rpc/internal/AInternalRpcService.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # ClientChainSigner.ts
 
 > **Source:** [src/evm/signer/ClientChainSigner.ts](../../../../../../../src/evm/signer/ClientChainSigner.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

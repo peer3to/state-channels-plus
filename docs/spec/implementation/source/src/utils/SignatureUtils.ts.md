@@ -1,8 +1,6 @@
 # SignatureUtils.ts
 
 > **Source:** [src/utils/SignatureUtils.ts](../../../../../../src/utils/SignatureUtils.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # Holepunch.ts
 
 > **Source:** [src/Holepunch.ts](../../../../../src/Holepunch.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

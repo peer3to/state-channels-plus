@@ -1,8 +1,6 @@
 # StoredBlockMergeService.ts
 
-> **Source:** [StoredBlockMergeService.ts](../../../../../../../src/stateManager/ingest/StoredBlockMergeService.ts#L1)
->
-> **Design views:** [components.md](../../../../views/architecture/sdk/components.md)
+> **Source:** [StoredBlockMergeService.ts](../../../../../../../src/stateManager/ingest/StoredBlockMergeService.ts)
 
 ## Requirements
 

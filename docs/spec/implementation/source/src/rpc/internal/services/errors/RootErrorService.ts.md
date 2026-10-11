@@ -1,6 +1,6 @@
 # RootErrorService.ts
 
-> **Source:** [src/rpc/internal/services/errors/RootErrorService.ts](../../../../../../../../../src/rpc/internal/services/errors/RootErrorService.ts#L1)
+> **Source:** [src/rpc/internal/services/errors/RootErrorService.ts](../../../../../../../../../src/rpc/internal/services/errors/RootErrorService.ts)
 
 ## Requirements
 

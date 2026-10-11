@@ -1,8 +1,6 @@
 # ValidationService.ts
 
 > **Source:** [src/stateManager/ingest/ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

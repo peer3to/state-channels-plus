@@ -1,8 +1,6 @@
 # EvmFactory.ts
 
 > **Source:** [src/evm/EvmFactory.ts](../../../../../../src/evm/EvmFactory.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

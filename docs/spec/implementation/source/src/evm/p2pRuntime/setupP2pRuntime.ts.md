@@ -1,8 +1,6 @@
 # setupP2pRuntime.ts
 
 > **Source:** [src/evm/p2pRuntime/setupP2pRuntime.ts](../../../../../../../src/evm/p2pRuntime/setupP2pRuntime.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

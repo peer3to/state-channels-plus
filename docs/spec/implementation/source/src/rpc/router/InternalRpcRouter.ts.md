@@ -1,8 +1,6 @@
 # InternalRpcRouter.ts
 
 > **Source:** [src/rpc/router/InternalRpcRouter.ts](../../../../../../../src/rpc/router/InternalRpcRouter.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

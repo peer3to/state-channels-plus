@@ -1,8 +1,6 @@
 # LocalDiscoveryServer.ts
 
 > **Source:** [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 
@@ -15,8 +13,8 @@
 
 Topic-owned local discovery lifecycle
 
-- Setup: Use real loopback discovery, authenticated managers, transport close, blacklist, topic leave, and cleanup
-- Oracle: One eligible replacement while observed; no replacement after leave, blacklist, or cleanup; at most one pending dial/retry per session peer; a leave clears the in-flight dial marks its session still holds; only the dial that owns a mark removes it
+- Setup: Use real loopback discovery, authenticated managers, transport close, blacklist, topic leave, topic rejoin, accepted sockets held unread so a closed dial socket stays closing, and cleanup
+- Oracle: One eligible replacement while observed; no replacement after leave, blacklist, or cleanup; at most one pending dial/retry per session peer
 
 - [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P1` — valid client-ready frame before cleanup acknowledges and starts one handshake
 - [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P2` — malformed ready frame closes without transport or handshake
@@ -34,5 +32,6 @@ Topic-owned local discovery lifecycle
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14` — a dial whose handshake is still pending when its runtime begins shutdown schedules no retry and logs no retry warning
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15` — a replacement endpoint advertised during the old endpoint handshake is retained; after the old socket closes, real retry authenticates a new transport with no blacklist
 - [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16` — the same replacement advertisement while the old authenticated transport is live is retained and used after its close
-- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17` — a topic leave while a dial before authentication is still open clears that session's in-flight dial mark for the peer; a later observation of the topic dials the peer and authenticates while the left dial's close still lags
-- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18` — the late close of a left session's dial, after a later session marked its own dial to the same peer, keeps that later mark, so a third observed topic starts no second pending dial
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17` — after a topic leave, a rejoin dials the announced peer again while the left topic's closed dial socket has not finished closing
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18` — after the left topic's old dial socket finishes closing, the rejoined topic's pending dial still deduplicates a second topic's announcement of the same peer
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P19` — a rejoin dials the announced peer again while the pending, unauthenticated dial its leave closed has not finished closing

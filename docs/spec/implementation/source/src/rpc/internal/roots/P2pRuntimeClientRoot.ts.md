@@ -1,8 +1,6 @@
 # P2pRuntimeClientRoot.ts
 
 > **Source:** [src/rpc/internal/roots/P2pRuntimeClientRoot.ts](../../../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

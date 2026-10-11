@@ -1,8 +1,6 @@
 # BlockStorage.ts
 
 > **Source:** [src/storage/BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts)
->
-> **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

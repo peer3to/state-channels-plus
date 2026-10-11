@@ -1,8 +1,6 @@
 # Rpc.ts
 
 > **Source:** [src/rpc/Rpc.ts](../../../../../../src/rpc/Rpc.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

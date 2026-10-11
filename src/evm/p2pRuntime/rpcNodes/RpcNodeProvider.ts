@@ -53,6 +53,21 @@ type NodeConnection = {
  */
 export type ExpectedChain = { chainId?: bigint };
 
+/** A node's WebSocket. */
+class NodeSocket extends WebSocketProvider {
+    // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
+    // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
+    // before the answer) is settled here; the subscription ends with the socket.
+    override send(
+        method: string,
+        params: unknown[] | Record<string, unknown>
+    ): Promise<unknown> {
+        const answer = super.send(method, params);
+        if (method === "eth_unsubscribe") answer.catch(() => undefined);
+        return answer;
+    }
+}
+
 /**
  * A socket to `url`. A URL the WebSocket constructor rejects becomes an error
  * that names the endpoint by scheme and host only: its text would carry the
@@ -60,7 +75,7 @@ export type ExpectedChain = { chainId?: bigint };
  */
 function openSocket(url: string): WebSocketProvider {
     try {
-        return new WebSocketProvider(url);
+        return new NodeSocket(url);
     } catch {
         throw new Error(
             `Cannot open a WebSocket to ${LoggerUtils.getRpcNodeMetadata(url).rpcNode}`

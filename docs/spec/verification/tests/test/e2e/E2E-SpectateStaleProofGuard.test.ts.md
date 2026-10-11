@@ -20,6 +20,6 @@ cleanliness permutation.
 
 ## Tests
 
-- `aborts sync when on-chain snapshot is more advanced than what participant proved`: INV-SYNC-3-A7A2ED.T1.P2, INV-SYNC-3-A7A2ED.T1.P13, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P3, INV-SPC-1-ZV8QM5.T1.P3, INV-SPC-4-WVXS19.T1.P4, REQ-MSG-9-BFN9P5.T1.P3
-- `aborts sync when a peer answers with undecodable junk bytes`: INV-SYNC-3-A7A2ED.T1.P1, INV-SPC-4-WVXS19.T1.P3, REQ-MSG-9-BFN9P5.T1.P2
+- `aborts sync when on-chain snapshot is more advanced than what participant proved`: INV-SYNC-3-A7A2ED.T1.P2, INV-SYNC-3-A7A2ED.T1.P13, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P3, REQ-MSG-9-BFN9P5.T1.P3
+- `aborts sync when a peer answers with undecodable junk bytes`: INV-SYNC-3-A7A2ED.T1.P1, REQ-MSG-9-BFN9P5.T1.P2
 - `blacklists the responder when a participant receives a proof behind the on-chain snapshot`: INV-SYNC-3-A7A2ED.T1.P14, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P12

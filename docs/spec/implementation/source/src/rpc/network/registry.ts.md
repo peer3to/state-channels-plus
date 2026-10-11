@@ -1,8 +1,6 @@
 # registry.ts
 
 > **Source:** [src/rpc/network/registry.ts](../../../../../../../src/rpc/network/registry.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # ADiamondStateMachine.ts
 
 > **Source:** [src/ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

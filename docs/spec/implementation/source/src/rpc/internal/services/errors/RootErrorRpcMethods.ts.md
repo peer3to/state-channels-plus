@@ -1,6 +1,6 @@
 # RootErrorRpcMethods.ts
 
-> **Source:** [src/rpc/internal/services/errors/RootErrorRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/errors/RootErrorRpcMethods.ts#L1)
+> **Source:** [src/rpc/internal/services/errors/RootErrorRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/errors/RootErrorRpcMethods.ts)
 
 ## Requirements
 

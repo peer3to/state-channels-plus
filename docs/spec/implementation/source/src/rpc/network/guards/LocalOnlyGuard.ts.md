@@ -1,8 +1,6 @@
 # LocalOnlyGuard.ts
 
 > **Source:** [src/rpc/network/guards/LocalOnlyGuard.ts](../../../../../../../../src/rpc/network/guards/LocalOnlyGuard.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

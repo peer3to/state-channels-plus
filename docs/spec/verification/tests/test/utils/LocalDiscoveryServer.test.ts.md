@@ -15,19 +15,18 @@ The late-ready case holds a real accepted socket, disposes its manager, then sen
 
 The pending-dial shutdown case delays every handshake reply on both inline peers, waits until one runtime has a real dial in flight, and runs that runtime's `StateManager.stop`, the first half of shutdown that settles its handshake wait with `false` while its P2P manager and discovery session are still alive. It asserts the manager is not yet disposed and that no peer retry count was written, which is where a retry records itself together with its warning and timer.
 
+The pending-close rejoin case stops the acceptor reading its accepted sockets, so the dialer's closed socket stays closing; the dialer leaves, closes its transport and rejoins the topic, and must authenticate a different transport while exactly one held peer-dial socket is still closing. A variant holds both handshakes across the rejoin, lets the old socket finish closing, then joins a second topic and requires the single held handshake per peer and no extra connection. Another holds handshakes before the first join, so the leave closes a pending, unauthenticated dial; the rejoin must authenticate a transport while that socket is still closing.
+
 The replacement-endpoint cases use real listener leave/rejoin and registry advertisements while the old socket is either awaiting handshake or authenticated. They close only that obsolete listener’s sockets and require a different authenticated transport, one live connection, and no blacklist. The real dialer, deduplication and retry paths execute.
-
-The left-dial late-close cases share one staging on two inline peers. Both peers hold their handshakes, so the primary dial stays before authentication with the dialer's in-flight mark set. The acceptor then stops reading that dial's socket, and both peers leave the topic: the dialer's leave closes the dial, and that close cannot complete, so it lags behind the leave. The real discovery sessions, dial admission, handshakes and close handling run; the staging only pauses and resumes one real accepted socket.
-
-The rematch case releases the handshakes, joins the same topic again on both peers, and waits for an authenticated transport between them. The left dial's close must still be pending when that transport exists, so the later observation dialed before the old close arrived.
-
-The ownership case keeps the handshakes held and joins a second topic on both peers, so the dialer starts a new dial to the same peer and marks it. It then delivers the left dial's close. The dialer must still mark the peer (harness query `isLocalDialMarked`). A third topic is then joined on both peers; after repeated announcements the dialer still has one live peer dial and one more held handshake, so no second pending dial started.
 
 ## Tests
 
 - `redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5, UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6, REQ-LOBBY-9-N894C0.T1.P13, REQ-LOBBY-9-N894C0.T1.P18
 - `does not redial a peer blacklisted before its transport closes`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7, REQ-LOBBY-9-N894C0.T1.P16
 - `deduplicates an in-flight dial across topics before authentication`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P10
+- `dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17, REQ-LOBBY-9-N894C0.T1.P32
+- `keeps a rejoined topic's pending dial deduplicated across topics after the left topic's old socket finishes closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18, REQ-LOBBY-9-N894C0.T1.P33
+- `dials the peer again after a rejoin while the pending dial the leave closed has not finished closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P19
 - `does not dial a peer that already has a live authenticated transport on another topic`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P8
 - `repeated and concurrent joins share one listener and a pending join can be left`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P9, REQ-LOBBY-9-N894C0.T1.P17
 - `closes an accepted socket whose ready frame arrives after manager disposal`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P11
@@ -35,5 +34,3 @@ The ownership case keeps the handshakes held and joins a second topic on both pe
 - `schedules no retry for a local dial whose handshake is pending when its runtime shuts down`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14
 - `retries the replacement endpoint announced while the old endpoint handshake is pending`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15, REQ-LOBBY-9-N894C0.T1.P24
 - `retries the replacement endpoint announced while the old authenticated transport is still connected`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16, REQ-LOBBY-9-N894C0.T1.P25
-- `dials the peer again from a later observation of a left topic while the left dial's close still lags`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17, REQ-LOBBY-9-N894C0.T1.P32
-- `keeps a later session's dial mark when a left session's dial closes late, so another topic starts no second dial`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18, REQ-LOBBY-9-N894C0.T1.P33

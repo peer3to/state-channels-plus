@@ -1,8 +1,6 @@
 # SnapshotUpdateService.ts
 
 > **Source:** [src/stateManager/snapshotUpdate/SnapshotUpdateService.ts](../../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts)
->
-> **Design views:** [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

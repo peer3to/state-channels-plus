@@ -1,8 +1,6 @@
 # StateSnapshot.ts
 
 > **Source:** [src/models/StateSnapshot.ts](../../../../../../src/models/StateSnapshot.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

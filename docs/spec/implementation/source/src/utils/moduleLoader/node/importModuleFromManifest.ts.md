@@ -1,8 +1,6 @@
 # importModuleFromManifest.ts
 
 > **Source:** [src/utils/moduleLoader/node/importModuleFromManifest.ts](../../../../../../../../src/utils/moduleLoader/node/importModuleFromManifest.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

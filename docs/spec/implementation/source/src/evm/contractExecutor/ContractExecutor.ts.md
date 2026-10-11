@@ -1,8 +1,6 @@
 # ContractExecutor.ts
 
 > **Source:** [src/evm/contractExecutor/ContractExecutor.ts](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

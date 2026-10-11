@@ -1,8 +1,6 @@
 # ANetworkRpcMethods.ts
 
 > **Source:** [src/rpc/network/ANetworkRpcMethods.ts](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # bytes32.ts
 
-> **Source:** [bytes32.ts](../../../../../../src/utils/bytes32.ts#L1)
->
-> **Design views:** [components.md](../../../views/architecture/sdk/components.md)
+> **Source:** [bytes32.ts](../../../../../../src/utils/bytes32.ts)
 
 ## Requirements
 

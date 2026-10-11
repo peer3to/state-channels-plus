@@ -1,8 +1,6 @@
 # chainSignerSerialization.ts
 
 > **Source:** [src/rpc/internal/services/chainSigner/chainSignerSerialization.ts](../../../../../../../../../src/rpc/internal/services/chainSigner/chainSignerSerialization.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

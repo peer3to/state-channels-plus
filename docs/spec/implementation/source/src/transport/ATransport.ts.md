@@ -1,8 +1,6 @@
 # ATransport.ts
 
 > **Source:** [src/transport/ATransport.ts](../../../../../../src/transport/ATransport.ts)
->
-> **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

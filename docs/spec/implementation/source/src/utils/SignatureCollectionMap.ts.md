@@ -1,8 +1,6 @@
 # SignatureCollectionMap.ts
 
 > **Source:** [src/utils/SignatureCollectionMap.ts](../../../../../../src/utils/SignatureCollectionMap.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

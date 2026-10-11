@@ -1,8 +1,6 @@
 # StateTransitionRpcMethods.ts
 
 > **Source:** [src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/state-transition.md](../../../../../../views/architecture/sdk/rpc/state-transition.md)
 
 ## Requirements
 

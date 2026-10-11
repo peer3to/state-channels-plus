@@ -1,8 +1,6 @@
 # BlockValidationStrategy.ts
 
 > **Source:** [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

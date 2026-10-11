@@ -1,8 +1,6 @@
 # createRpcProxy.ts
 
 > **Source:** [src/rpc/createRpcProxy.ts](../../../../../../src/rpc/createRpcProxy.ts)
->
-> **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

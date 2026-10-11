@@ -1,8 +1,6 @@
 # runGuards.ts
 
 > **Source:** [src/rpc/network/guards/runGuards.ts](../../../../../../../../src/rpc/network/guards/runGuards.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

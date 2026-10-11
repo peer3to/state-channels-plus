@@ -13,6 +13,9 @@ const {
 const {
     TaskCoordinator
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
+const {
+    discoverTasks
+} = require("../../scripts/e2e-parallel/shared/taskDiscovery.js");
 const example = {
     runner: "hardhat",
     label: "one",
@@ -205,6 +208,18 @@ describe("task cost cache", function () {
             expect(
                 cache.key({
                     ...example,
+                    sourceFile: "test/unit/example.test.ts",
+                    args: [
+                        "--require",
+                        "setup.js",
+                        "test",
+                        "dist/test/unit/example.test.js"
+                    ]
+                })
+            ).to.equal("hardhat|test/unit/example.test.ts|one");
+            expect(
+                cache.key({
+                    ...example,
                     runner: "browser",
                     args: [
                         "browser-test",
@@ -217,6 +232,55 @@ describe("task cost cache", function () {
                 "hardhat||legacy"
             );
         } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keys a compiled-config task by its test file and finds its committed cost", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "compiled-key-"));
+        const cwd = process.cwd();
+        try {
+            fs.mkdirSync(path.join(root, "test/unit"), { recursive: true });
+            fs.writeFileSync(
+                path.join(root, "test/unit/example.test.ts"),
+                'describe("suite", function () { it("case", function () {}); });\n'
+            );
+            fs.mkdirSync(path.join(root, "dist/test/unit"), {
+                recursive: true
+            });
+            fs.writeFileSync(
+                path.join(root, "dist/test/unit/example.test.js"),
+                ""
+            );
+            fs.writeFileSync(path.join(root, "hardhat.compiled.config.js"), "");
+            // the pre-compiled-config key shape test-costs.json is keyed by
+            const committedKey = "hardhat|test/unit/example.test.ts|suite case";
+            writeCosts(root, { [committedKey]: costEntry(4321, 1) });
+            process.chdir(root);
+            const [compiled] = discoverTasks(
+                "test",
+                undefined,
+                undefined,
+                undefined,
+                { compiled: true }
+            ).tasks;
+            const [source] = discoverTasks("test").tasks;
+            expect(compiled.args.slice(0, 2)).to.deep.equal([
+                "--config",
+                "hardhat.compiled.config.js"
+            ]);
+            expect(path.resolve(compiled.sourceFile)).to.equal(
+                path.join(fs.realpathSync(root), "test/unit/example.test.ts")
+            );
+            const cache = new CostCache({ projectRoot: root });
+            expect(cache.key(compiled)).to.equal(committedKey);
+            expect(cache.key(source)).to.equal(committedKey);
+            expect(cache.resolve(compiled)).to.include({
+                durationMs: 4321,
+                known: true
+            });
+        } finally {
+            process.chdir(cwd);
             fs.rmSync(root, { recursive: true, force: true });
         }
     });

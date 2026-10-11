@@ -1,11 +1,11 @@
 # DisputeVerificationFacet.sol
 
 > **Source:** [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
 ## Requirements
 
+- [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e)
+  Contradicts: `verifyBalanceInvariantCheckSnapshot` imports the development console and keeps eight live logging calls in a production facet ([`FIND-CONTRACT-DEVLOG-1-S97S2H`](../../../../../audit/open-findings.md#find-contract-devlog-1-s97s2h)).
 - [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../../../../../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt)
 - [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../../../../../specification/disputes/disputes.md#req-dis-4-6j6yyg)
 - [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)

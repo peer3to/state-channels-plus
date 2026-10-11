@@ -56,10 +56,11 @@ function countTasksForRunner(tasks, runner) {
 /**
  * Run a tier's build command before any of its tasks is scheduled. Returns null
  * when the build is warm, an Error describing the failure otherwise: `missing`
- * explains an unrunnable command, `failed` a nonzero build.
+ * explains an unrunnable command, `failed` a nonzero build. `cwd` defaults to
+ * this process's working directory.
  */
-function tierBuildFailure(command, args, { missing, failed }) {
-    const result = spawnSync(command, args, { stdio: "inherit" });
+function tierBuildFailure(command, args, { missing, failed, cwd }) {
+    const result = spawnSync(command, args, { stdio: "inherit", cwd });
     if (result.error) {
         return new Error(
             `Could not run \`${command} ${args.join(" ")}\`: ${result.error.message}. ` +

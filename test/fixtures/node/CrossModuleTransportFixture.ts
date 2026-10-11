@@ -27,7 +27,10 @@ function loadSeparateTransportGraph(): typeof WebRTCTransport {
                 specifier === "./ATransport"
             ) {
                 return load(
-                    path.resolve(path.dirname(filename), `${specifier}.ts`)
+                    path.resolve(
+                        path.dirname(filename),
+                        `${specifier}${path.extname(filename)}`
+                    )
                 );
             }
             return localRequire(specifier);
@@ -46,7 +49,9 @@ function loadSeparateTransportGraph(): typeof WebRTCTransport {
         );
         return module.exports;
     };
-    return load(require.resolve("@/transport/WebRTCTransport"))
+    // relative -> tsc-alias leaves require.resolve alone, and this resolves the
+    // .ts source under ts-node and its .js twin in the compiled tree
+    return load(require.resolve("../../../src/transport/WebRTCTransport"))
         .default as typeof WebRTCTransport;
 }
 

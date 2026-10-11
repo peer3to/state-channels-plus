@@ -92,7 +92,7 @@ The [local adapter](../implementation/source/src/utils/node/LocalDiscoveryServer
 
 ## Local discovery endpoint replacement
 
-The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Historical cost run 435 and FIFO (`-w 6`) run 436 were reported to pass all 3,405 tasks, including Forge and both browser gates, with no starvation or infrastructure retries. Their exact source SHA has not been established; they are not evidence that the current PR head passes. Subsequent runner and dispute-test changes require fresh validation.
+The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. Pending-dial admission spans only the currently joined topic sessions: a leave drops its session's pending-dial marks, so a rejoin dials before the left dial's socket finishes closing ([`FIND-DISCOVERY-2-0FP84C`](open-findings.md#find-discovery-2-0fp84c)). See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Historical cost run 435 and FIFO (`-w 6`) run 436 were reported to pass all 3,405 tasks, including Forge and both browser gates, with no starvation or infrastructure retries. Their exact source SHA has not been established; they are not evidence that the current PR head passes. Subsequent runner and dispute-test changes require fresh validation.
 
 ## Runtime cleanup and context forwarding
 
@@ -603,7 +603,7 @@ Construction starts from the mirrored chain anchor. Omission follows the empty-g
 milestone anchor/everyone rule. Reduction and committed-result validation retain their chain-owned
 computation. A different trusted start may skip older history; this is not proof that all auditors
 must check identical bytes. Concrete source owners and exact permutation evidence are linked from
-[state proofs](../implementation/views/protocol/state-proofs.md). The full source/test gate passed
+[disputes/state-proofs.md](../specification/disputes/state-proofs.md). The full source/test gate passed
 before documentation edits; individual Covers assignments still require semantic inspection.
 
 ## Signature-parity authentication, upfront replay funding, and local EVM call gas — 2026-09-27

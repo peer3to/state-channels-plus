@@ -1,8 +1,6 @@
 # EventBus.ts
 
 > **Source:** [src/events/EventBus.ts](../../../../../../src/events/EventBus.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

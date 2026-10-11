@@ -1,8 +1,6 @@
 # BlockIngestService.ts
 
 > **Source:** [src/stateManager/ingest/BlockIngestService.ts](../../../../../../../src/stateManager/ingest/BlockIngestService.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

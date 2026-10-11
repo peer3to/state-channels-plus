@@ -1,8 +1,6 @@
 # config.ts
 
 > **Source:** [src/utils/config.ts](../../../../../../src/utils/config.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

@@ -2,57 +2,6 @@
 
 > **Specification subject:** [specification/protocol-model/state-machines.md](../../../specification/protocol-model/state-machines.md)
 
-## System design
-
-### Contract and adapter split
-
-The implementation deliberately divides one logical state-machine boundary across two layers.
-`AStateMachine` defines the application contract that both local execution and on-chain replay
-invoke. `ADiamondStateMachine` defines the SDK-facing operations, while
-`EvmDiamondStateMachine` translates those operations into calls against the local EVM. The
-adapter is not allowed to invent different semantics: encoding, return values, failures, state
-effects, and outbound-message ordering must match the contract boundary.
-
-### State ownership and temporary inspection
-
-Application contracts own the concrete state shape and its encoding. The protocol treats the
-serialized bytes as opaque and restores them before replay. This preserves application freedom,
-but makes deterministic encoding, complete mapping enumeration, and balance algebra explicit
-integrator obligations rather than properties the base class can prove.
-
-`peekNextToWrite` is one simulated call of `AStateMachine.getNextToWriteOf(encodedState)`, which
-sets the supplied state and returns its next writer. The executor runs the call alone and reverts
-its state change, so the live state is never replaced, a failed read leaves nothing to restore, and
-callers such as the timeout audit in
-[DisputeValidationService](../../source/src/stateManager/dispute/DisputeValidationService.ts.md)
-need no lock.
-
-### Validation and replay
-
-The off-chain pipeline asks the state machine for the next writer before executing a block and
-rejects a mismatched author. On-chain invalid-transition replay restores state and executes the
-transaction, but does not independently apply that generic author check. As a result, a wrong-turn
-fraud proof is sound only when the application repeats the check inside its transition. The intended
-design is one shared rule across both paths.
-
-### Inbound messages, exits, and balance policy
-
-The base contract owns dispatch and outbound-message buffering; the application owns admission,
-top-up, removal, slashing, and balance semantics. A join message is routed to `_joinChannel`, and
-all other message types are routed to the custom hook. Successful slashing and removal each record one exit message and return it. `_slashParticipant` must return true for every current participant, because dispute reduction joins the timeout target to the removals only when no slash took effect; a machine that returns false for a present participant also removes the timeout target ([AStateMachine.sol.md](../../source/contracts/V1/AStateMachine.sol.md)). The dispute facet consumes only the returned exits; the SDK clears the buffer before its next state transition.
-
-The bundled Math state machine is useful as the repository's concrete executable integration, but
-it implements only the simple `Balance.amount` model. It cannot establish correctness for custom
-`Balance.data` algebras. The legacy Tic-Tac-Toe example is illustrative only and must not be used
-as conformance evidence.
-
-### Injected execution context
-
-`stateTransition` clears prior outbound messages, assigns `_tx.header`, and dispatches the
-transaction body through a bounded self-call. It does not populate `_tx.body`. Applications must
-therefore consume the dispatched function arguments and injected header, not `_tx.body` or
-ambient EVM context. There is currently no static enforcement for that restriction.
-
 ## INTEGRATION-TEST-SM-1-5QXMFK
 
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
@@ -155,7 +104,3 @@ ambient EVM context. There is currently no static enforcement for that restricti
 - [ ] `INTEGRATION-TEST-SM-7-1Y3WKE.P8` — query
 - [ ] `INTEGRATION-TEST-SM-7-1Y3WKE.P9` — selector operations
 - [ ] `INTEGRATION-TEST-SM-7-1Y3WKE.P10` — outbound operations
-
-## Source admission and membership updates
-
-The reference machine exposes balance-funded off-chain insertion with a configured N. Author/target/fund checks still run at capacity; valid capacity requests change only the turn counter. The constructor receives gas limit and the same effective N for local and chain instances. Generic snapshot/genesis adoption remains separately constrained. See [MathStateMachine.sol](../../source/contracts/V1/examples/MathStateMachine/MathStateMachine.sol.md).

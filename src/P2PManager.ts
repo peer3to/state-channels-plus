@@ -9,7 +9,7 @@ import { Address, PeerKey } from "./types/types";
 import { runCleanup } from "./utils/runCleanup";
 import { DoubleSignatureReport, onDoubleSignature } from "@/cache";
 import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
-import { P2pSigner } from "@/evm";
+import P2pSigner from "@/evm/signer/LocalP2pSigner";
 import Holepunch from "@/Holepunch";
 import type PeerProfile from "@/PeerProfile";
 import ProfileManager from "@/ProfileManager";

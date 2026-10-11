@@ -1,8 +1,6 @@
 # ParticipantSetChangeStorage.ts
 
 > **Source:** [src/storage/ParticipantSetChangeStorage.ts](../../../../../../src/storage/ParticipantSetChangeStorage.ts)
->
-> **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

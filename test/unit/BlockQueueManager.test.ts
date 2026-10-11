@@ -5,6 +5,7 @@ import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
+    assertStoredTipCopyDrainsNextBlock,
     scheduleForkRecoveryAroundStop,
     stopWithHeldForkRecovery,
     stopWithRejectedAndPendingProbes
@@ -291,6 +292,13 @@ describe("Unit: BlockQueueManager", () => {
             }
         );
         expect(result).to.deep.equal({ isDisposed: true, syncCalls: 0 });
+    });
+
+    it("a drain that dequeues a stored copy still drains the queued next block", async () => {
+        await assertStoredTipCopyDrainsNextBlock(
+            MathTestSession.getHarness(),
+            "ingested"
+        );
     });
 
     it("sync succeeds but the sender is still absent: blacklisted with no queue entry", async () => {

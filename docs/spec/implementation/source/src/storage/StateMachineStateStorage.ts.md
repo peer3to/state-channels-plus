@@ -1,8 +1,6 @@
 # StateMachineStateStorage.ts
 
 > **Source:** [src/storage/StateMachineStateStorage.ts](../../../../../../src/storage/StateMachineStateStorage.ts)
->
-> **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

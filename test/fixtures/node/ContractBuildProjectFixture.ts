@@ -64,3 +64,33 @@ export function runContractProject(
         encoding: "utf8"
     });
 }
+
+// A consumer with no build scripts of its own, linking a contract project that
+// declares build outputs.
+export function linkedContractProjects() {
+    const linked = contractProject();
+    const project = contractProject();
+    linked.write(
+        "package.json",
+        JSON.stringify({
+            ...JSON.parse(linked.read("package.json")),
+            name: "linked-contracts",
+            peer3TestDistribution: { buildOutputs: ["dist"] }
+        })
+    );
+    project.write(
+        "package.json",
+        JSON.stringify({
+            name: "consumer",
+            dependencies: { "linked-contracts": `link:${linked.root}` }
+        })
+    );
+    return {
+        linked,
+        project,
+        dispose: () => {
+            project.dispose();
+            linked.dispose();
+        }
+    };
+}

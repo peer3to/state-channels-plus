@@ -136,7 +136,18 @@ place without deleting anything, because a runner can itself be a task of an
 outer run that is loading from the same tree; when a source was added, removed
 or renamed it runs the clean build, so no compiled twin of a deleted file can
 linger and run. Outside a project with that build script the runner falls back
-to the sources. Two flags change the default:
+to the sources. Compiled children load `hardhat.compiled.config.js` from the
+project root, which re-exports `dist/hardhat.config.js`, so hardhat skips
+ts-node for its config too; without that file they load `hardhat.config.ts`
+under ts-node. With the shim nothing registers `tsconfig-paths`, so `dist`
+must hold no path aliases: the build mirrors non-TypeScript files into `dist`
+before `tsc-alias` runs, and code that resolves module paths itself
+(`require.resolve`) uses relative paths, which `tsc-alias` does not rewrite.
+Every child also gets `NODE_COMPILE_CACHE` at
+`cache/node-compile-cache` (node 22.1+, an exported value wins), so its main
+and worker threads reuse compiled code across tasks; a worker host picks this
+up only after it updates its runner checkout and restarts
+`yarn test:parallel:server`. Two flags change the default:
 
 ```shell
 yarn test:parallel --skip-build     # never refresh, use the dist tree as is
@@ -357,11 +368,12 @@ before anything is built, in either schedule. The defaults are placeholders in
 
 The worker and orchestrator can run on different devices. They do not need a
 direct IP address for each other when the default Hyperswarm DHT is reachable.
-The orchestrator sends source files and the build outputs its project declares
-in `peer3TestDistribution.buildOutputs` (built locally before the run), never
-`node_modules`. Only files whose content changed since a worker's last run are
-transferred. Workers then install dependencies and run; they build only linked
-repositories, whose outputs the orchestrator does not ship.
+The orchestrator sends source files and the build outputs each repository
+declares in `peer3TestDistribution.buildOutputs`, never `node_modules`. It
+builds those repositories locally before the run, linked ones included. Only
+files whose content changed since a worker's last run are transferred. Workers
+then install dependencies and run; they build only the repositories that
+declare no build outputs.
 
 Put the same long, randomly generated secret in the ignored `.env` file on
 every device:

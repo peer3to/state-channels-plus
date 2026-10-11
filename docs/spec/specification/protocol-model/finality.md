@@ -80,6 +80,10 @@ MUST name the same next writer. Honest peers can name different writers only whi
 heights of a fork (one has applied a block the other has not yet received); that is replication lag, not a
 second writer. A peer whose local state lags stamps a candidate at a height that is not its slot; such a
 candidate is never a valid block and is dropped before signing (block-processing rule 7).
+The named author is block-level, not per transaction. Every peer checks each incoming block's author
+against it; that off-chain check is the enforcement point, and an in-contract wrong-turn check is
+optional defense in depth. The dispute path re-derives the next writer on-chain to validate timeout
+targets.
 
 **[`REQ-FIN-6-YZWJX2`](finality.md#req-fin-6-yzwjx2) (SHOULD).** The recommended policy is **round-robin** over the participant set, as a
 function of channel state (e.g.
@@ -264,7 +268,8 @@ Threats include equivocation, signature replay across domains, incorrect thresho
 double-counted virtual votes, wrong-leader blocks, non-final suffix truncation, and unavailable calldata during
 fallback. Verification must test both sides of every threshold and membership transition, competing forks,
 duplicate/reordered signatures, delayed votes, and recovery through the chain. Leader-election and signature
-domain-separation questions are security blockers, not optimization details.
+domain-separation questions are security blockers, not optimization details. Whether every on-chain adjudication path can
+enforce next-author authorization generically is open ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../open-questions.md#oq-26-xh59sp)).
 
 ## Requirements and invariants
 

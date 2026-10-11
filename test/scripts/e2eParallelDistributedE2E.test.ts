@@ -9,6 +9,7 @@ import {
 } from "../fixtures/distributed/testTransport";
 import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
+import { execFileSync } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
@@ -950,7 +951,7 @@ describe("distributed parallel runner", function () {
         }
     });
 
-    it("runs a real worker from the shipped build outputs without the project's prepare script", async function () {
+    it("runs a real worker from the shipped build outputs of the project and its linked repository without their prepare scripts", async function () {
         const pool = await LeasePoolHarness.create();
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-outputs-"));
         const originalPath = process.env.PATH;
@@ -960,11 +961,32 @@ describe("distributed parallel runner", function () {
                 path.join(workspace.projectRoot, relative),
                 content
             );
+        const linked = path.join(root, "linked");
+        fs.mkdirSync(path.join(linked, "dist"), { recursive: true });
+        execFileSync("git", ["init", "-q"], { cwd: linked });
+        fs.writeFileSync(
+            path.join(linked, "package.json"),
+            JSON.stringify({
+                name: "linked-fixture",
+                version: "1.0.0",
+                scripts: { compile: "exit 1" },
+                peer3TestDistribution: {
+                    prepareScript: "compile",
+                    buildOutputs: ["dist"]
+                }
+            })
+        );
+        fs.writeFileSync(path.join(linked, ".gitignore"), "dist\n");
+        fs.writeFileSync(
+            path.join(linked, "dist", "value.js"),
+            "module.exports = 'linked build';\n"
+        );
         write(
             "package.json",
             JSON.stringify({
                 name: "real-worker-fixture",
                 version: "1.0.0",
+                dependencies: { "linked-fixture": "link:../linked" },
                 scripts: { compile: "exit 1" },
                 peer3TestDistribution: {
                     prepareScript: "compile",
@@ -987,6 +1009,7 @@ describe("distributed parallel runner", function () {
 describe("shipped outputs", function () {
     it("reads the build", function () {
         assert.strictEqual(require("../dist/value.js"), process.env.EXPECTED_BUILD);
+        assert.strictEqual(require("../../linked/dist/value.js"), "linked build");
     });
 });
 `
@@ -1048,6 +1071,7 @@ describe("shipped outputs", function () {
                 expect(workerLog).not.to.include(
                     "Preparing real-worker-fixture"
                 );
+                expect(workerLog).not.to.include("Preparing linked-fixture");
             }
         } finally {
             process.env.PATH = originalPath;

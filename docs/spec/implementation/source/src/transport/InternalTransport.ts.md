@@ -1,8 +1,6 @@
 # InternalTransport.ts
 
 > **Source:** [src/transport/InternalTransport.ts](../../../../../../src/transport/InternalTransport.ts)
->
-> **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

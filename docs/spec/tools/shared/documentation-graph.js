@@ -602,7 +602,6 @@ function buildDocumentationGraph() {
         ...auditDocs
     ];
     const requirements = collectDefinitions(specificationDocs, REQUIREMENT_RE);
-    const allRequirements = collectDefinitions(allDocs, REQUIREMENT_RE);
     const specificationPlanItems = collectDefinitions(
         specificationDocs,
         TEST_PLAN_ITEM_RE
@@ -874,7 +873,6 @@ function buildDocumentationGraph() {
             allDocs
         },
         requirements,
-        allRequirements,
         planItems: {
             specification: specificationPlanItems,
             implementation: implementationPlanItems,

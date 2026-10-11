@@ -35,6 +35,11 @@ probe's failure. A real fork recovery held in flight keeps `stop()` pending with
 until it is released, then the recovery state is cleared. A fork recovery scheduled after `stop()`
 began, or whose timer fires after it, never enters recovery.
 
+A drain case holds a fresh spectator's sync with the channel tip in its payload, suppresses its
+queue timeouts, and ingests a copy of that tip and of the next block authored meanwhile; both queue
+on the spectator's unsynced fork. Released, the sync stores the tip and its drain dequeues the stored
+copy; the spectator must still apply the next block and hold no queued entry for it.
+
 ## Tests
 
 - `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
@@ -44,6 +49,7 @@ began, or whose timer fires after it, never enters recovery.
 - `a fork recovery scheduled or firing after stop began never runs`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46
 - `a queue timeout firing after stop began starts no source probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
+- `a drain that dequeues a stored copy still drains the queued next block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47
 - `an oversized verified eligibility cache does not expand the N-source allowance`: REQ-QSTORE-2-VYWJAQ.T1.P39, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P14
 - `an explicit validation strategy stays outside the queued storage clone boundary`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P16
 - `an explicit validation strategy stays outside the stored-copy storage clone boundary`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P17

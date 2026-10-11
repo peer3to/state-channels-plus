@@ -114,14 +114,6 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
     }
 
-    /**
-     * Whether local discovery still marks `peerAddress` as being dialed by
-     * this peer. Only the Node discovery server dials; elsewhere this is false.
-     */
-    public isLocalDialMarked(peerAddress: Address): boolean {
-        return this.service.isLocalDialMarked(peerAddress);
-    }
-
     /** Ordinary lobby joins on `topic` that a leave has marked. */
     public getLeftLobbyJoinCount(topic: string): number {
         const normalizedTopic =

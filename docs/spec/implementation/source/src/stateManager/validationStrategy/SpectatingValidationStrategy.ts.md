@@ -1,8 +1,6 @@
 # SpectatingValidationStrategy.ts
 
 > **Source:** [src/stateManager/validationStrategy/SpectatingValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

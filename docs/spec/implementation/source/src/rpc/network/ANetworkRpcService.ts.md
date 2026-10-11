@@ -1,8 +1,6 @@
 # ANetworkRpcService.ts
 
 > **Source:** [src/rpc/network/ANetworkRpcService.ts](../../../../../../../src/rpc/network/ANetworkRpcService.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

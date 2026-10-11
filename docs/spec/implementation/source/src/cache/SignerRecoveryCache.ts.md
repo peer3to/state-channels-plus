@@ -1,8 +1,6 @@
 # SignerRecoveryCache.ts
 
 > **Source:** [src/cache/SignerRecoveryCache.ts](../../../../../../src/cache/SignerRecoveryCache.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [protocol/finality.md](../../../views/protocol/finality.md)
 
 ## Requirements
 

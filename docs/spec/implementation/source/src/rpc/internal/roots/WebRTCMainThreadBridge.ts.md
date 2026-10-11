@@ -1,8 +1,6 @@
 # WebRTCMainThreadBridge.ts
 
 > **Source:** [src/rpc/internal/roots/WebRTCMainThreadBridge.ts](../../../../../../../../src/rpc/internal/roots/WebRTCMainThreadBridge.ts)
->
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/rpc/webrtc-setup.md](../../../../../views/architecture/sdk/rpc/webrtc-setup.md)
 
 ## Requirements
 

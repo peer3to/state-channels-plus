@@ -3,6 +3,7 @@ import { BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { assertStoredTipCopyDrainsNextBlock } from "@test/fixtures/QueueDrainStaging";
 import {
     assertStoredCopyQuota,
     assertPendingJoinAdmission,
@@ -683,6 +684,13 @@ describe("E2E: BlockQueueManager", function () {
                 await restoreTimeouts();
             }
         });
+    });
+
+    it("a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout", async function () {
+        await assertStoredTipCopyDrainsNextBlock(
+            TestSession.getHarness(),
+            "gossiped"
+        );
     });
 
     it("queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted", async function () {
@@ -1669,7 +1677,13 @@ describe("E2E: BlockQueueManager", function () {
                         };
                         // Record-only: an on-chain dispute against an honest
                         // block would derail the session; the proof stays real.
+                        let storedBeforeDispute = false;
                         disputeManager.dispute = async (forkId: unknown) => {
+                            storedBeforeDispute = proofHash
+                                ? !!sm.storage.fraudProofs.getFraudProofByHash(
+                                      proofHash as any
+                                  )
+                                : false;
                             disputed.push(String(forkId));
                             return {};
                         };
@@ -1679,6 +1693,7 @@ describe("E2E: BlockQueueManager", function () {
                             return {
                                 result,
                                 disputed,
+                                storedBeforeDispute,
                                 forkId: String(sm.forkId),
                                 proofStored: proofHash
                                     ? !!sm.storage.fraudProofs.getFraudProofByHash(
@@ -1697,6 +1712,7 @@ describe("E2E: BlockQueueManager", function () {
 
                 expect(r.result).to.equal(BlockValidationResult.DISPUTE);
                 expect(r.disputed).to.deep.equal([r.forkId]);
+                expect(r.storedBeforeDispute).to.equal(true);
                 expect(r.proofStored).to.equal(true);
             });
         });

@@ -1,8 +1,6 @@
 # RuntimeLifecycleRpcMethods.ts
 
 > **Source:** [src/rpc/internal/services/lifecycle/RuntimeLifecycleRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/lifecycle/RuntimeLifecycleRpcMethods.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

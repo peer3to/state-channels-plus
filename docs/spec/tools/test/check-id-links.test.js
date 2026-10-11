@@ -12,7 +12,8 @@ const modules = path.resolve(tools, "../../../node_modules");
 const requirement = "REQ-FIX-1-AAAAA1";
 const second = "REQ-FIX-2-AAAAA2";
 const family = "UNIT-TEST-FIX-1-AAAAA1";
-const local = "INV-LOCAL-1-AAAAA3";
+const integration = "INTEGRATION-TEST-FIX-1-AAAAA3";
+const local = "INV-LOCAL-1-AAAAA4";
 const report = "docs/spec/implementation/source/src/fix.ts.md";
 const view = "docs/spec/implementation/views/fix.md";
 const testReport = "docs/spec/verification/tests/test/fix.test.ts.md";
@@ -22,8 +23,8 @@ const bullet = (line, covers) => `- \`case ${line}\`: ${covers}`;
 const testsReport = (...bullets) =>
     `# fix.test.ts\n\nTest file: [test](../../../../../test/fix.test.ts)\n\n## Tests\n\n${bullets.join("\n")}\n`;
 
-// One specification document, one file report with a family, one view with a
-// view-local requirement, one test file and its verification report.
+// One specification document, one file report with a family, one view with an
+// integration family, one test file and its verification report.
 function fixture(run, parent = os.tmpdir()) {
     const repo = fs.mkdtempSync(path.join(parent, "id-links-test-"));
     const write = (file, content) => {
@@ -53,7 +54,7 @@ function fixture(run, parent = os.tmpdir()) {
         );
         write(
             view,
-            `# Fix view\n\n## Design invariants\n\n### ${local} — Local subject\n\nThe local statement.\n\n- \`${local}.T1.P1\` — local case\n`
+            `# Fix view\n\n## ${integration}\n\nSpans files.\n\n- \`${integration}.P1\` — integration case\n`
         );
         write(
             "test/fix.test.ts",
@@ -111,7 +112,10 @@ test("--write sets each case checkbox from the mappings", () =>
         );
         assert.match(
             f.read(view),
-            new RegExp(`^- \\[ \\] \`${local}\\.T1\\.P1\` — local case$`, "m")
+            new RegExp(
+                `^- \\[ \\] \`${integration}\\.P1\` — integration case$`,
+                "m"
+            )
         );
         const check = f.ids();
         assert.equal(check.status, 0, check.stderr);
@@ -368,12 +372,12 @@ test("two branches that test different requirements merge; the same requirement 
         }
     }));
 
-test("a case reference links to its family or requirement heading", () =>
+test("a case reference links to its family heading", () =>
     fixture((f) => {
         const notes = "docs/spec/implementation/source/src/notes.ts.md";
         f.write(
             notes,
-            `# notes.ts\n\nSee \`${family}.P1\` and \`${local}.T1.P1\`.\n`
+            `# notes.ts\n\nSee \`${family}.P1\` and \`${integration}.P1\`.\n`
         );
         f.ids("--write");
         const text = f.read(notes);
@@ -386,7 +390,7 @@ test("a case reference links to its family or requirement heading", () =>
         assert.match(
             text,
             new RegExp(
-                `\\[\`${local}\\.T1\\.P1\`\\]\\(../../views/fix\\.md#${local.toLowerCase()}\\)`
+                `\\[\`${integration}\\.P1\`\\]\\(../../views/fix\\.md#${integration.toLowerCase()}\\)`
             )
         );
         assert.equal(f.ids().status, 0);
@@ -655,20 +659,73 @@ test("a repository under a verification/tests directory still finds its tests", 
     }
 });
 
-test("a requirement defined at a heading gets an anchor and a glossed reference", () =>
+test("a requirement defined outside the specification fails check", () =>
     fixture((f) => {
+        f.write(
+            view,
+            `# Fix view\n\n### ${local} — Local subject\n\nThe local statement.\n\n- \`${local}.T1.P1\` — local case\n`
+        );
+        const check = f.ids();
+        assert.notEqual(check.status, 0);
+        assert.match(
+            check.stderr,
+            new RegExp(`${local} is defined outside specification/`)
+        );
+    }));
+
+test("a requirement statement in a verification report fails check", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/verification/tests/test/notes.md",
+            `# notes\n\n**\`${local}\` — Local subject.** The local statement.\n`
+        );
+        const check = f.ids();
+        assert.notEqual(check.status, 0);
+        assert.match(
+            check.stderr,
+            new RegExp(
+                `verification/tests/test/notes\\.md:3: ${local} is defined outside specification/`
+            )
+        );
+    }));
+
+test("a requirement case bullet in a file report fails check", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/implementation/source/src/notes.ts.md",
+            `# notes.ts\n\n- \`${local}.T1.P1\` — orphan case\n`
+        );
+        const check = f.ids();
+        assert.notEqual(check.status, 0);
+        assert.match(
+            check.stderr,
+            new RegExp(`${local}\\.T1\\.P1 is defined outside specification/`)
+        );
+    }));
+
+test("a question defined at a heading gets an anchor and a glossed reference", () =>
+    fixture((f) => {
+        const question = "OQ-IMPL-FIX-1-AAAAA5";
+        const questions = "docs/spec/implementation/open-questions.md";
+        f.write(
+            questions,
+            `# Questions\n\n## ${question} — Question subject\n\nOpen.\n`
+        );
+        f.write(
+            "docs/spec/implementation/source/src/notes.ts.md",
+            `# notes.ts\n\nSee \`${question}\`.\n`
+        );
         f.ids("--write");
         assert.match(
-            f.read(view),
+            f.read(questions),
             new RegExp(
-                `<a id="${local.toLowerCase()}"></a>\\n\\n### ${local} — Local subject`
+                `<a id="${question.toLowerCase()}"></a>\\n\\n## ${question} — Question subject`
             )
         );
         assert.match(
-            f.read(status),
+            f.read("docs/spec/implementation/source/src/notes.ts.md"),
             new RegExp(
-                `^\\[\`${local}\` \\(Local subject\\)\\]\\(../implementation/views/fix\\.md#${local.toLowerCase()}\\)$`,
-                "m"
+                `\\[\`${question}\` \\(Question subject\\)\\]\\(../../open-questions\\.md#${question.toLowerCase()}\\)`
             )
         );
         assert.equal(f.ids().status, 0);

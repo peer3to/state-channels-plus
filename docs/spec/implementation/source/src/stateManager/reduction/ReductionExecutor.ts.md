@@ -1,8 +1,6 @@
 # ReductionExecutor.ts
 
 > **Source:** [src/stateManager/reduction/ReductionExecutor.ts](../../../../../../../src/stateManager/reduction/ReductionExecutor.ts)
->
-> **Design views:** [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

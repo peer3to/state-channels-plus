@@ -1,8 +1,6 @@
 # IsForkDisputedService.ts
 
 > **Source:** [src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/is-fork-disputed.md](../../../../../../views/architecture/sdk/rpc/is-fork-disputed.md)
 
 ## Requirements
 

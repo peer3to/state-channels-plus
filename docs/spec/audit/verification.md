@@ -58,7 +58,7 @@ period); `evidenceTime: 12` in [MilestoneProofStartStaging](../../../test/fixtur
 (about 9 s audit path on a loaded farm); and the 15 s E19 window above. Luka approved one more the same day: `evidenceTime: 12` in
 `stageOffWireTailOverBlindPendingAuditor` (MilestoneProofStartStaging, E15 and its control), where two
 sequential audit and transaction rounds in one window took about 9 s against 8 s and the colluders' disputes
-reverted with `RaceConditionDisputeEvidencePeriodExpired`. The local discovery left-dial staging (`stageLeftDialWithHeldClose`) no longer widens `agreementTime`: a handshake hold keeps its held dials pending, so it runs on the baseline. These are protocol inputs chosen for
+reverted with `RaceConditionDisputeEvidencePeriodExpired`. These are protocol inputs chosen for
 the test host's load, not wait budgets; no oracle changed.
 
 ## Late dial close, exit-fallback race and evidence-window staging — 2026-10-09
@@ -66,14 +66,15 @@ the test host's load, not wait budgets; no oracle changed.
 Three intermittent failures were root-caused. First, after a lobby negotiation failed unsigned, the old
 outbound dial socket's close could arrive after the new session's peer announcement. Its process-wide
 in-flight mark made the peer look connected, the rematch dial was skipped with no log, and the peers never
-reconnected, so the lobby E2E case for a new join after a leave during the handoff timed out. Each discovery
-session now records its own marks and its leave clears them. The
-[discovery component cases](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md) now stage the later
-dial while the left dial's close is held
-([`REQ-LOBBY-9-N894C0.T1.P32`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p32))
-and the late close of that dial after a newer session marked its own
-([`REQ-LOBBY-9-N894C0.T1.P33`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p33));
-both fail on the code before the respective change (2026-10-10). Second, U121 in the [older-dispute audit report](../verification/tests/test/unit/DisputeAuditOlderDispute.test.ts.md)
+reconnected, so the lobby E2E case for a new join after a leave during the handoff timed out. This is fixed
+by session-scoped dial marks: each discovery session records its own in-flight dials, and the marks end with
+the session, so a late close of a left session's dial can neither hide the peer from a later session nor clear
+a later session's mark. Two
+[discovery component cases](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md) cover it: a
+rejoined topic dials the peer again while the left topic's closed socket has not finished closing
+([`REQ-LOBBY-9-N894C0.T1.P32`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p32)),
+and the rejoined topic's pending dial stays deduplicated across topics after the old socket finishes closing
+([`REQ-LOBBY-9-N894C0.T1.P33`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p33)). Second, U121 in the [older-dispute audit report](../verification/tests/test/unit/DisputeAuditOlderDispute.test.ts.md)
 now suppresses the held leaver's own dispute initiation, as the departed-disputer staging already does. Its
 exit fallback could otherwise start a self-removal dispute beside the dispute the test constructs, and the
 two stubbed constructions shared the fixture's pending auditing data. Third, E19 in the

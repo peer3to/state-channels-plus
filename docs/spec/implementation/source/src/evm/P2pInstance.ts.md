@@ -1,8 +1,6 @@
 # P2pInstance.ts
 
 > **Source:** [src/evm/P2pInstance.ts](../../../../../../src/evm/P2pInstance.ts)
->
-> **Design views:** [architecture/sdk/architecture.md](../../../views/architecture/sdk/architecture.md)
 
 ## Requirements
 

@@ -1,8 +1,6 @@
 # localDiamond.ts
 
 > **Source:** [src/utils/localDiamond.ts](../../../../../../src/utils/localDiamond.ts)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../views/architecture/contracts/manager-and-facets.md), [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

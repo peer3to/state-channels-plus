@@ -1,8 +1,6 @@
 # RpcContractExecutor.ts
 
 > **Source:** [src/evm/contractExecutor/RpcContractExecutor.ts](../../../../../../../src/evm/contractExecutor/RpcContractExecutor.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

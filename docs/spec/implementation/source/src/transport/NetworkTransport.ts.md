@@ -1,8 +1,6 @@
 # NetworkTransport.ts
 
 > **Source:** [src/transport/NetworkTransport.ts](../../../../../../src/transport/NetworkTransport.ts)
->
-> **Design views:** [Runtime and concurrency](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

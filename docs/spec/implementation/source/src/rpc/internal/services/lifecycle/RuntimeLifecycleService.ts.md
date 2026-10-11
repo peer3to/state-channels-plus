@@ -1,8 +1,6 @@
 # RuntimeLifecycleService.ts
 
 > **Source:** [src/rpc/internal/services/lifecycle/RuntimeLifecycleService.ts](../../../../../../../../../src/rpc/internal/services/lifecycle/RuntimeLifecycleService.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

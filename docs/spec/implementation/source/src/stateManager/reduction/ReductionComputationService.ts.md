@@ -1,8 +1,6 @@
 # ReductionComputationService.ts
 
 > **Source:** [src/stateManager/reduction/ReductionComputationService.ts](../../../../../../../src/stateManager/reduction/ReductionComputationService.ts)
->
-> **Design views:** [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

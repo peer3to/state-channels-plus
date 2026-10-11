@@ -1,8 +1,6 @@
 # PeerProfile.ts
 
 > **Source:** [src/PeerProfile.ts](../../../../../src/PeerProfile.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

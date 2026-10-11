@@ -92,6 +92,9 @@ async function runTask(
                 : output;
 
         const childEnv = {
+            // node's own compile cache is checksummed and written via temp
+            // file + rename -> safe to share across parallel children
+            NODE_COMPILE_CACHE: path.resolve("cache", "node-compile-cache"),
             ...process.env,
             ...env,
             // Parallel Hardhat processes can read v8-compile-cache's shared

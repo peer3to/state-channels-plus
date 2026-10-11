@@ -1,8 +1,6 @@
 # AValidationStrategy.ts
 
 > **Source:** [src/stateManager/validationStrategy/AValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/AValidationStrategy.ts)
->
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Requirements
 

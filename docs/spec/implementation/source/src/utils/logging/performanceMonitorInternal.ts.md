@@ -1,8 +1,6 @@
 # performanceMonitorInternal.ts
 
 > **Source:** [src/utils/logging/performanceMonitorInternal.ts](../../../../../../../src/utils/logging/performanceMonitorInternal.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

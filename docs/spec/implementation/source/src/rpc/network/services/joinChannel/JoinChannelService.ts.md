@@ -1,8 +1,6 @@
 # JoinChannelService.ts
 
 > **Source:** [src/rpc/network/services/joinChannel/JoinChannelService.ts](../../../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/join-channel.md](../../../../../../views/architecture/sdk/rpc/join-channel.md)
 
 ## Requirements
 

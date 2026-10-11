@@ -1,8 +1,6 @@
 # WebRTCConnectionFactory.ts
 
 > **Source:** [src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts)
->
-> **Design views:** [architecture/sdk/rpc/webrtc-setup.md](../../../../../../../views/architecture/sdk/rpc/webrtc-setup.md), [architecture/sdk/runtime-and-concurrency.md](../../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

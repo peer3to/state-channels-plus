@@ -1,8 +1,6 @@
 # DisputeManagerFacet.sol
 
 > **Source:** [contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol)
->
-> **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
 ## Requirements
 

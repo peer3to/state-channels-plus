@@ -3,8 +3,6 @@
 > **Source:** [src/rpc/network/services/index.ts](../../../../../../../../src/rpc/network/services/index.ts)
 >
 > **Replaces:** `src/rpc/services/index.ts`
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

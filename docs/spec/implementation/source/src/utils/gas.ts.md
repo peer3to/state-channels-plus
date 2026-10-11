@@ -1,8 +1,6 @@
 # gas.ts
 
 > **Source:** [src/utils/gas.ts](../../../../../../src/utils/gas.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

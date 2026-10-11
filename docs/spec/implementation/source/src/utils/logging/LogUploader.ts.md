@@ -1,8 +1,6 @@
 # LogUploader.ts
 
 > **Source:** [src/utils/logging/LogUploader.ts](../../../../../../../src/utils/logging/LogUploader.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

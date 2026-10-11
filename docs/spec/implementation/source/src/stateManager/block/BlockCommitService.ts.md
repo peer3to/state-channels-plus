@@ -1,8 +1,6 @@
 # BlockCommitService.ts
 
 > **Source:** [src/stateManager/block/BlockCommitService.ts](../../../../../../../src/stateManager/block/BlockCommitService.ts)
->
-> **Design views:** [dispute pipeline](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Requirements
 

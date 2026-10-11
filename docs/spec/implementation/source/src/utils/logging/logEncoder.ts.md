@@ -1,8 +1,6 @@
 # logEncoder.ts
 
 > **Source:** [src/utils/logging/logEncoder.ts](../../../../../../../src/utils/logging/logEncoder.ts)
->
-> **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
 ## Requirements
 

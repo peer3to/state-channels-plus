@@ -737,6 +737,51 @@ export async function assertDestroyDuringPendingAttemptStaysQuiet(): Promise<voi
     });
 }
 
+export async function assertUnsubscribeAnsweredAfterDestroyStaysQuiet(): Promise<void> {
+    await withProxiedNodes(1, async ({ proxies: [proxy], nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const listener = () => undefined;
+        await provider.on("block", listener);
+        await waitFor(() => proxy.forwardedMethods.includes("eth_subscribe"));
+        const unsubscribe = proxy.holdReplies("eth_unsubscribe");
+        const rejections = await recordUnhandledRejections(async () => {
+            // the last block listener goes: ethers unsubscribes the node
+            // socket without awaiting the answer
+            await provider.off("block", listener);
+            await waitFor(() => unsubscribe.heldReplies() === 1);
+            // the answer reaches the socket after the provider is destroyed
+            unsubscribe.release();
+            provider.destroy();
+        });
+
+        expect(rejections).to.deep.equal([]);
+    });
+}
+
+export async function assertUnsubscribeErrorAnswerStaysQuiet(): Promise<void> {
+    await withProxiedNodes(1, async ({ proxies: [proxy], nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            const listener = () => undefined;
+            await provider.on("block", listener);
+            await waitFor(() =>
+                proxy.forwardedMethods.includes("eth_subscribe")
+            );
+            proxy.failNextRequest("eth_unsubscribe");
+            const rejections = await recordUnhandledRejections(async () => {
+                // the live node answers the unawaited unsubscribe with an error
+                await provider.off("block", listener);
+                await waitFor(() => proxy.failedCount("eth_unsubscribe") === 1);
+            });
+
+            expect(rejections).to.deep.equal([]);
+            expect(await provider.getBlockNumber()).to.be.a("number");
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
 export async function assertHeartbeatErrorAnswerKeepsNode(): Promise<void> {
     await withProxiedNodes(
         1,

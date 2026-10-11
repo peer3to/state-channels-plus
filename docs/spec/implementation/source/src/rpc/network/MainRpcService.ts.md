@@ -1,8 +1,6 @@
 # MainRpcService.ts
 
 > **Source:** [src/rpc/network/MainRpcService.ts](../../../../../../../src/rpc/network/MainRpcService.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
 ## Requirements
 

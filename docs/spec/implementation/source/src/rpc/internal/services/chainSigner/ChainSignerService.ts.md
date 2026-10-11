@@ -1,8 +1,6 @@
 # ChainSignerService.ts
 
 > **Source:** [src/rpc/internal/services/chainSigner/ChainSignerService.ts](../../../../../../../../../src/rpc/internal/services/chainSigner/ChainSignerService.ts)
->
-> **Design views:** [Runtime and concurrency](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
 ## Requirements
 

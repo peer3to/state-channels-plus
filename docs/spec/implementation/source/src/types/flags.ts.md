@@ -1,8 +1,6 @@
 # flags.ts
 
 > **Source:** [src/types/flags.ts](../../../../../../src/types/flags.ts)
->
-> **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
 No specified behavior: Canonical enum declarations for block outcomes and SDK lifecycle status.
 
