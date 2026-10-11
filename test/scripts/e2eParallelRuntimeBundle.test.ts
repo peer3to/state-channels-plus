@@ -386,6 +386,73 @@ describe("distributed source workspace", function () {
         }
     });
 
+    it("gives a cached file the archived mode when a delta rewrites it", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cached-mode-"));
+        const project = path.join(root, "project");
+        const workspace = path.join(root, "workspace");
+        try {
+            initializeRepository(project);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({
+                    name: "project",
+                    peer3TestDistribution: { buildOutputs: ["dist"] }
+                })
+            );
+            fs.writeFileSync(path.join(project, ".gitignore"), "dist\n");
+            fs.mkdirSync(path.join(project, "dist"));
+            fs.writeFileSync(path.join(project, "dist", "a.json"), "new");
+            const runner = path.join(
+                project,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "");
+            const manifest = await buildRuntimeManifest(project);
+            const relative = "project/dist/a.json";
+            const expected = manifest.files.find(
+                (entry: { path: string }) => entry.path === relative
+            );
+            expect(expected.mode).to.equal(0o644);
+            // the cached copy has other content and another mode
+            const cached = path.join(workspace, relative);
+            fs.mkdirSync(path.dirname(cached), { recursive: true });
+            fs.writeFileSync(cached, "old");
+            fs.chmodSync(cached, 0o600);
+            const changed = manifest.files.filter(
+                (entry: { path: string }) =>
+                    entry.path === relative ||
+                    entry.path === "project/package.json"
+            );
+            const delta = path.join(root, "delta.tgz");
+            const deltaManifest = await buildDeltaBundle(
+                manifest,
+                changed.map((entry: { path: string }) => entry.path),
+                delta
+            );
+
+            await extractRuntimeBundle(
+                delta,
+                workspace,
+                { ...manifest, ...deltaManifest },
+                {
+                    maxCompressedBytes: 1024 * 1024,
+                    maxExpandedBytes: 1024 * 1024
+                },
+                changed
+            );
+
+            expect({
+                content: fs.readFileSync(cached, "utf8"),
+                mode: fs.statSync(cached).mode & 0o777
+            }).to.deep.equal({ content: "new", mode: 0o644 });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("rejects unsupported manifests and archive checksum changes", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "source-workspace-")

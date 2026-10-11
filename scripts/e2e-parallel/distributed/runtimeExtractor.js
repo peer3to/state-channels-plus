@@ -74,7 +74,11 @@ async function extractRuntimeBundle(
         file: archivePath,
         cwd: destination,
         preservePaths: false,
-        strict: true
+        strict: true,
+        // tar writes into an existing file in place and keeps its mode, so a
+        // cached file whose mode differs from the archive would keep that mode.
+        // Unlinking first creates every file with the archived mode.
+        unlink: true
     });
     for (const expected of expectedFiles) {
         const filePath = assertContained(
@@ -83,14 +87,19 @@ async function extractRuntimeBundle(
             { message: `Source file escapes workspace: ${expected.path}` }
         );
         const stat = fs.statSync(filePath);
-        if (
-            !stat.isFile() ||
-            stat.size !== expected.bytes ||
-            (stat.mode & 0o777) !== expected.mode ||
-            (await sha256File(filePath)) !== expected.sha256
-        ) {
+        const mode = stat.mode & 0o777;
+        const mismatch = !stat.isFile()
+            ? "not a regular file"
+            : stat.size !== expected.bytes
+              ? `${stat.size} bytes, expected ${expected.bytes}`
+              : mode !== expected.mode
+                ? `mode ${mode.toString(8)}, expected ${expected.mode.toString(8)}`
+                : (await sha256File(filePath)) !== expected.sha256
+                  ? "content hash differs"
+                  : null;
+        if (mismatch) {
             throw new Error(
-                `Source file verification failed: ${expected.path}`
+                `Source file verification failed: ${expected.path} (${mismatch})`
             );
         }
     }
