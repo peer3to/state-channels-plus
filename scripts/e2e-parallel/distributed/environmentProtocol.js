@@ -1,7 +1,9 @@
 const { EventEmitter } = require("events");
 
 const ENVIRONMENT_PROTOCOL_VERSION = 1;
-const DEFAULT_MAX_ENVIRONMENT_FRAME_BYTES = 1024 * 1024;
+// The workspace offer carries the whole source manifest, as the worker
+// protocol frame does.
+const DEFAULT_MAX_ENVIRONMENT_FRAME_BYTES = 2 * 1024 * 1024;
 const HOST_KINDS = new Set([
     "TRUSTED_RUNNER",
     "ENVIRONMENT_SETUP",
