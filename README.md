@@ -330,15 +330,17 @@ from worker source bundles, so updating them does not trigger worker preparation
 reads it. A measurement without cores or memory (from an older worker) leaves
 those to the later sources. Every attempt whose result the run keeps is measured
 (a speculative copy that finishes after its test settled only when it fails the
-test; a redundant copy never); an attempt that starved is recorded with 50% more
+test; a redundant copy never); an attempt that starved is recorded with 30% more
 cores and memory, so its retry is admitted as more expensive, and the run keeps
 its last attempt's measurement.
 
 `test-costs.json` and `test-costs.overrides.json` live at the project root, so
 another project using this runner keeps its own. A run that writes the cache
 adds a test's entry to `test-costs.json` only when it is new. Existing entries
-stay unchanged on ordinary runs, regardless of CPU or memory drift. A final
-starvation sample still updates the entry with the existing 50% CPU and memory
+stay unchanged on ordinary runs, regardless of CPU or memory drift. A test that
+starved and then passed in the same run overrides its entry with the passing
+attempt's CPU and memory plus 30%; later ordinary runs keep that raised cost. A
+final starvation sample (no passing retry) updates the entry with the same 30%
 inflation and a `starved: true` marker. The next successful, non-starved run
 with complete measurements replaces that temporary baseline and clears the marker.
 `.cache/test-costs.json` is atomically replaced with only the latest completed

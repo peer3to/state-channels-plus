@@ -53,8 +53,10 @@ const COST_CPU_VALVE = 0.95;
 // Cost of a task with no measurement and no finished sibling.
 const DEFAULT_TASK_COST = { durationMs: 30000, cores: 1, rssGb: 2 };
 // A starved attempt's measured cores and memory are stored this much higher,
-// so the next run admits it as more expensive; a clean retry replaces it.
-const STARVED_COST_FACTOR = 1.5;
+// so its retry is admitted as more expensive. A test that starved and then
+// passed in the same run keeps its passing measurement this much higher as
+// its committed cost.
+const STARVED_COST_FACTOR = 1.3;
 // Why a task's peakRssGb/avgCores are null: the sampler found no process tree,
 // or the attempt came from a worker that predates the measurements.
 const MEASUREMENT_REASONS = Object.freeze([

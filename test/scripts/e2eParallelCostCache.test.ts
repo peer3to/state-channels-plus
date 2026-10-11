@@ -595,9 +595,8 @@ describe("task cost cache", function () {
         }
     });
 
-    it("stores a starved attempt's cores and memory 50% higher until a clean retry replaces it", function () {
+    it("stores a starved attempt's cores and memory 30% higher, and a test that starved then passed keeps its passing cost 30% higher", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starved-"));
-        // Exact in binary, so 1.5x compares exactly.
         const measured = { ...sample, avgCores: 0.5, peakRssGb: 1 };
         const starved = {
             ...metadata,
@@ -607,16 +606,18 @@ describe("task cost cache", function () {
         try {
             let cache = new CostCache({ projectRoot: root });
             cache.record(example, measured, starved);
+            // the retry is admitted 30% higher
             expect(cache.resolve(example)).to.deep.equal({
                 durationMs: 100,
-                cores: 0.75,
-                rssGb: 1.5,
+                cores: 0.65,
+                rssGb: 1.3,
                 known: true
             });
+            // the clean retry passes: its measurement plus 30% is kept
             cache.record(example, sample, metadata);
             expect(cache.resolve(example)).to.include({
-                cores: 0.3,
-                rssGb: 0.5
+                cores: 0.39,
+                rssGb: 0.65
             });
             const other = { ...example, label: "other", fullTitle: "other" };
             cache.record(other, measured, metadata);
@@ -641,22 +642,26 @@ describe("task cost cache", function () {
             ).tasks;
             expect(tasks).not.to.have.property(cache.key(example));
             expect(tasks[cache.key(other)]).to.include({
-                avgCores: 0.75,
-                peakRssGb: 1.5,
+                avgCores: 0.65,
+                peakRssGb: 1.3,
                 samples: 1
             });
             const committed = readTasks(path.join(root, "test-costs.json"));
+            // starved then passed: the raised cost is a plain baseline
             expect(committed[cache.key(example)]).to.include({
-                avgCores: 0.3,
-                peakRssGb: 0.5
+                avgCores: 0.39,
+                peakRssGb: 0.65
             });
+            expect(committed[cache.key(example)]).not.to.have.property(
+                "starved"
+            );
             expect(committed[cache.key(other)]).to.include({
-                avgCores: 0.75,
-                peakRssGb: 1.5
+                avgCores: 0.65,
+                peakRssGb: 1.3
             });
             expect(
                 new CostCache({ projectRoot: root }).resolve(other)
-            ).to.include({ cores: 0.75, rssGb: 1.5 });
+            ).to.include({ cores: 0.65, rssGb: 1.3 });
             expect(committed[cache.key(other)].starved).to.equal(true);
             // A failure must not clear the persisted starvation marker.
             cache = new CostCache({ projectRoot: root });
@@ -690,6 +695,42 @@ describe("task cost cache", function () {
             cache.commit();
             expect(readTasks(path.join(root, "test-costs.json"))).to.deep.equal(
                 recovered
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("a test that starved and then passed in one run overrides its committed cost with the passing measurement plus 30%, which later clean runs keep", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-raised-"));
+        const starved = {
+            ...metadata,
+            starveCount: 1,
+            disposition: "retry-starvation"
+        };
+        try {
+            let cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, metadata);
+            cache.commit();
+            cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, starved);
+            cache.record(
+                example,
+                { ...sample, avgCores: 0.5, peakRssGb: 1 },
+                metadata
+            );
+            cache.commit();
+            const raised = readTasks(path.join(root, "test-costs.json"));
+            expect(raised[cache.key(example)]).to.include({
+                avgCores: 0.65,
+                peakRssGb: 1.3
+            });
+            expect(raised[cache.key(example)]).not.to.have.property("starved");
+            cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, metadata);
+            cache.commit();
+            expect(readTasks(path.join(root, "test-costs.json"))).to.deep.equal(
+                raised
             );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
