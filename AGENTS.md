@@ -224,6 +224,9 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
 methods }`. Never interleave a field declaration between methods. When adding a
   new field, put it with the other fields at the top of the class (keep any
   explanatory comment with it), not next to the method that happens to use it.
+- **Public methods before private ones** — after the fields and the
+  constructor come the public methods and getters, then protected, then
+  private. The interface reads first; the internals follow.
 
 ### Import order
 

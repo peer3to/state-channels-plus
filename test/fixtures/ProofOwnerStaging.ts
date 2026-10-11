@@ -365,13 +365,26 @@ export async function prepareSameForkView(
     });
 }
 
-/** `postStateSnapshotWait` on the peer; the posting outcome. */
+/**
+ * `postStateSnapshotWait` on the peer: "posted" once it resolved, or the
+ * custom error name of the chain's revert.
+ */
 export async function postSnapshotFrom(
     h: MathPeerTestHarness,
     peerIndex: number
-): Promise<boolean> {
-    return h.execOnHost(h.getPeer(peerIndex), (sm) =>
-        sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
+): Promise<string> {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm, _, { tryDecodeCustomError }) => {
+            try {
+                await sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId);
+                return "posted";
+            } catch (error) {
+                const name = tryDecodeCustomError(error)?.name;
+                if (!name) throw error;
+                return name;
+            }
+        }
     );
 }
 
@@ -391,7 +404,7 @@ export async function postAnchor(
             .stub.stubHoldSnapshotUpdatedEvents()
             .request();
     const before = await chainSnapshot(h);
-    expect(await postSnapshotFrom(h, 0), "the anchor post").to.equal(true);
+    expect(await postSnapshotFrom(h, 0), "the anchor post").to.equal("posted");
     const anchor = await chainSnapshot(h);
     expect(anchor.hash, "the post moved the chain anchor").to.not.equal(
         before.hash
@@ -1221,7 +1234,7 @@ export async function stageUnpostedSuccessorFork(
             expect(
                 await postSnapshotFrom(h, 0),
                 "the ancestor anchor post"
-            ).to.equal(true);
+            ).to.equal("posted");
         }
     });
     const ancestorAnchor = await chainSnapshot(h);
@@ -1275,7 +1288,7 @@ export async function stageSuccessorBlockZero(h: MathPeerTestHarness): Promise<{
             expect(
                 await postSnapshotFrom(h, 0),
                 "the ancestor anchor post"
-            ).to.equal(true);
+            ).to.equal("posted");
         }
     });
     const ancestorAnchor = await chainSnapshot(h);

@@ -4,6 +4,7 @@ import {
     stageLocalDiscoveryReady,
     observeDiscoveryLogger,
     observeLocalDialRetries,
+    stageLeftDialWithHeldClose,
     waitForPendingLocalDial
 } from "@test/fixtures/node/LocalDiscoveryReadyStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
@@ -342,6 +343,93 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                 )
             )
         );
+    });
+
+    it("dials the peer again from a later observation of a left topic while the left dial's close still lags", async function () {
+        const h = TestSession.getHarness();
+        const topic = ethers.id("left-dial-late-close-rematch");
+        const staged = await stageLeftDialWithHeldClose(h, topic);
+        try {
+            for (const peer of h.peers)
+                await h
+                    .control(peer)
+                    .stub.releaseInitHandshakesAndCompletionWaits()
+                    .request();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.joinSelectedKey(topic).request()
+                )
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(staged.dialer)
+                        .network.getTransportToken(staged.acceptor.address)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            // the fresh observation connected before the left dial closed
+            expect(staged.closeHeld()).to.equal(true);
+        } finally {
+            staged.dispose();
+        }
+    });
+
+    it("keeps a later session's dial mark when a left session's dial closes late, so another topic starts no second dial", async function () {
+        const h = TestSession.getHarness();
+        const staged = await stageLeftDialWithHeldClose(
+            h,
+            ethers.id("left-dial-late-close-first")
+        );
+        const { dialer, acceptor } = staged;
+        try {
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h
+                        .control(peer)
+                        .network.joinSelectedKey(
+                            ethers.id("left-dial-late-close-second")
+                        )
+                        .request()
+                )
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(dialer)
+                        .stub.getHeldHandshakeCount()
+                        .request()) === 2
+            );
+            expect(staged.liveDials()).to.equal(1);
+
+            await staged.releaseClose();
+            expect(
+                await h
+                    .control(dialer)
+                    .query.isLocalDialMarked(acceptor.address)
+                    .request()
+            ).to.equal(true);
+
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h
+                        .control(peer)
+                        .network.joinSelectedKey(
+                            ethers.id("left-dial-late-close-third")
+                        )
+                        .request()
+                )
+            );
+            // Observe repeated discovery announcements on the third topic.
+            await sleep(600);
+            expect(staged.liveDials()).to.equal(1);
+            expect(
+                await h.control(dialer).stub.getHeldHandshakeCount().request()
+            ).to.equal(2);
+        } finally {
+            staged.dispose();
+        }
     });
 
     it("does not dial a peer that already has a live authenticated transport on another topic", async function () {

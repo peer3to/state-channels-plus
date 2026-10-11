@@ -83,6 +83,8 @@ export class HarnessControlRpc extends MainRpcService {
      */
     override async dispose(): Promise<void> {
         this.stub.releaseReductionHolds();
+        // a join collection held mid-way continues into the disposed runtime
+        this.stub.releaseJoinThresholdRead();
         await super.dispose();
     }
 }

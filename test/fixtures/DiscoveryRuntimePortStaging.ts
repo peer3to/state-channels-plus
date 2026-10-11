@@ -23,14 +23,16 @@ export const assertClean = async (
 
 /**
  * Both peers join `topic` with their matched negotiations parked at the
- * handoff; `leave` runs on each peer's signer there; the negotiations then
- * fail unsigned. A recorded leave ends both joins with no rematch and no
- * channel.
+ * handoff; `leave` starts on each peer's signer there, and once every host
+ * has marked its join `whileHeld` runs before the negotiations fail
+ * unsigned. The leave ends both joins with no rematch and no channel, and
+ * reports true.
  */
 export const expectLeftHandoffEndsJoins = async (
     h: ReturnType<typeof TestSession.getHarness>,
     topic: string,
-    leave: (signer: ClientP2pSigner) => Promise<void>
+    leave: (signer: ClientP2pSigner) => Promise<boolean>,
+    whileHeld?: (signer: ClientP2pSigner) => Promise<void>
 ) => {
     const indices = h.peers.map((_, index) => index);
     const releases = await Promise.all(
@@ -41,8 +43,19 @@ export const expectLeftHandoffEndsJoins = async (
             peer.p2pInstance.p2pSigner.joinLobby(topic)
         );
         await h.rpcStub.waitForHeldMatchedNegotiation(indices);
-        for (const peer of h.peers) await leave(peer.p2pInstance.p2pSigner);
+        const leaves = Promise.all(
+            h.peers.map((peer) => leave(peer.p2pInstance.p2pSigner))
+        );
+        // the leaves settle with the joins; this only keeps an early
+        // rejection handled until they are awaited
+        leaves.catch(() => undefined);
+        await h.network.waitForLeftLobbyJoins(indices, topic);
+        if (whileHeld) {
+            for (const peer of h.peers)
+                await whileHeld(peer.p2pInstance.p2pSigner);
+        }
         await Promise.all(releases.map((release) => release()));
+        expect(await leaves).to.deep.equal([true, true]);
         expect(await Promise.all(joins)).to.deep.equal([undefined, undefined]);
         for (const peer of h.peers) {
             const control = h.control(peer);

@@ -1,8 +1,8 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import {
-    assertHonestLeaverDisputeOrdering,
-    assertHonestLeaverKillPeriodRefusal
+    assertHonestLeaverKillPeriodRefusal,
+    assertHonestPeersContributeAfterSelfRemoval
 } from "@test/fixtures/HonestLeaverDisputeStaging";
 import {
     DisputeTampering,
@@ -104,29 +104,14 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         }
     });
 
-    it("an honest leaver re-joined before its exit post → its self-removal dispute is its last signed state; no stale proof, no slash", async function () {
-        await assertHonestLeaverDisputeOrdering(
-            TestSession.getHarness(),
-            false
+    it("an honest leaver's exit post refused for an unconsumed inbound join → its watchdog self-removal dispute; the others contribute newer state into the existing window and remain participants", async function () {
+        await assertHonestPeersContributeAfterSelfRemoval(
+            TestSession.getHarness()
         );
-    });
-
-    it("an honest leaver's fallback waits for an admitted incoming signature before capturing its dispute", async function () {
-        await assertHonestLeaverDisputeOrdering(TestSession.getHarness(), true);
     });
 
     it("an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash", async function () {
-        await assertHonestLeaverKillPeriodRefusal(
-            TestSession.getHarness(),
-            false
-        );
-    });
-
-    it("an honest leaver's exit post refused after it already disputed the fork → its own dispute stands, removed by the reduced state, no proof, no slash", async function () {
-        await assertHonestLeaverKillPeriodRefusal(
-            TestSession.getHarness(),
-            true
-        );
+        await assertHonestLeaverKillPeriodRefusal(TestSession.getHarness());
     });
 
     it("dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState", async function () {

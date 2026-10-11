@@ -1,27 +1,52 @@
 import { Status, timeoutWaitTime } from "@/types";
-import { channelIdToDiscoveryKey, Codec, sleep, Type } from "@/utils";
+import {
+    addressesEqual,
+    channelIdToDiscoveryKey,
+    Codec,
+    sleep,
+    Type
+} from "@/utils";
 import {
     chainBlockPastWait,
+    chainNonceReader,
+    countFinalizedBlocks,
+    disputeOmittedJoin,
     exitOnLeaveTurn,
     latestSyncFromResponderBehindDerivedFork,
     prepareJoinWithAuthorization,
+    readForceExit,
     recordDiscoveryKeyJoins,
+    recordLeaveChannelLogs,
     recordedForceJoinDeadlineDelays,
     recordSnapshotPostWaitResults,
-    requestLatestFrom
+    requestLatestFrom,
+    stageInboundBlockedExit,
+    stageExitReplacedBySeatingFork,
+    stageInboundBlockedProtocolExit,
+    stageLeaveAwaitingTurn
 } from "@test/fixtures/BotConnectionFixesStaging";
+import { UNEXPECTED_SNAPSHOT_POST_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { holdReductions } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     readForceJoinBounds,
     authorUntilForceJoinCountingStarted,
+    holdForceJoinDeadlineParticipantRead,
     holdForceJoinMembershipRead,
+    isJoinCheckQueued,
+    JOIN_TIMER_NAMES,
+    isJoinPending,
     observeDisputeRequests,
+    readTrackedJoin,
     type HeldForceJoinMembershipRead,
-    runForceJoinBlockBound
+    runForceJoinBlockBound,
+    waitForJoinChecks
 } from "@test/fixtures/ForceJoinCountingStaging";
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
+import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
+import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { withHeldFreshRequester } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -86,7 +111,7 @@ describe("Unit: bot-connection fixes", function () {
     });
 
     describe("terminal leave settlement", function () {
-        it("U71: both founders leave and the last exit closes the channel → both terminal leaves settle on NOT_OPENED", async function () {
+        it("U71: both founders leave and the last exit closes the channel → both get onLeftChannel on NOT_OPENED", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0);
             const first = h.getPeer(0);
@@ -94,10 +119,8 @@ describe("Unit: bot-connection fixes", function () {
             const firstExit = exitOnLeaveTurn(first);
             const secondExit = exitOnLeaveTurn(second);
 
-            const firstLeave = first.p2pInstance.p2pSigner.leaveChannel();
-            const secondLeave = second.p2pInstance.p2pSigner.leaveChannel();
-            await h.event.waitUntilLeavePhase(first.index, "awaiting-exit");
-            await h.event.waitUntilLeavePhase(second.index, "awaiting-exit");
+            await first.p2pInstance.p2pSigner.leaveChannel();
+            await second.p2pInstance.p2pSigner.leaveChannel();
 
             // One block hands the turn to the leavers; each sends its exit on
             // its leave turn and the second exit leaves no participant.
@@ -111,7 +134,8 @@ describe("Unit: bot-connection fixes", function () {
             );
             await firstExit();
             await secondExit();
-            await Promise.all([firstLeave, secondLeave]);
+            await h.event.waitUntilLeftChannel(first.index);
+            await h.event.waitUntilLeftChannel(second.index);
 
             expect(
                 (await h.channelManager.isChannelOpen(h.channelId))[0]
@@ -128,8 +152,8 @@ describe("Unit: bot-connection fixes", function () {
         });
     });
 
-    describe("snapshot post blocked by an unconsumed inbound message", function () {
-        it("U72: a same-fork snapshot post waiting on an inbound message its snapshot has not consumed resolves false and posts nothing", async function () {
+    describe("exit settled by a posted snapshot", function () {
+        it("U72: a same-fork snapshot post waiting on an inbound message its snapshot has not consumed reverts with the pending-inbound refusal and posts nothing", async function () {
             const h = TestSession.getHarness();
             const {
                 joiner,
@@ -155,32 +179,63 @@ describe("Unit: bot-connection fixes", function () {
             });
             const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-            const posted = await h.execOnHost(
-                h.getPeer(0),
-                (sm, args) =>
-                    sm.snapshotUpdateService.postStateSnapshotWait(args.forkId),
-                { forkId: h.activeForkId! }
-            );
+            const posted = await postSnapshotFrom(h, 0);
 
-            expect(posted).to.equal(false);
+            expect(posted).to.equal("RaceConditionPendingInboundNotConsumed");
             expect(await h.query.getOnChainSnapshotHash()).to.equal(
                 snapshotBefore
             );
         });
 
-        it("U72: a leaver whose exit snapshot post is blocked by an unconsumed inbound join gets false and starts its self-removal dispute", async function () {
+        it("U72: a leaver posts the latest state snapshot once its exit block is final, and that snapshot settles the leave with no dispute", async function () {
             const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const leaver = h.getPeer(1);
+            const disputes = await h.rpcStub.recordDisputeSubmissions(
+                leaver.index
+            );
+            const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            const exit = exitOnLeaveTurn(leaver);
+            try {
+                await leaver.p2pInstance.p2pSigner.leaveChannel();
+                await h.transition.keepAuthoringUntil({
+                    until: () => exit() !== undefined,
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 6
+                });
+                await exit();
+                // the finalized exit block makes the leaver post, and its
+                // own post is mined
+                await send.waitUntilHeld();
+                expect(await send.release()).to.equal(null);
+                expect(await disputes.submissions()).to.deep.equal([]);
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+            } finally {
+                await send.release();
+            }
+        });
+
+        it("U72: a leaver whose exit is blocked by an inbound join that no block consumes posts again on each finalized block and starts one self-removal dispute when the one leave watchdog expires", async function () {
+            const h = TestSession.getHarness();
+            // the production default; long enough for the exit and two more blocks
+            const watchdogMs = 15_000;
             const {
                 joiner,
                 confirmation,
                 expectedSnapshotHash,
                 expectedForkId
-            } = await h.scenario.syncSpectatorAndPrepareJoin();
+            } = await h.scenario.syncSpectatorAndPrepareJoin(4, {
+                configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs }
+            });
             const leaver = h.getPeer(1);
             for (const peerIndex of [0, 1, 2]) {
                 await h.byzantine.stubPendingInboundInclusion(peerIndex);
             }
             const posts = await recordSnapshotPostWaitResults(h, leaver);
+            const tasks = await h.rpcStub.recordScheduledTasks(leaver.index);
             // The dispute is recorded, not sent: its boundary is the subject.
             const recorder = await h.rpcStub.recordDisputeSubmissions(
                 leaver.index
@@ -196,24 +251,42 @@ describe("Unit: bot-connection fixes", function () {
                 ).to.equal(true);
                 const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-                const leave = leaver.p2pInstance.p2pSigner.leaveChannel();
-                void leave.catch(() => undefined);
-                await h.event.waitUntilLeavePhase(
-                    leaver.index,
-                    "awaiting-exit"
-                );
+                await leaver.p2pInstance.p2pSigner.leaveChannel();
                 await h.transition.keepAuthoringUntil({
                     until: () => exit() !== undefined,
                     waitForPeers: [0, 1, 2],
                     maximumBlocks: 6
                 });
                 await exit();
-                await waitFor(
-                    async () => (await recorder.submissions()).length === 1,
-                    h.event.protocolEventTimeoutMs()
+                expect((await posts.resultsWait(1))[0]).to.equal(
+                    "RaceConditionPendingInboundNotConsumed"
                 );
 
-                expect(await posts.results()).to.deep.equal([false]);
+                // the remaining participants' blocks still omit the join:
+                // each finalized block posts again, sends nothing and starts
+                // no dispute
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: [0, 2]
+                });
+                const reposted = await posts.resultsWait(2);
+                expect(reposted).to.deep.equal(
+                    reposted.map(() => "RaceConditionPendingInboundNotConsumed")
+                );
+                expect(await recorder.submissions()).to.deep.equal([]);
+
+                // the one watchdog armed by the leave call bounds the exit
+                expect(
+                    (await tasks.tasks())
+                        .filter(
+                            (task) => task.taskName === "channel leave watchdog"
+                        )
+                        .map((task) => task.delayMs)
+                ).to.deep.equal([watchdogMs]);
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 1,
+                    watchdogMs + h.event.protocolEventTimeoutMs()
+                );
                 const [submission] = await recorder.submissions();
                 expect(
                     Codec.decode(submission.encodedDispute, Type.Dispute).input
@@ -227,9 +300,564 @@ describe("Unit: bot-connection fixes", function () {
                 ).to.include(leaver.address);
             } finally {
                 await posts.restore();
+                await tasks.restore();
                 await recorder.restore();
             }
             await leaver.p2pInstance.dispose();
+        });
+
+        it("U72: a leaver whose exit is blocked by an inbound join posts the exit once the remaining participants' finalized block consumes the join, with no self-removal dispute", async function () {
+            const h = TestSession.getHarness();
+            const {
+                joiner,
+                leaver,
+                remainingPeerIndices,
+                posts,
+                disputes,
+                includeInboundAgain
+            } = await stageInboundBlockedExit(h);
+            const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            try {
+                // the remaining participants include the join again; their
+                // next finalized block consumes it
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                // the leaver's own post of the latest snapshot is sent, and
+                // it is mined
+                await send.waitUntilHeld();
+                expect(await send.release()).to.equal(null);
+                await waitFor(
+                    async () =>
+                        !(
+                            await h.channelManager.getParticipants(h.channelId)
+                        ).includes(leaver.address),
+                    h.event.protocolEventTimeoutMs()
+                );
+                const results = await posts.results();
+                expect(results.at(-1)).to.equal("posted");
+                expect(results.slice(0, -1)).to.deep.equal(
+                    results
+                        .slice(0, -1)
+                        .map(() => "RaceConditionPendingInboundNotConsumed")
+                );
+                expect(await disputes.submissions()).to.deep.equal([]);
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.include(joiner.address);
+            } finally {
+                await send.release();
+            }
+        });
+
+        it("U72: blocks finalized while the exit's snapshot post runs queue one more post after it when that post did not land the exit, and the next finalized block posts again", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, remainingPeerIndices, posts, disputes } =
+                await stageInboundBlockedExit(h);
+            const finalized = countFinalizedBlocks(leaver);
+            try {
+                // a post of the staging still running would skip the block
+                await waitFor(
+                    async () =>
+                        (await posts.results()).length ===
+                        (await posts.started()),
+                    h.event.protocolEventTimeoutMs()
+                );
+                await posts.holdResults();
+                const startedBefore = await posts.started();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                // that block's post runs and its result is parked
+                await waitFor(
+                    async () => (await posts.started()) > startedBefore,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const started = await posts.started();
+                // two more blocks finalize while that post runs
+                const finalizedBefore = finalized();
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: remainingPeerIndices
+                });
+                await waitFor(
+                    async () => finalized() >= finalizedBefore + 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await posts.started()).to.equal(started);
+
+                // the refused post did not land the exit: the blocks finalized
+                // during it queue exactly one more post
+                await posts.releaseResults();
+                await waitFor(
+                    async () => (await posts.started()) === started + 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                await sleep(2_000);
+                expect(await posts.started()).to.equal(started + 1);
+
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                await waitFor(
+                    async () => (await posts.started()) > started + 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await disputes.submissions()).to.deep.equal([]);
+            } finally {
+                await posts.restore();
+            }
+        });
+
+        it("U72: a leaver whose exit the remaining participants post while it sees no further block settles the leave, and the leave watchdog starts no self-removal dispute", async function () {
+            const h = TestSession.getHarness();
+            // the production default; long enough for the exit and two more blocks
+            const watchdogMs = 15_000;
+            const {
+                leaver,
+                remainingPeerIndices,
+                posts,
+                disputes,
+                includeInboundAgain
+            } = await stageInboundBlockedExit(h, { watchdogMs });
+            const watchdogExpiresBy = Date.now() + watchdogMs;
+            // blind to gossip: the leaver finalizes no further block and posts nothing more
+            const restoreConfirmations =
+                await h.rpcStub.dropNetworkConfirmations(leaver.index);
+            try {
+                const startedBefore = await posts.started();
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices,
+                    waitForFinalization: true
+                });
+                await h.transition.postSnapshot({ peerIndex: 0 });
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+
+                // the settled exit cancelled its watchdog
+                await h.transition.keepAuthoringUntil({
+                    until: () => Date.now() > watchdogExpiresBy + 1_000,
+                    waitForPeers: remainingPeerIndices,
+                    maximumBlocks: 8
+                });
+                expect(await disputes.submissions()).to.deep.equal([]);
+                expect(await posts.started()).to.equal(startedBefore);
+            } finally {
+                await restoreConfirmations();
+            }
+        });
+
+        it("U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, remainingPeerIndices, includeInboundAgain } =
+                await stageInboundBlockedExit(h);
+            const leaverNonce = await chainNonceReader(h, leaver);
+            await includeInboundAgain();
+            await leaver.p2pInstance.dispose();
+            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+            const nonceBefore = await leaverNonce();
+
+            await h.transition.advanceState({
+                waitForPeers: remainingPeerIndices
+            });
+            // absence window: a late post would be mined by now
+            await sleep(2_000);
+            expect(await leaverNonce()).to.equal(nonceBefore);
+            expect(
+                await h.channelManager.getParticipants(h.channelId)
+            ).to.include(leaver.address);
+        });
+
+        it("U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it", async function () {
+            const h = TestSession.getHarness();
+            const { joiner, leaver, disputes } = await stageLeaveAwaitingTurn(
+                h,
+                {
+                    watchdogMs: 60_000,
+                    forwardDisputes: true
+                }
+            );
+            const forkId = h.activeForkId!;
+            const comparisons = await h.rpcStub.recordEvidenceComparisons(
+                leaver.index
+            );
+            try {
+                await disputeOmittedJoin(h, joiner.index);
+                await waitFor(
+                    async () => (await disputes.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const [submission] = await disputes.submissions();
+                expect(
+                    Codec.decode(submission.encodedDispute, Type.Dispute).input
+                        .selfRemoval
+                ).to.equal(true);
+                expect(await comparisons.comparisons()).to.deep.equal([]);
+                // its own dispute does not complete the leave
+                expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.include(leaver.address);
+
+                await h.dispute.resolveDisputeWait({
+                    forkId,
+                    honestPeerIndices: [0, 2],
+                    assertMaliciousRemoved: false
+                });
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+                expect(await disputes.submissions()).to.have.length(1);
+            } finally {
+                await comparisons.restore();
+                await disputes.restore();
+            }
+        });
+
+        it("U72: a dispute observed after an exit block the application authored with no leave call makes the leaver submit its self-removal dispute at once, with no evidence comparison; the reduced snapshot drops it and its runtime is SYNCED with the self-removal still set", async function () {
+            const h = TestSession.getHarness();
+            const { joiner, leaver, disputes } =
+                await stageInboundBlockedProtocolExit(h, {
+                    watchdogMs: 60_000,
+                    forwardDisputes: true
+                });
+            const forkId = h.activeForkId!;
+            const comparisons = await h.rpcStub.recordEvidenceComparisons(
+                leaver.index
+            );
+            try {
+                // the exit is pending from its block, with no leave call
+                expect(await readForceExit(h, leaver)).to.equal(true);
+                await disputeOmittedJoin(h, joiner.index);
+                await waitFor(
+                    async () => (await disputes.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const [submission] = await disputes.submissions();
+                expect(
+                    Codec.decode(submission.encodedDispute, Type.Dispute).input
+                        .selfRemoval
+                ).to.equal(true);
+                expect(await comparisons.comparisons()).to.deep.equal([]);
+
+                await h.dispute.resolveDisputeWait({
+                    forkId,
+                    honestPeerIndices: [0, 2],
+                    assertMaliciousRemoved: false
+                });
+                await h.event.waitUntilPeerStatus(leaver.index, Status.SYNCED);
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+                // a started exit is never retracted
+                expect(await readForceExit(h, leaver)).to.equal(true);
+                expect(await disputes.submissions()).to.have.length(1);
+            } finally {
+                await comparisons.restore();
+                await disputes.restore();
+            }
+        });
+
+        it("U72: an exit block the application authored with no leave call is posted the same way: a later finalized block's post lands it once the join is consumed, and the runtime ends SYNCED with onLeftChannel, the self-removal still set and no dispute", async function () {
+            const h = TestSession.getHarness();
+            const {
+                leaver,
+                remainingPeerIndices,
+                posts,
+                disputes,
+                includeInboundAgain
+            } = await stageInboundBlockedProtocolExit(h);
+            const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            try {
+                // the exit is pending from its block, with no leave call
+                expect(await readForceExit(h, leaver)).to.equal(true);
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                await send.waitUntilHeld();
+                expect(await send.release()).to.equal(null);
+                await h.event.waitUntilPeerStatus(leaver.index, Status.SYNCED);
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+                expect((await posts.results()).at(-1)).to.equal("posted");
+                // a started exit is never retracted
+                expect(await readForceExit(h, leaver)).to.equal(true);
+                expect(await disputes.submissions()).to.deep.equal([]);
+            } finally {
+                await send.release();
+            }
+        });
+
+        it("U72: a block finalized while the exit's snapshot post runs queues no further post when that post lands the exit: the leaver sends once and posts no more", async function () {
+            const h = TestSession.getHarness();
+            const {
+                leaver,
+                remainingPeerIndices,
+                posts,
+                disputes,
+                includeInboundAgain
+            } = await stageInboundBlockedExit(h);
+            const finalized = countFinalizedBlocks(leaver);
+            const leaverNonce = await chainNonceReader(h, leaver);
+            // a post of the staging still running would skip the block
+            await waitFor(
+                async () =>
+                    (await posts.results()).length === (await posts.started()),
+                h.event.protocolEventTimeoutMs()
+            );
+            const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            try {
+                const startedBefore = await posts.started();
+                const nonceBefore = await leaverNonce();
+                // the remaining participants' next finalized block consumes
+                // the join; its post is parked at its send
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                await send.waitUntilHeld();
+                expect(await posts.started()).to.equal(startedBefore + 1);
+
+                // another block finalizes while that post runs
+                const finalizedBefore = finalized();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                await waitFor(
+                    async () => finalized() > finalizedBefore,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await posts.started()).to.equal(startedBefore + 1);
+
+                // the post is mined and returns the snapshot that drops the
+                // leaver: the block queued during it posts nothing more
+                expect(await send.release()).to.equal(null);
+                expect(
+                    (await posts.resultsWait(startedBefore + 1)).at(-1)
+                ).to.equal("posted");
+                await h.event.waitUntilLeftChannel(leaver.index);
+                // absence window: a queued post would have started by now
+                await sleep(2_000);
+                expect(await posts.started()).to.equal(startedBefore + 1);
+                expect(await leaverNonce()).to.equal(nonceBefore + 1);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+                expect(await disputes.submissions()).to.deep.equal([]);
+            } finally {
+                await send.release();
+                await posts.restore();
+            }
+        });
+
+        it("U72: a chain refusal of the exit's snapshot post reaches the leave's logger with its custom error and is not fatal: the next finalized block posts again", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, remainingPeerIndices, posts, disputes } =
+                await stageInboundBlockedExit(h);
+            // a post of the staging still running would log before the probe
+            await waitFor(
+                async () =>
+                    (await posts.results()).length === (await posts.started()),
+                h.event.protocolEventTimeoutMs()
+            );
+            const logs = await recordLeaveChannelLogs(h, leaver);
+            const refused = {
+                message: "The chain refused the exit snapshot post",
+                meta: [{ refusal: "RaceConditionPendingInboundNotConsumed" }]
+            };
+            try {
+                const before = (await posts.results()).length;
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                expect((await posts.resultsWait(before + 1)).at(-1)).to.equal(
+                    "RaceConditionPendingInboundNotConsumed"
+                );
+                await waitFor(
+                    async () => (await logs.entries()).length >= 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await logs.entries()).to.deep.equal([refused]);
+
+                // the refusal is not fatal: the next finalized block posts again
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices
+                });
+                expect((await posts.resultsWait(before + 2)).at(-1)).to.equal(
+                    "RaceConditionPendingInboundNotConsumed"
+                );
+                await waitFor(
+                    async () => (await logs.entries()).length >= 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await logs.entries()).to.deep.equal([refused, refused]);
+                expect(await disputes.submissions()).to.deep.equal([]);
+                // no detached error: settleDetached throws on one
+                await TestSession.settleDetached();
+            } finally {
+                await logs.restore();
+                await posts.restore();
+            }
+        });
+
+        it("U72: an exit post that fails with an error that is no chain refusal is a fatal runtime error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const leaver = h.getPeer(1);
+            await h
+                .control(leaver)
+                .stub.failStateSnapshotPost("error")
+                .request();
+            const posts = await recordSnapshotPostWaitResults(h, leaver);
+            const exit = exitOnLeaveTurn(leaver);
+            try {
+                await leaver.p2pInstance.p2pSigner.leaveChannel();
+                await h.transition.keepAuthoringUntil({
+                    until: () => exit() !== undefined,
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 6
+                });
+                await exit();
+                // the finalized exit block makes the leaver post, and that
+                // post fails with no chain refusal
+                expect((await posts.resultsWait(1))[0]).to.equal("failed");
+                await TestSession.settleDetached({
+                    expectedErrorIncludes: UNEXPECTED_SNAPSHOT_POST_FAILURE
+                });
+                expect(leaver.eventSpies.onLeftChannel?.called).to.equal(false);
+            } finally {
+                await posts.restore();
+                await h
+                    .control(leaver)
+                    .stub.restoreStateSnapshotPost()
+                    .request();
+            }
+        });
+
+        it("U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog", async function () {
+            const h = TestSession.getHarness();
+            // the watchdog expires at least once within the join's authorization
+            const watchdogMs = 3_000;
+            const prepared = await prepareJoinWithAuthorization(h, 15, {
+                LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs
+            });
+            const joiner = prepared.joiner;
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                joiner.index
+            );
+            const tasks = await h.rpcStub.recordScheduledTasks(joiner.index);
+            const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+                joiner.index,
+                "joinChannel"
+            );
+            const watchdogDelays = async () =>
+                (await tasks.tasks())
+                    .filter(
+                        (task) => task.taskName === "channel leave watchdog"
+                    )
+                    .map((task) => task.delayMs);
+            try {
+                expect(
+                    await joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(false);
+                await joiner.p2pInstance.p2pSigner.leaveChannel();
+
+                // the founders keep authoring while the watchdog armed by the
+                // leave expires and a replacement is armed
+                await h.transition.keepAuthoringUntil({
+                    until: async () => (await watchdogDelays()).length >= 2,
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 6
+                });
+                expect((await watchdogDelays()).slice(0, 2)).to.deep.equal([
+                    watchdogMs,
+                    watchdogMs
+                ]);
+                expect(await recorder.submissions()).to.deep.equal([]);
+                expect(
+                    await isJoinPending(h, h.getPeer(joiner.index))
+                ).to.equal(true);
+                expect(joiner.eventSpies.onLeftChannel?.called).to.equal(false);
+
+                // the join ends at its authorization deadline, and the leave with it
+                await Promise.all([
+                    chainBlockPastWait(h, prepared.joinDeadline),
+                    h.transition.keepAuthoringUntil({
+                        until: () =>
+                            joiner.eventSpies.onLeftChannel?.called === true,
+                        waitForPeers: [0, 1, 2],
+                        maximumBlocks: 20
+                    })
+                ]);
+                await h.event.waitUntilLeftChannel(joiner.index);
+                expect(
+                    await h.control(joiner).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+                expect(
+                    await h.execOnHost(
+                        h.getPeer(joiner.index),
+                        (sm) =>
+                            Reflect.get(sm.leaveChannelService, "watchdog") ===
+                            undefined
+                    )
+                ).to.equal(true);
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await restore();
+                await tasks.restore();
+                await recorder.restore();
+            }
+        });
+
+        it("U72: a reduction that replaces the fork of an exit block the application authored with no leave call by a state that still seats the leaver restarts the exit there as a requested leave: its leave turn comes, self-removal stays set and its exit settles", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, forkId, exit } =
+                await stageExitReplacedBySeatingFork(h);
+            const leaverQuery = h.control(leaver).query;
+            const successorForkId = await leaverQuery.getForkId().request();
+            expect(successorForkId).to.not.equal(forkId);
+            expect(await leaverQuery.getParticipants().request()).to.include(
+                leaver.address
+            );
+            await h.event.waitUntilLeaveState(leaver.index, "isLeaveRequested");
+            expect(
+                await leaverQuery.getLeaveChannelState().request()
+            ).to.deep.include({
+                forkId: successorForkId,
+                isLeaveRequested: true,
+                isExitBlockCommitted: false
+            });
+            expect(await readForceExit(h, leaver)).to.equal(true);
+
+            // the requested leave offers the leaver's next turn on the new fork
+            await h.transition.keepAuthoringUntil({
+                until: () => exit() !== undefined,
+                waitForPeers: [leaver.index, 2],
+                maximumBlocks: 6
+            });
+            expect(leaver.eventSpies.onLeaveTurn?.callCount).to.equal(1);
+            await exit();
+            await h.event.waitUntilLeftChannel(leaver.index);
+            const participants = await h.channelManager.getParticipants(
+                h.channelId
+            );
+            expect(participants).to.not.include(leaver.address);
+            expect(participants).to.include(h.getPeer(2).address);
+            expect(await readForceExit(h, leaver)).to.equal(true);
         });
     });
 
@@ -319,6 +947,7 @@ describe("Unit: bot-connection fixes", function () {
                 ).to.equal(null);
                 await read.release();
                 await running;
+                await waitForJoinChecks(h, joiner);
                 expect(await requests.requests()).to.have.length(0);
                 expect(
                     (await readForceJoinBounds(h, joiner)).disputeStarted
@@ -334,7 +963,7 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("RO2: the block bound wins while the deadline awaits membership and only one dispute is requested", async function () {
+        it("RO2: the block bound passing while the deadline awaits membership requests only one dispute", async function () {
             const h = TestSession.getHarness();
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
             const joiner = h.getPeer(prepared.joiner.index);
@@ -376,14 +1005,17 @@ describe("Unit: bot-connection fixes", function () {
                     count: bounds.participantCount + 1,
                     waitForPeers: [0, 1, 2, joiner.index]
                 });
+                // the join checks run one at a time: the block bound's check
+                // waits behind the held deadline check
+                expect(await requests.requests()).to.have.length(0);
+                await read.release();
+                await running;
                 await waitFor(
                     async () => (await recorder.submissions()).length === 1
                 );
                 expect(
                     (await readForceJoinBounds(h, joiner)).disputeStarted
                 ).to.equal(true);
-                await read.release();
-                await running;
                 expect(await requests.requests()).to.have.length(1);
                 expect(await recorder.submissions()).to.have.length(1);
             } finally {
@@ -437,6 +1069,7 @@ describe("Unit: bot-connection fixes", function () {
                 ).to.equal(Status.PARTICIPATING);
                 await read.release();
                 await running;
+                await waitForJoinChecks(h, joiner);
                 const bounds = await readForceJoinBounds(h, joiner);
                 expect(bounds.submissionHeight).to.equal(null);
                 expect(bounds.disputeStarted).to.equal(false);
@@ -511,6 +1144,7 @@ describe("Unit: bot-connection fixes", function () {
                 );
                 released = true;
                 await deadline.release(true);
+                await waitForJoinChecks(h, joiner);
                 expect(await recorder.submissions()).to.deep.equal([]);
                 const after = await readForceJoinBounds(h, joiner);
                 expect(after.submissionHeight).to.equal(
@@ -674,6 +1308,119 @@ describe("Unit: bot-connection fixes", function () {
                 await recorder.restore();
             }
         });
+
+        it("disposing a joiner while its force-join check is held at its membership read and another check waits behind it submits no dispute and emits no membership event", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
+            const joiner = h.getPeer(prepared.joiner.index);
+            const spies = prepared.joiner.eventSpies;
+            for (const index of [0, 1, 2]) {
+                await h.byzantine.stubPendingInboundInclusion(index);
+                // only the joiner could open a dispute window on the fork
+                await h.rpcStub.suppressTimeoutCheck(index);
+            }
+            const deadline = await h.rpcStub.holdScheduledTasks(
+                joiner.index,
+                "force join deadline"
+            );
+            expect(
+                await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(true);
+            await waitFor(async () => (await deadline.heldCount()) === 1);
+            // the disposal below releases the held read
+            const read = await holdForceJoinMembershipRead(h, joiner.index, {
+                releaseOnDispose: true
+            });
+            await deadline.release(true);
+            await waitFor(read.entered);
+            // a committed block counted toward the bound queues one more check
+            const bounds = await authorUntilForceJoinCountingStarted(
+                h,
+                joiner.index,
+                [0, 1, 2]
+            );
+            expect(await isJoinCheckQueued(h, joiner)).to.equal(true);
+            const before = {
+                disputes: spies.onInitiatingDispute?.callCount ?? 0,
+                left: spies.onLeftChannel?.callCount ?? 0,
+                statusChanges: spies.onStatusChanged?.callCount ?? 0
+            };
+
+            await prepared.joiner.p2pInstance.dispose();
+            // absence window: the released check and the queued one run in
+            // the disposed runtime; a dispute they sent lands within it
+            await sleep(bounds.timeConfig.agreementTime * 2 * 1000);
+
+            expect({
+                disputes: spies.onInitiatingDispute?.callCount ?? 0,
+                left: spies.onLeftChannel?.callCount ?? 0,
+                statusChanges: spies.onStatusChanged?.callCount ?? 0
+            }).to.deep.equal(before);
+            expect(
+                Number(
+                    await h.channelManager.getDisputeWindowCreationTimestamp(
+                        h.channelId,
+                        prepared.expectedForkId
+                    )
+                )
+            ).to.equal(0);
+        });
+
+        it("disposing a joiner while its force-join deadline setup is held at its participant-count read arms no join timer once the setup continues", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(4, {
+                // the retained inline host stays readable after disposal
+                configOverrides: { RUN_SDK_IN_THREAD: false }
+            });
+            const joiner = prepared.joiner;
+            const endpoint = runtimeEndpointFor(joiner.p2pInstance);
+            // record-only scheduling probe: every task still runs as scheduled
+            endpoint.stub.stubRecordScheduledTasks();
+            const read = holdForceJoinDeadlineParticipantRead(endpoint.sm);
+            try {
+                expect(
+                    await joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(true);
+                // the observed join's deadline setup read the participants
+                await waitFor(
+                    async () => read.isEntered(),
+                    h.event.protocolEventTimeoutMs()
+                );
+
+                await joiner.p2pInstance.dispose();
+                await waitFor(
+                    async () => endpoint.sm.isDisposed,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const tasksAtDisposal =
+                    endpoint.stub.getRecordedScheduledTasks().tasks.length;
+                read.release();
+                await Reflect.get(endpoint.sm.channelJoinService, "checks");
+
+                expect(
+                    endpoint.stub
+                        .getRecordedScheduledTasks()
+                        .tasks.slice(tasksAtDisposal)
+                        .map((task) => task.taskName)
+                        .filter((name) =>
+                            (JOIN_TIMER_NAMES as readonly string[]).includes(
+                                name
+                            )
+                        )
+                ).to.deep.equal([]);
+            } finally {
+                read.release();
+                endpoint.stub.restoreRecordScheduledTasks();
+            }
+        });
     });
 
     describe("own-join observation and join authorization expiry", function () {
@@ -758,7 +1505,7 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("U75b: an uncertain join that never reaches the chain → own join state open until the chain passes its authorization deadline, then expired", async function () {
+        it("U75b: an uncertain join that never reaches the chain → the join stays pending until the chain passes its authorization deadline, then the runtime leaves to SYNCED", async function () {
             const h = TestSession.getHarness();
             const prepared = await prepareJoinWithAuthorization(h, 10);
             const signer = prepared.joiner.p2pInstance.p2pSigner;
@@ -774,33 +1521,19 @@ describe("Unit: bot-connection fixes", function () {
                         prepared.expectedForkId
                     )
                 ).to.equal(false);
-
-                // the remaining time is counted on the joiner's own clock, so
-                // bound it by that clock read just before and just after
-                const joinerQuery = h.control(prepared.joiner).query;
-                const clockBefore = await joinerQuery
-                    .getClockTimeInSeconds()
-                    .request();
-                const open = await signer.getOwnJoinState();
-                const clockAfter = await joinerQuery
-                    .getClockTimeInSeconds()
-                    .request();
-                expect(open.state).to.equal("open");
-                expect(
-                    open.state === "open" ? open.secondsUntilExpiry : 0
-                ).to.be.within(
-                    Math.max(prepared.joinDeadline + 1 - clockAfter, 1),
-                    Math.max(prepared.joinDeadline + 1 - clockBefore, 1)
-                );
-
-                await chainBlockPastWait(h, prepared.joinDeadline);
-                expect(await signer.getOwnJoinState()).to.deep.equal({
-                    state: "expired"
-                });
-                // a read only: the runtime stays pending
+                const joiner = h.getPeer(prepared.joiner.index);
+                const joinerQuery = h.control(joiner).query;
+                expect(await isJoinPending(h, joiner)).to.equal(true);
                 expect(await joinerQuery.getStatus().request()).to.equal(
                     Status.PENDING_PARTICIPANT
                 );
+
+                await chainBlockPastWait(h, prepared.joinDeadline);
+                await h.event.waitUntilLeftChannel(joiner.index);
+                expect(await joinerQuery.getStatus().request()).to.equal(
+                    Status.SYNCED
+                );
+                expect(await isJoinPending(h, joiner)).to.equal(false);
             } finally {
                 await restore();
             }
@@ -825,34 +1558,28 @@ describe("Unit: bot-connection fixes", function () {
                         prepared.expectedForkId
                     )
                 ).to.equal(false);
-                const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
-                let leaveSettled = false;
-                const settled = leave.then(() => {
-                    leaveSettled = true;
-                });
-                await h.event.waitUntilLeavePhase(
-                    joiner.index,
-                    "awaiting-join"
-                );
-                expect(leaveSettled).to.equal(false);
+                await joiner.p2pInstance.p2pSigner.leaveChannel();
+                // the leave waits for the join
+                expect(joiner.eventSpies.onLeftChannel?.called).to.equal(false);
 
                 // The founders keep authoring through the wait.
                 await Promise.all([
                     chainBlockPastWait(h, prepared.joinDeadline),
                     h.transition.keepAuthoringUntil({
-                        until: () => leaveSettled,
+                        until: () =>
+                            joiner.eventSpies.onLeftChannel?.called === true,
                         waitForPeers: [0, 1, 2],
                         maximumBlocks: 20
                     })
                 ]);
-                await settled;
+                await h.event.waitUntilLeftChannel(joiner.index);
 
                 expect(
                     await h.control(joiner).query.getStatus().request()
                 ).to.equal(Status.SYNCED);
                 expect(
-                    await joiner.p2pInstance.p2pSigner.getOwnJoinState()
-                ).to.deep.equal({ state: "none" });
+                    await readTrackedJoin(h, h.getPeer(joiner.index))
+                ).to.equal(null);
                 expect(await recorder.submissions()).to.deep.equal([]);
             } finally {
                 await restore();
@@ -873,9 +1600,7 @@ describe("Unit: bot-connection fixes", function () {
                     prepared.expectedForkId
                 )
             ).to.equal(true);
-            const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
-            void leave.catch(() => undefined);
-            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+            await joiner.p2pInstance.p2pSigner.leaveChannel();
             expect(
                 (await readForceJoinBounds(h, h.getPeer(joiner.index)))
                     .countingStartsAt
@@ -883,24 +1608,48 @@ describe("Unit: bot-connection fixes", function () {
 
             await held.release({ replay: true });
 
-            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-exit");
+            // the observed join makes it a member's leave
+            await waitFor(
+                async () =>
+                    (await readForceJoinBounds(h, h.getPeer(joiner.index)))
+                        .countingStartsAt !== null
+            );
             expect(
-                (await readForceJoinBounds(h, h.getPeer(joiner.index)))
-                    .countingStartsAt
-            ).to.not.equal(null);
+                await h.control(joiner).query.getLeaveChannelState().request()
+            ).to.deep.include({ isLeaveRequested: true });
+            expect(joiner.eventSpies.onLeftChannel?.called).to.equal(false);
             await joiner.p2pInstance.dispose();
-            await expect(leave).to.be.rejectedWith("disposed");
         });
 
-        it("U75e: a landed join whose self-removal reduction the joiner installs while the chain still lists it → the chain's snapshot event lowers it to SYNCED and its leave settles", async function () {
+        it("U75e: a leaving joiner whose landed join a founder's timeout dispute reduces away while the chain still lists it → once the chain drops it, its force-join check starts no dispute and lowers it to SYNCED with one onLeftChannel", async function () {
             const h = TestSession.getHarness();
-            const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(4);
             const joiner = prepared.joiner;
             const joinerQuery = h.control(joiner).query;
             // The founders omit the join, so the joiner stays pending.
             for (const peerIndex of [0, 1, 2]) {
                 await h.byzantine.stubPendingInboundInclusion(peerIndex);
             }
+            // One founder times out the idle writer: the leaving joiner
+            // audits one dispute, not one per founder, before its
+            // self-removal must land within the evidence period.
+            const nextToWrite = await h
+                .control(h.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            const [, ...otherFounders] = [0, 1, 2].filter(
+                (index) =>
+                    !addressesEqual(h.getPeer(index).address, nextToWrite)
+            );
+            for (const index of otherFounders)
+                await h.rpcStub.suppressTimeoutCheck(index);
+            // The force-join deadline is held when armed: the joiner's own
+            // force-join dispute cannot start, and the deadline is passed
+            // below only once the chain dropped the join.
+            const deadline = await h.rpcStub.holdScheduledTasks(
+                joiner.index,
+                "force join deadline"
+            );
             // Every snapshot post parks, so the chain still lists the joiner
             // when it installs the reduction genesis that drops it.
             const posts = await Promise.all(
@@ -908,6 +1657,10 @@ describe("Unit: bot-connection fixes", function () {
                     h.rpcStub.holdSnapshotPostSend(peer.index)
                 )
             );
+            let isDeadlineReleased = false;
+            let requests:
+                | Awaited<ReturnType<typeof observeDisputeRequests>>
+                | undefined;
             try {
                 expect(
                     await joiner.p2pInstance.p2pSigner.joinChannel(
@@ -916,25 +1669,28 @@ describe("Unit: bot-connection fixes", function () {
                         prepared.expectedForkId
                     )
                 ).to.equal(true);
-                const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
-                let leaveSettled = false;
-                const settled = leave.then(() => {
-                    leaveSettled = true;
-                });
-                await h.event.waitUntilLeavePhase(
-                    joiner.index,
-                    "awaiting-exit"
-                );
+                await joiner.p2pInstance.p2pSigner.leaveChannel();
                 const disputedForkId = await joinerQuery.getForkId().request();
-                // The founders author until the joiner's exit fallback
-                // starts its self-removal dispute.
-                await h.transition.keepAuthoringUntil({
-                    until: async () =>
-                        (await joinerQuery.getLeaveChannelState().request())
-                            ?.phase === "awaiting-settlement",
-                    waitForPeers: [0, 1, 2],
-                    maximumBlocks: 8
-                });
+                // No block is authored after the join: a founder's
+                // participant-timeout dispute opens the window, and the
+                // leaving joiner answers it at once with its self-removal
+                // dispute. The leave watchdog skips a join in progress.
+                await waitFor(() =>
+                    joinerQuery.didIDispute(disputedForkId).request()
+                );
+                expect(
+                    (await readForceJoinBounds(h, h.getPeer(joiner.index)))
+                        .disputeStarted
+                ).to.equal(false);
+                const founderDisputes = await Promise.all(
+                    [0, 1, 2].map((index) =>
+                        h
+                            .control(h.getPeer(index))
+                            .query.didIDispute(disputedForkId)
+                            .request()
+                    )
+                );
+                expect(founderDisputes).to.include(true);
                 // Every peer leaves the disputed fork, not only the joiner: a
                 // founder whose reduction has not run yet would author the next
                 // block on the disputed fork, and the others drop it.
@@ -949,16 +1705,33 @@ describe("Unit: bot-connection fixes", function () {
                 expect(
                     await h.channelManager.getPendingParticipants(h.channelId)
                 ).to.include(joiner.address);
+                requests = await observeDisputeRequests(h, joiner.index);
 
                 // The founders keep authoring, so no later dispute installs
-                // another state: only the snapshot event can settle the leave.
+                // another state, until the released post drops the joiner
+                // on chain; too few blocks for the force-join block bound.
                 await Promise.all(posts.map((post) => post.release()));
                 await h.transition.keepAuthoringUntil({
-                    until: () => leaveSettled,
+                    until: async () =>
+                        !(
+                            await joinerQuery
+                                .getOnChainParticipantUnion()
+                                .request()
+                        ).includes(joiner.address),
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 4
+                });
+                expect(joiner.eventSpies.onLeftChannel?.called).to.equal(false);
+                // the force-join check now runs and finds the join dropped
+                isDeadlineReleased = true;
+                await deadline.release(true);
+                await h.transition.keepAuthoringUntil({
+                    until: () =>
+                        joiner.eventSpies.onLeftChannel?.called === true,
                     waitForPeers: [0, 1, 2],
                     maximumBlocks: 8
                 });
-                await settled;
+                await h.event.waitUntilLeftChannel(joiner.index);
 
                 expect(await joinerQuery.getStatus().request()).to.equal(
                     Status.SYNCED
@@ -969,8 +1742,15 @@ describe("Unit: bot-connection fixes", function () {
                 expect(
                     await joinerQuery.getOnChainParticipantUnion().request()
                 ).to.not.include(joiner.address);
+                expect(joiner.eventSpies.onLeftChannel?.callCount).to.equal(1);
+                expect(
+                    await readTrackedJoin(h, h.getPeer(joiner.index))
+                ).to.equal(null);
+                expect(await requests.requests()).to.deep.equal([]);
             } finally {
+                if (!isDeadlineReleased) await deadline.release(false);
                 await Promise.all(posts.map((post) => post.release()));
+                await requests?.restore();
             }
         });
 
@@ -1013,11 +1793,74 @@ describe("Unit: bot-connection fixes", function () {
                     Status.PENDING_PARTICIPANT
                 );
                 expect(
-                    (await joiner.p2pInstance.p2pSigner.getOwnJoinState()).state
-                ).to.equal("open");
+                    await isJoinPending(h, h.getPeer(joiner.index))
+                ).to.equal(true);
             } finally {
                 await restore();
             }
+        });
+
+        it("U75g: a finally refused first join emits onLeftChannel once and does not abort; a later join of the same runtime refused for its expired authorization emits its onLeftChannel before onAbort, each once", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await prepareJoinWithAuthorization(h, 2);
+            const joiner = prepared.joiner;
+            const spies = joiner.eventSpies;
+            const signer = joiner.p2pInstance.p2pSigner;
+            const join = () =>
+                signer.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+            // the first submission's receipt fails; later ones run for real
+            await h.rpcStub.failMembershipReceipt(joiner.index, "joinChannel", {
+                once: true
+            });
+
+            // a proven failure with the snapshot at its pin: final, no race
+            expect(await join()).to.equal(false);
+            await h.event.waitUntilLeftChannel(joiner.index);
+            expect(spies.onLeftChannel?.callCount).to.equal(1);
+            expect(spies.onAbort?.called ?? false).to.equal(false);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+
+            // the same runtime joins again once the authorization expired
+            await chainBlockPastWait(h, prepared.joinDeadline);
+            let expired: unknown;
+            try {
+                await h.channelManager
+                    .connect(joiner.signer)
+                    .joinChannel.staticCall(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    );
+                expect.fail("expected the expired join to revert");
+            } catch (error) {
+                expired = error;
+            }
+            expectDecodedError(
+                expired,
+                "RaceConditionJoinChannelExpired",
+                "the second join must meet the authorization refusal"
+            );
+            // the abort disposes the runtime, so the call may also reject
+            expect(await join().catch(() => false)).to.equal(false);
+            await waitFor(
+                async () => spies.onAbort?.called === true,
+                h.event.protocolEventTimeoutMs()
+            );
+            await h.event.waitUntilLeftChannel(joiner.index, 1);
+
+            expect(spies.onLeftChannel?.callCount).to.equal(2);
+            expect(spies.onAbort?.callCount).to.equal(1);
+            expect(
+                spies
+                    .onLeftChannel!.getCall(1)
+                    .calledBefore(spies.onAbort!.getCall(0))
+            ).to.equal(true);
         });
     });
 
@@ -1087,11 +1930,10 @@ describe("Unit: bot-connection fixes", function () {
             await h.setup(2, { autoConnect: false });
             const topic = ethers.id("unit-lobby-rejoin-after-leave");
             const first = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
-            try {
-                await h.network.leaveLobby([0, 1], topic);
-            } finally {
-                await first();
-            }
+            // the failed negotiation ends both joins, so both leaves report true
+            expect(
+                await h.network.leaveLobbyAtHeldHandoff([0, 1], topic, first)
+            ).to.deep.equal([true, true]);
             await TestSession.settleDetached();
             const second = await h.network.joinLobbyHeldAtHandoff(
                 [0, 1],

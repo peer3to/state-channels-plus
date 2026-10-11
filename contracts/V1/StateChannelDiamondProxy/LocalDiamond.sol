@@ -25,7 +25,6 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     bytes32 private constant CHANNEL_OPENED_FAMILY = keccak256("ChannelOpened");
     bytes32 private constant STATE_SNAPSHOT_FAMILY = keccak256("StateSnapshotUpdated");
-    bytes32 private constant INBOUND_MESSAGES_FAMILY = keccak256("InboundMessagesProcessed");
     bytes32 private constant REDUCED_RESULT_FAMILY = keccak256("DisputeReducedResultCommitted");
     bytes32 private constant WITHDRAWALS_FAMILY = keccak256("WithdrawalsUpdated");
     bytes32 private constant STORAGE_CLEARED_FAMILY = keccak256("ChannelStorageCleared");
@@ -111,21 +110,19 @@ contract LocalDiamond is StateChannelManagerProxy {
         stateSnapshots[channelId] = stateSnapshot;
     }
 
-    // Called by InboundMessagesProcessed event
-    function onInboundMessagesProcessed(
-        bytes32 channelId,
-        MessageBlock calldata messageBlock,
-        uint256 blockNumber,
-        uint256 logIndex
-    ) external {
-        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) {
-            return;
-        }
+    // Called by InboundMessagesProcessed event, log recovery and the membership
+    // refresh. Idempotent whatever the source: a stored block is a no-op. The
+    // inbound head and its deposit total only move forward, so an older block
+    // is stored without moving the head back.
+    function onInboundMessagesProcessed(bytes32 channelId, MessageBlock calldata messageBlock) external {
         bytes32 blockHash = keccak256(abi.encode(messageBlock));
-        ChannelBalance storage channelBalance = channelBalances[channelId];
+        if (_hasInboundMessageBlock(channelId, blockHash)) return;
         _persistInboundMessageBlock(channelId, blockHash, messageBlock);
+        ChannelBalance storage channelBalance = channelBalances[channelId];
+        if (messageBlock.blockHeight <= channelBalance.latestInboundMessageBlockHeight) return;
         channelBalance.latestInboundMessageBlockHash = blockHash;
         channelBalance.latestInboundMessageBlockHeight = messageBlock.blockHeight;
+        // the total belongs to the head block
         channelBalance.totalDeposits = messageBlock.totalBalance;
     }
 

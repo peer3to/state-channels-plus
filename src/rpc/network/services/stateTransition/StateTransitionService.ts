@@ -1,7 +1,10 @@
 import StateTransitionRpcMethods from "./StateTransitionRpcMethods";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
-import { HandshakeCompletedGuard } from "@/rpc/network/guards";
+import {
+    HandshakeCompletedGuard,
+    WaitForSyncStatusGuard
+} from "@/rpc/network/guards";
 import { NetworkTransport } from "@/transport";
 
 class StateTransitionService extends ANetworkRpcService<StateTransitionRpcMethods> {
@@ -12,7 +15,11 @@ class StateTransitionService extends ANetworkRpcService<StateTransitionRpcMethod
                 component: "StateTransitionService"
             })
         );
-        this.guards = [new HandshakeCompletedGuard(this)];
+        // live blocks wait for the initial sync (see WaitForSyncStatusGuard)
+        this.guards = [
+            new HandshakeCompletedGuard(this),
+            new WaitForSyncStatusGuard(this)
+        ];
     }
     public createRPCMethods(
         transport: NetworkTransport

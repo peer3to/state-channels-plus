@@ -10,6 +10,7 @@
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)
 
 ## UNIT-TEST-ROOT-CREATION-1-1NWN3V
 
@@ -52,3 +53,7 @@ Parent-owned root creation
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33` — A parentless worker whose thread exits during a real call rejects that call and closes its handle while its hidden parent is not yet disposing; disposing the handle afterwards leaves the hidden parent disposing with no connections
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P34` — A parentless worker created with a caller logger reports its errors through a child of that logger into the caller's store; disposing the handle leaves the caller's logger undisposed and usable
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P35` — A parentless worker whose thread exits while its handle has an error listener delivers exactly the exit cause to that listener, rejects the pending call with it, and the hidden parent does not log it
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P36` — A worker root created after the creating thread changed its config already holds that config when its root class is constructed; no root installs a config itself
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P37` — A parentless worker root that installs no config itself uploads a line it logged to the endpoint that only the creating thread's config names, under the thread name its entry passed to `startRootWorker`
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P38` — A worker root whose entry passes no thread name to `startRootWorker` logs and uploads under `main`
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P39` — In a browser worker, `startRootWorker` with a thread name gives the root's logger that name, and without one gives it `main`

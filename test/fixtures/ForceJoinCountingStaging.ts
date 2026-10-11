@@ -1,9 +1,57 @@
-// @spec-test-coverage-ignore: force-join block-bound staging shared by the force-join unit and E2E cases
+// @spec-test-coverage-ignore: force-join and join-check staging shared by the join unit and E2E cases
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
+import type StateManager from "@/stateManager/StateManager";
+import type { JoinRecord } from "@/storage/ForceJoinStorage";
+import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { waitFor } from "@test/utils/waitFor";
 
 type HarnessPeer = ReturnType<MathPeerTestHarness["getPeer"]>;
+
+/** This runtime's tracked join, as `storage.forceJoin` holds it. */
+export type TrackedJoin = JoinRecord;
+
+/** The peer's tracked join, read on its host; null when no join is tracked. */
+export async function readTrackedJoin(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<TrackedJoin | null> {
+    return await h.execOnHost(peer, (sm) => {
+        return sm.storage.forceJoin.getJoin() ?? null;
+    });
+}
+
+/** Whether the peer's submitted join is not observed on chain yet and can still land. */
+export async function isJoinPending(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<boolean> {
+    const join = await readTrackedJoin(h, peer);
+    return join !== null && join.countingStartsAt === undefined;
+}
+
+/** Whether a join check of the peer waits behind the one running (`ChannelJoinService`'s queued check). */
+export async function isJoinCheckQueued(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<boolean> {
+    return await h.execOnHost(
+        peer,
+        (sm) => Reflect.get(sm.channelJoinService, "isCheckQueued") === true
+    );
+}
+
+/** Until the peer's queued join checks (`ChannelJoinService`'s serialized `checks`) have settled. */
+export async function waitForJoinChecks(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<void> {
+    await h.execOnHost(peer, async (sm) => {
+        await Reflect.get(sm.channelJoinService, "checks");
+        return true;
+    });
+}
 
 /**
  * Wait until the pending joiner observed its own join on chain and its own
@@ -17,10 +65,8 @@ export async function waitForceJoinCountingStarted(
     const joiner = h.getPeer(joinerIndex);
     let countingStartsAt: number | null = null;
     await waitFor(async () => {
-        countingStartsAt = await h.execOnHost(
-            joiner,
-            async (sm) => sm.storage.forceJoin.getCountingStartsAt() ?? null
-        );
+        countingStartsAt =
+            (await readTrackedJoin(h, joiner))?.countingStartsAt ?? null;
         return countingStartsAt !== null;
     }, h.event.protocolEventTimeoutMs());
     await waitFor(
@@ -47,11 +93,8 @@ export async function authorUntilForceJoinCountingStarted(
     const joiner = h.getPeer(joinerIndex);
     await h.transition.keepAuthoringUntil({
         until: async () =>
-            (await h.execOnHost(
-                joiner,
-                async (sm) =>
-                    sm.storage.forceJoin.getCountingFromHeight() !== undefined
-            )) === true,
+            (await readTrackedJoin(h, joiner))?.countingFromHeight !==
+            undefined,
         waitForPeers: [...writers, joinerIndex],
         maximumBlocks: 20
     });
@@ -64,12 +107,12 @@ export async function readForceJoinBounds(
     joiner: HarnessPeer
 ) {
     return await h.execOnHost(joiner, async (sm) => {
-        const forceJoin = sm.storage.forceJoin;
+        const join = sm.storage.forceJoin.getJoin();
         return {
-            submissionHeight: forceJoin.getJoinSubmissionBlockHeight() ?? null,
-            countingStartsAt: forceJoin.getCountingStartsAt() ?? null,
-            countingFromHeight: forceJoin.getCountingFromHeight() ?? null,
-            disputeStarted: forceJoin.hasDisputeStarted(),
+            submissionHeight: join?.submissionHeight ?? null,
+            countingStartsAt: join?.countingStartsAt ?? null,
+            countingFromHeight: join?.countingFromHeight ?? null,
+            disputeStarted: join?.isDisputeStarted ?? false,
             latestBlockHeight:
                 sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1,
             timeConfig: { ...sm.timeConfig },
@@ -81,25 +124,23 @@ export async function readForceJoinBounds(
 
 /**
  * The joiner's force-join check run on its latest committed block, as its
- * commit runs it; returns whether the dispute started and the join marker
- * is still held.
+ * commit runs it, settled; returns whether the dispute started and the
+ * join is still tracked.
  */
-async function checkForceJoinOnLatestBlock(
+export async function checkForceJoinOnLatestBlock(
     h: MathPeerTestHarness,
     joiner: HarnessPeer
 ) {
     return await h.execOnHost(joiner, async (sm) => {
-        const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
-        const participants = await sm.diamondStateMachine.getParticipants();
-        await sm.membershipService.maybeInitiateForceJoinDispute(
-            block,
-            participants
+        const service = sm.channelJoinService;
+        service.onBlockCommitted(
+            sm.storage.blocks.getLatestBlock(sm.forkId)!.height
         );
+        await Reflect.get(service, "checks");
+        const join = sm.storage.forceJoin.getJoin();
         return {
-            disputeStarted: sm.storage.forceJoin.hasDisputeStarted(),
-            markerRetained:
-                sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                undefined
+            disputeStarted: join?.isDisputeStarted ?? false,
+            markerRetained: join !== undefined
         };
     });
 }
@@ -222,47 +263,110 @@ export async function runForceJoinBlockBound(
     }
 }
 
-/** Hold delivery of the first real membership read; later reads retain their normal behavior. */
+/**
+ * Hold delivery of the first real membership read of one join check after it
+ * answered; later reads retain their normal behavior.
+ */
 export type HeldForceJoinMembershipRead = {
     entered: () => Promise<boolean>;
+    /** The held read's real answer; null until a read is held. */
+    answer: () => Promise<boolean | null>;
     release: () => Promise<boolean>;
 };
 
+/**
+ * `check`: the join check whose chain-membership read is held, the
+ * force-join dispute (the default) or the join expiry check
+ * (`checkJoinLanded`). The read is held only while that check runs.
+ *
+ * `releaseOnDispose`: the runtime's disposal releases the held read right
+ * after it marks the runtime disposed, so the held check continues into the
+ * disposed runtime.
+ */
 export async function holdForceJoinMembershipRead(
     h: MathPeerTestHarness,
-    joinerIndex: number
+    joinerIndex: number,
+    options: {
+        check?: "forceJoinDispute" | "joinExpiry";
+        releaseOnDispose?: boolean;
+    } = {}
 ): Promise<HeldForceJoinMembershipRead> {
     const peer = h.getPeer(joinerIndex);
-    await h.execOnHost(peer, (sm) => {
-        const owner = sm.membershipService;
-        const original = owner.getOnChainParticipantUnion.bind(owner);
-        let release!: () => void;
-        const gate = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        let held = false;
-        Object.defineProperties(owner, {
-            forceJoinReadEntered: {
-                value: false,
-                writable: true,
-                configurable: true
-            },
-            releaseForceJoinRead: { value: release, configurable: true },
-            getOnChainParticipantUnion: {
-                configurable: true,
-                value: async () => {
-                    const answer = await original();
-                    if (!held) {
-                        held = true;
-                        Reflect.set(owner, "forceJoinReadEntered", true);
-                        await gate;
-                    }
-                    return answer;
-                }
+    await h.execOnHost(
+        peer,
+        (sm, hostArgs) => {
+            const owner = sm.membershipService;
+            const original = owner.isSignerOnChain.bind(owner);
+            const joinService = sm.channelJoinService;
+            const checkMethod = hostArgs.checkMethod;
+            const runCheck = Reflect.get(joinService, checkMethod) as (
+                ...args: unknown[]
+            ) => Promise<void>;
+            let release!: () => void;
+            const gate = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            let held = false;
+            // counts the running checks of the held kind: other callers'
+            // reads are not held
+            let runningChecks = 0;
+            Reflect.set(joinService, checkMethod, (...args: unknown[]) => {
+                runningChecks += 1;
+                const check = runCheck.apply(joinService, args);
+                return check.finally(() => {
+                    runningChecks -= 1;
+                });
+            });
+            if (hostArgs.releaseOnDispose) {
+                const stop = sm.stop.bind(sm);
+                Reflect.set(sm, "stop", () => {
+                    const stopping = stop();
+                    release();
+                    return stopping;
+                });
             }
-        });
-        return true;
-    });
+            Object.defineProperties(owner, {
+                forceJoinReadEntered: {
+                    value: false,
+                    writable: true,
+                    configurable: true
+                },
+                forceJoinReadAnswer: {
+                    value: null,
+                    writable: true,
+                    configurable: true
+                },
+                releaseForceJoinRead: { value: release, configurable: true },
+                restoreForceJoinRead: {
+                    configurable: true,
+                    value: () =>
+                        Reflect.deleteProperty(joinService, checkMethod)
+                },
+                isSignerOnChain: {
+                    configurable: true,
+                    value: async () => {
+                        const isHeld = runningChecks > 0 && !held;
+                        if (isHeld) held = true;
+                        const answer = await original();
+                        if (isHeld) {
+                            Reflect.set(owner, "forceJoinReadAnswer", answer);
+                            Reflect.set(owner, "forceJoinReadEntered", true);
+                            await gate;
+                        }
+                        return answer;
+                    }
+                }
+            });
+            return true;
+        },
+        {
+            checkMethod:
+                options.check === "joinExpiry"
+                    ? "checkJoinLanded"
+                    : "startForceJoinDispute",
+            releaseOnDispose: options.releaseOnDispose ?? false
+        }
+    );
     return {
         entered: () =>
             h.execOnHost(
@@ -273,21 +377,25 @@ export async function holdForceJoinMembershipRead(
                         "forceJoinReadEntered"
                     ) === true
             ),
+        answer: () =>
+            h.execOnHost(
+                peer,
+                (sm) =>
+                    (Reflect.get(sm.membershipService, "forceJoinReadAnswer") ??
+                        null) as boolean | null
+            ),
         release: () =>
             h.execOnHost(peer, (sm) => {
                 Reflect.get(sm.membershipService, "releaseForceJoinRead")?.();
-                Reflect.deleteProperty(
-                    sm.membershipService,
-                    "getOnChainParticipantUnion"
-                );
-                Reflect.deleteProperty(
-                    sm.membershipService,
-                    "forceJoinReadEntered"
-                );
-                Reflect.deleteProperty(
-                    sm.membershipService,
+                Reflect.get(sm.membershipService, "restoreForceJoinRead")?.();
+                for (const key of [
+                    "isSignerOnChain",
+                    "restoreForceJoinRead",
+                    "forceJoinReadEntered",
+                    "forceJoinReadAnswer",
                     "releaseForceJoinRead"
-                );
+                ])
+                    Reflect.deleteProperty(sm.membershipService, key);
                 return true;
             })
     };
@@ -337,4 +445,105 @@ export async function observeDisputeRequests(
                 return true;
             })
     };
+}
+
+/** Join timer names `ChannelJoinService` schedules. */
+export const JOIN_TIMER_NAMES = [
+    "join authorization expiry",
+    "force join deadline"
+] as const;
+
+/**
+ * Holds the participant-count read of the joiner's next force-join deadline
+ * setup after the read answered; the setup continues once released. It
+ * patches the retained inline host (see `runtimeEndpointFor`), so it can be
+ * released after the runtime disposed.
+ */
+export function holdForceJoinDeadlineParticipantRead(sm: StateManager) {
+    const joinService = sm.channelJoinService;
+    const diamond = sm.diamondStateMachine;
+    const armDeadline = Reflect.get(
+        joinService,
+        "armUntilForceJoinDeadline"
+    ) as (...args: unknown[]) => Promise<void>;
+    const readParticipants = diamond.getParticipants.bind(diamond);
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        open = resolve;
+    });
+    let isEntered = false;
+    let isDeadlineSetup = false;
+    Object.defineProperty(diamond, "getParticipants", {
+        configurable: true,
+        value: async () => {
+            const isHeld = isDeadlineSetup && !isEntered;
+            if (isHeld) isEntered = true;
+            const participants = await readParticipants();
+            if (isHeld) await gate;
+            return participants;
+        }
+    });
+    Reflect.set(
+        joinService,
+        "armUntilForceJoinDeadline",
+        (...args: unknown[]) => {
+            // the setup reads the participant count synchronously at its start
+            isDeadlineSetup = true;
+            try {
+                return armDeadline.apply(joinService, args);
+            } finally {
+                isDeadlineSetup = false;
+            }
+        }
+    );
+    return {
+        isEntered: () => isEntered,
+        release: () => {
+            Reflect.deleteProperty(diamond, "getParticipants");
+            Reflect.deleteProperty(joinService, "armUntilForceJoinDeadline");
+            open();
+        }
+    };
+}
+
+/** The joiner's host state right after it emitted `onLeftChannel`. */
+export type MembershipEndObservation = {
+    status: Status;
+    trackedJoin: TrackedJoin | null;
+    leaveState: LeaveChannelState | null;
+    /** Whether the last read of the installed local state before the event listed the signer; null without a read. */
+    isSignerInLocalState: boolean | null;
+};
+
+/**
+ * Record-only: on the retained inline host (see `runtimeEndpointFor`),
+ * records the answer of each real read of the installed local state's
+ * participants (every membership drop decides on one) and, once the runtime
+ * emits `onLeftChannel` and its synchronous subscribers ran, the host state.
+ * The record stays readable after the runtime disposes itself.
+ */
+export function observeMembershipEnd(sm: StateManager) {
+    const diamond = sm.diamondStateMachine;
+    const readParticipants = diamond.getParticipants.bind(diamond);
+    let isSignerInLocalState: boolean | null = null;
+    let atLeft: MembershipEndObservation | undefined;
+    Object.defineProperty(diamond, "getParticipants", {
+        configurable: true,
+        value: async () => {
+            const participants = await readParticipants();
+            isSignerInLocalState = participants.includes(sm.signerAddress);
+            return participants;
+        }
+    });
+    sm.events.on("p2pEventHooks", "onLeftChannel", () => {
+        queueMicrotask(() => {
+            atLeft ??= {
+                status: sm.status,
+                trackedJoin: sm.storage.forceJoin.getJoin() ?? null,
+                leaveState: sm.leaveChannelService.state ?? null,
+                isSignerInLocalState
+            };
+        });
+    });
+    return { atLeft: () => atLeft };
 }

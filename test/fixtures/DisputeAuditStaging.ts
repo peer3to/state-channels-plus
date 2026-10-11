@@ -14,6 +14,7 @@ import type {
     RecordedFraudProofApply,
     RefusedUploadKind
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { stageOutboundAroundAnchor } from "@test/fixtures/HistoricSyncStaging";
 import { syncSpectatorOnServedPayload } from "@test/fixtures/MilestoneSyncStaging";
 import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
@@ -664,17 +665,15 @@ export async function stagePendingAuditorBehindJoin(
 export async function activeView(h: MathPeerTestHarness, peerIndex: number) {
     const peer = h.getPeer(peerIndex);
     const forkId = h.activeForkId!;
+    const join = await readTrackedJoin(h, peer);
     return {
         nextBlockHeight: await h
             .control(peer)
             .query.getNextBlockHeight(forkId)
             .request(),
         status: await h.control(peer).query.getStatus().request(),
-        ...(await h.execOnHost(peer, async (sm) => ({
-            forceJoinCountingFromHeight:
-                sm.storage.forceJoin.getCountingFromHeight() ?? null,
-            forceJoinDisputeStarted: sm.storage.forceJoin.hasDisputeStarted()
-        })))
+        forceJoinCountingFromHeight: join?.countingFromHeight ?? null,
+        forceJoinDisputeStarted: join?.isDisputeStarted ?? false
     };
 }
 
@@ -969,7 +968,9 @@ async function joinLateAuditorAwayFrom(
 export async function stagePendingDisputerBehindLateAuditor(
     h: MathPeerTestHarness
 ) {
-    await h.lifecycle.start(3, 0);
+    // The disputer's join idles the authors longer than p2pTime +
+    // agreementTime under load, and the next block fails the time check.
+    await h.lifecycle.start(3, 0, { timeConfig: { p2pTime: 15 } });
     const forkId = h.activeForkId!;
     for (const index of [0, 1, 2]) {
         await h.rpcStub.suppressTimeoutCheck(index);

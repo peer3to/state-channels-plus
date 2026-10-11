@@ -32,16 +32,16 @@ Collector unanimity
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P10` — pending threshold member without a transport fails preflight
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P11` — returned snapshot and fork pins equal the collector's current chain view
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P13` — with `JOIN_CHANNEL_DEADLINE_SECONDS` configured, a prepared first-join confirmation carries `deadlineTimestamp` equal to the chain time read during preparation plus that lifetime
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P14` — a snapshot post that lands after the collector pinned the snapshot and before any countersigner reads its view leaves the collection unanimous; the returned pin is still the collector's
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ
 
 Responder validation chain
 
-- Setup: Request signatures with each binding/pin/authority violated and fully valid
-- Oracle: Only fully bound, currently pinned, in-threshold requests are signed over exact bytes; failures are penalty-free errors
+- Setup: Request signatures with each binding/authority violated and fully valid, and after the snapshot moved away from the joiner's pin
+- Oracle: Only fully bound, in-threshold requests are signed over exact bytes, whatever the current snapshot or fork; failures are penalty-free errors
 
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P1` — all triple-binding violations
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P2` — snapshot or fork pin mismatch
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P3` — exact and expired deadline boundaries
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P4` — non-member authority
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P5` — valid countersign byte-exactness
@@ -53,9 +53,8 @@ Responder validation chain
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P11` — wrong channel
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P12` — exact responder deadline accepted
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P13` — deadline after boundary rejected
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P14` — snapshot moves after pinning
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P15` — fork pin mismatch
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P16` — validation refusal keeps the session usable for retry
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P17` — a join is signed after the snapshot moved away from the joiner's pin
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-32-BQYC6G
 

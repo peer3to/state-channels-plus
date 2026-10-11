@@ -19,6 +19,6 @@
 
 Current: [`MathStateMachine.leaveChannel`](../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L134)
 is exactly this — a normal transition that removes the caller and records an `ExitChannel`
-outbound message. After a transition in which the local participant left, the SDK waits
-`agreementTime` and then either posts the finalized snapshot (everyone signed) or opens a
-self-removal dispute (`MembershipService.startMaybeExitOnChain`).
+outbound message. After a transition in which the local participant left, the SDK posts the latest state
+snapshot on each finalized block until it observes its removal; one leave watchdog bounds the
+exit with a self-removal dispute (`LeaveChannelService`).

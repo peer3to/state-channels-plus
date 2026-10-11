@@ -30,7 +30,7 @@ describe("SnapshotUpdateService target selection", function () {
         expect(prepared.expectedSnapshotHash).to.equal(finalPoint);
         // the finalized-only proof carries no tail
         expect(prepared.milestoneHeights).to.deep.equal([[1]]);
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         // the recorder sees the update transaction
         expect(sent).to.deep.equal([["updateStateSnapshotSameFork"]]);
         expect((await chainSnapshot(h)).hash).to.equal(finalPoint);
@@ -47,7 +47,7 @@ describe("SnapshotUpdateService target selection", function () {
         expect(prepared.callDataCount).to.equal(1);
         expect(prepared.expectedSnapshotHash).to.equal(latest);
         expect(prepared.milestoneHeights.at(-1)![0]).to.equal(2);
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         expect((await chainSnapshot(h)).hash).to.equal(latest);
     });
 
@@ -79,7 +79,7 @@ describe("SnapshotUpdateService target selection", function () {
         );
         expect(prepared.callDataCount).to.equal(0);
         expect(prepared.expectedSnapshotHash).to.equal(null);
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         expect(sent).to.deep.equal([]);
         expect((await chainSnapshot(h)).hash).to.equal(before.hash);
     });
@@ -96,7 +96,7 @@ describe("SnapshotUpdateService target selection", function () {
         expect(prepared.callDataCount).to.equal(1);
         expect(prepared.expectedSnapshotHash).to.equal(blockZero);
         expect(prepared.milestoneHeights).to.deep.equal([[0]]);
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         const after = await chainSnapshot(h);
         // block zero's snapshot, not the genesis, though both have height 0
         expect(after.hash).to.equal(blockZero);
@@ -124,7 +124,7 @@ describe("SnapshotUpdateService target selection", function () {
 
         expect(prepared.callDataCount).to.equal(0);
         expect(prepared.expectedSnapshotHash).to.equal(null);
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         expect(sent).to.deep.equal([]);
         expect((await chainSnapshot(h)).hash).to.equal(before.hash);
     });
@@ -151,7 +151,7 @@ describe("SnapshotUpdateService target selection", function () {
         expect(prepared.callDataCount).to.equal(0);
         expect(prepared.expectedSnapshotHash).to.equal(null);
         // nothing was sent: the wait resolves without a transaction
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         expect(sent).to.deep.equal([]);
         expect((await chainSnapshot(h)).hash).to.equal(anchor!.hash);
     });
@@ -182,7 +182,7 @@ describe("SnapshotUpdateService target selection", function () {
         );
         expect(prepared.expectedSnapshotHash).to.equal(finalPoint);
         expect(prepared.expectedSnapshotHash).to.not.equal(joinSnapshot);
-        expect(posted).to.equal(true);
+        expect(posted).to.equal("posted");
         expect((await chainSnapshot(h)).hash).to.equal(finalPoint);
     });
 });

@@ -303,9 +303,10 @@ export async function stageWindowBeforeTimeoutDeadline(h: MathPeerTestHarness) {
     const writer = h.peers.find((peer) => peer.address === writerAddress)!;
     const race = await h.rpcStub.holdReductionRace(observer.index);
     const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
-    await h.execOnHost(h.getPeer(1), (sm) =>
-        sm.membershipService.startSelfRemovalDispute(sm.forkId)
-    );
+    await h
+        .control(h.getPeer(1))
+        .dispute.startSelfRemovalDispute(forkId)
+        .request();
     await waitFor(
         async () =>
             await h.execOnHost(

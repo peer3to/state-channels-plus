@@ -1,7 +1,6 @@
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import AgreementManager from "../agreementManager";
-import type { BuiltStateProof } from "../agreementManager/AgreementManager";
-import { StateSnapshot } from "../models";
+import DisputeBuilder, { type ConstructDisputeResult } from "./DisputeBuilder";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import P2pEventHooks from "@/P2pEventHooks";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
@@ -11,14 +10,10 @@ import {
     DebugProxy,
     DetachedPromises,
     hash,
-    intersection,
     Codec,
     CustomEvmError,
     Type,
-    SignatureUtils,
     Mutex,
-    difference,
-    getChecksumAddress,
     isReasonlessRevert,
     Logger,
     multicallLastCallRevertData,
@@ -27,45 +22,28 @@ import {
 } from "@/utils";
 import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
-import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
-    DisputeConfirmationStruct,
     DisputeStruct,
-    DisputeAuditingDataStruct,
-    DisputeInputStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ethers, BytesLike } from "ethers";
-import { isEqual } from "lodash";
+import { ethers } from "ethers";
 
-export type ConstructDisputeResult = {
-    dispute: DisputeStruct;
-    disputeConfirmation: DisputeConfirmationStruct;
-    auditingData: DisputeAuditingDataStruct;
-    fraudProofsToApply: FraudProofStruct[];
-    observedOnChainSlashes: Address[];
-};
+export type { ConstructDisputeResult };
 
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
-    agreementManager: AgreementManager;
     stateChannelManagerContract: StateChannelManagerInterface;
     channelId: ChannelId;
     p2pEventHooks: P2pEventHooks;
     self = config.DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
-    diamondStateMachine: ADiamondStateMachine;
     mutex: Mutex;
     private eventSyncService: EventSyncService;
     private logger: Logger;
-    // Per disputed fork, whether our own dispute adds evidence to the first
-    // audited one (see shouldAddOwnEvidence).
-    private evidenceChecks = new Map<ForkId, Promise<boolean>>();
+    private readonly disputeBuilder: DisputeBuilder;
     // The manager's getStateTransitionReplayGas, read on the first replay send.
     private stateTransitionReplayGas?: Promise<bigint>;
 
@@ -85,15 +63,24 @@ class DisputeManager {
         this.channelId = channelId;
         this.signer = signer;
         this.signerAddress = signerAddress;
-        this.agreementManager = agreementManager;
         this.stateChannelManagerContract = stateChannelManagerContract;
         this.p2pEventHooks = p2pEventHooks;
         this.storage = storage;
-        this.diamondStateMachine = diamondStateMachine;
         this.eventSyncService = eventSyncService;
         this.logger = logger.child({ component: "DisputeManager" });
         this.mutex = new Mutex(
             this.logger.child({ component: "DisputeManager:Mutex" })
+        );
+        this.disputeBuilder = new DisputeBuilder(
+            channelId,
+            signer,
+            signerAddress,
+            agreementManager,
+            stateChannelManagerContract,
+            storage,
+            diamondStateMachine,
+            eventSyncService,
+            this.logger
         );
         return this.self;
     }
@@ -425,6 +412,7 @@ class DisputeManager {
         }
         return { lostEvidenceRace };
     }
+
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
         const attempt = this.dispute(forkId);
@@ -435,172 +423,17 @@ class DisputeManager {
         });
     }
 
-    /**
-     * Gas limit for a transaction that may replay a transition as fraud
-     * proof: the signer's estimate (with its headroom) plus the manager's
-     * replay requirement. The state machine refuses a replay unless its full
-     * budget is available when the replay starts, but an estimator that
-     * reports the gas a run spends (the peer3 hardhat fork) counts only what
-     * the transition used, never the unused budget that must be free, and the
-     * work before the replay (proof checks, setting the machine's state) can
-     * exceed any fixed margin. Adding the requirement to the estimate covers
-     * both. A searching estimator already includes the requirement, so there
-     * the limit asks for more than needed, which is safe. Callers estimate
-     * through getFunction, the contract's own method, so an estimate is never
-     * taken from a replaced or wrapped method property.
-     */
-    private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
-        let replayGas = this.stateTransitionReplayGas;
-        if (!replayGas) {
-            const read =
-                this.stateChannelManagerContract.getStateTransitionReplayGas();
-            replayGas = this.stateTransitionReplayGas = read;
-            // A failed read is retried on the next send.
-            read.catch(() => {
-                if (this.stateTransitionReplayGas === read)
-                    this.stateTransitionReplayGas = undefined;
-            });
-        }
-        const [estimated, required] = await Promise.all([estimate, replayGas]);
-        return estimated + required;
-    }
-
-    /**
-     * Estimate for a best-effort multicall. A searching estimator funds a call
-     * only up to the least gas at which it succeeds, and the best-effort call
-     * succeeds even when its last call runs out of gas. The all-or-nothing
-     * estimate funds the last call too; only a last call that already fails
-     * is estimated best effort, so the earlier calls still land. That
-     * estimate can leave the last call too little gas to revert with its
-     * reason, so `refusal` keeps the custom error the all-or-nothing estimate
-     * reverted with.
-     */
-    private async estimateBestEffortMulticall(
-        calls: string[]
-    ): Promise<{ gas: bigint; refusal?: CustomEvmError }> {
-        const contract = this.stateChannelManagerContract;
-        try {
-            return {
-                gas: await contract.getFunction("multicall").estimateGas(calls)
-            };
-        } catch (error) {
-            return {
-                gas: await contract
-                    .getFunction("multicallBestEffortLast")
-                    .estimateGas(calls),
-                refusal: tryDecodeCustomError(error) ?? undefined
-            };
-        }
-    }
-
-    /**
-     * The refusal of a mined best-effort multicall's last call, decoded as its
-     * revert would be, or undefined when the last call landed. A refusal
-     * that names no reason (no revert data, or the proxy's revert for a facet
-     * that reverted without data, see isReasonlessRevert) is
-     * `estimatedRefusal` when its estimate decoded one: the last call ran out
-     * of the gas the best-effort estimate left it. Otherwise it is fatal.
-     */
-    private async lastCallRefusal(
-        receipt: ethers.TransactionReceipt,
-        estimatedRefusal: CustomEvmError | undefined
-    ): Promise<Error | undefined> {
-        const revertData = await multicallLastCallRevertData(
-            this.stateChannelManagerContract,
-            receipt.logs
-        );
-        if (revertData === undefined) return undefined;
-        if (isReasonlessRevert(revertData))
-            return (
-                estimatedRefusal ??
-                new Error(`dispute upload reverted: ${revertData}`)
-            );
-        return (
-            tryDecodeCustomError({ data: revertData }) ??
-            new Error(`dispute upload reverted: ${revertData}`)
-        );
-    }
-
-    /**
-     * Whether this node should add its own dispute to the window of `forkId`.
-     * A node that already disputed the fork has committed its evidence. Otherwise
-     * the comparison runs once per disputed fork: reduction merges evidence
-     * monotonically, so a dispute of ours that adds nothing to the first audited
-     * dispute adds nothing once more disputes land. That holds only while the
-     * compared dispute stays in the window, so a kill drops the cached answer
-     * (forgetEvidenceComparison). Concurrent audits share the in-flight comparison; a
-     * failed one is not kept, and a positive answer stays positive so a failed
-     * upload is retried by the next audit.
-     */
+    /** Whether this node adds its own dispute to the window of `forkId`. */
     public shouldAddOwnEvidence(
         forkId: ForkId,
         dispute: DisputeStruct
     ): Promise<boolean> {
-        if (this.storage.disputes.didIDispute(forkId))
-            return Promise.resolve(false);
-        let check = this.evidenceChecks.get(forkId);
-        if (!check) {
-            const forget = () => {
-                if (this.evidenceChecks.get(forkId) === check)
-                    this.evidenceChecks.delete(forkId);
-            };
-            check = this.canConstructMoreEvidence(dispute).catch(
-                (error: unknown) => {
-                    forget();
-                    throw error;
-                }
-            );
-            this.evidenceChecks.set(forkId, check);
-        }
-        return check;
+        return this.disputeBuilder.canAddEvidence(forkId, dispute);
     }
 
-    /** Whether our own dispute adds evidence to `dispute`. */
-    private async canConstructMoreEvidence(
-        dispute: DisputeStruct
-    ): Promise<boolean> {
-        const ourDispute = (
-            await this.constructDispute(this.stateManager.forkId)
-        ).dispute;
-
-        this.logger.verbose("Constructed our own dispute for comparison", {
-            ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
-            theirDispute: LoggerUtils.getDisputeMetadata(dispute)
-        });
-
-        let hasMoreEvidence;
-        try {
-            // Compare reduced disputes to see if we have more evidence
-            const singleDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [dispute]
-                );
-            const combinedDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [ourDispute, dispute]
-                );
-            hasMoreEvidence = !isEqual(
-                singleDisputeReduction,
-                combinedDisputeReduction
-            );
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error("Error during dispute reduction comparison", {
-                errors: error,
-                custom
-            });
-            throw error;
-        }
-        this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
-        return hasMoreEvidence;
-    }
-
-    /**
-     * Drop the cached comparison for `forkId`: after a kill (the compared
-     * dispute may be gone) and once the fork's reduced result is committed.
-     */
-    public forgetEvidenceComparison(forkId: ForkId): void {
-        this.evidenceChecks.delete(forkId);
+    /** After a kill or a committed reduced result of `forkId`. */
+    public clearCache(forkId: ForkId): void {
+        this.disputeBuilder.clearCache(forkId);
     }
 
     public async killDispute(dispute: DisputeStruct): Promise<void> {
@@ -693,6 +526,113 @@ class DisputeManager {
         }
     }
 
+    /**
+     * This peer's dispute of `forkId` from its active view: the proof
+     * through its latest block (persistence-only replay never moves it).
+     * `expectedSlashes` are slashes a kill in the same multicall lands first.
+     */
+    public constructDispute(
+        forkId: ForkId,
+        options?: { expectedSlashes?: Address[] }
+    ): Promise<ConstructDisputeResult> {
+        return this.disputeBuilder.constructDispute(forkId, options);
+    }
+
+    public setChannelId(channelId: ChannelId) {
+        this.channelId = channelId;
+        this.disputeBuilder.channelId = channelId;
+    }
+
+    public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
+        this.p2pEventHooks = p2pEventHooks;
+    }
+
+    /**
+     * Gas limit for a transaction that may replay a transition as fraud
+     * proof: the signer's estimate (with its headroom) plus the manager's
+     * replay requirement. The state machine refuses a replay unless its full
+     * budget is available when the replay starts, but an estimator that
+     * reports the gas a run spends (the peer3 hardhat fork) counts only what
+     * the transition used, never the unused budget that must be free, and the
+     * work before the replay (proof checks, setting the machine's state) can
+     * exceed any fixed margin. Adding the requirement to the estimate covers
+     * both. A searching estimator already includes the requirement, so there
+     * the limit asks for more than needed, which is safe. Callers estimate
+     * through getFunction, the contract's own method, so an estimate is never
+     * taken from a replaced or wrapped method property.
+     */
+    private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
+        let replayGas = this.stateTransitionReplayGas;
+        if (!replayGas) {
+            const read =
+                this.stateChannelManagerContract.getStateTransitionReplayGas();
+            replayGas = this.stateTransitionReplayGas = read;
+            // A failed read is retried on the next send.
+            read.catch(() => {
+                if (this.stateTransitionReplayGas === read)
+                    this.stateTransitionReplayGas = undefined;
+            });
+        }
+        const [estimated, required] = await Promise.all([estimate, replayGas]);
+        return estimated + required;
+    }
+
+    /**
+     * Estimate for a best-effort multicall. A searching estimator funds a call
+     * only up to the least gas at which it succeeds, and the best-effort call
+     * succeeds even when its last call runs out of gas. The all-or-nothing
+     * estimate funds the last call too; only a last call that already fails
+     * is estimated best effort, so the earlier calls still land. That
+     * estimate can leave the last call too little gas to revert with its
+     * reason, so `refusal` keeps the custom error the all-or-nothing estimate
+     * reverted with.
+     */
+    private async estimateBestEffortMulticall(
+        calls: string[]
+    ): Promise<{ gas: bigint; refusal?: CustomEvmError }> {
+        const contract = this.stateChannelManagerContract;
+        try {
+            return {
+                gas: await contract.getFunction("multicall").estimateGas(calls)
+            };
+        } catch (error) {
+            return {
+                gas: await contract
+                    .getFunction("multicallBestEffortLast")
+                    .estimateGas(calls),
+                refusal: tryDecodeCustomError(error) ?? undefined
+            };
+        }
+    }
+
+    /**
+     * The refusal of a mined best-effort multicall's last call, decoded as its
+     * revert would be, or undefined when the last call landed. A refusal
+     * that names no reason (no revert data, or the proxy's revert for a facet
+     * that reverted without data, see isReasonlessRevert) is
+     * `estimatedRefusal` when its estimate decoded one: the last call ran out
+     * of the gas the best-effort estimate left it. Otherwise it is fatal.
+     */
+    private async lastCallRefusal(
+        receipt: ethers.TransactionReceipt,
+        estimatedRefusal: CustomEvmError | undefined
+    ): Promise<Error | undefined> {
+        const revertData = await multicallLastCallRevertData(
+            this.stateChannelManagerContract,
+            receipt.logs
+        );
+        if (revertData === undefined) return undefined;
+        if (isReasonlessRevert(revertData))
+            return (
+                estimatedRefusal ??
+                new Error(`dispute upload reverted: ${revertData}`)
+            );
+        return (
+            tryDecodeCustomError({ data: revertData }) ??
+            new Error(`dispute upload reverted: ${revertData}`)
+        );
+    }
+
     private getStoredDisputeFraudProof(dispute: DisputeStruct) {
         const disputeFraudProof =
             this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
@@ -701,339 +641,6 @@ class DisputeManager {
         if (!disputeFraudProof)
             throw new Error("No dispute fraud proof found for dispute");
         return disputeFraudProof;
-    }
-
-    /**
-     * This peer's dispute of `forkId` from its active view: the proof
-     * through its latest block (persistence-only replay never moves it).
-     * `expectedSlashes` are slashes a kill in the same multicall lands first.
-     */
-    public async constructDispute(
-        forkId: ForkId,
-        options?: { expectedSlashes?: Address[] }
-    ): Promise<ConstructDisputeResult> {
-        const latestBlockHeight =
-            this.storage.blocks.getNextBlockHeight(forkId) - 1;
-
-        // StateProof, LatestStateSnapshot
-        const [
-            builtStateProof,
-            latestStateSnapshot,
-            _onChainSlashes,
-            _participants
-        ] = await Promise.all([
-            this.agreementManager.buildStateProof(forkId, latestBlockHeight),
-            this.storage.getStateSnapshot({
-                forkId,
-                height: latestBlockHeight
-            }),
-            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                this.channelId
-            ),
-            this.storage.getParticipantsUnion({
-                forkId,
-                height: latestBlockHeight
-            })
-        ]).catch((error) => {
-            this.logger.error(
-                "Error constructing dispute - failed to get inputData",
-                {
-                    forkId,
-                    channelId: this.channelId,
-                    latestBlockHeight,
-                    error: errorMessage(error)
-                }
-            );
-            throw error;
-        });
-
-        // Construction uses the local observation. A refused conditional upload
-        // recovers missing chain slashes before normal reconstruction. The kill
-        // in the same multicall lands `expectedSlashes` first.
-        const slashedOnChain = new Set<Address>([
-            ..._onChainSlashes,
-            ...(options?.expectedSlashes ?? [])
-        ]);
-        const participants = new Set<Address>(_participants);
-
-        //sanity check
-        if (!latestStateSnapshot) {
-            throw new Error("createDispute - missing state snapshot");
-        }
-
-        const latestStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                latestStateSnapshot.stateMachineStateHash
-            );
-
-        if (!latestStateMachineState) {
-            throw new Error(
-                "createDispute - missing state machine state in storage for hash: " +
-                    latestStateSnapshot.stateMachineStateHash
-            );
-        }
-
-        // sanity/race condition check
-        if (
-            latestStateSnapshot.stateMachineStateHash !==
-            hash(latestStateMachineState)
-        ) {
-            throw new Error(
-                "createDispute - latestStateSnapshot.stateMachineStateHash !== hash(latestStateMachineState)"
-            );
-        }
-
-        const fraudProofsToApply: FraudProofStruct[] = [];
-        for (const participant of difference(participants, slashedOnChain)) {
-            const fraudProof =
-                this.storage.fraudProofs.getFraudProofForParticipant(
-                    participant
-                );
-            if (fraudProof) {
-                fraudProofsToApply.push(fraudProof);
-                slashedOnChain.add(participant);
-            }
-        }
-        // Only participants of the latest state may be listed: a slash of
-        // anyone else, e.g. a participant an ancestor fork already removed,
-        // makes the dispute provably invalid (InvalidDisputeReason).
-        const onChainSlashes = intersection(
-            slashedOnChain,
-            new Set<Address>(
-                latestStateSnapshot.snapshotData.participants.map(
-                    getChecksumAddress
-                )
-            )
-        );
-
-        // timeout: it links only at the height right after the proof's latest
-        // block. A lower one names a height this node passed (block accepted
-        // or later state installed) -> drop it. A higher one was stored after
-        // a later block landed during construction -> keep it, not attached.
-        const storedTimeout = this.storage.timeout.getTimeout(forkId);
-        const nextHeight = BigInt(latestBlockHeight + 1);
-        if (storedTimeout && BigInt(storedTimeout.blockHeight) < nextHeight)
-            this.storage.timeout.removeTimeout(forkId);
-        const timeoutStruct =
-            storedTimeout && BigInt(storedTimeout.blockHeight) === nextHeight
-                ? storedTimeout
-                : this.getEmptyTimeoutStruct();
-
-        // latestStateSnapshot proves its own inbound head -> naming anything
-        // below it is objective fraud against ourselves
-        const inboundHead = this.storage.inboundMessages.headNotBehind(
-            latestStateSnapshot.latestInboundMessageBlockHash,
-            latestStateSnapshot.latestInboundMessageBlockHeight
-        );
-
-        // the bound every auditor recomputes with
-        const auditingData = await this.buildAuditingData(
-            forkId,
-            builtStateProof,
-            latestStateSnapshot,
-            inboundHead.hash
-        );
-        const stateProof = builtStateProof.stateProof;
-
-        const disputeAuditingDataHash = hash(
-            Codec.encode(auditingData, Type.DisputeAuditingData)
-        );
-
-        // disputer
-        const disputer = this.signerAddress;
-
-        // selfRemoval
-        const selfRemoval = this.storage.forceExit.getForceExit();
-
-        const disputeInput: DisputeInputStruct = {
-            channelId: this.channelId,
-            forkId: forkId,
-            latestStateSnapshotHash: latestStateSnapshot.hash,
-            stateProof: stateProof,
-            onChainSlashes: Array.from(onChainSlashes),
-            disputeAuditingDataHash: disputeAuditingDataHash,
-            disputer: disputer,
-            timeout: timeoutStruct,
-            selfRemoval: selfRemoval,
-            requireExistingDisputeWindow: false,
-            latestInboundMessageBlockHash: inboundHead.hash,
-            lastInboundMessageBlockHeight: inboundHead.height
-        };
-        disputeInput.requireExistingDisputeWindow =
-            !(await this.diamondStateMachine.localDiamondContract.hasDisputeReason(
-                disputeInput,
-                auditingData.latestStateSnapshot
-            ));
-        let outputSnapshotData: SnapshotDataStruct;
-        try {
-            outputSnapshotData =
-                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
-                    disputeInput,
-                    auditingData.latestStateSnapshot,
-                    latestStateMachineState,
-                    auditingData.inboundMessageBlocks
-                );
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error("Error computing dispute output snapshot data", {
-                forkId,
-                channelId: this.channelId,
-                disputeInput: LoggerUtils.getDisputeInputMetadata(disputeInput),
-                auditingData: LoggerUtils.getAuditingMetadata(auditingData),
-                custom,
-                error
-            });
-
-            throw error;
-        }
-
-        const outputSnapshotDataHash = hash(
-            Codec.encode(outputSnapshotData, Type.SnapshotData)
-        );
-
-        const draftDispute: DisputeStruct = {
-            input: disputeInput,
-            outputSnapshotDataHash: outputSnapshotDataHash,
-            postedAuditingData: false
-        };
-
-        // Posting the auditing data is never wrong, only costlier, so a local
-        // "must post" posts it without asking the chain. A local "may omit"
-        // leaves it out, which is slashable if the lagging mirror was wrong, so
-        // the chain confirms that answer.
-        const isOmissionAllowed = await preferLocal(
-            () =>
-                this.diamondStateMachine.localDiamondContract.isAuditingDataOmissionAllowed.staticCall(
-                    draftDispute
-                ),
-            () =>
-                this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
-                    draftDispute
-                ),
-            (isAllowed) => !isAllowed
-        );
-        const postedAuditingData = !isOmissionAllowed;
-
-        const dispute: DisputeStruct = {
-            ...draftDispute,
-            postedAuditingData
-        };
-
-        // ****** TODO - run auditing as a sanity check *******
-
-        // TODO - Dispute model (like block), so it's easy doing operations on it
-
-        const signedDispute = await SignatureUtils.signDispute(
-            dispute,
-            this.signer
-        );
-        const disputeConfirmation: DisputeConfirmationStruct = {
-            signedDispute: {
-                encodedDispute: signedDispute.encoded,
-                signature: signedDispute.signature as BytesLike
-            },
-            signatures: []
-        };
-        this.logger.debug("CONSTRUCTED DISPUTE:", {
-            dispute: LoggerUtils.getDisputeMetadata(dispute),
-            auditingData: auditingData
-                ? LoggerUtils.getAuditingMetadata(auditingData)
-                : undefined
-        });
-        return {
-            dispute,
-            disputeConfirmation,
-            auditingData,
-            fraudProofsToApply,
-            observedOnChainSlashes: Array.from(_onChainSlashes)
-        };
-    }
-
-    /**
-     * The auditing data of our own proof: the walk evidence, the latest
-     * state, the state of the proof's final point, the inbound run, and the
-     * outbound run above the on-chain anchor. Missing local data throws: this
-     * peer holds what it signed.
-     */
-    private async buildAuditingData(
-        forkId: ForkId,
-        built: BuiltStateProof,
-        latestStateSnapshot: StateSnapshot,
-        disputeLatestInboundMessageBlockHash: Hash
-    ): Promise<DisputeAuditingDataStruct> {
-        const latestFinalizedStateStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                built.finalizedSnapshot.stateMachineStateHash
-            );
-        if (!latestFinalizedStateStateMachineState)
-            throw new Error(
-                `buildAuditingData - missing the state of the finalized snapshot ${built.finalizedSnapshot.hash}`
-            );
-        const inboundMessageBlocks =
-            await this.eventSyncService.loadSynchronizedInboundRun(
-                disputeLatestInboundMessageBlockHash,
-                latestStateSnapshot.snapshotData
-                    .latestInboundMessageBlockHash as Hash,
-                latestStateSnapshot.timestamp,
-                this.channelId
-            );
-        if (!inboundMessageBlocks)
-            throw new Error(
-                "buildAuditingData - the inbound run is unavailable after event recovery"
-            );
-        // only the run above the chain's anchor serves a later snapshot post;
-        // the anchor only moves forward, so this run keeps covering it.
-        // An anchor at or above the latest head leaves nothing to carry.
-        const onChainSnapshot = StateSnapshot.from(
-            await this.stateChannelManagerContract.getStateSnapshot(
-                this.channelId
-            )
-        );
-        const outboundMessageBlocks =
-            onChainSnapshot.latestOutboundMessageBlockHeight >=
-            latestStateSnapshot.latestOutboundMessageBlockHeight
-                ? []
-                : this.storage.outboundMessages.getMessageBlocksInRange({
-                      upperBlockHash:
-                          latestStateSnapshot.latestOutboundMessageBlockHash,
-                      lowerBlockHash:
-                          onChainSnapshot.latestOutboundMessageBlockHash
-                  });
-
-        const auditingData: DisputeAuditingDataStruct = {
-            genesisStateSnapshotData: built.evidence.genesisStateSnapshotData,
-            latestStateSnapshot: latestStateSnapshot.toStruct(),
-            latestFinalizedStateStateMachineState,
-            milestoneSnapshots: built.evidence.milestoneSnapshots,
-            inboundMessageBlocks,
-            outboundMessageBlocks
-        };
-        this.logger.verbose("Constructed auditing data for dispute", {
-            forkId,
-            channelId: this.channelId,
-            auditingData: LoggerUtils.getAuditingMetadata(auditingData)
-        });
-        return auditingData;
-    }
-
-    private getEmptyTimeoutStruct(): TimeoutStruct {
-        return {
-            participant: ethers.ZeroAddress,
-            blockHeight: 0,
-            minTimeStamp: 0,
-            isForced: false,
-            previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: "0x"
-        };
-    }
-
-    public setChannelId(channelId: ChannelId) {
-        this.channelId = channelId;
-    }
-
-    public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
-        this.p2pEventHooks = p2pEventHooks;
     }
 }
 

@@ -14,13 +14,10 @@ describe("StateManager timeout", function () {
         // The opener needs its own reason before a dispute window exists. It
         // uploads through its SDK, so it holds its own dispute marker and does
         // not dispute again on its own commitment.
-        await h.execOnHost(
-            h.getPeer(0),
-            async (sm, { forkId }) => {
-                await sm.membershipService.startSelfRemovalDispute(forkId);
-            },
-            { forkId: h.activeForkId! }
-        );
+        await h
+            .control(h.getPeer(0))
+            .dispute.startSelfRemovalDispute(h.activeForkId!)
+            .request();
         await h.assert.dispute.committedWait({
             peersIndices: [0],
             expectedCount: 1

@@ -1527,15 +1527,11 @@ describe("E2E: lobby matching", function () {
         const topic = ethers.id("e2e-lobby-leave-during-handoff");
         const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
         try {
-            // no matching is active to cancel, so the leave reports false
-            for (const peer of h.peers) {
-                expect(
-                    await h.control(peer).network.leaveLobby(topic).request()
-                ).to.equal(false);
-            }
-            await release();
             // both joins settle on their failed negotiation without a rematch,
-            // so neither peer opens a channel
+            // so both leaves report true and neither peer opens a channel
+            expect(
+                await h.network.leaveLobbyAtHeldHandoff([0, 1], topic, release)
+            ).to.deep.equal([true, true]);
             await TestSession.settleDetached();
             for (const peer of h.peers) {
                 expect(

@@ -84,8 +84,8 @@ which is mutexed and idempotent per fork (`didIDispute` flag):
 | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)                                             | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
 | Participant timeout                                                                                             | [`ParticipantTimeoutService.tryTimeoutParticipant`](../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L54) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
-| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                                                             | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
-| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                                                               | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
+| Voluntary self-removal (exit without N/N signatures)                                                            | `LeaveChannelService` watchdog, or at once on an observed dispute                                                                             | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
+| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `ChannelJoinService` block bound or deadline                                                                                                  | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
 | On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                                                                 | `onChainSlashes`                                                                                                                                          |
 | Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                                                                | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
 | Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                                                           | own view of the fork                                                                                                                                      |
@@ -255,7 +255,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   positive answer is kept so a failed upload is retried. A kill drops the
   fork's comparison (the compared dispute may be the one killed), and a
   committed reduced result prunes it (`EventHandler` calls
-  `DisputeManager.forgetEvidenceComparison` for both). The memo only gates joining another
+  `DisputeManager.clearCache` for both). The memo only gates joining another
   peer's dispute; new own evidence (fraud, timeout, leave) is disputed through
   its own paths (§3.1). Reduction is scheduled at `killPeriodEnd` in every
   case.
@@ -316,7 +316,7 @@ is still a participant.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
 ([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L696)):
-drop the fork's cached evidence comparison (`DisputeManager.forgetEvidenceComparison`), mirror
+drop the fork's cached evidence comparison (`DisputeManager.clearCache`), mirror
 into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute the reduction on `SCM`
 (`ReductionManager.computeReduction`, the chain's reducer; the LocalDiamond has no sync guarantee,

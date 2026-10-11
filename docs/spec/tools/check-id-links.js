@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -60,6 +61,15 @@ const LEGACY_ID_RE = new RegExp(
     "g"
 );
 
+// --write formats what it wrote with the pre-commit prettier: prettier escapes
+// a word-initial "_" in a written label, so without this every commit and
+// every later --write would rewrite each other's labels.
+const written = new Set();
+function writeDocument(document, markdown) {
+    fs.writeFileSync(document, markdown);
+    written.add(document);
+}
+
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -96,7 +106,7 @@ function normalizeIdMarkup() {
                 (_, id) => `\`${id}\``
             );
         } while (markdown !== previous);
-        if (markdown !== before) fs.writeFileSync(document, markdown);
+        if (markdown !== before) writeDocument(document, markdown);
     }
 }
 
@@ -138,7 +148,7 @@ function addCanonicalAnchors(registry) {
             });
         }
         const after = lines.join("\n");
-        if (after !== before) fs.writeFileSync(document, after);
+        if (after !== before) writeDocument(document, after);
     }
 }
 
@@ -308,7 +318,7 @@ function linkify(registry, glossary = new Map()) {
             return line;
         });
         markdown = lines.join("\n");
-        if (markdown !== before) fs.writeFileSync(document, markdown);
+        if (markdown !== before) writeDocument(document, markdown);
     }
 }
 
@@ -521,14 +531,14 @@ function applyTestStatus(registry, tested, apply) {
               .replace(EXACT_ID_LINK_RE, (_, id) => `\`${id}\``)
         : "";
     if (current !== expected) {
-        if (apply) fs.writeFileSync(REQUIREMENT_STATUS, expected);
+        if (apply) writeDocument(REQUIREMENT_STATUS, expected);
         else stale.push(specRelative(REQUIREMENT_STATUS));
     }
     for (const document of maintainedDocuments()) {
         const before = fs.readFileSync(document, "utf8");
         const after = withCheckboxes(before, document, registry, tested);
         if (after === before) continue;
-        if (apply) fs.writeFileSync(document, after);
+        if (apply) writeDocument(document, after);
         else stale.push(specRelative(document));
     }
     return stale;
@@ -541,6 +551,12 @@ if (write) {
     registry = buildIdRegistry();
     applyTestStatus(registry, testMappings(registry).tested, true);
     linkify(registry, buildGlossary(registry));
+    if (written.size > 0)
+        execFileSync(
+            path.join(REPO_ROOT, "node_modules", ".bin", "prettier"),
+            ["--write", "--log-level", "warn", ...written],
+            { stdio: "inherit" }
+        );
 }
 
 const result = check();

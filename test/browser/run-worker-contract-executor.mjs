@@ -287,6 +287,31 @@ try {
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 
+    await test("browser logger renders one thread label for unnamed, main, sdk, vm and prover lines", async () => {
+        const rendered = await runSmoke("runBrowserLoggerThreadLabelSmoke");
+        assert.deepEqual(
+            rendered.map(({ threadName, matches }) => [threadName, matches]),
+            [
+                [null, true],
+                ["main", true],
+                ["sdk", true],
+                ["vm", true],
+                ["prover", true]
+            ],
+            JSON.stringify(rendered)
+        );
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker root starts with the creating page's config and the thread name its entry gives", async () => {
+        assert.deepEqual(await runSmoke("runWorkerRootBootstrapBrowserSmoke"), {
+            bootstrapped: true,
+            named: "prover",
+            unnamed: "main"
+        });
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
     await test("browser worker executes a contract", async () => {
         const result = {
             contractExecutor: await runSmoke(

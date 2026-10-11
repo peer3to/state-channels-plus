@@ -35,11 +35,13 @@ export type EvidenceComparisonRecording = {
     comparisons: () => Promise<RecordedEvidenceComparison[]>;
     /** The `shouldAddOwnEvidence` calls, in call order. */
     audits: () => Promise<RecordedEvidenceAudit[]>;
+    /** The `constructDispute` calls outside a comparison (builds of `dispute`). */
+    disputeBuilds: () => Promise<number>;
     /** Wait until `count` comparisons have settled. */
     waitUntilSettled: (count: number, timeoutMs?: number) => Promise<void>;
     /** Wait until `count` audits have asked for a comparison. */
     waitUntilAudited: (count: number, timeoutMs?: number) => Promise<void>;
-    /** Wait until the `hold` fault parks a comparison. */
+    /** Wait until the `hold` or `holdBuilt` fault parks a comparison. */
     waitUntilHeld: (timeoutMs?: number) => Promise<void>;
     /** Continue the held comparison for real, or fail it. */
     releaseHeld: (release: HeldEvidenceComparisonRelease) => Promise<void>;
@@ -300,12 +302,13 @@ export class RpcStubActions<
 
     async holdSpectateResponses(
         peerIndex: number,
-        fail = false
+        fail = false,
+        beforeAnswer = false
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.holdSpectateResponses(fail)
+            .stub.holdSpectateResponses(fail, beforeAnswer)
             .request();
         return async () =>
             await this.harness
@@ -362,14 +365,28 @@ export class RpcStubActions<
                 .request();
     }
 
+    /** Lets the peer's held membership submissions run and keeps holding later ones. */
+    async releaseOneMembershipSubmission(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.releaseOneMembershipSubmission()
+            .request();
+    }
+
+    /**
+     * Fail the peer's `kind` submissions with a mined, failed receipt (with
+     * `once` only the first; later ones run for real). Each submission is
+     * counted in `getHeldMembershipReceiptCount`. Returns the restore.
+     */
     async failMembershipReceipt(
         peerIndex: number,
-        kind: HeldMembershipReceiptKind
+        kind: HeldMembershipReceiptKind,
+        options: { once?: boolean } = {}
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.failMembershipReceipt(kind)
+            .stub.failMembershipReceipt(kind, options.once ?? false)
             .request();
         return async () =>
             await this.harness
@@ -709,12 +726,32 @@ export class RpcStubActions<
      * recovery query can succeed. Subscribed deliveries are unaffected - they
      * arrive over `eth_subscribe`, never through `getLogs`.
      */
-    async failChainLogQueries(peerIndex: number): Promise<{
+    /**
+     * Record the manager function of every chain call (eth_call) a peer
+     * makes; each call still reaches the chain. A multicall lists
+     * "multicall", then "multicall:<name>" per inner call.
+     */
+    async recordChainCalls(peerIndex: number): Promise<{
+        calls: () => Promise<string[]>;
         restore: () => Promise<void>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubFailChainLogQueries().request();
-        this.logger.debug(`Failing chain log queries on peer ${peerIndex}`);
+        await ctl().recordChainCalls().request();
+        return {
+            calls: async () => await ctl().getRecordedChainCalls().request(),
+            restore: async () => {
+                await ctl().restoreChainCalls().request();
+            }
+        };
+    }
+
+    /** A peer's getLogs answer no logs, as a node that has not indexed them. */
+    async hideChainLogs(peerIndex: number): Promise<{
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHideChainLogs().request();
+        this.logger.debug(`Hiding chain logs from peer ${peerIndex}`);
         return {
             restore: async () => {
                 await ctl().restoreChainLogQueries().request();
@@ -1170,13 +1207,16 @@ export class RpcStubActions<
      * the post was prepared against the chain; `waitUntilHeld` resolves once
      * a post is parked there.
      */
-    async holdSnapshotPostSend(peerIndex: number): Promise<{
+    async holdSnapshotPostSend(
+        peerIndex: number,
+        options?: { adoptionOnly?: boolean }
+    ): Promise<{
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
         /** Resolves with the first parked send's revert name, or null when it was mined or nothing was parked. */
         release: () => Promise<string | null>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubHoldSnapshotPostSend().request();
+        await ctl().stubHoldSnapshotPostSend(options?.adoptionOnly).request();
         return {
             waitUntilHeld: (
                 timeoutMs = this.harness.event.protocolEventTimeoutMs({
@@ -1515,6 +1555,7 @@ export class RpcStubActions<
         return {
             comparisons,
             audits,
+            disputeBuilds: async () => (await recorded()).disputeBuilds,
             waitUntilSettled: (
                 count,
                 timeoutMs = this.harness.event.protocolEventTimeoutMs()

@@ -53,8 +53,8 @@ Reconnect catch-up
 
 Ordering and recovery
 
-- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts
-- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips
+- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied
+- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers; a failed recovery read or a local handler failure on a recovered log rejects the recovery for every caller
 
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P1` — ordering
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P2` — gap recovery within attempts
@@ -66,7 +66,15 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P8` — authoritative slash recovery rejects a missing chain head
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P9` — authoritative slash recovery rejects exhausted chain log queries
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P10` — a missed JOIN is recovered through EventHandler and appears in both fast eligibility and LocalDiamond before network-copy validation
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P11` — a dispute recovery across several `LOG_QUERY_MAX_BLOCKS` windows whose second window fails once recovers on the next attempt and dispatches each dispute once
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P12` — membership synchronization applies the whole pending inbound run; a block the local diamond already applied from its live log is applied again as a no-op, and the local diamond ends at the chain's inbound head
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P13` — the live log's and the refresh's applications of one inbound block both in flight, the live one applied first: no revert, the block stored, the inbound head and deposit total at the chain's
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P14` — the same with the refresh's application applied first and the live log's after it
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P15` — membership synchronization fills an inbound block of the pending run that the local diamond misses below its head; the head and deposit total stay at the chain's
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16` — membership synchronization applies its snapshot at the end of its pinned chain block, so a newer StateSnapshotUpdated log the local diamond applied meanwhile stays
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17` — the pinned membership read is one multicall, and applying it for a pending joiner makes no other chain call: the pending check reads the local diamond that the applied inbound run filled
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18` — membership synchronization rejects with the failure of a local handler applying a slash log its recovery read
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P19` — membership synchronization rejects with the failure of a local handler applying an inbound log its recovery read
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20` — the reduce, audit and dispute inbound recovery rejects with the failure of a local handler applying a recovered log
 
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 

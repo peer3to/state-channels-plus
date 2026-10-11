@@ -42,7 +42,6 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 ## Tests
 
 - `known slashes reject network contributions even when slash log recovery fails`: none
-- `a sender absent after membership refresh failure uses ordinary network sync`: REQ-GOSSIP-4-J5Z4DF.T1.P32, REQ-GOSSIP-4-J5Z4DF.T1.P37
 - `an existing sync handles an unknown-source copy without another wire request`: REQ-GOSSIP-4-J5Z4DF.T1.P30, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P24, REQ-GOSSIP-4-J5Z4DF.T1.P36
 - `failed ingress sync blacklists its sender without queueing the triggering block`: REQ-GOSSIP-4-J5Z4DF.T1.P29, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P25
 - `a real slash rejects the next supplier copy without changing held honest work`: REQ-GOSSIP-4-J5Z4DF.T1.P4, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P3

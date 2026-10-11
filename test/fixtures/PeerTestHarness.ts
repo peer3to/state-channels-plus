@@ -27,6 +27,7 @@ import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
 import type StateManager from "@/stateManager/StateManager";
 import { TimeConfig } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
     EventBarrier,
@@ -158,6 +159,12 @@ export class PeerTestHarness<
      */
     private forkIdCache = new Map<number, ForkId>();
     private peerSignersRegistered = new Set<number>();
+    /**
+     * Peers whose membership ended (`onLeftChannel`) and that did not become
+     * pending or participating again since: a runtime whose join failed can
+     * join again, so the event alone does not mark a permanent departure.
+     */
+    private readonly endedMembershipPeerIndices = new Set<number>();
     private cleanupPromise?: Promise<void>;
 
     /**
@@ -605,12 +612,14 @@ export class PeerTestHarness<
         this.logger.debug(`Creating peer ${index} at ${address}`);
 
         const peerTurnBarrier = new EventBarrier(peerLogger);
+        this.endedMembershipPeerIndices.delete(index);
 
         const eventSpies: EventSpies = {
             // P2pEventHooks spies
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
             onLeaveTurn: sinon.spy(),
+            onLeftChannel: sinon.spy(),
             onSetState: sinon.spy(),
             onAbort: sinon.spy(),
             onStatusChanged: sinon.spy(),
@@ -654,6 +663,14 @@ export class PeerTestHarness<
                 eventSpies.onLeaveTurn?.();
                 void this.eventCountsBarrier.signal();
             },
+            onLeftChannel: () => {
+                peerLogger.debug("Left the channel", {
+                    component: "P2pEventHooks"
+                });
+                this.endedMembershipPeerIndices.add(index);
+                eventSpies.onLeftChannel?.();
+                void this.eventCountsBarrier.signal();
+            },
             onTurn: (
                 addr: Address,
                 _turnTime: number,
@@ -690,6 +707,14 @@ export class PeerTestHarness<
                     oldStatus,
                     newStatus
                 });
+                // a new join: the peer is a member again
+                if (isCommittedParticipantStatus(newStatus)) {
+                    this.endedMembershipPeerIndices.delete(index);
+                    this.context.leftChannelPeerIndices =
+                        this.context.leftChannelPeerIndices.filter(
+                            (peerIndex) => peerIndex !== index
+                        );
+                }
                 eventSpies.onStatusChanged?.(oldStatus, newStatus);
                 void this.eventCountsBarrier.signal();
             },
@@ -1068,7 +1093,11 @@ export class PeerTestHarness<
             ...(this.context.maliciousPeerIndices ?? []),
             ...(this.context.afkPeerIndices ?? []),
             ...this.peers
-                .filter((peer) => peer.eventSpies.onAbort?.called)
+                .filter(
+                    (peer) =>
+                        peer.eventSpies.onAbort?.called ||
+                        this.endedMembershipPeerIndices.has(peer.index)
+                )
                 .map((peer) => peer.index)
         ]);
         const heights = await Promise.all(
@@ -1098,14 +1127,18 @@ export class PeerTestHarness<
         );
     }
 
-    /** Every responsive honest harness peer except leavers and aborted peers. */
+    /** Every responsive honest harness peer except leavers, removed and aborted peers. */
     getActiveHonestPeers(): TestPeer<TCustomRpc, TStateMachine>[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? []),
             ...(this.context.afkPeerIndices ?? []),
             ...this.peers
-                .filter((peer) => peer.eventSpies.onAbort?.called)
+                .filter(
+                    (peer) =>
+                        peer.eventSpies.onAbort?.called ||
+                        this.endedMembershipPeerIndices.has(peer.index)
+                )
                 .map((peer) => peer.index)
         ]);
         return this.peers.filter((p) => !exclude.has(p.index));

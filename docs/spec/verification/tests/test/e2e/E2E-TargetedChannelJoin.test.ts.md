@@ -13,7 +13,10 @@ Every full connect reaches its production success, failure, or disposal boundary
 Each initial-sync failure case maps to its own failure angle (selected-peer disconnect, invalid response,
 requester expiry, observed-open failure); the broad fatal-disposal permutation stays with the component
 suite that also proves the root closes. The sync-timeout case has the same body as the sync-silence case, so
-only the silence case carries the no-fallback permutation. The explicit same-ID retry case repeats the
+only the silence case carries the no-fallback permutation. Live blocks the participants gossip while that held
+sync is in flight wait unprocessed until the observer is synced, so they start no queue probe toward the
+other ready peer, and the abort drops them; the single-request oracle counts every spectate request either
+participant received. The explicit same-ID retry case repeats the
 component suite's retry case through the same public API and carries no ID.
 
 ## Coverage

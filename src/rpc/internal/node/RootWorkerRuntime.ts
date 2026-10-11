@@ -6,6 +6,7 @@ import { createWorkerShutdown } from "@/evm/node/workerShutdown";
 import { instrumentWorkerStartup } from "@/evm/node/workerStartupTiming";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
+import { createConfig } from "@/utils/config";
 import { resolveRuntimeModulePath } from "@/utils/moduleLoader/node/resolveRuntimeModulePath";
 import { adaptPort } from "@platform/p2pRuntimeChannel";
 import * as path from "node:path";
@@ -104,6 +105,9 @@ export function onRootBootstrap<T>(
             return;
         }
         globalThis.threadName = message.threadName ?? globalThis.threadName;
+        // Every root in this worker logs, stores, and uploads with its
+        // creator's config, also a root that never restores one itself.
+        if (message.config) createConfig(message.config);
         startCpuProfilerIfEnabled(globalThis.threadName);
         void handler(message);
     });

@@ -3,7 +3,9 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, SignatureUtils, sleep, Type } from "@/utils";
 import { DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS } from "@/utils/config";
+import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { prepareFirstJoinDeadline } from "@test/fixtures/JoinDeadlineStaging";
+import { collectAcrossSnapshotMove } from "@test/fixtures/JoinPinRaceStaging";
 import { assertJoinSignatureDeadlineBoundary } from "@test/fixtures/node/JoinSignatureDeadlineStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -31,9 +33,6 @@ describe("JoinChannel signature requests", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         const joiner = await h.join.addSpectatorWait();
-        const snapshot = StateSnapshot.from(
-            await h.channelManager.getStateSnapshot(h.channelId)
-        );
         const chainTime = await Clock.getBlockchainTime();
         const signed = await SignatureUtils.signJoinChannel(
             {
@@ -65,9 +64,7 @@ describe("JoinChannel signature requests", function () {
                 try {
                     await sm.p2pManager.localRpc.joinChannelService.signJoinRequest(
                         transport,
-                        args.encodedSignedJoinChannel,
-                        args.snapshotHash,
-                        args.forkId
+                        args.encodedSignedJoinChannel
                     );
                 } catch (error) {
                     message =
@@ -80,8 +77,6 @@ describe("JoinChannel signature requests", function () {
             },
             {
                 encodedSignedJoinChannel,
-                snapshotHash: snapshot.hash,
-                forkId: snapshot.forkID,
                 joiner: joiner.address
             }
         );
@@ -148,6 +143,32 @@ describe("JoinChannel signature requests", function () {
         );
         expect(confirmationSigners).to.have.deep.members(thresholdSet);
         expect(confirmationSigners).to.not.include(spammer.address);
+    });
+
+    it("collects every countersignature when a snapshot post lands between the joiner's pin read and the countersigners' replies", async function () {
+        const h = TestSession.getHarness();
+        const { pinnedSnapshotHash, movedSnapshotHash, prepared } =
+            await collectAcrossSnapshotMove(h);
+        expect(movedSnapshotHash).to.not.equal(pinnedSnapshotHash);
+        // The joiner keeps its own pin; the chain checks it at submission.
+        expect(prepared.expectedSnapshotHash).to.equal(pinnedSnapshotHash);
+        const encodedJoinChannel = String(
+            prepared.confirmation.signedJoinChannel.encodedJoinChannel
+        );
+        const confirmationSigners = prepared.confirmation.signatures.map(
+            (signature) =>
+                SignatureUtils.getSignerAddress(
+                    encodedJoinChannel,
+                    String(signature)
+                )
+        );
+        expect(confirmationSigners).to.have.deep.members(
+            await h
+                .control(h.getPeer(0))
+                .query.getOnChainThresholdSet()
+                .request()
+        );
+        expect(confirmationSigners).to.have.length(3);
     });
 
     it("rejects collector identity and deadline failures before requesting signatures", async function () {
@@ -254,34 +275,21 @@ describe("JoinChannel signature requests", function () {
         const request = (
             fromPeerIndex: number,
             toAddress: string,
-            encodedRequest: string,
-            expectedSnapshotHash: string,
-            expectedForkId: string
+            encodedRequest: string
         ) =>
             h.execOnHost(
                 h.getPeer(fromPeerIndex),
                 async (sm, args) =>
                     sm.p2pManager.remoteRpc.joinChannelService
-                        .requestJoinSignature(
-                            args.encodedRequest,
-                            args.expectedSnapshotHash,
-                            args.expectedForkId
-                        )
+                        .requestJoinSignature(args.encodedRequest)
                         .request(args.toAddress),
-                {
-                    toAddress,
-                    encodedRequest,
-                    expectedSnapshotHash,
-                    expectedForkId
-                }
+                { toAddress, encodedRequest }
             );
 
         const valid = await request(
             joiner.index,
             h.getPeer(0).address,
-            encodedSignedJoinChannel,
-            String(prepared.expectedSnapshotHash),
-            String(prepared.expectedForkId)
+            encodedSignedJoinChannel
         );
         expect(
             SignatureUtils.getSignerAddress(
@@ -299,9 +307,7 @@ describe("JoinChannel signature requests", function () {
                 try {
                     await sm.p2pManager.localRpc.joinChannelService.signJoinRequest(
                         transport,
-                        args.encodedRequest,
-                        args.expectedSnapshotHash,
-                        args.expectedForkId
+                        args.encodedRequest
                     );
                     return "resolved";
                 } catch (error) {
@@ -312,34 +318,18 @@ describe("JoinChannel signature requests", function () {
                     transport.peerAddress = peerAddress;
                 }
             },
-            {
-                encodedRequest: encodedSignedJoinChannel,
-                expectedSnapshotHash: String(prepared.expectedSnapshotHash),
-                expectedForkId: String(prepared.expectedForkId)
-            }
+            { encodedRequest: encodedSignedJoinChannel }
         );
         expect(missingPeerResult).to.equal(
             "requestJoinSignature: missing peer address"
         );
 
         await assert.rejects(
-            request(
-                joiner.index,
-                h.getPeer(0).address,
-                "0xdeadbeef",
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
-            )
+            request(joiner.index, h.getPeer(0).address, "0xdeadbeef")
         );
 
         await assert.rejects(
-            request(
-                1,
-                h.getPeer(0).address,
-                encodedSignedJoinChannel,
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
-            ),
+            request(1, h.getPeer(0).address, encodedSignedJoinChannel),
             /invalid participant signature/
         );
 
@@ -361,9 +351,7 @@ describe("JoinChannel signature requests", function () {
                         },
                         Type.SignedJoinChannel
                     )
-                ),
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
+                )
             ),
             /invalid participant signature/
         );
@@ -378,13 +366,7 @@ describe("JoinChannel signature requests", function () {
             )
         );
         await assert.rejects(
-            request(
-                joiner.index,
-                h.getPeer(0).address,
-                invalidSignatureRequest,
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
-            )
+            request(joiner.index, h.getPeer(0).address, invalidSignatureRequest)
         );
 
         const wrongChannelJoin = {
@@ -409,9 +391,7 @@ describe("JoinChannel signature requests", function () {
                         },
                         Type.SignedJoinChannel
                     )
-                ),
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
+                )
             ),
             /channel mismatch/
         );
@@ -436,9 +416,7 @@ describe("JoinChannel signature requests", function () {
                         },
                         Type.SignedJoinChannel
                     )
-                ),
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
+                )
             ),
             /join expired/
         );
@@ -446,30 +424,8 @@ describe("JoinChannel signature requests", function () {
         await assert.rejects(
             request(
                 joiner.index,
-                h.getPeer(0).address,
-                encodedSignedJoinChannel,
-                `0x${"55".repeat(32)}`,
-                String(prepared.expectedForkId)
-            ),
-            /snapshot mismatch/
-        );
-        await assert.rejects(
-            request(
-                joiner.index,
-                h.getPeer(0).address,
-                encodedSignedJoinChannel,
-                String(prepared.expectedSnapshotHash),
-                `0x${"66".repeat(32)}`
-            ),
-            /fork mismatch/
-        );
-        await assert.rejects(
-            request(
-                joiner.index,
                 nonUnionSigner.address,
-                encodedSignedJoinChannel,
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
+                encodedSignedJoinChannel
             ),
             /local signer not in threshold/
         );
@@ -492,9 +448,7 @@ describe("JoinChannel signature requests", function () {
         const retry = await request(
             joiner.index,
             h.getPeer(0).address,
-            encodedSignedJoinChannel,
-            String(prepared.expectedSnapshotHash),
-            String(prepared.expectedForkId)
+            encodedSignedJoinChannel
         );
         expect(
             SignatureUtils.getSignerAddress(
@@ -515,16 +469,24 @@ describe("JoinChannel signature requests", function () {
 
         await h.transition.advanceState({ count: 1 });
         await h.transition.postSnapshotWait({ peerIndex: 0 });
-        await assert.rejects(
-            request(
-                joiner.index,
-                h.getPeer(0).address,
-                encodedSignedJoinChannel,
-                String(prepared.expectedSnapshotHash),
-                String(prepared.expectedForkId)
-            ),
-            /snapshot mismatch/
+        expect(
+            StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            ).hash
+        ).to.not.equal(prepared.expectedSnapshotHash);
+        // The signature covers only the encoded join, so the responder signs
+        // it after the snapshot moved away from the joiner's pin.
+        const afterSnapshotMove = await request(
+            joiner.index,
+            h.getPeer(0).address,
+            encodedSignedJoinChannel
         );
+        expect(
+            SignatureUtils.getSignerAddress(
+                String(signed.encoded),
+                String(afterSnapshotMove.signature)
+            )
+        ).to.equal(h.getPeer(0).address);
         await h.join.forceInboundJoinWait({
             waitForHonestPeersObserve: false
         });
@@ -563,15 +525,13 @@ describe("JoinChannel signature requests", function () {
         );
         const refusalState = await h.execOnHost(
             h.getPeer(joiner.index),
-            async (sm) => ({
-                status: sm.status,
-                joinSubmissionHeight:
-                    sm.storage.forceJoin.getJoinSubmissionBlockHeight()
-            }),
+            async (sm) => ({ status: sm.status }),
             {}
         );
         expect(refusalState.status).to.equal(Status.SYNCED);
-        expect(refusalState.joinSubmissionHeight).to.equal(undefined);
+        expect(await readTrackedJoin(h, h.getPeer(joiner.index))).to.equal(
+            null
+        );
     });
 
     it("rejects erroring, wrong-signer, and deadline-silent threshold members", async function () {
@@ -642,12 +602,8 @@ describe("JoinChannel signature requests", function () {
         expect(await h.control(joiner).query.getStatus().request()).to.equal(
             Status.SYNCED
         );
-        expect(
-            await h.execOnHost(
-                h.getPeer(joiner.index),
-                (sm) => sm.storage.forceJoin.getJoinSubmissionBlockHeight(),
-                {}
-            )
-        ).to.equal(undefined);
+        expect(await readTrackedJoin(h, h.getPeer(joiner.index))).to.equal(
+            null
+        );
     });
 });

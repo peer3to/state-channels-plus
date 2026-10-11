@@ -119,16 +119,13 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
     }
 
     public async probeInboundRunRecovery(
-        upperBlockHash: Hash,
-        options?: { failChainQueries?: boolean }
+        upperBlockHash: Hash
     ): Promise<InboundRunRecoveryProbe> {
-        return this.service.probeInboundRunRecovery(upperBlockHash, options);
+        return this.service.probeInboundRunRecovery(upperBlockHash);
     }
 
-    public async probeBlockCalldataRecovery(options?: {
-        failChainQueries?: boolean;
-    }): Promise<BlockCalldataRecoveryProbe> {
-        return this.service.probeBlockCalldataRecovery(options);
+    public async probeBlockCalldataRecovery(): Promise<BlockCalldataRecoveryProbe> {
+        return this.service.probeBlockCalldataRecovery();
     }
 
     public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {

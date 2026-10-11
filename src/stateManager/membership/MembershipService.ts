@@ -1,36 +1,21 @@
-import type { ParticipantChanges } from "../block/SnapshotAssemblyService";
 import type StateManager from "../StateManager";
-import Clock from "@/Clock";
-
-import { Block, StateSnapshot } from "@/models";
-import { Status, timeoutWaitTime } from "@/types";
+import { Block } from "@/models";
+import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
-import {
-    Address,
-    BlockHeight,
-    ChannelId,
-    ChecksumAddress,
-    ForkId,
-    Hash
-} from "@/types/types";
+import { Address, ChannelId, ChecksumAddress } from "@/types/types";
 import {
     addressesEqual,
-    DetachedPromises,
     getChecksumAddress,
     Logger,
     union,
     Codec,
     Type
 } from "@/utils";
-import { errorMessage } from "@/utils/errorMessage";
-import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 import type {
-    JoinChannelConfirmationStruct,
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { id, isError } from "ethers";
+import { id } from "ethers";
 
 export enum SourceEligibility {
     ELIGIBLE,
@@ -39,24 +24,8 @@ export enum SourceEligibility {
 }
 
 /**
- * This runtime's own join. "none": no join is tracked (none submitted,
- * seated, or dropped). "open": not observed on chain and its authorization
- * can still admit it; the chain is past the deadline in about
- * `secondsUntilExpiry`. "landed": observed, or listed on chain. "expired":
- * the authorization expired and the chain does not list the signer, so the
- * join never landed and never can.
- */
-export type OwnJoinState =
-    | { state: "none" }
-    | { state: "open"; secondsUntilExpiry: number }
-    | { state: "landed" }
-    | { state: "expired" };
-
-/**
  * The membership domain: the channel's participant union (on-chain current +
- * pending), and my own lifecycle in it — joining, topping up, forcing a join
- * that peers refuse to include, and exiting once I have left the participant
- * set.
+ * pending), source eligibility, and whether this signer is in it.
  */
 export default class MembershipService {
     private readonly logger: Logger;
@@ -64,8 +33,6 @@ export default class MembershipService {
     private onChainEligibility: Set<ChecksumAddress> = new Set();
     private offChainEligibility: Set<ChecksumAddress> = new Set();
     private readonly knownSlashes: Set<ChecksumAddress> = new Set();
-    private forceJoinDeadline?: ReturnType<typeof setTimeout>;
-    private joinGeneration = 0;
 
     constructor(
         private readonly stateManager: StateManager,
@@ -135,13 +102,9 @@ export default class MembershipService {
             if (message.messageType !== id("JOIN_CHANNEL_MESSAGE")) continue;
             const join = Codec.decode(message.data, Type.JoinChannel);
             this.onChainEligibility.add(getChecksumAddress(join.participant));
-            if (
-                addressesEqual(
-                    join.participant,
-                    this.stateManager.signerAddress
-                )
-            )
-                this.onOwnJoinObserved();
+            // this signer's own join is observed by ChannelJoinService: it
+            // subscribes to the inbound and snapshot events and reads the
+            // local diamond's pending set
         }
     }
 
@@ -165,24 +128,23 @@ export default class MembershipService {
         if (this.eligibilityRefresh) return this.eligibilityRefresh;
         this.eligibilityRefresh = (async () => {
             const sm = this.stateManager;
-            try {
-                const membership =
-                    await sm.eventSyncService.readPinnedChainMembership(
-                        sm.channelId
-                    );
-                for (const participant of membership.slashed)
-                    this.observeOnChainSlash(participant);
+            const membership =
+                await sm.eventSyncService.readPinnedChainMembership(
+                    sm.channelId
+                );
+            for (const participant of membership.slashed)
+                this.observeOnChainSlash(participant);
+            const synchronized =
                 await sm.eventSyncService.synchronizeChainMembership(
                     sm.channelId,
                     membership
                 );
-                return true;
-            } catch (error) {
-                this.logger.warn("Source eligibility refresh unavailable", {
-                    error: errorMessage(error)
-                });
-                return false;
-            }
+            // the chain did not return a log the run needs
+            if (!synchronized)
+                this.logger.warn(
+                    "Source eligibility refresh unavailable: chain logs missing after recovery"
+                );
+            return synchronized;
         })();
         try {
             return await this.eligibilityRefresh;
@@ -210,6 +172,40 @@ export default class MembershipService {
         );
     }
 
+    /**
+     * Whether the local chain mirror lists this signer as pending. It reads
+     * the mirror only: the join service starts its force-join bounds from
+     * this observation, and a direct chain answer must not start them early.
+     */
+    public async isSignerPendingInMirror(
+        channelId: ChannelId = this.stateManager.channelId
+    ): Promise<boolean> {
+        return this.includesSigner(
+            (await this.stateManager.diamondStateMachine.localDiamondContract.getPendingParticipants(
+                channelId
+            )) as Address[]
+        );
+    }
+
+    /**
+     * Whether the chain's pending set (unconsumed JOINs) lists this signer.
+     * The local mirror holds only JOINs the chain processed, so a mirror that
+     * lists the signer answers without a chain read; otherwise the chain
+     * confirms the absence, since the JOIN can land after the mirror's
+     * inbound head. A failed read rejects the caller.
+     */
+    public async isSignerPendingOnChain(
+        channelId: ChannelId = this.stateManager.channelId
+    ): Promise<boolean> {
+        if (await this.isSignerPendingInMirror(channelId)) return true;
+        return this.includesSigner(
+            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                channelId
+            )) as Address[]
+        );
+    }
+
+    /** Whether the chain's seated or pending participants list this signer. */
     public async isSignerOnChain(): Promise<boolean> {
         return this.includesSigner(await this.getOnChainParticipantUnion());
     }
@@ -218,24 +214,6 @@ export default class MembershipService {
         return this.includesSigner(
             await this.stateManager.getParticipantsCurrent()
         );
-    }
-
-    /**
-     * Starts this signer's self-removal dispute and returns its marker. An
-     * upload that lost the evidence race is thrown, so each leave path maps
-     * that refusal by its own policy. Today there are two outcomes: the exit
-     * fallback after the authored exit block (`onExitFallbackFailed`) settles
-     * the leave, since the window's reduction removes the leaver; the leave's
-     * own dispute fallback (`startDisputeFallback`, block bound or watchdog)
-     * fails it.
-     * TODO(OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ): revisit how a lost evidence race is interpreted
-     */
-    public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
-        const sm = this.stateManager;
-        sm.storage.forceExit.setForceExit(true);
-        const { lostEvidenceRace } = await sm.disputeManager.dispute(forkId);
-        if (lostEvidenceRace) throw lostEvidenceRace;
-        return sm.storage.disputes.didIDispute(forkId);
     }
 
     public async getOnChainThresholdSet(
@@ -248,547 +226,15 @@ export default class MembershipService {
         ).map(String) as Address[];
     }
 
-    public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Hash,
-        expectedForkId: ForkId
-    ): Promise<boolean> {
-        const sm = this.stateManager;
-        if (sm.status !== Status.SYNCED) {
-            throw new Error(
-                `joinChannel requires SYNCED status, got ${Status[sm.status]}`
-            );
-        }
-
-        const { deadlineTimestamp } = Codec.decode(
-            String(confirmation.signedJoinChannel.encodedJoinChannel),
-            Type.JoinChannel
-        );
-        const joinSubmissionHeight =
-            sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1;
-        this.resetJoinTracking();
-        sm.storage.forceJoin.setJoinSubmissionBlockHeight(joinSubmissionHeight);
-        sm.storage.forceJoin.setJoinAuthorizationDeadline(
-            Number(deadlineTimestamp)
-        );
-        this.logger.info(
-            "joinChannel - recorded force join submission height",
-            { joinSubmissionHeight }
-        );
-        sm.setStatus(Status.PENDING_PARTICIPANT);
-        this.logger.info(
-            "joinChannel - promoted to PENDING_PARTICIPANT before submission"
-        );
-
-        try {
-            const tx = await sm.stateChannelManagerContract.joinChannel(
-                confirmation,
-                expectedSnapshotHash,
-                expectedForkId
-            );
-            await tx.wait();
-            return true;
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            if (
-                custom?.name === "ErrorJoinChannelParticipantAlreadyExists" &&
-                sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                    undefined
-            ) {
-                this.logger.warn(
-                    "joinChannel - participant already exists; preserving pending join state"
-                );
-                return true;
-            }
-
-            const failedReceipt =
-                isError(error, "CALL_EXCEPTION") &&
-                error.receipt !== null &&
-                error.receipt !== undefined &&
-                Number(error.receipt.status) === 0;
-            const commitmentRuledOut = custom !== null || failedReceipt;
-            if (!commitmentRuledOut) {
-                try {
-                    const participantUnion =
-                        await this.getOnChainParticipantUnion();
-                    if (this.includesSigner(participantUnion)) {
-                        this.logger.warn(
-                            "joinChannel - submission outcome was uncertain but on-chain membership is present"
-                        );
-                        return true;
-                    }
-                } catch (reconciliationError) {
-                    this.logger.warn(
-                        "joinChannel - failed to reconcile uncertain submission",
-                        {
-                            error: errorMessage(reconciliationError)
-                        }
-                    );
-                }
-                this.logger.warn(
-                    "joinChannel - submission outcome uncertain; preserving pending state",
-                    {
-                        error: errorMessage(error)
-                    }
-                );
-                return false;
-            }
-
-            sm.setStatus(Status.SYNCED);
-            this.resetJoinTracking();
-            switch (custom?.name) {
-                case "RaceConditionJoinChannelExpired":
-                case "RaceConditionSnapshotForkMismatch":
-                case "RaceConditionJoinChannelSnapshotMismatch":
-                case "RaceConditionJoinChannelForkDisputed":
-                case "ErrorJoinChannelInvalidSignature":
-                case "ErrorJoinChannelConfirmationNotThresholdSigned":
-                    this.logger.warn(
-                        `joinChannel - race condition: ${custom.name}`,
-                        {
-                            customError:
-                                LoggerUtils.getCustomEvmErrorMetadata(custom)
-                        }
-                    );
-                    sm.abort();
-                    return false;
-            }
-            this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
-                error: errorMessage(error)
-            });
-            return false;
-        }
-    }
-
-    public async topUpBalance(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Hash,
-        expectedForkId: ForkId
-    ): Promise<boolean> {
-        const sm = this.stateManager;
-        if (!isCommittedParticipantStatus(sm.status)) {
-            throw new Error(
-                `topUpBalance requires PARTICIPATING or PENDING_PARTICIPANT status, got ${Status[sm.status]}`
-            );
-        }
-
-        try {
-            const tx = await sm.stateChannelManagerContract.topUpBalance(
-                confirmation,
-                expectedSnapshotHash,
-                expectedForkId
-            );
-            await tx.wait();
-            return true;
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            if (custom) {
-                this.logger.warn(`topUpBalance failed: ${custom.name}`, {
-                    customError: LoggerUtils.getCustomEvmErrorMetadata(custom)
-                });
-                return false;
-            }
-            return false;
-        }
-    }
-
-    // Fires the force-join dispute exactly once when N turns have passed without the joiner being included
-    public async maybeInitiateForceJoinDispute(
-        block: Block,
-        participants: Address[]
-    ): Promise<void> {
-        const forceJoin = this.stateManager.storage.forceJoin;
-        if (forceJoin.getJoinSubmissionBlockHeight() === undefined) return;
-        // A fast table authors N turns before its writers even observe the
-        // join: count only blocks this joiner commits once its own Clock is
-        // agreementTime past observing the join on chain.
-        const countingStartsAt = forceJoin.getCountingStartsAt();
-        if (
-            countingStartsAt === undefined ||
-            Clock.getTimeInSeconds() < countingStartsAt
-        )
-            return;
-        let countingFromHeight = forceJoin.getCountingFromHeight();
-        if (countingFromHeight === undefined) {
-            countingFromHeight = block.height;
-            forceJoin.setCountingFromHeight(countingFromHeight);
-        }
-        const N = participants.length + 1;
-        const fireOnBlockHeight = countingFromHeight + N;
-        if (block.height < fireOnBlockHeight || forceJoin.hasDisputeStarted())
-            return;
-        await this.startForceJoinDispute(`block ${block.height}`);
-    }
-
     /**
-     * The block bound needs blocks; a table whose writers author none would
-     * hold the join forever. The deadline gives the join the same N turns,
-     * each the full window a writer gets before it can be timed out, so an
-     * honest table that is merely slow still includes the join first.
-     */
-    private async armForceJoinDeadline(
-        joinSubmissionHeight: BlockHeight,
-        generation = this.joinGeneration,
-        forkId = this.stateManager.forkId
-    ): Promise<void> {
-        const sm = this.stateManager;
-        if (!this.isCurrentForceJoin(generation, forkId)) return;
-        const N = (await sm.diamondStateMachine.getParticipants()).length + 1;
-        // the join tracking was reset during the read
-        if (!this.isCurrentForceJoin(generation, forkId)) return;
-        this.cancelForceJoinDeadline();
-        this.forceJoinDeadline = sm.timeoutManager.scheduleTask(
-            async () => {
-                if (!this.isCurrentForceJoin(generation, forkId)) return;
-                this.forceJoinDeadline = undefined;
-                // a deferred dispute waits another deadline
-                if (!(await this.startForceJoinDispute("deadline")))
-                    await this.armForceJoinDeadline(
-                        joinSubmissionHeight,
-                        generation,
-                        forkId
-                    );
-            },
-            N * timeoutWaitTime(sm.timeConfig, joinSubmissionHeight + 1) * 1000,
-            "force join deadline"
-        );
-    }
-
-    /**
-     * Both force-join bounds start once this joiner observes its own join as
-     * an inbound message on chain, never at submission: before that, the
-     * peers that must include it cannot have seen it either. The block bound
-     * starts counting agreementTime later; the deadline is armed now.
-     */
-    private onOwnJoinObserved(): void {
-        const sm = this.stateManager;
-        const forceJoin = sm.storage.forceJoin;
-        const joinSubmissionHeight = forceJoin.getJoinSubmissionBlockHeight();
-        if (
-            joinSubmissionHeight === undefined ||
-            forceJoin.getCountingStartsAt() !== undefined ||
-            sm.status !== Status.PENDING_PARTICIPANT
-        )
-            return;
-        sm.leaveChannelService.onOwnJoinObserved();
-        forceJoin.setCountingStartsAt(
-            Clock.getTimeInSeconds() + sm.timeConfig.agreementTime
-        );
-        DetachedPromises.collect(
-            this.armForceJoinDeadline(joinSubmissionHeight)
-        );
-    }
-
-    /** Whether this pending joiner observed its own join on chain (its force-join bounds started). */
-    public isOwnJoinObserved(): boolean {
-        return (
-            this.stateManager.storage.forceJoin.getCountingStartsAt() !==
-            undefined
-        );
-    }
-
-    /**
-     * This signer's membership ended: its join never reached the chain, or
-     * the chain dropped its seat or pending join. The join tracking is
-     * cleared and a committed status goes back to SYNCED.
+     * This signer's membership ended: the chain dropped its seat or pending
+     * join. A committed status goes back to SYNCED. Both follow-ups subscribe
+     * to that status change: ChannelJoinService ends the join, and
+     * LeaveChannelService ends the exit and emits onLeftChannel.
      */
     public dropMembership(): void {
         const sm = this.stateManager;
-        this.resetJoinTracking();
         if (isCommittedParticipantStatus(sm.status))
             sm.setStatus(Status.SYNCED);
-    }
-
-    /**
-     * The installed state seats this signer, by a block or by a reduction
-     * genesis: its join ended, and a pending leave proceeds as a member's.
-     */
-    public onJoinSeated(): void {
-        this.resetJoinTracking();
-        this.stateManager.leaveChannelService.onOwnJoinObserved();
-    }
-
-    /** The join authorization's deadline, or undefined when no join of this runtime is tracked. */
-    public getJoinAuthorizationDeadline(): number | undefined {
-        return this.stateManager.storage.forceJoin.getJoinAuthorizationDeadline();
-    }
-
-    /**
-     * Whether this runtime's tracked join can still land: the contract admits
-     * a join only in a block whose timestamp is at most the authorization
-     * deadline, so it can while the latest chain block is not past it.
-     */
-    public async isJoinAuthorizationOpen(): Promise<boolean> {
-        const deadline = this.getJoinAuthorizationDeadline();
-        if (deadline === undefined) return false;
-        return (await Clock.getBlockchainTime()).timestamp <= deadline;
-    }
-
-    /**
-     * Whether this pending joiner's join can still land: it was not observed
-     * on chain yet and its authorization is open. An observed join already
-     * landed, and this runtime submits a join once.
-     */
-    public async canOwnJoinStillLand(): Promise<boolean> {
-        if (
-            this.stateManager.status !== Status.PENDING_PARTICIPANT ||
-            this.isOwnJoinObserved()
-        )
-            return false;
-        return this.isJoinAuthorizationOpen();
-    }
-
-    /** The state of this runtime's tracked join; see {@link OwnJoinState}. */
-    public async getOwnJoinState(): Promise<OwnJoinState> {
-        const deadline = this.getJoinAuthorizationDeadline();
-        if (deadline === undefined) return { state: "none" };
-        if (this.isOwnJoinObserved()) return { state: "landed" };
-        if (await this.isJoinAuthorizationOpen()) {
-            return {
-                state: "open",
-                secondsUntilExpiry: Math.max(
-                    deadline + 1 - Clock.getTimeInSeconds(),
-                    1
-                )
-            };
-        }
-        if (await this.isSignerOnChain()) return { state: "landed" };
-        return { state: "expired" };
-    }
-
-    private resetJoinTracking(): void {
-        this.joinGeneration++;
-        this.cancelForceJoinDeadline();
-        this.stateManager.storage.forceJoin.clear();
-    }
-
-    private cancelForceJoinDeadline(): void {
-        if (!this.forceJoinDeadline) return;
-        this.stateManager.timeoutManager.cancelTask(this.forceJoinDeadline);
-        this.forceJoinDeadline = undefined;
-    }
-
-    private isCurrentForceJoin(generation: number, forkId: ForkId): boolean {
-        const sm = this.stateManager;
-        return (
-            this.joinGeneration === generation &&
-            sm.forkId === forkId &&
-            sm.status === Status.PENDING_PARTICIPANT &&
-            this.isOwnJoinObserved() &&
-            sm.storage.forceJoin.getJoinSubmissionBlockHeight() !== undefined &&
-            !sm.storage.forceJoin.hasDisputeStarted()
-        );
-    }
-
-    /** Requests the force-join dispute; false when it is deferred. */
-    private async startForceJoinDispute(trigger: string): Promise<boolean> {
-        const sm = this.stateManager;
-        const generation = this.joinGeneration;
-        const forkId = sm.forkId;
-        if (!this.isCurrentForceJoin(generation, forkId)) return false;
-
-        let onChainParticipantUnion: Address[];
-        try {
-            onChainParticipantUnion = await this.getOnChainParticipantUnion();
-            if (!this.isCurrentForceJoin(generation, forkId)) return false;
-        } catch (error) {
-            this.logger.warn(
-                "Force join dispute deferred: on-chain membership could not be read",
-                {
-                    forkId: sm.forkId,
-                    trigger,
-                    error: errorMessage(error)
-                }
-            );
-            return false;
-        }
-        if (!this.includesSigner(onChainParticipantUnion)) {
-            this.logger.info(
-                "Force join dispute deferred: local pending membership is not on chain",
-                { forkId: sm.forkId, trigger }
-            );
-            return false;
-        }
-
-        let disputeWindowCreationTimestamp: number;
-        try {
-            disputeWindowCreationTimestamp = Number(
-                await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                    sm.channelId,
-                    forkId
-                )
-            );
-            if (!this.isCurrentForceJoin(generation, forkId)) return false;
-        } catch (error) {
-            this.logger.warn(
-                "Force join dispute deferred: dispute window could not be read",
-                {
-                    forkId: sm.forkId,
-                    trigger,
-                    error: errorMessage(error)
-                }
-            );
-            return false;
-        }
-        if (disputeWindowCreationTimestamp !== 0) {
-            let chainTimestamp: number;
-            try {
-                chainTimestamp = (await Clock.getBlockchainTime()).timestamp;
-                if (!this.isCurrentForceJoin(generation, forkId)) return false;
-            } catch (error) {
-                this.logger.warn(
-                    "Force join dispute deferred: chain time could not be read",
-                    {
-                        forkId: sm.forkId,
-                        trigger,
-                        error: errorMessage(error)
-                    }
-                );
-                return false;
-            }
-            if (
-                chainTimestamp >=
-                disputeWindowCreationTimestamp + sm.timeConfig.evidenceTime
-            ) {
-                this.logger.info(
-                    "Force join dispute deferred: dispute evidence window expired",
-                    {
-                        forkId: sm.forkId,
-                        trigger,
-                        disputeWindowCreationTimestamp,
-                        chainTimestamp
-                    }
-                );
-                return false;
-            }
-        }
-
-        if (!this.isCurrentForceJoin(generation, forkId)) return false;
-        sm.storage.forceJoin.setDisputeStarted();
-        this.cancelForceJoinDeadline();
-        this.logger.info(
-            "Force join dispute triggered: the join was not included in time",
-            { forkId: sm.forkId, trigger }
-        );
-        sm.disputeManager.requestDispute(forkId);
-        return true;
-    }
-
-    public async startMaybeExitOnChain(
-        block: Block,
-        _stateSnapshot: StateSnapshot,
-        participantChanges: ParticipantChanges,
-        _outboundMessageBlock?: MessageBlockStruct
-    ): Promise<void> {
-        const sm = this.stateManager;
-        if (!participantChanges.left.has(sm.signerAddress)) {
-            // I didn't exit, nothing to do
-            return;
-        }
-
-        this.logger.info(
-            `startMaybeExitOnChain - I left the channel at block ${block.height}, waiting agreementTime to attempt N/N exit`,
-            { blockHeight: block.height, forkId: block.forkId }
-        );
-
-        sm.timeoutManager.scheduleTask(
-            async () => {
-                const persistedBlock =
-                    sm.storage.blocks.getBlock(block.forkId, block.height) ??
-                    block;
-                const everyoneSigned =
-                    sm.agreementManager.didEveryoneSignBlock(persistedBlock);
-
-                if (everyoneSigned) {
-                    this.logger.info(
-                        `startMaybeExitOnChain - everyone signed block ${block.height}, posting state snapshot`,
-                        { blockHeight: block.height, forkId: block.forkId }
-                    );
-                    let posted = false;
-                    try {
-                        posted =
-                            await sm.snapshotUpdateService.postStateSnapshotWait(
-                                block.forkId
-                            );
-                    } catch (error) {
-                        this.logger.error(
-                            `startMaybeExitOnChain - failed to post state snapshot`,
-                            { error: errorMessage(error) }
-                        );
-                    }
-                    if (!posted) {
-                        try {
-                            if (
-                                !(await this.startSelfRemovalDispute(
-                                    block.forkId
-                                ))
-                            ) {
-                                this.logger.warn(
-                                    "Self-removal dispute did not start",
-                                    { forkId: block.forkId }
-                                );
-                                sm.leaveChannelService.onExitFallbackFailed(
-                                    block.forkId,
-                                    new Error(
-                                        "Terminal channel leave failed to start a dispute"
-                                    )
-                                );
-                            }
-                        } catch (disputeError) {
-                            this.logger.error(
-                                "startMaybeExitOnChain - failed to create self-removal dispute after snapshot failure",
-                                {
-                                    error: errorMessage(disputeError)
-                                }
-                            );
-                            sm.leaveChannelService.onExitFallbackFailed(
-                                block.forkId,
-                                disputeError
-                            );
-                        }
-                    }
-                } else {
-                    // Slow path: not everyone signed - create a self-removal dispute
-                    this.logger.info(
-                        `startMaybeExitOnChain - not everyone signed block ${persistedBlock.height}, creating self-removal dispute`,
-                        {
-                            blockHeight: persistedBlock.height,
-                            forkId: persistedBlock.forkId
-                        }
-                    );
-                    try {
-                        if (
-                            !(await this.startSelfRemovalDispute(
-                                persistedBlock.forkId
-                            ))
-                        ) {
-                            this.logger.warn(
-                                "Self-removal dispute did not start",
-                                { forkId: persistedBlock.forkId }
-                            );
-                            sm.leaveChannelService.onExitFallbackFailed(
-                                persistedBlock.forkId,
-                                new Error(
-                                    "Terminal channel leave failed to start a dispute"
-                                )
-                            );
-                        }
-                    } catch (error) {
-                        this.logger.error(
-                            `startMaybeExitOnChain - failed to create self-removal dispute`,
-                            {
-                                error: errorMessage(error)
-                            }
-                        );
-                        sm.leaveChannelService.onExitFallbackFailed(
-                            persistedBlock.forkId,
-                            error
-                        );
-                    }
-                }
-            },
-            sm.timeConfig.agreementTime * 1000,
-            `MaybeExitOnChain - block ${block.height} - fork ${block.forkId}`
-        );
     }
 }

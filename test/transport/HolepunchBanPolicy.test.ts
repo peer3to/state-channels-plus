@@ -36,6 +36,19 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.profileBlacklisted).to.equal(false);
     });
 
+    it("logs a peer's connection reset as a warning and any other socket error as an error, closing both transports", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchSocketErrors()
+            .request();
+
+        expect(result.warnings).to.deep.equal([
+            "Holepunch peer reset the connection"
+        ]);
+        expect(result.errors).to.deep.equal(["Holepunch socket error"]);
+        expect(result.closed).to.deep.equal([true, true]);
+    });
+
     it("bans the Holepunch fallback after a WebRTC upgrade", async function () {
         const result = await fixture
             .control()

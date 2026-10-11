@@ -105,7 +105,7 @@ describe("E2E: ReductionManager", function () {
             healthyRaces.push(await h.rpcStub.holdReductionRace(peerIndex));
         }
 
-        const blinded = await h.rpcStub.failChainLogQueries(laggingIndex);
+        const blinded = await h.rpcStub.hideChainLogs(laggingIndex);
         // before the kill period expires the attempt exits at the gate and
         // never reaches the window read
         await waitFor(

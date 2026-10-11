@@ -260,9 +260,9 @@ past the skew comparison);
 [`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L168)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
 sync, not an unhandled rejection;
-[`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L150)
-recovers and cross-checks the embedded signature, channel, deadline, fork, and snapshot before
-producing its own signature.
+[`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L146)
+recovers and cross-checks the embedded signature, channel and deadline before producing its own
+signature; it reads no snapshot (Luka, 2026-10-10).
 
 ## 5. Guards — first-class session gating
 

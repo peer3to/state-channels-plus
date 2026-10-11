@@ -11,6 +11,20 @@ Uses [root creation staging](../../../../../../test/fixtures/RootCreationFixture
 
 The parentless-worker cases ([ParentlessRootCreationFixture](../../../../../../test/fixtures/node/ParentlessRootCreationFixture.ts)) create real contract-executor workers through `createRoot` with `mode: "worker"` and no parent, using the probe executor entry, and observe the hidden parent through the test-only `RootCreationControl`. Oracles: the parent's class and its single child, cross-realm handle, real probe sums and the worker thread name, parent identity across creations, the handle's closed state, and the parent's disposing flag and empty connection map after disposal or after a startup failure caused by a missing precompile module. The crash case loads [workerAnswerPrecompile](../../../../../../test/fixtures/workerAnswerPrecompile.ts) with an `exitCode`, so the worker thread exits during a real `executeCall`; it waits for the handle to close, reads the call's rejection and the parent's not-yet-disposing flag, then disposes the handle and reads the same released state. The inline-owner case runs two inline SDK runtimes in one realm with a custom RPC ([OwnerContextRpcManifest](../../../../../../test/fixtures/customRpc/OwnerContextRpcManifest.ts)) that creates a real executor child under the owner it receives and records whether that host had stored its runtime yet; it compares actual host instances, child registration, and which child survives disposal of the second runtime. Both child placements also preserve the caller's Buffer, global and window state. The crashed-worker case asserts the handle's recorded failure and the call's rejection are both `Root worker exited with 31`, and, with no listener on the handle, that the hidden parent logged exactly that cause into the caller's log store; a second crashed-worker case registers `handle.onError` and asserts the listener received exactly that error while the hidden parent logged nothing. The logger case creates a parentless worker with a real caller logger, has the worker report an error through the probe and finds it in the caller's store, then disposes the handle and asserts the caller's logger is not disposed and still stores new entries.
 
+The creator-config case sets a marker value in the creating thread's config, then creates a Node.js worker
+root through [BootstrapConfigRootEntry](../../../../../../test/fixtures/workerRoot/BootstrapConfigRootEntry.ts),
+whose root class throws from its constructor, before the root is built, unless the worker already holds
+the marker; no root installs a config itself, so only the bootstrap can supply it. Creation succeeds and
+the creator's config is restored afterwards.
+
+The two upload cases point only the creating thread's config at a real log receiver, then create a
+parentless worker root through [NamedLoggerProbeRootEntry](../../../../../../test/fixtures/workerRoot/NamedLoggerProbeRootEntry.ts)
+(`startRootWorker` with thread name `prover`) or [UnnamedLoggerProbeRootEntry](../../../../../../test/fixtures/workerRoot/UnnamedLoggerProbeRootEntry.ts)
+(no thread name). The root is the real executor root with the logger probe and installs no config itself.
+Each case reads the worker logger's shared thread name, writes one marker line, uploads the worker's own
+store, and asserts that exactly one receiver request carries the marker, filed under the expected thread
+name (`prover` or `main`), with the marker entry's shared context naming the same thread.
+
 ## Tests
 
 - `settles disposal when the worker exits before its acknowledgement`: UNIT-TEST-ROOT-ERROR-1-0N4XM4.P6, REQ-RUNTIME-3-VQXW59.T1.P50
@@ -26,6 +40,9 @@ The parentless-worker cases ([ParentlessRootCreationFixture](../../../../../../t
 - `waits for a held worker host ready notification during client initialization`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P17, REQ-RUNTIME-3-VQXW59.T1.P38
 - `initializes a standalone executor before returning without parent connections`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P9, REQ-RUNTIME-3-VQXW59.T1.P30, UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P7
 - `cleans a standalone executor after initialization fails`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P10, REQ-RUNTIME-3-VQXW59.T1.P31
+- `starts a worker root with the creating thread's config before the root is built`: REQ-CONFIG-4-WW7BRX.T1.P1, UNIT-TEST-ROOT-CREATION-1-1NWN3V.P36
+- `uploads a worker root's logs with the creating thread's config under the thread name it was started with`: REQ-CONFIG-4-WW7BRX.T1.P3, UNIT-TEST-ROOT-CREATION-1-1NWN3V.P37
+- `uploads a worker root's logs under main when it was started without a thread name`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P38
 - `creates a parentless worker whose typed handle serves calls in the worker`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P27, REQ-RUNTIME-3-VQXW59.T1.P64
 - `gives each parentless worker its own hidden parent`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P28, REQ-RUNTIME-3-VQXW59.T1.P65
 - `releases a parentless worker's hidden parent and connection when its handle is disposed`: UNIT-TEST-ROOT-CREATION-1-1NWN3V.P29, REQ-RUNTIME-3-VQXW59.T1.P66

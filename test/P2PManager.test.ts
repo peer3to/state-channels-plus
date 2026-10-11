@@ -1,3 +1,4 @@
+import { TransportType } from "@/transport";
 import { Status } from "@/types";
 import { channelIdToTargetedJoinTopic, sleep } from "@/utils";
 
@@ -393,6 +394,35 @@ describe("P2PManager", function () {
             .request();
 
         expect(result.connectedPeers).to.deep.equal([fixture!.address(1)]);
+    });
+
+    it("reports each change of the connection set with its transport types, leaves out a peerless transport, and reports nothing for a repeated add or close", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeConnectionsChanged(
+                fixture!.address(0),
+                fixture!.address(1)
+            )
+            .request();
+
+        const holepunch = {
+            peerAddress: fixture!.address(0),
+            transportType: TransportType.HOLEPUNCH
+        };
+        const webRtc = {
+            peerAddress: fixture!.address(1),
+            transportType: TransportType.WEBRTC
+        };
+        expect(result.snapshots).to.deep.equal([
+            [holepunch],
+            // the peerless transport joined the set but is left out
+            [holepunch],
+            [holepunch, webRtc],
+            [webRtc],
+            // the unexpected close of the WebRTC transport
+            []
+        ]);
+        expect(result.openConnections).to.deep.equal([]);
     });
 
     it("ignores a completed handshake with no registered transport", async function () {

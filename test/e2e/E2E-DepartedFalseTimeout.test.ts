@@ -358,8 +358,10 @@ describe("E2E: departed submitter's old timeout", function () {
             await suppressTimeoutChecks(h, [auditorIndex]);
             // Keep authoring while exit preparation runs; it need only be
             // parked before the join, not before the spectator is created.
-            // her exit post parks before the auditor's join lands: a later
-            // post finds an unconsumed inbound block and she self-removes
+            // her exit post parks before the auditor's join lands: a post
+            // prepared after it would wait for a block that consumes the
+            // join, which cut-off Alice never sees, and she would self-remove
+            // when the leave watchdog expires
             await confirmExitParked();
             await joinAsPendingParticipant(h, auditorIndex, remaining);
             await waitForChainInboundHead(h, [

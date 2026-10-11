@@ -90,9 +90,9 @@ signed terms ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](.
 This also applies to an honest submission sent before the deadline but mined after it: `open` reverts with
 `RaceConditionOpenChannelExpired`, and the attempt ends through the existing failed-opening-receipt path
 (ordinary mode closes the peer with reconnect allowed, no strike, and retries unless the caller has left the lobby; targeted mode follows the
-targeted receipt-failure rule below). Public lobby leave is a matching-only
-operation: after commitment it reports that handoff is complete and does not cancel negotiation or chain
-observation; an outcome other than opening then ends the join instead of retrying. Successful chain observation leaves the caller topic before the opened-channel result is
+targeted receipt-failure rule below). Public lobby leave cancels only matching: after commitment it does
+not cancel negotiation or chain observation but waits for their outcome. An outcome other than opening
+then ends the join instead of retrying and the leave reports true; an opened channel makes it report false. Successful chain observation leaves the caller topic before the opened-channel result is
 returned to the client.
 
 Final loss of the matched profile before signing is a neutral abort without exclusion. Timeout, malformed

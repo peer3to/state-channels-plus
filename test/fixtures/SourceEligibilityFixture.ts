@@ -177,7 +177,7 @@ export async function missingInboundEligibility() {
     const observer = h.getPeer(0);
     const control = h.control(observer);
     const dropped = await h.rpcStub.dropInboundMessageLogs(observer.index);
-    const blinded = await h.rpcStub.failChainLogQueries(observer.index);
+    const blinded = await h.rpcStub.hideChainLogs(observer.index);
     await control.stub.observeAdmission().request();
     try {
         await prepared.joiner.p2pInstance.p2pSigner.joinChannel(

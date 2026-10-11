@@ -18,6 +18,9 @@ typechain-types
 #Generated spec reports stay compact — prettier column padding turns one-cell edits into whole-table diffs
 docs/spec/generated
 
+# Solidity is formatted by forge fmt (lint-staged); Prettier has no Solidity parser
+*.sol
+
 # Machine-written test scheduling costs
 /test-costs.json
 /test-costs.overrides.json

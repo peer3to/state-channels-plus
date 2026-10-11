@@ -1,3 +1,5 @@
+import { StateSnapshot } from "@/models";
+import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
@@ -32,31 +34,54 @@ describe("SnapshotUpdateService", function () {
         await h.transition.advanceState();
         const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-        const posted = await h.execOnHost(h.getPeer(0), (sm) =>
-            sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
-        );
-
-        expect(posted).to.equal(true);
+        expect(await postSnapshotFrom(h, 0)).to.equal("posted");
         expect(await h.query.getOnChainSnapshotHash()).to.not.equal(
             snapshotBefore
         );
     });
 
-    it("resolves false when a dispute commits between preparation and send", async function () {
+    it("a mined post resolves with the snapshot the chain now holds", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0);
+        await h.transition.advanceState();
+        const snapshotBefore = await h.query.getOnChainSnapshotHash();
+
+        const encodedSnapshot = await h.execOnHost(h.getPeer(0), async (sm) => {
+            const posted = await sm.snapshotUpdateService.postStateSnapshotWait(
+                sm.forkId
+            );
+            return posted?.encode() ?? null;
+        });
+
+        expect(encodedSnapshot, "a mined post returns its snapshot").to.not.be
+            .null;
+        const posted = StateSnapshot.decode(encodedSnapshot!);
+        const onChain = await h.channelManager.getStateSnapshot(h.channelId);
+        expect(posted.hash).to.not.equal(snapshotBefore);
+        expect(posted.hash).to.equal(await h.query.getOnChainSnapshotHash());
+        expect(posted.snapshotData.participants).to.deep.equal([
+            ...onChain.snapshotData.participants
+        ]);
+        expect(posted.snapshotData.participants).to.have.members(
+            h.peers.map((peer) => peer.address)
+        );
+    });
+
+    it("rejects with the disputed-fork refusal when a dispute commits between preparation and send", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const send = await h.rpcStub.holdSnapshotPostSend(0);
         let refusal: string | null = null;
         try {
-            const posted = h.execOnHost(h.getPeer(0), (sm) =>
-                sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
-            );
+            const posted = postSnapshotFrom(h, 0);
             await send.waitUntilHeld();
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
             });
             refusal = await send.release();
-            expect(await posted).to.equal(false);
+            expect(await posted).to.equal(
+                "RaceConditionSnapshotUpdateDisputedFork"
+            );
         } finally {
             await send.release();
         }
@@ -83,7 +108,7 @@ describe("SnapshotUpdateService", function () {
                             "prepareUpdateStateSnapshotFork"
                         ]();
                     const posted =
-                        await sm.snapshotUpdateService.postStateSnapshot(
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
                             sm.forkId
                         );
                     return {
@@ -106,7 +131,7 @@ describe("SnapshotUpdateService", function () {
         }
     });
 
-    it("blocks same-fork calldata when its snapshot has not consumed the on-chain inbound head", async function () {
+    it("a same-fork post whose snapshot has not consumed the on-chain inbound head reverts with the pending-inbound refusal", async function () {
         const h = TestSession.getHarness();
         const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
             await h.scenario.syncSpectatorAndPrepareJoin();
@@ -124,27 +149,12 @@ describe("SnapshotUpdateService", function () {
             waitForPeers: [0, 1, 2]
         });
 
-        const result = await h.execOnHost(
-            h.getPeer(0),
-            async (sm, args) => {
-                const prepared = await sm.snapshotUpdateService[
-                    "prepareUpdateSnapshotSameFork"
-                ](args.forkId);
-                const posted = await sm.snapshotUpdateService.postStateSnapshot(
-                    args.forkId
-                );
-                return {
-                    canPost: prepared.canPost,
-                    callDataCount: prepared.callData.length,
-                    postedSnapshotHash: posted?.hash ?? null
-                };
-            },
-            { forkId: h.activeForkId! }
-        );
+        const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-        expect(result.canPost).to.equal(false);
-        expect(result.callDataCount).to.equal(0);
-        expect(result.postedSnapshotHash).to.equal(null);
+        expect(await postSnapshotFrom(h, 0)).to.equal(
+            "RaceConditionPendingInboundNotConsumed"
+        );
+        expect(await h.query.getOnChainSnapshotHash()).to.equal(snapshotBefore);
     });
 
     it("walks two finalized dispute windows and prepares one terminal fork update", async function () {

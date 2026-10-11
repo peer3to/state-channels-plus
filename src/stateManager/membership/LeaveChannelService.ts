@@ -1,5 +1,4 @@
-import Clock from "@/Clock";
-import { Block } from "@/models";
+import { StateSnapshot } from "@/models";
 import type { ParticipantChanges } from "@/stateManager/block/SnapshotAssemblyService";
 import type StateManager from "@/stateManager/StateManager";
 import { Status } from "@/types";
@@ -9,391 +8,324 @@ import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 
-type LeavePhase =
-    | "starting"
-    | "awaiting-join"
-    | "awaiting-exit"
-    | "exit-authored"
-    | "disputing"
-    | "awaiting-settlement";
+/**
+ * Chain refusals of an exit post: the snapshot has not consumed the inbound
+ * head, another post or a later reduction landed first, or the fork is
+ * disputed (the leave's dispute settles it).
+ */
+const EXIT_POST_REFUSALS = [
+    "RaceConditionPendingInboundNotConsumed",
+    "RaceConditionBlockHeightTooOld",
+    "RaceConditionSnapshotForkMismatch",
+    "RaceConditionSnapshotUpdateNotLatestFork",
+    "RaceConditionSnapshotUpdateDisputedFork"
+] as const;
 
-type LeaveOperation = {
-    promise: Promise<void>;
-    resolve: () => void;
-    reject: (error: Error) => void;
-    participantCount: number;
-    ingestedBlockCount: number;
-    forkId: ForkId;
-    phase: LeavePhase;
-    leaveTurnEmitted: boolean;
-    watchdog?: ReturnType<typeof setTimeout>;
-};
-
+/** This runtime's exit, from a leave request or from its own exit block. */
 export type LeaveChannelState = {
-    participantCount: number;
-    ingestedBlockCount: number;
     forkId: ForkId;
-    phase: LeavePhase;
-    leaveTurnEmitted: boolean;
+    isLeaveRequested: boolean;
+    isLeaveTurnTaken: boolean;
+    isExitBlockCommitted: boolean;
 };
 
-/** Owns the terminal leave operation for one runtime. */
+/**
+ * Owns this runtime's membership end. A leave offers the leaver's next turn
+ * to the application (`onLeaveTurn`) to author its exit. Once the exit block
+ * is committed, each finalized block posts the latest state snapshot: any
+ * posted snapshot that includes the exit lands it. Every dispute of an
+ * exiting signer carries its self-removal (the force-exit flag), and the
+ * leave watchdog starts one. Once the runtime observes that it is in
+ * neither the local state nor the chain's membership it drops to SYNCED.
+ * Every drop of a member or pending joiner to SYNCED, whatever caused it
+ * (a leave, a removal, a refused or expired join), emits `onLeftChannel`.
+ */
 export default class LeaveChannelService {
     private readonly logger: Logger;
-    private operation?: LeaveOperation;
-    private disposed = false;
+    private readonly unsubscribers: (() => void)[];
+    private exit?: LeaveChannelState;
+    private watchdog?: ReturnType<typeof setTimeout>;
+    // one exit post runs at a time; a finalized block during it posts once more
+    private isPosting = false;
+    private isPostQueued = false;
+    // one membership check runs at a time; at most one more waits behind it
+    private checks: Promise<void> = Promise.resolve();
+    private isCheckQueued = false;
 
     constructor(
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
         this.logger = logger.child({ component: "LeaveChannel" });
+        const events = stateManager.events;
+        const check = () => this.requestCheck();
+        this.unsubscribers = [
+            events.on("p2pEventHooks", "onBlockFinalized", () =>
+                this.postLatestSnapshot()
+            ),
+            events.on("p2pEventHooks", "onSetState", check),
+            events.on("p2pEventHooks", "onStatusChanged", (oldStatus, status) =>
+                this.onStatusChanged(oldStatus, status)
+            ),
+            events.on(
+                "eventHandler",
+                "onStateSnapshotUpdated",
+                (_, snapshot) => {
+                    // a snapshot that still lists this signer removed no
+                    // one: only a pending exit checks it
+                    if (
+                        !this.exit &&
+                        stateManager.membershipService.includesSigner(
+                            snapshot.snapshotData.participants as Address[]
+                        )
+                    )
+                        return;
+                    this.requestCheck();
+                }
+            ),
+            events.on("eventHandler", "onDisputeReducedResultCommitted", check),
+            events.on("eventHandler", "onChannelStorageCleared", check)
+        ];
     }
 
     public get isLeaving(): boolean {
-        return this.operation !== undefined;
+        return this.exit?.isLeaveRequested === true;
     }
 
     public get state(): LeaveChannelState | null {
-        const operation = this.operation;
-        if (!operation) return null;
-        return {
-            participantCount: operation.participantCount,
-            ingestedBlockCount: operation.ingestedBlockCount,
-            forkId: operation.forkId,
-            phase: operation.phase,
-            leaveTurnEmitted: operation.leaveTurnEmitted
-        };
+        return this.exit ? { ...this.exit } : null;
     }
 
     public assertOperationAllowed(operation: string): void {
-        if (!this.operation) return;
-        throw new Error(
-            `${operation} is unavailable while terminal channel leave is pending`
-        );
+        if (this.isLeaving)
+            throw new Error(
+                `${operation} is unavailable while terminal channel leave is pending`
+            );
     }
 
-    public leaveChannel(): Promise<void> {
-        if (this.operation) return this.operation.promise;
-
-        let resolve!: () => void;
-        let reject!: (error: Error) => void;
-        const promise = new Promise<void>((resolvePromise, rejectPromise) => {
-            resolve = resolvePromise;
-            reject = rejectPromise;
-        });
-        const operation: LeaveOperation = {
-            promise,
-            resolve,
-            reject,
-            participantCount: 0,
-            ingestedBlockCount: 0,
-            forkId: this.stateManager.forkId,
-            phase: "starting",
-            leaveTurnEmitted: false
-        };
-        this.operation = operation;
-
-        if (!isCommittedParticipantStatus(this.stateManager.status)) {
-            operation.resolve();
-            return operation.promise;
-        }
-
-        void this.startCommittedLeave(operation).catch((error) =>
-            this.fail(operation, error)
-        );
-        return operation.promise;
-    }
-
-    public takeLeaveTurn(nextToWrite: Address): boolean {
-        const operation = this.operation;
+    /** Starts this runtime's leave; `onLeftChannel` reports its end. */
+    public leaveChannel(): void {
+        if (this.isLeaving) return;
         if (
-            !operation ||
-            operation.phase !== "awaiting-exit" ||
-            operation.leaveTurnEmitted ||
-            !addressesEqual(nextToWrite, this.stateManager.signerAddress)
+            !this.exit &&
+            !isCommittedParticipantStatus(this.stateManager.status)
         ) {
-            return false;
+            // nothing to leave
+            this.stateManager.p2pEventHooks.onLeftChannel?.();
+            return;
         }
-        operation.leaveTurnEmitted = true;
+        (this.exit ?? this.startExit()).isLeaveRequested = true;
+        this.requestCheck();
+    }
+
+    /** Whether the leaver's turn goes to the application to author its exit. */
+    public shouldTakeLeaveTurn(nextToWrite: Address): boolean {
+        const exit = this.exit;
+        if (
+            !exit?.isLeaveRequested ||
+            exit.isLeaveTurnTaken ||
+            exit.isExitBlockCommitted ||
+            !addressesEqual(nextToWrite, this.stateManager.signerAddress)
+        )
+            return false;
+        exit.isLeaveTurnTaken = true;
         return true;
     }
 
-    public async onBlockCommitted(
-        block: Block,
-        participantChanges: ParticipantChanges
-    ): Promise<void> {
-        const operation = this.operation;
-        if (!operation) return;
-
-        if (participantChanges.left.has(this.stateManager.signerAddress)) {
-            operation.phase = "exit-authored";
-            this.cancelWatchdog(operation);
-            return;
-        }
+    /** A committed block; the signer's own exit block starts its exit. */
+    public onBlockCommitted(participantChanges: ParticipantChanges): void {
+        // a signer that already left has no exit to start
         if (
-            operation.phase !== "awaiting-exit" ||
-            block.forkId !== operation.forkId
-        ) {
-            return;
-        }
-
-        operation.ingestedBlockCount += 1;
-        if (operation.ingestedBlockCount >= operation.participantCount + 1) {
-            const fallback = this.startDisputeFallback(
-                operation,
-                "block bound"
-            );
-            DetachedPromises.observe(fallback, (error) =>
-                this.fail(operation, error)
-            );
-        }
-    }
-
-    public onExitFallbackFailed(forkId: ForkId, error: unknown): void {
-        const operation = this.operation;
-        if (
-            !operation ||
-            operation.phase !== "exit-authored" ||
-            operation.forkId !== forkId
+            !participantChanges.left.has(this.stateManager.signerAddress) ||
+            !isCommittedParticipantStatus(this.stateManager.status)
         )
             return;
-        // the window already holds commitments -> its reduction settles the leave
-        if (
-            tryDecodeCustomError(error)?.name ===
-            "RaceConditionDisputeEvidencePeriodExpired"
-        ) {
-            operation.phase = "awaiting-settlement";
-            return;
-        }
-        this.fail(operation, error);
-    }
-
-    public async onSettledStateObserved(): Promise<void> {
-        const operation = this.operation;
-        // Until its authorization expires, the join may still land: only the
-        // join wait settles an unobserved join.
-        if (
-            !operation ||
-            operation.phase === "starting" ||
-            operation.phase === "awaiting-join"
-        )
-            return;
-
-        const sm = this.stateManager;
-        const remainsLocal = await sm.membershipService.isSignerInLocalState();
-        const disputeSettlementObserved =
-            (operation.phase === "awaiting-settlement" ||
-                sm.storage.disputes.didIDispute(operation.forkId)) &&
-            sm.forkId !== operation.forkId;
-
-        // A closed channel (NOT_OPENED after the last exit) holds no member,
-        // so an exit that closed it settles the leave as SYNCED would.
-        if (
-            (sm.status === Status.SYNCED || sm.status === Status.NOT_OPENED) &&
-            !remainsLocal &&
-            (disputeSettlementObserved ||
-                !(await sm.membershipService.isSignerOnChain()))
-        ) {
-            this.cancelWatchdog(operation);
-            operation.resolve();
-            return;
-        }
-
-        if (
-            remainsLocal &&
-            sm.forkId !== operation.forkId &&
-            isCommittedParticipantStatus(sm.status)
-        ) {
-            operation.forkId = sm.forkId;
-            operation.ingestedBlockCount = 0;
-            operation.leaveTurnEmitted = false;
-            operation.phase = "awaiting-exit";
-            this.armWatchdog(operation);
-        }
+        (this.exit ?? this.startExit()).isExitBlockCommitted = true;
     }
 
     public dispose(): void {
-        this.disposed = true;
-        const operation = this.operation;
-        if (!operation) return;
-        this.cancelWatchdog(operation);
-        operation.reject(
-            new Error(
-                "P2P runtime was disposed while channel leave was pending"
-            )
-        );
+        for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe();
+        this.cancelWatchdog();
+        this.exit = undefined;
     }
 
-    private async startCommittedLeave(
-        operation: LeaveOperation
-    ): Promise<void> {
-        const participants =
-            await this.stateManager.diamondStateMachine.getParticipants();
-        if (this.operation !== operation) return;
-
-        operation.participantCount = participants.length;
-        operation.forkId = this.stateManager.forkId;
-        this.stateManager.storage.forceExit.setForceExit(true);
-
-        if (this.stateManager.storage.disputes.didIDispute(operation.forkId)) {
-            operation.phase = "awaiting-settlement";
-            return;
-        }
-
-        // A pending joiner that has not observed its own join on chain has
-        // nothing to remove yet: it waits until its join authorization has
-        // expired on chain before any exit fallback starts.
+    private startExit(): LeaveChannelState {
         const sm = this.stateManager;
-        if (
-            sm.status === Status.PENDING_PARTICIPANT &&
-            !sm.membershipService.isOwnJoinObserved()
-        ) {
-            operation.phase = "awaiting-join";
-            this.scheduleJoinWait(operation, 0);
+        const exit: LeaveChannelState = {
+            forkId: sm.forkId,
+            isLeaveRequested: false,
+            isLeaveTurnTaken: false,
+            isExitBlockCommitted: false
+        };
+        this.exit = exit;
+        // every dispute of this signer now carries its self-removal; a
+        // started exit is never retracted
+        sm.storage.forceExit.setForceExit(true);
+        this.armWatchdog(config.LEAVE_CHANNEL_WATCHDOG_MS);
+        return exit;
+    }
+
+    private requestCheck(): void {
+        if (this.isCheckQueued) return;
+        this.isCheckQueued = true;
+        const check = this.checks.then(() => {
+            this.isCheckQueued = false;
+            return this.checkLeft();
+        });
+        this.checks = check.catch(() => undefined);
+        DetachedPromises.observe(check, (error) => {
+            throw error;
+        });
+    }
+
+    /** Ends the membership once it is gone from the local state and the chain. */
+    private async checkLeft(): Promise<void> {
+        const sm = this.stateManager;
+        const membership = sm.membershipService;
+        if (!this.exit && !isCommittedParticipantStatus(sm.status)) return;
+        // a tracked join ends the membership itself: seated, refused,
+        // expired, or dropped by an installed state
+        if (sm.channelJoinService.isJoinInProgress()) return;
+        if (await membership.isSignerInLocalState()) {
+            const exit = this.exit;
+            // a new fork that keeps the signer: an exit block of the
+            // replaced fork no longer holds; a started exit leaves there. A
+            // drop to SYNCED during the read already ended the exit.
+            if (
+                !exit ||
+                sm.forkId === exit.forkId ||
+                !isCommittedParticipantStatus(sm.status)
+            )
+                return;
+            this.endExit();
+            this.startExit().isLeaveRequested = true;
             return;
         }
-
-        operation.phase = "awaiting-exit";
-        this.armWatchdog(operation);
-        await this.onSettledStateObserved();
-    }
-
-    /** The leaver's own join arrived on chain: its leave proceeds as a member's. */
-    public onOwnJoinObserved(): void {
-        const operation = this.operation;
-        if (!operation || operation.phase !== "awaiting-join") return;
-        operation.phase = "awaiting-exit";
-        this.armWatchdog(operation);
-    }
-
-    /**
-     * Checks the join once the chain is past the join authorization's
-     * deadline (at least `minimumSeconds` from now). The contract admits a
-     * join only in a block whose timestamp is at most that deadline.
-     */
-    private scheduleJoinWait(
-        operation: LeaveOperation,
-        minimumSeconds: number
-    ): void {
-        const deadline =
-            this.stateManager.membershipService.getJoinAuthorizationDeadline();
-        const untilExpirySeconds =
-            deadline === undefined
-                ? 0
-                : deadline + 1 - Clock.getTimeInSeconds();
-        operation.watchdog = this.stateManager.timeoutManager.scheduleTask(
-            () =>
-                DetachedPromises.observe(
-                    this.settleUnobservedJoin(operation),
-                    (error) => this.fail(operation, error)
-                ),
-            Math.max(minimumSeconds, untilExpirySeconds, 0) * 1000,
-            "terminal channel leave join wait"
-        );
-    }
-
-    /** The join wait still owns this operation: no observation, disposal or replacement happened. */
-    private isAwaitingJoin(operation: LeaveOperation): boolean {
-        return (
-            !this.disposed &&
-            this.operation === operation &&
-            operation.phase === "awaiting-join" &&
-            !this.stateManager.membershipService.isOwnJoinObserved()
-        );
-    }
-
-    /**
-     * The join wait ended without the leaver observing its join; the
-     * membership service owns the join decision. "open": the join can still
-     * land, so the wait continues. "landed": the observation only lags and
-     * the member's leave runs. "expired" or "none" (the join was dropped):
-     * the leave has nothing to remove and settles. An observation, disposal
-     * or replacement during the read wins over the read.
-     */
-    private async settleUnobservedJoin(
-        operation: LeaveOperation
-    ): Promise<void> {
-        operation.watchdog = undefined;
-        if (!this.isAwaitingJoin(operation)) return;
-        const membership = this.stateManager.membershipService;
-        const join = await membership.getOwnJoinState();
-        if (!this.isAwaitingJoin(operation)) return;
-        if (join.state === "open") {
-            this.scheduleJoinWait(operation, 1);
-            return;
-        }
-        if (join.state === "landed") {
-            operation.phase = "awaiting-exit";
-            this.armWatchdog(operation);
-            return;
-        }
+        if (await membership.isSignerOnChain()) return;
+        // onStatusChanged below ends the exit and emits onLeftChannel
         membership.dropMembership();
-        this.logger.info(
-            "Terminal channel leave settled: the join authorization expired and the join never reached the chain"
-        );
-        operation.resolve();
     }
 
-    private armWatchdog(operation: LeaveOperation): void {
-        this.cancelWatchdog(operation);
-        operation.watchdog = this.stateManager.timeoutManager.scheduleTask(
-            () =>
-                DetachedPromises.observe(
-                    this.startDisputeFallback(operation, "watchdog"),
-                    (error) => this.fail(operation, error)
-                ),
-            config.LEAVE_CHANNEL_WATCHDOG_MS,
-            "terminal channel leave watchdog"
-        );
-    }
-
-    private cancelWatchdog(operation: LeaveOperation): void {
-        if (!operation.watchdog) return;
-        this.stateManager.timeoutManager.cancelTask(operation.watchdog);
-        operation.watchdog = undefined;
-    }
-
-    private async startDisputeFallback(
-        operation: LeaveOperation,
-        reason: "block bound" | "watchdog"
-    ): Promise<void> {
+    /**
+     * A member or pending joiner that becomes SYNCED left, whatever ended
+     * the membership: its leave, a removal, a refused or expired join.
+     */
+    private onStatusChanged(oldStatus: Status, status: Status): void {
         if (
-            this.operation !== operation ||
-            operation.phase !== "awaiting-exit"
+            isCommittedParticipantStatus(oldStatus) &&
+            status === Status.SYNCED
         ) {
+            this.endExit();
+            this.logger.info("Left the channel");
+            this.stateManager.p2pEventHooks.onLeftChannel?.();
+        }
+        this.requestCheck();
+    }
+
+    private postLatestSnapshot(): void {
+        if (!this.exit?.isExitBlockCommitted) return;
+        // the block finalized during a post can be the one that lands the
+        // exit, and a leaver commits no later block to post again: it posts
+        // once more after this post, unless this post landed the exit
+        if (this.isPosting) {
+            this.isPostQueued = true;
             return;
         }
-        this.cancelWatchdog(operation);
+        this.isPosting = true;
+        // scheduled like a block post: the task tracks the post, so disposal
+        // bounds its wait. Its own failure is fatal: it is rethrown as an
+        // unhandled rejection. Not DetachedPromises.observe: that also
+        // collects the post, and teardown would then wait on a post still
+        // waiting for its receipt, past the disposal bound.
+        this.stateManager.timeoutManager.scheduleTask(
+            () => {
+                const post = this.postExitSnapshot();
+                void post.catch((error: unknown) => {
+                    throw error;
+                });
+                return post.catch(() => undefined);
+            },
+            0,
+            "exit snapshot post"
+        );
+    }
 
-        if (this.stateManager.storage.disputes.didIDispute(operation.forkId)) {
-            operation.phase = "awaiting-settlement";
-            return;
-        }
-
-        operation.phase = "disputing";
-        this.logger.info(
-            "Terminal channel leave starting self-removal dispute",
-            {
-                forkId: operation.forkId,
-                reason
+    /**
+     * One exit post. A chain refusal (e.g. an inbound message the snapshot
+     * has not consumed) lands nothing and is logged: the next finalized
+     * block, or the one queued during this post, posts again. Any other
+     * failure rejects.
+     */
+    private async postExitSnapshot(): Promise<void> {
+        const sm = this.stateManager;
+        let posted: StateSnapshot | undefined;
+        try {
+            posted = await sm.snapshotUpdateService.postStateSnapshotWait(
+                sm.forkId
+            );
+        } catch (error) {
+            const refusal = tryDecodeCustomError(error)?.name;
+            if (!EXIT_POST_REFUSALS.some((name) => name === refusal))
+                throw error;
+            this.logger.info("The chain refused the exit snapshot post", {
+                refusal
+            });
+        } finally {
+            this.isPosting = false;
+            // a posted snapshot that drops this signer landed the exit
+            const hasExitLanded =
+                posted !== undefined &&
+                !sm.membershipService.includesSigner(
+                    posted.snapshotData.participants as Address[]
+                );
+            if (this.isPostQueued) {
+                this.isPostQueued = false;
+                if (!hasExitLanded) this.postLatestSnapshot();
             }
-        );
-        if (
-            !(await this.stateManager.membershipService.startSelfRemovalDispute(
-                operation.forkId
-            ))
-        ) {
-            throw new Error("Terminal channel leave failed to start a dispute");
         }
-        operation.phase = "awaiting-settlement";
     }
 
-    private fail(operation: LeaveOperation, error: unknown): void {
-        if (this.operation !== operation) return;
-        this.cancelWatchdog(operation);
-        operation.reject(
-            error instanceof Error ? error : new Error(String(error))
+    /**
+     * A member disputes its own removal. A pending join waits another
+     * watchdog: it lands, or its expiry ends it. A dispute that loses the
+     * evidence race waits for that window's reduction.
+     */
+    private async onWatchdog(): Promise<void> {
+        this.watchdog = undefined;
+        const exit = this.exit;
+        if (!exit) return;
+        const sm = this.stateManager;
+        // a join in progress lands (forced in if needed) or ends first
+        if (sm.channelJoinService.isJoinInProgress())
+            return this.armWatchdog(config.LEAVE_CHANNEL_WATCHDOG_MS);
+        if (sm.storage.disputes.didIDispute(exit.forkId)) return;
+        this.logger.info("Starting the leave's self-removal dispute", {
+            forkId: exit.forkId
+        });
+        await sm.disputeManager.dispute(exit.forkId);
+    }
+
+    private armWatchdog(delayMs: number): void {
+        this.cancelWatchdog();
+        this.watchdog = this.stateManager.timeoutManager.scheduleTask(
+            () =>
+                DetachedPromises.observe(this.onWatchdog(), (error) => {
+                    throw error;
+                }),
+            delayMs,
+            "channel leave watchdog"
         );
+    }
+
+    private cancelWatchdog(): void {
+        if (!this.watchdog) return;
+        this.stateManager.timeoutManager.cancelTask(this.watchdog);
+        this.watchdog = undefined;
+    }
+
+    private endExit(): void {
+        if (!this.exit) return;
+        this.cancelWatchdog();
+        this.exit = undefined;
     }
 }

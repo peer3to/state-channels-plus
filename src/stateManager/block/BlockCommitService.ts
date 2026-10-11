@@ -53,15 +53,9 @@ export default class BlockCommitService {
         ) {
             const participants = await sm.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(sm.signerAddress);
-            if (isParticipant) {
-                sm.setStatus(Status.PARTICIPATING);
-                sm.membershipService.onJoinSeated();
-            } else if (sm.status === Status.PENDING_PARTICIPANT) {
-                await sm.membershipService.maybeInitiateForceJoinDispute(
-                    block,
-                    participants
-                );
-            }
+            // a seated pending joiner's join ends on this status change:
+            // ChannelJoinService subscribes to onStatusChanged
+            if (isParticipant) sm.setStatus(Status.PARTICIPATING);
         }
         // step 2 - persist the state snapshot + state machine state first:
         // shouldSignBlock reads the resulting participants from storage
@@ -96,6 +90,12 @@ export default class BlockCommitService {
         // The block is canonical from here: a failure in the remaining side
         // effects must not roll the VM back behind stored state.
         options?.onBlockCommitted?.();
+        if (!isDisputeReplay) {
+            // counts toward the force-join bound while this signer's join is
+            // observed and not seated; the join service ignores it otherwise
+            sm.channelJoinService.onBlockCommitted(block.height);
+            sm.leaveChannelService.onBlockCommitted(participantChanges);
+        }
         P2pEventHooksUtils.maybeNotifyBlockFinalized({
             block,
             storage: sm.storage,
@@ -137,19 +137,6 @@ export default class BlockCommitService {
                 .onBlockConfirmation(block.blockConfirmationStruct)
                 .broadcast();
         }
-
-        // step 8 - startMaybeExitOnChain
-        await sm.membershipService.startMaybeExitOnChain(
-            block,
-            stateSnapshot,
-            participantChanges,
-            options?.outboundMessageBlock
-        );
-
-        await sm.leaveChannelService.onBlockCommitted(
-            block,
-            participantChanges
-        );
 
         // step 9 - success callback
         successCallback();

@@ -250,26 +250,28 @@ describe("EventSyncService", function () {
             await held.release({ replay: false });
         });
 
-        it("chain query fails during recovery → undefined, no throw", async function () {
+        it("local diamond failure applying a recovered log → recovery rejects with it", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
             const lagging = 2;
             const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
             const inboundHead = await stageInboundHead(h, lagging);
             await dropped.waitUntilDropped();
+            await h.mirror.failNextUpdate(
+                lagging,
+                "onInboundMessagesProcessed"
+            );
 
-            // the same recoverable gap as above, but every getLogs throws
             const probe = await h
                 .control(h.getPeer(lagging))
-                .validation.probeInboundRunRecovery(inboundHead, {
-                    failChainQueries: true
-                })
+                .validation.probeInboundRunRecovery(inboundHead)
                 .request();
 
-            // the contract that keeps a flaky provider from evicting the peer
-            expect(probe.threw).to.equal(null);
-            // a failed query is one failed attempt - the rest still run
-            expect(probe.queryCount).to.equal(LOG_RECOVERY_ATTEMPTS);
+            expect(probe.threw).to.match(
+                /^Local contract call failed: Error: Local EVM execution failed: revert/
+            );
+            expect(probe.heldBefore).to.equal(false);
+            expect(probe.queryCount).to.equal(1);
             expect(probe.blockCount).to.equal(null);
 
             await dropped.release();
@@ -295,24 +297,6 @@ describe("EventSyncService", function () {
             // one span already covers the whole window the calldata can be in
             expect(probe.queryCount).to.equal(1);
         });
-
-        it("chain queries fail → benign result, no throw, calldata absent", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-            const { leader } = await h.transition.authorNextBlockOffWireWait();
-
-            const probe = await h
-                .control(leader)
-                .validation.probeBlockCalldataRecovery({
-                    failChainQueries: true
-                })
-                .request();
-
-            expect(probe.threw).to.equal(null);
-            expect(probe.recoveredCalldata).to.equal(false);
-            expect(probe.validationScheduled).to.equal(false);
-            expect(probe.queryCount).to.equal(1);
-        });
     });
 
     describe("loadSynchronizedWindowCommitments", function () {
@@ -325,7 +309,7 @@ describe("EventSyncService", function () {
                     maliciousPeerIndex: 2
                 });
 
-            const blinded = await h.rpcStub.failChainLogQueries(observerIndex);
+            const blinded = await h.rpcStub.hideChainLogs(observerIndex);
             const recoveredCount = await h
                 .control(h.getPeer(observerIndex))
                 .dispute.recoverCommittedDisputes(forkId)
@@ -339,109 +323,8 @@ describe("EventSyncService", function () {
             // null = the window could not be made locally readable. the old
             // code threw here, and the throw reached abort()
             expect(recoveredCount).to.equal(null);
-            // a failed query is one failed attempt - the rest still run
+            // no attempt finds the log -> every attempt runs
             expect(queryCount).to.equal(LOG_RECOVERY_ATTEMPTS);
-
-            await race.release({
-                replayEvents: false,
-                runHeldTasks: false,
-                keepTasksHeld: true
-            });
-            await restoreEvents(false);
-        });
-
-        it("a recovery read across several windows survives a failed middle window and dispatches each dispute once", async function () {
-            const h = TestSession.getHarness();
-            const observerIndex = 0;
-            const { forkId, race, restoreEvents } =
-                await h.scenario.disputeWithSuppressedCommitEvents({
-                    observerIndex,
-                    maliciousPeerIndex: 2,
-                    harnessOptions: {
-                        rpcNodeProxiesByPeer: { [observerIndex]: 1 },
-                        // one block per window: every recovery spans several
-                        configOverrides: { LOG_QUERY_MAX_BLOCKS: 1 }
-                    }
-                });
-            const [proxy] = h.getRpcNodeProxies(observerIndex);
-            await restoreEvents(false);
-            await h.event.settleContractEvents(observerIndex);
-            const committedBefore = h.event.getEventCallCount(
-                observerIndex,
-                "onDisputeCommitted"
-            );
-            const windowsBefore = proxy.forwardedLogWindows().length;
-            // the first attempt reads one window, then its second window fails
-            proxy.failRequestAfter("eth_getLogs", 1);
-
-            const recoveredCount = await h
-                .control(h.getPeer(observerIndex))
-                .dispute.recoverCommittedDisputes(forkId)
-                .request();
-
-            const failedWindows = proxy.failedLogWindows();
-            expect(failedWindows.length).to.equal(1);
-            const [[failedFrom]] = failedWindows;
-            const committedLogs = [
-                ...(await h.channelManager.queryFilter(
-                    h.channelManager.filters.DisputeCommitted(h.channelId)
-                )),
-                ...(await h.channelManager.queryFilter(
-                    h.channelManager.filters.DisputeCommittedWithAuditingData(
-                        h.channelId
-                    )
-                ))
-            ];
-            // premise - a dispute commit lies in or after the failed window,
-            // so recovering it needed a later attempt
-            expect(
-                Math.max(...committedLogs.map((log) => log.blockNumber))
-            ).to.be.at.least(failedFrom);
-            // a later attempt read the failed window again
-            expect(
-                proxy
-                    .forwardedLogWindows()
-                    .slice(windowsBefore)
-                    .filter(([fromBlock]) => fromBlock === failedFrom).length
-            ).to.be.at.least(2);
-            if (recoveredCount === null)
-                throw new Error("Expected the window to be recovered");
-            expect(recoveredCount).to.be.greaterThan(0);
-            await h.event.settleContractEvents(observerIndex);
-            expect(
-                h.event.getEventCallCount(observerIndex, "onDisputeCommitted") -
-                    committedBefore
-            ).to.equal(recoveredCount);
-
-            await race.release({
-                replayEvents: false,
-                runHeldTasks: false,
-                keepTasksHeld: true
-            });
-        });
-
-        it("dispute window-span read fails → failed recovery, no throw", async function () {
-            const h = TestSession.getHarness();
-            const observerIndex = 0;
-            const { forkId, race, restoreEvents } =
-                await h.scenario.disputeWithSuppressedCommitEvents({
-                    observerIndex,
-                    maliciousPeerIndex: 2
-                });
-
-            const ctl = h.control(h.getPeer(observerIndex));
-            await ctl.stub.stubCountChainLogQueries().request();
-            await ctl.stub.stubFailDisputeWindowTimestampRead().request();
-            const recoveredCount = await ctl.dispute
-                .recoverCommittedDisputes(forkId)
-                .request();
-            const queryCount = await ctl.stub.getChainLogQueryCount().request();
-            await ctl.stub.restoreDisputeWindowTimestampRead().request();
-            await ctl.stub.restoreChainLogQueries().request();
-
-            expect(recoveredCount).to.equal(null);
-            // the span read is contained ahead of the loop -> no query at all
-            expect(queryCount).to.equal(0);
 
             await race.release({
                 replayEvents: false,

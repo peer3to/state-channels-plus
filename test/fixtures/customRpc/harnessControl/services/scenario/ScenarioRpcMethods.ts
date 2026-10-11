@@ -3,6 +3,7 @@ import type { ScenarioService } from "./ScenarioService";
 import * as eventBusModule from "@/events/EventBus";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { ethers } from "ethers";
 
 /**
@@ -12,6 +13,7 @@ import { ethers } from "ethers";
 export type HostExecModules = {
     ethers: typeof ethers;
     eventBus: typeof eventBusModule;
+    tryDecodeCustomError: typeof tryDecodeCustomError;
 };
 
 /**
@@ -38,7 +40,8 @@ export class ScenarioRpcMethods extends ANetworkRpcMethods<ScenarioService> {
         ) => unknown;
         return await fn(this.service.sm, args, {
             ethers,
-            eventBus: eventBusModule
+            eventBus: eventBusModule,
+            tryDecodeCustomError
         });
     }
 }

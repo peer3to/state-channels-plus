@@ -86,6 +86,9 @@ export const MIRROR_UPDATES = [
 ] as const satisfies readonly (keyof LocalDiamondContract)[];
 export type MirrorUpdate = (typeof MIRROR_UPDATES)[number];
 
+/** The order held mirror updates are applied in on release. */
+export type MirrorReleaseOrder = "recorded" | "reverse";
+
 /** What one side answered for one read, in call order. */
 export type MirrorReadSide = {
     reads: number;
@@ -281,21 +284,61 @@ export class MirrorService extends ANetworkRpcService<
         this.heldUpdates.set(update, { calls, restore });
     }
 
+    /**
+     * The next `update` fails in the local EVM: the real contract runs it
+     * with its ABI arguments cut off and reverts in the ABI decoder.
+     */
+    public failNextUpdate(update: MirrorUpdate): void {
+        if (!MIRROR_UPDATES.includes(update))
+            throw new Error("Invalid mirror update selection");
+        const localDiamond: BaseContract =
+            this.sm.diamondStateMachine.localDiamondContract;
+        const restore = this.replaceMethod(
+            localDiamond,
+            update,
+            () =>
+                (...args: unknown[]) => {
+                    restore();
+                    return this.revertingCall(localDiamond, update, args);
+                }
+        );
+    }
+
     public heldUpdateCount(update: MirrorUpdate): number {
         return this.heldUpdates.get(update)?.calls.length ?? 0;
     }
 
-    /** Resume `update` and apply the held logs to the mirror, in order. */
-    public async releaseUpdates(update: MirrorUpdate): Promise<number> {
+    /**
+     * Resume `update` and apply the held calls to the mirror in `order`:
+     * "reverse" applies the last held call first.
+     */
+    public async releaseUpdates(
+        update: MirrorUpdate,
+        order: MirrorReleaseOrder = "recorded"
+    ): Promise<number> {
         const held = this.heldUpdates.get(update);
         if (!held) return 0;
         held.restore();
         this.heldUpdates.delete(update);
         const localDiamond: BaseContract =
             this.sm.diamondStateMachine.localDiamondContract;
-        for (const args of held.calls) {
+        const calls =
+            order === "reverse" ? [...held.calls].reverse() : held.calls;
+        for (const args of calls) {
             await localDiamond.getFunction(update)(...args);
         }
+        return held.calls.length;
+    }
+
+    /**
+     * Resume `update` and drop the held calls: the mirror missed those logs
+     * for good. Returns how many were dropped.
+     */
+    public discardUpdates(update: MirrorUpdate): number {
+        const held = this.heldUpdates.get(update);
+        if (!held) return 0;
+        held.restore();
+        this.heldUpdates.delete(update);
         return held.calls.length;
     }
 
@@ -431,7 +474,7 @@ export class MirrorService extends ANetworkRpcService<
     /** The same function with its ABI arguments cut off: a real EVM revert. */
     private async revertingCall(
         contract: BaseContract,
-        read: ObservableRead,
+        read: ObservableRead | MirrorUpdate,
         args: StaticCallArgs
     ): Promise<string> {
         const selector = ethers.dataSlice(

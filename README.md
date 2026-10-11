@@ -58,6 +58,11 @@ The SDK abstracts away most of the complexities of the system and is designed to
 ### Upgrade notes
 
 - State-machine diamonds MUST route `getNextToWriteOf(bytes)` from `AStateMachine` to the state-machine facet. It sets the given state, so call it only as a simulated call (`eth_call`). The SDK uses it to read the next writer of a given state. An unrouted selector makes every timeout audit throw.
+- The `requestJoinSignature` peer RPC no longer carries the joiner's snapshot and fork pins, and countersigners no longer check them. Mixed SDK versions cannot sign joins: an old countersigner refuses a new collector's request.
+- `ContractExecutorInitialization` no longer has a `config` field. A worker root gets its creator's config from the worker bootstrap; a consumer that builds executor roots directly must drop the field.
+- `LocalDiamond.onInboundMessagesProcessed` now takes `(channelId, messageBlock)` only. Rebuild any bundled local-diamond ABI.
+- `P2pInstance.leaveChannel()` now returns `void`: it only starts the departure. Returning does not mean the runtime has left. Subscribe to the `onLeftChannel` hook to learn when the membership has ended. After that hook fires, the instance disposes itself; a separate `dispose()` call is not needed. The internal signer's `leaveChannel()` still returns a promise, but that promise only confirms that the leave request was accepted, not that the departure is settled.
+- `getOwnJoinState` is removed from the instance and the signer. To follow your own join, read the status changes (`onStatusChanged`) and `onLeftChannel`. `onLeftChannel` fires once for every membership or pending join that ends, including a join that is refused or expires.
 
 ## Examples
 

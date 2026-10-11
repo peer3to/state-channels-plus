@@ -97,7 +97,7 @@ export class EventActions<
         await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: waitTimeoutMs,
             timeoutMessageFn: () => {
-                let actualCounts: Array<{
+                const actualCounts: Array<{
                     peerId: number;
                     actualCount: number;
                 }> = [];
@@ -312,12 +312,64 @@ export class EventActions<
         );
     }
 
-    async waitUntilLeavePhase(
+    /** Calls the peer's leave and waits for the `onLeftChannel` that leave emits. */
+    async leaveChannelWait(peerIndex: number): Promise<void> {
+        // an earlier membership of this runtime may have emitted one already
+        const previousCount = this.getEventCallCount(
+            peerIndex,
+            "onLeftChannel"
+        );
+        await this.harness
+            .getPeer(peerIndex)
+            .p2pInstance.p2pSigner.leaveChannel();
+        await this.waitUntilLeftChannel(peerIndex, previousCount);
+    }
+
+    /**
+     * Waits for an `onLeftChannel` of the peer after the `previousCount` it
+     * had emitted, whatever ended its membership. Read `previousCount` before
+     * the action that ends a membership when the runtime may have emitted
+     * one for an earlier membership (a failed join, a removal).
+     */
+    async waitUntilLeftChannel(
         peerIndex: number,
-        phase: LeaveChannelState["phase"]
+        previousCount = 0
+    ): Promise<void> {
+        const timeoutMs = this.protocolEventTimeoutMs();
+        await this.harness.eventCountsBarrier.waitFor(
+            () =>
+                this.getEventCallCount(peerIndex, "onLeftChannel") >
+                previousCount,
+            {
+                timeoutMs,
+                timeoutMessage: `Peer ${peerIndex} did not leave the channel within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    /** Waits until the peer's instance disposed itself after its leave. */
+    async waitUntilDisposed(peerIndex: number): Promise<void> {
+        const signer = this.harness.getPeer(peerIndex).p2pInstance.p2pSigner;
+        await waitFor(
+            () =>
+                signer.getChannelStatus().then(
+                    () => false,
+                    (error: Error) => {
+                        if (error.message.includes("disposed")) return true;
+                        throw error;
+                    }
+                ),
+            this.protocolEventTimeoutMs()
+        );
+    }
+
+    /** Waits until a flag of the peer's exit is set. */
+    async waitUntilLeaveState(
+        peerIndex: number,
+        flag: Exclude<keyof LeaveChannelState, "forkId">
     ): Promise<void> {
         const peer = this.harness.getPeer(peerIndex);
-        // Leave phases have no event of their own to wake the event barrier.
+        // Exit flags have no event of their own to wake the event barrier.
         await waitFor(
             async () =>
                 (
@@ -325,7 +377,7 @@ export class EventActions<
                         .control(peer)
                         .query.getLeaveChannelState()
                         .request()
-                )?.phase === phase,
+                )?.[flag] === true,
             this.protocolEventTimeoutMs()
         );
     }

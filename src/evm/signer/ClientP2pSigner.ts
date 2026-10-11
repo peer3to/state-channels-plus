@@ -8,7 +8,7 @@ import type {
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
 } from "@/rpc/network/services";
-import type { OwnJoinState } from "@/stateManager/membership/MembershipService";
+import type { OpenConnection } from "@/transport/TransportType";
 import type { Status } from "@/types";
 
 import type { Address, Bytes, ForkId, Hash } from "@/types/types";
@@ -183,14 +183,9 @@ class ClientP2pSigner implements Signer {
             .request({ timeoutMs: null });
     }
 
-    /**
-     * Internal route for `P2pInstance.leaveChannel`.
-     * Direct callers wait for settled removal but do not dispose the runtime.
-     */
+    /** Starts the host's leave; `onLeftChannel` reports its end. */
     leaveChannel(): Promise<void> {
-        return this.client.p2pSigner
-            .leaveChannel()
-            .request({ timeoutMs: null });
+        return this.client.p2pSigner.leaveChannel().request();
     }
 
     joinLobby(
@@ -278,9 +273,9 @@ class ClientP2pSigner implements Signer {
         return this.client.p2pSigner.getChannelStatus().request();
     }
 
-    /** The state of this runtime's own join; see {@link OwnJoinState}. */
-    getOwnJoinState(): Promise<OwnJoinState> {
-        return this.client.p2pSigner.getOwnJoinState().request();
+    /** This runtime's active peer connections and their transport types. */
+    getOpenConnections(): Promise<OpenConnection[]> {
+        return this.client.p2pSigner.getOpenConnections().request();
     }
 
     private validateConnectOptions(options: ConnectToChannelOptions): void {

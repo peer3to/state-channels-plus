@@ -157,9 +157,10 @@ describe("Unit: ParticipantTimeoutService", function () {
             }
         });
         try {
-            await h.execOnHost(peer, async (sm) => {
-                await sm.membershipService.startSelfRemovalDispute(sm.forkId);
-            });
+            await h
+                .control(peer)
+                .dispute.startSelfRemovalDispute(h.activeForkId!)
+                .request();
             expect(await recorder.submissions()).to.have.length(1);
             const dispute = Codec.decode(
                 (await recorder.submissions())[0].encodedDispute,

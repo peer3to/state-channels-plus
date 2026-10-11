@@ -9,9 +9,16 @@ import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { BlockHeight, ForkId } from "@/types/types";
+import type {
+    Address,
+    BlockHeight,
+    ChecksumAddress,
+    ForkId
+} from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { getChecksumAddress } from "@/utils/address";
 import { config } from "@/utils/config";
+import { LocalDiscoveryServer } from "@/utils/LocalDiscoveryServer";
 
 /**
  * Read-only peer-state queries exposed to the test harness. Accessors live here
@@ -33,6 +40,23 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
     }
     get storage() {
         return this.sm.storage;
+    }
+
+    /**
+     * Whether local discovery still marks `peerAddress` as being dialed by
+     * this peer. Only the Node discovery server dials; elsewhere this is false.
+     */
+    isLocalDialMarked(peerAddress: Address): boolean {
+        // Read the real private dial registry; do not replace its behavior.
+        const dialingPeers = Reflect.get(
+            LocalDiscoveryServer,
+            "dialingPeers"
+        ) as WeakMap<P2PManager, Map<ChecksumAddress, symbol>> | undefined;
+        return (
+            dialingPeers
+                ?.get(this.p2pManager)
+                ?.has(getChecksumAddress(peerAddress)) === true
+        );
     }
 
     /** Project a live `Block` into a serializable bundle for the harness. */

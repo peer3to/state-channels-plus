@@ -71,7 +71,11 @@ export async function stageChainAnchor(
 ): Promise<ChainAnchorStaging> {
     await h.scenario.preDisputeSetup({
         peerCount: 4,
-        transitionCount: options.transitionCount ?? 2
+        transitionCount: options.transitionCount ?? 2,
+        // An auditor walks every milestone of these proofs before it builds
+        // and sends its kill, which has taken about nine seconds on a loaded
+        // farm: the kill period keeps headroom over that.
+        timeConfig: { evidenceTime: 12 }
     });
     // Pin the anchor before authoring; mining and mirror delivery must not
     // consume the next writer's window.
@@ -581,7 +585,13 @@ export type OffWireTailStaging = {
 export async function stageOffWireTailOverBlindPendingAuditor(
     h: MathPeerTestHarness
 ): Promise<OffWireTailStaging & { restoreGossip: () => Promise<void> }> {
-    await h.scenario.preDisputeSetup({ peerCount: 4 });
+    // Two audit and transaction rounds share the window the forged dispute
+    // opens (the auditor's kill and dispute, then the colluders' disputes):
+    // about 9 s on a loaded host, against the default 8 s.
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 12 }
+    });
     const participants = [0, 1, 2, 3];
     const { auditorIndex, headHeight, restoreGossip } =
         await stageBlindPendingAuditor(h, participants);

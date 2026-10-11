@@ -15,9 +15,10 @@ fork-traversal and post-dispute spectating, spectator promotion to participant (
 and `joinChannel`, including concurrent promotion races — the losing joiner's static call is
 decoded and matched against the widened threshold set and the set its pre-signed signatures
 recover to, which is what identifies the pending participant as the missing signer; the losing
-joiner's client-side cleanup is read as the status-hook transition back to `SYNCED` immediately
-followed by the abort transition to `OPENED`, plus a cleared force-join submission height, because
-the abort sets `OPENED` itself and would otherwise hide both cleanup effects), genesis and
+joiner's `joinChannel` then has its held first submission refused and its one retry submitted as the
+second and last held submission, returns `true`, and ends on-chain pending and `PENDING_PARTICIPANT`
+with one countersignature request answered by the pending participant, no abort, no `onLeftChannel` and
+no status change to `SYNCED` since the call), genesis and
 block-0 joins, concurrent
 sync dedup, mutual blacklisting on an unprovable target, minimum-height payload proving (heights 0/1
 and requests at or below a leave), and dispute-window recovery inside `generateSyncPayload`. Oracles are peer
@@ -59,7 +60,7 @@ The two chain-final window cases lose participant 2's InboundMessagesProcessed d
 - `via joinChannel`: none
 - `joinChannel survives dispute on reduced fork`: none
 - `joinChannel before forceInboundJoin → both joiners participate`: none
-- `forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelConfirmationNotThresholdSigned (pending participant did not sign confirmation)`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P11, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P14
+- `forceInboundJoin before joinChannel → the pre-signed confirmation reverts ErrorJoinChannelConfirmationNotThresholdSigned, and joinChannel collects it again once with the pending participant's countersignature and lands`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P11, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P78, REQ-JOINSIG-1-8X1A4V.T1.P12, REQ-TJOIN-5-Q795M7.T1.P24
 - `survives dispute on reduced fork`: none
 - `should spectate successfully when joining at genesis state`: none
 - `should spectate successfully when joining at block 0`: none

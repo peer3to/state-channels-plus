@@ -315,7 +315,7 @@ export async function assertRecoveredSlashTimestampAndDedup(
         );
         await dropped.waitUntilDropped();
         if (failQueries) {
-            await h.control(target).stub.stubFailChainLogQueries().request();
+            await h.control(target).stub.stubHideChainLogs().request();
             try {
                 await expect(
                     h.execOnHost(target, (sm) =>

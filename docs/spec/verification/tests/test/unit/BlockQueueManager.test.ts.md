@@ -51,9 +51,7 @@ began, or whose timer fires after it, never enters recovery.
 - `eligible source bypasses refresh and sync before queue retention`: REQ-GOSSIP-4-J5Z4DF.T1.P1, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P23
 - `wrong channel is rejected before sender refresh or retention`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P24
 - `forged author is rejected before sender refresh or retention`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P25
-- `a source absent after a failed refresh follows ordinary sync`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P35
 - `a failed unknown copy preserves the existing honest contribution`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28
-- `a failed membership read can retry on the next request`: REQ-GOSSIP-4-J5Z4DF.T1.P31, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P33
 - `sync with no sender transport ends intake without queueing the block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34
 - `a queued copy that merged a gossip copy → the gossip source is cut and a forced check is requested`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P17, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38, UNIT-TEST-BLOCK-INGEST-1-JV64AS.P5, UNIT-TEST-STATE-MANAGER-7-YRC0N3.P1
 - `posted calldata queued above the next height → restored, then judged as calldata once its height is next`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P18, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P39

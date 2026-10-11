@@ -19,6 +19,7 @@
 - [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)
 - [`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../../../specification/protocol-model/identity.md#req-id-5-gw1zey)
 - [`REQ-TRUST-5-NDVRW8` (The design targets many SMALL channels, not large ones)](../../../specification/security/trust-model.md#req-trust-5-ndvrw8)
+- [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
 
 ## UNIT-TEST-P2P-MANAGER-1-9DNSRZ
 
@@ -127,10 +128,12 @@ Status-driven promotion
 
 Connected peer projection
 
-- Setup: Register a real transport with a competing profile identity; getConnectedPeers includes the transport address and excludes the profile address.
-- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
+- Setup: Register a real transport with a competing profile identity and read `getConnectedPeers`; add a Holepunch and a WebRTC transport, add the first again, then close the first twice while recording every `onConnectionsChanged`.
+- Oracle: The projection includes the transport address and excludes the profile address; each real add or close emits the new open-connection set with each peer's checksum address and transport type, a repeated add or close emits nothing, and `getOpenConnections` afterwards matches the last emitted set; all unrelated stored state and lifecycle policy is preserved.
 
 - [x] `UNIT-TEST-P2PMANAGER-32-RX8SQP.P1` — prefers a transport address over its registered profile address
+- [x] `UNIT-TEST-P2PMANAGER-32-RX8SQP.P2` — each added and each closed transport emits the new open-connection set with its transport types
+- [x] `UNIT-TEST-P2PMANAGER-32-RX8SQP.P3` — a repeated add or a repeated close of the same transport emits nothing
 
 ## UNIT-TEST-P2PMANAGER-33-XKAJJN
 

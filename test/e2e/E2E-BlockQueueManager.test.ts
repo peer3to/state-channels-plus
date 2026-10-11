@@ -34,9 +34,6 @@ describe("E2E: BlockQueueManager", function () {
         await assertSlashAdmission("failed-recovery");
     });
 
-    it("a sender absent after membership refresh failure uses ordinary network sync", async () => {
-        await assertOutsiderProofDoesNotAdmitCopy("success", true);
-    });
     it("an existing sync handles an unknown-source copy without another wire request", async () => {
         await assertOutsiderProofDoesNotAdmitCopy("busy");
     });

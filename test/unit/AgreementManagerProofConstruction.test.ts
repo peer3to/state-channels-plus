@@ -1146,7 +1146,7 @@ describe("Unit: AgreementManager proof construction", function () {
             const posted = await postSnapshotFrom(h, observerIndex);
             const sent = await sends.restore();
 
-            expect(posted).to.equal(true);
+            expect(posted).to.equal("posted");
             expect(sent.flat()).to.include("updateStateSnapshotSameFork");
             expect((await chainSnapshot(h)).hash).to.equal(finalPoint);
         });

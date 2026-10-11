@@ -78,7 +78,7 @@ export async function waitForPendingLocalDial(
     const dialing = Reflect.get(
         LocalDiscoveryServer,
         "dialingPeers"
-    ) as WeakMap<P2PManager, Set<string>>;
+    ) as WeakMap<P2PManager, Map<string, symbol>>;
     let owner: P2PManager | undefined;
     await waitFor(() => {
         owner = managers.find(
@@ -199,4 +199,99 @@ export async function assertDiscoveryEndpointReplacement(
         for (const socket of observedSockets) socket.off("message", observe);
         for (const socket of oldServer.clients) socket.terminate();
     }
+}
+
+/**
+ * Stages the primary local dial on `topic` before authentication, makes the
+ * acceptor stop reading its socket, and leaves the topic on both peers. The
+ * dialer's leave closes the dial, and that close then lags behind the leave
+ * until `releaseClose`. Handshakes and their completion waits stay held
+ * until released, so no held dial times out during the test.
+ */
+export async function stageLeftDialWithHeldClose(
+    h: MathPeerTestHarness,
+    topic: string
+) {
+    await h.setup(2, {
+        autoConnect: false,
+        configOverrides: { RUN_SDK_IN_THREAD: false }
+    });
+    const dialer = h.getPeer(h.network.lobbyRoleIndices()[0]);
+    const acceptor = h.getPeer(1 - dialer.index);
+    // The hold, not the handshake-completion timeout, keeps held dials pending.
+    for (const peer of h.peers)
+        await h
+            .control(peer)
+            .stub.holdInitHandshakesAndCompletionWaits()
+            .request();
+    await Promise.all(
+        h.peers.map((peer) =>
+            h.control(peer).network.joinSelectedKey(topic).request()
+        )
+    );
+    // Observe the real private listener and dial sockets; nothing replaces
+    // dial admission, handshakes, or close handling.
+    const servers = Reflect.get(
+        LocalDiscoveryServer,
+        "peerServers"
+    ) as Set<WebSocketServer>;
+    const clients = Reflect.get(
+        LocalDiscoveryServer,
+        "activeClientConnections"
+    ) as Set<WebSocket>;
+    const peerPorts = new Set<string>();
+    const peerDials = () => {
+        for (const server of servers) {
+            const address = server.address();
+            if (address && typeof address !== "string")
+                peerPorts.add(String(address.port));
+        }
+        return [...clients].filter((socket) =>
+            peerPorts.has(new URL(socket.url).port)
+        );
+    };
+    // both ends have the dial's transport and wait for the held handshake
+    await waitFor(async () =>
+        (
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).stub.getHeldHandshakeCount().request()
+                )
+            )
+        ).every((count) => count === 1)
+    );
+    const [heldDial] = peerDials();
+    const heldAccepted = [...servers].flatMap((server) => [...server.clients]);
+    if (!heldDial || heldAccepted.length !== 1)
+        throw new Error("Expected one pending local dial");
+    heldAccepted[0].pause();
+    await Promise.all(
+        h.peers.map((peer) =>
+            h.control(peer).network.leaveSelectedKey(topic).request()
+        )
+    );
+    if (heldDial.readyState !== WebSocket.CLOSING)
+        throw new Error("Expected the left dial to wait for its close");
+    return {
+        dialer,
+        acceptor,
+        /** Whether the left dial's close still lags. */
+        closeHeld: () => heldDial.readyState === WebSocket.CLOSING,
+        /** The dialer's peer dials that are not closing. */
+        liveDials: () =>
+            peerDials().filter(
+                (socket) =>
+                    socket.readyState === WebSocket.CONNECTING ||
+                    socket.readyState === WebSocket.OPEN
+            ).length,
+        /** Delivers the left dial's late close. */
+        async releaseClose() {
+            const closed = once(heldDial, "close");
+            heldAccepted[0].resume();
+            await closed;
+        },
+        dispose() {
+            heldAccepted[0].terminate();
+        }
+    };
 }

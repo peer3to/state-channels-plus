@@ -62,6 +62,10 @@ describe("E2E: State Snapshots", function () {
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
+        // the leaver posts at its exit block's finality; failing its posts
+        // keeps this case's post the only one
+        for (const peer of h.peers)
+            await h.control(peer).stub.failStateSnapshotPost().request();
 
         await h.transition.advanceState();
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
@@ -88,6 +92,10 @@ describe("E2E: State Snapshots", function () {
         await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
+        // the leaver posts at its exit block's finality; failing its posts
+        // keeps this case's post the only one
+        for (const peer of h.getActiveHonestPeers())
+            await h.control(peer).stub.failStateSnapshotPost().request();
 
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
         await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
@@ -109,11 +117,14 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
         const h = TestSession.getHarness();
 
-        //  longer agreement time to prevent StateManger.startMaybeExitOnChain to update the on-chain snapshot
-        //  before this test doesit - the point of this test is to exercise the multicall path for fork updates
+        //  the point of this test is to exercise the multicall path for fork updates
         await h.scenario.fourPeersDisputeResolution({
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
+        // the leaver posts at its exit block's finality; failing its posts
+        // keeps this case's post the only one
+        for (const peer of h.getActiveHonestPeers())
+            await h.control(peer).stub.failStateSnapshotPost().request();
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
         await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
         await h.transition.fromHonestPeersOnly((c) => c.add(3));
@@ -362,6 +373,10 @@ describe("E2E: State Snapshots", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
+        // the leaver posts at its exit block's finality; failing its posts
+        // keeps this case's post the only one
+        for (const peer of h.peers)
+            await h.control(peer).stub.failStateSnapshotPost().request();
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
 

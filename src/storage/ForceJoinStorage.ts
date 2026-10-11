@@ -1,60 +1,57 @@
 import { BlockHeight } from "@/types/types";
 
+/** This runtime's submitted join, until it is seated or ends. */
+export type JoinRecord = {
+    /** Identifies one submission: an update for an earlier one changes nothing. */
+    id: number;
+    submissionHeight: BlockHeight;
+    /** Chain seconds after which no block admits the join. */
+    authorizationDeadline: number;
+    /** Set once the join is observed on chain: blocks committed from then count toward the force-join bound. */
+    countingStartsAt?: number;
+    /** The first and the latest block counted toward the bound. */
+    countingFromHeight?: BlockHeight;
+    latestCountedHeight?: BlockHeight;
+    isForceJoinDeadlinePassed: boolean;
+    isDisputeStarted: boolean;
+    /** A refused submission whose retry is being decided or collected: its expiry and checks are retired. */
+    isRetrying?: boolean;
+};
+
+export type JoinUpdate = Partial<
+    Omit<JoinRecord, "id" | "submissionHeight" | "authorizationDeadline">
+>;
+
 export class ForceJoinStorage {
-    private joinSubmissionBlockHeight?: BlockHeight;
-    /** Chain seconds of the join authorization's deadlineTimestamp; no block after it admits the join. */
-    private joinAuthorizationDeadline?: number;
-    /** Seconds from which committed blocks count toward the block bound, once the join is on chain. */
-    private countingStartsAt?: number;
-    /** The first block counted once counting started; the bound counts from it. */
-    private countingFromHeight?: BlockHeight;
-    private disputeStarted = false;
+    private join?: JoinRecord;
+    private nextJoinId = 0;
 
-    setJoinSubmissionBlockHeight(height: BlockHeight): void {
-        this.joinSubmissionBlockHeight = height;
+    startJoin(
+        submissionHeight: BlockHeight,
+        authorizationDeadline: number
+    ): JoinRecord {
+        this.join = {
+            id: this.nextJoinId++,
+            submissionHeight,
+            authorizationDeadline,
+            isForceJoinDeadlinePassed: false,
+            isDisputeStarted: false
+        };
+        return this.join;
     }
 
-    getJoinSubmissionBlockHeight(): BlockHeight | undefined {
-        return this.joinSubmissionBlockHeight;
+    getJoin(): JoinRecord | undefined {
+        return this.join;
     }
 
-    setJoinAuthorizationDeadline(seconds: number): void {
-        this.joinAuthorizationDeadline = seconds;
-    }
-
-    getJoinAuthorizationDeadline(): number | undefined {
-        return this.joinAuthorizationDeadline;
-    }
-
-    setCountingStartsAt(seconds: number): void {
-        this.countingStartsAt = seconds;
-    }
-
-    getCountingStartsAt(): number | undefined {
-        return this.countingStartsAt;
-    }
-
-    setCountingFromHeight(height: BlockHeight): void {
-        this.countingFromHeight = height;
-    }
-
-    getCountingFromHeight(): BlockHeight | undefined {
-        return this.countingFromHeight;
-    }
-
-    setDisputeStarted(): void {
-        this.disputeStarted = true;
-    }
-
-    hasDisputeStarted(): boolean {
-        return this.disputeStarted;
+    /** Applies `update` to the join `id`; false when it is no longer the current join. */
+    updateJoin(id: number, update: JoinUpdate): boolean {
+        if (this.join?.id !== id) return false;
+        Object.assign(this.join, update);
+        return true;
     }
 
     clear(): void {
-        this.joinSubmissionBlockHeight = undefined;
-        this.joinAuthorizationDeadline = undefined;
-        this.countingStartsAt = undefined;
-        this.countingFromHeight = undefined;
-        this.disputeStarted = false;
+        this.join = undefined;
     }
 }

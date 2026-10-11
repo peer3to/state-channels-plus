@@ -3,6 +3,7 @@ import { rootStartContext } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import type { ContractExecutorInitialization } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
 import type { RuntimePort } from "@/transport/RuntimePort";
+import { config, createConfig } from "@/utils/config";
 import type {
     PerformanceSample,
     PerformanceSampleSource
@@ -93,18 +94,14 @@ export async function startWatchdogContractExecutorWorker(
     const context = rootStartContext(port.runtimePort, "worker", {
         close: () => port.onDisposed?.()
     });
-    const host = new ContractExecutorRoot(
-        {
-            ...initialization,
-            config: {
-                ...initialization.config,
-                LOG_SKIP_WRITING: true,
-                EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
-            }
-        },
-        undefined,
-        context
-    );
+    // This worker replaces the creator's config it was bootstrapped with
+    // before the root builds its logger.
+    createConfig({
+        ...config,
+        LOG_SKIP_WRITING: true,
+        EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
+    });
+    const host = new ContractExecutorRoot(initialization, undefined, context);
     port.onUnhandledWorkerError((error) => host.reportError(error));
     const start = host.rootLogger.startPerformanceMonitoring.bind(
         host.rootLogger

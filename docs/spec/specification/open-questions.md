@@ -734,3 +734,21 @@ Requested engineer decision: whether the node should do more after a lost race. 
 and upload when a kill emptied the window after the evidence end, check that the committed evidence
 covers its own, or record a metric for lost races. Until the decision, the no-op stands and no
 recovery is implied. This blocks a recovery guarantee for a lost race, not the selected no-op.
+
+<a id="oq-spec-topup-1-g3d2mf"></a>
+
+## OQ-SPEC-TOPUP-1-G3D2MF — Snapshot pin and countersignatures for a top-up
+
+Raised 2026-10-11. A top-up uses the same confirmation as a first join: the threshold set countersigns it,
+and it is pinned to the channel's on-chain snapshot, so a snapshot move before the submission lands refuses
+it and needs a fresh collection ([join authorization](peer-communication/join-authorization.md),
+[`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)).
+A top-up comes from a signer that is already a participant: no state can reach the chain without that
+signer, so the pin protects nothing that the signer's own signatures do not already protect.
+
+Owner: [join authorization](peer-communication/join-authorization.md), the confirmation and its pin.
+Alternatives: (1) keep the pin for top-ups (current); (2) drop the snapshot-hash match on chain for a
+top-up only; (3) also allow a top-up without countersignatures from the other participants. Alternative
+(3) needs a bound on the inbound message queue, because unsigned top-ups could flood it. Requested
+engineer decision: which alternative the protocol uses. Until then, a top-up keeps the pin and the
+countersignatures. This blocks a cheaper top-up path, not the current behavior.

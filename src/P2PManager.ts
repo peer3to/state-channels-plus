@@ -21,7 +21,8 @@ import type { BlacklistReason } from "@/storage/BlacklistStorage";
 import {
     NetworkTransport,
     LoopbackTransport,
-    TransportType
+    TransportType,
+    type OpenConnection
 } from "@/transport";
 import { isNetworkTransport } from "@/transport/NetworkTransport";
 import { Status } from "@/types";
@@ -469,6 +470,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (transport.isClosed) return;
         if (!this.openConnections.includes(transport)) {
             this.openConnections.push(transport);
+            this.notifyConnectionsChanged();
         }
     }
 
@@ -594,9 +596,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             new Error("Peer disconnected before RPC response arrived")
         );
 
+        const wasOpen = this.openConnections.includes(transport);
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
+        if (wasOpen) this.notifyConnectionsChanged();
         this.profileManager.releaseHolepunchBanOnWebRtcClose(transport);
 
         try {
@@ -626,26 +630,42 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     /**
      * Returns a snapshot of currently connected peer identities (EVM addresses).
-     * Resolve transport addresses first, falling back to their registered profiles.
      */
     public getConnectedPeers(): Set<Address> {
-        const addresses = new Set<Address>();
+        return new Set<Address>(
+            this.getOpenConnections().map(({ peerAddress }) => peerAddress)
+        );
+    }
+
+    /**
+     * Returns a snapshot of the active connections with their transport
+     * types. A transport's peer address is resolved from the transport first,
+     * then from its registered profile; an unidentified transport is left out.
+     */
+    public getOpenConnections(): OpenConnection[] {
+        const connections: OpenConnection[] = [];
         for (const transport of this.openConnections) {
             const fromTransport = transport.peerAddress;
-            if (fromTransport) {
-                // Boundary: transport.peerAddress can originate outside ethers.
-                addresses.add(getChecksumAddress(fromTransport));
-                continue;
-            }
-
-            const profile =
-                this.profileManager.getProfileByTransport(transport);
-            const fromProfile = profile?.getEvmAddress();
-            if (fromProfile) {
-                addresses.add(fromProfile.toString());
-            }
+            const peerAddress = fromTransport
+                ? // Boundary: transport.peerAddress can originate outside ethers.
+                  getChecksumAddress(fromTransport)
+                : this.profileManager
+                      .getProfileByTransport(transport)
+                      ?.getEvmAddress()
+                      ?.toString();
+            if (peerAddress)
+                connections.push({
+                    peerAddress,
+                    transportType: transport.transportType
+                });
         }
-        return addresses;
+        return connections;
+    }
+
+    private notifyConnectionsChanged(): void {
+        this.stateManager.p2pEventHooks.onConnectionsChanged?.(
+            this.getOpenConnections()
+        );
     }
 }
 

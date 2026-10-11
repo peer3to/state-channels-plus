@@ -117,3 +117,116 @@ globalThis.runBrowserPerformanceReportingSmoke = async () => {
         logger.dispose();
     }
 };
+
+// Render one info line per thread name through the real browser logger. The
+// console sink is captured for those writes only; the rendered text is the
+// format string without its %c markers, then every argument after the styles.
+globalThis.runBrowserLoggerThreadLabelSmoke = async () => {
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const {
+        THREAD_LABEL_COMPONENT,
+        THREAD_LABEL_MESSAGE,
+        expectedThreadLabelLine,
+        threadLabelSharedContext
+    } = await import("../fixtures/logging/ThreadLabelExpectation.ts");
+    const render = (threadName) => {
+        const logger = new BrowserLogger(
+            { component: THREAD_LABEL_COMPONENT },
+            threadLabelSharedContext(threadName),
+            "info",
+            new LogStore(1024 * 1024, false)
+        );
+        const lines = [];
+        const { groupCollapsed, groupEnd, info } = console;
+        console.groupCollapsed = (format, ...rest) => {
+            const styles = (format.match(/%c/g) ?? []).length;
+            lines.push(
+                [format.replace(/%c/g, ""), ...rest.slice(styles)].join(" ")
+            );
+        };
+        // The stack line inside the group is not under test.
+        console.info = () => {};
+        console.groupEnd = () => {};
+        try {
+            logger.info(THREAD_LABEL_MESSAGE);
+        } finally {
+            Object.assign(console, { groupCollapsed, groupEnd, info });
+            logger.dispose();
+        }
+        return lines;
+    };
+    const cases = [
+        [undefined, "main"],
+        ["main", "main"],
+        ["sdk", "sdk"],
+        ["vm", "vm"],
+        ["prover", "prover"]
+    ];
+    return cases.map(([threadName, label]) => {
+        const lines = render(threadName);
+        return {
+            threadName: threadName ?? null,
+            lines,
+            matches:
+                lines.length === 1 &&
+                expectedThreadLabelLine(label).test(lines[0])
+        };
+    });
+};
+
+// Parentless browser worker roots created from this page: one whose class
+// checks the page's config before the root is built, and two logger-probe
+// roots that read the thread name their entry started them with.
+globalThis.runWorkerRootBootstrapBrowserSmoke = async () => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { config, createConfig } = await import("../../src/utils/config.ts");
+    const { BOOTSTRAP_CONFIG_MARKER_MB } = await import(
+        "../fixtures/workerRoot/BootstrapConfigMarker.ts"
+    );
+    const { LoggerProbeExecutorRoot } = await import(
+        "../fixtures/workerRoot/LoggerProbeExecutorRoot.ts"
+    );
+    const entry = (file) =>
+        new URL(`../fixtures/workerRoot/${file}`, import.meta.url);
+    const threadNameOf = async (file) => {
+        const handle = await createRoot(LoggerProbeExecutorRoot, {
+            mode: "worker",
+            workerUrl: entry(file),
+            args: { customPrecompiles: [] }
+        });
+        try {
+            return (await handle.rpc.loggerProbe.context().request())
+                .threadName;
+        } finally {
+            await handle.dispose();
+        }
+    };
+    const before = { ...config };
+    createConfig({
+        ...before,
+        CRASH_LOG_MAX_SIZE_MB: BOOTSTRAP_CONFIG_MARKER_MB
+    });
+    let bootstrapped = false;
+    try {
+        const handle = await createRoot(ContractExecutorRoot, {
+            mode: "worker",
+            workerUrl: entry("BootstrapConfigRootEntry.ts"),
+            args: { customPrecompiles: [] }
+        });
+        bootstrapped = true;
+        await handle.dispose();
+    } finally {
+        createConfig(before);
+    }
+    return {
+        bootstrapped,
+        named: await threadNameOf("NamedLoggerProbeRootEntry.ts"),
+        unnamed: await threadNameOf("UnnamedLoggerProbeRootEntry.ts")
+    };
+};

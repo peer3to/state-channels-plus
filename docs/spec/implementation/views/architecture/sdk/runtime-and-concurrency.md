@@ -135,7 +135,7 @@ with one structured-clone-safe 32-byte topic and serializable opening options. T
 negotiation, retries, timers, peer profiles, transports, reputation policy, and cleanup; the client sends
 no callback, transport, abort signal, or live manager object. Matching has no implicit deadline; an optional
 finite timeout crosses with the options. Replacing a join settles an earlier active match as `undefined`.
-`leaveLobby` returns the host's phase decision: true during cancellable matching and false after handoff.
+`leaveLobby` waits for the left joins: true when they end with no channel, false when it changed nothing.
 Lobby-authenticated transports remain host-side and outside ordinary connection tracking until one selected
 profile is promoted at commitment. Every non-success cleanup closes the session set, and unsigned retry
 leaves and freshly rejoins the topic unless the caller left the lobby. The internal match transcript never crosses the port.
@@ -204,9 +204,8 @@ nonce counter never leave the host ([`INV-RUN-4-4M27AP`](runtime-and-concurrency
 shipped**, not re-derived across the boundary: `p2pSetup` resolves the config
 once (precedence: overrides > `process.env` > `peer3.config.ts` > defaults,
 [../reference/configuration.md](../../operations/configuration.md)) into the
-`SetupPayload`, and the worker re-establishes the identical singleton via
-`createConfig(payload.config)`
-([host root](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L141)).
+`SetupPayload`, and the worker bootstrap (`onRootBootstrap`) installs the creating thread's config
+before any root in the worker is built; no root installs a config itself.
 A worker that re-read `process.env` could diverge from the main thread; it
 deliberately does not.
 

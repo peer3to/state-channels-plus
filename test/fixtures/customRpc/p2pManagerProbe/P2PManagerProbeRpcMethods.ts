@@ -16,7 +16,9 @@ import type {
     TransportRetirementProbe,
     BulkPenaltyProbe,
     ConnectedPeerFallbackProbe,
+    ConnectionsChangedProbe,
     BanPolicyProbe,
+    HolepunchSocketErrorProbe,
     DisconnectPolicyProbe,
     SuspendPolicyProbe,
     RetryTierProbe,
@@ -205,6 +207,16 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeConnectedPeerFallback(address);
     }
 
+    public probeConnectionsChanged(
+        holepunchAddress: string,
+        webRtcAddress: string
+    ): ConnectionsChangedProbe {
+        return this.service.probeConnectionsChanged(
+            holepunchAddress,
+            webRtcAddress
+        );
+    }
+
     public probeForeignResponse(
         intendedAddress: string,
         foreignAddress: string
@@ -235,6 +247,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeUnauthenticatedBlacklist(): BanPolicyProbe {
         return this.service.probeUnauthenticatedBlacklist();
+    }
+
+    public probeHolepunchSocketErrors(): HolepunchSocketErrorProbe {
+        return this.service.probeHolepunchSocketErrors();
     }
 
     public probeUnauthenticatedClose(): BanPolicyProbe {

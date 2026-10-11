@@ -3,6 +3,10 @@ import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
+    countJoinSignatureRequests,
+    waitForHeldJoins
+} from "@test/fixtures/JoinSnapshotRetryStaging";
+import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
     assertPromotionBeforeReceiverApplication
@@ -1023,7 +1027,7 @@ describe("E2E: Spectate Service", function () {
             }
         });
 
-        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelConfirmationNotThresholdSigned (pending participant did not sign confirmation)", async function () {
+        it("forceInboundJoin before joinChannel → the pre-signed confirmation reverts ErrorJoinChannelConfirmationNotThresholdSigned, and joinChannel collects it again once with the pending participant's countersignature and lands", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig
@@ -1054,10 +1058,9 @@ describe("E2E: Spectate Service", function () {
                 participant: joinerB.address
             });
 
-            // Pin which revert the client path is reacting to. Every name in
-            // the MembershipService abort switch produces the same
-            // OPENED/disposed pair, so the status assertions below cannot tell
-            // them apart; this static call does.
+            // Pin which refusal the join's first submission meets: the
+            // threshold shortfall, not a snapshot move, is what gives it the
+            // retry below.
             let thresholdRevert: unknown;
             try {
                 await h.channelManager
@@ -1101,56 +1104,50 @@ describe("E2E: Spectate Service", function () {
             expect(confirmationSigners).to.have.members(originalParticipants);
             expect(confirmationSigners).to.not.include(joinerB.address);
 
-            expect(
-                await joinerA.p2pInstance.p2pSigner.joinChannel(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                )
-            ).to.equal(false);
-            // The abort path sets OPENED itself, so the terminal status alone
-            // says nothing about the two cleanup effects the terminal-revert
-            // branch owes before aborting: restoring SYNCED and clearing the
-            // force-join marker. Status hooks cross the runtime port ahead of
-            // the joinChannel response, so the transient restore is still
-            // observable here, and the abort follows it rather than replacing
-            // it: without the restore the peer would go straight from
-            // PENDING_PARTICIPANT to OPENED and neither index would be found.
-            const statusChanges = (
-                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
-            ).map((call): [Status, Status] => [call.args[0], call.args[1]]);
-            const restoredSyncedIndex = statusChanges.findIndex(
-                ([oldStatus, newStatus]) =>
-                    oldStatus === Status.PENDING_PARTICIPANT &&
-                    newStatus === Status.SYNCED
+            // The refusal is a race the joiner can win: it collects a fresh
+            // confirmation, which joinerB now countersigns, and submits once
+            // more within the same public call.
+            const releaseAll = await h.rpcStub.holdMembershipSubmission(
+                joinerA.index,
+                "joinChannel"
             );
-            expect(restoredSyncedIndex).to.be.greaterThan(-1);
-            const abortedIndex = statusChanges.findIndex(
-                ([oldStatus, newStatus], index) =>
-                    index > restoredSyncedIndex &&
-                    oldStatus === Status.SYNCED &&
-                    newStatus === Status.OPENED
+            const countersignedByB = await countJoinSignatureRequests(h, [
+                joinerB.index
+            ]);
+            const statusChangesBefore =
+                joinerA.eventSpies.onStatusChanged?.callCount ?? 0;
+            const join = joinerA.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
             );
-            expect(abortedIndex).to.be.greaterThan(restoredSyncedIndex);
+            // observed below; keeps a failure from being an unhandled rejection meanwhile
+            join.catch(() => undefined);
+            await waitForHeldJoins(h, joinerA.index, 1);
+            await h.rpcStub.releaseOneMembershipSubmission(joinerA.index);
+            // the refused submission's one retry is the second and last
+            await waitForHeldJoins(h, joinerA.index, 2);
+            await releaseAll();
 
-            const failedJoinState = await h.execOnHost(
-                h.getPeer(joinerA.index),
-                async (stateManager) => ({
-                    status: stateManager.status,
-                    isDisposed: stateManager.isDisposed,
-                    joinSubmissionBlockHeight:
-                        stateManager.storage.forceJoin.getJoinSubmissionBlockHeight()
-                }),
-                {}
+            expect(await join).to.equal(true);
+            expect(await countersignedByB()).to.equal(1);
+            expect(
+                await h.channelManager.getPendingParticipants(h.channelId)
+            ).to.include(joinerA.address);
+            expect(
+                await h.control(joinerA).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(joinerA.eventSpies.onAbort?.called ?? false).to.equal(false);
+            expect(joinerA.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(
+                0
             );
-            expect(failedJoinState.status).to.equal(Status.OPENED);
-            expect(failedJoinState.isDisposed).to.equal(true);
-            // joinChannel recorded the submission height before submitting; the
-            // terminal branch must drop it, otherwise the dead join keeps a
-            // force-join trigger height on record.
-            expect(failedJoinState.joinSubmissionBlockHeight).to.equal(
-                undefined
-            );
+            // one logical join: the refused attempt exposed no SYNCED
+            const statusesSinceJoin = (
+                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
+            )
+                .slice(statusChangesBefore)
+                .map((call) => call.args[1] as Status);
+            expect(statusesSinceJoin).to.not.include(Status.SYNCED);
         });
     });
 

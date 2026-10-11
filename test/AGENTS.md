@@ -264,6 +264,10 @@ work; it does not cancel or dispose the feature operation.
   asks for that change. `timeConfig` is protocol input, not a test wait budget.
   Diagnose and fix the ordering, detached-work, lifecycle, or event-barrier bug
   that made the test depend on extra protocol time.
+- The harness baseline `p2pTime` is 5 (Luka, 2026-10-10): one staging step under
+  load can idle the table past `p2pTime + agreementTime`. The per-test widenings
+  he approved are listed in `docs/spec/audit/verification.md` ("Test timing
+  inputs"); any new one needs his explicit approval and an entry there.
 - Do not hardcode timeout values for protocol, event, status, sync, dispute, or
   snapshot waits. Omit the timeout when the action has a derived default, or use
   `h.event.protocolEventTimeoutMs(...)` when a lower-level API requires one.

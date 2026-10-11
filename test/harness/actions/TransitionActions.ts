@@ -8,6 +8,7 @@ import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 
@@ -197,8 +198,11 @@ export class TransitionActions<
             // keep-alive block late and the stamps fall behind the wall clock
             // until the subjective window rejects them.
             lastWriteAt = Date.now();
-            await this.submit(writer, options.txFn, { waitForPeers });
+            await this.submit(writer, options.txFn, { waitForSync: false });
             blocksAuthored += 1;
+            // the awaited condition (a dispute, a removal) can stop this
+            // block from committing, so it ends the wait as well
+            await this.waitUntilSyncedOr(writer, waitForPeers, until);
         }
         return blocksAuthored;
     }
@@ -255,10 +259,8 @@ export class TransitionActions<
         forkId?: string;
         timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
-        // Submit without holding the control RPC open for the transaction:
-        // a mined transaction on a loaded farm outlasts the RPC budget. The
-        // barrier below is the completion signal; a failed post surfaces as
-        // a detached host error at quiesce.
+        // The post resolves once mined; the barrier below waits until every
+        // honest peer holds the posted snapshot.
         const expectedSnapshot = await this.requestPostSnapshot(options);
         if (!expectedSnapshot) return undefined;
 
@@ -302,7 +304,10 @@ export class TransitionActions<
         }
 
         const transition = this.harness.control(peer).transition;
-        const result = await transition.postStateSnapshot(forkId).request();
+        // the post waits until mined: the protocol event budget bounds it
+        const result = await transition.postStateSnapshot(forkId).request({
+            timeoutMs: this.harness.event.protocolEventTimeoutMs()
+        });
         return result
             ? StateSnapshot.from(
                   Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
@@ -565,6 +570,40 @@ export class TransitionActions<
                 return sm.status;
             },
             { forkId, timestampOverride, timestampOffsetSeconds }
+        );
+    }
+
+    /** Waits until `waitForPeers` reach the writer's latest height, or `until` holds. */
+    private async waitUntilSyncedOr(
+        writer: TestPeer<TCustomRpc, TContract>,
+        waitForPeers: number[] | undefined,
+        until: () => boolean | Promise<boolean>
+    ): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId)
+            throw new Error("No active fork ID - cannot wait for sync");
+        const height = await this.harness
+            .control(writer)
+            .query.getLatestBlockHeight(forkId)
+            .request();
+        const peers =
+            waitForPeers !== undefined
+                ? this.harness.getFilteredPeers(waitForPeers)
+                : this.harness.getActiveHonestPeers();
+        await waitFor(
+            async () =>
+                (await until()) ||
+                (
+                    await Promise.all(
+                        peers.map((peer) =>
+                            this.harness
+                                .control(peer)
+                                .query.getLatestBlockHeight(forkId)
+                                .request()
+                        )
+                    )
+                ).every((peerHeight) => (peerHeight ?? -1) >= (height ?? 0)),
+            this.harness.event.protocolEventTimeoutMs()
         );
     }
 }

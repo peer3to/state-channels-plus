@@ -41,7 +41,7 @@ Position in the end-to-end flow (owned by the protocol doc; here for orientation
 sync (§3) → **collect signatures (this service)** → on-chain `joinChannel` submit + deposit →
 off-chain inbound inclusion → forced inclusion via dispute if ignored. This service owns exactly
 the "collect signatures" hop. The on-chain submission, deposit, inclusion, and force-join dispute
-live in [`MembershipService`](../../../../../../../src/stateManager/membership/MembershipService.ts#L251) and the contracts, not
+live in [`ChannelJoinService`](../../../../../../../src/stateManager/membership/ChannelJoinService.ts#L47) and the contracts, not
 here.
 
 **Observable contract.** `collectJoinChannelConfirmation(joinChannel)` returns a
@@ -64,8 +64,8 @@ of chain/state-manager state at call time:
   resolution.
 - **Writes:** none to service or state-manager storage. The only side effect is producing
   signatures and issuing outbound RPC requests. The collector's result is handed back to the
-  caller (`MembershipService.joinChannel`), which owns the on-chain submission and
-  [`ForceJoinStorage`](../../../../../../../src/storage/ForceJoinStorage.ts#L3) — not this service.
+  caller ([`ChannelJoinService.joinChannel`](../../../../../../../src/stateManager/membership/ChannelJoinService.ts#L81)), which owns the
+  on-chain submission, the pending join and the force-join dispute — not this service.
 
 Lifetime/cleanup: nothing to clean up. The service is a long-lived singleton constructed once per
 `P2PManager` ([./README.md](./README.md) §6.8); each dispatch instantiates a fresh stateless
@@ -113,8 +113,8 @@ Runs on the joiner. Not an RPC endpoint; invoked through the signer facade
    (`encodedSignedJoinChannel`), the wire form sent to peers (bigint-safe per [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
 8. **Fan out and verify.** For each threshold participant, in parallel: the local address self-signs
    directly (`signMsg(encoded, signer)`); a remote participant is asked via
-   `remoteRpc.joinChannelService.requestJoinSignature(encodedSignedJoinChannel,
-expectedSnapshotHash, expectedForkId).request(participant, { timeoutMs })`. Each returned
+   `remoteRpc.joinChannelService.requestJoinSignature(encodedSignedJoinChannel).request(participant,
+{ timeoutMs })`; the request carries no snapshot or fork pin. Each returned
    signature is recovered (`getSignerAddress(encoded, response.signature)`) and must equal the
    addressed participant; else throw `invalid signature from <participant>`.
 9. **Assemble.** Return `{ confirmation: { signedJoinChannel, signatures }, expectedSnapshotHash,
@@ -144,18 +144,16 @@ joinChannel.participant`. This binds three identities: the ECDSA signer, the dec
 4. **Channel match.** `joinChannel.channelId == stateManager.getChannelId()`; else throw.
 5. **Deadline.** `joinChannel.deadlineTimestamp ≥ Clock.getBlockchainTime()`; else throw
    `join expired`.
-6. **Fork match.** Read current on-chain snapshot; `snapshot.forkID == expectedForkId`; else throw
-   `fork mismatch`.
-7. **Snapshot match.** `snapshot.hash == expectedSnapshotHash`; else throw `snapshot mismatch`.
-   Stages 6–7 ensure the signer only authorizes a join pinned to the same chain state it currently
-   observes.
-8. **Local-signer-in-threshold.** The local signer must be a member of
+6. **No pin check.** The request carries no snapshot or fork pin and the responder reads no
+   snapshot: the countersignature covers only the encoded join, and the joiner's own pins are
+   checked by the contract at submission (Luka, 2026-10-10).
+7. **Local-signer-in-threshold.** The local signer must be a member of
    `getOnChainThresholdSet(channelId)`; else throw `local signer not in threshold`. A node that
    is not part of the threshold has no authority to countersign.
-9. **Sign (the auto-sign step).** `signMsg(encodedJoinChannel, signer)` and return `{ signature }`.
+8. **Sign (the auto-sign step).** `signMsg(encodedJoinChannel, signer)` and return `{ signature }`.
    A code TODO here marks the missing admission filter:
    `// TODO: add a configurable admission filter, including optional snapshot-scoped consent.`
-   Every structurally valid request that passes stages 1–8 is signed unconditionally (§4, [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
+   Every structurally valid request that passes stages 1–7 is signed unconditionally (§4, [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
 
 ```mermaid
 flowchart TD
@@ -166,7 +164,7 @@ flowchart TD
     P -- yes --> D[Codec.decode SignedJoinChannel + JoinChannel]
     D --> S{recover == participant == sender?}
     S -- no --> X
-    S -- yes --> C{channel + deadline + fork + snapshot match? local in threshold?}
+    S -- yes --> C{channel + deadline match? local in threshold?}
     C -- no --> X
     C -- yes --> SG[sign encodedJoinChannel unconditionally]
     SG --> R[return signature]
@@ -192,8 +190,9 @@ stages 1–8 admit, so precisely:
 - The attacker can only get a signature over a join **where it is itself the participant/signer/
   authenticated peer** (stage 3). It cannot get a join signed for a _third party_ it does not
   control — the sender-binding forbids relaying.
-- The join is pinned to the _current_ snapshot/fork (stages 6–7); the attacker cannot get a
-  signature for a stale or future chain state.
+- The countersignature covers only the encoded join, not a snapshot or fork. Stale state is decided at
+  submission: the contract checks the joiner's snapshot and fork pins, the current threshold set and the
+  deadline, so a signature collected against an older state cannot admit a join the current state refuses.
 - The join is confined to _this_ channel (stage 4) and must be live (stage 5).
 
 So the auto-sign does not let an attacker mint arbitrary authorizations. Its danger is different:
@@ -237,8 +236,9 @@ decision pending.)
 **Observed fact.** Joins pin `expectedSnapshotHash`; a second join invalidates the first only once
 the snapshot advances. Two simultaneous joiners each collect against the current snapshot; whichever
 submits first advances the chain, and the other's pinned snapshot goes stale → its on-chain submit
-reverts `RaceCondition*` and `MembershipService.joinChannel` aborts
-([`MembershipService.joinChannel`](../../../../../../../src/stateManager/membership/MembershipService.ts#L340)). At the RPC layer,
+reverts `RaceCondition*`; after its one retry is spent, `ChannelJoinService` ends the join `SYNCED`
+(reported as `onLeftChannel`) and aborts
+([`ChannelJoinService.onJoinRefused`](../../../../../../../src/stateManager/membership/ChannelJoinService.ts#L260)). At the RPC layer,
 a responder signing two concurrent requests is not itself a fault — it signs both; the contention is
 resolved on-chain. Consequence: concurrent admissions are serialized by chain races, not
 coordinated; honest concurrent joiners can waste a full signature-collection round.
@@ -250,15 +250,15 @@ coordinated; honest concurrent joiners can waste a full signature-collection rou
 returns `{ok: false, error}` with the **connection kept, no blacklist** ([./README.md](./README.md)
 §6.4/§8). A peer can therefore invoke this endpoint repeatedly with invalid payloads at zero cost —
 free probing of a guarded request endpoint. The error strings are descriptive
-(`fork mismatch`, `snapshot mismatch`, `join expired`, `local signer not in threshold`), which also
-leaks the responder's view of chain state and threshold membership to any handshake-completed peer.
+(`join expired`, `local signer not in threshold`), which also
+leaks the responder's view of chain time and threshold membership to any handshake-completed peer.
 
 This is the join-side instance of [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2)'s failure-outcome-policy inconsistency: join-signature abuse
 is penalty-free while an unprovable spectate request is an immediate permanent blacklist
 ([./spectate.md](./spectate.md) §4). Each choice is individually defensible — an honest joiner can
-race a stale snapshot and legitimately get `snapshot mismatch` — but the intended per-class policy
+race its deadline and legitimately get `join expired` — but the intended per-class policy
 is unstated. **Classified: [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2), decision pending.** Mitigation depends on the future central rate
-limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)): unbounded invalid requests each run chain reads (`getStateSnapshot`,
+limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)): unbounded invalid requests each run chain reads (chain time,
 `getOnChainThresholdSet`), so this endpoint carries real per-request cost (§4.7).
 
 ### 4.6 Deadline / top-up abuse — accepted residual + open question
@@ -279,7 +279,7 @@ limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification
 
 ### 4.7 Resource cost per request — unhandled ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5))
 
-Each `requestJoinSignature` performs two chain/provider reads (`getStateSnapshot` and
+Each `requestJoinSignature` performs two chain/provider reads (chain time and
 `getOnChainThresholdSet`) plus a Codec decode and an ECDSA recover, then a
 sign. None is bounded per peer. Combined with §4.5 (penalty-free errors), a peer can drive
 unbounded provider load. **Classified: [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)** — the intended single central RPC-level rate limiter
@@ -290,7 +290,7 @@ unbounded provider load. **Classified: [`OQ-6-4JPNE5` (P2P gossip rate limiting)
 There is no access control on _who_ may request a join signature beyond `HandshakeCompletedGuard`:
 any handshake-completed peer may call it. Because it signs only for the caller's own participant
 identity (§4.2), it does not disclose other participants' authorizations. It does leak, via error
-strings, the responder's current snapshot/fork/threshold view (§4.5). No separate participant-vs-
+strings, the responder's chain time and threshold view (§4.5). No separate participant-vs-
 outsider authorization guard exists — [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) / [./README.md](./README.md) §5.3 names this as the
 future guard-library work.
 
@@ -321,9 +321,9 @@ A responder signs a join only if the ECDSA signer, the declared `participant`, a
 
 <a id="inv-jcs-2-95qm5s"></a>
 
-### INV-JCS-2-95QM5S — Joins pinned to the responder's snapshot
+### INV-JCS-2-95QM5S — Joins signed only by threshold members
 
-A responder signs only a join pinned to its own current on-chain snapshot and fork (`expectedForkId`/`expectedSnapshotHash` equality, stages 6–7) and only when the local signer is in the threshold set (stage 8).
+A responder signs a join only when the local signer is in the current threshold set (stage 7). It does not check the joiner's snapshot or fork pins: the countersignature covers only the encoded join, and enforcement checks the pins at submission (Luka, 2026-10-10).
 
 <a id="inv-jcs-3-xj8kgx"></a>
 
@@ -347,7 +347,7 @@ The collector only ever collects for the local node's own participant identity (
 
 ### REQ-JCS-1-DDRPA8 — Full validation before signing a join
 
-`requestJoinSignature` MUST run the full decode + identity + channel + deadline + fork + snapshot + threshold chain before signing ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) instance).
+`requestJoinSignature` MUST run the full decode + identity + channel + deadline + threshold chain before signing ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) instance).
 
 <a id="req-jcs-2-wmqgwc"></a>
 

@@ -252,6 +252,8 @@ describe("E2E: evidence in the dispute window", function () {
 
     it("E19: an auditor frozen by its own dispute replays a higher dispute as stored data only: no view change and no new signature, its own proof and dispute stay at the frozen height, and the reduction after the kill window uses the replayed state", async function () {
         const h = TestSession.getHarness();
+        // The leader audits the opener's dispute and builds its own before it
+        // submits; the default evidence window can close before that lands.
         const {
             forkId,
             leader,
@@ -261,7 +263,9 @@ describe("E2E: evidence in the dispute window", function () {
             authored,
             height,
             restoreLeaderNetwork
-        } = await stageHigherStateOverOpener(h);
+        } = await stageHigherStateOverOpener(h, {
+            evidenceTime: EVIDENCE_TIME
+        });
         const openerUploads = await h.rpcStub.recordDisputeSubmissions(
             opener.index,
             { forward: true }

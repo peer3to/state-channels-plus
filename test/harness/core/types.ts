@@ -191,6 +191,7 @@ export type EventSpies = {
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
     onLeaveTurn?: sinon.SinonSpy;
+    onLeftChannel?: sinon.SinonSpy;
     onSetState?: sinon.SinonSpy;
     onAbort?: sinon.SinonSpy;
     onStatusChanged?: sinon.SinonSpy;

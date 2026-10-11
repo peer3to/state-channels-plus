@@ -6,7 +6,6 @@ import { createRoot } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { Logger } from "@/utils";
-import { config } from "@/utils/config";
 import workerUrl from "@platform/contractExecutorRootUrl";
 
 export type ContractExecutorFactoryOptions = {
@@ -38,7 +37,6 @@ export async function createContractExecutor(
                     options: precompile.options
                 })
             ),
-            config,
             callGasLimit: options.callGasLimit?.toString(),
             clockAdjustmentSeconds:
                 options.dedicatedThread && Clock.isInitialized()

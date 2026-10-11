@@ -4,4 +4,6 @@
 >
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-No specified behavior: The transport-type enum (preference negotiation vocabulary).
+## Requirements
+
+- [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)

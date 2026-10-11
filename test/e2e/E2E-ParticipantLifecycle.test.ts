@@ -2,6 +2,7 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
@@ -12,7 +13,7 @@ import { expect } from "chai";
  * E2E Tests for Participant Lifecycle (Exit + Join)
  *
  * Maps to:
- *   src/stateManager/StateManager.ts  (startMaybeExitOnChain, joinChannel)
+ *   src/stateManager/membership/LeaveChannelService.ts (exit posts), MembershipService.ts (joinChannel)
  *   src/eventHandlers/EventHandler.ts (onStateSnapshotUpdated status transitions)
  *   src/evm/P2pSigner.ts              (joinChannel public API)
  *
@@ -227,6 +228,25 @@ describe("E2E: Participant Lifecycle", function () {
             }
         });
 
+        it("a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort", async function () {
+            const h = TestSession.getHarness();
+            const {
+                maliciousPeerIndices: [slashedIndex]
+            } = await h.scenario.fourPeersDisputeResolution();
+            const slashed = h.getPeer(slashedIndex);
+
+            await h.event.waitUntilLeftChannel(slashedIndex);
+
+            expect(
+                await h.channelManager.getParticipants(h.channelId)
+            ).to.not.include(slashed.address);
+            expect(slashed.eventSpies.onLeftChannel?.callCount).to.equal(1);
+            expect(slashed.eventSpies.onAbort?.called).to.equal(false);
+            expect(
+                await h.control(slashed).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+        });
+
         it("exiting participant does not sign blocks authored after its leave", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 1);
@@ -295,7 +315,7 @@ describe("E2E: Participant Lifecycle", function () {
                     leaver.p2pInstance.p2pContractInstance.leaveChannel();
             });
 
-            const leave = leaver.p2pInstance.leaveChannel();
+            leaver.p2pInstance.leaveChannel();
             await h.transition.advanceState();
             await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
             await exitPromise;
@@ -304,17 +324,13 @@ describe("E2E: Participant Lifecycle", function () {
             // stop routing through it; the others keep the slot alive while
             // the exit snapshot lands.
             h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
-            let leaveSettled = false;
-            const settledLeave = leave.then(() => {
-                leaveSettled = true;
-            });
             await h.transition.keepAuthoringUntil({
-                until: () => leaveSettled,
+                until: () => leaver.eventSpies.onLeftChannel?.called === true,
                 waitForPeers: remaining,
                 excludePeerIndices: [leaver.index],
                 maximumBlocks: 20
             });
-            await settledLeave;
+            await h.event.waitUntilLeftChannel(leaver.index);
             expect(
                 (await h.channelManager.getParticipants(h.channelId)).includes(
                     leaver.address
@@ -602,15 +618,13 @@ describe("E2E: Participant Lifecycle", function () {
             ).to.equal(true);
             const retryState = await h.execOnHost(
                 h.getPeer(spectator.index),
-                async (sm) => ({
-                    status: sm.status,
-                    joinSubmissionHeight:
-                        sm.storage.forceJoin.getJoinSubmissionBlockHeight()
-                }),
+                async (sm) => ({ status: sm.status }),
                 {}
             );
             expect(retryState.status).to.equal(Status.PENDING_PARTICIPANT);
-            expect(retryState.joinSubmissionHeight).to.not.equal(undefined);
+            expect(
+                await readTrackedJoin(h, h.getPeer(spectator.index))
+            ).to.not.equal(null);
 
             await h.assert.storage.honestPeersObserveInboundMessageWait();
             joinObserved = true;

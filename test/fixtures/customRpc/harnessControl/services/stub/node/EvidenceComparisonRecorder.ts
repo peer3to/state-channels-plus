@@ -1,7 +1,8 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import type DisputeManager from "@/disputeManager";
 import type StateManager from "@/stateManager";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -13,11 +14,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
  *   reports partial auditing data.
  * - `hold`: the comparison's construction waits until
  *   `releaseHeldComparison`, then runs for real or rejects.
+ * - `holdBuilt`: the comparison's construction runs for real, then waits
+ *   until `releaseHeldComparison` before it returns its result or rejects.
  */
 export type EvidenceComparisonFault =
     | "comparisonError"
     | "unrecoverableInboundRun"
-    | "hold";
+    | "hold"
+    | "holdBuilt";
 
 /** How a held comparison continues: the real construction, or a rejection. */
 export type HeldEvidenceComparisonRelease = "forward" | "fail";
@@ -28,6 +32,8 @@ export type RecordedEvidenceComparison = {
     outcome: "pending" | "resolved" | "rejected";
     /** Constructor name of the rejection, or null. */
     errorName: string | null;
+    /** Hash of the built dispute once resolved, or null. */
+    disputeHash: Hash | null;
 };
 
 /** One `DisputeManager.shouldAddOwnEvidence` call and its answer. */
@@ -47,13 +53,16 @@ export const EVIDENCE_COMPARISON_FAULT_MESSAGE =
 
 /**
  * Record-only probe on `DisputeManager.shouldAddOwnEvidence` (the audits
- * that ask for an evidence comparison) and on the `constructDispute` calls
- * made inside it (the comparisons). Every call is forwarded. The optional
- * fault applies to the next comparison only.
+ * that ask for an evidence comparison), on the own-dispute builds made
+ * inside it (the comparisons) and on the count of the other builds (the
+ * builds of `dispute`). Every call is
+ * forwarded. The optional fault applies to the next comparison only.
  */
 export class EvidenceComparisonRecorder {
     readonly comparisons: RecordedEvidenceComparison[] = [];
     readonly audits: RecordedEvidenceAudit[] = [];
+    /** Own-dispute builds outside a comparison. */
+    disputeBuilds = 0;
     private fault?: EvidenceComparisonFault;
     private heldRelease?: (release: HeldEvidenceComparisonRelease) => void;
     private lastAudit?: { forkId: ForkId; dispute: DisputeStruct };
@@ -68,11 +77,14 @@ export class EvidenceComparisonRecorder {
         this.restore();
         this.comparisons.splice(0);
         this.audits.splice(0);
+        this.disputeBuilds = 0;
         this.lastAudit = undefined;
         this.fault = fault;
         const disputeManager = sm.disputeManager;
         const eventSync = sm.eventSyncService;
-        const construct = disputeManager.constructDispute.bind(disputeManager);
+        const builder = disputeManager["disputeBuilder"];
+        const build = builder["build"].bind(builder);
+        const hasMoreEvidence = builder["hasMoreEvidence"].bind(builder);
         const shouldAddOwnEvidence =
             disputeManager.shouldAddOwnEvidence.bind(disputeManager);
         const loadInboundRun =
@@ -103,12 +115,17 @@ export class EvidenceComparisonRecorder {
                 );
         };
         this.disputeManager = disputeManager;
-        disputeManager.constructDispute = (forkId) => {
-            if (!this.auditContext.getStore()) return construct(forkId);
+        // the real builds of dispute(); a reused build runs none
+        builder["build"] = (forkId, inputs, proof) => {
+            if (!this.auditContext.getStore()) this.disputeBuilds++;
+            return build(forkId, inputs, proof);
+        };
+        builder["hasMoreEvidence"] = (forkId, dispute) => {
             const recorded: RecordedEvidenceComparison = {
                 forkId,
                 outcome: "pending",
-                errorName: null
+                errorName: null,
+                disputeHash: null
             };
             this.comparisons.push(recorded);
             const fault = this.fault;
@@ -121,20 +138,36 @@ export class EvidenceComparisonRecorder {
                           )
                       )
                     : fault === "unrecoverableInboundRun"
-                      ? this.faultContext.run(true, () => construct(forkId))
+                      ? this.faultContext.run(true, () =>
+                            hasMoreEvidence(forkId, dispute)
+                        )
                       : fault === "hold"
                         ? this.held().then((release) => {
                               if (release === "fail")
                                   throw new EvidenceComparisonFaultError(
                                       EVIDENCE_COMPARISON_FAULT_MESSAGE
                                   );
-                              return construct(forkId);
+                              return hasMoreEvidence(forkId, dispute);
                           })
-                        : construct(forkId);
+                        : fault === "holdBuilt"
+                          ? hasMoreEvidence(forkId, dispute).then(
+                                async (answer) => {
+                                    if ((await this.held()) === "fail")
+                                        throw new EvidenceComparisonFaultError(
+                                            EVIDENCE_COMPARISON_FAULT_MESSAGE
+                                        );
+                                    return answer;
+                                }
+                            )
+                          : hasMoreEvidence(forkId, dispute);
             return run.then(
-                (result) => {
+                (answer) => {
                     recorded.outcome = "resolved";
-                    return result;
+                    const ours = builder["built"].get(forkId)?.result.dispute;
+                    recorded.disputeHash = ours
+                        ? hash(Codec.encode(ours, Type.Dispute))
+                        : null;
+                    return answer;
                 },
                 (error: unknown) => {
                     recorded.outcome = "rejected";
@@ -148,13 +181,14 @@ export class EvidenceComparisonRecorder {
             return loadInboundRun(...args);
         };
         this.restoreProbe = () => {
-            disputeManager.constructDispute = construct;
+            builder["build"] = build;
+            builder["hasMoreEvidence"] = hasMoreEvidence;
             disputeManager.shouldAddOwnEvidence = shouldAddOwnEvidence;
             eventSync.loadSynchronizedInboundRun = loadInboundRun;
         };
     }
 
-    /** Whether a comparison waits at the `hold` fault. */
+    /** Whether a comparison waits at the `hold` or `holdBuilt` fault. */
     get isHolding(): boolean {
         return this.heldRelease !== undefined;
     }

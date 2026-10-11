@@ -75,6 +75,8 @@ it MUST NOT mean missing the ones that exist.
 - Higher generations within an active window can share scheduled work. At most one local upload and one follow-up are active; entries beyond the last snapshot can wait for a later generation.
 
 - A thread can crash, hang, or be killed with no warning, including while a collection is running.
+- Every thread logs, stores, and uploads with the configuration of the thread that created it
+  ([`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](configuration.md#req-config-4-ww7brx)), so a split session collects under one configuration.
 - The thread that hits an error often has none of the logs that explain it.
 - Logs are there for development and support. They are not protocol state, and no protocol decision may
   depend on them.

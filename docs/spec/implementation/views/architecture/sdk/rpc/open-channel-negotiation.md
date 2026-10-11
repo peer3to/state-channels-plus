@@ -42,8 +42,8 @@ connection tracking and broadcasts. Commitment stops availability and matching, 
 non-selected lobby transport, promotes only the selected profile, and keeps the caller topic joined.
 Negotiation sets the channel ID only after it validates the committed
 transcript and exchanged terms. A successful opening leaves the topic before returning the result.
-Matching is indefinite unless the caller supplies a finite timeout. `leaveLobby` returns true only
-before commitment; after handoff it returns false and cannot cancel negotiation. Direct
+Matching is indefinite unless the caller supplies a finite timeout. `leaveLobby` waits for the left
+joins and returns true when they end with no channel; after handoff it cannot cancel negotiation. Direct
 `connectToChannel(channelId)` stays separate and rejects while a lobby is active.
 
 ## Matching handoff

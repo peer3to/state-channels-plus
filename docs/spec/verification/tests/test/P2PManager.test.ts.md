@@ -10,7 +10,9 @@ Register a real transport with a competing profile identity; getConnectedPeers i
 The suite drives the real host-side manager through its custom-RPC control fixture. It covers the
 ordered frame gates, UTF-8 byte boundaries, every implemented request settlement and race with
 registry/timer cleanup, disconnect and disposal cleanup, original-transport retirement, bulk
-penalties, broadcast, and peer-registry snapshots. The ingress probes authenticate fault senders
+penalties, broadcast, and peer-registry snapshots. The connection-set probe adds a Holepunch and a
+WebRTC transport, re-adds the first, and closes it twice; it asserts the exact ordered
+`onConnectionsChanged` sets with their transport types and that the repeated add and close emit nothing. The ingress probes authenticate fault senders
 and prove that oversized, malformed-envelope, unknown-service, and unknown-endpoint traffic
 blacklists them. A throwing local service only disconnects. The lifecycle probe also proves that a
 fault on a retired authenticated transport blacklists the current address profile and closes both
@@ -44,6 +46,7 @@ fork before the settlement behavior is exercised; protocol time values are uncha
 - `deduplicates connections, broadcasts once, blacklists peers, and reports known addresses`: UNIT-TEST-P2P-MANAGER-2-HR5HCB.P1, UNIT-TEST-P2P-MANAGER-2-HR5HCB.P2, UNIT-TEST-P2P-MANAGER-3-0FEPCH.P1, UNIT-TEST-P2P-MANAGER-3-0FEPCH.P2, UNIT-TEST-P2P-MANAGER-3-0FEPCH.P3
 - `blacklists and disconnects every peer in a bulk penalty`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P26
 - `uses profile fallback, deduplicates addresses, and omits unknown peers`: UNIT-TEST-P2P-MANAGER-3-0FEPCH.P4
+- `reports each change of the connection set with its transport types, leaves out a peerless transport, and reports nothing for a repeated add or close`: REQ-SDK-ARCH-7-H64K87.T1.P1, REQ-SDK-ARCH-7-H64K87.T1.P2, REQ-SDK-ARCH-7-H64K87.T1.P3, REQ-SDK-ARCH-7-H64K87.T1.P4, REQ-SDK-ARCH-7-H64K87.T1.P6, REQ-SDK-ARCH-7-H64K87.T1.P8, UNIT-TEST-P2PMANAGER-32-RX8SQP.P2, UNIT-TEST-P2PMANAGER-32-RX8SQP.P3
 - `ignores a completed handshake with no registered transport`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P10, REQ-AUTH-5-BQG9AG.T1.P10
 - `does not promote a transport that closed before handshake dispatch`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P7, REQ-AUTH-5-BQG9AG.T1.P7
 - `does not promote a late handshake after manager disposal`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P8, REQ-AUTH-5-BQG9AG.T1.P8

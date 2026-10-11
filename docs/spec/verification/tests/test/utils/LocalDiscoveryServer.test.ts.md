@@ -17,6 +17,12 @@ The pending-dial shutdown case delays every handshake reply on both inline peers
 
 The replacement-endpoint cases use real listener leave/rejoin and registry advertisements while the old socket is either awaiting handshake or authenticated. They close only that obsolete listener’s sockets and require a different authenticated transport, one live connection, and no blacklist. The real dialer, deduplication and retry paths execute.
 
+The left-dial late-close cases share one staging on two inline peers. Both peers hold their handshakes, so the primary dial stays before authentication with the dialer's in-flight mark set. The acceptor then stops reading that dial's socket, and both peers leave the topic: the dialer's leave closes the dial, and that close cannot complete, so it lags behind the leave. The real discovery sessions, dial admission, handshakes and close handling run; the staging only pauses and resumes one real accepted socket.
+
+The rematch case releases the handshakes, joins the same topic again on both peers, and waits for an authenticated transport between them. The left dial's close must still be pending when that transport exists, so the later observation dialed before the old close arrived.
+
+The ownership case keeps the handshakes held and joins a second topic on both peers, so the dialer starts a new dial to the same peer and marks it. It then delivers the left dial's close. The dialer must still mark the peer (harness query `isLocalDialMarked`). A third topic is then joined on both peers; after repeated announcements the dialer still has one live peer dial and one more held handshake, so no second pending dial started.
+
 ## Tests
 
 - `redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5, UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6, REQ-LOBBY-9-N894C0.T1.P13, REQ-LOBBY-9-N894C0.T1.P18
@@ -29,3 +35,5 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 - `schedules no retry for a local dial whose handshake is pending when its runtime shuts down`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14
 - `retries the replacement endpoint announced while the old endpoint handshake is pending`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15, REQ-LOBBY-9-N894C0.T1.P24
 - `retries the replacement endpoint announced while the old authenticated transport is still connected`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16, REQ-LOBBY-9-N894C0.T1.P25
+- `dials the peer again from a later observation of a left topic while the left dial's close still lags`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17, REQ-LOBBY-9-N894C0.T1.P32
+- `keeps a later session's dial mark when a left session's dial closes late, so another topic starts no second dial`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18, REQ-LOBBY-9-N894C0.T1.P33

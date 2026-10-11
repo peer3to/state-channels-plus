@@ -37,7 +37,6 @@ import {
     Filter,
     Log,
     Provider,
-    Result,
     hexlify,
     zeroPadValue
 } from "ethers";
@@ -77,8 +76,9 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
     );
 // widening getLogs spans a log recovery tries before giving up
 const LOG_RECOVERY_ATTEMPTS = 3;
-// one span already covers the whole window the calldata can be in
-const CALLDATA_RECOVERY_ATTEMPTS = 1;
+// a log index after every log of its block: a read pinned at a block holds
+// all of that block's logs
+const END_OF_BLOCK_LOG_INDEX = Number.MAX_SAFE_INTEGER;
 
 /** The window whose eth_getLogs read failed, and why. */
 export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
@@ -378,6 +378,7 @@ export default class EventSyncService {
         this.pendingOnChainBlockValidations.set(validationKey, recovery);
         return recovery;
     }
+
     /**
      * The fork's dispute window as the chain has it, with any commitment whose
      * event hasn't reached us yet recovered before we return. Single owner for
@@ -394,7 +395,7 @@ export default class EventSyncService {
                 channelId,
                 forkId
             );
-        const missing = await this.ensureDisputesProcessed(
+        const missing = await this.recoverWindowDisputes(
             channelId,
             forkId,
             commitments
@@ -423,8 +424,8 @@ export default class EventSyncService {
      * first. `undefined` when the gap survives recovery. Single owner for the
      * audit and reduce paths, so neither walks into a storage gap.
      *
-     * Never throws - a failed chain read is a failed attempt. A throw here
-     * would reach `abort()` through `getReduceData` -> `tryReduce`.
+     * A failed chain read or a local handler failure on a recovered log
+     * throws.
      */
     async loadSynchronizedInboundRun(
         upperBlockHash: Hash,
@@ -433,52 +434,18 @@ export default class EventSyncService {
         channelId: ChannelId = this.channelId
     ): Promise<MessageBlockStruct[] | undefined> {
         // the honest path holds the whole run -> no chain call at all
-        let run = this.storage.inboundMessages.tryGetMessageBlocksInRange({
+        const run = this.storage.inboundMessages.tryGetMessageBlocksInRange({
             upperBlockHash,
             lowerBlockHash
         });
         if (!run.missingBlockHash) return run.blocks;
-
-        const latest = await this.tryGetBlockchainTime();
-        if (latest) {
-            // notBefore is the on-chain timestamp of the snapshot that owns
-            // lowerBlockHash, so every block of the needed run was appended
-            // at or after it -> the span covers them
-            const recovery = await this.recoverLogsUntil({
-                channelId,
-                eventNames: ["InboundMessagesProcessed"],
-                toBlock: latest.blockNumber,
-                span: this.getBlockSpan(latest.timestamp - notBefore),
-                attempts: LOG_RECOVERY_ATTEMPTS,
-                dispatch: "awaited",
-                probe: () =>
-                    this.storage.inboundMessages.tryGetMessageBlocksInRange({
-                        upperBlockHash,
-                        lowerBlockHash
-                    }),
-                isRecovered: (held) => !held.missingBlockHash,
-                // only the blocks we do not hold: re-dispatching an applied log
-                // is pointless work, and that filter is what makes recovery
-                // terminate
-                isMissingLog: (args) =>
-                    !this.storage.inboundMessages.getMessageBlock(
-                        hash(Codec.encode(args.messageBlock, Type.MessageBlock))
-                    )
-            });
-            run = recovery.held;
-        }
-
-        if (!run.missingBlockHash) return run.blocks;
-        this.logger.warn("Inbound run unavailable after event recovery", {
+        return this.recoverInboundRun(
             channelId,
-            inboundRun: LoggerUtils.getInboundRunMetadata({
-                upperBlockHash,
-                lowerBlockHash,
-                blocks: run.blocks,
-                missingBlockHash: run.missingBlockHash
-            })
-        });
-        return undefined;
+            upperBlockHash,
+            lowerBlockHash,
+            notBefore,
+            await Clock.getBlockchainTime()
+        );
     }
 
     public async readPinnedChainMembership(
@@ -527,189 +494,223 @@ export default class EventSyncService {
         };
     }
 
-    /** Pull missing membership through the same handlers as live events. */
+    /**
+     * Pull missing membership through the same handlers as live events.
+     * `false` when the chain cannot back it: the inbound run or the
+     * authoritative slash set is still missing after log recovery. A failure
+     * of the local handlers or the local diamond throws, also when it applies
+     * a log the recovery read, and so does a failed recovery read. Applying it
+     * makes no chain call that `membership` already answers.
+     */
     public async synchronizeChainMembership(
         channelId: ChannelId,
         membership: PinnedChainMembership
-    ): Promise<void> {
+    ): Promise<boolean> {
         const snapshot = StateSnapshot.from(membership.snapshot);
-        const inbound = await this.loadSynchronizedInboundRun(
+        // the pinned read named the run's head, so recovery queries up to
+        // its block without a chain time read of its own
+        const inbound = await this.recoverInboundRun(
+            channelId,
             membership.balance.latestInboundMessageBlockHash,
             snapshot.latestInboundMessageBlockHash,
             snapshot.timestamp,
-            channelId
+            membership
         );
-        if (!inbound)
-            throw new Error("Membership inbound messages unavailable");
-        for (const block of inbound) {
+        if (!inbound) return false;
+        // the local diamond applies an inbound block idempotently and never
+        // moves its head back -> the whole pending run fills any block it
+        // misses, also below its head. Its pending set then holds the pinned
+        // one, so the snapshot below reads no pending set from the chain.
+        for (const block of inbound)
             await this.eventHandler.onInboundMessagesProcessed(
                 channelId,
-                block,
-                {
-                    blockNumber: 0,
-                    logIndex: 0
-                }
+                block
             );
-        }
+        // at the end of the pinned block: the local diamond drops it when a
+        // later StateSnapshotUpdated log was already applied
         await this.eventHandler.onStateSnapshotUpdated(
             channelId,
             membership.snapshot,
             {
-                blockNumber: 0,
-                logIndex: 0
+                blockNumber: membership.blockNumber,
+                logIndex: END_OF_BLOCK_LOG_INDEX
             }
         );
-        await this.recoverOnChainSlashes(channelId, undefined, membership);
-    }
-
-    /** Recover authoritative slashes through the ordinary timestamped event handlers. */
-    public async recoverOnChainSlashes(
-        channelId: ChannelId,
-        previouslyObserved?: readonly Address[],
-        observedMembership?: PinnedChainMembership
-    ): Promise<boolean> {
-        const membership =
-            observedMembership ??
-            (await this.readPinnedChainMembership(channelId));
-        const expected = membership.slashed;
-        const probe = () =>
-            this.localDiamondContract.getOnChainSlashedParticipants(channelId);
-        const initial = await probe();
-        const complete = (held: Address[]) =>
-            expected.every((address) => held.includes(address));
-        const previous = previouslyObserved ?? initial;
-        const changed = expected.some((address) => !previous.includes(address));
-        if (complete(initial)) return changed;
-        const recovered = await this.recoverLogsUntil({
-            channelId,
-            eventNames: ["ChainSlashed", "DisputeKilled"],
-            toBlock: membership.blockNumber,
-            span: this.getBlockSpan(this.timeConfig.evidenceTime * 2),
-            attempts: LOG_RECOVERY_ATTEMPTS,
-            dispatch: "awaited",
-            probe,
-            isRecovered: complete,
-            isMissingLog: (args, held) =>
-                !held.includes(args.participant ?? args.disputer)
-        });
-        if (!recovered.isRecovered)
-            throw new Error(
-                "Slash recovery did not recover the authoritative set"
-            );
-        return changed;
+        return this.recoverSlashes(channelId, membership);
     }
 
     /**
-     * One widening getLogs recovery: query the channel's `eventNames` logs,
-     * dispatch the ones the caller is still missing, re-probe, widen, repeat.
-     * Every attempt is contained - a failed chain read or a rejected
-     * re-dispatch is a failed attempt, never a throw, because a throw out of a
-     * recovery reaches `abort()` through the reduce path. Exhaustion is the
-     * caller's outcome: it branches on `isRecovered`.
+     * Recover authoritative slashes through the ordinary timestamped event
+     * handlers. `true` when the chain's set holds a slash outside
+     * `previouslyObserved` (the local diamond's set when omitted).
      */
-    private async recoverLogsUntil<THeld>(recovery: {
-        channelId: ChannelId;
-        eventNames: readonly SupportedStateChannelManagerEventName[];
-        /** indexed topic values after channelId, e.g. a calldata commitment */
-        indexedTopics?: readonly BytesLike[];
-        /** newest chain block every attempt queries up to */
-        toBlock: BlockNumber;
-        /** blocks back from `toBlock` the first attempt queries; doubles after each */
-        span: number;
-        attempts: number;
-        /** "detached" for a caller that must not await the dispatched pipeline */
-        dispatch: "awaited" | "detached";
-        /** what local storage holds right now */
-        probe: () => THeld | Promise<THeld>;
-        isRecovered: (held: THeld) => boolean;
-        /**
-         * which queried logs are still worth dispatching; all of them when
-         * omitted. `args` arrives normalized - `isLogMissing` applies
-         * `convertEthersValue` before invoking, like both scans do today.
-         */
-        isMissingLog?: (args: Result, held: THeld) => boolean;
-    }): Promise<{
-        held: THeld;
-        isRecovered: boolean;
-        scheduledLogCount: number;
-    }> {
-        const isMissingLog = recovery.isMissingLog;
-        let held = await recovery.probe();
-        let span = recovery.span;
-        let scheduledLogCount = 0;
-        for (
-            let attempt = 0;
-            attempt < recovery.attempts && !recovery.isRecovered(held);
-            attempt++
-        ) {
-            const fallback = Math.max(0, recovery.toBlock - span);
-            const cursor = this.storage.eventSync.getLatestProcessedBlock(
-                recovery.channelId
+    public async recoverOnChainSlashes(
+        channelId: ChannelId,
+        previouslyObserved?: readonly Address[]
+    ): Promise<boolean> {
+        const membership = await this.readPinnedChainMembership(channelId);
+        const previous =
+            previouslyObserved ??
+            (await this.localDiamondContract.getOnChainSlashedParticipants(
+                channelId
+            ));
+        if (!(await this.recoverSlashes(channelId, membership)))
+            throw new Error(
+                "Slash recovery did not recover the authoritative set"
             );
-            const fromBlock = Math.min(cursor ?? fallback, fallback);
-            try {
-                const failure = await readLogPages(
-                    this.getProvider(),
-                    this.buildLogFilter(
-                        recovery.eventNames,
-                        recovery.channelId,
-                        recovery.indexedTopics
-                    ),
-                    fromBlock,
-                    recovery.toBlock,
-                    async (logs) => {
-                        const missingLogs = isMissingLog
-                            ? logs.filter((log) =>
-                                  this.isLogMissing(log, isMissingLog, held)
-                              )
-                            : logs;
-                        scheduledLogCount += missingLogs.length;
-                        const dispatched = missingLogs.map((log) =>
-                            this.scheduleLog(log, recovery.channelId)
-                        );
-                        if (recovery.dispatch === "awaited") {
-                            await Promise.all(dispatched);
-                        } else {
-                            dispatched.forEach((eventPromise) =>
-                                DetachedPromises.collect(eventPromise)
-                            );
-                        }
-                    },
-                    config.LOG_QUERY_MAX_BLOCKS
-                );
-                if (failure) throw failure.error;
-            } catch (error) {
-                this.logger.warn("Contract event recovery query failed", {
-                    channelId: recovery.channelId,
-                    events: recovery.eventNames,
-                    fromBlock,
-                    toBlock: recovery.toBlock,
-                    error
-                });
-            }
-            held = await recovery.probe();
-            span *= 2;
-        }
-        return {
-            held,
-            isRecovered: recovery.isRecovered(held),
-            scheduledLogCount
-        };
+        return membership.slashed.some(
+            (address) => !previous.includes(address)
+        );
     }
 
-    private isLogMissing<THeld>(
-        log: Log,
-        isMissingLog: (args: Result, held: THeld) => boolean,
-        held: THeld
-    ): boolean {
-        const parsed = this.stateChannelManagerContract.interface.parseLog({
-            topics: log.topics,
-            data: log.data
+    /**
+     * Recover the InboundMessagesProcessed logs of the run (lowerBlockHash,
+     * upperBlockHash] up to `head`. The run, or `undefined` when the gap
+     * survives recovery.
+     */
+    private async recoverInboundRun(
+        channelId: ChannelId,
+        upperBlockHash: Hash,
+        lowerBlockHash: Hash,
+        notBefore: Timestamp,
+        head: { blockNumber: BlockNumber; timestamp: Timestamp }
+    ): Promise<MessageBlockStruct[] | undefined> {
+        const range = { upperBlockHash, lowerBlockHash };
+        const inbound = this.storage.inboundMessages;
+        let run = inbound.tryGetMessageBlocksInRange(range);
+        if (!run.missingBlockHash) return run.blocks;
+        // notBefore is the on-chain timestamp of the snapshot that owns
+        // lowerBlockHash, so every block of the needed run was appended
+        // at or after it -> the span covers them
+        for await (const logs of this.searchLogs(
+            channelId,
+            ["InboundMessagesProcessed"],
+            head.blockNumber,
+            this.getBlockSpan(head.timestamp - notBefore)
+        )) {
+            // only the blocks we do not hold: re-dispatching an applied log
+            // is pointless work, and that filter is what makes recovery
+            // terminate
+            await this.scheduleRecoveredLogs(
+                channelId,
+                logs.filter((log) => {
+                    const args = this.parseLog(log)?.args;
+                    return (
+                        args &&
+                        !inbound.getMessageBlock(
+                            hash(
+                                Codec.encode(
+                                    args.messageBlock,
+                                    Type.MessageBlock
+                                )
+                            )
+                        )
+                    );
+                })
+            );
+            run = inbound.tryGetMessageBlocksInRange(range);
+            if (!run.missingBlockHash) return run.blocks;
+        }
+        this.logger.warn("Inbound run unavailable after event recovery", {
+            channelId,
+            inboundRun: LoggerUtils.getInboundRunMetadata({
+                upperBlockHash,
+                lowerBlockHash,
+                blocks: run.blocks,
+                missingBlockHash: run.missingBlockHash
+            })
         });
-        if (!parsed) return false;
-        // parseLog is invoked directly, outside createEthersResultProxy, so
-        // normalize nested Result structs before they reach storage/models.
-        return isMissingLog(convertEthersValue(parsed.args), held);
+        return undefined;
+    }
+
+    /**
+     * Dispatch the slash logs the local diamond misses for `membership`'s
+     * authoritative set, up to its pinned block. Whether the local diamond
+     * then holds the whole set.
+     */
+    private async recoverSlashes(
+        channelId: ChannelId,
+        membership: PinnedChainMembership
+    ): Promise<boolean> {
+        const local = this.localDiamondContract;
+        const expected = membership.slashed;
+        let held = await local.getOnChainSlashedParticipants(channelId);
+        if (expected.every((address) => held.includes(address))) return true;
+        for await (const logs of this.searchLogs(
+            channelId,
+            ["ChainSlashed", "DisputeKilled"],
+            membership.blockNumber,
+            this.getBlockSpan(this.timeConfig.evidenceTime * 2)
+        )) {
+            await this.scheduleRecoveredLogs(
+                channelId,
+                logs.filter((log) => {
+                    const args = this.parseLog(log)?.args;
+                    return (
+                        args &&
+                        !held.includes(args.participant ?? args.disputer)
+                    );
+                })
+            );
+            held = await local.getOnChainSlashedParticipants(channelId);
+            if (expected.every((address) => held.includes(address)))
+                return true;
+        }
+        return false;
+    }
+
+    /**
+     * Recover the dispute logs of the fork's window whose dispute local
+     * storage lacks. The commitments still missing after recovery.
+     */
+    private async recoverWindowDisputes(
+        channelId: ChannelId,
+        forkId: ForkId,
+        commitments: readonly Hash[]
+    ): Promise<ReadonlySet<NormalizedDisputeCommitment>> {
+        let missing = this.getMissingDisputes(commitments);
+        if (missing.size === 0) return missing;
+
+        const window = await this.getDisputeWindowSpan(channelId, forkId);
+        for await (const logs of this.searchLogs(
+            channelId,
+            ["DisputeCommitted", "DisputeCommittedWithAuditingData"],
+            window.latest.blockNumber,
+            window.span
+        )) {
+            await this.scheduleRecoveredLogs(
+                channelId,
+                logs.filter((log) => {
+                    const args = this.parseLog(log)?.args;
+                    return (
+                        args &&
+                        missing.has(
+                            hash(
+                                args.disputeConfirmation.signedDispute
+                                    .encodedDispute
+                            ).toLowerCase()
+                        )
+                    );
+                })
+            );
+            missing = this.getMissingDisputes(commitments);
+            if (missing.size === 0) break;
+        }
+        return missing;
+    }
+
+    /** Commitments of the window whose dispute local storage still lacks. */
+    private getMissingDisputes(
+        commitments: readonly Hash[]
+    ): Set<NormalizedDisputeCommitment> {
+        return new Set(
+            commitments
+                .filter(
+                    (commitment) =>
+                        !this.storage.disputes.getDispute(commitment)
+                )
+                .map((commitment) => String(commitment).toLowerCase())
+        );
     }
 
     private async recoverBlockCalldataAndScheduleValidation(
@@ -719,152 +720,131 @@ export default class EventSyncService {
         blockAuthor: Address
     ): Promise<BlockCalldataRecoveryResult> {
         const channelId = this.channelId;
-        try {
-            const commitmentResult =
-                await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    channelId,
-                    forkId,
-                    blockHeight,
-                    blockAuthor
-                );
-            if (!commitmentResult.found) {
-                return { validationScheduled: false };
-            }
-            const commitment = commitmentResult.blockCalldataCommitment;
-            const probe = () =>
-                this.storage.blockCalldata.getBlockCalldata(
-                    forkId,
-                    blockHeight,
-                    blockAuthor
-                );
-            let recovered = probe();
-            let validationScheduled = false;
-            if (!recovered) {
-                const toBlock = await this.getProvider().getBlockNumber();
-                // onBlockCalldataPosted stores before its first await, so the
-                // explicit read below observes calldata without waiting for validation.
-                const recovery = await this.recoverLogsUntil({
-                    channelId,
-                    eventNames: ["BlockCalldataPosted"],
-                    indexedTopics: [commitment],
-                    toBlock,
-                    span: this.getBlockSpan(
-                        timeoutWaitTime(this.timeConfig, blockHeight)
-                    ),
-                    // one span is the whole window the calldata can be in; the
-                    // retry comes from this method's callers, not from here
-                    attempts: CALLDATA_RECOVERY_ATTEMPTS,
-                    dispatch: "detached",
-                    probe,
-                    isRecovered: (held) => held !== undefined
-                });
-                recovered = recovery.held;
-                validationScheduled = recovery.scheduledLogCount > 0;
-            }
-            if (!recovered) return { validationScheduled };
-            this.processedOnChainBlockValidationKeys.add(validationKey);
-            return { blockCalldata: recovered, validationScheduled };
-        } catch (error) {
-            this.logger.error("Block calldata recovery failed", { error });
+        const commitmentResult =
+            await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                channelId,
+                forkId,
+                blockHeight,
+                blockAuthor
+            );
+        if (!commitmentResult.found) {
             return { validationScheduled: false };
         }
-    }
-
-    /** Commitments of the window whose dispute local storage still lacks. */
-    private async ensureDisputesProcessed(
-        channelId: ChannelId,
-        forkId: ForkId,
-        commitments: readonly Hash[]
-    ): Promise<ReadonlySet<NormalizedDisputeCommitment>> {
         const probe = () =>
-            new Set<NormalizedDisputeCommitment>(
-                commitments
-                    .filter(
-                        (commitment) =>
-                            !this.storage.disputes.getDispute(commitment)
-                    )
-                    .map((commitment) => String(commitment).toLowerCase())
+            this.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                blockHeight,
+                blockAuthor
             );
-        const missing = probe();
-        if (missing.size === 0) return missing;
-
-        const window = await this.tryGetDisputeWindowSpan(channelId, forkId);
-        if (!window) return missing;
-
-        const recovery = await this.recoverLogsUntil({
-            channelId,
-            eventNames: [
-                "DisputeCommitted",
-                "DisputeCommittedWithAuditingData"
-            ],
-            toBlock: window.latest.blockNumber,
-            span: window.span,
-            attempts: LOG_RECOVERY_ATTEMPTS,
-            dispatch: "awaited",
-            probe,
-            isRecovered: (held) => held.size === 0,
-            isMissingLog: (args, held) =>
-                held.has(
-                    hash(
-                        args.disputeConfirmation.signedDispute.encodedDispute
-                    ).toLowerCase()
-                )
-        });
-        return recovery.held;
-    }
-
-    // a failed chain read counts as a failed recovery attempt, never a throw
-    private async tryGetBlockchainTime() {
-        try {
-            return await Clock.getBlockchainTime();
-        } catch (error) {
-            this.logger.warn("Inbound run recovery could not read chain time", {
-                error
-            });
-            return undefined;
-        }
-    }
-
-    // a failed chain read counts as a failed recovery attempt, never a throw
-    private async tryGetDisputeWindowSpan(
-        channelId: ChannelId,
-        forkId: ForkId
-    ) {
-        try {
-            const [windowCreationTimestamp, latest] = await Promise.all([
-                this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
-                    channelId,
-                    forkId
+        let recovered = probe();
+        let validationScheduled = false;
+        if (!recovered) {
+            // one span is the whole window the calldata can be in; the
+            // retry comes from this method's callers, not from here
+            const logs = await this.readRecentLogs(
+                channelId,
+                ["BlockCalldataPosted"],
+                await this.getProvider().getBlockNumber(),
+                this.getBlockSpan(
+                    timeoutWaitTime(this.timeConfig, blockHeight)
                 ),
-                Clock.getBlockchainTime()
-            ]);
-            return {
-                latest,
-                span: this.getBlockSpan(
-                    latest.timestamp - Number(windowCreationTimestamp)
-                )
-            };
-        } catch (error) {
-            this.logger.warn(
-                "Dispute recovery could not read the window span",
-                {
-                    channelId,
-                    forkId,
-                    error
-                }
+                [commitmentResult.blockCalldataCommitment]
             );
-            return undefined;
+            // onBlockCalldataPosted stores before its first await, so the
+            // explicit read below observes calldata without waiting for validation.
+            for (const log of logs)
+                DetachedPromises.collect(this.scheduleLog(log, channelId));
+            recovered = probe();
+            validationScheduled = logs.length > 0;
         }
+        if (!recovered) return { validationScheduled };
+        this.processedOnChainBlockValidationKeys.add(validationKey);
+        return { blockCalldata: recovered, validationScheduled };
+    }
+
+    /**
+     * The one log search of every recovery: the channel's `eventNames` logs
+     * up to `toBlock`, one widening span per step. The first reaches `span`
+     * blocks back, each next one twice as far. The caller stops once its gap
+     * is filled; after LOG_RECOVERY_ATTEMPTS spans the chain does not hold
+     * the log. A failed read throws.
+     */
+    private async *searchLogs(
+        channelId: ChannelId,
+        eventNames: readonly SupportedStateChannelManagerEventName[],
+        toBlock: BlockNumber,
+        span: number
+    ): AsyncGenerator<Log[]> {
+        for (let attempt = 0; attempt < LOG_RECOVERY_ATTEMPTS; attempt++) {
+            yield await this.readRecentLogs(
+                channelId,
+                eventNames,
+                toBlock,
+                span
+            );
+            span *= 2;
+        }
+    }
+
+    /**
+     * The channel's `eventNames` logs of the `span` blocks up to `toBlock`,
+     * from the completed-block watermark when it is older. `indexedTopics`
+     * are the indexed topic values after channelId, e.g. a calldata
+     * commitment. A failed read throws.
+     */
+    private async readRecentLogs(
+        channelId: ChannelId,
+        eventNames: readonly SupportedStateChannelManagerEventName[],
+        toBlock: BlockNumber,
+        span: number,
+        indexedTopics: readonly BytesLike[] = []
+    ): Promise<Log[]> {
+        const fallback = Math.max(0, toBlock - span);
+        const cursor =
+            this.storage.eventSync.getLatestProcessedBlock(channelId);
+        const logs: Log[] = [];
+        const failure = await readLogPages(
+            this.getProvider(),
+            this.buildLogFilter(eventNames, channelId, indexedTopics),
+            Math.min(cursor ?? fallback, fallback),
+            toBlock,
+            (page) => {
+                logs.push(...page);
+            },
+            config.LOG_QUERY_MAX_BLOCKS
+        );
+        if (failure) throw failure.error;
+        return logs;
+    }
+
+    private async scheduleRecoveredLogs(
+        channelId: ChannelId,
+        logs: Log[]
+    ): Promise<void> {
+        await Promise.all(logs.map((log) => this.scheduleLog(log, channelId)));
+    }
+
+    private async getDisputeWindowSpan(channelId: ChannelId, forkId: ForkId) {
+        const [windowCreationTimestamp, latest] = await Promise.all([
+            this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                channelId,
+                forkId
+            ),
+            Clock.getBlockchainTime()
+        ]);
+        return {
+            latest,
+            span: this.getBlockSpan(
+                latest.timestamp - Number(windowCreationTimestamp)
+            )
+        };
     }
 
     private async dispatchLog(
         log: Log,
         scheduledChannelId: ChannelId
     ): Promise<void> {
-        const parsed = this.stateChannelManagerContract.interface.parseLog({
-            topics: log.topics,
-            data: log.data
-        });
+        const parsed = this.parseLog(log);
         if (!parsed) return;
         if (!this.isSupportedEventName(parsed.name)) {
             this.logger.debug("Skipping unsupported manager event", {
@@ -874,9 +854,7 @@ export default class EventSyncService {
             return;
         }
         const eventName = parsed.name;
-        // parseLog is invoked directly, outside createEthersResultProxy, so
-        // normalize nested Result structs before they reach storage/models.
-        const args = convertEthersValue(parsed.args);
+        const args = parsed.args;
         if (toChannelKey(args.channelId) !== toChannelKey(scheduledChannelId)) {
             this.logger.warn("Ignoring manager event for another channel", {
                 scheduledChannelId,
@@ -973,13 +951,24 @@ export default class EventSyncService {
             case "InboundMessagesProcessed":
                 await this.eventHandler.onInboundMessagesProcessed(
                     args.channelId,
-                    args.messageBlock,
-                    coordinate
+                    args.messageBlock
                 );
                 break;
             default:
                 this.assertNeverEventName(eventName);
         }
+    }
+
+    /** `log`'s event name and args; `undefined` for no manager event. */
+    private parseLog(log: Log) {
+        const parsed = this.stateChannelManagerContract.interface.parseLog({
+            topics: log.topics,
+            data: log.data
+        });
+        if (!parsed) return undefined;
+        // parseLog is invoked directly, outside createEthersResultProxy, so
+        // normalize nested Result structs before they reach storage/models.
+        return { name: parsed.name, args: convertEthersValue(parsed.args) };
     }
 
     /**

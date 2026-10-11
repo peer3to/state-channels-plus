@@ -68,7 +68,6 @@ export async function assertLiveForkSwitch(
                 .request();
             expect(observation.scheduled).to.equal(1);
             expect(observation.cancelled).to.equal(1);
-            expect(observation.settledStateObserved).to.be.greaterThan(0);
             await h.control(target).stub.restoreForkLeave().request();
         }
         const before = await h.execOnHost(target, async (sm) => ({

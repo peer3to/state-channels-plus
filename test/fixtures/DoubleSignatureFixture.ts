@@ -1,5 +1,4 @@
 // @spec-test-coverage-ignore: shared fixture builds real signatures and block copies; executable evidence belongs to its calling test declarations
-import StateSnapshot from "@/models/StateSnapshot";
 import { Codec, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { MathTestSession } from "@test/harness";
@@ -37,24 +36,15 @@ export async function latestBlockCopy(
     };
 }
 
-/**
- * A join request for `participant` signed by `signature`, encoded for the wire,
- * together with the channel's real pinned snapshot hash and fork.
- */
+/** A join request for `participant` signed by `signature`, encoded for the wire. */
 export type JoinRequest = {
     encodedSignedJoinChannel: string;
-    expectedSnapshotHash: string;
-    expectedForkId: string;
 };
 
-export async function encodeJoinRequest(
+export function encodeJoinRequest(
     joinChannel: JoinChannelStruct,
     signature: string
-): Promise<JoinRequest> {
-    const h = MathTestSession.getHarness();
-    const snapshot = StateSnapshot.from(
-        await h.channelManager.getStateSnapshot(h.channelId)
-    );
+): JoinRequest {
     return {
         encodedSignedJoinChannel: String(
             Codec.encode(
@@ -67,9 +57,7 @@ export async function encodeJoinRequest(
                 },
                 Type.SignedJoinChannel
             )
-        ),
-        expectedSnapshotHash: String(snapshot.hash),
-        expectedForkId: String(snapshot.forkID)
+        )
     };
 }
 
@@ -88,11 +76,7 @@ export async function sendJoinSignatureRequest(
         async (sm, args) => {
             try {
                 await sm.p2pManager.remoteRpc.joinChannelService
-                    .requestJoinSignature(
-                        args.encodedSignedJoinChannel,
-                        args.expectedSnapshotHash,
-                        args.expectedForkId
-                    )
+                    .requestJoinSignature(args.encodedSignedJoinChannel)
                     .request(args.toAddress);
                 return undefined;
             } catch (error) {

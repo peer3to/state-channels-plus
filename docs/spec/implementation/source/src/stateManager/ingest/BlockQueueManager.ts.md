@@ -49,9 +49,7 @@ Intake gates and lifetime
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P25` — forged author is rejected before sender refresh or retention
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28` — a failed unknown copy preserves the existing honest contribution
 - [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P32` — clear a disputed gossip queue while an audit replay is held; replay persists the snapshot and reduction completes
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P33` — a failed membership read can retry on the next request
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34` — sync with no sender transport ends intake without queueing the block
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P35` — an unknown source still absent after a failed refresh invokes ordinary sync and does not retain the copy
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36` — sync succeeds but the sender is still absent: blacklisted with no queue entry
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37` — stopping the manager clears a future queued block and cancels its timeout
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38` — a queued entry that merged a gossip copy with the chain-committed copy is executed in the chain-committed context: the gossip source is cut and the chain-only consequence still runs

@@ -1,6 +1,7 @@
 import "../threadName";
 import type { RootWorker } from "../createRoot";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
+import { createConfig } from "@/utils/config";
 import { adaptPort } from "@platform/p2pRuntimeChannel";
 
 export function createRootWorker(
@@ -50,6 +51,9 @@ export function onRootBootstrap<T>(
         (event: MessageEvent) => {
             globalThis.threadName =
                 event.data.threadName ?? globalThis.threadName;
+            // Every root in this worker logs, stores, and uploads with its
+            // creator's config, also a root that never restores one itself.
+            if (event.data.config) createConfig(event.data.config);
             void handler(event.data);
         },
         { once: true }

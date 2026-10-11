@@ -11,14 +11,12 @@
 
 ## UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN
 
-Marker lifecycle
+Join record lifecycle
 
-- Setup: Set height, defer eligibility, start dispute, clear, and read again
-- Oracle: Exact height survives deferral; started state prevents duplicates; clear resets both fields
+- Setup: Start a join, update it, start a later join, update the earlier id, clear, and read again
+- Oracle: The record reads back as updated; an update for an earlier id changes nothing and reports false; clear returns the absent state
 
-- [ ] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P1` — read before set
-- [ ] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P2` — set/read/clear cycle
-- [ ] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P3` — repeated clear idempotent
-- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P5` — An expired real evidence window preserves the pending submission height and leaves disputeStarted false
-- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P6` — A delayed JOIN preserves tracking before inclusion; the later block bound sets disputeStarted and a repeated check does not submit again
-- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P7` — Normal block seating clears the submission height; an in-flight deadline cannot restore the started flag
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P1` — read before start
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P2` — start/read/update/clear cycle
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P3` — repeated clear idempotent
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P4` — an update for an earlier submission id changes nothing
