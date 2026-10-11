@@ -312,10 +312,17 @@ class CostCache {
     record(task, attempt, metadata) {
         if (!isCostSample(attempt, metadata)) return;
         const pending = this.pendingFor(this.key(task));
+        const isStarved = metadata.starveCount > 0;
+        // a clean pass after a starvation in this run keeps the inflation:
+        // its measurement plus the factor becomes the committed cost
+        const isPassAfterStarvation =
+            !isStarved &&
+            attempt.code === 0 &&
+            pending.hasStarvedInRun === true;
         const inflate = (value) =>
             value === null || value === undefined
                 ? null
-                : metadata.starveCount > 0
+                : isStarved || isPassAfterStarvation
                   ? value * STARVED_COST_FACTOR
                   : value;
         const previous = this.resolve(task);
@@ -346,11 +353,14 @@ class CostCache {
                     : null)
         };
         this.addToFileSums(task, pending.sample, 1);
-        pending.starved = metadata.starveCount > 0;
+        pending.starved = isStarved;
+        pending.hasStarvedInRun = pending.hasStarvedInRun === true || isStarved;
         pending.succeeded =
             attempt.code === 0 &&
             !pending.starved &&
             SAMPLE_FIELDS.every((field) => numeric(attempt[field]));
+        pending.isRaisedAfterStarvation =
+            isPassAfterStarvation && pending.succeeded;
         pending.at = metadata.at ?? new Date().toISOString();
         this.touch(task);
     }
@@ -496,9 +506,18 @@ class CostCache {
             return false;
         }
         let changed = false;
-        for (const [key, { sample, starved, succeeded }] of this.pending) {
+        for (const [
+            key,
+            { sample, starved, succeeded, isRaisedAfterStarvation }
+        ] of this.pending) {
             if (!costs[key] && !succeeded && !starved) continue;
-            if (costs[key] && !starved && !(costs[key].starved && succeeded))
+            // a test that starved and then passed overrides its committed cost
+            if (
+                costs[key] &&
+                !starved &&
+                !isRaisedAfterStarvation &&
+                !(costs[key].starved && succeeded)
+            )
                 continue;
             const next = committedCost(sample, costs[key]);
             costs[key] = next;

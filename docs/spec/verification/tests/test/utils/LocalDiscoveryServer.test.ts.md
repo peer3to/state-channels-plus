@@ -24,8 +24,8 @@ The replacement-endpoint cases use real listener leave/rejoin and registry adver
 - `redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5, UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6, REQ-LOBBY-9-N894C0.T1.P13, REQ-LOBBY-9-N894C0.T1.P18
 - `does not redial a peer blacklisted before its transport closes`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7, REQ-LOBBY-9-N894C0.T1.P16
 - `deduplicates an in-flight dial across topics before authentication`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P10
-- `dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17
-- `keeps a rejoined topic's pending dial deduplicated across topics after the left topic's old socket finishes closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18
+- `dials the peer again after a leave and rejoin while the left topic's closed socket has not finished closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17, REQ-LOBBY-9-N894C0.T1.P32
+- `keeps a rejoined topic's pending dial deduplicated across topics after the left topic's old socket finishes closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18, REQ-LOBBY-9-N894C0.T1.P33
 - `dials the peer again after a rejoin while the pending dial the leave closed has not finished closing`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P19
 - `does not dial a peer that already has a live authenticated transport on another topic`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P8
 - `repeated and concurrent joins share one listener and a pending join can be left`: UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P9, REQ-LOBBY-9-N894C0.T1.P17

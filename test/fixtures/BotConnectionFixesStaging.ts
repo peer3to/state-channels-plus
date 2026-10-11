@@ -1,7 +1,11 @@
 // @spec-test-coverage-ignore: shared staging for the bot-connection fix unit cases (lobby discovery, leave settlement, join bounds, latest spectate)
 import Clock from "@/Clock";
+import type StateSnapshot from "@/models/StateSnapshot";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import type { HarnessOptions } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 type HarnessPeer = ReturnType<MathPeerTestHarness["getPeer"]>;
 
@@ -57,39 +61,106 @@ export async function recordDiscoveryKeyJoins(
 }
 
 /**
- * Record-only probe on the peer's `SnapshotUpdateService.postStateSnapshotWait`:
- * every call still runs. Returns the resolved results and the restore.
+ * One `postStateSnapshotWait` of the peer: "posted" once it resolved with the
+ * posted snapshot, "no-op" once it resolved with nothing to post, the custom
+ * error name of the chain's revert, or "failed" for any other error.
+ */
+export type RecordedSnapshotPost = string;
+
+/**
+ * Record-only probe on the peer's `SnapshotUpdateService.postStateSnapshotWait`
+ * (a reduction's adopt-only posts are not recorded): every call still runs
+ * and returns its own snapshot or rejects with its own error. Returns the
+ * number of started posts, the results in call order, a wait for the first
+ * `count` results, and the restore. While `holdResults` is on, each recorded
+ * post parks before it returns, until `releaseResults`.
  */
 export async function recordSnapshotPostWaitResults(
     h: MathPeerTestHarness,
     peer: HarnessPeer
 ): Promise<{
-    results: () => Promise<boolean[]>;
+    started: () => Promise<number>;
+    results: () => Promise<RecordedSnapshotPost[]>;
+    resultsWait: (count: number) => Promise<RecordedSnapshotPost[]>;
+    holdResults: () => Promise<void>;
+    releaseResults: () => Promise<void>;
     restore: () => Promise<void>;
 }> {
-    await h.execOnHost(peer, (sm) => {
+    await h.execOnHost(peer, (sm, _, { tryDecodeCustomError }) => {
         const service = sm.snapshotUpdateService;
         const original = service.postStateSnapshotWait;
         const post = original.bind(service);
-        const results: boolean[] = [];
-        Reflect.set(service, "recordedPostWaitResults", results);
+        const record = { started: 0, results: [] as string[] };
+        let release = () => undefined as void;
+        let gate: Promise<void> | undefined;
+        const hold = {
+            start: () => {
+                gate ??= new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+            },
+            release: () => {
+                gate = undefined;
+                release();
+            }
+        };
+        Reflect.set(service, "recordedPostWaits", record);
+        Reflect.set(service, "recordedPostWaitHold", hold);
         Reflect.set(service, "recordedPostWaitOriginal", original);
-        service.postStateSnapshotWait = async (...parameters) => {
-            const posted = await post(...parameters);
-            results.push(posted);
+        service.postStateSnapshotWait = async (forkId, options) => {
+            if (options?.forkAdoptionOnly) return post(forkId, options);
+            record.started += 1;
+            let posted: StateSnapshot | undefined;
+            try {
+                posted = await post(forkId, options);
+            } catch (error) {
+                record.results.push(
+                    tryDecodeCustomError(error)?.name ?? "failed"
+                );
+                if (gate) await gate;
+                throw error;
+            }
+            record.results.push(posted === undefined ? "no-op" : "posted");
+            if (gate) await gate;
             return posted;
         };
         return true;
     });
-    return {
-        results: () =>
-            h.execOnHost(peer, (sm) => [
-                ...(Reflect.get(
+    const read = () =>
+        h.execOnHost(peer, (sm) => {
+            const record = Reflect.get(
+                sm.snapshotUpdateService,
+                "recordedPostWaits"
+            ) as { started: number; results: RecordedSnapshotPost[] };
+            return { started: record.started, results: [...record.results] };
+        });
+    const controlHold = (action: "start" | "release") =>
+        h.execOnHost(
+            peer,
+            (sm, args) => {
+                const hold = Reflect.get(
                     sm.snapshotUpdateService,
-                    "recordedPostWaitResults"
-                ) as boolean[])
-            ]),
+                    "recordedPostWaitHold"
+                ) as Record<"start" | "release", () => void>;
+                hold[args.action]();
+                return true;
+            },
+            { action }
+        );
+    return {
+        started: async () => (await read()).started,
+        results: async () => (await read()).results,
+        resultsWait: async (count) => {
+            await waitFor(
+                async () => (await read()).results.length >= count,
+                h.event.protocolEventTimeoutMs()
+            );
+            return (await read()).results;
+        },
+        holdResults: () => controlHold("start").then(() => undefined),
+        releaseResults: () => controlHold("release").then(() => undefined),
         restore: async () => {
+            await controlHold("release");
             await h.execOnHost(peer, (sm) => {
                 const original = Reflect.get(
                     sm.snapshotUpdateService,
@@ -101,6 +172,57 @@ export async function recordSnapshotPostWaitResults(
                         "postStateSnapshotWait",
                         original
                     );
+                return true;
+            });
+        }
+    };
+}
+
+/** One `info` entry of the peer's leave-channel logger: its message and metadata. */
+export type RecordedLeaveLog = { message: string; meta: unknown[] };
+
+/**
+ * Record-only probe on the `info` entries of the peer's `LeaveChannelService`
+ * logger: every entry is still logged. Returns the entries in order and the
+ * restore.
+ */
+export async function recordLeaveChannelLogs(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<{
+    entries: () => Promise<RecordedLeaveLog[]>;
+    restore: () => Promise<void>;
+}> {
+    await h.execOnHost(peer, (sm) => {
+        const logger = Reflect.get(sm.leaveChannelService, "logger") as {
+            info: (message: string, ...meta: unknown[]) => void;
+        };
+        const info = logger.info.bind(logger);
+        const entries: { message: string; meta: unknown[] }[] = [];
+        Reflect.set(logger, "recordedLeaveLogs", entries);
+        logger.info = (message: string, ...meta: unknown[]) => {
+            entries.push({ message, meta });
+            info(message, ...meta);
+        };
+        return true;
+    });
+    return {
+        entries: () =>
+            h.execOnHost(peer, (sm) => {
+                const logger = Reflect.get(sm.leaveChannelService, "logger");
+                return (
+                    Reflect.get(logger, "recordedLeaveLogs") as {
+                        message: string;
+                        meta: unknown[];
+                    }[]
+                ).map((entry) => ({ ...entry }));
+            }),
+        restore: async () => {
+            await h.execOnHost(peer, (sm) => {
+                const logger = Reflect.get(sm.leaveChannelService, "logger");
+                // the own property shadows the prototype's method
+                Reflect.deleteProperty(logger, "info");
+                Reflect.deleteProperty(logger, "recordedLeaveLogs");
                 return true;
             });
         }
@@ -121,6 +243,170 @@ export function exitOnLeaveTurn(
     return () => exit;
 }
 
+/** Counts the blocks the peer finalized since this call, from its own `onBlockFinalized` hook. */
+export function countFinalizedBlocks(peer: HarnessPeer): () => number {
+    let count = 0;
+    peer.p2pInstance.events.on("p2pEventHooks", "onBlockFinalized", () => {
+        count += 1;
+    });
+    return () => count;
+}
+
+/**
+ * U72 staging up to the exit. A synced spectator's join lands on chain while
+ * the three founders omit it, so the chain holds an inbound message no
+ * snapshot has consumed (the joiner's force-join dispute is suppressed).
+ * Founder 1's snapshot posts are recorded; its self-removal disputes are
+ * recorded and, with `forwardDisputes`, also sent.
+ */
+type InboundJoinStagingOptions = {
+    watchdogMs?: number;
+    forwardDisputes?: boolean;
+    evidenceTime?: number;
+};
+
+async function stageOmittedInboundJoin(
+    h: MathPeerTestHarness,
+    options: InboundJoinStagingOptions
+) {
+    const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
+        await h.scenario.syncSpectatorAndPrepareJoin(4, {
+            configOverrides:
+                options.watchdogMs === undefined
+                    ? undefined
+                    : { LEAVE_CHANNEL_WATCHDOG_MS: options.watchdogMs },
+            timeConfig:
+                options.evidenceTime === undefined
+                    ? undefined
+                    : { evidenceTime: options.evidenceTime }
+        });
+    const leaver = h.getPeer(1);
+    // the omitted join is staging: the joiner's force-join dispute is recorded, not started
+    await h.control(joiner).stub.stubSuppressForceJoinDispute().request();
+    const restoreInclusions: (() => Promise<void>)[] = [];
+    for (const peerIndex of [0, 1, 2]) {
+        restoreInclusions.push(
+            await h.byzantine.stubPendingInboundInclusion(peerIndex)
+        );
+    }
+    const posts = await recordSnapshotPostWaitResults(h, leaver);
+    const disputes = await h.rpcStub.recordDisputeSubmissions(leaver.index, {
+        forward: options.forwardDisputes ?? false
+    });
+    expect(
+        await joiner.p2pInstance.p2pSigner.joinChannel(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        )
+    ).to.equal(true);
+    return {
+        joiner,
+        leaver,
+        remainingPeerIndices: [0, 2],
+        posts,
+        disputes,
+        snapshotBeforeExit: await h.query.getOnChainSnapshotHash(),
+        includeInboundAgain: async () => {
+            for (const restoreInclusion of restoreInclusions)
+                await restoreInclusion();
+        }
+    };
+}
+
+/**
+ * U72 staging. On the omitted join (see `stageOmittedInboundJoin`), founder
+ * 1 leaves and sends its exit on its leave turn; its first snapshot post
+ * after the exit block is blocked by that join. Returns once that post
+ * resolved false; `includeInboundAgain` lets the founders include the join
+ * again.
+ */
+export async function stageInboundBlockedExit(
+    h: MathPeerTestHarness,
+    options: InboundJoinStagingOptions = {}
+) {
+    const staged = await stageOmittedInboundJoin(h, options);
+    const { leaver, posts } = staged;
+    const exit = exitOnLeaveTurn(leaver);
+    await leaver.p2pInstance.p2pSigner.leaveChannel();
+    await h.transition.keepAuthoringUntil({
+        until: () => exit() !== undefined,
+        waitForPeers: [0, 1, 2],
+        maximumBlocks: 6
+    });
+    await exit();
+    expect((await posts.resultsWait(1))[0]).to.equal(
+        "RaceConditionPendingInboundNotConsumed"
+    );
+    return staged;
+}
+
+/**
+ * On the omitted join (see `stageOmittedInboundJoin`), founder 1 leaves and
+ * never sends its exit: its leave awaits its leave turn.
+ */
+export async function stageLeaveAwaitingTurn(
+    h: MathPeerTestHarness,
+    options: InboundJoinStagingOptions = {}
+) {
+    const staged = await stageOmittedInboundJoin(h, options);
+    await staged.leaver.p2pInstance.p2pSigner.leaveChannel();
+    return staged;
+}
+
+/**
+ * `stageInboundBlockedExit` for an exit the application authors on its own
+ * turn, as a protocol exit does, with no leave operation.
+ */
+export async function stageInboundBlockedProtocolExit(
+    h: MathPeerTestHarness,
+    options: InboundJoinStagingOptions = {}
+) {
+    const staged = await stageOmittedInboundJoin(h, options);
+    await h.transition.participantLeaveStateTransition({
+        leaverIndex: staged.leaver.index,
+        waitForPeers: [0, 1, 2]
+    });
+    expect((await staged.posts.resultsWait(1))[0]).to.equal(
+        "RaceConditionPendingInboundNotConsumed"
+    );
+    return staged;
+}
+
+/**
+ * The joiner of `stageOmittedInboundJoin` disputes the fork through its own
+ * SDK: a dispute the founders observe and did not start.
+ */
+export async function disputeOmittedJoin(
+    h: MathPeerTestHarness,
+    joinerIndex: number
+): Promise<void> {
+    expect(
+        await h.execOnHost(h.getPeer(joinerIndex), async (sm) => {
+            await sm.disputeManager.dispute(sm.forkId);
+            return sm.storage.disputes.didIDispute(sm.forkId);
+        })
+    ).to.equal(true);
+}
+
+/** Whether the peer's disputes carry its self-removal (its force-exit flag). */
+export function readForceExit(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<boolean> {
+    return h.execOnHost(peer, (sm) => sm.storage.forceExit.getForceExit());
+}
+
+/** Reads the peer's chain account nonce from another peer's provider: it works after the peer is disposed. */
+export async function chainNonceReader(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<() => Promise<number>> {
+    const address = await peer.p2pInstance.chainSigner.getAddress();
+    const provider = h.getPeer(0).p2pInstance.chainSigner.provider!;
+    return () => provider.getTransactionCount(address, "pending");
+}
+
 /**
  * A synced spectator (peer 3 of three founders) holding a join
  * confirmation whose authorization ends `authorizationSeconds` after the
@@ -128,9 +414,13 @@ export function exitOnLeaveTurn(
  */
 export async function prepareJoinWithAuthorization(
     h: MathPeerTestHarness,
-    authorizationSeconds: number
+    authorizationSeconds: number,
+    configOverrides?: HarnessOptions["configOverrides"]
 ) {
-    const { joiner } = await h.scenario.syncSpectatorAndPrepareJoin(0);
+    const { joiner } = await h.scenario.syncSpectatorAndPrepareJoin(
+        0,
+        configOverrides === undefined ? undefined : { configOverrides }
+    );
     const joinDeadline =
         (await Clock.getBlockchainTime()).timestamp + authorizationSeconds;
     const prepared = await h.join.buildJoinChannelConfirmation({
@@ -290,4 +580,85 @@ export async function latestSyncFromResponderBehindDerivedFork(
     } finally {
         await hold.release();
     }
+}
+
+/**
+ * Staging for an exit restarted on a successor fork that still seats the
+ * leaver. Founder 2 is blind to block gossip when founder 1 authors its exit
+ * with no leave call, so the exit block is never final. Founder 0 then signs
+ * an out-of-turn block at the exit's height; delivered to founder 2, it is a
+ * real invalid state transition, and founder 2 disputes it from the state
+ * before the exit. Founder 0 (the offender) contributes no evidence and
+ * founder 1's own disputes are recorded, not sent, so the window's reduction
+ * proves the state before the exit: the successor fork drops founder 0 and
+ * still seats founders 1 and 2. Returns once founders 1 and 2 installed it,
+ * with every staging stub restored.
+ */
+export async function stageExitReplacedBySeatingFork(h: MathPeerTestHarness) {
+    await h.lifecycle.start(3, 0, {
+        // the leave watchdog's dispute is not the subject
+        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60_000 }
+    });
+    const forkId = h.activeForkId!;
+    const offender = h.getPeer(0);
+    const leaver = h.getPeer(1);
+    const disputer = h.getPeer(2);
+    const exit = exitOnLeaveTurn(leaver);
+    let restoreGossip: (() => Promise<void>) | undefined;
+    let restoreTimeoutCheck: (() => Promise<void>) | undefined;
+    let disputes:
+        | Awaited<
+              ReturnType<
+                  MathPeerTestHarness["rpcStub"]["recordDisputeSubmissions"]
+              >
+          >
+        | undefined;
+    try {
+        await h.transition.keepAuthoringUntil({
+            until: () => h.control(leaver).query.isMyTurn().request(),
+            waitForPeers: [0, 1, 2],
+            maximumBlocks: 3
+        });
+        // founder 2 disputes only the invalid block below: its wait for the
+        // exit block it never sees times no one out
+        restoreTimeoutCheck = await h.rpcStub.suppressTimeoutCheck(
+            disputer.index
+        );
+        await h.dispute.suppressDisputeInitiation([offender.index]);
+        disputes = await h.rpcStub.recordDisputeSubmissions(leaver.index);
+        restoreGossip = await h.rpcStub.dropNetworkConfirmations(
+            disputer.index
+        );
+        await h.transition.submit(
+            leaver,
+            (contract) => contract.leaveChannel(),
+            {
+                waitForTurn: true,
+                waitForPeers: [0, 1],
+                waitForFinalization: false
+            }
+        );
+        await h.event.waitUntilLeaveState(leaver.index, "isExitBlockCommitted");
+        const { encodedBlock } = await h.byzantine.craftInvalidTransitionBlock(
+            disputer.index,
+            { offenderIndex: offender.index }
+        );
+        await h
+            .control(disputer)
+            .transition.ingestBlockConfirmation(encodedBlock, {
+                origin: BlockOrigin.PROOF
+            })
+            .request();
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            maliciousPeerIndices: [offender.index],
+            honestPeerIndices: [leaver.index, disputer.index]
+        });
+    } finally {
+        await restoreGossip?.();
+        await restoreTimeoutCheck?.();
+        await disputes?.restore();
+        await h.dispute.restoreDisputeInitiation([offender.index]);
+    }
+    return { leaver, forkId, exit };
 }

@@ -332,7 +332,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 ## Accepted PR 472 fixes after the SDK refactor
 
 The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
-missing-marker and expired-evidence outcomes have explicit runtime-port declarations. The configured
+unrecognized-upload-failure and expired-evidence outcomes have explicit runtime-port declarations. The configured
 production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
 This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 

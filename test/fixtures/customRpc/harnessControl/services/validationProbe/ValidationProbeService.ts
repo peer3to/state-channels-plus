@@ -660,8 +660,7 @@ export class ValidationProbeService extends ANetworkRpcService<
      * dispatched.
      */
     public async probeInboundRunRecovery(
-        upperBlockHash: Hash,
-        options?: { failChainQueries?: boolean }
+        upperBlockHash: Hash
     ): Promise<InboundRunRecoveryProbe> {
         const sm = this.sm;
         const genesis = sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
@@ -674,9 +673,7 @@ export class ValidationProbeService extends ANetworkRpcService<
         const cursorAtCall =
             sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
 
-        if (options?.failChainQueries)
-            this.p2pManager.localRpc.stub.failChainLogQueries();
-        else this.p2pManager.localRpc.stub.countChainLogQueries();
+        this.p2pManager.localRpc.stub.countChainLogQueries();
         // count-and-forward: the driver's dispatch count is what proves an
         // already-applied log is not re-dispatched
         const eventSyncService = sm.eventSyncService;
@@ -727,21 +724,15 @@ export class ValidationProbeService extends ANetworkRpcService<
 
     /**
      * Lose a subscribed `BlockCalldataPosted` delivery for one of this peer's
-     * own blocks, then run the real calldata recovery for that block. With
-     * `failChainQueries` the recovery query is blinded, so the contained
-     * failure path runs instead.
+     * own blocks, then run the real calldata recovery for that block.
      */
-    public async probeBlockCalldataRecovery(options?: {
-        failChainQueries?: boolean;
-    }): Promise<BlockCalldataRecoveryProbe> {
+    public async probeBlockCalldataRecovery(): Promise<BlockCalldataRecoveryProbe> {
         const sm = this.sm;
         const forkId = sm.forkId;
         const block = await this.findOwnBlockWithoutPostedCalldata(forkId);
 
         this.p2pManager.localRpc.stub.holdCalldataPostedEvents();
-        if (options?.failChainQueries)
-            this.p2pManager.localRpc.stub.failChainLogQueries();
-        else this.p2pManager.localRpc.stub.countChainLogQueries();
+        this.p2pManager.localRpc.stub.countChainLogQueries();
 
         try {
             await this.postBlockCalldataOnChain(

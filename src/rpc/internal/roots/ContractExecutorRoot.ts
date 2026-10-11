@@ -4,7 +4,6 @@ import {
     type ContractExecutorInitialization
 } from "../services/contractExecutor/ContractExecutorService";
 import { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import { createConfig } from "@/utils/config";
 
 export class ContractExecutorRoot extends AInternalRpcRoot {
     public readonly executor: ContractExecutorService;
@@ -14,9 +13,8 @@ export class ContractExecutorRoot extends AInternalRpcRoot {
         _local: undefined,
         context: RootStartContext
     ) {
-        // Re-establish config in this worker and build its logger, then monitor
-        // this thread with the same fatal delay threshold as every service loop.
-        if (context.mode === "worker") createConfig(initialization.config);
+        // Build this thread's logger, then monitor it with the same fatal delay
+        // threshold as every service loop.
         super(
             (error) => {
                 throw error;

@@ -2,6 +2,7 @@ import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, hash, tryDecodeCustomError, Type } from "@/utils";
+import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import {
@@ -381,12 +382,10 @@ describe("E2E: Join channel race conditions", function () {
             // the joiner uploads its self-removal through its SDK, so it holds
             // its own dispute marker and does not dispute its commitment again
             expect(
-                await h.execOnHost(
-                    h.getPeer(joiner.index),
-                    async (sm, { forkId }) =>
-                        sm.membershipService.startSelfRemovalDispute(forkId),
-                    { forkId: originalForkId }
-                )
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .dispute.startSelfRemovalDispute(originalForkId)
+                    .request()
             ).to.equal(true);
             const dispute = joiner.eventSpies.onInitiatingDispute!.lastCall
                 .args[1] as DisputeStruct;
@@ -417,8 +416,9 @@ describe("E2E: Join channel race conditions", function () {
             expect(participants).to.not.include(joiner.address);
         });
 
-        // an anchor below the newest pending join is refused at upload (disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts)
-        it.skip("omitting the newest pending join from a self-removal dispute is killed", async function () {
+        // the chain refuses the omission at upload, so no commitment exists
+        // for an auditor to kill
+        it("omitting the newest pending join from a self-removal dispute is refused at upload", async function () {
             const h = TestSession.getHarness();
             const {
                 joiner,
@@ -433,32 +433,68 @@ describe("E2E: Join channel race conditions", function () {
                     expectedForkId
                 )
             ).to.equal(true);
+            const forkId = h.activeForkId!;
+            const chainInboundHead = (
+                await h.channelManager.getChannelBalance(h.channelId)
+            ).latestInboundMessageBlockHash;
+            // the joiner's own store holds the JOIN the chain's head names
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(joiner)
+                        .query.getLatestInboundMessageHash()
+                        .request()) === chainInboundHead,
+                h.event.protocolEventTimeoutMs()
+            );
             await h.control(joiner).dispute.setForceExit(true).request();
 
-            await h.tamper.postTamperedDispute(
-                joiner.index,
-                (dispute, _confirmation, auditingData) => {
-                    const newestInbound =
-                        auditingData!.inboundMessageBlocks.at(-1)!;
-                    auditingData!.inboundMessageBlocks =
-                        auditingData!.inboundMessageBlocks.slice(0, -1);
-                    dispute.input.latestInboundMessageBlockHash =
-                        newestInbound.previousBlockHash;
-                    dispute.input.lastInboundMessageBlockHeight =
-                        BigInt(newestInbound.blockHeight) - 1n;
-                    dispute.input.disputeAuditingDataHash = hash(
-                        Codec.encode(auditingData!, Type.DisputeAuditingData)
-                    );
-                }
+            const { dispute, disputeConfirmation, auditingData } =
+                await h.dispute.fetchConstructedDispute(joiner.index, forkId);
+            // premise: the honest self-removal dispute replays the JOIN last
+            expect(dispute.input.selfRemoval).to.equal(true);
+            const join = auditingData.inboundMessageBlocks.at(-1)!;
+            expect(hash(Codec.encode(join, Type.MessageBlock))).to.equal(
+                chainInboundHead
+            );
+            expect(dispute.input.latestInboundMessageBlockHash).to.equal(
+                chainInboundHead
             );
 
-            await h.assert.dispute.committedWait({
-                peersIndices: [0, 1, 2],
-                expectedCount: 1
-            });
-            await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
-                mode: "atLeast"
-            });
+            // omit the JOIN: the dispute stops at its predecessor
+            auditingData.inboundMessageBlocks =
+                auditingData.inboundMessageBlocks.slice(0, -1);
+            dispute.input.latestInboundMessageBlockHash =
+                join.previousBlockHash;
+            dispute.input.lastInboundMessageBlockHeight =
+                BigInt(join.blockHeight) - 1n;
+            dispute.input.disputeAuditingDataHash = hash(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
+            );
+            dispute.postedAuditingData = true;
+            await h.tamper.resignDispute(
+                joiner.signer,
+                dispute,
+                disputeConfirmation
+            );
+
+            const contract = joiner.p2pInstance.stateChannelManagerContract;
+            await expect(
+                contract.uploadDisputeWithCalldata(
+                    disputeConfirmation,
+                    auditingData
+                )
+            )
+                .to.be.revertedWithCustomError(
+                    contract,
+                    "RaceConditionDisputeInboundNotLatest"
+                )
+                .withArgs(chainInboundHead, join.previousBlockHash);
+            expect(
+                await h.channelManager.getDisputeWindowCreationTimestamp(
+                    h.channelId,
+                    forkId
+                )
+            ).to.equal(0n);
         });
 
         it("refuses existing and pending participants' top-ups during a dispute and converges after reduction", async function () {
@@ -625,15 +661,13 @@ describe("E2E: Join channel race conditions", function () {
                 participant,
                 async (sm) => ({
                     status: sm.status,
-                    isDisposed: sm.isDisposed,
-                    joinSubmissionHeight:
-                        sm.storage.forceJoin.getJoinSubmissionBlockHeight()
+                    isDisposed: sm.isDisposed
                 }),
                 {}
             );
             expect(state.status).to.equal(Status.PARTICIPATING);
             expect(state.isDisposed).to.equal(false);
-            expect(state.joinSubmissionHeight).to.equal(undefined);
+            expect(await readTrackedJoin(h, participant)).to.equal(null);
         });
     });
 });

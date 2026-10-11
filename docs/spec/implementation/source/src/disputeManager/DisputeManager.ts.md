@@ -26,6 +26,7 @@
 - [`REQ-IX-5-6XHJJB` (On-chain adjudication)](../../../../specification/interactions.md#req-ix-5-6xhjjb)
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
 - [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
+- [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 
 ## UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD
@@ -86,30 +87,6 @@ Escalation guard: once per fork, rollback on failure, serialized
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P53` — the upload of a mined kill-and-dispute multicall is refused with a custom error no dispute handler takes (`ErrorDisputerNotMsgSender`): the kill landed once in the multicall, the marker rolls back, `dispute` rejects with that refusal and no kill is sent alone
 - [x] `UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P54` — the upload of a mined kill-and-dispute multicall is refused without revert data while its all-or-nothing estimate succeeded: nothing classifies the refusal, so `dispute` rejects, the marker rolls back, the kill landed once in the multicall and none is sent alone
 
-## UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R
-
-Construction correctness
-
-- Setup: `constructDispute(forkId)` with storage fixtures varying slashes, proofs, timeout, force-exit, inbound tip
-- Oracle: Dispute fields equal fixture-derived expectations; claimed slashes ⊆ participants; held proofs for unslashed members enter `fraudProofsToApply` and the claimed set; output hash equals the mirrored staticCall result
-
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1` — slash subset and proof folding
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P2` — empty timeout struct
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P3` — self-removal flag
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P4` — inbound tip fields from a populated stream
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P5` — snapshot/state hash mismatch throws
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P6` — finality probe not-final posts auditing data
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P7` — held timeout struct
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P8` — empty-stream tip defaults
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P9` — finality probe final skips auditing data
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10` — local probe "not final" posts auditing data with no chain probe
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P11` — local probe "final", chain "not final": auditing data is posted
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P12` — local probe reverts: the chain probe decides
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13` — local probe "final", chain "final": exactly one chain read and the auditing data is left out
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P14` — local probe fails outside the EVM (executor transport failure): construction throws it and the chain is never read
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15` — local probe "final", chain read fails with a transport error: construction throws it, no dispute is built
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P16` — the auditing-data omission predicate reverts locally during dispute construction: construction fails without a chain read or a constructed dispute
-
 ## UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T
 
 Submission composition
@@ -132,7 +109,7 @@ Kill preconditions and races
 
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P1` — valid kill
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P2` — missing stored proof
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P3` — window absent no-op
+- [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P3` — window absent no-op
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P4` — RaceConditionDisputeKillPeriodExpired revert is fatal: logged and rethrown
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P5` — window expired no-op
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P6` — RaceConditionOnChainSlashes revert tolerated
@@ -143,22 +120,6 @@ Kill preconditions and races
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P11` — An unrecognized upload receipt failure rejects with the original error and clears the local disputed marker
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P12` — An unrecognized kill send failure rejects with the original error after one apply attempt, without retry or slashing the submitter
 - [x] `UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P13` — An unrecognized kill receipt failure rejects with the original error after one apply attempt, without retry or slashing the submitter
-
-## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
-
-Auditing-data assembly; missing local data throws
-
-- Setup: `constructDispute(forkId)` (its `buildAuditingData`) with each element present and absent
-- Oracle: Complete fixtures yield exact ranges and snapshots; each locally missing element makes construction throw; no partial dispute is submitted
-
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P1` — complete assembly
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P2` — missing milestone snapshot: construction throws and no dispute is built
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P3` — inbound range bounds incl. pinned upper hash
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P4` — genesis-anchored fork (no milestones)
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P5` — missing latest-state snapshot: construction throws and no dispute is built
-- [ ] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P6` — missing finalized state-machine state: construction throws and no dispute is built
-- [x] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P8` — the outbound range holds only the blocks above the on-chain snapshot's outbound head, up to the latest state's, and the chain accepts the dispute.
-- [x] `UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P18` — a successor fork while the chain anchor is still on the parent fork (no successor snapshot posted): the dispute built on the successor carries auditing data cut at that parent-fork anchor, the chain accepts its proof and an honest auditor accepts it without a counter.
 
 ## UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9
 
@@ -181,8 +142,8 @@ Replay sends funded upfront
 
 Once-per-fork evidence comparison
 
-- Setup: Real committed disputes audited by a running peer whose own dispute initiation is suppressed (so it only audits), with a record-only probe on `shouldAddOwnEvidence` (the audits) and on the `constructDispute` calls inside it (the comparisons) that can fail, partially fail, or hold the next comparison; disputers and non-disputers of one fork; a dispute killed between or during comparisons; an upload that fails once; a reduced result committed
-- Oracle: The number and outcome of comparisons and audits per peer, the audits that complete (`onDisputeCommitted`), the auditor's uploads, detached errors, and the peer's own `DisputeCommitted`: zero comparisons for a disputer; one for two audits by a non-disputer; a rejected or partial-data comparison is followed by a new one; a held comparison is shared; after a kill or a reduced result the next request compares again; a dropped comparison settling late does not erase its replacement; no upload without an outcome-changing comparison
+- Setup: Real committed disputes audited by a running peer whose own dispute initiation is suppressed (so it only audits), with a record-only probe on `shouldAddOwnEvidence` (the audits) and on the builder's evidence comparison inside it (`DisputeBuilder.hasMoreEvidence`, the comparisons) that can fail, partially fail, or hold the next comparison before or after its construction, and that counts the builder `build` runs outside an audit (the builds of `dispute`; a construction that returns the cached result runs none); disputers and non-disputers of one fork; a dispute killed between or during comparisons; an upload that fails once; a reduced result committed; a `dispute` with a kill after a kept comparison; an exiting node (force-exit flag set) that audits
+- Oracle: The number and outcome of comparisons and audits per peer, the audits that complete (`onDisputeCommitted`), the auditor's uploads, detached errors, and the peer's own `DisputeCommitted`: zero comparisons for a disputer; one for two audits by a non-disputer; a rejected or partial-data comparison is followed by a new one; a held comparison is shared; after a kill or a reduced result the next request compares again; a dropped comparison settling late does not erase its replacement; no upload without an outcome-changing comparison; `dispute` uploads the compared dispute with no second build while the fork's latest block and the self-removal flag are unchanged, and builds once more for changed dispute inputs or on a kill; extra signatures on the unchanged latest block alone require no rebuild; an exiting node answers yes with no comparison and uploads its self-removal dispute
 
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P1` — a node that already disputed the fork audits another peer's dispute of it and never runs the comparison
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P2` — a node that has not disputed the fork audits two disputes of it and runs the comparison once
@@ -193,3 +154,6 @@ Once-per-fork evidence comparison
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P7` — the fork's reduced result is committed: the kept comparison is dropped and the next request for the fork compares again
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P8` — concurrent audits of one fork share one in-flight comparison: while the first is held the second starts no construction, and both get its answer
 - [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P9` — a comparison dropped by a kill while it was held settles later without erasing the replacement comparison's kept answer
+- [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P10` — a positive comparison followed by the counter-dispute with the fork's latest block and the self-removal flag unchanged: `dispute` uploads the dispute the comparison built: its `constructDispute` call returns the cached result and runs no second builder `build`
+- [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P12` — `dispute` with a kill after a kept positive comparison: the kill changes the construction inputs, so it runs one more builder `build` and uploads, in the kill's multicall, a dispute that lists the killed submitter's slash, not the compared one
+- [x] `UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P13` — an exiting node (force-exit flag set) audits a valid dispute: `shouldAddOwnEvidence` answers yes with no comparison, and the node uploads its self-removal dispute with one build

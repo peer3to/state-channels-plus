@@ -164,9 +164,10 @@ describe("Unit: DisputeManager", function () {
             }
         });
         try {
-            await h.execOnHost(peer, async (sm) => {
-                await sm.membershipService.startSelfRemovalDispute(sm.forkId);
-            });
+            await h
+                .control(peer)
+                .dispute.startSelfRemovalDispute(h.activeForkId!)
+                .request();
             expect(await recorder.submissions()).to.have.length(1);
             const dispute = Codec.decode(
                 (await recorder.submissions())[0].encodedDispute,
@@ -218,40 +219,59 @@ describe("Unit: DisputeManager", function () {
         });
         it("successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof", async function () {
             const h = TestSession.getHarness();
-            const { newForkId, honestPeerIndices } =
-                await h.scenario.fourPeersDisputeResolution();
-            const [disputerIndex, auditorIndex] = honestPeerIndices;
-            await h.transition.fromHonestPeersOnly((c) => c.add(1));
-            expect(
-                StateSnapshot.from(
-                    await h.channelManager.getStateSnapshot(h.channelId)
-                ).forkID,
-                "the chain anchor is on the parent fork"
-            ).to.not.equal(newForkId);
-
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(
-                    disputerIndex!,
-                    newForkId
+            await h.lifecycle.start(4, 2);
+            await h.assert.sync.peersInSyncWait();
+            // A peer whose reduction is mined adopts the reduced fork on chain
+            // at once; parked, the chain anchor stays on the parent fork. The
+            // parked posts are sent once the test is done.
+            const adoptionHolds = [];
+            for (const peer of h.peers)
+                adoptionHolds.push(
+                    await h.rpcStub.holdSnapshotPostSend(peer.index, {
+                        adoptionOnly: true
+                    })
                 );
-            expect(dispute.input.forkId).to.equal(newForkId);
-            expect(
-                await chainAcceptsDisputeProof(
-                    h.channelManager,
+            try {
+                const { newForkId, honestPeerIndices } =
+                    await h.scenario.disputeWithReduction({
+                        maliciousPeerIndex: (await h.query.getNextPeerToWrite())
+                            .index
+                    });
+                const [disputerIndex, auditorIndex] = honestPeerIndices;
+                await h.transition.fromHonestPeersOnly((c) => c.add(1));
+                expect(
+                    StateSnapshot.from(
+                        await h.channelManager.getStateSnapshot(h.channelId)
+                    ).forkID,
+                    "the chain anchor is on the parent fork"
+                ).to.not.equal(newForkId);
+
+                const { dispute, auditingData } =
+                    await h.dispute.fetchConstructedDispute(
+                        disputerIndex!,
+                        newForkId
+                    );
+                expect(dispute.input.forkId).to.equal(newForkId);
+                expect(
+                    await chainAcceptsDisputeProof(
+                        h.channelManager,
+                        dispute,
+                        auditingData
+                    )
+                ).to.equal(true);
+                // Conditional admission supplies a reason, never an exception to proof validation.
+                dispute.input.requireExistingDisputeWindow = true;
+                dispute.postedAuditingData = true;
+                const run = await h.dispute.auditDispute(
+                    auditorIndex!,
                     dispute,
                     auditingData
-                )
-            ).to.equal(true);
-            // Conditional admission supplies a reason, never an exception to proof validation.
-            dispute.input.requireExistingDisputeWindow = true;
-            dispute.postedAuditingData = true;
-            const run = await h.dispute.auditDispute(
-                auditorIndex!,
-                dispute,
-                auditingData
-            );
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
+                );
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                expect(run.disputeFraudProofCount).to.equal(0);
+            } finally {
+                await Promise.all(adoptionHolds.map((hold) => hold.release()));
+            }
         });
         it("healthy fork → well-formed dispute, the chain accepts its proof", async function () {
             const h = TestSession.getHarness();
@@ -996,7 +1016,7 @@ describe("Unit: DisputeManager", function () {
                 await dropped.waitUntilDropped();
 
                 const laggingCtl = h.control(h.getPeer(lagging));
-                await laggingCtl.stub.stubFailChainLogQueries().request();
+                await laggingCtl.stub.stubHideChainLogs().request();
                 const r = await h.execOnHost(
                     h.getPeer(lagging),
                     async (sm, args) => {
@@ -2180,12 +2200,64 @@ describe("Unit: DisputeManager", function () {
             expect(await probe.applies()).to.deep.equal([]);
         });
 
-        // no test: `windowExists=false` is unreachable from the public surface.
-        // a stored dispute fraud proof only exists for a dispute the peer
-        // audited after it was committed, and committing creates the window;
-        // _killDispute only pops the commitment, never the window
-        // (DisputeVerificationFacet._killDispute).
-        it.skip("no dispute window → killDispute returns before submitting (unreachable)", function () {});
+        it("a stored proof whose dispute window a later same-fork snapshot cleared → killDispute returns before submitting", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const killer = h.getPeer(0);
+
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.stateProof.milestones = [];
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait({ forkId });
+            // a same-fork post on the reduced fork clears the old windows
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+            await h.transition.advanceState();
+            expect(
+                await h.transition.postSnapshotWait({ peerIndex: 0 })
+            ).to.not.equal(undefined);
+            const period = await h.query.killPeriod(forkId);
+            expect(period.windowExists).to.equal(false);
+            expect(period.isExpired).to.equal(false);
+
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+            const r = await h.execOnHost(
+                killer,
+                async (sm, args) => {
+                    const proofs = sm.storage.disputeFraudProofs
+                        .getDisputeFraudProofs()
+                        .filter(
+                            (proof) =>
+                                String(proof.dispute.input.forkId) ===
+                                args.forkId
+                        );
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return { proofCount: proofs.length, threw };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            expect(r.proofCount).to.be.greaterThan(0);
+            expect(r.threw).to.equal("");
+            expect(await probe.applies()).to.deep.equal([]);
+        });
 
         it("expired kill window → killDispute returns before submitting anything", async function () {
             const h = TestSession.getHarness();

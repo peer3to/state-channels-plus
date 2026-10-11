@@ -4,7 +4,7 @@ Test file: [test/e2e/E2E-DisputeWindowEvidence.test.ts](../../../../../../test/e
 
 ## Overview
 
-Exercises dispute submission and evidence timing around the initial window. The unresolved loss of the only higher-state commitment remains explicitly skipped.
+Exercises dispute submission and evidence timing around the initial window. The loss of the only higher-state commitment remains explicitly skipped: it is deferred by OQ-SPEC-SP-RECOVERY-1-N85P7T until the engineer selects its remediation oracle, and its executable gap stays open until then.
 
 The E47 late-timeout claim is constructed before the opening dispute starts the evidence window. Once the higher state is admitted, it is dated against that window, re-signed and its real transaction gas estimated before waiting for the later submission. The send still occurs at the same protocol timestamp target, with the same lower-state, counter, submission-count and reduction assertions.
 

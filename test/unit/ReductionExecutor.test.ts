@@ -1,6 +1,13 @@
 import { Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
+import {
+    assertSettledAdoptionRefusal,
+    type FinalLaterReduction,
+    finalizeLaterReduction,
+    openSuccessorDispute,
+    stageHeldSuccessorAdoption
+} from "@test/fixtures/SettledAdoptionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -98,11 +105,13 @@ describe("Unit: ReductionExecutor", function () {
 
         it("someone else's reduction while the run is unavailable → not challenged, no throw", async function () {
             const h = TestSession.getHarness();
-            const laggingIndex = 2;
-            const { held, disputerIndex } =
-                await h.scenario.stageDisputeOverHeldInboundGap({
-                    laggingIndex: laggingIndex
-                });
+            // a synced spectator, as above: a participant's audit of the
+            // window throws on the unavailable run
+            const {
+                held,
+                disputerIndex,
+                spectatorIndex: laggingIndex
+            } = await h.scenario.stageSpectatedDisputeOverHeldInboundGap();
 
             // a reduced fork id that matches nothing locally: with reduce data
             // the peer would challenge it, without reduce data it must not
@@ -196,7 +205,7 @@ describe("Unit: ReductionExecutor", function () {
             const commitmentsBefore = (
                 await h.channelManager.getWindowCommitments(h.channelId, forkId)
             ).length;
-            const blinded = await h.rpcStub.failChainLogQueries(observerIndex);
+            const blinded = await h.rpcStub.hideChainLogs(observerIndex);
             const outcome = await tryReduceByHand(h, forkId);
 
             // the regression: this used to throw out of the executor, and
@@ -244,7 +253,7 @@ describe("Unit: ReductionExecutor", function () {
             await restoreEvents(false);
         });
 
-        it("a re-dispatched dispute log that fails again → failed attempt, not a fatal", async function () {
+        it("a re-dispatched dispute log that fails → the attempt rejects with that failure", async function () {
             const h = TestSession.getHarness();
             const { forkId } =
                 await h.scenario.disputeWithSuppressedCommitEvents({
@@ -254,21 +263,15 @@ describe("Unit: ReductionExecutor", function () {
             await waitForKillPeriod(h, forkId);
 
             // the queries succeed, but every re-dispatched dispute log throws
-            // inside the handler - the Promise.all leg that used to reject out
-            // of the recovery into abort()
+            // inside the handler: a local failure is fatal
             const failing =
                 await h.rpcStub.failDisputeCommittedHandler(observerIndex);
             const outcome = await tryReduceByHand(h, forkId);
 
-            expect(outcome.threw).to.equal("");
+            expect(outcome.threw).to.equal(
+                "stubbed onDisputeCommitted failure"
+            );
             expect(outcome.forkIdAfter).to.equal(forkId);
-            expect(
-                await h
-                    .control(h.getPeer(observerIndex))
-                    .query.getStatus()
-                    .request(),
-                "a failed re-dispatch must not evict the peer"
-            ).to.equal(Status.PARTICIPATING);
             expect(
                 await failing.handlerCalls(),
                 "the recovery must really have re-dispatched the held logs"
@@ -291,7 +294,7 @@ describe("Unit: ReductionExecutor", function () {
             // a reduced fork id that matches nothing locally: with a readable
             // window the peer would challenge it, without one it must not
             const claimedReducedForkId = randomHash() as ForkId;
-            const blinded = await h.rpcStub.failChainLogQueries(observerIndex);
+            const blinded = await h.rpcStub.hideChainLogs(observerIndex);
             const probe = await h
                 .control(h.getPeer(observerIndex))
                 .validation.probeDisputeReductionChallenge(claimedReducedForkId)
@@ -463,6 +466,43 @@ describe("Unit: ReductionExecutor", function () {
                 await adoption.restore();
             }
         });
+
+        it("a held adoption of the successor refused because a later reduction is final → settled, not retried", async function () {
+            const h = TestSession.getHarness();
+            const held = await stageHeldSuccessorAdoption(h);
+            let later: FinalLaterReduction | undefined;
+            try {
+                const { honestIndex } = await openSuccessorDispute(h, held);
+                later = await finalizeLaterReduction(h, held, honestIndex);
+                // the parked post targets the successor, an older fork the
+                // chain reaches on its way to the later final reduction
+                expect(later.laterForkId).to.not.equal(held.successorForkId);
+                await assertSettledAdoptionRefusal(
+                    h,
+                    held,
+                    "RaceConditionSnapshotUpdateNotLatestFork",
+                    later
+                );
+            } finally {
+                await held.release();
+                await later?.releaseLaterAdoption();
+            }
+        });
+
+        it("a held adoption of the successor refused because the successor is disputed → settled, not retried", async function () {
+            const h = TestSession.getHarness();
+            const held = await stageHeldSuccessorAdoption(h);
+            try {
+                await openSuccessorDispute(h, held);
+                await assertSettledAdoptionRefusal(
+                    h,
+                    held,
+                    "RaceConditionSnapshotUpdateDisputedFork"
+                );
+            } finally {
+                await held.release();
+            }
+        });
     });
 
     describe("getSyncedForkDisputes", function () {
@@ -470,7 +510,7 @@ describe("Unit: ReductionExecutor", function () {
         // handler stores the struct. tryReduce firing in that gap used to
         // hit AgreementManager.getForkDisputes and throw "Missing Dispute in
         // storage" - getSyncedForkDisputes now recovers via
-        // EventSyncService.ensureDisputesProcessed before reading storage.
+        // EventSyncService.loadSynchronizedWindowCommitments before reading storage.
         it("committed dispute missing locally → recovers via event replay, then reduces", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;

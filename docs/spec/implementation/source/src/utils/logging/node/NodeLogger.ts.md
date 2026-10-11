@@ -28,3 +28,16 @@ Monitor lifecycle
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P4` — warns when the real histogram source rejects an invalid resolution
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P5` — a real main-thread sample carries the thread's CPU time and run-queue wait and the host's busy and steal share where the kernel exposes them, and none of them elsewhere
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P6` — omits scripted samples from timing markers even when reporting is enabled, while preserving the watchdog throw
+
+## UNIT-TEST-NODE-LOGGER-THREAD-LABEL-1-26DRFB
+
+Every rendered line names its thread
+
+- Setup: Write one info line with peer and component context through a real `NodeLogger` and capture its console line for that write only; vary the shared context's thread name: absent, `main`, `sdk`, `vm` and a consumer name (`prover`).
+- Oracle: Exactly one rendered line; with colors removed it is time, level, peer, exactly one thread label, component, then the unchanged message; an absent name renders `main`.
+
+- [x] `UNIT-TEST-NODE-LOGGER-THREAD-LABEL-1-26DRFB.P1` — a line whose context names no thread renders `[main]`
+- [x] `UNIT-TEST-NODE-LOGGER-THREAD-LABEL-1-26DRFB.P2` — a `main` line renders `[main]`
+- [x] `UNIT-TEST-NODE-LOGGER-THREAD-LABEL-1-26DRFB.P3` — an `sdk` line renders `[sdk]`
+- [x] `UNIT-TEST-NODE-LOGGER-THREAD-LABEL-1-26DRFB.P4` — a `vm` line renders `[vm]`
+- [x] `UNIT-TEST-NODE-LOGGER-THREAD-LABEL-1-26DRFB.P5` — a consumer `prover` line renders `[prover]`

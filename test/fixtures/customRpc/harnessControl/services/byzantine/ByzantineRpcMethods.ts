@@ -9,10 +9,12 @@ import { __doubleSignatureListenerCount } from "@/cache";
 import Clock from "@/Clock";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type RpcHandler from "@/rpc/network/RpcHandler";
 import type Rpc from "@/rpc/Rpc";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import type {
     BlockStruct,
@@ -90,6 +92,27 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
             )
             .sendOne(targetEvmAddress);
         return true;
+    }
+
+    /**
+     * {@link sendBlockConfirmation} as a request (with a request id); settles
+     * with the receiver's response: `ok`, or the error it returned (a guard
+     * rejection, or the request timeout when no response came).
+     */
+    public async requestBlockConfirmation(
+        encodedBlockConfirmation: string,
+        targetEvmAddress: string
+    ): Promise<{ ok: boolean; error?: string }> {
+        const handler =
+            this.p2pManager.remoteRpc.stateTransitionService.onBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+            ) as unknown as RpcHandler;
+        try {
+            await handler.request(targetEvmAddress);
+            return { ok: true };
+        } catch (error) {
+            return { ok: false, error: errorMessage(error) };
+        }
     }
 
     /**

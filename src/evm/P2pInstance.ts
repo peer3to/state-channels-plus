@@ -6,7 +6,7 @@ import type { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClient
 import MainRpcService from "@/rpc/network/MainRpcService";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type StateManager from "@/stateManager/StateManager";
-import { Logger } from "@/utils";
+import { DetachedPromises, Logger } from "@/utils";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import { AStateMachine } from "@typechain-types";
 
@@ -38,7 +38,7 @@ export default class P2pInstance<
 
     private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot;
     private disposal?: Promise<void>;
-    private terminalLeavePromise?: Promise<void>;
+    private isLeaveRequested = false;
 
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
@@ -119,16 +119,23 @@ export default class P2pInstance<
         }
     }
 
-    public leaveChannel(): Promise<void> {
-        if (!this.terminalLeavePromise) {
-            this.terminalLeavePromise = this.leaveAndDispose();
-        }
-        return this.terminalLeavePromise;
-    }
-
-    private async leaveAndDispose(): Promise<void> {
-        await this.p2pSigner.leaveChannel();
-        await this.dispose();
+    /**
+     * Starts the terminal leave: once the runtime reports `onLeftChannel`,
+     * this instance disposes itself.
+     */
+    public leaveChannel(): void {
+        if (this.isLeaveRequested) return;
+        this.isLeaveRequested = true;
+        // The disposal is not detached domain work: the root settles what is
+        // in flight when it disposes, but its own failure must surface.
+        this.events.on("p2pEventHooks", "onLeftChannel", () =>
+            DetachedPromises.observe(this.dispose(), (error) => {
+                throw error;
+            })
+        );
+        DetachedPromises.observe(this.p2pSigner.leaveChannel(), (error) => {
+            throw error;
+        });
     }
 
     /**

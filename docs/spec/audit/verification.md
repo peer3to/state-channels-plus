@@ -11,6 +11,91 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Join and top-up retry after a snapshot move — 2026-10-10
+
+The [join snapshot guard report](../verification/tests/test/e2e/E2E-JoinSnapshotGuard.test.ts.md) holds the
+joiner's join or top-up submissions at their send, has the participants finalize and post a newer snapshot,
+and releases one held submission at a time through the stub action `releaseOneMembershipSubmission`; the
+submission hold reads its gate per call so it also holds the retry. E42 is rewritten: on the public route one
+move to a stored snapshot ends with the join returning `true`, the joiner pending and no abort, and a static
+replay of the stale confirmation still reverts with the snapshot-mismatch error; it covers
+[`REQ-TJOIN-5-Q795M7.T1.P21`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7.t1.p21)
+and [`REQ-MSG-10-7JS45Q.T2.P3`](../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q.t2.p3).
+The connect declarations cover
+[`REQ-TJOIN-5-Q795M7.T1.P15`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7.t1.p15)
+to [`REQ-TJOIN-5-Q795M7.T1.P17`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7.t1.p17)
+and [`REQ-JOINSIG-1-8X1A4V.T1.P5`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p5).
+A joiner made blind to block confirmations by `stubDropNetworkConfirmations` sees a chain-only move, aborts
+and is not admitted
+([`REQ-TJOIN-5-Q795M7.T1.P18`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7.t1.p18));
+the abort comes from the join submission path: the snapshot-mismatch refusal is not retried because the joiner
+does not store the new snapshot, and the final refusal aborts the runtime.
+A participant's top-up through `connectToChannel` with a balance is submitted twice and returns `true`
+([`REQ-JOINSIG-1-8X1A4V.T1.P6`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p6)).
+The retry tests wait for two held submissions; they do not prove that no third one follows.
+`returns false for a stale top-up guard without aborting participation` in
+[E2E-JoinChannelRaceConditions](../verification/tests/test/e2e/E2E-JoinChannelRaceConditions.test.ts.md)
+submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the retry condition, which needs
+both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
+full gate).
+
+## Test timing inputs — 2026-10-12
+
+Engineer decision (Luka, 2026-10-12): `evidenceTime` 4 → 6 in `assertHonestPeersContributeAfterSelfRemoval`
+([HonestLeaverDisputeStaging](../../../test/fixtures/HonestLeaverDisputeStaging.ts)), the selfRemoval
+contribution case. The staging's other tests keep 4 s. The remaining founders audit the leaver's self-removal
+dispute and then contribute their newer state into its window. Under full-gate load that path took about 5 s:
+the audit took about 2 s, and the contributions were sent 3 s after the window opened and mined after the 4 s
+evidence period, so all three were refused with `RaceConditionDisputeWindowNotOpen`. The value reaches the
+staging through a new `evidenceTime` option of `stageOmittedInboundJoin` and a `timeConfig` override of
+`syncSpectator`. This is a protocol input chosen for the test host's load, not a wait budget; no oracle
+changed.
+
+## Test timing inputs — 2026-10-10
+
+Engineer decision (Luka, 2026-10-10): the harness baseline `MIN_TEST_TIME_CONFIG.p2pTime` is 5 instead of 2
+([testTimeConfig.ts](../../../test/harness/core/testTimeConfig.ts)). Under load one staging step, such as a
+join or an exit snapshot post, could idle the table longer than `p2pTime + agreementTime` (5 s), and the next
+block then failed the receivers' subjective time check; the baseline now allows 8 s. Every derived wait grows
+by 3 s (`participantTimeoutWaitMs` 15 → 18 s at height 0, `protocolEventTimeoutMs` 18 → 21 s); the measured
+test phase of the full gate did not change. Luka also approved, the same day, the earlier per-test widenings
+made for the same class of load failures, each with its measured reason:
+`p2pTime: 15` in `stagePendingDisputerBehindLateAuditor`
+([DisputeAuditStaging](../../../test/fixtures/DisputeAuditStaging.ts), a join idled the authors about 8 s) and
+in `stageOutboundAroundAnchor` ([HistoricSyncStaging](../../../test/fixtures/HistoricSyncStaging.ts), an exit
+snapshot post idled them about 9 s); `evidenceTime` 8 → 15 in
+[case5_milestoneBlockContent](../../../test/e2e/disputeValidation/stateProof/case5_milestoneBlockContent.test.ts)
+(three concurrent audits, the invalid one replayed over three tiers, took about 10 s against an 8 s kill
+period); `evidenceTime: 12` in [MilestoneProofStartStaging](../../../test/fixtures/MilestoneProofStartStaging.ts)
+(about 9 s audit path on a loaded farm); and the 15 s E19 window above. Luka approved one more the same day: `evidenceTime: 12` in
+`stageOffWireTailOverBlindPendingAuditor` (MilestoneProofStartStaging, E15 and its control), where two
+sequential audit and transaction rounds in one window took about 9 s against 8 s and the colluders' disputes
+reverted with `RaceConditionDisputeEvidencePeriodExpired`. These are protocol inputs chosen for
+the test host's load, not wait budgets; no oracle changed.
+
+## Late dial close, exit-fallback race and evidence-window staging — 2026-10-09
+
+Three intermittent failures were root-caused. First, after a lobby negotiation failed unsigned, the old
+outbound dial socket's close could arrive after the new session's peer announcement. Its process-wide
+in-flight mark made the peer look connected, the rematch dial was skipped with no log, and the peers never
+reconnected, so the lobby E2E case for a new join after a leave during the handoff timed out. This is fixed
+by session-scoped dial marks: each discovery session records its own in-flight dials, and the marks end with
+the session, so a late close of a left session's dial can neither hide the peer from a later session nor clear
+a later session's mark. Two
+[discovery component cases](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md) cover it: a
+rejoined topic dials the peer again while the left topic's closed socket has not finished closing
+([`REQ-LOBBY-9-N894C0.T1.P32`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p32)),
+and the rejoined topic's pending dial stays deduplicated across topics after the old socket finishes closing
+([`REQ-LOBBY-9-N894C0.T1.P33`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p33)). Second, U121 in the [older-dispute audit report](../verification/tests/test/unit/DisputeAuditOlderDispute.test.ts.md)
+now suppresses the held leaver's own dispute initiation, as the departed-disputer staging already does. Its
+exit fallback could otherwise start a self-removal dispute beside the dispute the test constructs, and the
+two stubbed constructions shared the fixture's pending auditing data. Third, E19 in the
+[evidence-window report](../verification/tests/test/e2e/E2E-DisputeWindowEvidence.test.ts.md) uses the same
+15-second evidence window as E47: the leader's audit, own dispute construction and submission could land after
+the default 8-second window closed, which the contract rejects by design. No oracle changed in U121 or E19,
+and neither change alters SDK or contract behavior. The E19 window is a fixture timing increase; Luka approved
+it on 2026-10-10 (see the timing entry below).
+
 ## Discovery replacement and anchored-tail regression follow-up
 
 Runs 420 and 421 invalidate any claim that one previous green full run established stability. Cost mode repeated the anchored-tail timestamp rejection; FIFO exposed a replacement-endpoint announcement lost during an old dial, followed by a reduction failure. The new discovery component cases force both pending-handshake and already-authenticated interleavings and require a different transport after the old socket closes. Existing restarted-spectator E2E coverage remains the integration oracle. Anchor staging requires the publication receipt and mirror convergence before constructing/auditing the dispute. Publication overlaps the two unfinalized tail blocks; the offline peer keeps the published anchor at block 2. The two new endpoint regressions fail against the original adapter and pass after its repair. Full cost run 425 exposed two additional staging dependencies: runtime recreation idled participant authoring, and E47 populated transaction metadata after its late wait. Runtime restart now overlaps ordinary authoring, and transaction metadata is populated before the unchanged deadline. Focused run 426 passed both cases; full cost run 427 passed all 3,404 tasks including both browser gates and Forge, with no starvation or infrastructure retries. FIFO run 428 caught a separate previous-block-signature staging race: its current-writer query overlapped subscribed audit replay. Capturing block 2’s writer before opening the window preserves the signature oracle. Focused run 429 passed; full FIFO run 430 then passed all 3,404 tasks with all tiers and no starvation or infrastructure retries. Cost run 431 exposed a separate exact join-deadline race on the shared node; its extracted test now owns its chain, pauses only that chain’s interval mining, and retains equality and one-second-expiry checks. All six join-signature tests passed in focused run 432. Run 433 showed that anchor staging still needed publication to overlap authoring; retaining receipt-before-tail chronology left estimation/mining inside the writer window. All 19 anchor-boundary cases passed in focused run 434. On the same final source/test tree, cost run 435 passed all 3,405 tasks in 297.69 s and FIFO (`-w 6`) run 436 passed all 3,405 in 351.81 s. Both completed 3,379 Mocha tasks, 24 Forge contracts and two browser gates with zero starvation or infrastructure retries. Node/browser typechecks, import lint and compile passed. These runs establish current passing evidence, not a claim that intermittent failures are impossible. Engineer approvals and the existing repository coverage/review backlog remain unchanged.

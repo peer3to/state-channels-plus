@@ -84,67 +84,152 @@ export async function stageHeldEvidenceComparisonRace(h: MathPeerTestHarness) {
 export const EVIDENCE_UPLOAD_FAILURE_MESSAGE =
     "stubbed evidence upload failure";
 
-/**
- * Four peers, one invalid state transition, two disputes that land one after
- * the other. The auditor asked to leave, so its own dispute adds a
- * self-removal the window lacks: its first comparison answers "more
- * evidence". That comparison is held until the auditor's upload is armed to
- * fail once (a send failure that is no custom error, so it fails the first
- * audit), then released. The second disputer's upload stays held at its send.
- * Returns once the failed first upload is recorded; the caller releases
- * `secondUpload` after the first audit has failed.
- */
-export async function stageEvidenceUploadRetry(h: MathPeerTestHarness) {
-    await h.scenario.preDisputeSetup({ peerCount: 4 });
-    const offender = await h.query.getNextPeerToWrite();
-    const [firstDisputerIndex, secondDisputerIndex, auditorIndex] = h.peers
-        .map((peer) => peer.index)
-        .filter((index) => index !== offender.index);
-    const recorder = await h.rpcStub.recordEvidenceComparisons(auditorIndex, {
-        fault: "hold"
-    });
-    const secondUpload = await h.rpcStub.recordDisputeSubmissions(
-        secondDisputerIndex,
-        { hold: true, forward: true }
-    );
-    await h.dispute.suppressDisputeInitiation([auditorIndex]);
-    await h
-        .control(h.getPeer(auditorIndex))
-        .dispute.setForceExit(true)
-        .request();
+/** The auditor of the higher-state counter-dispute stagings. */
+const HIGHER_STATE_AUDITOR = 0;
 
-    await h.byzantine.submitInvalidStateTransitionBlock(offender.index);
-    await h.assert.dispute.initiatedWait({
-        peersIndices: [firstDisputerIndex]
+/** Peer 2 disputes from the genesis; peers 1 and 3 only audit. */
+const GENESIS_DISPUTER = 2;
+const QUIET_AUDITORS = [1, 3];
+
+/**
+ * Four peers; peer 2 is away before block 0, so its view is the genesis
+ * while the others reach block 1. Every peer holds its timeout checks and
+ * reductions. Peers 1 and 3 only audit (dispute initiation suppressed), as
+ * does the auditor (peer 0) with `suppressAuditor`. The auditor's comparisons
+ * are recorded with `fault`, and its uploads recorded (forwarded unless
+ * `forward` is false, failed once at send with `failUploadOnce`). Peer 2
+ * asks to leave. The caller stages its inputs, then calls
+ * {@link uploadGenesisDispute}.
+ */
+export async function prepareHigherStateCounterDispute(
+    h: MathPeerTestHarness,
+    options: {
+        fault?: EvidenceComparisonFault;
+        forward?: boolean;
+        failUploadOnce?: boolean;
+        suppressAuditor?: boolean;
+    } = {}
+) {
+    await h.scenario.preDisputeSetupDisconnectedPeer({
+        disconnectedPeerIndex: GENESIS_DISPUTER
     });
-    await recorder.waitUntilHeld();
-    // the invalid block is behind the auditor: from now on only its evidence
-    // comparison makes it dispute
-    await h.dispute.restoreDisputeInitiation([auditorIndex]);
-    const auditorUploads = await h.rpcStub.recordDisputeSubmissions(
-        auditorIndex,
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers) {
+        await h.rpcStub.suppressTimeoutCheck(peer.index);
+        await h.rpcStub.holdReductionRace(peer.index);
+    }
+    const recorder = await h.rpcStub.recordEvidenceComparisons(
+        HIGHER_STATE_AUDITOR,
+        { fault: options.fault }
+    );
+    const uploads = await h.rpcStub.recordDisputeSubmissions(
+        HIGHER_STATE_AUDITOR,
         {
-            forward: true,
-            failWith: {
-                message: EVIDENCE_UPLOAD_FAILURE_MESSAGE,
-                at: "send",
-                times: 1
-            }
+            forward: options.forward ?? true,
+            failWith: options.failUploadOnce
+                ? {
+                      message: EVIDENCE_UPLOAD_FAILURE_MESSAGE,
+                      at: "send",
+                      times: 1
+                  }
+                : undefined
         }
     );
-    await recorder.releaseHeld("forward");
+    await h.dispute.suppressDisputeInitiation(
+        options.suppressAuditor
+            ? [...QUIET_AUDITORS, HIGHER_STATE_AUDITOR]
+            : QUIET_AUDITORS
+    );
+    await h
+        .control(h.getPeer(GENESIS_DISPUTER))
+        .dispute.setForceExit(true)
+        .request();
+    return {
+        forkId,
+        auditorIndex: HIGHER_STATE_AUDITOR,
+        disputerIndex: GENESIS_DISPUTER,
+        quietIndices: QUIET_AUDITORS,
+        recorder,
+        uploads
+    };
+}
+
+/**
+ * Peer 2 uploads its own genesis-state dispute (a valid self-removal). The
+ * auditor's own dispute names the later state, so its comparison answers
+ * "more evidence" and it counter-disputes.
+ */
+export async function uploadGenesisDispute(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.tamper.postTamperedDispute(GENESIS_DISPUTER, () => {}, {
+        markMalicious: false
+    });
+}
+
+/**
+ * {@link prepareHigherStateCounterDispute} and {@link uploadGenesisDispute}
+ * with the auditor's comparison held once its construction is built
+ * (`holdBuilt`). Returns while it is held; the release runs the real
+ * counter-dispute.
+ */
+export async function stageHeldHigherStateCounterDispute(
+    h: MathPeerTestHarness,
+    options: { forward?: boolean } = {}
+) {
+    const staged = await prepareHigherStateCounterDispute(h, {
+        ...options,
+        fault: "holdBuilt"
+    });
+    await uploadGenesisDispute(h);
+    await staged.recorder.waitUntilHeld();
+    return staged;
+}
+
+/**
+ * {@link prepareHigherStateCounterDispute} and {@link uploadGenesisDispute}
+ * with the auditor's dispute initiation suppressed: returns once its
+ * positive comparison is kept and its `dispute()` call was swallowed, so the
+ * compared dispute waits for the next `dispute()` of the fork. The caller
+ * restores the initiation.
+ */
+export async function stageKeptHigherStateComparison(h: MathPeerTestHarness) {
+    const staged = await prepareHigherStateCounterDispute(h, {
+        suppressAuditor: true
+    });
+    await uploadGenesisDispute(h);
     await waitFor(
-        async () => (await auditorUploads.submissions()).length > 0,
+        async () => (await staged.recorder.audits())[0]?.outcome === "resolved",
         h.event.protocolEventTimeoutMs()
     );
-    const firstUploads = await auditorUploads.submissions();
-    return {
-        auditorIndex,
-        firstUploads,
-        auditorUploads,
-        secondUpload,
-        recorder
-    };
+    return staged;
+}
+
+/**
+ * A real InvalidStateTransition fraud proof against `offenderIndex` lands in
+ * `observerIndex`'s storage: the observer's live strategy handles that
+ * deviation for a crafted next block (its dispute and disconnect are only
+ * recorded). The strategy hook is driven directly because a disputed fork
+ * takes no new block. Returns the offender's address.
+ */
+async function storeFraudProofOnDisputedFork(
+    h: MathPeerTestHarness,
+    observerIndex: number,
+    offenderIndex: number
+): Promise<Address> {
+    const { offender, encodedBlock } =
+        await h.byzantine.craftInvalidTransitionBlock(observerIndex, {
+            offenderIndex
+        });
+    const validation = await h
+        .control(h.getPeer(observerIndex))
+        .validation.runBlockValidation(encodedBlock, {
+            hook: "invalidStateTransitionDetected"
+        })
+        .request();
+    if (validation.fraudProofType === null)
+        throw new Error(`no fraud proof stored (${validation.resultName})`);
+    return offender.address;
 }
 
 /**
@@ -192,10 +277,11 @@ export async function stageSequentialEvidenceAudits(
  * as invalid, with kills held back. Peer 2 then adds a state-only dispute,
  * which the auditor (peer 3, dispute initiation suppressed) compares its own
  * evidence against: nothing to add, and that answer is cached. The auditor
- * then asks to leave, so its own dispute would now carry a self-removal the
- * window lacks. Peer 2 kills the spam dispute, the auditor's initiation is
- * restored, and peer 0 adds one more dispute - the first audit after the
- * kill. Every peer holds its reduction timers.
+ * then stores a real fraud proof against peer 0 or 2 (whichever is not the
+ * next writer), so its own dispute would now apply a slash the window lacks.
+ * Peer 2 kills the spam dispute, the auditor's initiation is restored, and
+ * peer 0 adds one more dispute - the first audit after the kill. Every peer
+ * holds its reduction timers.
  */
 export async function stageEvidenceAuditAfterKill(h: MathPeerTestHarness) {
     const auditorIndex = 3;
@@ -236,10 +322,14 @@ export async function stageEvidenceAuditAfterKill(h: MathPeerTestHarness) {
     await h.event.waitForPeers("onDisputeCommitted", [auditorIndex], 2);
     const beforeKill = await recorder!.comparisons();
 
-    await h
-        .control(h.getPeer(auditorIndex))
-        .dispute.setForceExit(true)
-        .request();
+    const nextWriter = await h.query.getNextPeerToWrite();
+    const offender = await storeFraudProofOnDisputedFork(
+        h,
+        auditorIndex,
+        [lastContributorIndex, contributorIndex].find(
+            (index) => index !== nextWriter.index
+        )!
+    );
 
     await killSpamDispute(h, killer.index, spammer.address, forkId);
     await h.event.waitForPeers("onDisputeKilled", [auditorIndex], 1);
@@ -249,7 +339,13 @@ export async function stageEvidenceAuditAfterKill(h: MathPeerTestHarness) {
         lastContributorIndex,
         forkId
     );
-    return { auditorIndex, afterFailedAudit, beforeKill, recorder: recorder! };
+    return {
+        auditorIndex,
+        afterFailedAudit,
+        beforeKill,
+        offender,
+        recorder: recorder!
+    };
 }
 
 /**
@@ -310,6 +406,23 @@ export async function stageEvidenceComparisonReplacedAfterKill(
     // the replacement's audit completed while the first one is still held
     await h.event.waitForPeers("onDisputeCommitted", [auditorIndex], 2);
     return { auditorIndex, recorder: recorder! };
+}
+
+/**
+ * Peer `spammerIndex` uploads a dispute that names no reason of its own:
+ * every auditor finds it invalid and kills it.
+ */
+export async function postReasonlessDispute(
+    h: MathPeerTestHarness,
+    spammerIndex: number
+): Promise<void> {
+    await h.tamper.postTamperedDispute(spammerIndex, (dispute) => {
+        dispute.input.timeout.participant =
+            "0x0000000000000000000000000000000000000000";
+        dispute.input.onChainSlashes = [];
+        dispute.input.selfRemoval = false;
+        dispute.input.requireExistingDisputeWindow = false;
+    });
 }
 
 /** Peer `killerIndex` kills the spam dispute `spammer` uploaded on `forkId`. */

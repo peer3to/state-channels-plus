@@ -149,3 +149,4 @@ Responder proving
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7` — pinned-target success
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8` — same-fork payload emits an empty pre-genesis outbound segment while preserving the latest-fork outbound proof
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9` — a recovered dispute window identifies a successor whose genesis is not installed; proof serving uses the computed genesis before installation
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the responder refuses to serve, without throwing

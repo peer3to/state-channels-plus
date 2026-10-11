@@ -10,7 +10,7 @@ import type {
 } from "@/rpc/network/services";
 import { validateMatchTimeout } from "@/rpc/network/services/lobbyMatching/LobbyMatchingValidation";
 import { DEFAULT_JOIN_AMOUNT } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-import type { OwnJoinState } from "@/stateManager/membership/MembershipService";
+import type { OpenConnection } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, Bytes } from "@/types/types";
@@ -29,6 +29,17 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers, Signer, TransactionResponse } from "ethers";
 
+/** An ordinary lobby join in flight, with its normalized topic. */
+type LobbyJoin = {
+    topic: string;
+    /** A leave marked it; matching never starts for a marked join. */
+    left: boolean;
+    /** Its negotiation opened a channel. */
+    opened: boolean;
+    /** Resolves when the join has settled, whatever its outcome. */
+    ended: Promise<void>;
+};
+
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
  * transactions and coordination actions.
@@ -43,10 +54,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     logger: Logger;
     //local profile
     isLeader: boolean;
-    // ordinary lobby joins in flight with their normalized topic; a leave
-    // marks every join on its topic, and matching never starts for a marked
-    // join, so a leave ends it even when it had nothing active to cancel
-    lobbyJoins = new Set<{ topic: string; left: boolean }>();
+    // ordinary lobby joins in flight; a leave marks every join on its topic
+    // and waits until they have settled
+    lobbyJoins = new Set<LobbyJoin>();
 
     constructor(
         signer: Signer,
@@ -179,6 +189,135 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
+    public cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
+        return this.p2pManager.localRpc.lobbyMatchingService.cancelMatching(
+            channelIdToTargetedJoinTopic(ethers.hexlify(channelId))
+        );
+    }
+
+    /** Starts this runtime's leave; `onLeftChannel` reports its end. */
+    public leaveChannel(): void {
+        this.p2pManager.stateManager.leaveChannelService.leaveChannel();
+    }
+
+    public async joinLobby(
+        lobbyTopic: string,
+        options: LobbyJoinOptions = {}
+    ): Promise<LobbyJoinResult | undefined> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinLobby"
+        );
+        let end!: () => void;
+        const join: LobbyJoin = {
+            topic: this.p2pManager.localRpc.lobbyMatchingService.validateTopic(
+                lobbyTopic
+            ),
+            left: false,
+            opened: false,
+            ended: new Promise<void>((resolve) => {
+                end = resolve;
+            })
+        };
+        validateMatchTimeout(options.matchTimeoutMs);
+        this.lobbyJoins.add(join);
+        try {
+            const balance = options.balance ?? this.defaultBalance();
+            await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+                balance,
+                "Balance"
+            );
+            if (
+                String(this.p2pManager.stateManager.channelId) !==
+                ethers.ZeroHash
+            ) {
+                throw new Error(
+                    "Ordinary discovery requires no selected channel"
+                );
+            }
+            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+            return await this.runLobbyJoin(join, {
+                balance,
+                matchTimeoutMs: options.matchTimeoutMs
+            });
+        } finally {
+            this.lobbyJoins.delete(join);
+            end();
+        }
+    }
+
+    /**
+     * Ends every ordinary lobby join on `lobbyTopic` and waits until they have
+     * settled. True means this runtime is out of the lobby with no channel;
+     * false means the leave changed nothing: no join was on the topic, or a
+     * join's negotiation opened a channel first.
+     */
+    public async leaveLobby(lobbyTopic: string): Promise<boolean> {
+        const matching = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = matching.validateTopic(lobbyTopic);
+        const joins = [...this.lobbyJoins].filter(
+            (join) => join.topic === topic
+        );
+        if (joins.length === 0) return false;
+        for (const join of joins) join.left = true;
+        await matching.cancelMatching(topic);
+        await Promise.all(joins.map((join) => join.ended));
+        return joins.every((join) => !join.opened);
+    }
+
+    public async joinChannel(
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
+    ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinChannel"
+        );
+        return this.p2pManager.stateManager.channelJoinService.joinChannel(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        );
+    }
+
+    public async topUpBalance(
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
+    ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "topUpBalance"
+        );
+        return this.p2pManager.stateManager.channelJoinService.topUpBalance(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        );
+    }
+
+    public collectJoinChannelConfirmation(
+        joinChannel: JoinChannelStruct
+    ): Promise<PreparedJoinChannelConfirmation> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "collectJoinChannelConfirmation"
+        );
+        return this.p2pManager.localRpc.joinChannelService.collectJoinChannelConfirmation(
+            joinChannel
+        );
+    }
+
+    public disconnectFromPeers() {
+        this.p2pManager.disconnectAll();
+    }
+
+    public async getChannelStatus(): Promise<Status> {
+        return this.p2pManager.stateManager.status;
+    }
+
+    /** This runtime's active peer connections and their transport types. */
+    public async getOpenConnections(): Promise<OpenConnection[]> {
+        return this.p2pManager.getOpenConnections();
+    }
+
     private async runConnectToChannel(
         channelId: Bytes,
         options: ConnectToChannelOptions
@@ -260,7 +399,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                     options.balance
                 );
-            return stateManager.membershipService.topUpBalance(
+            return stateManager.channelJoinService.topUpBalance(
                 prepared.confirmation,
                 prepared.expectedSnapshotHash,
                 prepared.expectedForkId
@@ -271,68 +410,15 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                 options.balance ?? this.defaultBalance()
             );
-        return stateManager.membershipService.joinChannel(
+        return stateManager.channelJoinService.joinChannel(
             prepared.confirmation,
             prepared.expectedSnapshotHash,
             prepared.expectedForkId
         );
     }
 
-    public cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
-        return this.p2pManager.localRpc.lobbyMatchingService.cancelMatching(
-            channelIdToTargetedJoinTopic(ethers.hexlify(channelId))
-        );
-    }
-
-    /**
-     * Internal route for `P2pInstance.leaveChannel`.
-     * Direct callers wait for settled removal but do not dispose the runtime.
-     */
-    public leaveChannel(): Promise<void> {
-        return this.p2pManager.stateManager.leaveChannelService.leaveChannel();
-    }
-
-    public async joinLobby(
-        lobbyTopic: string,
-        options: LobbyJoinOptions = {}
-    ): Promise<LobbyJoinResult | undefined> {
-        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
-            "joinLobby"
-        );
-        const join = {
-            topic: this.p2pManager.localRpc.lobbyMatchingService.validateTopic(
-                lobbyTopic
-            ),
-            left: false
-        };
-        validateMatchTimeout(options.matchTimeoutMs);
-        this.lobbyJoins.add(join);
-        try {
-            const balance = options.balance ?? this.defaultBalance();
-            await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
-                balance,
-                "Balance"
-            );
-            if (
-                String(this.p2pManager.stateManager.channelId) !==
-                ethers.ZeroHash
-            ) {
-                throw new Error(
-                    "Ordinary discovery requires no selected channel"
-                );
-            }
-            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
-            return await this.runLobbyJoin(join, {
-                balance,
-                matchTimeoutMs: options.matchTimeoutMs
-            });
-        } finally {
-            this.lobbyJoins.delete(join);
-        }
-    }
-
     private async runLobbyJoin(
-        join: { topic: string; left: boolean },
+        join: LobbyJoin,
         options: LobbyJoinOptions
     ): Promise<LobbyJoinResult | undefined> {
         const lobbyTopic = join.topic;
@@ -357,6 +443,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                     }
                 );
                 if (outcome.status === "opened") {
+                    join.opened = true;
                     await matching.completeLobby(lobbyTopic);
                     opened = outcome.result;
                 } else if (outcome.status === "cancelled") {
@@ -389,69 +476,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             );
         }
         return undefined;
-    }
-
-    public async leaveLobby(lobbyTopic: string): Promise<boolean> {
-        const matching = this.p2pManager.localRpc.lobbyMatchingService;
-        const topic = matching.validateTopic(lobbyTopic);
-        for (const join of this.lobbyJoins) {
-            if (join.topic === topic) join.left = true;
-        }
-        return matching.cancelMatching(topic);
-    }
-
-    public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Hash,
-        expectedForkId: ForkId
-    ): Promise<boolean> {
-        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
-            "joinChannel"
-        );
-        return this.p2pManager.stateManager.membershipService.joinChannel(
-            confirmation,
-            expectedSnapshotHash,
-            expectedForkId
-        );
-    }
-
-    public async topUpBalance(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Hash,
-        expectedForkId: ForkId
-    ): Promise<boolean> {
-        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
-            "topUpBalance"
-        );
-        return this.p2pManager.stateManager.membershipService.topUpBalance(
-            confirmation,
-            expectedSnapshotHash,
-            expectedForkId
-        );
-    }
-
-    public collectJoinChannelConfirmation(
-        joinChannel: JoinChannelStruct
-    ): Promise<PreparedJoinChannelConfirmation> {
-        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
-            "collectJoinChannelConfirmation"
-        );
-        return this.p2pManager.localRpc.joinChannelService.collectJoinChannelConfirmation(
-            joinChannel
-        );
-    }
-
-    public disconnectFromPeers() {
-        this.p2pManager.disconnectAll();
-    }
-
-    public async getChannelStatus(): Promise<Status> {
-        return this.p2pManager.stateManager.status;
-    }
-
-    /** The state of this runtime's own join; see {@link OwnJoinState}. */
-    public getOwnJoinState(): Promise<OwnJoinState> {
-        return this.p2pManager.stateManager.membershipService.getOwnJoinState();
     }
 
     private defaultBalance(): BalanceStruct {

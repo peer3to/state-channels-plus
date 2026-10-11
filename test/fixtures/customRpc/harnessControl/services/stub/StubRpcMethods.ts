@@ -5,7 +5,11 @@ import type {
     RecordedEvidenceAudit,
     RecordedEvidenceComparison
 } from "./node/EvidenceComparisonRecorder";
-import { REDUCTION_ATTEMPT_STUB_FAILURE } from "./StubService";
+import type { RecordedLiveBlockDelivery } from "./node/LiveBlockRetentionRecorder";
+import {
+    REDUCTION_ATTEMPT_STUB_FAILURE,
+    UNEXPECTED_SNAPSHOT_POST_FAILURE
+} from "./StubService";
 import type {
     DisputeSubmissionFailureSpec,
     PausedConstructDisputeState,
@@ -63,6 +67,9 @@ import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import type { ContractTransactionResponse } from "ethers";
+
+/** Marks a snapshot service whose posts `stubPostStateSnapshot` suppressed, the harness's included. */
+export const HARNESS_POST_SUPPRESSED = "isHarnessPostSuppressed";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -141,6 +148,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             ![
                 "queueDequeue",
                 "authoring",
+                "authoringStart",
                 "commit",
                 "signature",
                 "confirmation",
@@ -461,31 +469,44 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    /** Suppress this peer's snapshot posting (stays dispute-eligible on-chain). */
+    /**
+     * Suppress this peer's snapshot posting (it stays dispute-eligible
+     * on-chain): its runtime posts and the harness's posts from it send
+     * nothing, as if nothing could be posted yet. A reduction's adoption
+     * post still runs.
+     */
     public stubPostStateSnapshot(): boolean {
         const snapshotUpdateService = this.service.sm.snapshotUpdateService;
-        if (!this.service.stubOriginals.has("postStateSnapshot")) {
-            this.service.stubOriginals.set(
-                "postStateSnapshot",
-                snapshotUpdateService.postStateSnapshot
-            );
-        }
-        snapshotUpdateService.postStateSnapshot = async () => undefined;
+        const original = snapshotUpdateService.postStateSnapshotWait;
+        if (!this.service.stubOriginals.has("postStateSnapshotWait"))
+            this.service.stubOriginals.set("postStateSnapshotWait", original);
+        snapshotUpdateService.postStateSnapshotWait = async (
+            forkId,
+            options
+        ) =>
+            options?.forkAdoptionOnly
+                ? original.call(snapshotUpdateService, forkId, options)
+                : undefined;
+        Reflect.set(snapshotUpdateService, HARNESS_POST_SUPPRESSED, true);
         return true;
     }
 
     public restorePostStateSnapshot(): boolean {
-        const original = this.service.stubOriginals.get("postStateSnapshot");
-        if (original === undefined) return false;
-        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
-        snapshotUpdateService.postStateSnapshot =
-            original as typeof snapshotUpdateService.postStateSnapshot;
-        this.service.stubOriginals.delete("postStateSnapshot");
-        return true;
+        Reflect.deleteProperty(
+            this.service.sm.snapshotUpdateService,
+            HARNESS_POST_SUPPRESSED
+        );
+        return this.restoreStateSnapshotPost();
     }
 
-    /** Make the fully-signed snapshot path fail so exit falls back to dispute. */
-    public failPostStateSnapshotWait(): boolean {
+    /**
+     * Every state snapshot post of this peer is refused and lands nothing;
+     * with `failure: "error"` each post instead fails with
+     * `UNEXPECTED_SNAPSHOT_POST_FAILURE`, an error that is no chain refusal.
+     */
+    public failStateSnapshotPost(
+        failure: "refusal" | "error" = "refusal"
+    ): boolean {
         const snapshotUpdateService = this.service.sm.snapshotUpdateService;
         if (!this.service.stubOriginals.has("postStateSnapshotWait")) {
             this.service.stubOriginals.set(
@@ -493,13 +514,24 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 snapshotUpdateService.postStateSnapshotWait
             );
         }
-        snapshotUpdateService.postStateSnapshotWait = async () => {
-            throw new Error("injected state snapshot post failure");
+        // the chain refuses every runtime post with a real refusal: it lands
+        // nothing; a reduction's adoption post sends nothing. The harness's
+        // own post (transition.postStateSnapshot) is not stubbed.
+        snapshotUpdateService.postStateSnapshotWait = async (_, options) => {
+            if (options?.forkAdoptionOnly) return undefined;
+            if (failure === "error")
+                throw new Error(UNEXPECTED_SNAPSHOT_POST_FAILURE);
+            // a chain refusal the exit post expects: it lands nothing
+            throw {
+                data: encodedCustomErrorRevert(
+                    "RaceConditionPendingInboundNotConsumed"
+                )
+            };
         };
         return true;
     }
 
-    public restorePostStateSnapshotWait(): boolean {
+    public restoreStateSnapshotPost(): boolean {
         const original = this.service.stubOriginals.get(
             "postStateSnapshotWait"
         );
@@ -1308,6 +1340,42 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdJoinThresholdRead(): boolean {
+        this.service.holdJoinThresholdRead();
+        return true;
+    }
+    public getJoinThresholdReadEntered(): number {
+        return this.service.getJoinThresholdReadEntered();
+    }
+    public releaseJoinThresholdRead(): boolean {
+        this.service.releaseJoinThresholdRead();
+        return true;
+    }
+
+    public holdJoinRetryEligibilityRead(): boolean {
+        this.service.holdJoinRetryEligibilityRead();
+        return true;
+    }
+    public getJoinRetryEligibilityReadEntered(): number {
+        return this.service.getJoinRetryEligibilityReadEntered();
+    }
+    public releaseJoinRetryEligibilityRead(): boolean {
+        this.service.releaseJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public recordPublishedSnapshots(): boolean {
+        this.service.recordPublishedSnapshots();
+        return true;
+    }
+    public getLastPublishedSnapshotHash(): Hash | null {
+        return this.service.getLastPublishedSnapshotHash();
+    }
+    public restorePublishedSnapshots(): boolean {
+        this.service.restorePublishedSnapshots();
+        return true;
+    }
+
     public holdSyncReductionResult(): boolean {
         this.service.holdSyncReductionResult();
         return true;
@@ -1343,6 +1411,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getSyncFinalityReadWidths(): number[] {
         return this.service.getSyncFinalityReadWidths();
+    }
+
+    public recordChainCalls(): boolean {
+        this.service.recordChainCalls();
+        return true;
+    }
+
+    public getRecordedChainCalls(): string[] {
+        return this.service.getRecordedChainCalls();
+    }
+
+    public restoreChainCalls(): boolean {
+        this.service.restoreChainCalls();
+        return true;
     }
 
     public recordChainMembershipReads(): boolean {
@@ -1668,7 +1750,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public getForkLeaveObservation(): {
         scheduled: number;
         cancelled: number;
-        settledStateObserved: number;
     } {
         return { ...this.service.forkLeaveObservation };
     }
@@ -1908,8 +1989,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /** Park this peer's snapshot post at its contract send until restored. */
-    public stubHoldSnapshotPostSend(): boolean {
-        this.service.installSnapshotPostSendHold();
+    public stubHoldSnapshotPostSend(adoptionOnly?: boolean): boolean {
+        this.service.installSnapshotPostSendHold(adoptionOnly);
         return true;
     }
 
@@ -2798,9 +2879,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreOnChainSlashesRead();
     }
 
-    /** Make every provider getLogs throw, so no recovery query can succeed. */
-    public stubFailChainLogQueries(): boolean {
-        this.service.failChainLogQueries();
+    /** Make every provider getLogs answer no logs, so no recovery query finds a missing log. */
+    public stubHideChainLogs(): boolean {
+        this.service.hideChainLogs();
         return true;
     }
 
@@ -2830,16 +2911,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getFailedDisputeCommittedHandlerCallCount(): number {
         return this.service.failedDisputeCommittedHandlerCalls;
-    }
-
-    /** Make the dispute-window creation timestamp read throw. */
-    public stubFailDisputeWindowTimestampRead(): boolean {
-        this.service.failDisputeWindowTimestampRead();
-        return true;
-    }
-
-    public restoreDisputeWindowTimestampRead(): boolean {
-        return this.service.restoreDisputeWindowTimestampRead();
     }
 
     /** Drop subscribed dispute logs before the scheduler records their key. */
@@ -3198,8 +3269,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public holdSpectateResponses(fail = false): boolean {
-        this.service.holdSpectateResponses(fail);
+    public holdSpectateResponses(fail = false, beforeAnswer = false): boolean {
+        this.service.holdSpectateResponses(fail, beforeAnswer);
         return true;
     }
 
@@ -3235,6 +3306,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
         this.service.holdMembershipSubmission(kind);
         return true;
+    }
+
+    /** Releases the submissions held so far and keeps holding later ones. */
+    public releaseOneMembershipSubmission(): number {
+        return this.service.releaseOneMembershipSubmission();
     }
 
     public holdQueueProbe(): boolean {
@@ -3312,6 +3388,28 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdInitHandshakesAndCompletionWaits(): boolean {
+        this.service.holdInitHandshakesAndCompletionWaits();
+        return true;
+    }
+
+    public releaseInitHandshakesAndCompletionWaits(): boolean {
+        this.service.releaseInitHandshakesAndCompletionWaits();
+        return true;
+    }
+
+    public recordConfirmationOperations(): boolean {
+        this.service.recordConfirmationOperations();
+        return true;
+    }
+
+    public async settleConfirmationOperations(
+        blockHashes: Hash[]
+    ): Promise<boolean> {
+        await this.service.settleConfirmationOperations(blockHashes);
+        return true;
+    }
+
     /** Drop a proven peer's profile; its open transports keep their address. */
     public stubUnregisterPeerProfile(peerAddress: Address): boolean {
         return this.service.unregisterPeerProfile(peerAddress);
@@ -3353,8 +3451,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getInitHandshakeCallCount();
     }
 
-    public failMembershipReceipt(kind: HeldMembershipReceiptKind): boolean {
-        this.service.failMembershipReceipt(kind);
+    /** Fail `kind` submissions with a failed receipt (only the first with `once`); counted, never held. */
+    public failMembershipReceipt(
+        kind: HeldMembershipReceiptKind,
+        once?: boolean
+    ): boolean {
+        this.service.failMembershipReceipt(kind, once);
         return true;
     }
 
@@ -3417,8 +3519,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Record every `shouldAddOwnEvidence` audit and the evidence comparison
-     * `constructDispute` call inside it, and forward both. `fault` applies
-     * only to the next comparison.
+     * `constructDispute` call inside it, count the other `constructDispute`
+     * calls, and forward all. `fault` applies only to the next comparison.
      */
     public stubRecordEvidenceComparisons(
         fault?: EvidenceComparisonFault
@@ -3430,6 +3532,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public getRecordedEvidenceComparisons(): {
         comparisons: RecordedEvidenceComparison[];
         audits: RecordedEvidenceAudit[];
+        disputeBuilds: number;
         isHolding: boolean;
     } {
         const recorder = this.service.evidenceComparisons;
@@ -3438,6 +3541,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 ...comparison
             })),
             audits: recorder.audits.map((audit) => ({ ...audit })),
+            disputeBuilds: recorder.disputeBuilds,
             isHolding: recorder.isHolding
         };
     }
@@ -3455,6 +3559,37 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreEvidenceComparisons(): boolean {
         return this.service.evidenceComparisons.restore();
+    }
+
+    /**
+     * Record every live `onBlockConfirmation` RPC run (arrival and guard
+     * re-runs), the queue intake each run reaches and each response sent
+     * for it; forward all.
+     */
+    public stubRecordLiveBlockRetention(): boolean {
+        this.service.liveBlockRetention.install(this.service.sm);
+        return true;
+    }
+
+    public getRecordedLiveBlockRetention(): {
+        deliveries: RecordedLiveBlockDelivery[];
+        retainedCount: number;
+    } {
+        const recorder = this.service.liveBlockRetention;
+        return {
+            deliveries: recorder.deliveries.map((delivery) => ({
+                ...delivery,
+                intakes: delivery.intakes.map((intake) => ({ ...intake })),
+                responses: delivery.responses.map((response) => ({
+                    ...response
+                }))
+            })),
+            retainedCount: recorder.retainedCount
+        };
+    }
+
+    public restoreLiveBlockRetention(): boolean {
+        return this.service.liveBlockRetention.restore();
     }
 }
 

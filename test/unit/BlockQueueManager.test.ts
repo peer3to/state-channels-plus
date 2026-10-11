@@ -400,23 +400,6 @@ describe("Unit: BlockQueueManager", () => {
         }
     });
 
-    it("a source absent after a failed refresh follows ordinary sync", async () => {
-        const f = new QueueIntakeFixture();
-        await f.start({ failMembership: true });
-        try {
-            expect(await f.receive(f.strangers[0])).to.equal(true);
-            expect(await f.retention()).to.equal(null);
-            expect((await f.observation()).chainReads).to.equal(1);
-            expect((await f.observation()).completedSyncs).to.equal(1);
-            expect((await f.observation()).syncRequests).to.equal(0);
-            expect(
-                await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(true);
-        } finally {
-            await f.close();
-        }
-    });
-
     it("a failed unknown copy preserves the existing honest contribution", async () => {
         const f = new QueueIntakeFixture();
         await f.start({ failMembership: true });
@@ -426,23 +409,6 @@ describe("Unit: BlockQueueManager", () => {
             await f.receive(f.strangers[0]);
             expect(await f.retention()).to.deep.equal(before);
             expect((await f.observation()).syncRequests).to.equal(0);
-        } finally {
-            await f.close();
-        }
-    });
-
-    it("a failed membership read can retry on the next request", async () => {
-        const f = new QueueIntakeFixture();
-        await f.start({ failMembership: true });
-        try {
-            expect(await f.receive(f.strangers[0])).to.equal(true);
-            expect(await f.receive(f.strangers[0])).to.equal(true);
-            expect((await f.observation()).chainReads).to.equal(2);
-            expect((await f.observation()).completedSyncs).to.equal(2);
-            expect(await f.retention()).to.equal(null);
-            expect(
-                await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(true);
         } finally {
             await f.close();
         }

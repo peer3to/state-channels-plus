@@ -28,10 +28,19 @@ class HolepunchTransport extends NetworkTransport {
             this.close();
         });
         this.holepunchSocket.on("error", (error: Error) => {
-            this.p2pManager.logger.error("Holepunch socket error", {
+            const details = {
                 socketState: this.holepunchSocket?.readyState,
                 error
-            });
+            };
+            // A peer that resets its connection (it left or its runtime
+            // ended) is ordinary churn, not a failure of this runtime.
+            if ((error as NodeJS.ErrnoException).code === "ECONNRESET")
+                this.p2pManager.logger.warn(
+                    "Holepunch peer reset the connection",
+                    details
+                );
+            else
+                this.p2pManager.logger.error("Holepunch socket error", details);
             this.close();
         });
     }

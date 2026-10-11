@@ -3,7 +3,7 @@ import { readMathPeer } from "./OffChainPromotionFixture";
 import { runtimeIsClosed } from "./RuntimeRootObservation";
 import { Block, StateSnapshot } from "@/models";
 import { Status, type SyncPayload } from "@/types";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { latestSyncFromResponderBehindDerivedFork } from "@test/fixtures/BotConnectionFixesStaging";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
@@ -256,6 +256,9 @@ export async function stagePromotedChannel(
     }
 ) {
     await h.lifecycle.start(2, 0);
+    // `keepOnlyAuthorSignatures` settles the confirmations the founders admit.
+    for (const peer of h.peers)
+        await h.control(peer).stub.recordConfirmationOperations().request();
     const observer = options.syncOnlyObserver
         ? await addSyncOnlyObserverAtGenesis(h)
         : undefined;
@@ -305,8 +308,12 @@ export async function stagePromotedChannel(
 /**
  * Replace the peer's stored blocks at `heights` with author-signed copies:
  * the threshold evidence of those blocks then comes only from the authors of
- * the blocks linked after them (virtual voting). Run once every signature
- * has landed, so no late confirmation merges back.
+ * the blocks linked after them (virtual voting). The peer first stops
+ * ingesting gossiped confirmations: a confirmation still in flight would
+ * merge the removed signatures back. The confirmation operations the peer
+ * admitted before that settle next, and the strip runs once after them. The
+ * peer records its confirmation operations since before these blocks'
+ * confirmations arrived (`stagePromotedChannel` records on the founders).
  */
 export async function keepOnlyAuthorSignatures(
     h: MathPeerTestHarness,
@@ -314,13 +321,31 @@ export async function keepOnlyAuthorSignatures(
     forkId: ForkId,
     heights: number[]
 ): Promise<void> {
+    const peer = h.getPeer(peerIndex);
+    await h.rpcStub.dropNetworkConfirmations(peerIndex);
+    const blockHashes: Hash[] = [];
+    for (const height of heights) {
+        const blockHash = await h
+            .control(peer)
+            .query.getBlockHashAt(forkId, height)
+            .request();
+        if (blockHash === null) throw new Error(`No stored block at ${height}`);
+        blockHashes.push(blockHash);
+    }
+    await h
+        .control(peer)
+        .stub.settleConfirmationOperations(blockHashes)
+        .request();
     await h.execOnHost(
-        h.getPeer(peerIndex),
+        peer,
         async (sm, args) => {
             const blocks = sm.storage.blocks;
             for (const height of args.heights) {
                 const block = blocks.getBlock(args.forkId, height);
                 if (!block) throw new Error(`No stored block at ${height}`);
+                // a queued copy would merge its signatures back later
+                if (sm.storage.queues.getQueuedEntry(block.hash))
+                    throw new Error(`A copy of block ${height} is queued`);
                 blocks.deleteBlock(args.forkId, height);
                 blocks.storeBlock(block.authorSignedCopy());
             }
@@ -615,8 +640,8 @@ export async function stageLaggingConstructionMirror(h: MathPeerTestHarness) {
 
 /**
  * Four peers; two final blocks, a fully signed leave, then two final blocks
- * by the remaining participants. The leaver's own exit post
- * (`MaybeExitOnChain`) is recorded and never runs, so no exit snapshot is
+ * by the remaining participants. The leaver's snapshot posts
+ * (`exit snapshot post`) are recorded and never run, so no exit snapshot is
  * posted: the chain snapshot stays the genesis.
  */
 export async function stageUnpostedLeave(h: MathPeerTestHarness) {
@@ -624,7 +649,7 @@ export async function stageUnpostedLeave(h: MathPeerTestHarness) {
     await h.transition.advanceState({ count: 2 });
     const leaverIndex = (await h.query.getNextPeerToWrite()).index;
     await h.rpcStub.recordScheduledTasks(leaverIndex, {
-        suppressPrefix: "MaybeExitOnChain"
+        suppressPrefix: "exit snapshot post"
     });
     await h.transition.participantLeaveStateTransition({ leaverIndex });
     const remaining = [0, 1, 2, 3].filter((index) => index !== leaverIndex);

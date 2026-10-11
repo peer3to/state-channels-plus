@@ -2,20 +2,17 @@ import type StateManager from "../StateManager";
 import { StateSnapshot } from "@/models";
 
 import type { ForkId } from "@/types/types";
-import { DetachedPromises, Logger } from "@/utils";
+import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
-import {
-    tryDecodeCustomError,
-    tryHandleEvmError
-} from "@/utils/evmErrorHandler";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ethers, TransactionResponse } from "ethers";
+import { ethers } from "ethers";
 
 type SnapshotSubmission = {
     expectedSnapshot: StateSnapshot;
-    completion: Promise<boolean>;
+    completion: Promise<void>;
 };
 
 type ForkSnapshotUpdatePreparation = {
@@ -32,8 +29,6 @@ export type SameForkSnapshotUpdatePreparation = {
     milestoneProofs: MilestoneProofStruct[];
     milestoneSnapshots: StateSnapshot[];
     outboundMessageBlocks: MessageBlockStruct[];
-    /** The chain holds an inbound message the latest snapshot has not consumed. */
-    blockedByInbound?: boolean;
 };
 
 export default class SnapshotUpdateService {
@@ -46,37 +41,49 @@ export default class SnapshotUpdateService {
         this.logger = logger.child({ component: "SnapshotUpdateService" });
     }
 
-    public async postStateSnapshot(
-        forkId: ForkId,
-        options?: { forkAdoptionOnly?: boolean }
-    ): Promise<StateSnapshot | undefined> {
-        const submission = await this.submitStateSnapshot(forkId, options);
-        if (!submission || submission === "blocked-by-inbound")
-            return undefined;
-
-        DetachedPromises.collect(submission.completion);
-        return submission.expectedSnapshot;
-    }
-
     /**
-     * Resolves false when the chain refused the post on a disputed fork, and
-     * when the same-fork update cannot be posted because the chain holds an
-     * inbound message the latest snapshot has not consumed: only a dispute,
-     * whose replay applies that message, can move such a fork on.
+     * Posts the latest state snapshot of `forkId` and resolves with it once
+     * the post is mined; undefined when nothing can be posted yet. A chain
+     * revert rejects with its custom error; the caller reads it.
      */
     public async postStateSnapshotWait(
         forkId: ForkId,
         options?: { forkAdoptionOnly?: boolean }
-    ): Promise<boolean> {
+    ): Promise<StateSnapshot | undefined> {
         const submission = await this.submitStateSnapshot(forkId, options);
-        if (submission === "blocked-by-inbound") return false;
-        return submission?.completion ?? true;
+        if (!submission) return undefined;
+        await submission.completion;
+        return submission.expectedSnapshot;
+    }
+
+    public buildForkSnapshotCalldata(
+        reducedGenesisSnapshot: StateSnapshot,
+        currentOnChainSnapshot: StateSnapshot
+    ): { calldata: string; outboundMessageBlocks: MessageBlockStruct[] } {
+        // reducedGenesisSnapshot is  newer than currentOnChainSnapshot,
+        const outboundMessageBlocks =
+            this.stateManager.storage.outboundMessages.getMessageBlocksInRange({
+                lowerBlockHash:
+                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
+                upperBlockHash:
+                    reducedGenesisSnapshot.latestOutboundMessageBlockHash
+            });
+        const calldata =
+            this.stateManager.stateChannelManagerContract.interface.encodeFunctionData(
+                "updateStateSnapshotFork",
+                [
+                    this.stateManager.channelId,
+                    reducedGenesisSnapshot.toStruct(),
+                    outboundMessageBlocks
+                ]
+            );
+        return { calldata, outboundMessageBlocks };
     }
 
     private async submitStateSnapshot(
         forkId: ForkId,
         options?: { forkAdoptionOnly?: boolean }
-    ): Promise<SnapshotSubmission | "blocked-by-inbound" | undefined> {
+    ): Promise<SnapshotSubmission | undefined> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
         const sameForkData: Omit<
             SameForkSnapshotUpdatePreparation,
@@ -94,11 +101,7 @@ export default class SnapshotUpdateService {
 
         // Preparation always runs to completion. `canPost` only controls
         // whether the resulting calldata is currently eligible for submission.
-        if (!forkData.canPost) return undefined;
-        if (!sameForkData.canPost)
-            return sameForkData.blockedByInbound
-                ? "blocked-by-inbound"
-                : undefined;
+        if (!forkData.canPost || !sameForkData.canPost) return undefined;
 
         if (callData.length === 0) {
             this.logger.debug("No state snapshot updates needed");
@@ -144,76 +147,48 @@ export default class SnapshotUpdateService {
             }
         );
 
-        let transactionResponse: TransactionResponse;
+        // A revert rejects with its custom error; each caller reads the races
+        // it expects (ReductionExecutor's fork adoption, the leave's post).
         const completion = this.stateManager.stateChannelManagerContract
             .multicall(callData)
             .then(async (response) => {
-                transactionResponse = response;
-                await response.wait();
-                return true;
-            })
-            .catch(async (error) => {
-                let refused = false;
-                const success = await tryHandleEvmError(error, {
-                    tx: transactionResponse,
-                    logger: this.logger,
-                    signer: this.stateManager.signer,
-                    forkId,
-                    handlers: {
-                        RaceConditionSnapshotForkMismatch: () => {
-                            this.logger.warn(
-                                "postStateSnapshot: snapshot fork mismatch — another peer's snapshot landed first",
-                                { forkId }
-                            );
-                        },
-                        RaceConditionBlockHeightTooOld: () => {
-                            this.logger.warn(
-                                "postStateSnapshot: block height too old — newer snapshot already on-chain",
-                                { forkId }
-                            );
-                        },
-                        RaceConditionPendingInboundNotConsumed: () => {
-                            this.logger.error(
-                                "postStateSnapshot: pending inbound not consumed by our snapshot",
-                                { forkId }
-                            );
-                            throw new Error(
-                                `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
-                            );
-                        },
-                        RaceConditionSnapshotUpdateNotLatestFork: () => {
-                            this.logger.warn(
-                                "postStateSnapshot: a later reduction landed first; the next post adopts it",
-                                { forkId }
-                            );
-                        },
-                        RaceConditionSnapshotUpdateDisputedFork: () => {
-                            this.logger.warn(
-                                "postStateSnapshot: adoption refused on a disputed fork",
-                                { forkId }
-                            );
-                            refused = true;
-                        },
-                        RaceConditionReductionExpectationDoesntMatch: () => {
-                            this.logger.error(
-                                "postStateSnapshot: reduction already finalized to a different forkId",
-                                { forkId }
-                            );
-                            throw new Error(
-                                `postStateSnapshot: reduction already finalized to a different forkId for forkId=${forkId}`
-                            );
-                        }
-                    }
-                });
-                if (success) return !refused;
-                const custom = tryDecodeCustomError(error);
-                this.logger.error("Error posting state snapshot", {
-                    custom,
-                    error: errorMessage(error)
-                });
-                throw error;
+                try {
+                    await response.wait();
+                } catch (error) {
+                    throw await this.withRevertData(error, callData);
+                }
             });
         return { expectedSnapshot, completion };
+    }
+
+    /**
+     * A post that passed its estimate and then reverted in its block (a
+     * concurrent post landed first) has a receipt but no revert data, so
+     * `tryDecodeCustomError` finds nothing. Replaying the same call on the
+     * state that block left returns the error with its custom error; any
+     * other failure, or a replay that names no custom error, stays as it was.
+     *
+     * Not `tryHandleEvmError`: it reports a revert through handlers instead
+     * of returning it, resends the transaction when its replay passes, and
+     * would make this service hold every caller's refusal names. Callers
+     * read the custom error from the rejection (the leave's exit post, the
+     * fork adoption), so this service only puts the revert data back.
+     */
+    private async withRevertData(
+        error: unknown,
+        callData: string[]
+    ): Promise<unknown> {
+        if (!ethers.isError(error, "CALL_EXCEPTION") || !error.receipt)
+            return error;
+        try {
+            await this.stateManager.stateChannelManagerContract.multicall.staticCall(
+                callData,
+                { blockTag: error.receipt.blockNumber }
+            );
+        } catch (replayed) {
+            if (tryDecodeCustomError(replayed)) return replayed;
+        }
+        return error;
     }
 
     /**
@@ -387,30 +362,6 @@ export default class SnapshotUpdateService {
         }
     }
 
-    public buildForkSnapshotCalldata(
-        reducedGenesisSnapshot: StateSnapshot,
-        currentOnChainSnapshot: StateSnapshot
-    ): { calldata: string; outboundMessageBlocks: MessageBlockStruct[] } {
-        // reducedGenesisSnapshot is  newer than currentOnChainSnapshot,
-        const outboundMessageBlocks =
-            this.stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                lowerBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
-                upperBlockHash:
-                    reducedGenesisSnapshot.latestOutboundMessageBlockHash
-            });
-        const calldata =
-            this.stateManager.stateChannelManagerContract.interface.encodeFunctionData(
-                "updateStateSnapshotFork",
-                [
-                    this.stateManager.channelId,
-                    reducedGenesisSnapshot.toStruct(),
-                    outboundMessageBlocks
-                ]
-            );
-        return { calldata, outboundMessageBlocks };
-    }
-
     /**
      * Prepares data for updating the state snapshot when the fork is the same.
      */
@@ -526,35 +477,9 @@ export default class SnapshotUpdateService {
                 };
             }
 
-            const channelBalance =
-                await this.stateManager.stateChannelManagerContract.getChannelBalance(
-                    this.stateManager.channelId
-                );
-            if (
-                String(channelBalance.latestInboundMessageBlockHash) !==
-                String(latestSnapshot.latestInboundMessageBlockHash)
-            ) {
-                this.logger.warn(
-                    "Same-fork snapshot update is waiting for the latest inbound messages",
-                    {
-                        forkId,
-                        onChainInboundMessageBlockHash:
-                            channelBalance.latestInboundMessageBlockHash,
-                        snapshotInboundMessageBlockHash:
-                            latestSnapshot.latestInboundMessageBlockHash
-                    }
-                );
-                return {
-                    canPost: false,
-                    callData: [],
-                    milestoneProofs: [],
-                    milestoneSnapshots: [],
-                    outboundMessageBlocks: [],
-                    // a fork snapshot not yet on chain blocks first
-                    blockedByInbound: canPost
-                };
-            }
-
+            // No inbound pre-check: the chain refuses a snapshot that has not
+            // consumed its inbound head (RaceConditionPendingInboundNotConsumed),
+            // and the post rejects with that error for the caller to read.
             const outboundMessageBlocks =
                 this.stateManager.storage.outboundMessages.getMessageBlocksInRange(
                     {

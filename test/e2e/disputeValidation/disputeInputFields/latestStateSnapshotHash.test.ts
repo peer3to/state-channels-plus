@@ -236,8 +236,17 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                     });
 
-                    const leaverIndex =
-                        await h.transition.participantLeaveStateTransition();
+                    // the leaver's exit posts fail, so it stays on chain and
+                    // audits the dispute below
+                    const leaverIndex = (await h.query.getNextPeerToWrite())
+                        .index;
+                    await h
+                        .control(h.getPeer(leaverIndex))
+                        .stub.failStateSnapshotPost()
+                        .request();
+                    await h.transition.participantLeaveStateTransition({
+                        leaverIndex
+                    });
                     await h.transition.advanceState({
                         waitForPeers: [0, 1, 3],
                         count: 3

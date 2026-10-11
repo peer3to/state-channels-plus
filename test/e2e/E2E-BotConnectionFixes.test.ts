@@ -1,7 +1,10 @@
 import { StateSnapshot } from "@/models";
 import { Status, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
-import { waitForceJoinCountingStarted } from "@test/fixtures/ForceJoinCountingStaging";
+import {
+    readForceJoinBounds,
+    waitForceJoinCountingStarted
+} from "@test/fixtures/ForceJoinCountingStaging";
 import {
     expectInitialSyncSkipped,
     postSnapshotSeenBy,
@@ -89,7 +92,7 @@ describe("E2E: Bot connection fixes", function () {
                 exits.push(peer.p2pInstance.p2pContractInstance.leaveChannel());
             });
 
-        const leaves = h.peers.map((peer) => peer.p2pInstance.leaveChannel());
+        for (const peer of h.peers) peer.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await waitFor(
             () => exits.length === 2,
@@ -101,7 +104,8 @@ describe("E2E: Bot connection fixes", function () {
         for (const peer of h.peers)
             h.contextApi.markAfkPeer({ afkPeerIndex: peer.index });
 
-        await Promise.all(leaves);
+        for (const peer of h.peers)
+            await h.event.waitUntilLeftChannel(peer.index);
         expect(await h.channelManager.getOpenChannelIds(0, 100)).to.not.include(
             channelId
         );
@@ -112,7 +116,12 @@ describe("E2E: Bot connection fixes", function () {
 
     it("E25: founders whose exits wait on an unconsumed join do not report a posted snapshot; their self-removal disputes settle the leaves and seat the joiner", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
+        // No participant stays to consume the join, so each exit waits out
+        // the leave watchdog before it disputes.
+        const watchdogMs = 5_000;
+        await h.lifecycle.start(2, 0, {
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs }
+        });
         const { peer } = await h.join.addSpectatorAuthoring({
             authoringPeerIndices: [0, 1],
             minimumBlocks: 2,
@@ -153,9 +162,7 @@ describe("E2E: Bot connection fixes", function () {
             );
         const forkId = h.activeForkId!;
 
-        const leaves = founders.map((founder) =>
-            founder.p2pInstance.leaveChannel()
-        );
+        for (const founder of founders) founder.p2pInstance.leaveChannel();
         await h.transition.advanceState({ waitForPeers: [0, 1] });
         await waitFor(
             () => exits.length === 2,
@@ -164,7 +171,8 @@ describe("E2E: Bot connection fixes", function () {
         await Promise.all(exits);
         for (const founder of founders)
             h.contextApi.markAfkPeer({ afkPeerIndex: founder.index });
-        // The blocked snapshot post returned false, so each exit disputed.
+        // The blocked snapshot post waited for the join, so each exit
+        // disputed at the watchdog.
         await waitFor(
             async () =>
                 (
@@ -174,7 +182,7 @@ describe("E2E: Bot connection fixes", function () {
                         )
                     )
                 ).every((submissions) => submissions.length > 0),
-            h.event.protocolEventTimeoutMs()
+            watchdogMs + h.event.protocolEventTimeoutMs()
         );
         for (const [index, recorder] of founderDisputes.entries()) {
             const dispute = Codec.decode(
@@ -194,7 +202,8 @@ describe("E2E: Bot connection fixes", function () {
             h.event.protocolEventTimeoutMs()
         );
 
-        await Promise.all(leaves);
+        for (const founder of founders)
+            await h.event.waitUntilLeftChannel(founder.index);
         await h.event.waitUntilPeerStatus(joiner.index, Status.PARTICIPATING);
         expect(
             await h.channelManager.getParticipants(h.channelId)
@@ -411,14 +420,7 @@ describe("E2E: Bot connection fixes", function () {
             joiner.index
         );
         const tasks = await h.rpcStub.recordScheduledTasks(joiner.index);
-        const forceJoin = () =>
-            h.execOnHost(joiner, async (sm) => ({
-                countingStartsAt:
-                    sm.storage.forceJoin.getCountingStartsAt() ?? null,
-                submissionHeight:
-                    sm.storage.forceJoin.getJoinSubmissionBlockHeight() ?? null,
-                timeConfig: sm.timeConfig
-            }));
+        const forceJoin = () => readForceJoinBounds(h, joiner);
         const deadlines = async () =>
             (await tasks.tasks()).filter(
                 (task) => task.taskName === "force join deadline"
@@ -499,10 +501,7 @@ describe("E2E: Bot connection fixes", function () {
             Status.PENDING_PARTICIPANT
         );
 
-        let walkedAway = false;
-        const leave = joiner.p2pInstance.p2pSigner.leaveChannel().then(() => {
-            walkedAway = true;
-        });
+        await joiner.p2pInstance.p2pSigner.leaveChannel();
         // Chain time moves only with blocks: once the deadline passed, one
         // ordinary transaction lets the chain show the expiry.
         const expiry = waitFor(
@@ -523,12 +522,12 @@ describe("E2E: Bot connection fixes", function () {
             ).wait();
         });
         await h.transition.keepAuthoringUntil({
-            until: () => walkedAway,
+            until: () => joiner.eventSpies.onLeftChannel?.called === true,
             waitForPeers: [0, 1, 2],
             maximumBlocks: 20
         });
         await expiry;
-        await leave;
+        await h.event.waitUntilLeftChannel(joiner.index);
         expect(await h.control(joiner).query.getStatus().request()).to.equal(
             Status.SYNCED
         );
@@ -562,10 +561,8 @@ describe("E2E: Bot connection fixes", function () {
         await h.join.joinChannelWait({ joiner });
         let countingStartsAt: number | null = null;
         await waitFor(async () => {
-            countingStartsAt = await h.execOnHost(
-                joiner,
-                async (sm) => sm.storage.forceJoin.getCountingStartsAt() ?? null
-            );
+            countingStartsAt = (await readForceJoinBounds(h, joiner))
+                .countingStartsAt;
             return countingStartsAt !== null;
         }, h.event.protocolEventTimeoutMs());
 
@@ -575,13 +572,10 @@ describe("E2E: Bot connection fixes", function () {
             await h.control(joiner).query.getClockTimeInSeconds().request(),
             "the blocks landed inside the grace"
         ).to.be.lessThan(countingStartsAt!);
-        expect(
-            await h.execOnHost(joiner, async (sm) => ({
-                countingFromHeight:
-                    sm.storage.forceJoin.getCountingFromHeight() ?? null,
-                disputeStarted: sm.storage.forceJoin.hasDisputeStarted()
-            }))
-        ).to.deep.equal({ countingFromHeight: null, disputeStarted: false });
+        expect(await readForceJoinBounds(h, joiner)).to.deep.include({
+            countingFromHeight: null,
+            disputeStarted: false
+        });
         expect(
             await h.channelManager.isForkDisputed(h.channelId, forkId)
         ).to.equal(false);

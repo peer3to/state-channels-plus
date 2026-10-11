@@ -118,7 +118,10 @@ export async function stageOutboundAroundAnchor(
     h: MathPeerTestHarness,
     options: { finalBlocks: number }
 ) {
-    await h.lifecycle.start(4, 2);
+    // Each exit waits agreementTime and then its snapshot post and chain
+    // event before the next writer authors; under load that idles longer
+    // than p2pTime + agreementTime, and the late block fails the time check.
+    await h.lifecycle.start(4, 2, { timeConfig: { p2pTime: 15 } });
     await suppressTimeoutChecks(h, [0, 1, 2, 3]);
     let remaining = [0, 1, 2, 3];
     const anchoredLeaver = await h.query.getNextPeerToWrite();

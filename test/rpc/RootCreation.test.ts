@@ -15,6 +15,8 @@ import {
     assertParentlessWorkerBorrowsCallerLogger,
     assertParentlessWorkerDisposalReleasesParent,
     assertParentlessWorkerServes,
+    assertWorkerStartsWithCreatorConfig,
+    assertWorkerRootUploadsWithCreatorConfig,
     assertParentlessWorkersHaveDistinctParents,
     assertParentlessWorkerStartupFailureReleasesParent
 } from "@test/fixtures/node/ParentlessRootCreationFixture";
@@ -30,6 +32,7 @@ import {
     assertTopLevelRoot,
     assertRootCreationCloneFailure
 } from "@test/fixtures/RootCreationFixture";
+import { NAMED_WORKER_THREAD } from "@test/fixtures/workerRoot/LoggerProbeExecutorRoot";
 
 describe("RootCreation", () => {
     it("settles disposal when the worker exits before its acknowledgement", async () => {
@@ -71,6 +74,21 @@ describe("RootCreation", () => {
     });
     it("cleans a standalone executor after initialization fails", async () => {
         await assertStandaloneRoot(true);
+    });
+    it("starts a worker root with the creating thread's config before the root is built", async () => {
+        await assertWorkerStartsWithCreatorConfig();
+    });
+    it("uploads a worker root's logs with the creating thread's config under the thread name it was started with", async () => {
+        await assertWorkerRootUploadsWithCreatorConfig(
+            "NamedLoggerProbeRootEntry.ts",
+            NAMED_WORKER_THREAD
+        );
+    });
+    it("uploads a worker root's logs under main when it was started without a thread name", async () => {
+        await assertWorkerRootUploadsWithCreatorConfig(
+            "UnnamedLoggerProbeRootEntry.ts",
+            "main"
+        );
     });
     it("creates a parentless worker whose typed handle serves calls in the worker", async () => {
         await assertParentlessWorkerServes();

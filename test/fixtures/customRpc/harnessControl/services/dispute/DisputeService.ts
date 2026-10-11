@@ -380,9 +380,9 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
 
     /**
      * This peer's own proof through `blockHeight` (`blockHeight` -1: the
-     * empty genesis proof) with the auditing data DisputeManager builds for
-     * it. `disputeLatestInboundMessageBlockHash` bounds the inbound run, as in
-     * `constructDispute` (default: the inbound head not behind that state).
+     * empty genesis proof) with the auditing data its DisputeBuilder
+     * reconstructs for it. `disputeLatestInboundMessageBlockHash` bounds the
+     * inbound run (default: the inbound head not behind that state).
      */
     async buildOwnAuditingData(
         forkId: ForkId,
@@ -392,10 +392,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         stateProof: StateProofStruct;
         auditingData: DisputeAuditingDataStruct;
     }> {
-        const built = await this.agreementManager.buildStateProof(
-            forkId,
-            blockHeight
-        );
         const latestStateSnapshot = this.storage.getStateSnapshot({
             forkId,
             height: blockHeight
@@ -404,19 +400,35 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             throw new Error(
                 `buildOwnAuditingData: no snapshot at height ${blockHeight} of ${forkId}`
             );
-        const inboundHash =
-            disputeLatestInboundMessageBlockHash ??
-            this.storage.inboundMessages.headNotBehind(
-                latestStateSnapshot.latestInboundMessageBlockHash,
-                latestStateSnapshot.latestInboundMessageBlockHeight
-            ).hash;
-        const auditingData = await this.disputeManager["buildAuditingData"](
-            forkId,
-            built,
-            latestStateSnapshot,
-            inboundHash
+        const inboundHead = this.storage.inboundMessages.headNotBehind(
+            latestStateSnapshot.latestInboundMessageBlockHash,
+            latestStateSnapshot.latestInboundMessageBlockHeight
         );
-        return { stateProof: built.stateProof, auditingData };
+        const { stateProof } = await this.agreementManager.buildStateProof(
+            forkId,
+            blockHeight
+        );
+        const auditingData = await this.disputeManager[
+            "disputeBuilder"
+        ].reconstructAuditingData({
+            channelId: this.sm.channelId,
+            forkId,
+            latestStateSnapshotHash: latestStateSnapshot.hash,
+            stateProof,
+            onChainSlashes: [],
+            disputeAuditingDataHash: ZeroHash,
+            disputer: this.sm.signerAddress,
+            timeout:
+                this.disputeManager["disputeBuilder"][
+                    "getEmptyTimeoutStruct"
+                ](),
+            selfRemoval: false,
+            requireExistingDisputeWindow: false,
+            latestInboundMessageBlockHash:
+                disputeLatestInboundMessageBlockHash ?? inboundHead.hash,
+            lastInboundMessageBlockHeight: inboundHead.height
+        });
+        return { stateProof, auditingData };
     }
 
     /**

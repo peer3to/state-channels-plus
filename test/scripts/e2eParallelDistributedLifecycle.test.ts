@@ -473,9 +473,9 @@ describe("distributed worker pool lifecycle", function () {
             );
             await backend.firstCreateStarted;
 
-            const second = await pool.startOrchestrator("retry-run", {
-                keyPair
-            });
+            // its own key: the swarm keeps one connection per remote key, so
+            // a second live orchestrator on the first one's key replaces it
+            const second = await pool.startOrchestrator("retry-run");
             await second.waitFor(worker.name, "BUSY");
             await pool.closeOrchestrator(first);
             await second.waitFor(worker.name, "LEASE_GRANTED");

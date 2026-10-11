@@ -13,34 +13,44 @@
 
 Terminal leave state machine
 
-- Setup: Enter through `P2pInstance.leaveChannel` or the internal signer route from every commitment state.
-- Oracle: Hook substitution, fixed bounds, self-removal dispute input, settled removal, and one terminal disposal are exact; no cross-channel work starts.
+- Setup: Enter through `P2pInstance.leaveChannel` or the internal signer route from every commitment state, or through the signer's own exit block with no leave call; block, fail or hold the exit's snapshot posts.
+- Oracle: Hook substitution, the one watchdog bound, self-removal dispute input, one exit post per finalized block with at most one in flight, one `onLeftChannel` per drop to `SYNCED`, one terminal disposal and fatal errors for a stopped leave are exact; no cross-channel work starts.
 
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P1` — immediate non-committed leave
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P2` — authored exit
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P3` — pending promotion
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P4` — fixed block bound
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P4` — more than N + 1 blocks before the leaver's exit start no fallback
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P5` — zero-block watchdog
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P6` — existing dispute wait and next-fork retry
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P7` — authored exit cancels the recorded watchdog and enters exit-authored
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P8` — pending leave with the signer still local makes no chain membership read
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P9` — pending terminal leave rejects joinLobby
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P10` — pending terminal leave rejects joinChannel
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P11` — pending terminal leave rejects topUpBalance
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P12` — pending terminal leave rejects collectJoinChannelConfirmation
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P13` — leave watchdog rejects without a dispute marker
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14` — leave watchdog rejects after the evidence period expires
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15` — disposal rejects leave before a held watchdog upload completes; late completion preserves the disposal rejection
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16` — fast snapshot failure followed by a missing dispute marker rejects authored leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17` — fast snapshot failure followed by an evidence-expired error moves authored leave to awaiting-settlement, and the reduced fork that drops the leaver resolves it
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P18` — an unsigned exit followed by a missing dispute marker rejects authored leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P19` — an unsigned exit followed by an evidence-expired error moves authored leave to awaiting-settlement without rejecting
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P20` — an unsigned exit starts one real self-removal dispute and settles leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P21` — fallback failure ignores absent and awaiting-exit operations
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P22` — a fallback failure for another fork cannot reject an authored leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23` — Both leave promises settle after the last exit closes the channel and status becomes NOT_OPENED
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P24` — Leaving an unobserved join waits for authorization expiry, then settles SYNCED with cleared own-join state and no dispute
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P25` — JOIN observation while leave waits changes it to member exit handling; explicit disposal rejects the unfinished member leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P26` — Both founders leave through the public runtime API, both leave promises settle, the channel disappears from the open-channel registry and on-chain participants become empty
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P27` — With an unconsumed on-chain JOIN blocking exit snapshot updates, both founders submit self-removal disputes on the original fork without changing the chain snapshot first; their leave promises settle and reduction seats the sole joiner
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14` — a leave watchdog dispute that loses the evidence race keeps the leave waiting with no error
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15` — disposal during a held watchdog upload stops the runtime at once; the late completion reports nothing
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16` — an authored exit whose snapshot posts all fail falls back at the leave watchdog; a dispute submission that fails with no recognized chain refusal is a fatal runtime error and leaves no dispute marker
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17` — an authored exit whose snapshot posts all fail falls back at the leave watchdog; an evidence-expired refusal waits for the window's reduction, and the reduced fork that drops the leaver emits `onLeftChannel`
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23` — Both founders get `onLeftChannel` after the last exit closes the channel and status becomes NOT_OPENED
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P24` — Leaving an unobserved join waits for authorization expiry, then settles SYNCED with `onLeftChannel` and no dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P25` — JOIN observation while leave waits changes it to member exit handling; explicit disposal stops the unfinished member leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P26` — Both founders leave through the public runtime API, both get `onLeftChannel`, the channel disappears from the open-channel registry and on-chain participants become empty
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P27` — With an unconsumed on-chain JOIN blocking exit snapshot updates, both founders submit self-removal disputes on the original fork without changing the chain snapshot first; each gets `onLeftChannel` and reduction seats the sole joiner
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P28` — After an uncertain join submission preserves local pending status but never lands, leave waits for authorization expiry and resolves SYNCED with the address absent from both on-chain participant sets
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P29` — a leave that settles while its exit's posts are blocked ends the exit: the leave watchdog starts no self-removal dispute and no further post runs
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P30` — disposal stops the exit's snapshot posts together with the leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P31` — the one leave watchdog stays armed from the leave call through the authored exit and is cancelled when the exit settles
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P32` — the finalized exit block makes the leaver post the latest state snapshot, and that post settles the leave with no dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P33` — a post blocked by an unconsumed inbound join lands nothing; the post of a later finalized block that consumes the join lands the exit, with no dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P34` — when no block consumes the blocking join, each finalized block posts again and lands nothing, and the leave watchdog starts one self-removal dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P35` — at most one exit post is in flight: blocks finalized while a refused post runs queue exactly one more post after it, and the next finalized block posts again
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P36` — an exit block the application authors with no leave call sets self-removal and is posted the same way; the runtime ends `SYNCED` with self-removal still set and no dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P37` — after an exit block with no leave call, a dispute observed on the fork carries the leaver's self-removal at once; the reduced snapshot drops it and self-removal stays set
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P38` — a join in progress at the leave watchdog's expiry re-arms the watchdog and starts no dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P39` — a new fork that still holds the signer restarts the exit there as a requested leave; the force-exit flag stays set
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P40` — a finally refused first join emits `onLeftChannel` once; a race or authorization refusal emits it before `onAbort`
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P41` — a submitted join that expires before it lands emits `onLeftChannel` once with no leave call
+
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P42` — an expected exit-post chain refusal reaches the internal logger and normal later posting remains enabled
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P43` — an unexpected exit-post error reaches fatal runtime handling instead of being swallowed
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P44` — a block finalized while a post runs queues no further post when that post returns a snapshot that drops the signer: one send, no second post

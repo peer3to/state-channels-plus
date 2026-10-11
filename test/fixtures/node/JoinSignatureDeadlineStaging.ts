@@ -1,5 +1,4 @@
 // @spec-test-coverage-ignore: isolated chain-time staging for the exact join deadline boundary
-import StateSnapshot from "@/models/StateSnapshot";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -32,9 +31,6 @@ export async function assertJoinSignatureDeadlineBoundary(
     // Verify ownership before any node-wide mutation; never pause a shared slot.
     assert(Reflect.get(h, "ownNode"), "deadline test must own its chain node");
     const joiner = await h.join.addSpectatorWait();
-    const snapshot = StateSnapshot.from(
-        await h.channelManager.getStateSnapshot(h.channelId)
-    );
     await h.provider.send("evm_setIntervalMining", [0]);
     try {
         const block = await h.provider.send("eth_getBlockByNumber", [
@@ -78,16 +74,10 @@ export async function assertJoinSignatureDeadlineBoundary(
                 h.getPeer(joiner.index),
                 (sm, args) =>
                     sm.p2pManager.remoteRpc.joinChannelService
-                        .requestJoinSignature(
-                            args.encodedRequest,
-                            args.snapshotHash,
-                            args.forkId
-                        )
+                        .requestJoinSignature(args.encodedRequest)
                         .request(args.responder),
                 {
                     encodedRequest,
-                    snapshotHash: String(snapshot.hash),
-                    forkId: String(snapshot.forkID),
                     responder: h.getPeer(0).address
                 }
             );

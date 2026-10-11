@@ -316,10 +316,12 @@ export async function scheduleForkRecoveryAroundStop() {
 
 /**
  * A spectator's sync is held with the channel tip in its payload while a
- * copy of that tip and the next block queue on its not yet synced fork, with
- * no queue timeout armed to rescue them. The sync then stores the tip, so
- * the drain it schedules dequeues the stored tip copy: the next block must
- * still drain and apply. `next` arrives by direct ingest or by gossip.
+ * copy of that tip queues on its not yet synced fork, with no queue timeout
+ * armed to rescue it. The sync then stores the tip, so the drain it
+ * schedules dequeues the stored tip copy: the next block must still apply.
+ * `next` arrives by direct ingest, which queues it behind the tip copy, or
+ * by gossip, which the WaitForSyncStatusGuard retains until the sync ends
+ * and then runs through queue intake.
  */
 export async function assertStoredTipCopyDrainsNextBlock(
     h: MathPeerTestHarness,
@@ -343,6 +345,9 @@ export async function assertStoredTipCopyDrainsNextBlock(
         { suppressPrefix: "BlockQueueManager.queueTimeout" }
     );
     const sync = await h.rpcStub.holdSpectateSyncApplication(spectator.index);
+    const stub = h.control(spectator).stub;
+    if (next === "gossiped")
+        await stub.stubRecordLiveBlockRetention().request();
     const ingest = async (hash: Hash) => {
         const latest = await h
             .control(author)
@@ -388,14 +393,19 @@ export async function assertStoredTipCopyDrainsNextBlock(
             .request())!;
         if (next === "ingested") await ingest(nextHash);
         else
-            await waitFor(
-                async () =>
-                    await h
-                        .control(spectator)
-                        .query.isBlockQueued(nextHash)
-                        .request(),
-                h.event.protocolEventTimeoutMs()
-            );
+            await waitFor(async () => {
+                const { deliveries, retainedCount } = await stub
+                    .getRecordedLiveBlockRetention()
+                    .request();
+                return (
+                    retainedCount > 0 &&
+                    deliveries.some(
+                        (delivery) =>
+                            delivery.blockHash === nextHash &&
+                            delivery.intakes.length === 0
+                    )
+                );
+            }, h.event.protocolEventTimeoutMs());
 
         await sync.release();
         await waitFor(
@@ -418,5 +428,7 @@ export async function assertStoredTipCopyDrainsNextBlock(
     } finally {
         await sync.release();
         await queueTimeouts.restore();
+        if (next === "gossiped")
+            await stub.restoreLiveBlockRetention().request();
     }
 }

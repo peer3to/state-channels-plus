@@ -277,6 +277,9 @@ describe("Unit: DisputeValidationService data availability and older disputes", 
             const leaver = await h.query.getNextPeerToWrite();
             // its exit post never lands: it stays chain-eligible
             await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            // the test constructs its dispute; an exit fallback's own dispute
+            // would race that construction on the same leaver
+            await h.dispute.suppressDisputeInitiation([leaver.index]);
             const remaining = h.peers
                 .map((peer) => peer.index)
                 .filter((index) => index !== leaver.index);

@@ -231,6 +231,16 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
         return true;
     }
 
+    /**
+     * This peer's self-removal dispute through its SDK: the force-exit flag,
+     * then its dispute. Returns whether its dispute marker is set.
+     */
+    public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
+        this.service.storage.forceExit.setForceExit(true);
+        await this.service.disputeManager.dispute(forkId);
+        return this.service.storage.disputes.didIDispute(forkId);
+    }
+
     /** Plant a fresh timeout for `participant` at head+1 height on `forkId`. */
     public plantFreshTimeout(forkId: ForkId, participant: string): boolean {
         const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);

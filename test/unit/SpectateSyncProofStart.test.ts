@@ -66,7 +66,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             applying.catch(() => undefined);
             try {
                 await waitFor(hold.entered);
-                expect(await postSnapshotFrom(h, 0)).to.equal(true);
+                expect(await postSnapshotFrom(h, 0)).to.equal("posted");
                 await hold.release();
                 const outcome = await applying;
                 expect(outcome.outcomes).to.deep.equal([

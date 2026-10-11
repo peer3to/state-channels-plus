@@ -7,7 +7,6 @@ import { expect } from "chai";
 export async function assertSyncedLeaverSkipsSubmission(
     h: MathPeerTestHarness
 ) {
-    let leave: Promise<void> | undefined;
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
         disputingPeerIndices: [2],
         beforeDispute: async () => {
@@ -17,10 +16,7 @@ export async function assertSyncedLeaverSkipsSubmission(
             // The deliberately invalid author must not start an unrelated
             // honest timeout while the leaver submits its dispute.
             await h.rpcStub.suppressTimeoutCheck(1);
-            const leaver = h.getPeer(2);
-            leave = leaver.p2pInstance.p2pSigner.leaveChannel();
-            void leave.catch(() => undefined);
-            await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
+            await h.getPeer(2).p2pInstance.p2pSigner.leaveChannel();
         }
     });
     const target = h.getPeer(2);
@@ -60,7 +56,7 @@ export async function assertSyncedLeaverSkipsSubmission(
             h.event.protocolEventTimeoutMs()
         );
         await application.release();
-        await leave;
+        await h.event.waitUntilLeftChannel(target.index);
         expect(await h.control(target).query.getStatus().request()).to.equal(
             Status.SYNCED
         );
@@ -72,11 +68,25 @@ export async function assertSyncedLeaverSkipsSubmission(
                     .stub.getReductionAttemptsInFlight()
                     .request()) === 0
         );
+        // The local install completed: the attempt resolved with the reduced
+        // fork the chain records, although the signer left during it.
+        expect(
+            await h.control(target).stub.getTryReduceOutcome().request()
+        ).to.deep.equal({
+            settled: true,
+            result: (
+                await h.channelManager.getReducedResult(
+                    h.channelId,
+                    sourceForkId
+                )
+            ).reducedForkId,
+            rejected: null
+        });
         await h.control(target).stub.recordChainMembershipReads().request();
         let settlementReads: number;
         try {
             await h.execOnHost(target, async (sm) => {
-                await sm.leaveChannelService.onSettledStateObserved();
+                await sm.leaveChannelService["checkLeft"]();
             });
             settlementReads = await h
                 .control(target)

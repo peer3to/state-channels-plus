@@ -11,7 +11,6 @@ import type {
 import { createRoot } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config } from "@/utils/config";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import { createLogger } from "@/utils/logging";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
@@ -36,7 +35,7 @@ export async function assertLifecycleReadiness(
         const creating = createRoot(ContractExecutorRoot, {
             parent: sdk.clientRoot,
             mode: "inline",
-            args: { config, customPrecompiles: [] }
+            args: { customPrecompiles: [] }
         });
         void creating.catch(() => undefined);
         const child = [...sdk.clientRoot.children].find(
@@ -252,7 +251,7 @@ export async function assertRootDisposalTree(
 ) {
     await withRuntimeRpc(async () => {
         const root = await createRoot(ContractExecutorRoot, {
-            args: { config, customPrecompiles: [] }
+            args: { customPrecompiles: [] }
         });
         const closed: string[] = []; // Ordered root names observed at their public close boundary.
         root.onClosed(() => closed.push("root"));
@@ -263,7 +262,7 @@ export async function assertRootDisposalTree(
                 const first = await createRoot(ContractExecutorRoot, {
                     parent: root,
                     mode: "inline",
-                    args: { config, customPrecompiles: [] }
+                    args: { customPrecompiles: [] }
                 });
                 const firstRoot = RootCreationControl.connection(root, first)[
                     "localPeerRemoteRoot"
@@ -278,7 +277,7 @@ export async function assertRootDisposalTree(
                     const second = await createRoot(ContractExecutorRoot, {
                         parent: root,
                         mode: "inline",
-                        args: { config, customPrecompiles: [] }
+                        args: { customPrecompiles: [] }
                     });
                     RootCreationControl.connection(root, second)[
                         "localPeerRemoteRoot"
@@ -288,7 +287,7 @@ export async function assertRootDisposalTree(
                     const nested = await createRoot(ContractExecutorRoot, {
                         parent: firstRoot,
                         mode: "inline",
-                        args: { config, customPrecompiles: [] }
+                        args: { customPrecompiles: [] }
                     });
                     RootCreationControl.connection(firstRoot, nested)[
                         "localPeerRemoteRoot"
@@ -390,7 +389,7 @@ export async function assertRootLoggerCascade(): Promise<void> {
         const child = logger.child({ component: "undisposed child" });
         const leaf = child.child({ component: "undisposed grandchild" });
         const root = await createRoot(ContractExecutorRoot, {
-            args: { config, customPrecompiles: [] },
+            args: { customPrecompiles: [] },
             logger
         });
         try {

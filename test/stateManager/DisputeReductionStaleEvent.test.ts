@@ -24,7 +24,7 @@ describe("Dispute reduction stale event", function () {
         // The reduction commits DETACHED after the scenario returns: wait for
         // the real chain event to reach an HONEST peer's mirrored handler (the
         // scenario picks the malicious peer dynamically, so no fixed index is
-        // safe, and the slashed peer aborts its runtime on the event, so its
+        // safe, and the slashed peer leaves the channel on the event, so its
         // handler cannot be replayed). The harness spies record every delivery
         // since peer creation.
         const findObserverIndex = () =>

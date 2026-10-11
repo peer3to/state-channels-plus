@@ -50,6 +50,10 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P35` — a mined best-effort upload whose facet reverted without data, which the proxy reports as `Error("StateChannelManagerProxy - Delegatecall failed")`, is reasonless and takes the estimate refusal the same way
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P36` — the `MulticallLastCallFailed` revert data is read only from the manager's own receipt log with that topic, and a decoded custom error no handler takes is rethrown
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P37` — a reasonless refusal while the all-or-nothing estimate succeeded has no estimate refusal to take and is rethrown as "dispute upload reverted: 0x"
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P38` — `isProvenSubmissionFailure` is true for a submission the chain refuses with a decoded custom error
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P39` — `isProvenSubmissionFailure` is true for a mined submission whose receipt failed, with no decoded reason
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P40` — `isProvenSubmissionFailure` is false for a failure with no receipt and no decoded revert
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P41` — `isProvenSubmissionFailure` is false for a reverted call with no receipt and no revert data
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W
 

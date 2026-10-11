@@ -14,6 +14,7 @@
 - [`REQ-TJOIN-4-SDPZJW` (Direct response routing)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw)
 - [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
 - [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
+- [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
 
 ## UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW
 
@@ -36,8 +37,8 @@ Targeted connect composition
 Ordinary lobby join leave
 
 - Setup: Park both peers' matched negotiations at the handoff, leave from the in-process signer, then fail the negotiations unsigned
-- Oracle: Each join resolves undefined with no channel, NOT_OPENED status, and no lobby session
+- Oracle: Each leave waits for its join and returns true; each join resolves undefined with no channel, NOT_OPENED status, and no lobby session
 
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P1` — same-topic leave ends both joins
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P2` — a rejected second join on the signer keeps the leave
-- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3` — a differently cased leave counts, and a later leave of another topic does not undo it
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3` — a differently cased leave counts, and a later leave of another topic returns false and does not undo it

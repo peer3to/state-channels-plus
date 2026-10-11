@@ -22,20 +22,27 @@ forwards a real send instead: a multicall upload is parked while a join moves th
 head, then released so the chain itself reverts `RaceConditionDisputeInboundNotLatest(head,
 anchor)`. Local storage is assumed current through event sync, so the refusal is not retried: the
 marker rolls back and nothing re-uploads.
-The successor-fork construction case resolves a four-peer dispute, adds one honest transition on the
-successor and checks that the chain anchor is still on the parent fork. The dispute constructed on the
+The successor-fork construction case parks every peer's adopt-only snapshot post (the reduction still
+lands), resolves a four-peer dispute, adds one honest transition on the successor and checks that the
+chain anchor is still on the parent fork; the parked posts are sent when the case ends. The dispute constructed on the
 successor is accepted by the chain's proof check, and an honest auditor accepts it (posted data, an
 existing window required) with no counter.
 Other real sends and on-chain dispute settlement are out of scope (owned by the dispute e2e
-flows), and skipped declarations document unreachable branches. The permutation pool has since been atomized, so the formerly bundled
+flows). The permutation pool has since been atomized, so the formerly bundled
 comparisons (empty vs held timeout, plain vs calldata upload, each named race revert, the
 posted-auditing probe both ways) are now assigned one side per test below. Still unassigned:
-scenarios with no staged test — rollback-with-retry (`1.P2`), self-removal flag (`2.P3`),
+scenarios with no staged test — rollback-with-retry (`1.P2`),
 snapshot/state hash mismatch (`2.P5`), empty-stream tip defaults (`2.P8`), submission-hook
 identity (`3.P4`), the range-bound assertions (`5.P3`, `5.P7`), and the remaining
-missing-element cases where construction throws (`5.P5`, `5.P6`) — plus `4.P3` (window absent), whose only test is
-a skipped unreachable-branch declaration, and the inbound-head no-retry branches for a local head
+missing-element cases where construction throws (`5.P5`, `5.P6`) — plus the inbound-head no-retry branches for a local head
 already at the chain head (`1.P31`) and a disposed runtime or changed fork (`1.P32`).
+
+The window-absent kill (`4.P3`) runs the snapshot flow that clears a window: a spammer posts a dispute
+with an empty state proof, peers 0 and 2 store their dispute fraud proofs and kill it, the window is
+reduced, the participants author a block on the reduced fork and peer 0 posts a same-fork snapshot,
+which deletes the old fork's dispute window on chain. With the chain reporting no window (and so no
+expired one), `killDispute` on peer 0's still-stored proof resolves and the record-only apply probe
+sees no send.
 
 The `fraud-proof replay gas limit` describe (staging in `test/fixtures/ReplayGasLimitStaging.ts`)
 sends real fraud-proof transactions. A record-only stub scales the signer's `estimateGas` answer for
@@ -126,7 +133,7 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `already-disputed fork → dispute() short-circuits before constructDispute`: none
 - `two concurrent dispute() calls → the mutex serializes them, only the first uploads`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P1, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P3
 - `no stored fraud proof → killDispute rejects, nothing is submitted`: none
-- `no dispute window → killDispute returns before submitting (unreachable)`: none
+- `a stored proof whose dispute window a later same-fork snapshot cleared → killDispute returns before submitting`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P3
 - `expired kill window → killDispute returns before submitting anything`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P5
 - `a kill sent after the real kill period ends → the chain reverts it with RaceConditionDisputeKillPeriodExpired and killDispute rejects with it`: REQ-DISPUTE-PIPE-5-RZZB48.T4.P6, UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P9
 - `RaceConditionOnChainSlashes on the apply → consumed, no rejection, no detached error`: none
@@ -144,5 +151,5 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P11
 - `a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again`: none
 - `a rejected replay requirement read rejects the kill without sending it and the next kill reads again`: none
-- `fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1
+- `fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P1, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P8
 - `a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P45, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P17

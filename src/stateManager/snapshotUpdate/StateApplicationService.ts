@@ -17,7 +17,6 @@ interface PreparedState {
     previousEncodedState: Bytes;
     participants: Address[];
     listedOnChain: boolean;
-    joinMayLand: boolean;
     nextToWrite: Address;
 }
 
@@ -79,7 +78,6 @@ export default class StateApplicationService {
         );
         if (previousForkId !== stateSnapshot.forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
-        await sm.leaveChannelService.onSettledStateObserved();
         return true;
     }
 
@@ -124,9 +122,37 @@ export default class StateApplicationService {
             outboundMessageBlock,
             prepared
         );
-        // Follow-up: may await; disposal after this point rolls nothing back.
-        await sm.leaveChannelService.onSettledStateObserved();
         return true;
+    }
+
+    public async unsafeSetGenesisState(
+        snapshotData: SnapshotDataStruct,
+        encodedState: Bytes,
+        forkId: ForkId,
+        genesisTimestamp: Timestamp,
+        outboundMessageBlock?: MessageBlockStruct
+    ): Promise<void> {
+        const normalizedGenesisTimestamp = Number(genesisTimestamp);
+        this.logger.info("Setting genesis state", {
+            forkId,
+            genesisTimestamp: normalizedGenesisTimestamp,
+            participant: snapshotData.participants
+        });
+
+        // generate and store genesis snapshot
+        const _genesisSnapshot: StateSnapshotStruct = {
+            forkId,
+            blockHeight: 0,
+            timestamp: normalizedGenesisTimestamp,
+            snapshotData: snapshotData
+        };
+        this.logger.debug("Stored genesis snapshot", { _genesisSnapshot });
+
+        await this.unsafeSetLatestState(
+            _genesisSnapshot,
+            encodedState,
+            outboundMessageBlock
+        );
     }
 
     /**
@@ -146,7 +172,6 @@ export default class StateApplicationService {
                 previousEncodedState,
                 participants,
                 listedOnChain,
-                joinMayLand: await this.mayUnlistedJoinLand(listedOnChain),
                 nextToWrite: await sm.diamondStateMachine.getNextToWrite()
             };
         } catch (error) {
@@ -181,8 +206,7 @@ export default class StateApplicationService {
         );
         this.applyParticipationStatus(
             prepared.participants,
-            prepared.listedOnChain,
-            prepared.joinMayLand
+            prepared.listedOnChain
         );
         this.scheduleFollowUps(
             stateSnapshot.forkId,
@@ -205,17 +229,6 @@ export default class StateApplicationService {
     }
 
     /**
-     * Whether a pending joiner that neither the state nor the chain lists
-     * submitted a join that can still land. Read only in that case.
-     */
-    private async mayUnlistedJoinLand(
-        listedOnChain: boolean
-    ): Promise<boolean> {
-        if (listedOnChain) return false;
-        return this.stateManager.membershipService.canOwnJoinStillLand();
-    }
-
-    /**
      * Status reflects the chain. A state that lists the signer makes it a
      * participant; a state that no longer lists it makes it `SYNCED` only
      * once the chain no longer lists it either. A locally reduced fork can
@@ -223,25 +236,26 @@ export default class StateApplicationService {
      * posting its snapshot is mined; the chain's snapshot event then makes
      * the transition. A pending joiner whose join can still land stays
      * pending, so its own-join observation still starts the force-join
-     * bounds. Once the authorization expired, a later install or the
-     * leave's join wait lowers it.
+     * bounds; the join service ends a join whose authorization expired.
      */
     private applyParticipationStatus(
         participants: Address[],
-        listedOnChain: boolean,
-        joinMayLand: boolean
+        listedOnChain: boolean
     ): void {
         const sm = this.stateManager;
         const isParticipant = participants.includes(sm.signerAddress);
         if (isParticipant) {
+            // a reduction genesis can seat a pending joiner: its join ends on
+            // this status change (ChannelJoinService subscribes to
+            // onStatusChanged)
             sm.setStatus(Status.PARTICIPATING);
-            // a reduction genesis can seat a pending joiner
-            sm.membershipService.onJoinSeated();
-        } else if (joinMayLand) {
+        } else if (sm.channelJoinService.isJoinInProgress()) {
+            // the join service ends a join that does not land
             this.logger.info(
-                "Installed state does not list this signer; its join can still land, keeping PENDING_PARTICIPANT"
+                "Installed state does not list this signer; its join is in progress, keeping PENDING_PARTICIPANT"
             );
         } else if (!listedOnChain) {
+            // LeaveChannelService reports this drop as onLeftChannel
             sm.setStatus(Status.SYNCED);
         } else {
             this.logger.info(
@@ -302,35 +316,5 @@ export default class StateApplicationService {
             logger: this.logger,
             leaveChannelService: sm.leaveChannelService
         });
-    }
-
-    public async unsafeSetGenesisState(
-        snapshotData: SnapshotDataStruct,
-        encodedState: Bytes,
-        forkId: ForkId,
-        genesisTimestamp: Timestamp,
-        outboundMessageBlock?: MessageBlockStruct
-    ): Promise<void> {
-        const normalizedGenesisTimestamp = Number(genesisTimestamp);
-        this.logger.info("Setting genesis state", {
-            forkId,
-            genesisTimestamp: normalizedGenesisTimestamp,
-            participant: snapshotData.participants
-        });
-
-        // generate and store genesis snapshot
-        const _genesisSnapshot: StateSnapshotStruct = {
-            forkId,
-            blockHeight: 0,
-            timestamp: normalizedGenesisTimestamp,
-            snapshotData: snapshotData
-        };
-        this.logger.debug("Stored genesis snapshot", { _genesisSnapshot });
-
-        await this.unsafeSetLatestState(
-            _genesisSnapshot,
-            encodedState,
-            outboundMessageBlock
-        );
     }
 }

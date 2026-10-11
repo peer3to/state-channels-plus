@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
+import { refreshOutcome } from "@test/fixtures/PendingJoinEligibilityStaging";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -116,7 +117,7 @@ export async function assertSlashAdmission(
     const { h, observer, spammer, block } = f;
     const failedLogs =
         mode === "failed-recovery"
-            ? await h.rpcStub.failChainLogQueries(observer.index)
+            ? await h.rpcStub.hideChainLogs(observer.index)
             : undefined;
     await h
         .control(observer)
@@ -307,7 +308,7 @@ export async function assertSlashPreservesHonestWork() {
 
 export async function assertSlashRefreshFailure() {
     const f = await stageQueueSlash(true);
-    const failedLogs = await f.h.rpcStub.failChainLogQueries(f.observer.index);
+    const failedLogs = await f.h.rpcStub.hideChainLogs(f.observer.index);
     try {
         const result = await f.h.execOnHost(
             f.observer,
@@ -333,6 +334,24 @@ export async function assertSlashRefreshFailure() {
         });
     } finally {
         await failedLogs.restore();
+        await f.dropped?.release();
+    }
+}
+
+/**
+ * The observer misses a real slash's logs, so its refresh recovers them from
+ * the chain, while its local diamond's next slash write fails. Returns the
+ * refresh outcome.
+ */
+export async function refreshWithFailedRecoveredSlash() {
+    const f = await stageQueueSlash(true);
+    try {
+        await f.h.mirror.failNextUpdate(
+            f.observer.index,
+            "onOnChainSlashAdded"
+        );
+        return await refreshOutcome(f.h, f.observer.index);
+    } finally {
         await f.dropped?.release();
     }
 }

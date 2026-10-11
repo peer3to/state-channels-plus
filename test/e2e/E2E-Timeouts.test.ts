@@ -705,9 +705,10 @@ describe("E2E: Timeouts", function () {
                     h.event.hostExecTimeoutMs()
                 );
                 // a window opens after that deadline...
-                await h.execOnHost(parentAuthor, (sm) =>
-                    sm.membershipService.startSelfRemovalDispute(sm.forkId)
-                );
+                await h
+                    .control(parentAuthor)
+                    .dispute.startSelfRemovalDispute(forkId)
+                    .request();
                 await waitFor(
                     async () =>
                         await h.execOnHost(

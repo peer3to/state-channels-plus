@@ -18,7 +18,8 @@ const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
     [14, ALL_RUNNERS],
     [15, ALL_RUNNERS]
 ]);
-const DEFAULT_MAX_FRAME = 1024 * 1024;
+// A frame carries a whole source manifest; 2 MB fits about 10k files.
+const DEFAULT_MAX_FRAME = 2 * 1024 * 1024;
 const REVIEW_KINDS = new Set([
     "REVIEW_HELLO",
     "REVIEW_READY",

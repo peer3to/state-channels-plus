@@ -155,6 +155,64 @@ export class NetworkController<
         );
     }
 
+    /** Waits until each peer's host has marked its lobby join on the topic as left. */
+    async waitForLeftLobbyJoins(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await this.harness.connectionBarrier.waitFor(
+            async () =>
+                (
+                    await Promise.all(
+                        peers.map((peer) =>
+                            this.harness
+                                .control(peer)
+                                .query.getLeftLobbyJoinCount(rendezvousTopic)
+                                .request()
+                        )
+                    )
+                ).every((count) => count > 0),
+            {
+                timeoutMs: this.harness.event.protocolEventTimeoutMs(),
+                timeoutMessage: `lobby leaves of ${rendezvousTopic} never reached the hosts`
+            }
+        );
+    }
+
+    /**
+     * Leaves the lobby while the matched negotiations are parked at the
+     * handoff: once every host has marked its join, `release` lets the
+     * negotiations go on. Resolves with each peer's leave result.
+     */
+    async leaveLobbyAtHeldHandoff(
+        peerIndices: number[],
+        rendezvousTopic: string,
+        release: () => Promise<void>
+    ): Promise<boolean[]> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        const leaves = Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveLobby(rendezvousTopic)
+                    .request({
+                        timeoutMs: this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        })
+                    })
+            )
+        );
+        // the caller awaits the result; this only keeps an early rejection handled
+        leaves.catch(() => undefined);
+        try {
+            await this.waitForLeftLobbyJoins(peerIndices, rendezvousTopic);
+        } finally {
+            await release();
+        }
+        return leaves;
+    }
+
     /**
      * Joins the lobby and returns once every peer's matched negotiation is
      * parked at the handoff. The returned release fails those negotiations

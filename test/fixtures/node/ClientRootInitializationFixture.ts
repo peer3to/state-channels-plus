@@ -47,7 +47,6 @@ export async function assertStandaloneRoot(fail: boolean): Promise<void> {
             createRoot(ObservedStandaloneExecutorRoot, {
                 mode: "inline",
                 args: {
-                    config,
                     customPrecompiles: [
                         {
                             address:

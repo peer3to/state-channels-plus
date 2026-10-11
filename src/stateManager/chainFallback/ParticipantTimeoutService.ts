@@ -1,3 +1,4 @@
+import type { BlockCalldataRecoveryResult } from "../eventSync/EventSyncService";
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 
@@ -159,12 +160,14 @@ export default class ParticipantTimeoutService {
             previousBlockOrSnapshot.block &&
             !previousBlockOrSnapshot.block.onChainTimestamp
         ) {
-            const recovery =
-                await sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                    previousBlockOrSnapshot.block.forkId,
-                    previousBlockOrSnapshot.block.height,
-                    previousBlockOrSnapshot.block.author
-                );
+            const recovery = await this.tryRecoverCalldata(
+                forkId,
+                blockHeight,
+                participantAddress,
+                isForced,
+                previousBlockOrSnapshot.block
+            );
+            if (!recovery) return;
 
             if (recovery.validationScheduled) {
                 this.logger.info(
@@ -252,12 +255,14 @@ export default class ParticipantTimeoutService {
         }
 
         // (race condition) check if current block posted on-chain
-        const recovery =
-            await sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                forkId,
-                blockHeight,
-                participantAddress
-            );
+        const recovery = await this.tryRecoverCalldata(
+            forkId,
+            blockHeight,
+            participantAddress,
+            isForced,
+            { forkId, height: blockHeight, author: participantAddress }
+        );
+        if (!recovery) return;
         // calldata in hand without a query means the pipeline is already in
         // flight -> re-check, never time out a participant who did post
         if (recovery.validationScheduled || recovery.blockCalldata) {
@@ -478,21 +483,11 @@ export default class ParticipantTimeoutService {
                 }
             }
         } catch (error) {
-            this.logger.warn(
-                "createTimeOutDispute - chain read failed; rechecking",
-                {
-                    forkId,
-                    blockHeight,
-                    participantAddress,
-                    error: errorMessage(error)
-                }
-            );
-            this.scheduleCheck(
+            this.recheckAfterFailedChainRead(
+                error,
                 forkId,
                 blockHeight,
                 participantAddress,
-                TIMEOUT_RECHECK_DELAY_MS,
-                CHAIN_READ_FAILED_RECHECK_REASON,
                 isForced
             );
             return;
@@ -534,6 +529,62 @@ export default class ParticipantTimeoutService {
 
         // Time has fully elapsed - create dispute immediately
         await sm.disputeManager.dispute(forkId);
+    }
+
+    /**
+     * Calldata recovery of `target` for this check. Its chain read throws on
+     * failure -> re-arm the check and return `undefined`, so a due timeout
+     * survives an RPC outage.
+     */
+    private async tryRecoverCalldata(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        isForced: boolean,
+        target: { forkId: ForkId; height: BlockHeight; author: Address }
+    ): Promise<BlockCalldataRecoveryResult | undefined> {
+        try {
+            return await this.stateManager.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                target.forkId,
+                target.height,
+                target.author
+            );
+        } catch (error) {
+            this.recheckAfterFailedChainRead(
+                error,
+                forkId,
+                blockHeight,
+                participantAddress,
+                isForced
+            );
+            return undefined;
+        }
+    }
+
+    private recheckAfterFailedChainRead(
+        error: unknown,
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        isForced: boolean
+    ): void {
+        this.logger.warn(
+            "tryTimeoutParticipant - chain read failed; rechecking",
+            {
+                forkId,
+                blockHeight,
+                participantAddress,
+                error: errorMessage(error)
+            }
+        );
+        this.scheduleCheck(
+            forkId,
+            blockHeight,
+            participantAddress,
+            TIMEOUT_RECHECK_DELAY_MS,
+            CHAIN_READ_FAILED_RECHECK_REASON,
+            isForced
+        );
     }
 
     // whether a dispute window on the fork opened before the timeout became valid

@@ -39,6 +39,8 @@ export interface SetupPayload {
  */
 export interface WorkerBootstrapMessage<T = SetupPayload> {
     threadName?: string;
+    /** The creating thread's config, applied before the worker builds its root. */
+    config?: Config;
     type: "connect";
     payload: T;
     /** The transferred raw MessagePort (platform-specific); adapted by the worker. */

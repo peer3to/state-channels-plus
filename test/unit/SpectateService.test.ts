@@ -1000,7 +1000,7 @@ describe("Unit: SpectateService", function () {
             // the recovery really happened: every commitment of the window the
             // call walked is in storage afterwards. dispute events are still
             // held and the observer's own reduction is still frozen, so
-            // ensureDisputesProcessed inside generateSyncPayload is the only
+            // the dispute recovery inside generateSyncPayload is the only
             // thing that could have stored them. without this the call could
             // return early before ever reaching the recovery and still pass.
             expect(
@@ -1025,16 +1025,18 @@ describe("Unit: SpectateService", function () {
             await restoreEvents(false);
         });
 
-        // no test: "reduce data unavailable -> refuse to serve" needs the local
-        // EVM mirror's inbound head to sit above what TS storage holds, because
-        // computeReductionLocally takes the reduced inbound head from the mirror
-        // (DisputeVerificationFacet.sol:109, channelBalances) while
-        // getReduceData walks TS storage. No flow produces that split:
-        // EventHandler.onInboundMessagesProcessed writes storage first and the
-        // mirror second, so the mirror is never ahead. The one route that could
-        // break the tie is onChannelStorageCleared, which moves the mirror's
-        // inbound head without storing the block - it needs a real on-chain
-        // clear to stage. The undefined outcome itself is pinned by
+        // no test: "reduce data unavailable -> refuse to serve" needs the
+        // responder's local diamond inbound head above its inbound storage
+        // (computeReductionLocally takes the reduced inbound head from the
+        // mirror, getReduceData walks storage) while it still holds every
+        // dispute of the window. `rpcStub.holdInboundMessageStorage` produces
+        // the split, but every dispute of the window names that inbound head,
+        // so a participant responder's own audit fails on the same missing run
+        // before it stores the dispute: its window read refuses first
+        // ("dispute window unavailable", the case below). A spectator persists
+        // disputes without auditing; staging one that follows the disputed
+        // window with a held inbound write is not in the harness yet. The
+        // undefined outcome itself is pinned by
         // "Unit: AgreementManager ... unrecoverable reduce run -> undefined".
         it.skip("reduce data unavailable for a disputed window → payload refused (needs a mirror ahead of storage)", function () {});
 
@@ -1053,7 +1055,7 @@ describe("Unit: SpectateService", function () {
                 });
 
             // blinded recovery: the missing dispute can never be recovered
-            const blinded = await h.rpcStub.failChainLogQueries(observerIndex);
+            const blinded = await h.rpcStub.hideChainLogs(observerIndex);
             let threw = "";
             let syncResult: unknown = "unset";
             try {

@@ -118,11 +118,7 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
                           )
                       }
                     : await this.remoteRpc.joinChannelService
-                          .requestJoinSignature(
-                              encodedSignedJoinChannel,
-                              String(expectedSnapshotHash),
-                              String(expectedForkId)
-                          )
+                          .requestJoinSignature(encodedSignedJoinChannel)
                           .request(participant, { timeoutMs });
                 const recovered = SignatureUtils.getSignerAddress(
                     encoded,
@@ -149,9 +145,7 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
 
     public async signJoinRequest(
         transport: NetworkTransport,
-        encodedSignedJoinChannel: string,
-        expectedSnapshotHash: Hash,
-        expectedForkId: ForkId
+        encodedSignedJoinChannel: string
     ): Promise<{ signature: Signature }> {
         const peerAddress = transport.peerAddress;
         if (!peerAddress) {
@@ -180,27 +174,19 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         if (joinChannel.channelId !== sm.channelId) {
             throw new Error("requestJoinSignature: channel mismatch");
         }
-        const [chainTime, rawSnapshot, thresholdParticipants] =
-            await Promise.all([
-                Clock.getBlockchainTime(),
-                sm.stateChannelManagerContract.getStateSnapshot(
-                    joinChannel.channelId
-                ),
-                sm.membershipService.getOnChainThresholdSet(
-                    String(joinChannel.channelId) as ChannelId
-                )
-            ]);
+        // No snapshot or fork check: the signature covers only the encoded
+        // join. The joiner's pins are separate submission arguments that the
+        // contract checks for the joiner.
+        const [chainTime, thresholdParticipants] = await Promise.all([
+            Clock.getBlockchainTime(),
+            sm.membershipService.getOnChainThresholdSet(
+                String(joinChannel.channelId) as ChannelId
+            )
+        ]);
         if (Number(joinChannel.deadlineTimestamp) < chainTime.timestamp) {
             throw new Error("requestJoinSignature: join expired");
         }
 
-        const snapshot = StateSnapshot.from(rawSnapshot);
-        if (String(snapshot.forkID) !== String(expectedForkId)) {
-            throw new Error("requestJoinSignature: fork mismatch");
-        }
-        if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
-            throw new Error("requestJoinSignature: snapshot mismatch");
-        }
         if (!sm.membershipService.includesSigner(thresholdParticipants)) {
             throw new Error(
                 "requestJoinSignature: local signer not in threshold"

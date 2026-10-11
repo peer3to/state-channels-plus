@@ -211,8 +211,7 @@ export async function assertStoredMalformedNetworkCopy() {
 }
 
 export async function assertOutsiderProofDoesNotAdmitCopy(
-    mode: "success" | "busy" | "failure" = "success",
-    failMembership = false
+    mode: "success" | "busy" | "failure" = "success"
 ) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
@@ -244,7 +243,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
     );
     await h
         .control(observer)
-        .stub.observeAdmission({ source: outsider.address, failMembership })
+        .stub.observeAdmission({ source: outsider.address })
         .request();
     await h.control(outsider).stub.holdSpectateResponses().request();
     const ordinarySync =

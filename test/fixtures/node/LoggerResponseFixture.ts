@@ -5,7 +5,6 @@ import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { createRoot } from "@/rpc/internal/createRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config } from "@/utils/config";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
 
 /** Add an actual second port between SDK roots to exercise cyclic gossip. */
@@ -41,7 +40,7 @@ export async function createLateLoggerChild(sdk: LoggerSdkFixture) {
             createRoot(ContractExecutorRoot, {
                 parent: host,
                 mode: "inline",
-                args: { config, customPrecompiles: [] }
+                args: { customPrecompiles: [] }
             }),
         (root) => {
             if (root instanceof ContractExecutorRoot) created = root;

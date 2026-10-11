@@ -39,8 +39,11 @@ Terminal-disposal cases share the existing single-disputer staging: one real com
 The SYNCED-leaver case also uses one real disputer: the leaver itself. It checks
 that this peer retained its successful dispute marker and that the reducing peer
 observed the commitment. After leave completion it waits for the reduction attempt
-to settle before recording membership reads. The zero-read and zero-submission
-oracles remain unchanged; sibling uploads cannot exhaust the evidence window first.
+to settle and asserts its own attempt resolved with the reduced fork the chain records,
+so the local install completed although peer 0's adoption dropped the leaver to SYNCED
+during it. It then records membership reads. The zero-read oracle and the zero-submission
+oracle (no reduce entered the held send and the leaver sent no multicall at all) remain;
+sibling uploads cannot exhaust the evidence window first.
 
 The held-send disposal case (staging in `test/fixtures/ReductionDisposalStaging.ts`) holds the reduce
 multicall through `holdReductionAttempt(0, "submit")`, waits until the send was entered and the detached

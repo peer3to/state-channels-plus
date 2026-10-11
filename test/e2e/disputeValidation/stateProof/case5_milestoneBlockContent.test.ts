@@ -208,9 +208,11 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             // turn and its block; on a loaded host they can outlast the
             // subjective window, and a block stamped back into its slot then
             // parks on every peer until a writer timeout follows. The larger
-            // agreement window keeps the staged block inside it.
+            // agreement window keeps the staged block inside it. The kill
+            // period must outlast three concurrent audits, the invalid one
+            // replayed over three tiers.
             await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { evidenceTime: 8, agreementTime: 8 }
+                timeConfig: { evidenceTime: 15, agreementTime: 8 }
             });
             const p2pTime = h.options.timeConfig?.p2pTime;
             if (p2pTime === undefined) {

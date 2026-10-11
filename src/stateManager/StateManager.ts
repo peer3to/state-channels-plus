@@ -10,7 +10,11 @@ import {
 import DisputeValidationService from "./dispute/DisputeValidationService";
 import { BlockIngestService, StoredBlockMergeService } from "./ingest";
 import ValidationService from "./ingest/ValidationService";
-import { LeaveChannelService, MembershipService } from "./membership";
+import {
+    ChannelJoinService,
+    LeaveChannelService,
+    MembershipService
+} from "./membership";
 import { ReductionManager } from "./reduction";
 import {
     SnapshotUpdateService,
@@ -123,6 +127,7 @@ class StateManager<
     readonly participantTimeoutService: ParticipantTimeoutService;
     readonly calldataPostingService: CalldataPostingService;
     readonly membershipService: MembershipService;
+    readonly channelJoinService: ChannelJoinService;
     readonly leaveChannelService: LeaveChannelService;
     private disposalPromise?: Promise<void>;
     private stoppingPromise?: Promise<void>;
@@ -258,6 +263,10 @@ class StateManager<
             this.logger
         );
         this.membershipService = new MembershipService(this.self, this.logger);
+        this.channelJoinService = new ChannelJoinService(
+            this.self,
+            this.logger
+        );
         this.leaveChannelService = new LeaveChannelService(
             this.self,
             this.logger
@@ -352,6 +361,7 @@ class StateManager<
 
         this.isDisposed = true;
         this.membershipService.resetEligibility();
+        this.channelJoinService.dispose();
         this.leaveChannelService.dispose();
         this.reductionManager.dispose();
 

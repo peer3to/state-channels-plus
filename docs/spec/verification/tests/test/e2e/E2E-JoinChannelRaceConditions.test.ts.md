@@ -16,8 +16,12 @@ advancement after the JOIN is consumed. The dispute cases assert the disputed-fo
 pending join carried into the reduced participant set, one dispute replaying a pending join before
 self-removal, top-ups by existing and pending members refused during the window (`topUpBalance` returns
 `false`, `totalDeposits` unchanged after reduction, both still `PARTICIPATING`), and stale-pin recovery
-without disposing the participant. The omitted-newest-join kill case is an `it.skip` tripwire: upload
-refuses a dispute anchored below the inbound head, so no kill is reachable. Oracles combine
+without disposing the participant. The omitted-newest-join case builds the pending joiner's own
+self-removal dispute with its real builder (premise: it replays the JOIN the chain names as its
+inbound head), drops that JOIN from the posted inbound run, anchors the dispute at the JOIN's
+predecessor, re-signs it and uploads it with calldata from the joiner: the chain refuses it with
+`RaceConditionDisputeInboundNotLatest(JOIN, predecessor)` and opens no window, so no commitment
+exists for an auditor to kill. Oracles combine
 decoded revert names, host-side status/storage reads, and on-chain snapshot, participant, pending,
 and deposit queries. The removed `forceInboundJoin` disputed-fork case was duplicate evidence: the
 named harness helper submits the same `joinChannel` contract entry. Countersignature collection is
@@ -32,6 +36,6 @@ owned by `test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts`.
 - `join on disputed fork reverts`: REQ-ENFADM-2-K6K9SP.T1.P3, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P5
 - `pending joiner participates after dispute reduction`: REQ-MSG-11-VS3ZGC.T2.P1
 - `one dispute replays a pending join before self-removing that joiner`: REQ-DISPUTE-PIPE-7-76N72X.T1.P1
-- `omitting the newest pending join from a self-removal dispute is killed`: none
+- `omitting the newest pending join from a self-removal dispute is refused at upload`: REQ-DISPUTE-PIPE-7-76N72X.T1.P4
 - `refuses existing and pending participants' top-ups during a dispute and converges after reduction`: REQ-ENFADM-2-K6K9SP.T1.P7, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P25
 - `returns false for a stale top-up guard without aborting participation`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P16

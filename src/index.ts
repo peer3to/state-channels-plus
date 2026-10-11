@@ -69,7 +69,13 @@ export {
     NetworkTransport,
     getChecksumAddress
 };
+// Consumers call createConfig in their main thread before they create loggers
+// or roots; every worker root inherits that config at bootstrap.
+export { createConfig } from "@/utils/config";
+export type { Config } from "@/utils/config";
 export { DisconnectPolicy } from "@/DisconnectPolicy";
+export { TransportType } from "@/transport/TransportType";
+export type { OpenConnection } from "@/transport/TransportType";
 export { Status, isCommittedParticipantStatus } from "@/types";
 export type { ChannelId } from "@/types";
 export type { default as P2pInstance } from "@/evm/P2pInstance";
@@ -85,7 +91,6 @@ export {
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
 export { default as ClientChainSigner } from "@/evm/signer/ClientChainSigner";
 export type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
-export type { OwnJoinState } from "@/stateManager/membership/MembershipService";
 export type {
     SetupPayload,
     SerializedContract,

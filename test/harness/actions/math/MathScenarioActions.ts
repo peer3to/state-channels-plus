@@ -27,57 +27,6 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     /**
-     * A committed settled-path dispute whose reduce moves the inbound head
-     * past `laggingIndex`'s store. Its handler is held, so nothing - the
-     * on-demand recovery included - can close the gap until release.
-     */
-
-    async stageDisputeOverHeldInboundGap({
-        laggingIndex
-    }: {
-        laggingIndex: number;
-    }) {
-        await this.harness.setup(3, {
-            timeConfig: INBOUND_GAP_TIME_CONFIG
-        });
-        await this.harness.lifecycle.openChannel();
-        const forkId = this.harness.activeForkId!;
-        await this.harness.transition.advanceState({
-            count: 2,
-            waitForFinalization: true
-        });
-        await this.harness.assert.sync.peersInSyncWait();
-
-        const held =
-            await this.harness.rpcStub.holdInboundMessageEvents(laggingIndex);
-        const observers = this.harness.peers
-            .map((peer) => peer.index)
-            .filter((index) => index !== laggingIndex);
-        // a top-up of an existing participant keeps the head
-        // final-by-everyone -> the settled path posts no auditing data, so
-        // nothing back-fills the block this peer never received
-        await this.topUpAndObserve(observers);
-
-        this.harness.event.resetEventSpies();
-        this.harness.contextApi.captureOriginalFork();
-
-        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
-            .index;
-        const disputerIndex = observers.find(
-            (index) => index !== offenderIndex
-        )!;
-        await this.harness.byzantine.submitInvalidStateTransitionBlock(
-            offenderIndex
-        );
-        await this.harness.assert.dispute.initiatedAndCommitedWait({
-            peersIndices: [disputerIndex],
-            expectedCount: 1,
-            initiatedWithAuditingData: false
-        });
-        return { forkId, held, disputerIndex };
-    }
-
-    /**
      * A committed settled-path dispute on a fork whose chain inbound
      * head sits above `laggingIndex`'s store: the top-up of an existing
      * participant keeps the head final-by-everyone, so no auditing data
@@ -728,15 +677,27 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.transition.advanceState({ waitForSync: false });
     }
 
-    async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
+    /**
+     * Three participants author at least `initialTransitions` blocks while a
+     * fourth peer syncs as a spectator; returns that synced spectator.
+     */
+    async syncSpectator(
+        initialTransitions: number = 4,
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+        }
+    ): Promise<TestPeer> {
         const h = this.harness;
         await h.lifecycle.start(3, 0, {
             timeConfig: {
                 p2pTime: 5,
                 agreementTime: 4,
                 chainFallbackTime: 2,
-                evidenceTime: 4
-            }
+                evidenceTime: 4,
+                ...options?.timeConfig
+            },
+            configOverrides: options?.configOverrides
         });
 
         const { peer: joiner } = await h.join.addSpectatorAuthoring({
@@ -745,6 +706,18 @@ export class MathScenarioActions extends ScenarioActions {
             maximumBlocks: initialTransitions + 16
         });
         await h.assert.sync.peersInSyncWait();
+        return joiner;
+    }
+
+    async syncSpectatorAndPrepareJoin(
+        initialTransitions: number = 4,
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+        }
+    ) {
+        const h = this.harness;
+        const joiner = await this.syncSpectator(initialTransitions, options);
 
         const stateSnapshot = await h.channelManager.getStateSnapshot(
             h.channelId
@@ -776,14 +749,13 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig
         });
 
-        // Spectating is asynchronous to the channel: participants author on
-        // their own cadence and never wait for a joiner's spawn/sync. The
-        // bounded spawn keeps them authoring through the spawn and sync, so
-        // only the join RPCs and one automined transaction sit inside the
-        // final window before the promotion block. A blocking spawn between
-        // blocks would idle past p2pTime + agreementTime and get the
-        // promotion block rejected (its timestamp is capped at
-        // prev + p2pTime), disputing the fork.
+        // Spectating and joining are asynchronous to the channel:
+        // participants author on their own cadence and never wait for a
+        // joiner's spawn, sync or join. The harness keeps them authoring
+        // through all three. The join RPCs and the on-chain join take
+        // seconds on a loaded farm; an idle writer slot across them would
+        // pass p2pTime + agreementTime and get the next block rejected (its
+        // timestamp is capped at prev + p2pTime), disputing the fork.
         const { peer: joiner } = await this.harness.join.addSpectatorAuthoring({
             authoringPeerIndices: Array.from(
                 { length: initialPeers },
@@ -794,28 +766,42 @@ export class MathScenarioActions extends ScenarioActions {
         });
         await this.harness.assert.sync.peersInSyncWait();
 
-        await this.harness.join.joinChannelWait({
-            joiner
-        });
-        const joinerStatus = await this.harness
-            .control(this.harness.getPeer(joiner.index))
-            .query.getStatus()
-            .request();
-        if (joinerStatus !== Status.PENDING_PARTICIPANT) {
-            throw new Error(
-                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
-            );
-        }
-
+        // Handlers attached at once: the join promise is never unobserved.
+        const join: { isSettled: boolean; failure?: { error: unknown } } = {
+            isSettled: false
+        };
+        const joining = this.harness.join.joinChannelWait({ joiner }).then(
+            () => {
+                join.isSettled = true;
+            },
+            (error: unknown) => {
+                join.failure = { error };
+                join.isSettled = true;
+            }
+        );
         // The block that carries the join is the first one whose author has
         // already received the join's inbound event; author until the joiner
         // is promoted instead of assuming a fixed block count.
-        await this.harness.transition.keepAuthoringUntilPeersStatus({
-            peerIndices: [joiner.index],
-            status: Status.PARTICIPATING,
+        await this.harness.transition.keepAuthoringUntil({
+            until: async () => {
+                if (join.failure) throw join.failure.error;
+                if (!join.isSettled) return false;
+                const joinerStatus = await this.harness
+                    .control(this.harness.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request();
+                if (joinerStatus === Status.PARTICIPATING) return true;
+                if (joinerStatus !== Status.PENDING_PARTICIPANT) {
+                    throw new Error(
+                        `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
+                    );
+                }
+                return false;
+            },
             waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
             maximumBlocks: 20
         });
+        await joining;
 
         if (postPromotionTransitions > 0) {
             await this.harness.transition.advanceState({

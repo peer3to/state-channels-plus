@@ -114,6 +114,15 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
     }
 
+    /** Ordinary lobby joins on `topic` that a leave has marked. */
+    public getLeftLobbyJoinCount(topic: string): number {
+        const normalizedTopic =
+            this.p2pManager.localRpc.lobbyMatchingService.validateTopic(topic);
+        return [...this.p2pManager.p2pSigner.lobbyJoins].filter(
+            (join) => join.topic === normalizedTopic && join.left
+        ).length;
+    }
+
     public getJoinedHolepunchTopics(): string[] {
         return this.p2pManager.holepunch.topics.map(
             (topic) => `0x${topic.toString("hex")}`

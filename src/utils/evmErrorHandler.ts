@@ -169,6 +169,25 @@ export async function multicallLastCallRevertData(
     return undefined;
 }
 
+/**
+ * Whether a failed submission is proven not to have landed: the chain named
+ * a reason (`custom`, the decoded custom error of `error`, or null), or the
+ * transaction was mined and its receipt failed. Any other failure (no
+ * receipt, no decoded revert) leaves the outcome uncertain.
+ */
+export function isProvenSubmissionFailure(
+    error: unknown,
+    custom: CustomEvmError | null
+): boolean {
+    if (custom !== null) return true;
+    return (
+        ethers.isError(error, "CALL_EXCEPTION") &&
+        error.receipt !== null &&
+        error.receipt !== undefined &&
+        Number(error.receipt.status) === 0
+    );
+}
+
 export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }

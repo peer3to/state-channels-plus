@@ -4,7 +4,7 @@
 > **Engineer verification:** Pending.
 > **Status:** Draft.
 > **Scope:** The small marker modules: chain-observation progress, the force-exit intent flag, and
-> the force-join submission marker. Shared storage rules: [durability.md](./durability.md).
+> the force-join record. Shared storage rules: [durability.md](./durability.md).
 
 ## Contents
 
@@ -22,8 +22,10 @@ Three markers that carry a node's position or intent across protocol phases:
 - **Event-sync progress.** Per channel, the latest base-layer block number whose events the node has
   processed — where chain observation resumes after a gap or restart.
 - **Force-exit intent.** A local flag that the node intends to exit through the dispute path.
-- **Force-join marker.** The base-layer block height at which the node submitted its join, kept so
-  the node can detect non-inclusion and escalate to forced inclusion
+- **Force-join record.** The node's own submitted join: its submission height, its authorization
+  deadline, and its force-join bounds once the join is observed on chain, kept so the node can detect
+  non-inclusion and escalate to forced inclusion. Each submission has its own id; an update for an
+  earlier submission changes nothing
   ([cross-layer-messages.md](../settlement/cross-layer-messages.md)).
 
 ## Requirements and invariants
@@ -33,8 +35,9 @@ store of a lower block number than the retained one leaves the retained value. P
 _processed_, not merely observed, events — the producer stores it only after handling, and it never
 advances past a block with an event whose handling failed or is incomplete.
 
-**<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-join marker is set on submission, read
-for non-inclusion detection, and cleared explicitly; clearing returns it to its absent state. The
+**<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-join record is started on submission, read
+for non-inclusion detection, updated only for the current submission, and cleared explicitly when the
+join ends; clearing returns it to its absent state. The
 force-exit flag is one-way in the designed lifecycle: off initially ("no exit intent"), set on when
 the node commits to a self-removal exit, and never retracted — from that point every dispute the
 node raises declares self-removal. Absent/off means "no intent / no pending submission", and
@@ -50,7 +53,7 @@ consumers MUST NOT infer intent from any other module.
 
 ## Security considerations
 
-The markers are local knowledge with protocol consequences: lost force-join markers delay
+The markers are local knowledge with protocol consequences: a lost force-join record delays
 non-inclusion detection; skipped observation progress misses events that other defenses assume were
 seen. Neither is remotely writable; the risk is loss and mis-advancement, addressed by monotonicity
 and the processed-only rule.
@@ -62,7 +65,7 @@ and the processed-only rule.
 | Plan item                                                     | Requirements / invariants                                          | Setup and stimulus                                                          | Expected result                                                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <a id="req-rmstore-1-bwkvbg.t1"></a>`REQ-RMSTORE-1-BWKVBG.T1` | [`REQ-RMSTORE-1-BWKVBG`](progress-markers.md#req-rmstore-1-bwkvbg) | Store progress values increasing, repeated, and regressing across channels. | Monotone per channel; regressions ignored; channels independent.    | <a id="req-rmstore-1-bwkvbg.t1.p1"></a>`REQ-RMSTORE-1-BWKVBG.T1.P1` — advance; <a id="req-rmstore-1-bwkvbg.t1.p2"></a>`REQ-RMSTORE-1-BWKVBG.T1.P2` — regression ignored; <a id="req-rmstore-1-bwkvbg.t1.p3"></a>`REQ-RMSTORE-1-BWKVBG.T1.P3` — per-channel isolation; <a id="req-rmstore-1-bwkvbg.t1.p4"></a>`REQ-RMSTORE-1-BWKVBG.T1.P4` — an event whose handling fails leaves the marker below its block, and the next catch-up re-read delivers it again; <a id="req-rmstore-1-bwkvbg.t1.p5"></a>`REQ-RMSTORE-1-BWKVBG.T1.P5` — an event still being handled holds the marker while a later block completes; the marker moves only after that handling ends. |
-| <a id="req-rmstore-2-y2t1pg.t1"></a>`REQ-RMSTORE-2-Y2T1PG.T1` | [`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) | Exercise each marker's lifecycle, including reads before any set.           | Lifecycles honored; defaults distinct and read back before any set. | <a id="req-rmstore-2-y2t1pg.t1.p1"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P1` — force-exit defaults off; set-on reads back on; <a id="req-rmstore-2-y2t1pg.t1.p2"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P2` — read before set; <a id="req-rmstore-2-y2t1pg.t1.p3"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P3` — repeated force-join clear idempotent; <a id="req-rmstore-2-y2t1pg.t1.p4"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P4` — set/read/clear force-join marker.                                                                                                                                                                                                                                  |
+| <a id="req-rmstore-2-y2t1pg.t1"></a>`REQ-RMSTORE-2-Y2T1PG.T1` | [`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) | Exercise each marker's lifecycle, including reads before any set.           | Lifecycles honored; defaults distinct and read back before any set. | <a id="req-rmstore-2-y2t1pg.t1.p1"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P1` — force-exit defaults off; set-on reads back on; <a id="req-rmstore-2-y2t1pg.t1.p2"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P2` — read before set; <a id="req-rmstore-2-y2t1pg.t1.p3"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P3` — repeated force-join record clear idempotent; <a id="req-rmstore-2-y2t1pg.t1.p4"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P4` — start/read/update/clear the force-join record; an update for an earlier submission changes nothing.                                                                                                                                                         |
 
 ## Future Work
 

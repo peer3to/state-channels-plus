@@ -6,7 +6,6 @@ import { createRoot } from "@/rpc/internal/createRoot";
 import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import type { CustomRpcContext } from "@/rpc/network/registry";
-import { config } from "@/utils/config";
 
 export type OwnerContextRecord = {
     owner: AInternalRpcRoot;
@@ -35,7 +34,7 @@ export class OwnerContextRpc extends ReadyLifecycleRpc {
         this.child = createRoot(ContractExecutorRoot, {
             parent: context.owner,
             mode: "inline",
-            args: { config, customPrecompiles: [] }
+            args: { customPrecompiles: [] }
         });
         // Observed through the record; construction does not await startup.
         this.child.catch(() => undefined);

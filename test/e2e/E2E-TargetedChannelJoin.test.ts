@@ -123,11 +123,11 @@ describe("E2E: Targeted channel join", function () {
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
             exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exit;
-        await leave;
+        await h.event.waitUntilLeftChannel(leaver.index);
         expect(
             (await h.channelManager.getParticipants(channelId)).includes(
                 leaver.address
@@ -152,9 +152,7 @@ describe("E2E: Targeted channel join", function () {
         expect(
             await h.control(freshPeers[0]).query.getChannelId().request()
         ).to.equal(nextChannelId);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await h.event.waitUntilDisposed(leaver.index);
     });
 
     it("unopened target without autoOpen and with balance returns false without discovery", async function () {

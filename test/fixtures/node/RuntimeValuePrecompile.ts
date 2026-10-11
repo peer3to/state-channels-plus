@@ -7,7 +7,6 @@ import type {
 import { createRoot } from "@/rpc/internal/createRoot";
 import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
-import { config } from "@/utils/config";
 import type { RuntimeProbeRoot } from "@test/fixtures/runtimeRpc/probe/runtime/RuntimeProbeService";
 import { AbiCoder, getBytes } from "ethers";
 import path from "node:path";
@@ -37,7 +36,7 @@ const createRuntimeValuePrecompile: EvmCustomPrecompileFactory<{
         parent: owner,
         mode: "worker",
         workerUrl: path.join(__dirname, "RuntimeRpcExecutorEntry.ts"),
-        args: { config, customPrecompiles: [] }
+        args: { customPrecompiles: [] }
     });
     if (!owner.children.has(child))
         throw new Error("Precompile child is not attached to its owner");

@@ -7,15 +7,11 @@ import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 import type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
 import type InternalTransport from "@/transport/InternalTransport";
 import type { Logger } from "@/utils";
-import type { Config } from "@/utils/config";
 
 export type ContractExecutorInitialization = {
     customPrecompiles: Array<
         Omit<EvmCustomPrecompileManifest, "address"> & { address: string }
     >;
-    // Config the worker re-establishes so logging and timing use the same
-    // thresholds as the rest of the runtime.
-    config: Config;
     // The host Clock's adjustment from wall time to estimated chain
     // time; the worker keeps the same perception as ambient block time.
     // Absent for a host without a Clock (time zero, as before).

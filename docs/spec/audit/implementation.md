@@ -42,6 +42,54 @@ Luka deferred SO1 and its complete local/on-chain reduction gas investigation ou
 Successful on-chain replay must be established in the follow-up. Local exhaustion alone does not prove
 on-chain impossibility, and this PR does not change reduction failure handling.
 
+## Join and top-up retry after a snapshot move — 2026-10-11
+
+Luka's review-six XO1 decision makes the automatic snapshot-race retry one logical join, encapsulated
+inside [ChannelJoinService](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md).
+The public promise stays pending during the internal retry; the refused attempt exposes no transient
+`SYNCED`, membership-end event or final failure. Retire its deadline and stale checks before the fresh
+collection. The one-retry bound, same balance and existing final outcomes remain unchanged. This is a
+deep-module ownership decision, not a new public retry API or feature-specific RPC recovery path.
+
+`runJoin` awaits fresh collection without settling the public promise; the refused attempt's record is
+marked retrying, so join checks skip it, and its timer is cancelled; after collection a disposed runtime or
+a record that is no longer current submits nothing ([`FIND-JOIN-RETRY-LIFETIME-1-447RDE`](open-findings.md#find-join-retry-lifetime-1-447rde)). A refusal for a threshold
+set a landed join widened (`ErrorJoinChannelConfirmationNotThresholdSigned`) takes the same retry. After
+its own force-join dispute starts, `checkJoin` runs `checkJoinDropped`, which drops an observed join that
+both the local state and the chain omit (review six FR1). The owner cases and their mapped tests passed in
+the recorded full SDK gate.
+
+Review 8 RO1 (2026-10-11): a check already past its entry guard could still end the join after the record
+became retrying, because its continuation checked only the record id. `runJoin` now marks the refused record
+retrying and cancels its timer before the retry-eligibility read, and every check, timer callback and record
+update re-reads that the record is current and not retrying (`isActive`) after its awaited reads. Implemented;
+the interleaving case is added in this pass and its verification is pending the next gate.
+
+`hasSnapshotMovedToStoredOne` throws on a failed read under the SDK-wide RPC assumption. A failed fresh
+collection returns `false` with no second submission and ends the join `SYNCED` without abort; top-up
+failure keeps participation. A second submission failure is final under its existing classification.
+Uncertain submissions are not retried. No code or test was changed by this decision. The
+intermediate-state and lifetime cases ([`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P74`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)–`.P77`) are mapped to
+tests that passed in the recorded full SDK gate.
+Owning requirement: [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v).
+
+## Live blocks wait for the initial sync — 2026-10-11
+
+Luka decided review 7 FO1: a live block that a peer sends while the runtime runs its initial sync is
+retained, not dropped for later redelivery. The new `WaitForSyncStatusGuard` in the `StateTransitionService`
+RPC guard chain holds such an RPC until the status is `SYNCED`, `PENDING_PARTICIPANT` or `PARTICIPATING`, then
+runs it again through the whole guard chain and normal validation and fork handling, in arrival order; the
+sender does not resend it. A retained block neither advances state nor starts a second sync, and the initial
+sync applies its own blocks through the ingest service, outside this RPC path. An abort drops what is
+retained. The `BlockQueueManager` branch that dropped a different-fork block while `OPENED` is removed. This
+is a new guard, not `DeferredAdmissionGuard`, and it inherits none of its expiry or transport policies.
+Implemented; the specification sentence, owner cases and tests are added in this pass, and verification is
+pending the next gate.
+
+## Local discovery dial marks per session — 2026-10-09
+
+The [local adapter](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) keeps its process-wide in-flight dial set per manager for cross-topic de-duplication. Each mark now records the dial attempt that owns it, and the mark is also recorded in the discovery session that made it. A session's leave removes the marks its dials still own. Before this change, the mark of a dial still in flight survived the leave until that dial's socket closed, so a later observation of the topic could not dial the peer until then (the P32 defect). Clearing the mark at leave opened a new window: the old dial's late close could delete a mark that a newer session had set for its own dial, and one more dial to the peer could then start on another topic before the first one authenticated. Dial ownership (2026-10-10) closes that window: a close or a leave removes a mark only while its own attempt still owns it. A peer that is really connected is still refused by the open-connection and live-profile checks, so no duplicate live connection results. Component cases [`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17`](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5) (a later observation dials while the left dial's close lags; also [`REQ-LOBBY-9-N894C0.T1.P32`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p32)) and `.P18` (the left dial's late close keeps the newer mark, and a third topic starts no second dial; also [`REQ-LOBBY-9-N894C0.T1.P33`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p33)) cover this. Both fail on the code before the respective change. A public lobby rematch end-to-end case with a held close is not added: holding the close needs inline mode and a paused private socket, and the component cases drive the same `joinDiscoveryKey`/`leaveDiscoveryKey` path the lobby uses.
+
 ## Local discovery endpoint replacement
 
 The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. Pending-dial admission spans only the currently joined topic sessions: a leave drops its session's pending-dial marks, so a rejoin dials before the left dial's socket finishes closing ([`FIND-DISCOVERY-2-0FP84C`](open-findings.md#find-discovery-2-0fp84c)). See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Historical cost run 435 and FIFO (`-w 6`) run 436 were reported to pass all 3,405 tasks, including Forge and both browser gates, with no starvation or infrastructure retries. Their exact source SHA has not been established; they are not evidence that the current PR head passes. Subsequent runner and dispute-test changes require fresh validation.
@@ -646,7 +694,7 @@ floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse
 and in [security-assessment.md](security-assessment.md#local-evm-call-gas--2026-09-26).
 
 **Evidence memo.** [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) owns it
-(`shouldAddOwnEvidence`, `forgetEvidenceComparison`); [EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)
+(`shouldAddOwnEvidence`, `clearCache`); [EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)
 only calls them from `onDisputeCommitted`, `onDisputeKilled` and `onDisputeReducedResultCommitted`.
 `didIDispute` stays first; a kill drops the fork's stored comparison; a comparison ended by partial
 own auditing data is not stored; the reduced result prunes the entry; concurrent audits share one

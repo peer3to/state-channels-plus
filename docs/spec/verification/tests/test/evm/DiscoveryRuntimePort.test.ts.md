@@ -5,12 +5,19 @@ Exercises: [P2pRuntimeHostRoot.ts](../../../../implementation/source/src/rpc/int
 
 ## Overview
 
-These cases drive the public signer/runtime boundary. They prove input validation occurs before lifecycle mutation, the exact serializable topic and options reach the host, matching-phase leave returns true and settles the pending join, post-handoff leave returns false without cancelling negotiation, optional timeout semantics cross the port, a selected channel cannot overlap discovery, and matching chains into negotiation without a client-side internal call.
+These cases drive the public signer/runtime boundary. They prove input validation occurs before lifecycle mutation, the exact serializable topic and options reach the host, matching-phase leave returns true and settles the pending join, a leave before matching or during the handoff waits for the join and returns true when it ends with no channel and false when its negotiation opens a channel, a leave of a topic with no ordinary join returns false, optional timeout semantics cross the port, a selected channel cannot overlap discovery, and matching chains into negotiation without a client-side internal call.
 The worker direct-join case fails the join receipt through the worker API and asserts the `false` result,
 restored `SYNCED` status, and a live runtime; it injects no pending fault, so the fault-interleaving
 permutation stays with the end-to-end participant lifecycle suite. The lobby leave and timeout cases prove
 port forwarding; the service-level leave and timeout permutations are owned by the `LobbyMatchingService`
 suite, which asserts them on the service directly.
+The open-connections case reads the client signer's snapshot across the runtime port after a lobby
+connection, then subscribes through `p2pInstance.events` and closes every peer with
+`disconnectFromPeers`, an expected close, until the client receives an empty set.
+The authored-leave fallback cases fail every snapshot post of the leaver and keep the remaining
+participants authoring until the leave watchdog's self-removal dispute, so the fallback runs after the
+exit block with no idle writer timed out. The leave returns at once; the cases wait for `onLeftChannel`
+(or the runtime's disposal after it), and a stopped leave is asserted as a fatal detached error.
 The pending-participant leave case authors through `keepAuthoringUntil` until the joiner is promoted, since the
 block that carries the join is the first one whose author has already received the join's inbound event.
 
@@ -48,25 +55,26 @@ block that carries the join is the first one whose author has already received t
 - `matching cancellation returns true and settles false before acceptance`: none
 - `matching cancellation returns false after acceptance`: none
 - `targeted connect starts fixed-ID negotiation from the returned match`: none
-- `targeted cancellation and leaveLobby do not cross-cancel`: none
+- `targeted cancellation and leaveLobby do not cross-cancel`: REQ-LOBBY-9-N894C0.T1.P30
+- `a leave of a targeted connect's derived topic reports false and does not cancel the targeted attempt`: REQ-LOBBY-9-N894C0.T1.P31
 - `manifest-loaded custom RPC filter rejects an authenticated peer before matching`: none
+- `reports the open connections and their changes to the client across the runtime port`: REQ-SDK-ARCH-7-H64K87.T1.P5, REQ-SDK-ARCH-7-H64K87.T1.P7
 - `internal leave route completes without disposing the host runtime`: REQ-TJOIN-6-0HEVYH.T1.P5
 - `public leave immediately disposes an attached NOT_OPENED runtime`: REQ-TJOIN-7-NNGTAY.T1.P2, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P1
 - `public leave immediately disposes a synced observer runtime`: REQ-TJOIN-7-NNGTAY.T1.P1, REQ-LIF-10-QR8NQ9.T1.P3
 - `participating public leave emits leave turn, settles removal, and disposes once`: REQ-TJOIN-7-NNGTAY.T1.P3, REQ-TJOIN-7-NNGTAY.T1.P7, REQ-LIF-10-QR8NQ9.T1.P1, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P2
-- `outer disposal failure rejects leave after the settled runtime becomes terminal`: none
+- `outer disposal failure after the settled leave is a detached error`: none
 - `a reduction that drops the leaver keeps its status until the chain records the removal`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P9, REQ-LIF-10-QR8NQ9.T1.P6
 - `failed fast snapshot post falls back to a settled self-removal dispute`: REQ-LIF-10-QR8NQ9.T1.P2
 - `leave watchdog starts a dispute carrying self-removal with no new blocks`: REQ-TJOIN-7-NNGTAY.T1.P6, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P5
-- `authored exit cancels the recorded watchdog and enters exit-authored`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P7
+- `an authored exit keeps the one leave watchdog armed until the exit settles`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P31
 - `pending leave with the signer still local makes no chain membership read`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P8
 - `pending terminal leave rejects joinLobby`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P9
 - `pending terminal leave rejects joinChannel`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P10
 - `pending terminal leave rejects topUpBalance`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P11
 - `pending terminal leave rejects collectJoinChannelConfirmation`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P12
-- `leave watchdog rejects without a dispute marker`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P13, REQ-TJOIN-7-NNGTAY.T1.P9
-- `leave watchdog rejects after the evidence period expires`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14, REQ-TJOIN-7-NNGTAY.T1.P10
-- `fixed N plus one block bound starts the same self-removal dispute`: REQ-TJOIN-7-NNGTAY.T1.P5, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P4
+- `leave watchdog dispute that loses the evidence race keeps the leave waiting with no error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14, REQ-TJOIN-7-NNGTAY.T1.P10
+- `more than N plus one blocks before the leaver's exit start no self-removal dispute and the exit settles the leave`: REQ-TJOIN-7-NNGTAY.T1.P5, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P4
 - `pending participant keeps one leave operation through promotion and exit`: REQ-TJOIN-7-NNGTAY.T1.P4, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P3
 - `rejects invalid join input before changing lifecycle state`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P1, REQ-LOBBY-1-PZTPKD.T1.P3
 - `forwards the caller topic and resolves pending discovery on explicit leave`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P2
@@ -74,19 +82,15 @@ block that carries the join is the first one whose author has already received t
 - `targeted connect leaves an unmatched ordinary lobby to its owner`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P10
 - `settles and cleans the previous lobby before replacement entry`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P4, REQ-LOBBY-9-N894C0.T1.P4
 - `forwards an explicit match timeout while the default remains caller-controlled`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P7
-- `does not let leaveLobby cancel negotiation after matching handoff`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P8, REQ-LOBBY-9-N894C0.T1.P10, REQ-NEG-4-ZQ0985.T1.P9
+- `a leave during the matching handoff waits for the negotiation and reports false when it opens a channel`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P8, REQ-LOBBY-9-N894C0.T1.P10, REQ-NEG-4-ZQ0985.T1.P9
 - `ends a lobby join left during the handoff when its negotiation then fails`: UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P1
 - `keeps a handoff leave when a second join on the same signer is rejected`: UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P2
 - `matches a handoff leave across topic letter case and keeps it after a leave of another topic`: UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3
 - `ends a lobby join left before its matching started`: REQ-LOBBY-9-N894C0.T1.P28
 - `joinLobby starts ordinary negotiation from the returned match`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P6
 - `settles joinLobby when the runtime is disposed after local signing`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9, REQ-NEG-4-ZQ0985.T1.P11
-- `disposal rejects leave while a watchdog upload is held and its late completion cannot resettle leave`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
-- `authored leave fast fallback rejects on missing-marker`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16, REQ-LIF-10-QR8NQ9.T1.P7, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P22
-- `authored leave fast fallback on evidence-expired awaits settlement and resolves on the reduced fork`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17, REQ-LIF-10-QR8NQ9.T1.P8
-- `authored leave slow fallback rejects on missing-marker`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P18, REQ-LIF-10-QR8NQ9.T1.P9
-- `authored leave slow fallback on evidence-expired awaits settlement instead of rejecting`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P19, REQ-LIF-10-QR8NQ9.T1.P10
-- `authored leave slow fallback settles through one dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P20, REQ-LIF-10-QR8NQ9.T1.P11
-- `exit fallback failure ignores absent and awaiting-exit operations`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P21
+- `disposal during a held watchdog upload stops the runtime and the late completion reports nothing`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
+- `authored leave watchdog fallback is fatal on unrecognized-upload-failure`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16, REQ-LIF-10-QR8NQ9.T1.P7
+- `authored leave watchdog fallback on evidence-expired waits for the reduction and emits onLeftChannel`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17, REQ-LIF-10-QR8NQ9.T1.P8, REQ-TJOIN-7-NNGTAY.T1.P10
 
-The held-watchdog disposal case retains the actual inline test endpoint before disposal. After disposal it reads and releases that recorder through the retained endpoint, without sending new network RPCs through the disposed P2PManager. The pending leave still rejects once, and late completion cannot resettle it.
+The held-watchdog disposal case retains the actual inline test endpoint before disposal. After disposal it reads and releases that recorder through the retained endpoint, without sending new network RPCs through the disposed P2PManager. No `onLeftChannel` fires and the late completion adds no detached error.

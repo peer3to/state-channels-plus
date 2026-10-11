@@ -6,6 +6,7 @@ import { RemoteRoot, childDisposedError } from "./RemoteRoot";
 import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
+import { config } from "@/utils/config";
 import type { Logger, SharedLoggerContext } from "@/utils/logging/Logger";
 import { runCleanup } from "@/utils/runCleanup";
 import { createTransferableChannel } from "@platform/p2pRuntimeChannel";
@@ -320,6 +321,7 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
                 {
                     type: "connect",
                     payload: options.args,
+                    config,
                     port: transferablePort
                 } satisfies WorkerBootstrapMessage<TArgs>,
                 [transferablePort]
@@ -430,8 +432,11 @@ export function rootStartContext(
 
 /** Worker entries explicitly select the root to initialize. */
 export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
-    entry: RootConstructor<TRoot, TArgs, TLocal>
+    entry: RootConstructor<TRoot, TArgs, TLocal>,
+    options?: { threadName?: string }
 ): void {
+    // every log line of this worker names it; unnamed it logs as "main"
+    if (options?.threadName) globalThis.threadName = options.threadName;
     onRootBootstrap<TArgs>(async (message) => {
         const port = adaptTransferredPort(message.port);
         let receivingRoot: AInternalRpcRoot | undefined;

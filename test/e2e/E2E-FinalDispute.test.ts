@@ -88,7 +88,7 @@ describe("E2E: final dispute resolution", function () {
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
             exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
         });
-        const leave = leaver.p2pInstance.leaveChannel();
+        leaver.p2pInstance.leaveChannel();
 
         const staged = await h.dispute.submitFinalDispute({
             maliciousPeerIndex
@@ -174,17 +174,13 @@ describe("E2E: final dispute resolution", function () {
 
         // The leave settles only after the exit snapshot lands on-chain; the
         // remaining honest peers keep the writer slot alive meanwhile.
-        let leaveSettled = false;
-        const settledLeave = leave.then(() => {
-            leaveSettled = true;
-        });
         await h.transition.keepAuthoringUntil({
-            until: () => leaveSettled,
+            until: () => leaver.eventSpies.onLeftChannel?.called === true,
             waitForPeers: remaining,
             excludePeerIndices: [leaver.index],
             maximumBlocks: 20
         });
-        await settledLeave;
+        await h.event.waitUntilLeftChannel(leaver.index);
 
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(

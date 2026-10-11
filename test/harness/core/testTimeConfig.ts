@@ -1,8 +1,11 @@
 // @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
 import { TimeConfig, firstBlockGrace } from "@/types";
 
+// p2pTime 5: under load a staging step (a join, a snapshot post) can idle
+// the table longer than p2pTime + agreementTime, and the next block then
+// fails the receivers' time check.
 export const MIN_TEST_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
-    p2pTime: 2,
+    p2pTime: 5,
     agreementTime: 3,
     chainFallbackTime: 3,
     evidenceTime: 6

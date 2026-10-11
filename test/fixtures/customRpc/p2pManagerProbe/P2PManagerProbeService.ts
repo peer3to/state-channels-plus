@@ -25,7 +25,7 @@ import type Rpc from "@/rpc/Rpc";
 import { BlacklistStorage } from "@/storage/BlacklistStorage";
 import { HolepunchTransport, WebRTCTransport } from "@/transport";
 import NetworkTransport from "@/transport/NetworkTransport";
-import { TransportType } from "@/transport/TransportType";
+import { TransportType, type OpenConnection } from "@/transport/TransportType";
 import { Status } from "@/types";
 import type { Address } from "@/types/types";
 import type { Bytes } from "@/types/types";
@@ -163,6 +163,12 @@ export type BulkPenaltyProbe = {
 
 export type ConnectedPeerFallbackProbe = {
     connectedPeers: string[];
+};
+
+export type ConnectionsChangedProbe = {
+    /** Each onConnectionsChanged set, in order. */
+    snapshots: OpenConnection[][];
+    openConnections: OpenConnection[];
 };
 
 export type ProfileDisconnectLifecycleProbe = {
@@ -430,6 +436,14 @@ export type LifecycleProbe = {
     staleAndCurrentDisconnected: boolean;
     missingAddressRecorded: boolean;
     connectedPeers: string[];
+};
+
+export type HolepunchSocketErrorProbe = {
+    /** Holepunch log messages by level, in order. */
+    warnings: string[];
+    errors: string[];
+    /** Whether each errored transport closed: [reset, other]. */
+    closed: boolean[];
 };
 
 export type BanPolicyProbe = {
@@ -1640,6 +1654,52 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         };
     }
 
+    /**
+     * Adds a Holepunch transport twice, a transport of no known peer, and a
+     * WebRTC transport; closes the Holepunch one twice, then the WebRTC one
+     * unexpectedly (as a dropped peer does), recording every
+     * onConnectionsChanged.
+     */
+    public probeConnectionsChanged(
+        holepunchAddress: string,
+        webRtcAddress: string
+    ): ConnectionsChangedProbe {
+        const snapshots: ConnectionsChangedProbe["snapshots"] = [];
+        const unsubscribe = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onConnectionsChanged",
+            (connections) => {
+                snapshots.push(connections.map((c) => ({ ...c })));
+            }
+        );
+        try {
+            const holepunch = this.transport(
+                getChecksumAddress(holepunchAddress)
+            );
+            const webRtc = this.transport(getChecksumAddress(webRtcAddress));
+            webRtc.transportType = TransportType.WEBRTC;
+            this.p2pManager.addConnection(holepunch);
+            this.p2pManager.addConnection(holepunch);
+            this.p2pManager.addConnection(this.transport());
+            this.p2pManager.addConnection(webRtc);
+            this.p2pManager.disconnectConnection(
+                holepunch,
+                DisconnectPolicy.ALLOW
+            );
+            this.p2pManager.disconnectConnection(
+                holepunch,
+                DisconnectPolicy.ALLOW
+            );
+            webRtc.close();
+            return {
+                snapshots,
+                openConnections: this.p2pManager.getOpenConnections()
+            };
+        } finally {
+            unsubscribe();
+        }
+    }
+
     public async probeForeignResponse(
         intendedAddressInput: string,
         foreignAddressInput: string
@@ -1805,6 +1865,39 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile?.isBlackListed ?? false
         };
+    }
+
+    /**
+     * Errors one Holepunch socket with a peer reset (ECONNRESET) and another
+     * with a different socket error, recording the logger level each reaches.
+     */
+    public probeHolepunchSocketErrors(): HolepunchSocketErrorProbe {
+        const logger = this.p2pManager.logger;
+        const warn = sinon.spy(logger, "warn");
+        const error = sinon.spy(logger, "error");
+        try {
+            const reset = this.holepunchTransport();
+            const other = this.holepunchTransport();
+            reset.socket.emit(
+                "error",
+                Object.assign(new Error("connection reset by peer"), {
+                    code: "ECONNRESET"
+                })
+            );
+            other.socket.emit("error", new Error("socket hang up"));
+            const holepunchMessages = (spy: sinon.SinonSpy) =>
+                spy.args
+                    .map((args) => String(args[0]))
+                    .filter((message) => message.startsWith("Holepunch"));
+            return {
+                warnings: holepunchMessages(warn),
+                errors: holepunchMessages(error),
+                closed: [reset.transport.isClosed, other.transport.isClosed]
+            };
+        } finally {
+            warn.restore();
+            error.restore();
+        }
     }
 
     public probeUnauthenticatedClose(): BanPolicyProbe {

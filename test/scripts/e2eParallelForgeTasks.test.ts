@@ -474,6 +474,7 @@ describe("parallel forge task discovery", function () {
             "InvalidStateProofStepTest",
             "JoinChannelFacetTest",
             "JoinChannelSnapshotGuardTest",
+            "LocalDiamondInboundMirrorTest",
             "MilestoneFinalityFreezeTest",
             "SameForkSnapshotKillPeriodTest",
             "StateChannelManagerProxyDepositTest",
@@ -489,7 +490,7 @@ describe("parallel forge task discovery", function () {
             "TimeoutSupersededByFinalStateTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(26);
+        expect(tasks).to.have.lengthOf(27);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

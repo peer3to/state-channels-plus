@@ -35,7 +35,6 @@ import { TimeConfig } from "@/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
 import { config, isNodeRuntime } from "@/utils/config";
-import { createConfig } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -137,8 +136,6 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         local: HostContext = {},
         context: RootStartContext
     ) {
-        // Restore worker configuration before common logger construction.
-        if (context.mode === "worker") createConfig(payload.config);
         super(
             (error) => {
                 // Parent closure during disposal must not restart the worker error funnel.

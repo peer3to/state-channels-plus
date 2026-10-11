@@ -5,6 +5,7 @@
 ## Requirements
 
 - [`REQ-GOSSIP-1-HTK3NX` (Thin attributed ingress)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1-htk3nx)
+- [`REQ-GOSSIP-5-2EQ7P6` (Live gossip waits for the initial sync)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-5-2eq7p6)
 
 ## UNIT-TEST-STATE-TRANSITION-SERVICE-1-W4MKDS
 

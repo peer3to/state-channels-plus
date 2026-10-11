@@ -15,8 +15,8 @@
 
 Attempt discipline
 
-- Setup: Race concurrent reducers; drop events then recover; fail the provider; supersede with a final dispute
-- Oracle: Convergence classified; unsynchronized windows never reduce; provider failure fatal; supersession stands down
+- Setup: Race concurrent reducers; drop events then recover; fail the provider; supersede with a final dispute; hold the fork adoption post while the successor is disputed or a later reduction becomes final; drop a leaving member to SYNCED during its install
+- Oracle: Convergence classified; unsynchronized windows never reduce; provider failure fatal; supersession stands down; a settled adoption refusal is neither retried nor reported; a member that left during its install sends no reduction
 
 - [ ] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P1` — concurrent convergence
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2` — event recovery before reduce
@@ -29,8 +29,10 @@ Attempt discipline
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P10` — a held dispute read returning no data after live sync changes the fork reschedules nothing
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P11` — a held candidate computation returning no candidate after live sync reschedules nothing
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P12` — a held real candidate computation resumed after live sync persists and submits nothing obsolete
-- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P13` — a leaving signer that becomes SYNCED during installation skips reduction submission
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P13` — a leaving signer that another peer's chain adoption drops to SYNCED during installation completes the local install and sends no reduction transaction
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17` — the reduce is sent as its own transaction and a failed adopt-only post is retried once, after which the chain holds the reduced fork
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P18` — when the retry fails too there is no third attempt: the failure surfaces as a detached error, the reduce stays recorded and the chain keeps its fork
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P19` — the first reduce is mined and reverts out of gas, the EVM error handler resends it and the resend is mined: the chain adopts the reduced fork and no detached error is reported
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P20` — the runtime stops while the reduce send is held after the local install, with the teardown parked before the chain provider closes: disposal does not intercept the started send, the reduce goes out once, and its detached submission settles with no rejection and no reported failure
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P21` — an adopt-only post prepared against the successor and sent after a later reduction of the successor became final reverts with `RaceConditionSnapshotUpdateNotLatestFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P22` — an adopt-only post prepared against the successor and sent after the successor's dispute opened reverts with `RaceConditionSnapshotUpdateDisputedFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was

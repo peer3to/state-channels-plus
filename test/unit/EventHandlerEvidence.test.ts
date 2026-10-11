@@ -1,11 +1,16 @@
+import { Codec, hash, Type } from "@/utils";
 import { EVIDENCE_COMPARISON_FAULT_MESSAGE } from "@test/fixtures/customRpc/harnessControl/services/stub/node/EvidenceComparisonRecorder";
 import {
     EVIDENCE_UPLOAD_FAILURE_MESSAGE,
+    postReasonlessDispute,
+    prepareHigherStateCounterDispute,
     stageEvidenceAuditsOfDisputeRace,
     stageEvidenceComparisonReplacedAfterKill,
-    stageEvidenceUploadRetry,
     stageHeldEvidenceComparisonRace,
+    stageHeldHigherStateCounterDispute,
+    stageKeptHigherStateComparison,
     stageSequentialEvidenceAudits,
+    uploadGenesisDispute,
     waitForCommittedDisputeOf
 } from "@test/fixtures/EvidenceComparisonStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -129,35 +134,38 @@ describe("Unit: EventHandler evidence comparison", function () {
 
     it("a positive comparison whose upload fails is kept: the next audit retries the upload without comparing again", async function () {
         const h = TestSession.getHarness();
-        const {
-            auditorIndex,
-            firstUploads,
-            auditorUploads,
-            secondUpload,
-            recorder
-        } = await stageEvidenceUploadRetry(h);
+        const { auditorIndex, forkId, quietIndices, recorder, uploads } =
+            await prepareHigherStateCounterDispute(h, {
+                failUploadOnce: true
+            });
         const auditor = h.getPeer(auditorIndex);
+        await uploadGenesisDispute(h);
 
-        // the first audit found more evidence; its upload failed, which is
-        // fatal to that audit
-        expect(firstUploads).to.have.length(1);
-        expect(firstUploads[0]).to.include({ waited: false, revert: null });
+        // the first audit found more evidence and sent the compared dispute;
+        // its upload failed, which is fatal to that audit
+        await waitFor(
+            async () => (await uploads.submissions()).length > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect((await uploads.submissions())[0]).to.include({
+            waited: false,
+            revert: null
+        });
         await TestSession.expectFirstDetachedError({
             includes: EVIDENCE_UPLOAD_FAILURE_MESSAGE,
             timeoutMs: h.event.protocolEventTimeoutMs()
         });
 
-        // the second dispute lands only after the first audit failed
-        await secondUpload.waitUntilHeld();
-        await secondUpload.release();
-
-        // the second audit reuses the answer and uploads again, for real
+        // a second dispute of the fork: the audit reuses the answer
+        await h.rpcStub.restoreDisputeInitiationAndDispute(
+            quietIndices[0],
+            forkId
+        );
         await waitFor(async () => {
-            const uploads = await auditorUploads.submissions();
-            return uploads.length === 2 && uploads[1].waited;
+            const sent = await uploads.submissions();
+            return sent.length === 2 && sent[1].waited;
         }, h.event.protocolEventTimeoutMs());
-        const own = await waitForCommittedDisputeOf(h, 0, auditor.address);
-        expect(own.input.selfRemoval).to.equal(true);
+        await waitForCommittedDisputeOf(h, quietIndices[0], auditor.address);
 
         expect(
             (await recorder.comparisons()).map(
@@ -172,6 +180,77 @@ describe("Unit: EventHandler evidence comparison", function () {
         await TestSession.settleDetached({
             expectedErrorIncludes: EVIDENCE_UPLOAD_FAILURE_MESSAGE
         });
+    });
+
+    it("a leaving node audits a valid dispute: it disputes at once with its self-removal, building its dispute once and comparing nothing", async function () {
+        const h = TestSession.getHarness();
+        const { auditorIndex, quietIndices, recorder } =
+            await prepareHigherStateCounterDispute(h);
+        const auditor = h.getPeer(auditorIndex);
+        await h.control(auditor).dispute.setForceExit(true).request();
+        await uploadGenesisDispute(h);
+
+        const own = await waitForCommittedDisputeOf(
+            h,
+            quietIndices[0],
+            auditor.address
+        );
+        expect(own.input.selfRemoval).to.equal(true);
+        expect(await recorder.comparisons()).to.deep.equal([]);
+        expect((await recorder.audits())[0].answer).to.equal(true);
+        expect(await recorder.disputeBuilds()).to.equal(1);
+    });
+
+    it("a counter-dispute uploads the dispute its comparison built, without building it again", async function () {
+        const h = TestSession.getHarness();
+        const { auditorIndex, quietIndices, recorder, uploads } =
+            await stageHeldHigherStateCounterDispute(h);
+
+        await recorder.releaseHeld("forward");
+        const own = await waitForCommittedDisputeOf(
+            h,
+            quietIndices[0],
+            h.getPeer(auditorIndex).address
+        );
+
+        const comparisons = await recorder.comparisons();
+        expect(
+            comparisons.map((comparison) => comparison.outcome)
+        ).to.deep.equal(["resolved"]);
+        expect(hash(Codec.encode(own, Type.Dispute))).to.equal(
+            comparisons[0].disputeHash
+        );
+        expect(await recorder.disputeBuilds()).to.equal(0);
+        expect(await uploads.submissions()).to.have.length(1);
+    });
+
+    it("a kill of another dispute follows a kept positive comparison: dispute(kill) builds its own dispute with the killed submitter's slash instead of the compared one", async function () {
+        const h = TestSession.getHarness();
+        const { auditorIndex, quietIndices, recorder, uploads } =
+            await stageKeptHigherStateComparison(h);
+        const auditor = h.getPeer(auditorIndex);
+        const [spammerIndex, observerIndex] = quietIndices;
+        // only the auditor kills, inside its own multicall
+        for (const index of [1, 2, 3])
+            await h.rpcStub.suppressDisputeKill(index);
+        await h.dispute.restoreDisputeInitiation([auditorIndex]);
+
+        await postReasonlessDispute(h, spammerIndex);
+        const own = await waitForCommittedDisputeOf(
+            h,
+            observerIndex,
+            auditor.address
+        );
+
+        const [upload] = await uploads.submissions();
+        expect(upload.innerMethods).to.include("applyDisputeFraudProofs");
+        expect(own.input.onChainSlashes).to.include(
+            h.getPeer(spammerIndex).address
+        );
+        expect(hash(Codec.encode(own, Type.Dispute))).to.not.equal(
+            (await recorder.comparisons())[0].disputeHash
+        );
+        expect(await recorder.disputeBuilds()).to.equal(1);
     });
 
     it("a comparison dropped by a kill cannot erase its replacement when it settles later", async function () {

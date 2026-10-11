@@ -731,6 +731,26 @@ test("a question defined at a heading gets an anchor and a glossed reference", (
         assert.equal(f.ids().status, 0);
     }));
 
+test("a label with a word-initial underscore is written as prettier formats it, so a second --write changes nothing", () =>
+    fixture((f) => {
+        const underscored = "INV-LOCAL-2-AAAAA6";
+        f.write(
+            "docs/spec/implementation/views/underscore.md",
+            `# Underscore view\n\n## Design invariants\n\n### ${underscored} — getState/_setState inverses\n\nThe statement.\n`
+        );
+        f.ids("--write");
+        assert.match(
+            f.read(status),
+            new RegExp(
+                `^\\[\`${underscored}\` \\(getState/\\\\_setState inverses\\)\\]\\(`,
+                "m"
+            )
+        );
+        const first = snapshot(f.repo);
+        f.ids("--write");
+        assert.deepEqual(snapshot(f.repo), first);
+    }));
+
 test("a wrapped untitled statement is labelled by its whole first clause", () =>
     fixture((f) => {
         const wrapped = "REQ-FIX-4-AAAAA5";
