@@ -201,18 +201,7 @@ export const codecTestAddress = "0x0000000000000000000000000000000000000001";
  * Pure data, no executable test behavior: each `it` declaration below calls
  * this factory and feeds the identical bytes to both sides.
  */
-export type CanonicalBlockCorpus = {
-    blockValue: ReturnType<typeof codecValues.block>;
-    canonical: string;
-    trailingWord: string;
-    trailingByte: string;
-    offsetGap: string;
-    dirtyPadding: string;
-    truncated: string;
-    empty: string;
-};
-
-export function canonicalBlockCorpus(): CanonicalBlockCorpus {
+export function canonicalBlockCorpus() {
     const base = codecValues.block();
     const blockValue: BlockStruct = {
         ...base,
@@ -222,26 +211,27 @@ export function canonicalBlockCorpus(): CanonicalBlockCorpus {
         },
         messageBlocks: [codecValues.messageBlock()]
     };
-    const canonical: string = ethers.hexlify(
+    const encodedCanonical = ethers.hexlify(
         Codec.encode(blockValue, Type.Block)
     );
     const word = ethers.toBeHex(64, 32);
-    const hex = canonical.slice(2);
+    const hex = encodedCanonical.slice(2);
     const paddingAt = hex.indexOf("123456" + "00".repeat(29));
     if (paddingAt < 0) throw new Error("fixture padding not located");
     return {
         blockValue,
-        canonical,
-        trailingWord: canonical + "00".repeat(32),
-        trailingByte: canonical + "00",
-        offsetGap: "0x" + word.slice(2) + "00".repeat(32) + canonical.slice(66),
-        dirtyPadding:
+        encodedCanonical,
+        encodedTrailingWord: encodedCanonical + "00".repeat(32),
+        encodedTrailingByte: encodedCanonical + "00",
+        encodedOffsetGap:
+            "0x" + word.slice(2) + "00".repeat(32) + encodedCanonical.slice(66),
+        encodedDirtyPadding:
             "0x" +
             hex.slice(0, paddingAt + 6) +
             "01" +
             hex.slice(paddingAt + 8),
-        truncated: canonical.slice(0, -2),
-        empty: "0x"
+        encodedTruncated: encodedCanonical.slice(0, -2),
+        encodedEmpty: "0x"
     };
 }
 

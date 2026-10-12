@@ -22,7 +22,7 @@ round-trips byte-identically through `decodeBlock`, decodable noncanonical encod
 byte/word, dirty padding) revert with `ErrorNonCanonicalBlock`, malformed bytes revert ordinarily,
 and `tryDecodeBlock` reports canonical bytes true with exact fields and every other input false
 with the default block. The obsolete trailing-word-acceptance permutation is deleted and its number
-left gapped, so the gap below `P10` is intentional rather than a missing case. Of the planned
+left gapped, so the gap at `P11` (between `P10` and `P12`) is intentional rather than a missing case. Of the planned
 permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8`, the decode pair is now covered (`P4` valid,
 `P7` invalid); the threshold/predicate permutations stay unassigned.
 

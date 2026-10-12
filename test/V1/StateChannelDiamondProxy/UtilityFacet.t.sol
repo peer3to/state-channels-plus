@@ -206,6 +206,16 @@ contract UtilityFacetTest is Test {
         revert("no dirty-padding word found");
     }
 
+    function _assertRevertsWithoutCanonicalityError(bytes memory encodedBlock) internal view {
+        (bool ok, bytes memory revertData) =
+            address(util).staticcall(abi.encodeCall(UtilityFacet.decodeBlock, (encodedBlock)));
+        assertFalse(ok, "malformed bytes must revert");
+        assertTrue(
+            revertData.length < 4 || bytes4(revertData) != ErrorNonCanonicalBlock.selector,
+            "malformed bytes must not reach the canonicality check"
+        );
+    }
+
     function test_decodeBlock_canonicalRoundTrip() public view {
         bytes memory canonical = abi.encode(_canonicalBlock());
         Block memory decoded = util.decodeBlock(canonical);
@@ -229,10 +239,8 @@ contract UtilityFacetTest is Test {
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
         util.decodeBlock(dirty);
         // Malformed inputs revert without the canonicality error.
-        vm.expectRevert();
-        util.decodeBlock(truncated);
-        vm.expectRevert();
-        util.decodeBlock(hex"");
+        _assertRevertsWithoutCanonicalityError(truncated);
+        _assertRevertsWithoutCanonicalityError(hex"");
         // The offset gap decodes but is rejected as noncanonical.
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
         util.decodeBlock(gap);

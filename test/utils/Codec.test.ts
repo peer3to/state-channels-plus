@@ -578,12 +578,12 @@ describe("Codec", function () {
         const corpus = canonicalBlockCorpus();
         const util = await deployUtilityFacetTestContract(hreEthers);
         const members = [
-            corpus.trailingWord,
-            corpus.trailingByte,
-            corpus.offsetGap,
-            corpus.dirtyPadding,
-            corpus.truncated,
-            corpus.empty
+            corpus.encodedTrailingWord,
+            corpus.encodedTrailingByte,
+            corpus.encodedOffsetGap,
+            corpus.encodedDirtyPadding,
+            corpus.encodedTruncated,
+            corpus.encodedEmpty
         ];
         for (const bytes of members) {
             let clientAccepts = true;
@@ -605,34 +605,39 @@ describe("Codec", function () {
         }
         let decodeBlockReverted = false;
         try {
-            await util.decodeBlock.staticCall(corpus.trailingWord);
+            await util.decodeBlock.staticCall(corpus.encodedTrailingWord);
         } catch {
             decodeBlockReverted = true;
         }
         expect(decodeBlockReverted).to.equal(true);
-        const clientDecoded = Codec.decode(corpus.canonical, Type.Block);
+        const clientDecoded = Codec.decode(corpus.encodedCanonical, Type.Block);
         expect(Codec.encode(clientDecoded, Type.Block)).to.equal(
-            corpus.canonical
+            corpus.encodedCanonical
         );
         const [contractAccepts, contractDecoded] =
-            await util.tryDecodeBlock.staticCall(corpus.canonical);
+            await util.tryDecodeBlock.staticCall(corpus.encodedCanonical);
         expect(contractAccepts).to.equal(true);
         expect(Codec.encode(contractDecoded, Type.Block)).to.equal(
-            corpus.canonical
+            corpus.encodedCanonical
         );
     });
 
     it("accepts canonical block bytes across hex casing and byte arrays", function () {
         const corpus = canonicalBlockCorpus();
-        const upperCased = "0x" + corpus.canonical.slice(2).toUpperCase();
+        const upperCased =
+            "0x" + corpus.encodedCanonical.slice(2).toUpperCase();
         const fromCased = Codec.decode(upperCased, Type.Block);
-        expect(Codec.encode(fromCased, Type.Block)).to.equal(corpus.canonical);
+        expect(Codec.encode(fromCased, Type.Block)).to.equal(
+            corpus.encodedCanonical
+        );
         const fromBytes = Codec.decode(
-            ethers.getBytes(corpus.canonical),
+            ethers.getBytes(corpus.encodedCanonical),
             Type.Block
         );
         expect(fromBytes).to.deep.equal(corpus.blockValue);
-        expect(Codec.encode(fromBytes, Type.Block)).to.equal(corpus.canonical);
+        expect(Codec.encode(fromBytes, Type.Block)).to.equal(
+            corpus.encodedCanonical
+        );
     });
 
     it("leaves non-block decoding acceptance unchanged", function () {
@@ -648,62 +653,11 @@ describe("Codec", function () {
         ).to.deep.equal(joinChannel);
     });
 
-    it("canonical differential block accepts on both sides", async function () {
-        const corpus = canonicalBlockCorpus();
-        const util = await deployUtilityFacetTestContract(hreEthers);
-        const clientDecoded = Codec.decode(corpus.canonical, Type.Block);
-        expect(Codec.encode(clientDecoded, Type.Block)).to.equal(
-            corpus.canonical
-        );
-        const [contractAccepts, contractDecoded] =
-            await util.tryDecodeBlock.staticCall(corpus.canonical);
-        expect(contractAccepts).to.equal(true);
-        expect(Codec.encode(contractDecoded, Type.Block)).to.equal(
-            corpus.canonical
-        );
-    });
-
-    it("trailing word differential block rejects on both sides", async function () {
-        const corpus = canonicalBlockCorpus();
-        const util = await deployUtilityFacetTestContract(hreEthers);
-        for (const bytes of [corpus.trailingWord, corpus.trailingByte]) {
-            expect(() => Codec.decode(bytes, Type.Block)).to.throw(
-                "Non-canonical block encoding"
-            );
-            const [contractAccepts] =
-                await util.tryDecodeBlock.staticCall(bytes);
-            expect(contractAccepts).to.equal(false);
-        }
-    });
-
-    it("dirty padding differential block rejects on both sides", async function () {
-        const corpus = canonicalBlockCorpus();
-        const util = await deployUtilityFacetTestContract(hreEthers);
-        for (const bytes of [corpus.dirtyPadding, corpus.offsetGap]) {
-            expect(() => Codec.decode(bytes, Type.Block)).to.throw(
-                "Non-canonical block encoding"
-            );
-            const [contractAccepts] =
-                await util.tryDecodeBlock.staticCall(bytes);
-            expect(contractAccepts).to.equal(false);
-        }
-    });
-
-    it("truncated differential block rejects on both sides", async function () {
-        const corpus = canonicalBlockCorpus();
-        const util = await deployUtilityFacetTestContract(hreEthers);
-        expect(() => Codec.decode(corpus.truncated, Type.Block)).to.throw();
-        const [contractAccepts] = await util.tryDecodeBlock.staticCall(
-            corpus.truncated
-        );
-        expect(contractAccepts).to.equal(false);
-    });
-
     it("Block model wrappers enforce canonical decoding failure policy", function () {
         const corpus = canonicalBlockCorpus();
         const signature = codecValues.signedBlock().signature;
         const canonicalSignedBlock = {
-            encodedBlock: corpus.canonical,
+            encodedBlock: corpus.encodedCanonical,
             signature
         };
         expect(
@@ -714,14 +668,14 @@ describe("Codec", function () {
             ...confirmation,
             signedBlock: {
                 ...confirmation.signedBlock,
-                encodedBlock: corpus.canonical
+                encodedBlock: corpus.encodedCanonical
             }
         };
         expect(
             Block.fromBlockConfirmation(canonicalConfirmation).blockStruct
         ).to.deep.equal(corpus.blockValue);
         const noncanonicalSignedBlock = {
-            encodedBlock: corpus.trailingWord,
+            encodedBlock: corpus.encodedTrailingWord,
             signature
         };
         expect(() => Block.fromSignedBlock(noncanonicalSignedBlock)).to.throw(
@@ -734,7 +688,7 @@ describe("Codec", function () {
             ...confirmation,
             signedBlock: {
                 ...confirmation.signedBlock,
-                encodedBlock: corpus.dirtyPadding
+                encodedBlock: corpus.encodedDirtyPadding
             }
         };
         expect(() =>

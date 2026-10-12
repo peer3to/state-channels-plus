@@ -516,15 +516,9 @@ describe("E2E: Block Fraud Proofs", function () {
             canonicalSignedBlock.encodedBlock + "00".repeat(32);
         const noncanonicalDigest = ethers.keccak256(noncanonicalBytes);
 
-        // Author-sign the raw trailing-word bytes through a single-use
-        // closure-free host exec; only the signature crosses back.
-        const signature = await h.execOnHost(
-            author!,
-            (sm, args, modules) =>
-                sm.signer.signMessage(
-                    modules.ethers.getBytes(String(args.digest))
-                ),
-            { digest: noncanonicalDigest }
+        // The author signs the raw trailing-word bytes.
+        const signature = await author!.signer.signMessage(
+            ethers.getBytes(noncanonicalDigest)
         );
         expect(
             ethers.verifyMessage(ethers.getBytes(noncanonicalDigest), signature)
@@ -557,26 +551,7 @@ describe("E2E: Block Fraud Proofs", function () {
 
         // Re-enable only the observer-to-author link so no other peer can
         // back-fill the missing block before the adversarial relay.
-        await h
-            .control(observer)
-            .network.unblacklistPeerByAddress(author!.address)
-            .request();
-        await h
-            .control(author!)
-            .network.unblacklistPeerByAddress(observer.address)
-            .request();
-        await Promise.all(
-            [observer, author!].map((peer) =>
-                h
-                    .control(peer)
-                    .network.leaveSelectedKey(h.channelId!.toString())
-                    .request()
-            )
-        );
-        await h.network.joinSelectedKey(
-            [observerIndex, author!.index],
-            h.channelId!.toString()
-        );
+        await h.network.restorePairDiscovery(observerIndex, author!.index);
         await waitFor(async () => {
             const token = await h
                 .control(author!)
@@ -594,6 +569,14 @@ describe("E2E: Block Fraud Proofs", function () {
             )
             .request();
         expect(relay.ok).to.equal(false);
+        // The link was clear just before the relay, so a blacklisted author
+        // can only come from the observer refusing the bytes at decode.
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(author!.address)
+                .request()
+        ).to.equal(true);
 
         // Neither the canonical nor the noncanonical bytes entered history,
         // and the observer head and app state are untouched.
