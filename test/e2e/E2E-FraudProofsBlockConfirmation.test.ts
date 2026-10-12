@@ -1,7 +1,7 @@
 import Clock from "@/Clock";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { FraudProofType } from "@/types/sol-enums";
-import { Codec, Type } from "@/utils";
+import { Codec, tryDecodeCustomError, Type } from "@/utils";
 import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -470,6 +470,17 @@ describe("E2E: Block Fraud Proofs", function () {
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
 
+        // No peer posts its own block on-chain, so the only posting attempt
+        // for the block is the noncanonical one below.
+        await Promise.all(
+            h.peers.map((peer) =>
+                h
+                    .control(peer)
+                    .stub.stubSuppressMaybePostBlockOnChain()
+                    .request()
+            )
+        );
+
         // Isolate the observer before any block is produced, mirroring the
         // fresh-block setup: the relay below is the only block data it sees.
         const observerIndex = 3;
@@ -495,10 +506,7 @@ describe("E2E: Block Fraud Proofs", function () {
             .query.getBlockByHeight(forkId!, 0)
             .request();
         expect(bundle).to.not.be.null;
-        const author = h.peers.find(
-            (peer) =>
-                peer.address.toLowerCase() === bundle!.author.toLowerCase()
-        );
+        const author = h.peers.find((peer) => peer.address === bundle!.author);
         expect(author).to.not.be.undefined;
         const canonicalSignedBlock = Codec.decode(
             bundle!.encodedSignedBlock,
@@ -519,10 +527,8 @@ describe("E2E: Block Fraud Proofs", function () {
             { digest: noncanonicalDigest }
         );
         expect(
-            ethers
-                .verifyMessage(ethers.getBytes(noncanonicalDigest), signature)
-                .toLowerCase()
-        ).to.equal(bundle!.author.toLowerCase());
+            ethers.verifyMessage(ethers.getBytes(noncanonicalDigest), signature)
+        ).to.equal(bundle!.author);
 
         // The outer confirmation encoding is untouched; it carries the raw
         // signed block with no confirmation signatures.
@@ -559,7 +565,18 @@ describe("E2E: Block Fraud Proofs", function () {
             .control(author!)
             .network.unblacklistPeerByAddress(observer.address)
             .request();
-        await h.network.restorePeerDiscovery([observerIndex, author!.index]);
+        await Promise.all(
+            [observer, author!].map((peer) =>
+                h
+                    .control(peer)
+                    .network.leaveSelectedKey(h.channelId!.toString())
+                    .request()
+            )
+        );
+        await h.network.joinSelectedKey(
+            [observerIndex, author!.index],
+            h.channelId!.toString()
+        );
         await waitFor(async () => {
             const token = await h
                 .control(author!)
@@ -608,7 +625,7 @@ describe("E2E: Block Fraud Proofs", function () {
             canonicalSignedBlock.encodedBlock,
             Type.Block
         );
-        let postReverted = false;
+        let revertError: unknown;
         try {
             const tx =
                 await author!.p2pInstance.stateChannelManagerContract.postBlockCalldata(
@@ -619,10 +636,13 @@ describe("E2E: Block Fraud Proofs", function () {
                     Clock.getTimeInSeconds() + 1000
                 );
             await tx.wait();
-        } catch {
-            postReverted = true;
+            expect.fail("expected noncanonical calldata to revert");
+        } catch (error) {
+            revertError = error;
         }
-        expect(postReverted).to.equal(true);
+        expect(
+            tryDecodeCustomError(revertError)?.errorDescription.name
+        ).to.equal("ErrorNonCanonicalBlock");
         const [found, commitment] =
             await author!.p2pInstance.stateChannelManagerContract.getBlockCallDataCommitment(
                 canonicalBlock.transaction.header.channelId,
