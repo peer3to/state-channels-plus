@@ -25,6 +25,7 @@
 - [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 - [`REQ-TIME-3-MT1MMF` (Window values and skew bound are explicit configuration trade-offs)](../../../../../specification/protocol-model/time.md#req-time-3-mt1mmf)
 - [`INV-DA-1-TS7HX2` (A posted block-calldata commitment MUST be immutable for its key and binding)](../../../../../specification/security/data-availability.md#inv-da-1-ts7hx2)
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
 
 ## UNIT-TEST-MANAGER-PROXY-1-NTYR71
 
@@ -53,6 +54,8 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18` — terms submitted at exactly their opening deadline open, so the deadline gate is inclusive like join
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19` — terms submitted after their opening deadline revert with `RaceConditionOpenChannelExpired` carrying the deadline and chain time
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20` — an already-open channel whose terms are past their deadline reports `RaceConditionChannelAlreadyOpen` first, not `RaceConditionOpenChannelExpired`
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P21` — a noncanonical post reverts with `ErrorNonCanonicalBlock` and stores no commitment
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P22` — a canonical post stores the signed-block/timestamp commitment, including a retry at a previously rejected key
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 

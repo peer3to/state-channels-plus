@@ -103,7 +103,9 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     }
 
     function decodeBlock(bytes memory encodedBlock) external pure returns (Block memory) {
-        return abi.decode(encodedBlock, (Block));
+        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        require(keccak256(abi.encode(decodedBlock)) == keccak256(encodedBlock), ErrorNonCanonicalBlock());
+        return decodedBlock;
     }
 
     function tryDecodeBlock(bytes memory encodedBlock)

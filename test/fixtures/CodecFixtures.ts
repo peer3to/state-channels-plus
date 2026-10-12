@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared factory-built Codec inputs; no executable test behavior
 import * as factory from "../factory";
 import { Codec, Type } from "@/utils/Codec";
+import type { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -191,6 +192,58 @@ export const codecValues = {
 };
 
 export const codecTestAddress = "0x0000000000000000000000000000000000000001";
+
+/**
+ * Shared differential corpus for the canonical block-encoding boundary: one
+ * real factory block with a nonempty dynamic body and a nested message, its
+ * canonical encoding, and the noncanonical/malformed mutations both the
+ * UtilityFacet decoder and `Codec.decode(..., Type.Block)` must agree on.
+ * Pure data, no executable test behavior: each `it` declaration below calls
+ * this factory and feeds the identical bytes to both sides.
+ */
+export type CanonicalBlockCorpus = {
+    blockValue: ReturnType<typeof codecValues.block>;
+    canonical: string;
+    trailingWord: string;
+    trailingByte: string;
+    offsetGap: string;
+    dirtyPadding: string;
+    truncated: string;
+    empty: string;
+};
+
+export function canonicalBlockCorpus(): CanonicalBlockCorpus {
+    const base = codecValues.block();
+    const blockValue: BlockStruct = {
+        ...base,
+        transaction: {
+            header: base.transaction.header,
+            body: { encodedData: "0x123456", data: "0xab" }
+        },
+        messageBlocks: [codecValues.messageBlock()]
+    };
+    const canonical: string = ethers.hexlify(
+        Codec.encode(blockValue, Type.Block)
+    );
+    const word = ethers.toBeHex(64, 32);
+    const hex = canonical.slice(2);
+    const paddingAt = hex.indexOf("123456" + "00".repeat(29));
+    if (paddingAt < 0) throw new Error("fixture padding not located");
+    return {
+        blockValue,
+        canonical,
+        trailingWord: canonical + "00".repeat(32),
+        trailingByte: canonical + "00",
+        offsetGap: "0x" + word.slice(2) + "00".repeat(32) + canonical.slice(66),
+        dirtyPadding:
+            "0x" +
+            hex.slice(0, paddingAt + 6) +
+            "01" +
+            hex.slice(paddingAt + 8),
+        truncated: canonical.slice(0, -2),
+        empty: "0x"
+    };
+}
 
 export function expectCodecRoundTrip(
     original: unknown,

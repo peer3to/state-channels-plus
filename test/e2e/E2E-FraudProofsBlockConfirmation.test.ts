@@ -463,6 +463,177 @@ describe("E2E: Block Fraud Proofs", function () {
         }
     });
 
+    it("canonical block encoding rejects Byzantine relay and calldata posting", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0);
+
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        // Isolate the observer before any block is produced, mirroring the
+        // fresh-block setup: the relay below is the only block data it sees.
+        const observerIndex = 3;
+        const observer = h.getPeer(observerIndex);
+        await h.network.blacklistAndDisconnectPeer(observerIndex);
+        const observerInitialSum = await observer.contractInstance.getSum();
+        const observerInitialHeight = await h
+            .control(observer)
+            .query.getNextBlockHeight(forkId!)
+            .request();
+
+        await h.transition.advanceState({
+            count: 1,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: false
+        });
+
+        // The real next block from its real author: structurally valid,
+        // state-valid, correctly timed and written by the expected writer.
+        const source = await h.peerWithHighestBlock(forkId!);
+        const bundle = await h
+            .control(source)
+            .query.getBlockByHeight(forkId!, 0)
+            .request();
+        expect(bundle).to.not.be.null;
+        const author = h.peers.find(
+            (peer) =>
+                peer.address.toLowerCase() === bundle!.author.toLowerCase()
+        );
+        expect(author).to.not.be.undefined;
+        const canonicalSignedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        const noncanonicalBytes =
+            canonicalSignedBlock.encodedBlock + "00".repeat(32);
+        const noncanonicalDigest = ethers.keccak256(noncanonicalBytes);
+
+        // Author-sign the raw trailing-word bytes through a single-use
+        // closure-free host exec; only the signature crosses back.
+        const signature = await h.execOnHost(
+            author!,
+            (sm, args, modules) =>
+                sm.signer.signMessage(
+                    modules.ethers.getBytes(String(args.digest))
+                ),
+            { digest: noncanonicalDigest }
+        );
+        expect(
+            ethers
+                .verifyMessage(ethers.getBytes(noncanonicalDigest), signature)
+                .toLowerCase()
+        ).to.equal(bundle!.author.toLowerCase());
+
+        // The outer confirmation encoding is untouched; it carries the raw
+        // signed block with no confirmation signatures.
+        const outer = Codec.decode(
+            bundle!.encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const adversarialConfirmation = Codec.encode(
+            {
+                ...outer,
+                signedBlock: {
+                    encodedBlock: noncanonicalBytes,
+                    signature
+                },
+                signatures: []
+            },
+            Type.BlockConfirmation
+        );
+        const noncanonicalHash = ethers.keccak256(noncanonicalBytes);
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(bundle!.hash)
+                .request()
+        ).to.be.null;
+
+        // Re-enable only the observer-to-author link so no other peer can
+        // back-fill the missing block before the adversarial relay.
+        await h
+            .control(observer)
+            .network.unblacklistPeerByAddress(author!.address)
+            .request();
+        await h
+            .control(author!)
+            .network.unblacklistPeerByAddress(observer.address)
+            .request();
+        await h.network.restorePeerDiscovery([observerIndex, author!.index]);
+        await waitFor(async () => {
+            const token = await h
+                .control(author!)
+                .network.getTransportToken(observer.address)
+                .request();
+            return token !== null;
+        }, h.event.protocolEventTimeoutMs());
+
+        // Send the real state-transition RPC and await its terminal response.
+        const relay = await h
+            .control(author!)
+            .byzantine.requestBlockConfirmation(
+                ethers.hexlify(adversarialConfirmation),
+                observer.address
+            )
+            .request();
+        expect(relay.ok).to.equal(false);
+
+        // Neither the canonical nor the noncanonical bytes entered history,
+        // and the observer head and app state are untouched.
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(bundle!.hash)
+                .request()
+        ).to.be.null;
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(noncanonicalHash)
+                .request()
+        ).to.be.null;
+        expect(
+            await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId!)
+                .request()
+        ).to.equal(observerInitialHeight);
+        expect(await observer.contractInstance.getSum()).to.equal(
+            observerInitialSum
+        );
+
+        // The same bytes cannot post on-chain either: canonicality reverts
+        // and no commitment is stored.
+        const canonicalBlock = Codec.decode(
+            canonicalSignedBlock.encodedBlock,
+            Type.Block
+        );
+        let postReverted = false;
+        try {
+            const tx =
+                await author!.p2pInstance.stateChannelManagerContract.postBlockCalldata(
+                    {
+                        encodedBlock: noncanonicalBytes,
+                        signature
+                    },
+                    Clock.getTimeInSeconds() + 1000
+                );
+            await tx.wait();
+        } catch {
+            postReverted = true;
+        }
+        expect(postReverted).to.equal(true);
+        const [found, commitment] =
+            await author!.p2pInstance.stateChannelManagerContract.getBlockCallDataCommitment(
+                canonicalBlock.transaction.header.channelId,
+                canonicalBlock.transaction.header.forkId,
+                Number(canonicalBlock.transaction.header.transactionCnt),
+                bundle!.author
+            );
+        expect(found).to.equal(false);
+        expect(commitment).to.equal(ethers.ZeroHash);
+    });
+
     it("double sign → BlockDoubleSign", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);

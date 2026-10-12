@@ -15,10 +15,16 @@ absent, and is idempotent; `areAddressArraysEqual` is reflexive and symmetric. T
 `retrieveSignerAddresses`: three signatures where the middle one is 64 bytes (the wrong length, so
 recovery fails) must yield the two real signers in submission order with `address(0)` in the
 middle slot rather than a revert, and an empty signature list must yield an empty set. The
-facet's signature-threshold verification, block decode, and genesis/ordering predicates are not
-touched here (the Hardhat `SignatureVerification.test.ts` suite covers the threshold path). The
-planned permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8` all target those threshold/decode/predicate
-surfaces, so none of them is covered by the array-helper cases and those permutations stay unassigned.
+facet's signature-threshold verification and genesis/ordering predicates are not
+touched here (the Hardhat `SignatureVerification.test.ts` suite covers the threshold path). Block
+decode is covered directly: a canonical block with a nonempty dynamic body and a nested message
+round-trips byte-identically through `decodeBlock`, decodable noncanonical encodings (trailing
+byte/word, dirty padding) revert with `ErrorNonCanonicalBlock`, malformed bytes revert ordinarily,
+and `tryDecodeBlock` reports canonical bytes true with exact fields and every other input false
+with the default block. The obsolete trailing-word-acceptance permutation is deleted and its number
+left gapped, so the gap below `P10` is intentional rather than a missing case. Of the planned
+permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8`, the decode pair is now covered (`P4` valid,
+`P7` invalid); the threshold/predicate permutations stay unassigned.
 
 ## Tests
 
@@ -32,3 +38,6 @@ surfaces, so none of them is covered by the array-helper cases and those permuta
 - `testFuzz_areAddressArraysEqual_symmetric`: none
 - `test_retrieveSignerAddresses_unrecoverableSignatureYieldsZeroInItsSlot`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P9
 - `test_retrieveSignerAddresses_noSignaturesYieldsEmptySet`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P10
+- `test_decodeBlock_canonicalRoundTrip`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P14
+- `test_decodeBlock_rejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15
+- `test_tryDecodeBlock_rejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P4, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P7, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16

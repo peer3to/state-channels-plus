@@ -5,11 +5,25 @@ Exercises: [Codec.ts](../../../../implementation/source/src/utils/Codec.ts.md)
 
 ## Overview
 
-The suite exercises the complete public codec surface with factory-built domain values. Every
-`Type`, `FraudProofType`, and `DisputeFraudProofType` mapping is encoded and decoded. Separate cases
+The suite exercises the public codec surface with factory-built domain values. Every
+`Type`, `FraudProofType`, and `DisputeFraudProofType` mapping is encoded and decoded, but canonical
+round-trip enforcement is proved for `Type.Block` only: the compatibility case pins that non-block
+types still accept trailing encodings, which is the retained gap rather than complete coverage. Separate cases
 cover max-uint256 canonical bytes, primitive/array/tuple EVM returns, recursive Result conversion,
 corrupt and truncated bytes, contextual encode errors, and unmapped enum values. Cross-module
-Result normalization remains mapped in the dedicated cross-module suite.
+Result normalization remains mapped in the dedicated cross-module suite. The canonical boundary is
+proved differentially: a shared `canonicalBlockCorpus` factory (real factory block with a nonempty
+dynamic body and a nested message, plus trailing-word/byte, offset-gap, dirty-padding, truncated
+and empty members) feeds identical bytes to `Codec.decode` and a Hardhat-deployed `UtilityFacet`,
+comparing accept/reject on both sides with byte-identical re-encoding for accepted bytes. The
+corpus rejection, normalized acceptance, and non-block compatibility cases own
+`UNIT-TEST-CODEC-1-HFAA3B.P54`–`P56`; the four single-member differential declarations own the
+neutral block-data permutations: the trailing-word declaration also exercises the trailing-byte member
+and the dirty-padding declaration also exercises the offset-gap member, alongside the full-corpus
+declaration and the Foundry rejection test. The `Block` model
+wrappers' failure policy (`from*` throw, `tryFrom*` null, canonical construction succeeds) is proved
+by the wrapper declaration here and owns `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`; the truncated member
+is proved by its differential declaration without owning a new permutation.
 
 ## Tests
 
@@ -67,3 +81,11 @@ Result normalization remains mapped in the dedicated cross-module suite.
 - `throws for corrupt and truncated encoded structs`: UNIT-TEST-CODEC-1-HFAA3B.P3
 - `adds type and bigint-safe value context to encode failures`: UNIT-TEST-CODEC-1-HFAA3B.P52
 - `rejects unmapped encode and decode type values`: UNIT-TEST-CODEC-1-HFAA3B.P53
+- `rejects noncanonical block bytes identically to UtilityFacet`: UNIT-TEST-CODEC-1-HFAA3B.P54, INV-MIRROR-1-VAF778.T1.P11
+- `accepts canonical block bytes across hex casing and byte arrays`: UNIT-TEST-CODEC-1-HFAA3B.P55
+- `leaves non-block decoding acceptance unchanged`: UNIT-TEST-CODEC-1-HFAA3B.P56
+- `canonical differential block accepts on both sides`: REQ-DATA-1-1KNRQS.T1.P12
+- `trailing word differential block rejects on both sides`: REQ-DATA-1-1KNRQS.T1.P10
+- `dirty padding differential block rejects on both sides`: REQ-DATA-1-1KNRQS.T1.P11
+- `truncated differential block rejects on both sides`: none
+- `Block model wrappers enforce canonical decoding failure policy`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P30

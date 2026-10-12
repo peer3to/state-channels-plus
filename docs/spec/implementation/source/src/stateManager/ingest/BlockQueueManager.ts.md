@@ -15,7 +15,6 @@
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-  Partial: Intake decoding is not at parity with the contracts' decoder ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 
 ## UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2

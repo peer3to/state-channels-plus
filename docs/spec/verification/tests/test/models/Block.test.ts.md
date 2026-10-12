@@ -34,8 +34,9 @@ bytes and hash while dropping only the confirmations (P14) and giving the copy i
 set (P15), and `isAuthentic` false for every contract-rejected author-signature encoding from
 `SignatureEncodingFixture` (P21). These are Block behavior tests only; the differential parity
 of the signature rule against the contract is the signer-recovery cache suite's. Block decoding is
-`Codec` only, so the file has no decoding-parity cases (the open deviation is
-`FIND-DECODE-1-FD1V6V`).
+`Codec` only, so this particular file supplies no differential block-decoding evidence: the
+decoding failure policy itself is proved by the Codec suite's wrapper declaration
+(`UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`), not here.
 Unassigned: P24 — no test puts a rejected encoding in a confirmation signature — and with it
 `INV-MIRROR-1-VAF778.T1.P9` (confirmation signatures follow the author rule), which is covered by ValidationService.test.ts (normalization of a contract-rejected confirmation encoding).
 The malformed-signature case (`0x1234`) is one wrong-length input, narrower than P21, and stays

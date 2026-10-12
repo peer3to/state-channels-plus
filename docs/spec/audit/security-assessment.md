@@ -548,15 +548,15 @@ Residual: correctness now depends on the parity itself; it is covered differenti
 contract (the signer-recovery and ECDSA acceptance cases in the verification layer) and must be
 re-checked whenever the OpenZeppelin ECDSA dependency changes.
 
-Block decoding is not at parity (engineer decision 2026-09-27: not in this change). The client
-decodes with `Codec` and the contracts with Solidity `abi.decode`; neither applies a canonical-encoding
-rule, and the contracts accept, for example, a trailing zero word, while `postBlockCalldata` stores
-any bytes. A Byzantine participant can therefore post, sign or relay an encoding that the chain
-accepts and peers decode differently or refuse. The sharpest known use: an author posts such bytes
-as calldata for its own slot and refutes an honest timeout dispute with `TimeoutCalldataPosted`,
-which can slash the honest forcer, although honest peers never accepted the block. This exposure is
-open, recorded as [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v); the planned resolution is identical encoding and decoding
-in the contracts and TypeScript, so both accept and reject the same inputs. The
+Block decoding is at parity on the covered paths since 2026-10-12 (partial resolution of
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v)). The client decodes `Type.Block` with
+`Codec`'s canonical round-trip rule and the contracts decode through `UtilityFacet.decodeBlock`
+with the identical rule (`ErrorNonCanonicalBlock`); `postBlockCalldata` routes through it, so the
+posted noncanonical bypass is fixed and a trailing zero word is rejected on both sides. Retained by
+engineer decision: direct `abi.decode` Block sites outside `tryDecodeBlock`/`postBlockCalldata` and
+non-block `Codec` trailing acceptance stay open under the finding; the planned complete resolution
+remains identical encoding and decoding in the contracts and TypeScript, so both accept and reject
+the same inputs. The
 ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
 functions and change no answer.
 
@@ -576,8 +576,10 @@ genesis), that the machine state hashes to that snapshot's state hash, and that 
 refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
 preflight runs the same predicate, so an honest node never submits an unlinked refutation.
 Fixed (2026-10-12): the posted block's author signature is verified before the replay
-([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); a non-canonical encoding of the
-posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
+([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of
+the posted block is now rejected at posting by the canonical round-trip rule; noncanonical encodings
+outside the covered decoders remain the residual decoding exposure of
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
 The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
 refutation reverts with no verdict, and one funded with its cost plus the manager's replay
 requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).

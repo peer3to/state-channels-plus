@@ -12,7 +12,7 @@
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-  Partial: The client and contract decoders may accept or reject different encodings ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
 
 ## UNIT-TEST-UTILITY-FACET-1-ER4P0V
 
@@ -24,16 +24,18 @@ Threshold and shape predicates
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1` — dup signer once
 - [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P2` — malleated signature
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P3` — missing member
-- [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P4` — tryDecode valid block
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P4` — tryDecode valid block
 - [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P5` — genesis-shape predicate
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P6` — extra member
-- [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P7` — tryDecode invalid block
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P7` — tryDecode invalid block
 - [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P8` — snapshot-ordering predicate
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P9` — `retrieveSignerAddresses` maps a signature that fails to recover to `address(0)` in its own slot and keeps the other signers in submission order
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P10` — `retrieveSignerAddresses` on an empty signature list returns an empty signer set
-- [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P11` — `tryDecodeBlock` decodes a non-canonical encoding (the canonical bytes plus one trailing zero word) to the same block as the canonical encoding
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P12` — `verifyOutboundRunAboveAnchor` returns invalid, without a revert, for a linked run whose forged message balance overflows the withdrawal sum, and valid for the same run with the genuine block
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P13` — `verifyOutboundRunAboveAnchor` returns invalid, without a revert, when the upper snapshot's outbound head points to an overflowing block right above the anchor, and returns that block as the part above the anchor
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P14` — `decodeBlock` accepts canonical block bytes with exact fields and re-encodes them byte-identically
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15` — `decodeBlock` rejects decodable noncanonical encodings with `ErrorNonCanonicalBlock` and malformed bytes with an ordinary revert
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16` — `tryDecodeBlock` reports canonical bytes true with exact fields and every noncanonical or malformed input false with the default block
 
 ## UNIT-TEST-UTILITY-FACET-2-89EC3Q
 

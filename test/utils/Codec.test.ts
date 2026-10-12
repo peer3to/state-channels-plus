@@ -1,12 +1,16 @@
 import {
+    canonicalBlockCorpus,
     codecValues,
     codecTestAddress,
     expectCodecRoundTrip
 } from "../fixtures/CodecFixtures";
+import { deployUtilityFacetTestContract } from "../test_utils/testHelpers";
+import Block from "@/models/Block";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils/Codec";
 import { expect } from "chai";
 import { ethers } from "ethers";
+import { ethers as hreEthers } from "hardhat";
 
 describe("Codec", function () {
     it("the existing-window flag survives nested confirmation encoding and binds the signature", async function () {
@@ -568,5 +572,176 @@ describe("Codec", function () {
         expect(() => Reflect.apply(Codec.decode, Codec, ["0x", 999])).to.throw(
             "No ethers type mapping found for 999"
         );
+    });
+
+    it("rejects noncanonical block bytes identically to UtilityFacet", async function () {
+        const corpus = canonicalBlockCorpus();
+        const util = await deployUtilityFacetTestContract(hreEthers);
+        const members = [
+            corpus.trailingWord,
+            corpus.trailingByte,
+            corpus.offsetGap,
+            corpus.dirtyPadding,
+            corpus.truncated,
+            corpus.empty
+        ];
+        for (const bytes of members) {
+            let clientAccepts = true;
+            try {
+                Codec.decode(bytes, Type.Block);
+            } catch {
+                clientAccepts = false;
+            }
+            expect(
+                clientAccepts,
+                `client acceptance of ${bytes.slice(0, 18)}`
+            ).to.equal(false);
+            const [contractAccepts] =
+                await util.tryDecodeBlock.staticCall(bytes);
+            expect(
+                contractAccepts,
+                `contract acceptance of ${bytes.slice(0, 18)}`
+            ).to.equal(false);
+        }
+        let decodeBlockReverted = false;
+        try {
+            await util.decodeBlock.staticCall(corpus.trailingWord);
+        } catch {
+            decodeBlockReverted = true;
+        }
+        expect(decodeBlockReverted).to.equal(true);
+        const clientDecoded = Codec.decode(corpus.canonical, Type.Block);
+        expect(Codec.encode(clientDecoded, Type.Block)).to.equal(
+            corpus.canonical
+        );
+        const [contractAccepts, contractDecoded] =
+            await util.tryDecodeBlock.staticCall(corpus.canonical);
+        expect(contractAccepts).to.equal(true);
+        expect(Codec.encode(contractDecoded, Type.Block)).to.equal(
+            corpus.canonical
+        );
+    });
+
+    it("accepts canonical block bytes across hex casing and byte arrays", function () {
+        const corpus = canonicalBlockCorpus();
+        const upperCased = "0x" + corpus.canonical.slice(2).toUpperCase();
+        const fromCased = Codec.decode(upperCased, Type.Block);
+        expect(Codec.encode(fromCased, Type.Block)).to.equal(corpus.canonical);
+        const fromBytes = Codec.decode(
+            ethers.getBytes(corpus.canonical),
+            Type.Block
+        );
+        expect(fromBytes).to.deep.equal(corpus.blockValue);
+        expect(Codec.encode(fromBytes, Type.Block)).to.equal(corpus.canonical);
+    });
+
+    it("leaves non-block decoding acceptance unchanged", function () {
+        const balance = codecValues.balance();
+        const balanceEncoded = Codec.encode(balance, Type.Balance);
+        expect(
+            Codec.decode(balanceEncoded + "00".repeat(32), Type.Balance)
+        ).to.deep.equal(balance);
+        const joinChannel = codecValues.joinChannel();
+        const joinEncoded = Codec.encode(joinChannel, Type.JoinChannel);
+        expect(
+            Codec.decode(joinEncoded + "00".repeat(32), Type.JoinChannel)
+        ).to.deep.equal(joinChannel);
+    });
+
+    it("canonical differential block accepts on both sides", async function () {
+        const corpus = canonicalBlockCorpus();
+        const util = await deployUtilityFacetTestContract(hreEthers);
+        const clientDecoded = Codec.decode(corpus.canonical, Type.Block);
+        expect(Codec.encode(clientDecoded, Type.Block)).to.equal(
+            corpus.canonical
+        );
+        const [contractAccepts, contractDecoded] =
+            await util.tryDecodeBlock.staticCall(corpus.canonical);
+        expect(contractAccepts).to.equal(true);
+        expect(Codec.encode(contractDecoded, Type.Block)).to.equal(
+            corpus.canonical
+        );
+    });
+
+    it("trailing word differential block rejects on both sides", async function () {
+        const corpus = canonicalBlockCorpus();
+        const util = await deployUtilityFacetTestContract(hreEthers);
+        for (const bytes of [corpus.trailingWord, corpus.trailingByte]) {
+            expect(() => Codec.decode(bytes, Type.Block)).to.throw(
+                "Non-canonical block encoding"
+            );
+            const [contractAccepts] =
+                await util.tryDecodeBlock.staticCall(bytes);
+            expect(contractAccepts).to.equal(false);
+        }
+    });
+
+    it("dirty padding differential block rejects on both sides", async function () {
+        const corpus = canonicalBlockCorpus();
+        const util = await deployUtilityFacetTestContract(hreEthers);
+        for (const bytes of [corpus.dirtyPadding, corpus.offsetGap]) {
+            expect(() => Codec.decode(bytes, Type.Block)).to.throw(
+                "Non-canonical block encoding"
+            );
+            const [contractAccepts] =
+                await util.tryDecodeBlock.staticCall(bytes);
+            expect(contractAccepts).to.equal(false);
+        }
+    });
+
+    it("truncated differential block rejects on both sides", async function () {
+        const corpus = canonicalBlockCorpus();
+        const util = await deployUtilityFacetTestContract(hreEthers);
+        expect(() => Codec.decode(corpus.truncated, Type.Block)).to.throw();
+        const [contractAccepts] = await util.tryDecodeBlock.staticCall(
+            corpus.truncated
+        );
+        expect(contractAccepts).to.equal(false);
+    });
+
+    it("Block model wrappers enforce canonical decoding failure policy", function () {
+        const corpus = canonicalBlockCorpus();
+        const signature = codecValues.signedBlock().signature;
+        const canonicalSignedBlock = {
+            encodedBlock: corpus.canonical,
+            signature
+        };
+        expect(
+            Block.fromSignedBlock(canonicalSignedBlock).blockStruct
+        ).to.deep.equal(corpus.blockValue);
+        const confirmation = codecValues.blockConfirmation();
+        const canonicalConfirmation = {
+            ...confirmation,
+            signedBlock: {
+                ...confirmation.signedBlock,
+                encodedBlock: corpus.canonical
+            }
+        };
+        expect(
+            Block.fromBlockConfirmation(canonicalConfirmation).blockStruct
+        ).to.deep.equal(corpus.blockValue);
+        const noncanonicalSignedBlock = {
+            encodedBlock: corpus.trailingWord,
+            signature
+        };
+        expect(() => Block.fromSignedBlock(noncanonicalSignedBlock)).to.throw(
+            "Non-canonical block encoding"
+        );
+        expect(Block.tryFromSignedBlock(noncanonicalSignedBlock)).to.equal(
+            null
+        );
+        const noncanonicalConfirmation = {
+            ...confirmation,
+            signedBlock: {
+                ...confirmation.signedBlock,
+                encodedBlock: corpus.dirtyPadding
+            }
+        };
+        expect(() =>
+            Block.fromBlockConfirmation(noncanonicalConfirmation)
+        ).to.throw("Non-canonical block encoding");
+        expect(
+            Block.tryFromBlockConfirmation(noncanonicalConfirmation)
+        ).to.equal(null);
     });
 });

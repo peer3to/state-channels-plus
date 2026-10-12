@@ -105,7 +105,7 @@ Specification cases tested: 11/14. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 7/8. Untested: T1.P6.
 
 [`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-Specification cases tested: 3/9. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
+Specification cases tested: 4/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 Specification cases tested: 0/14.
@@ -222,7 +222,7 @@ Specification cases tested: 2/3. Untested: T1.P2.
 Specification cases tested: 9/12. Untested: T1.P1, T1.P3, T1.P4.
 
 [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-Specification cases tested: 3/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 4/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
@@ -330,7 +330,7 @@ Specification cases tested: 0/3.
 Specification cases tested: 2/3. Untested: T1.P3.
 
 [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-Specification cases tested: 0/9.
+Specification cases tested: 3/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-DATA-2-A5HMZP` (Field and collection ordering, duplicate policy, optionality, and nested-byte…)](../specification/protocol-model/data-types.md#req-data-2-a5hmzp)
 Specification cases tested: 0/7.
