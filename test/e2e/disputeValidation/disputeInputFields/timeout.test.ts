@@ -363,9 +363,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
     it("bad-signature posted calldata cannot refute an honest forced timeout", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.timeoutSetup(4, 0, {
-            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
-        });
+        await h.lifecycle.timeoutSetup(4, 0);
 
         // Establish height 1 so the calldata block does not receive first-block grace.
         await h.transition.advanceState({ count: 2 });
@@ -460,12 +458,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             .query.getBlockByHeight(forkId, timeoutHeight - 1)
             .request();
         if (!previousBlock) throw new Error("previous block not found");
-        const wait = timeoutWaitTime(
-            resolveTestTimeConfig({
-                evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME
-            }),
-            timeoutHeight
-        );
+        const wait = timeoutWaitTime(resolveTestTimeConfig(), timeoutHeight);
         await h.event.waitUntilTimestamp(
             Math.max(
                 previousBlock.timestamp,

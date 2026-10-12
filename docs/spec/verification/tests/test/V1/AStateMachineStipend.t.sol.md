@@ -48,7 +48,7 @@ message is reported and stored. One fuzzes the input size (up to 128 KiB) and th
 (the requirement ±300,000) directly on the machine: whenever the call succeeds, the transition saw
 at least its budget minus 20,000 gas at entry.
 
-Twelve tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
+Thirteen tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
 staging (`test/V1/harness/TimeoutCalldataPostedStaging.sol`) uploads a timeout dispute by
 participant 1 against participant 0 for height 0 of the genesis fork, then has participant 0 post a
 signed block for that height in time, through the diamond's public entry points. The block's
@@ -63,16 +63,16 @@ attached gas assert that an honest `guardedAdd` refutation either kills the disp
 verdict, and that a `burn` refutation never kills it and slashes the submitter exactly when the call
 succeeds.
 
-Two of the twelve fault only the posted block's author signature: one signed by the wrong key, one carrying unrecoverable 65 zero bytes. Each funded refutation succeeds as a call, leaves the timeout dispute committed, keeps the disputer standing, and slashes the submitter.
+Three of the thirteen fault only the posted block's author signature: one signed by the wrong key, one carrying unrecoverable 65 zero bytes, and one with an empty signature. Each funded refutation succeeds as a call, leaves the timeout dispute committed, keeps the disputer standing, and slashes the submitter.
 
-Three of the twelve post a block that is honest for its own base but not linked to the dispute's latest
+Three of the thirteen post a block that is honest for its own base but not linked to the dispute's latest
 state (`_stageTimeoutCalldataPostedOn`): a snapshot whose state hash names a forged genesis state
 (participant 0 holds a balance it never had), with that forged state and a `previousBlockHash`
 matching the forged snapshot; the real genesis snapshot with the forged state; and the real genesis
 snapshot and state with a `previousBlockHash` of another block. Each funded refutation succeeds as a
 call, leaves the timeout dispute committed, keeps the disputer standing and slashes the submitter.
 
-One of the twelve gives the dispute a state proof with one signed block by participant 1
+One of the thirteen gives the dispute a state proof with one signed block by participant 1
 (`_stageTimeoutCalldataPostedAfter`), signed as that block's canonical encoding plus one trailing
 zero word; it asserts that the bytes decode to the same block and hash differently. The dispute
 blames participant 0 for height 1, and the posted block builds on the genesis state through a
