@@ -234,3 +234,4 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P205` — a zero-target failing proof from an eligible submitter slashes the submitter and keeps the dispute committed
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P206` — a `TimeoutCalldataPosted` proof whose posted block is signed by the wrong key is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P207` — a `TimeoutCalldataPosted` proof whose posted block carries an unrecoverable author signature is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P208` — a `TimeoutCalldataPosted` proof whose posted block carries no signature is invalid and slashes its submitter

@@ -27,7 +27,8 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     enum SignatureFault {
         None,
         WrongSigner,
-        Corrupted
+        Corrupted,
+        Missing
     }
     SignatureFault internal signatureFault;
 
@@ -47,6 +48,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     function _signPostedBlock(uint256 timedOutPk, bytes memory encodedBlock) internal override returns (bytes memory) {
         if (signatureFault == SignatureFault.WrongSigner) return _sign(DISPUTER_PK, encodedBlock);
         if (signatureFault == SignatureFault.Corrupted) return new bytes(65);
+        if (signatureFault == SignatureFault.Missing) return new bytes(0);
         return super._signPostedBlock(timedOutPk, encodedBlock);
     }
 
@@ -598,6 +600,17 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithUnrecoverableSignature() public {
         address[] memory participants = _deployGuarded();
         signatureFault = SignatureFault.Corrupted;
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok, "an invalid signature is a rejected proof verdict");
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithoutSignature() public {
+        address[] memory participants = _deployGuarded();
+        signatureFault = SignatureFault.Missing;
         (Dispute memory dispute, bytes memory call) =
             _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
 

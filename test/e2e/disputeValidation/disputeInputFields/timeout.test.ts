@@ -424,9 +424,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                     event.args.channelId === h.channelId
             );
         if (!postedLog) throw new Error("BlockCalldataPosted log not found");
-        expect(String(postedLog.args.sender).toLowerCase()).to.equal(
-            writer.address.toLowerCase()
-        );
+        expect(postedLog.args.sender).to.equal(writer.address);
         expect(postedLog.args.signedBlock.encodedBlock).to.equal(
             postedSignedBlock.encodedBlock
         );
@@ -486,9 +484,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         expect(Number(dispute.input.timeout.blockHeight)).to.equal(
             timeoutHeight
         );
-        expect(
-            String(dispute.input.timeout.participant).toLowerCase()
-        ).to.equal(writer.address.toLowerCase());
+        expect(dispute.input.timeout.participant).to.equal(writer.address);
 
         await h.assert.dispute.committedWait({
             peersIndices: [3],
@@ -578,11 +574,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         );
         expect(after, "dispute stays committed").to.include(disputeHash);
         expect(after, "no commitment removed").to.include.members(commitments);
-        const slashed = (
-            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
-        ).map((address) => address.toLowerCase());
-        expect(slashed).to.include(writer.address.toLowerCase());
-        expect(slashed).to.not.include(h.getPeer(3).address.toLowerCase());
+        const slashed = await h.channelManager.getOnChainSlashedParticipants(
+            h.channelId
+        );
+        expect(slashed).to.include(writer.address);
+        expect(slashed).to.not.include(h.getPeer(3).address);
 
         // No peer kills anything over the bad-signature calldata, and none
         // stores a dispute fraud proof for it.
@@ -609,20 +605,17 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             assertMaliciousRemoved: false
         });
         await waitFor(async () => {
-            const participants = (
-                await h
-                    .control(resolved.honestPeers[0]!)
-                    .query.getParticipants()
-                    .request()
-            ).map((address) => address.toLowerCase());
+            const participants = await h
+                .control(resolved.honestPeers[0]!)
+                .query.getParticipants()
+                .request();
             return (
-                participants.includes(h.getPeer(3).address.toLowerCase()) &&
-                !participants.includes(writer.address.toLowerCase())
+                participants.includes(h.getPeer(3).address) &&
+                !participants.includes(writer.address)
             );
         }, h.event.protocolEventTimeoutMs());
-        const slashedAfter = (
-            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
-        ).map((address) => address.toLowerCase());
-        expect(slashedAfter).to.not.include(h.getPeer(3).address.toLowerCase());
+        const slashedAfter =
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId);
+        expect(slashedAfter).to.not.include(h.getPeer(3).address);
     });
 });

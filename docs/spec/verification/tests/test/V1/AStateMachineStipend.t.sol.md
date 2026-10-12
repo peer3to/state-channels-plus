@@ -125,6 +125,7 @@ run, while the 32-run guarded fuzzes still pass. The sweeps assign no test IDs o
 - `test_applyDisputeFraudProofs_refusesUnderfundedTimeoutCalldataReplay`: REQ-ENFSM-1-DKJCY2.T1.P17
 - `test_applyDisputeFraudProofs_rejectsTimeoutRefutationSignedByAnotherKey`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P206, REQ-DIS-10-SAHJBN.T1.P22
 - `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithUnrecoverableSignature`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P207, REQ-DIS-10-SAHJBN.T1.P23
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithoutSignature`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P208, REQ-DIS-10-SAHJBN.T1.P26
 - `test_applyDisputeFraudProofs_fundedTimeoutCalldataReplayKillsTimeoutDispute`: REQ-ENFSM-1-DKJCY2.T1.P18, REQ-DIS-10-SAHJBN.T1.P24
 - `test_applyDisputeFraudProofs_fundedOverBudgetPostedBlockKeepsTimeoutDispute`: REQ-ENFSM-1-DKJCY2.T1.P19
 - `test_applyDisputeFraudProofs_rejectsTimeoutRefutationFromUnlinkedSnapshot`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P34, REQ-DIS-10-SAHJBN.T1.P17
