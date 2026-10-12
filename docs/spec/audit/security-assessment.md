@@ -575,8 +575,8 @@ genesis), that the machine state hashes to that snapshot's state hash, and that 
 [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
 refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
 preflight runs the same predicate, so an honest node never submits an unlinked refutation.
-Residual: the posted block's author signature is still not verified
-([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of the
+Fixed (2026-10-12): the posted block's author signature is verified before the replay
+([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); a non-canonical encoding of the
 posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
 The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
 refutation reverts with no verdict, and one funded with its cost plus the manager's replay

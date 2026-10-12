@@ -1,8 +1,20 @@
-import { DisputeFraudProofType } from "@/types/sol-enums";
-import { sleep, tryDecodeCustomError } from "@/utils";
+import { StateSnapshot } from "@/models";
+import { timeoutWaitTime } from "@/types";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import { Codec, Type, hash, sleep, tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
-import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { waitFor } from "@test/utils/waitFor";
+import {
+    TimeoutCalldataPostedStruct,
+    TimeoutTooEarlyStruct
+} from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
+import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { expect } from "chai";
+import { AbiCoder } from "ethers";
 
 // Invalid-dispute scenarios require upload -> audit -> kill to fit inside the
 // evidence window. With one-second interval mining, the three-second minimum
@@ -347,5 +359,270 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 h.getPeer(peerIndex).address.toLowerCase()
             );
         }
+    });
+
+    it("bad-signature posted calldata cannot refute an honest forced timeout", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.timeoutSetup(4, 0, {
+            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+        });
+
+        // Establish height 1 so the calldata block does not receive first-block grace.
+        await h.transition.advanceState({ count: 2 });
+
+        // Peer 3 cannot see the next block, so the author must post it as calldata.
+        await Promise.all(
+            [0, 1, 2, 3].map((peerIndex) =>
+                h.rpcStub.suppressTimeoutCheck(peerIndex)
+            )
+        );
+        await h.network.blacklistAndDisconnectPeer(3);
+
+        // A real linked writer block with the successful transition's next
+        // snapshot, authored off-wire so only the writer holds it.
+        const {
+            leader: writer,
+            authored,
+            startHeight,
+            forkId
+        } = await h.transition.authorNextBlockOffWireWait();
+        const timeoutHeight = Number(startHeight);
+        expect([0, 1, 2]).to.include(writer.index);
+        const validSignedBlock = Codec.decode(
+            authored.encodedSignedBlock,
+            Type.SignedBlock
+        );
+
+        // Corrupt only the signature before posting; the commitment still
+        // binds the exact posted bytes.
+        const badSignature = `0x${"00".repeat(65)}`;
+        const postedSignedBlock = {
+            ...validSignedBlock,
+            signature: badSignature
+        };
+        const { blockNumber, onChainTimestamp } = await h
+            .control(writer)
+            .validation.postBlockCalldataOnChain(
+                Codec.encode(postedSignedBlock, Type.SignedBlock) as string
+            )
+            .request();
+
+        // The on-chain commitment matches the exact posted payload.
+        const calldataPostedTopic = h.channelManager.interface.getEvent(
+            "BlockCalldataPosted"
+        )!.topicHash;
+        const blockLogs = await h.provider.getLogs({
+            fromBlock: blockNumber,
+            toBlock: blockNumber,
+            topics: [calldataPostedTopic]
+        });
+        const postedLog = blockLogs
+            .map((log) => h.channelManager.interface.parseLog(log))
+            .find(
+                (event) =>
+                    event?.name === "BlockCalldataPosted" &&
+                    event.args.channelId === h.channelId
+            );
+        if (!postedLog) throw new Error("BlockCalldataPosted log not found");
+        expect(String(postedLog.args.sender).toLowerCase()).to.equal(
+            writer.address.toLowerCase()
+        );
+        expect(postedLog.args.signedBlock.encodedBlock).to.equal(
+            postedSignedBlock.encodedBlock
+        );
+        expect(postedLog.args.signedBlock.signature).to.equal(badSignature);
+        expect(Number(postedLog.args.timestamp)).to.equal(
+            Number(onChainTimestamp)
+        );
+        expect(postedLog.args.commitmentHash).to.equal(
+            hash(
+                AbiCoder.defaultAbiCoder().encode(
+                    ["tuple(bytes encodedBlock, bytes signature)", "uint256"],
+                    [
+                        [
+                            postedSignedBlock.encodedBlock,
+                            postedSignedBlock.signature
+                        ],
+                        onChainTimestamp
+                    ]
+                )
+            )
+        );
+
+        // Every connected peer observes the posted (bad-signature) calldata.
+        await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
+            mode: "atLeast"
+        });
+
+        // Peer 3 honestly times out the writer it cannot see; the forced
+        // dispute names that writer and height.
+        await h.tamper.plantFreshTimeoutForParticipant(3, writer.address);
+        const previousBlock = await h
+            .control(h.getPeer(1))
+            .query.getBlockByHeight(forkId, timeoutHeight - 1)
+            .request();
+        if (!previousBlock) throw new Error("previous block not found");
+        const wait = timeoutWaitTime(
+            resolveTestTimeConfig({
+                evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME
+            }),
+            timeoutHeight
+        );
+        await h.event.waitUntilTimestamp(
+            Math.max(
+                previousBlock.timestamp,
+                previousBlock.onChainTimestamp ?? previousBlock.timestamp
+            ) +
+                wait +
+                1
+        );
+        await sleep(h.event.evidencePeriodWaitMs());
+
+        h.contextApi.captureOriginalFork();
+        h.event.resetEventSpies();
+        const { dispute } = await h.tamper.postTamperedDispute(3, (dispute) => {
+            dispute.input.timeout.isForced = true;
+        });
+        expect(Number(dispute.input.timeout.blockHeight)).to.equal(
+            timeoutHeight
+        );
+        expect(
+            String(dispute.input.timeout.participant).toLowerCase()
+        ).to.equal(writer.address.toLowerCase());
+
+        await h.assert.dispute.committedWait({
+            peersIndices: [3],
+            expectedCount: 1
+        });
+        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const commitments = await h.channelManager.getWindowCommitments(
+            h.channelId,
+            dispute.input.forkId
+        );
+        expect(commitments, "dispute stays committed").to.include(disputeHash);
+
+        // The writer's TimeoutCalldataPosted refutation over the exact posted
+        // bytes: the dispute's latest snapshot, that snapshot's machine state,
+        // and the posted commitment's timestamp.
+        const genesisResult = await h
+            .control(writer)
+            .dispute.getGenesisSnapshotStruct(forkId)
+            .request();
+        if (!genesisResult) throw new Error("no genesis snapshot");
+        const genesisSnapshot = StateSnapshot.from(
+            Codec.decode(genesisResult.encodedSnapshot, Type.StateSnapshot)
+        );
+        const { encodedAuditingData } = await h
+            .control(writer)
+            .dispute.buildOwnAuditingData(forkId, timeoutHeight - 1)
+            .request();
+        const latestStateSnapshot = Codec.decode(
+            encodedAuditingData,
+            Type.DisputeAuditingData
+        ).latestStateSnapshot;
+        expect(
+            hash(Codec.encode(latestStateSnapshot, Type.StateSnapshot))
+        ).to.equal(dispute.input.latestStateSnapshotHash);
+        const { machineState } = await h.execOnHost(
+            writer,
+            (sm, args) => {
+                const state =
+                    sm.storage.stateMachineStates.getStateMachineState(
+                        args.stateMachineStateHash
+                    );
+                if (!state) throw new Error("latest machine state not held");
+                return { machineState: state };
+            },
+            {
+                stateMachineStateHash:
+                    latestStateSnapshot.snapshotData.stateMachineStateHash
+            }
+        );
+        expect(hash(machineState)).to.equal(
+            latestStateSnapshot.snapshotData.stateMachineStateHash
+        );
+        const proof: TimeoutCalldataPostedStruct = {
+            genesisStateSnapshotData: genesisSnapshot.snapshotData,
+            latestStateSnapshot,
+            latestStateStateMachineState: machineState,
+            postedBlock: postedSignedBlock,
+            onChainTimestamp: BigInt(onChainTimestamp),
+            previousBlockOnChainTimestamp: 0,
+            previousBlockcalldata: validSignedBlock
+        };
+
+        // The posted block's author submits the refutation.
+        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: writer.index });
+        const refutation: DisputeFraudProofStruct = {
+            proofType: toSolidityDisputeFraudProofType(
+                DisputeFraudProofType.TimeoutCalldataPosted
+            ),
+            participant: dispute.input.disputer,
+            dispute,
+            encodedProof: Codec.encode(
+                proof,
+                DisputeFraudProofType.TimeoutCalldataPosted
+            )
+        };
+        await (
+            await writer.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
+                [refutation]
+            )
+        ).wait();
+
+        // A rejected refutation keeps the timeout committed, keeps the forcer
+        // standing, and slashes the refutation's submitter.
+        const after = await h.channelManager.getWindowCommitments(
+            h.channelId,
+            dispute.input.forkId
+        );
+        expect(after, "dispute stays committed").to.include(disputeHash);
+        expect(after, "no commitment removed").to.include.members(commitments);
+        const slashed = (
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
+        ).map((address) => address.toLowerCase());
+        expect(slashed).to.include(writer.address.toLowerCase());
+        expect(slashed).to.not.include(h.getPeer(3).address.toLowerCase());
+
+        // No peer kills anything over the bad-signature calldata, and none
+        // stores a dispute fraud proof for it.
+        await h.event.waitWhileEventCountsStayAtMost(
+            "onDisputeKilled",
+            [0, 1, 2],
+            { durationMs: 3000, maxCount: 0 }
+        );
+        for (const peerIndex of [0, 1, 2]) {
+            const proofTypes = await h
+                .control(h.getPeer(peerIndex))
+                .query.getDisputeFraudProofTypes()
+                .request();
+            expect(
+                proofTypes,
+                `peer ${peerIndex} stored no dispute fraud proof`
+            ).to.have.length(0);
+        }
+
+        // The standing forced timeout resolves with the forcer retained and
+        // the failed refutation's author gone.
+        const resolved = await h.dispute.resolveDisputeWait({
+            forkId: h.context.originalForkId!,
+            assertMaliciousRemoved: false
+        });
+        await waitFor(async () => {
+            const participants = (
+                await h
+                    .control(resolved.honestPeers[0]!)
+                    .query.getParticipants()
+                    .request()
+            ).map((address) => address.toLowerCase());
+            return (
+                participants.includes(h.getPeer(3).address.toLowerCase()) &&
+                !participants.includes(writer.address.toLowerCase())
+            );
+        }, h.event.protocolEventTimeoutMs());
+        const slashedAfter = (
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
+        ).map((address) => address.toLowerCase());
+        expect(slashedAfter).to.not.include(h.getPeer(3).address.toLowerCase());
     });
 });

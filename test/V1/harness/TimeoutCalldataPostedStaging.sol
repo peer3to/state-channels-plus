@@ -24,6 +24,10 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         bytes32 previousBlockHash;
     }
 
+    function _signPostedBlock(uint256 timedOutPk, bytes memory encodedBlock) internal virtual returns (bytes memory) {
+        return _sign(timedOutPk, encodedBlock);
+    }
+
     /// Stage the dispute and the posted block for `transitionData`, authored by `timedOutPk`
     /// on the genesis state `encodedGenesisState` of `channelId` (an open channel whose
     /// snapshot is still its genesis). The block's snapshot hash is the one a fully funded
@@ -99,7 +103,7 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
 
         bytes memory encodedBlock = abi.encode(postedBlock);
         SignedBlock memory signedBlock =
-            SignedBlock({encodedBlock: encodedBlock, signature: _sign(timedOutPk, encodedBlock)});
+            SignedBlock({encodedBlock: encodedBlock, signature: _signPostedBlock(timedOutPk, encodedBlock)});
         vm.prank(vm.addr(timedOutPk));
         diamond.postBlockCalldata(signedBlock, block.timestamp);
 
