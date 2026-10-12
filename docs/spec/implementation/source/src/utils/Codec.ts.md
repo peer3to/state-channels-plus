@@ -10,7 +10,6 @@
 - [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
   Partial: `Type.Block` decoding now enforces the canonical round trip identically to the contracts' decoder; the remaining gap is non-block types, which still accept trailing encodings ([`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-  `Type.Block` decoding accepts and rejects the same bytes as `UtilityFacet.decodeBlock`, through the same canonical round trip.
 - [`INV-DATA-1-F8CG0P` (Equal logical values have one canonical encoding and decode identically in…)](../../../../specification/protocol-model/data-types.md#inv-data-1-f8cg0p)
 - [`REQ-DATA-4-HFEAEA` (Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence…)](../../../../specification/protocol-model/data-types.md#req-data-4-hfeaea)
 
