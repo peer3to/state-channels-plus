@@ -1,9 +1,5 @@
-import { StateSnapshot } from "@/models";
 import { timeoutWaitTime } from "@/types";
-import {
-    DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep, tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
@@ -12,7 +8,6 @@ import {
     TimeoutCalldataPostedStruct,
     TimeoutTooEarlyStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
-import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { expect } from "chai";
 import { AbiCoder } from "ethers";
 
@@ -404,6 +399,18 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 Codec.encode(postedSignedBlock, Type.SignedBlock) as string
             )
             .request();
+        const previousBlock = await h
+            .control(h.getPeer(1))
+            .query.getBlockByHeight(forkId, timeoutHeight - 1)
+            .request();
+        if (!previousBlock) throw new Error("previous block not found");
+        const wait = timeoutWaitTime(resolveTestTimeConfig(), timeoutHeight);
+        // The refutation deadline when the predecessor has no posted calldata
+        // and the height is not 0: a late post would fail the refutation on
+        // timing, not on the signature.
+        expect(Number(onChainTimestamp)).to.be.at.most(
+            previousBlock.timestamp + wait
+        );
 
         // The on-chain commitment matches the exact posted payload.
         const calldataPostedTopic = h.channelManager.interface.getEvent(
@@ -453,12 +460,6 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // Peer 3 honestly times out the writer it cannot see; the forced
         // dispute names that writer and height.
         await h.tamper.plantFreshTimeoutForParticipant(3, writer.address);
-        const previousBlock = await h
-            .control(h.getPeer(1))
-            .query.getBlockByHeight(forkId, timeoutHeight - 1)
-            .request();
-        if (!previousBlock) throw new Error("previous block not found");
-        const wait = timeoutWaitTime(resolveTestTimeConfig(), timeoutHeight);
         await h.event.waitUntilTimestamp(
             Math.max(
                 previousBlock.timestamp,
@@ -493,14 +494,6 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // The writer's TimeoutCalldataPosted refutation over the exact posted
         // bytes: the dispute's latest snapshot, that snapshot's machine state,
         // and the posted commitment's timestamp.
-        const genesisResult = await h
-            .control(writer)
-            .dispute.getGenesisSnapshotStruct(forkId)
-            .request();
-        if (!genesisResult) throw new Error("no genesis snapshot");
-        const genesisSnapshot = StateSnapshot.from(
-            Codec.decode(genesisResult.encodedSnapshot, Type.StateSnapshot)
-        );
         const { encodedAuditingData } = await h
             .control(writer)
             .dispute.buildOwnAuditingData(forkId, timeoutHeight - 1)
@@ -512,52 +505,33 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         expect(
             hash(Codec.encode(latestStateSnapshot, Type.StateSnapshot))
         ).to.equal(dispute.input.latestStateSnapshotHash);
-        const { machineState } = await h.execOnHost(
-            writer,
-            (sm, args) => {
-                const state =
-                    sm.storage.stateMachineStates.getStateMachineState(
-                        args.stateMachineStateHash
-                    );
-                if (!state) throw new Error("latest machine state not held");
-                return { machineState: state };
-            },
-            {
-                stateMachineStateHash:
-                    latestStateSnapshot.snapshotData.stateMachineStateHash
-            }
-        );
+        const machineState = await h
+            .control(writer)
+            .query.getStateMachineState(
+                latestStateSnapshot.snapshotData.stateMachineStateHash
+            )
+            .request();
+        if (!machineState) throw new Error("latest machine state not held");
         expect(hash(machineState)).to.equal(
             latestStateSnapshot.snapshotData.stateMachineStateHash
         );
-        const proof: TimeoutCalldataPostedStruct = {
-            genesisStateSnapshotData: genesisSnapshot.snapshotData,
-            latestStateSnapshot,
-            latestStateStateMachineState: machineState,
-            postedBlock: postedSignedBlock,
-            onChainTimestamp: BigInt(onChainTimestamp),
-            previousBlockOnChainTimestamp: 0,
-            previousBlockcalldata: validSignedBlock
-        };
 
         // The posted block's author submits the refutation.
         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: writer.index });
-        const refutation: DisputeFraudProofStruct = {
-            proofType: toSolidityDisputeFraudProofType(
-                DisputeFraudProofType.TimeoutCalldataPosted
-            ),
-            participant: dispute.input.disputer,
-            dispute,
-            encodedProof: Codec.encode(
-                proof,
-                DisputeFraudProofType.TimeoutCalldataPosted
-            )
-        };
-        await (
-            await writer.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
-                [refutation]
-            )
-        ).wait();
+        await h.tamper.submitForgedFraudProof(
+            3,
+            DisputeFraudProofType.TimeoutCalldataPosted,
+            ({ genesisSnapshot }): TimeoutCalldataPostedStruct => ({
+                genesisStateSnapshotData: genesisSnapshot.snapshotData,
+                latestStateSnapshot,
+                latestStateStateMachineState: machineState,
+                postedBlock: postedSignedBlock,
+                onChainTimestamp: BigInt(onChainTimestamp),
+                previousBlockOnChainTimestamp: 0,
+                previousBlockcalldata: validSignedBlock
+            }),
+            { dispute, submitter: writer.p2pInstance.chainSigner }
+        );
 
         // A rejected refutation keeps the timeout committed, keeps the forcer
         // standing, and slashes the refutation's submitter.

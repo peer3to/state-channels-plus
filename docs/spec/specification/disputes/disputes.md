@@ -471,7 +471,10 @@ must show that invalid inputs cannot mutate canonical state, a failed/aborted wi
 and every accepted outcome is deterministic. A timeout refutation is a proof supplied by the participant
 the timeout names, so every input it replays must be tied to the dispute: a refutation that replays a
 self-signed block from a pre-state of its own choice would let the blamed participant turn an honest timeout
-into a slash of the honest disputer (§6.3 existence links). Auditors persist a dispute's outbound
+into a slash of the honest disputer (§6.3 existence links). The replayed block must also carry the
+timeout target's authentic signature: honest peers answer unauthenticated posted calldata only with a
+forced timeout, which skips the upload race check ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](dispute-processing.md#req-dispute-pipe-12-f85kf2)), so unauthenticated calldata
+must never refute a forced timeout. Auditors persist a dispute's outbound
 run for later withdrawals, so a posted run is verified before it is kept: a forged or truncated run
 would store false exits or leave real ones unreleased. It is judged from the current anchor, so an
 anchor that moves after the dispute was built cannot frame an honest disputer (§4.1). Before the
