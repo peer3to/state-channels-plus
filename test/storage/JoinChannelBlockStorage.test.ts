@@ -266,6 +266,20 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(storage.getLatestBlockHeight()).to.equal(1);
         });
 
+        it("a verified run whose predecessor is held but is not the tip is persisted and leaves the tip", () => {
+            storage.store(chain[0]);
+            // block 1 is held, but the tip stays at block 0
+            storage.store(chain[1], { justPersist: true });
+
+            storage.storeVerifiedRun([chain[2]], chainHashes[1]);
+
+            expect(storage.getMessageBlock(chainHashes[2])).to.deep.equal(
+                chain[2]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[0]);
+            expect(storage.getLatestBlockHeight()).to.equal(0);
+        });
+
         it("a verified run from the zero hash into an empty store moves the tip to its last block", () => {
             storage.storeVerifiedRun([chain[0], chain[1]], ethers.ZeroHash);
 
