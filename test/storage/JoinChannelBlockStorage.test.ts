@@ -265,6 +265,27 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
             expect(storage.getLatestBlockHeight()).to.equal(1);
         });
+
+        it("a verified run from the zero hash into an empty store moves the tip to its last block", () => {
+            storage.storeVerifiedRun([chain[0], chain[1]], ethers.ZeroHash);
+
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+
+        it("a verified run with a nonzero predecessor into an empty store is persisted and sets no tip", () => {
+            // its predecessor (block 1) is not held, and no tip is held
+            storage.storeVerifiedRun([chain[2], chain[3]], chainHashes[1]);
+
+            expect(storage.getMessageBlock(chainHashes[2])).to.deep.equal(
+                chain[2]
+            );
+            expect(storage.getMessageBlock(chainHashes[3])).to.deep.equal(
+                chain[3]
+            );
+            expect(storage.getLatestBlockHash()).to.be.undefined;
+            expect(storage.getLatestBlockHeight()).to.be.undefined;
+        });
     });
 
     describe("latest block helpers", () => {
