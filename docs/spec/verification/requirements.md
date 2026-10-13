@@ -1008,10 +1008,10 @@ Specification cases tested: 14/14.
 Specification cases tested: 8/8.
 
 [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
-Specification cases tested: 6/6.
+Specification cases tested: 6/7. Untested: T1.P7.
 
 [`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
-Specification cases tested: 7/7.
+Specification cases tested: 8/8.
 
 [`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)
 Specification cases tested: 2/2.

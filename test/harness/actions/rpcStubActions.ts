@@ -56,6 +56,14 @@ export type StateMutexHold = {
     release: () => Promise<void>;
 };
 
+/** Client handle on one peer's held timer tasks. */
+export type HeldScheduledTasks = {
+    heldCount: () => Promise<number>;
+    release: (runHeld: boolean) => Promise<void>;
+    /** Release and run every held task to completion: count and errors. */
+    runHeld: () => Promise<{ ran: number; errors: string[] }>;
+};
+
 /** Client handle on one peer's dispute submission recorder. */
 export type DisputeSubmissionRecording = {
     submissions: () => Promise<RecordedDisputeSubmission[]>;
@@ -121,12 +129,7 @@ export class RpcStubActions<
     async holdScheduledTasks(
         peerIndex: number,
         prefix: string
-    ): Promise<{
-        heldCount: () => Promise<number>;
-        release: (runHeld: boolean) => Promise<void>;
-        /** Release and run every held task to completion: count and errors. */
-        runHeld: () => Promise<{ ran: number; errors: string[] }>;
-    }> {
+    ): Promise<HeldScheduledTasks> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldScheduledTasks(prefix).request();
         return {

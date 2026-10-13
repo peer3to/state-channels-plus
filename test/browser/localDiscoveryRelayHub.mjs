@@ -15,7 +15,8 @@ import { WebSocketServer } from "ws";
  *    same link and relays raw frames between them. Frames sent before the
  *    second socket arrives are buffered and flushed on pairing; when either
  *    socket closes, the hub closes the other. A third socket for a link ends
- *    the old pair and starts a new one.
+ *    the old pair and starts a new one. `pairings(id)` counts the pairs a
+ *    link id has formed, so a gate can prove two peers never linked.
  */
 export async function startLocalDiscoveryRelayHub({
     host = "127.0.0.1",
@@ -26,6 +27,8 @@ export async function startLocalDiscoveryRelayHub({
     const topics = new Map();
     // link id -> { sockets: ws[], buffer: string[] }
     const links = new Map();
+    // link id -> pairs formed
+    const pairCounts = new Map();
 
     const join = (ws, topic, address) => {
         let members = topics.get(topic);
@@ -59,6 +62,7 @@ export async function startLocalDiscoveryRelayHub({
         const current = link;
         current.sockets.push(ws);
         if (current.sockets.length === 2) {
+            pairCounts.set(id, (pairCounts.get(id) ?? 0) + 1);
             for (const frame of current.buffer) ws.send(frame);
             current.buffer = [];
         }
@@ -90,6 +94,7 @@ export async function startLocalDiscoveryRelayHub({
     const address = wss.address();
     return {
         url: `ws://${host}:${address.port}`,
+        pairings: (id) => pairCounts.get(id) ?? 0,
         close: () =>
             new Promise((resolve) => {
                 for (const ws of wss.clients) ws.terminate();

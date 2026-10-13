@@ -4,11 +4,9 @@ import { keepOnlyAuthorSignatures } from "./MilestoneSyncStaging";
 import { applyPayloads, withEarlyHeldRequester } from "./SyncProofStaging";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { Hash } from "@/types/types";
+import type { HeldScheduledTasks } from "@test/harness/actions/rpcStubActions";
 
 type Peer = ReturnType<MathPeerTestHarness["getPeer"]>;
-type HeldTasks = Awaited<
-    ReturnType<MathPeerTestHarness["rpcStub"]["holdScheduledTasks"]>
->;
 
 /**
  * Three participants author three final blocks (0, 1, 2); the observer
@@ -76,8 +74,8 @@ export async function withQueuedBlockMadePast<T>(
             nextHeight: number;
             storedAtHeight: string | null;
         };
-        queueTimeouts: HeldTasks;
-        executions: HeldTasks;
+        queueTimeouts: HeldScheduledTasks;
+        executions: HeldScheduledTasks;
     }) => Promise<T>
 ): Promise<T> {
     return await withEarlyHeldRequester(
@@ -93,7 +91,7 @@ export async function withQueuedBlockMadePast<T>(
                 requester.index,
                 QUEUED_EXECUTION
             );
-            const drains: HeldTasks[] = [];
+            const drains: HeldScheduledTasks[] = [];
             try {
                 for (const prefix of QUEUE_DRAINS)
                     drains.push(

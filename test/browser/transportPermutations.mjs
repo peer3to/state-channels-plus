@@ -20,6 +20,9 @@ const SYNCED = 3;
 const PARTICIPATING = 5;
 const SAMPLE_MS = 500;
 const LOG_TAIL_LINES = 300;
+// The blacklisted peer's pending link answers its handshake within one
+// agreement window, so the window it stays unlinked must end before that.
+const BAN_WINDOW_MS = 10_000;
 
 /**
  * Two browser peers, each in its own page, over one bootstrap transport:
@@ -31,7 +34,9 @@ const LOG_TAIL_LINES = 300;
  *  (c) a dropped WebRTC connection falls back to the bootstrap transport
  *      within one agreement window, and blocks keep flowing;
  *  (d, e) three pages select one opened channel by connectToChannel (no
- *      lobby) and all three connect pairwise.
+ *      lobby) and all three connect pairwise;
+ *  (f) local only: a blacklisted peer that the hub announces again is not
+ *      linked, and releasing the blacklist links it exactly once.
  */
 export async function runTransportPermutations(mode) {
     const resources = [];
@@ -43,8 +48,9 @@ export async function runTransportPermutations(mode) {
         });
         resources.push(() => runtimeServer.close());
         let relayUrls;
+        let hub;
         if (mode === "local") {
-            const hub = await startLocalDiscoveryRelayHub();
+            hub = await startLocalDiscoveryRelayHub();
             resources.push(() => hub.close());
             relayUrls = [hub.url];
         } else {
@@ -136,6 +142,17 @@ export async function runTransportPermutations(mode) {
             scmAddress
         );
         for (const page of directPages) await page.close();
+
+        if (mode === "local") {
+            const banPages = [await openPage("ban-a"), await openPage("ban-b")];
+            results.ban = await runBanPermutation(
+                mode,
+                banPages,
+                scmAddress,
+                hub
+            );
+            for (const page of banPages) await page.close();
+        }
 
         console.log(
             `Transport permutations (${mode}):`,
@@ -330,6 +347,108 @@ async function runDirectPermutations(mode, pages, scmAddress) {
             connections.map(({ transportType }) => transportType)
         )
     };
+}
+
+/**
+ * (f) Page A blacklists page B, and B joins the channel topic again, so the
+ * hub announces B to A. A must not link B: no connection and no hub pair
+ * between them for a bounded window. Releasing the blacklist links them
+ * through exactly one new hub pair and one bootstrap connection per page.
+ */
+async function runBanPermutation(mode, pages, scmAddress, hub) {
+    const [banning, banned] = pages;
+    // Inline runtimes: the ban hooks act on the page's own P2PManager.
+    const addresses = await Promise.all(
+        pages.map((page, index) =>
+            page.call("start", {
+                scmAddress,
+                walletIndex: 6 + index,
+                inline: true
+            })
+        )
+    );
+    const [banningAddress, bannedAddress] = addresses;
+    const linkId = addresses
+        .map((address) => address.toLowerCase())
+        .sort()
+        .join(":");
+    const toPeer = (state, peer) =>
+        state.connections.filter(
+            ({ peerAddress }) =>
+                ethers.getAddress(peerAddress) === ethers.getAddress(peer)
+        );
+    const areLinked = ([a, b]) =>
+        toPeer(a, bannedAddress).length > 0 &&
+        toPeer(b, banningAddress).length > 0;
+    const areUnlinked = ([a, b]) =>
+        toPeer(a, bannedAddress).length === 0 &&
+        toPeer(b, banningAddress).length === 0;
+
+    const topic = ethers.id(`transport-${mode}-ban`);
+    const matches = await withDeadline(
+        Promise.all(pages.map((page) => page.call("joinLobby", topic))),
+        4 * AGREEMENT_MS,
+        "(f) lobby match"
+    );
+    const { channelId } = matches[0];
+    await waitFor(
+        pages,
+        (states) =>
+            areLinked(states) &&
+            states.every(({ status }) => status === PARTICIPATING),
+        2 * AGREEMENT_MS,
+        "(f) both pages participate and connect"
+    );
+
+    await banning.call("blacklist", bannedAddress);
+    await waitFor(
+        pages,
+        areUnlinked,
+        AGREEMENT_MS,
+        "(f) the blacklist drops the link"
+    );
+    const pairsBefore = hub.pairings(linkId);
+    await banned.call("rejoinChannelTopic", channelId);
+    const samples = await observe(pages, Date.now() + BAN_WINDOW_MS);
+    const leak = samples.find((states) => !areUnlinked(states));
+    assert.equal(
+        leak,
+        undefined,
+        `(f) the blacklisted peer connected: ${JSON.stringify(leak)}`
+    );
+    assert.equal(
+        hub.pairings(linkId),
+        pairsBefore,
+        "(f) the hub paired a link to the blacklisted peer"
+    );
+
+    assert.equal(await banning.call("unblacklist", bannedAddress), true);
+    const relinked = await waitFor(
+        pages,
+        areLinked,
+        AGREEMENT_MS,
+        "(f) the release links the peer"
+    );
+    assert.equal(
+        hub.pairings(linkId),
+        pairsBefore + 1,
+        "(f) the release forms exactly one hub pair"
+    );
+    const bootstrapLinks = [
+        toPeer(relinked[0], bannedAddress),
+        toPeer(relinked[1], banningAddress)
+    ].map(
+        (connections) =>
+            connections.filter(
+                ({ transportType }) => transportType === HOLEPUNCH
+            ).length
+    );
+    assert.deepEqual(
+        bootstrapLinks,
+        [1, 1],
+        `(f) one bootstrap connection per page: ${JSON.stringify(relinked)}`
+    );
+    return { unlinkedSamples: samples.length, bootstrapLinks };
 }
 
 function isOnly(state, transportTypes) {

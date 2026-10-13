@@ -6,8 +6,8 @@
 
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
-- [`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
     - Partial: `leave` — a relayed leave stays announced ([`FIND-UPG-RELAY-2-0TVHJ4`](../../../audit/open-findings.md#find-upg-relay-2-0tvhj4)).
+- [`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
 - [`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../../../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)
 
 ## UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J

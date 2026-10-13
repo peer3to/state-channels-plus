@@ -4,7 +4,8 @@ import {
     deployStack,
     setupBrowserPeer
 } from "./sdkSetup.js";
-import { Codec, SignatureUtils, Type } from "@/utils";
+import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { channelIdToDiscoveryKey, Codec, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, NonceManager } from "ethers";
 
@@ -38,6 +39,11 @@ function hardhatWallet(index) {
     );
 }
 
+function p2pManager() {
+    if (!host) throw new Error("The ban hooks need an inline runtime");
+    return host.hostRpc.requireManager();
+}
+
 function transportConfig() {
     if (pageConfig.mode === "local")
         return {
@@ -54,6 +60,8 @@ function transportConfig() {
 
 let peer;
 let address;
+// The host root of an inline runtime: the ban hooks act on its P2PManager.
+let host;
 const observed = {
     finalized: 0,
     ownTurns: 0,
@@ -108,8 +116,11 @@ globalThis.__transportE2E = {
         }
     },
 
-    /** Starts this page's runtime; it authors a block on every own turn. */
-    async start({ scmAddress, walletIndex }) {
+    /**
+     * Starts this page's runtime; it authors a block on every own turn.
+     * `inline` runs the SDK on this page, so the ban hooks reach it.
+     */
+    async start({ scmAddress, walletIndex, inline = false }) {
         const wallet = hardhatWallet(walletIndex);
         address = wallet.address;
         peer = await setupBrowserPeer(
@@ -119,10 +130,15 @@ globalThis.__transportE2E = {
             {
                 peerId: walletIndex,
                 config: {
-                    RUN_SDK_IN_THREAD: true,
+                    RUN_SDK_IN_THREAD: !inline,
                     LOG_LEVEL: pageConfig.logLevel,
                     CRASH_LOG_UPLOAD_ENDPOINT: "",
                     ...transportConfig()
+                }
+            },
+            {
+                onRuntimeRoot(root) {
+                    if (root instanceof P2pRuntimeHostRoot) host = root;
                 }
             }
         );
@@ -174,6 +190,23 @@ globalThis.__transportE2E = {
         );
         for (const connection of connected) connection.close();
         return connected.length;
+    },
+
+    /** Blacklists `peerAddress` and drops every connection to it. */
+    blacklist(peerAddress) {
+        p2pManager().disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+    },
+
+    /** Releases the blacklist of `peerAddress`. */
+    unblacklist(peerAddress) {
+        return p2pManager().profileManager.unblacklistPeer(peerAddress);
+    },
+
+    /** Leaves and joins the channel topic again: the hub re-announces us. */
+    async rejoinChannelTopic(channelId) {
+        const discoveryKey = channelIdToDiscoveryKey(channelId);
+        await p2pManager().leaveDiscoveryKey(discoveryKey);
+        await p2pManager().joinDiscoveryKey(discoveryKey);
     },
 
     dispose() {
