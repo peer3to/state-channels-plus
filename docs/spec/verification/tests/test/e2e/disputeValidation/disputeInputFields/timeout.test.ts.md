@@ -4,13 +4,18 @@ Test file: [test/e2e/disputeValidation/disputeInputFields/timeout.test.ts](../..
 
 ## Overview
 
-Eight tests audit the `dispute.input.timeout` claim conditions end-to-end, mostly by letting a
+Nine tests audit the `dispute.input.timeout` claim conditions end-to-end, mostly by letting a
 natural timeout fire (a peer that never writes) while one disputer's `constructDispute` or posted
 dispute is tampered. Linkage and schedule violations are each killed by the matching proof type:
 wrong `timeout.blockHeight` → `TimeoutNotLinkedToLatestState`; wrong `timeout.participant` →
 `TimeoutParticipantNotNext`; a timeout posted before its wait period elapses → `TimeoutTooEarly`
 plus an on-chain slash of the disputer; a forced timeout for a block whose calldata is already
 on-chain → `TimeoutCalldataPosted`, with the honest killers verified absent from the slash set.
+A bad-signature real forced-timeout flow posts linked calldata with a corrupted author signature
+and has the writer submit the `TimeoutCalldataPosted` refutation itself: the commitment matches the
+exact posted payload, the committed timeout survives, the forcer stays unslashed and is retained at
+resolution, and the failed refutation slashes its submitter while no peer stores a dispute fraud
+proof.
 The `TimeoutTooEarly` group also covers the upload-side race guard (revert with
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` when the window predates the claimed deadline),
 a false-positive guard where a valid timeout dispute stores zero dispute fraud proofs, and a
@@ -33,3 +38,4 @@ whose deadline is later than that window. Its refusal therefore exercises the ti
 - `forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed`: none
 - `leaver does not dispute a timeout after leaving the channel`: none
 - `dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted`: REQ-ENFFP-1-BREACW.T1.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P19, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P18, REQ-DISPUTE-PIPE-5-RZZB48.T1.P10
+- `bad-signature posted calldata cannot refute an honest forced timeout`: REQ-DIS-10-SAHJBN.T1.P25

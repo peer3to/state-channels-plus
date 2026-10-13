@@ -24,6 +24,14 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     address[] internal sweepParticipants;
     Dispute internal sweepDispute;
 
+    enum SignatureFault {
+        None,
+        WrongSigner,
+        Corrupted,
+        Missing
+    }
+    SignatureFault internal signatureFault;
+
     bytes32 internal constant CHANNEL_ID = keccak256("channel");
     bytes32 internal constant FORK_ID = keccak256("fork");
     // Enough for the 63/64 headroom of every frame above the stipend call.
@@ -36,6 +44,13 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     // The deterministic sweeps step this far either side of the requirement, in this increment.
     uint256 internal constant SWEEP_HALF_WIDTH = 32_000;
     uint256 internal constant SWEEP_STEP = 1_000;
+
+    function _signPostedBlock(uint256 timedOutPk, bytes memory encodedBlock) internal override returns (bytes memory) {
+        if (signatureFault == SignatureFault.WrongSigner) return _sign(DISPUTER_PK, encodedBlock);
+        if (signatureFault == SignatureFault.Corrupted) return new bytes(65);
+        if (signatureFault == SignatureFault.Missing) return new bytes(0);
+        return super._signPostedBlock(timedOutPk, encodedBlock);
+    }
 
     function _deploy(bool gasHungry) internal returns (address[] memory participants) {
         diamond = gasHungry
@@ -569,6 +584,39 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         assertFalse(ok, "an under-funded replay is no verdict");
         assertTrue(_isReplayRefusal(result), "refused as an under-funded replay");
         _assertNoVerdict(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationSignedByAnotherKey() public {
+        address[] memory participants = _deployGuarded();
+        signatureFault = SignatureFault.WrongSigner;
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok, "an invalid signature is a rejected proof verdict");
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithUnrecoverableSignature() public {
+        address[] memory participants = _deployGuarded();
+        signatureFault = SignatureFault.Corrupted;
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok, "an invalid signature is a rejected proof verdict");
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWithoutSignature() public {
+        address[] memory participants = _deployGuarded();
+        signatureFault = SignatureFault.Missing;
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok, "an invalid signature is a rejected proof verdict");
+        _assertRefutationRejected(dispute, participants);
     }
 
     function test_applyDisputeFraudProofs_fundedTimeoutCalldataReplayKillsTimeoutDispute() public {

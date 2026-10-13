@@ -383,16 +383,23 @@ export class DisputeTamperingActions<
             dispute: DisputeStruct;
             genesisSnapshot: StateSnapshot;
         }) => DisputeFraudStruct,
-        // default: the disputer submits against its own dispute, naming itself
-        options: { participant?: string; submitter?: Signer } = {}
+        // default: the disputer submits against its own last initiated
+        // dispute, naming itself
+        options: {
+            participant?: string;
+            submitter?: Signer;
+            dispute?: DisputeStruct;
+        } = {}
     ): Promise<ContractTransactionReceipt> {
         const peer = this.harness.getPeer(disputerIndex);
         if (!options.submitter)
             this.harness.contextApi.markMaliciousPeer({
                 maliciousPeerIndex: disputerIndex
             });
-        const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
-            .args[1] as DisputeStruct;
+        const dispute =
+            options.dispute ??
+            (peer.eventSpies.onInitiatingDispute!.lastCall
+                .args[1] as DisputeStruct);
         const genesisResult = await this.harness
             .control(peer)
             .dispute.getGenesisSnapshotStruct(this.harness.activeForkId!)

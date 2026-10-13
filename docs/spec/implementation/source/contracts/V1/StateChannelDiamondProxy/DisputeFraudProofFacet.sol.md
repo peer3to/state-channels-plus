@@ -9,7 +9,7 @@
 - [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
-  Partial: The posted block's author signature is not verified ([`FIND-TIMEOUT-2-J7S0TS`](../../../../../audit/open-findings.md#find-timeout-2-j7s0ts)). The replay rebuilds the posted block's snapshot differently from clients, so an honest refutation can fail ([`FIND-TIMEOUT-4-5YNPT3`](../../../../../audit/open-findings.md#find-timeout-4-5ynpt3)).
+  Partial: `_validateTimeoutCalldataPostedProof` rebuilds the posted block's snapshot differently from clients, so an honest refutation can fail ([`FIND-TIMEOUT-4-5YNPT3`](../../../../../audit/open-findings.md#find-timeout-4-5ynpt3)).
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
@@ -232,3 +232,6 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P203` — a failing proof that declares the zero target, submitted by a non-participant, leaves a valid committed dispute committed and slashes nobody
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P204` — for every proof family with a well-formed failing payload, a zero declared target submitted by a non-participant never kills a valid committed dispute or records a slash; the slash-subset family reverts `RaceConditionOnChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P205` — a zero-target failing proof from an eligible submitter slashes the submitter and keeps the dispute committed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P206` — a `TimeoutCalldataPosted` proof whose posted block is signed by the wrong key is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P207` — a `TimeoutCalldataPosted` proof whose posted block carries an unrecoverable author signature is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P208` — a `TimeoutCalldataPosted` proof whose posted block carries no signature is invalid and slashes its submitter

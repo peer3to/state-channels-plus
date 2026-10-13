@@ -559,6 +559,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return false;
         }
 
+        // Check the posted block is signed by its author
+        (address signer, bool signatureValid) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(postedBlock.encodedBlock, postedBlock.signature);
+        if (!signatureValid || signer != _getBlockAuthor(_block)) return false;
+
         // Check block calldata posted
         (bool isFound, bytes32 commitment) = _getBlockCallDataCommitment(
             _getDisputeChannel(dispute),
