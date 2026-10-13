@@ -5,7 +5,6 @@
 ## Requirements
 
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
-  Contradicts: Tip clause: `>=` lets an equal-height store repoint the tip (spec requires strictly newer). See [`FIND-STORAGE-2-NK2XBF`](../../../../audit/open-findings.md#find-storage-2-nk2xbf).
 - [`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)
 - [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../../../../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 
@@ -13,14 +12,18 @@
 
 Store and tip semantics
 
-- Setup: Store extending, equal-height, historical, duplicate, and justPersist blocks in both instances
-- Oracle: Addressing exact; duplicates idempotent; tip behavior documented incl. the equal-height divergence; instances isolated
+- Setup: Store extending, gap-skipping, equal-height, historical, duplicate, and justPersist blocks, and extending and non-extending verified runs, in both instances
+- Oracle: Addressing exact; duplicates idempotent; a direct store moves the tip by height, an equal height replaces it; justPersist and lower blocks leave it; a verified run moves it only on exact extension; a read from a tip above a gap reports the missing hash; instances isolated
 
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1` — tip advance on extension
-- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P2` — equal-height store (documents divergence)
-- [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P3` — justPersist leaves tip
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P2` — equal-height store replaces the tip
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P3` — justPersist leaves tip
 - [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P4` — duplicate idempotent
 - [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P5` — instance isolation
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P6` — higher block above a gap moves the tip; a read from the tip reports the missing hash
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P7` — lower block leaves the tip
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P8` — verified run extending the tip moves it to the run's last block
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P9` — verified run not extending the tip is persisted, tip unchanged
 
 ## UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV
 

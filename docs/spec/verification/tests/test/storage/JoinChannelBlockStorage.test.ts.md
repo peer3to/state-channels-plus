@@ -10,8 +10,11 @@ message blocks. Its range cases cover a complete walk, a missing middle block, a
 hash, the zero/zero empty anchor, zero upper with a nonzero lower, a linked suffix that reaches
 zero before its requested lower boundary, and the strict all-or-nothing rejection. Each tolerant
 incomplete case asserts both the proven suffix and `missingBlockHash`. Store tests cover computed
-and supplied hashes and duplicate insertion. The latest-tip test still demonstrates the open
-height-based tip divergence, so it receives no conformance credit.
+and supplied hashes and duplicate insertion. Tip tests use a factory-built linked chain: a higher
+block above an unheld gap moves the tip and a read from that tip reports the missing hash, an
+equal-height block replaces the tip, a `justPersist` store leaves it, and a verified run moves it
+only when the run extends the current tip. The out-of-order test shows a lower block leaves the
+tip.
 
 ## Tests
 
@@ -29,4 +32,9 @@ height-based tip divergence, so it receives no conformance credit.
 - `empty store → empty run, no gap`: none
 - `the strict read still throws the same message on that gap`: REQ-MSGSTORE-2-8RDXPZ.T1.P7, UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV.P7
 - `returns undefined when storage is empty`: none
-- `tracks the highest block height even when stored out of order`: none
+- `a higher block above an unheld gap moves the tip, and a read from that tip reports the missing block`: REQ-MSGSTORE-1-6ME9D7.T1.P8, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P6
+- `an equal-height block replaces the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P9, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P2
+- `a justPersist store of a higher block leaves the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P5, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P3
+- `a verified run that extends the tip moves the tip to its last block`: REQ-MSGSTORE-1-6ME9D7.T1.P10, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P8
+- `a verified run that does not extend the tip is persisted and leaves the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P11, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P9
+- `tracks the highest block height even when stored out of order`: REQ-MSGSTORE-1-6ME9D7.T1.P2, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P7

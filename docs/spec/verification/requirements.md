@@ -717,7 +717,7 @@ Specification cases tested: 4/20. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 0/13.
 
 [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
-Specification cases tested: 0/7.
+Specification cases tested: 7/9. Untested: T1.P3, T1.P4.
 
 [`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)
 Specification cases tested: 8/9. Untested: T1.P6.

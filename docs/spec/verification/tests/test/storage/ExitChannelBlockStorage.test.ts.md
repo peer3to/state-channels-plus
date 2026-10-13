@@ -23,6 +23,6 @@ tests assert only hash equality, which is not enough for the idempotence permuta
 - `returns undefined for unknown hashes`: none
 - `retrieves block by hash`: none
 - `returns ordered message blocks when iterating by range`: none
-- `returns the most recent block`: UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1
+- `returns the most recent block`: REQ-MSGSTORE-1-6ME9D7.T1.P1, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1
 - `returns blocks sorted from newest to oldest when no limit is provided`: none
 - `head above a hole → truncates at the gap instead of throwing`: none
