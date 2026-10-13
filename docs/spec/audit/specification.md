@@ -22,6 +22,17 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## 2026-10-13 — Message-block tip stays height-based
+
+Ljuba reversed the earlier decision on [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf): the
+specification was wrong, not the code. [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+now describes the height tip: a direct store moves it by height and it may sit above a gap, while a
+verified run moves it only on exact extension. Exact extension broke block production above a missed
+inbound log and late-auditor dispute construction. Safety stays at the read layer through
+[`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz). The strongest
+rejected alternative was strict extension with forward catch-up and a snapshot-anchor seed. No
+production code changed. Engineer review remains pending.
+
 ## 2026-08-31 — Targeted pre-open channel join
 
 The maintained specification now gives one owner to each phase: caller-topic matching, mode-bound
