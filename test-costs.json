@@ -7,6 +7,12 @@
       "peakRssGb": 1.685,
       "measurementReason": null
     },
+    "browser|test/browser/run-transport-holepunch-e2e.mjs|run-transport-holepunch-e2e": {
+      "durationMs": 167521,
+      "avgCores": 0.717,
+      "peakRssGb": 2.89,
+      "measurementReason": null
+    },
     "browser|test/browser/run-transport-local-e2e.mjs|run-transport-local-e2e": {
       "durationMs": 131443,
       "avgCores": 0.842,
