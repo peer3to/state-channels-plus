@@ -3,9 +3,12 @@ import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
 import { BlockCoordinates, Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import { ForkId } from "@/types/types";
+import { createLogger } from "@/utils";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 import { describe, it, beforeEach, before } from "mocha";
+
+const logger = createLogger({}, {}, { level: "error" });
 
 describe("Storage", () => {
     describe("getStateSnapshot", () => {
@@ -51,7 +54,7 @@ describe("Storage", () => {
         });
 
         beforeEach(() => {
-            storage = new Storage();
+            storage = new Storage(logger);
 
             // Store genesis snapshot
             storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
@@ -186,7 +189,7 @@ describe("Storage participant union", () => {
                 participants: [f.wallets[0].address, f.wallets[1].address]
             }
         });
-        const storage = new Storage();
+        const storage = new Storage(logger);
         const direct = storage.getParticipantsUnionFromSnapshots(
             previous,
             resulting
@@ -224,7 +227,7 @@ describe("Storage participant union", () => {
                 participants: [f.wallets[1].address, f.wallets[2].address]
             }
         });
-        const storage = new Storage();
+        const storage = new Storage(logger);
         expect(
             storage.getParticipantsUnionFromSnapshots(previous, resulting)
         ).to.deep.equal([
@@ -252,7 +255,10 @@ describe("Storage participant union", () => {
             }
         });
         expect(
-            new Storage().getParticipantsUnionFromSnapshots(previous, resulting)
+            new Storage(logger).getParticipantsUnionFromSnapshots(
+                previous,
+                resulting
+            )
         ).to.deep.equal([f.wallets[0].address, f.wallets[1].address]);
     });
 
@@ -265,7 +271,7 @@ describe("Storage participant union", () => {
             }
         });
         expect(
-            new Storage().getParticipantsUnionFromSnapshots(
+            new Storage(logger).getParticipantsUnionFromSnapshots(
                 undefined,
                 resulting
             )
@@ -281,12 +287,15 @@ describe("Storage participant union", () => {
             }
         });
         expect(
-            new Storage().getParticipantsUnionFromSnapshots(previous, undefined)
+            new Storage(logger).getParticipantsUnionFromSnapshots(
+                previous,
+                undefined
+            )
         ).to.deep.equal([f.wallets[0].address]);
     });
 
     it("returns an empty union for absent or empty snapshots", () => {
-        const storage = new Storage();
+        const storage = new Storage(logger);
         const empty = factory.stateSnapshot({
             snapshotData: { ...factory.snapshotData(), participants: [] }
         });

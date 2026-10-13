@@ -147,7 +147,7 @@ Specification cases tested: 0/11.
 Specification cases tested: 0/7.
 
 [`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)
-Specification cases tested: 3/4. Untested: T1.P2.
+Specification cases tested: 4/4.
 
 [`INV-SP-6-GNW74H` (A non-final tail remains accountable through non-equivocating signatures)](../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
 Specification cases tested: 0/19.
@@ -882,7 +882,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 1/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
-Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
+Specification cases tested: 5/5.
 
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
 Specification cases tested: 4/6. Untested: T1.P4, T1.P5.

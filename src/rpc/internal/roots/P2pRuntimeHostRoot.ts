@@ -451,7 +451,7 @@ export class P2pRuntimeHostRoot<
                 disputeExecutionGasLimit
             );
 
-        const storage = new Storage(this.maxChannelParticipants);
+        const storage = new Storage(logger, this.maxChannelParticipants);
 
         const stateManager = new StateManager<MainRpcService, unknown>(
             // Managed signer: becomes StateManager.signer → DisputeManager.signer,

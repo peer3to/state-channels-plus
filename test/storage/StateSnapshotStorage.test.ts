@@ -1,6 +1,9 @@
 import { stateSnapshot as stateSnapshotFactory } from "../factory";
 import StateSnapshot from "@/models/StateSnapshot";
 import { StateSnapshotStorage } from "@/storage/StateSnapshotStorage";
+import { LogEntry } from "@/utils/logging/Logger";
+import { LogStore } from "@/utils/logging/logStore";
+import { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, beforeEach } from "mocha";
@@ -9,9 +12,23 @@ describe("StateSnapshotStorage", () => {
     let storage: StateSnapshotStorage;
     let stateSnapshot: StateSnapshot;
     let genesisStateSnapshot: StateSnapshot;
+    let logStore: LogStore;
+
+    const warnings = (): LogEntry[] =>
+        logStore.getAllLogs().filter((entry) => entry.level === "warn");
+
+    // Same fork id and snapshotData as the registered genesis, later timestamp.
+    const conflictingGenesisOf = (genesis: StateSnapshot): StateSnapshot =>
+        StateSnapshot.from({
+            ...genesis.toStruct(),
+            timestamp: BigInt(genesis.timestamp + 1)
+        });
 
     beforeEach(() => {
-        storage = new StateSnapshotStorage();
+        logStore = new LogStore(1024 * 1024, true);
+        storage = new StateSnapshotStorage(
+            new NodeLogger({}, {}, "warn", logStore, undefined, new Set(), true)
+        );
 
         stateSnapshot = stateSnapshotFactory();
 
@@ -89,6 +106,115 @@ describe("StateSnapshotStorage", () => {
                     genesisStateSnapshot.toStruct()
                 );
             });
+        });
+    });
+
+    describe("Genesis registration conflicts", () => {
+        it("keeps the registered genesis and logs nothing when the same genesis is stored again", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const repeat = StateSnapshot.from({
+                ...genesisStateSnapshot.toStruct()
+            });
+
+            const hash = storage.storeStateSnapshot(repeat);
+
+            expect(hash).to.equal(genesisStateSnapshot.hash);
+            expect(
+                storage.getStateSnapshotByHash(hash)?.toStruct()
+            ).to.deep.equal(genesisStateSnapshot.toStruct());
+            expect(
+                storage
+                    .getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.toStruct()
+            ).to.deep.equal(genesisStateSnapshot.toStruct());
+            expect(warnings()).to.have.length(0);
+        });
+
+        it("refuses a conflicting genesis for a known fork id and keeps the original registered", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const conflicting = conflictingGenesisOf(genesisStateSnapshot);
+            expect(conflicting.isGenesis).to.be.true;
+            expect(conflicting.forkID).to.equal(genesisStateSnapshot.forkID);
+
+            storage.storeStateSnapshot(conflicting);
+
+            const registered = storage.getGenesisSnapshotByForkId(
+                genesisStateSnapshot.forkID
+            );
+            expect(registered?.timestamp).to.equal(
+                genesisStateSnapshot.timestamp
+            );
+            expect(registered?.hash).to.equal(genesisStateSnapshot.hash);
+        });
+
+        it("still stores a refused conflicting genesis under its hash", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const conflicting = conflictingGenesisOf(genesisStateSnapshot);
+
+            const hash = storage.storeStateSnapshot(conflicting);
+
+            expect(hash).to.equal(conflicting.hash);
+            expect(
+                storage.getStateSnapshotByHash(conflicting.hash)?.toStruct()
+            ).to.deep.equal(conflicting.toStruct());
+            expect(
+                storage.getGenesisSnapshotByForkId(conflicting.forkID)?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+        });
+
+        it("logs one warning naming the registered and the refused genesis on a conflict", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const conflicting = conflictingGenesisOf(genesisStateSnapshot);
+
+            storage.storeStateSnapshot(conflicting);
+
+            const logged = warnings();
+            expect(logged).to.have.length(1);
+            expect(logged[0].context.component).to.equal(
+                "StateSnapshotStorage"
+            );
+            expect(logged[0].meta[0].registered.stateSnapshotHash).to.equal(
+                genesisStateSnapshot.hash
+            );
+            expect(logged[0].meta[0].refused.stateSnapshotHash).to.equal(
+                conflicting.hash
+            );
+        });
+
+        it("registers a genesis for a different fork id next to an existing one", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const otherSnapshot = stateSnapshotFactory();
+            const otherGenesis = StateSnapshot.from({
+                ...otherSnapshot.toStruct(),
+                forkId: otherSnapshot.snapshotDataHash
+            });
+
+            storage.storeStateSnapshot(otherGenesis);
+
+            expect(
+                storage.getGenesisSnapshotByForkId(otherGenesis.forkID)?.hash
+            ).to.equal(otherGenesis.hash);
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+            expect(warnings()).to.have.length(0);
+        });
+
+        it("keeps the registered genesis when a non-genesis snapshot of the same fork is stored", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const forkSnapshot = stateSnapshotFactory({
+                forkId: genesisStateSnapshot.forkID
+            });
+            expect(forkSnapshot.isGenesis).to.be.false;
+
+            storage.storeStateSnapshot(forkSnapshot);
+
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+            expect(warnings()).to.have.length(0);
         });
     });
 
