@@ -149,7 +149,10 @@ describe("E2E: Dispute Manager", function () {
             await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateWait();
 
             await h.assert.sync.onlyHonestPeersInSync();
-            await h.transition.fromHonestPeersOnly((c) => c.add(1));
+            // the post below proves this tip: it must be final in every view
+            await h.transition.fromHonestPeersOnly((c) => c.add(1), {
+                waitForFinalization: true
+            });
             h.event.resetEventSpies();
             const expectedSnapshot2 = await h.transition.postSnapshot({
                 peerIndex: 0

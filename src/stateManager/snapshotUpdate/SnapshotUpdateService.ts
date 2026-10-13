@@ -317,15 +317,22 @@ export default class SnapshotUpdateService {
                 }
             );
 
-            // Get the genesis snapshot for the final resolved fork
+            // a fork the chain reduced to final that this node has not
+            // installed yet: nothing is postable until it is installed
             const genesisSnapshot =
                 this.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     currentForkId
                 );
             if (!genesisSnapshot) {
-                throw new Error(
-                    `No genesis snapshot found for fork ${currentForkId}`
+                this.logger.warn(
+                    "State snapshot fork update is waiting for the local reduction",
+                    { forkId: currentForkId }
                 );
+                return {
+                    canPost: false,
+                    callData: [],
+                    outboundMessageBlocks: []
+                };
             }
 
             if (genesisSnapshot.forkID !== this.stateManager.forkId) {

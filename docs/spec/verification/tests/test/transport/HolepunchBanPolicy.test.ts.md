@@ -24,7 +24,8 @@ reads the recorded verdict back through a second manager over the same store.
 
 - `bans an explicitly blacklisted unauthenticated Holepunch profile`: UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P1, REQ-UPG-4-M2XDBA.T1.P5
 - `drops an ordinary unauthenticated Holepunch profile without banning it`: UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P2, REQ-UPG-4-M2XDBA.T1.P6
-- `logs a peer's connection reset as a warning and any other socket error as an error, closing both transports`: UNIT-TEST-HOLEPUNCH-TRANSPORT-1-5KCTA2.P1, UNIT-TEST-HOLEPUNCH-TRANSPORT-1-5KCTA2.P2
+- `logs a dropped duplicate connection as debug, a peer's connection reset as a warning and any other socket error as an error, closing every transport`: UNIT-TEST-HOLEPUNCH-TRANSPORT-1-5KCTA2.P1, UNIT-TEST-HOLEPUNCH-TRANSPORT-1-5KCTA2.P2, UNIT-TEST-HOLEPUNCH-TRANSPORT-1-5KCTA2.P3
+- `logs a peer reset that carries only the message as a warning, not an error, and closes the transport`: UNIT-TEST-HOLEPUNCH-TRANSPORT-1-5KCTA2.P4
 - `bans the Holepunch fallback after a WebRTC upgrade`: UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P3, REQ-UPG-4-M2XDBA.T1.P1
 - `does not release the fallback ban when a replaced WebRTC transport closes`: UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P4, REQ-UPG-4-M2XDBA.T1.P2
 - `releases the fallback ban when the current WebRTC transport closes`: UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P5, REQ-UPG-4-M2XDBA.T1.P3

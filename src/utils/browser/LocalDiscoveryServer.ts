@@ -1,7 +1,14 @@
 import type P2PManager from "../../P2PManager";
+import type { BannablePeerInfo } from "../../PeerProfile";
 import LocalPeerInfo from "../../transport/LocalPeerInfo";
 import { config } from "../config";
 import type { Logger } from "../logging/Logger";
+
+type Membership = {
+    ws: WebSocket;
+    p2pManager: P2PManager;
+    rendezvousKey: string;
+};
 
 /**
  * Browser LocalDiscoveryServer.
@@ -9,16 +16,21 @@ import type { Logger } from "../logging/Logger";
  * The node implementation forms a peer mesh where each peer runs its own
  * WebSocket server — impossible in a browser/worker. Here peers instead
  * rendezvous through an external relay hub (`config.LOCAL_DISCOVERY_REGISTRY_URL`)
- * using the native `WebSocket` client: each peer opens one socket to the hub,
- * which relays frames between peers on the same channel (buffering until both
- * are present). Used for browser e2e/dev under `DEBUG_LOCAL_TRANSPORT`; the real
- * product path is Holepunch.
+ * with the native `WebSocket` client. Joining a topic opens a membership
+ * socket, over which the hub announces the topic's other peers; each announced
+ * peer gets its own link socket, which the hub pairs with the peer's link
+ * socket and which carries one `BrowserLocalTransport`. Like Hyperswarm, a
+ * banned peer is not linked, and releasing its ban links it again. Used for browser e2e/dev under
+ * `DEBUG_LOCAL_TRANSPORT`; the real product path is Holepunch.
  */
 export class LocalDiscoveryServer {
     private static _logger?: Logger;
-    private static readonly sockets = new Set<WebSocket>();
-    private static readonly socketTopics = new Map<WebSocket, string>();
-    private static readonly socketManagers = new Map<WebSocket, P2PManager>();
+    private static readonly memberships = new Set<Membership>();
+    // One open link socket per runtime and remote peer.
+    private static readonly links = new Map<
+        P2PManager,
+        Map<string, WebSocket>
+    >();
 
     static setLogger(logger: Logger): void {
         this._logger = logger.child({ component: "LocalDiscovery" });
@@ -30,117 +42,152 @@ export class LocalDiscoveryServer {
         return true;
     }
 
+    /** Joins the topic; resolves once the hub accepted the membership. */
     static async connectToPeers(
         p2pManager: P2PManager,
         rendezvousKey: string,
         myPeerAddress: string
     ): Promise<void> {
+        const ws = new WebSocket(
+            `${this.registryUrl()}?channelId=${encodeURIComponent(rendezvousKey)}` +
+                `&address=${encodeURIComponent(myPeerAddress)}`
+        );
+        const membership: Membership = {
+            ws,
+            p2pManager,
+            rendezvousKey
+        };
+        this.memberships.add(membership);
+        ws.addEventListener("close", () => this.memberships.delete(membership));
+        ws.addEventListener("message", (event: MessageEvent) => {
+            let announce: { type?: string; address?: string };
+            try {
+                announce = JSON.parse(String(event.data));
+            } catch {
+                return; // not a hub announcement
+            }
+            if (announce.type !== "peer" || !announce.address) return;
+            void this.link(p2pManager, myPeerAddress, announce.address);
+        });
+        await new Promise<void>((resolve, reject) => {
+            ws.addEventListener("open", () => resolve());
+            ws.addEventListener("error", () =>
+                reject(
+                    new Error(
+                        `Failed to open relay socket at ${this.registryUrl()}`
+                    )
+                )
+            );
+        });
+    }
+
+    /** Ends the topic membership; established peer links stay open. */
+    static async leave(
+        rendezvousKey: string,
+        p2pManager?: P2PManager
+    ): Promise<void> {
+        for (const membership of [...this.memberships]) {
+            if (membership.rendezvousKey !== rendezvousKey) continue;
+            if (p2pManager && membership.p2pManager !== p2pManager) continue;
+            this.memberships.delete(membership);
+            membership.ws.close();
+        }
+    }
+
+    static async cleanup(): Promise<void> {
+        for (const membership of this.memberships) membership.ws.close();
+        this.memberships.clear();
+        for (const links of this.links.values())
+            for (const ws of links.values()) ws.close();
+        this.links.clear();
+    }
+
+    private static registryUrl(): string {
         const registryUrl = config.LOCAL_DISCOVERY_REGISTRY_URL?.trim();
         if (!registryUrl) {
             throw new Error(
                 "LOCAL_DISCOVERY_REGISTRY_URL is required for browser local discovery"
             );
         }
+        return registryUrl;
+    }
 
-        // Imported lazily (before the socket opens) so `@/utils` — which
-        // re-exports this module — doesn't pull NetworkTransport into a load-time
-        // import cycle, and so there's no async gap between the socket opening
-        // and the announce listener attaching (the hub's peer announce fires
-        // the instant both peers are present and would be missed in a gap).
+    /**
+     * Opens the link to an announced peer unless the peer is banned, already
+     * connected, or already being linked. Both peers open the link; the hub
+     * pairs the two sockets and both ends run the mutual handshake.
+     */
+    private static async link(
+        p2pManager: P2PManager,
+        myPeerAddress: string,
+        remoteAddress: string
+    ): Promise<void> {
+        if (
+            p2pManager.isDisposed ||
+            LocalPeerInfo.isBanned(p2pManager, remoteAddress) ||
+            p2pManager.isBlacklisted(remoteAddress)
+        )
+            return;
+        const profile =
+            p2pManager.profileManager.getProfileByEvmAddress(remoteAddress);
+        if (profile && profile.getLiveTransports().length > 0) return;
+        const key = remoteAddress.toLowerCase();
+        let links = this.links.get(p2pManager);
+        if (!links) {
+            links = new Map();
+            this.links.set(p2pManager, links);
+        }
+        if (links.has(key)) return;
+
+        // Imported lazily so `@/utils` — which re-exports this module —
+        // doesn't pull NetworkTransport into a load-time import cycle.
         const { default: BrowserLocalTransport } = await import(
             "../../transport/BrowserLocalTransport"
         );
-
-        const url =
-            `${registryUrl}?channelId=${encodeURIComponent(rendezvousKey)}` +
-            `&address=${encodeURIComponent(myPeerAddress)}`;
-        const ws = new WebSocket(url);
-        this.sockets.add(ws);
-        this.socketTopics.set(ws, rendezvousKey);
-        this.socketManagers.set(ws, p2pManager);
+        if (links.has(key)) return;
+        const id = [myPeerAddress.toLowerCase(), key].sort().join(":");
+        const ws = new WebSocket(
+            `${this.registryUrl()}?link=${encodeURIComponent(id)}`
+        );
+        links.set(key, ws);
         ws.addEventListener("close", () => {
-            this.sockets.delete(ws);
-            this.socketTopics.delete(ws);
-            this.socketManagers.delete(ws);
+            if (links.get(key) === ws) links.delete(key);
         });
-
-        // The hub relays a single transport between the two peers, so — unlike
-        // the node mesh's separate dial/accept sockets — both sides initiating
-        // would multiplex two handshake sessions onto one transport and
-        // double-ack. Instead the hub announces the remote address on pairing;
-        // we pick a dial/accept role by address ordering (lower dials) so a
-        // single handshake session runs. The transport is bound synchronously
-        // inside the announce handler so no relayed frame is dropped before its
-        // `onmessage` is attached.
-        await new Promise<void>((resolve, reject) => {
-            const onError = () =>
-                reject(
-                    new Error(`Failed to open relay socket at ${registryUrl}`)
-                );
-            const onMessage = (event: MessageEvent) => {
-                let announce: { type?: string; address?: string };
-                try {
-                    announce = JSON.parse(String(event.data));
-                } catch {
-                    return;
-                }
-                if (announce?.type !== "peer" || !announce.address) return;
-                ws.removeEventListener("message", onMessage);
-                ws.removeEventListener("error", onError);
-
-                const remoteAddress = announce.address;
-                const transport = new BrowserLocalTransport(
-                    ws,
-                    p2pManager.rpcRouter
-                );
-                p2pManager.profileManager.setBannablePeerInfo(
-                    transport,
-                    new LocalPeerInfo(p2pManager, remoteAddress)
-                );
-                // Both ends initiate: the handshake is a mutual challenge, so a
-                // peer only finalizes once it has BOTH verified the remote (via
-                // its own challenge) and received the remote's ack.
-                p2pManager.localRpc.initHandshakeService.initHandshake(
-                    transport
-                );
-
-                this._logger?.debug("Connected to local discovery relay hub", {
-                    rendezvousKey,
-                    myPeerAddress,
-                    remoteAddress
-                });
-                resolve();
-            };
-            ws.addEventListener("error", onError);
-            ws.addEventListener("message", onMessage);
+        ws.addEventListener("open", () => {
+            const transport = new BrowserLocalTransport(
+                ws,
+                p2pManager.rpcRouter
+            );
+            p2pManager.profileManager.setBannablePeerInfo(
+                transport,
+                this.bannablePeerInfo(p2pManager, myPeerAddress, remoteAddress)
+            );
+            if (transport.isClosed) return;
+            // Both ends initiate: the handshake is a mutual challenge, so a
+            // peer only finalizes once it has BOTH verified the remote (via
+            // its own challenge) and received the remote's ack.
+            p2pManager.localRpc.initHandshakeService.initHandshake(transport);
+            this._logger?.debug("Linked to peer through the relay hub", {
+                myPeerAddress,
+                remoteAddress
+            });
         });
     }
 
-    static async leave(
-        rendezvousKey: string,
-        p2pManager?: P2PManager
-    ): Promise<void> {
-        for (const ws of [...this.sockets]) {
-            if (this.socketTopics.get(ws) !== rendezvousKey) continue;
-            if (p2pManager && this.socketManagers.get(ws) !== p2pManager) {
-                continue;
+    /** The local ban record; releasing it links the peer again. */
+    private static bannablePeerInfo(
+        p2pManager: P2PManager,
+        myPeerAddress: string,
+        remoteAddress: string
+    ): BannablePeerInfo {
+        const info = new LocalPeerInfo(p2pManager, remoteAddress);
+        return {
+            publicKey: info.publicKey,
+            ban: (value = true) => {
+                info.ban(value);
+                if (!value)
+                    void this.link(p2pManager, myPeerAddress, remoteAddress);
             }
-            // The relay socket becomes the established peer transport. Remove
-            // its discovery membership without closing the channel connection.
-            this.socketTopics.delete(ws);
-        }
-    }
-
-    static async cleanup(): Promise<void> {
-        for (const ws of this.sockets) {
-            try {
-                ws.close();
-            } catch {
-                // ignore
-            }
-        }
-        this.sockets.clear();
-        this.socketTopics.clear();
-        this.socketManagers.clear();
+        };
     }
 }

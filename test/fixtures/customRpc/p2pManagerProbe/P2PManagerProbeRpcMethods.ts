@@ -38,6 +38,10 @@ import type {
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
     HolepunchTopicProbe,
+    HolepunchAnnounceScenario,
+    HolepunchAnnounceLookupProbe,
+    HolepunchBanReleaseProbe,
+    HolepunchSwarmProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
     ProfileDisconnectLifecycleProbe,
@@ -425,6 +429,72 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         duplicate = false
     ): Promise<HolepunchTopicProbe> {
         return this.service.probeHolepunchRejoinAfterLeave(duplicate);
+    }
+
+    public probeHolepunchAnnounceLookup(
+        scenario: HolepunchAnnounceScenario
+    ): Promise<HolepunchAnnounceLookupProbe> {
+        return this.service.probeHolepunchAnnounceLookup(scenario);
+    }
+
+    public probeHolepunchBanReleaseLookup(
+        value: boolean
+    ): Promise<HolepunchBanReleaseProbe> {
+        return this.service.probeHolepunchBanReleaseLookup(value);
+    }
+
+    public async joinHolepunchOnLocalDht(
+        channelId: string,
+        bootstrapPort: number
+    ): Promise<boolean> {
+        await this.service.joinHolepunchOnLocalDht(channelId, bootstrapPort);
+        return true;
+    }
+
+    public async lookUpHolepunchTopics(): Promise<boolean> {
+        await this.service.lookUpHolepunchTopics();
+        return true;
+    }
+
+    public async waitForHolepunchAnnounced(): Promise<boolean> {
+        await this.service.waitForHolepunchAnnounced();
+        return true;
+    }
+
+    public async leaveHolepunchOnLocalDht(channelId: string): Promise<boolean> {
+        await this.service.leaveHolepunchOnLocalDht(channelId);
+        return true;
+    }
+
+    public async closeHolepunchSwarmConnections(): Promise<boolean> {
+        await this.service.closeHolepunchSwarmConnections();
+        return true;
+    }
+
+    public async waitForOpenSwarmConnections(count: number): Promise<boolean> {
+        await this.service.waitForOpenSwarmConnections(count);
+        return true;
+    }
+
+    public lookUpHolepunchPeerKeys(channelId: string): Promise<string[]> {
+        return this.service.lookUpHolepunchPeerKeys(channelId);
+    }
+
+    public holdIncomingUntilOwnDial(): boolean {
+        this.service.holdIncomingUntilOwnDial();
+        return true;
+    }
+
+    public waitForFirewallVerdicts(count: number): Promise<boolean[]> {
+        return this.service.waitForFirewallVerdicts(count);
+    }
+
+    public holepunchSwarmState(peerAddress: string): HolepunchSwarmProbe {
+        return this.service.holepunchSwarmState(peerAddress);
+    }
+
+    public requestSumFrom(peerAddress: string): Promise<number> {
+        return this.service.requestSumFrom(peerAddress);
     }
 
     public async closeChainProvider(): Promise<boolean> {

@@ -77,7 +77,9 @@ reported as a successful opening and no new proposal is signed.
 
 Negotiation admission is installed before an attempt is armed. An authenticated request from the expected
 peer may wait in arrival order for at most two agreement windows while local committed-attempt readiness is
-established. Only the committed peer, attempt, and challenge transcript pass after readiness. An unrelated
+established. The expected peer is the handed-off peer, or the advertiser a selector's commit is in flight
+to: the advertiser's acknowledgement and its first term request can arrive together, so that request can
+run before the selector reads the acknowledgement. Only the committed peer, attempt, and challenge transcript pass after readiness. An unrelated
 peer, ineligible request, expired request, or mismatch is rejected through the negotiation failure policy.
 
 Discovery and channel roles do not overlap. A committed match stops lobby advertisement and selection but

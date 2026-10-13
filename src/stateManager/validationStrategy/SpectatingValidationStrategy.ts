@@ -217,12 +217,6 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // Discard the entry without aborting an observer or retrying the fork.
         return BlockValidationResult.NOT_READY;
     }
-    public async blockIsBelowInstalledHistory(
-        _entry: QueuedBlockEntry
-    ): Promise<BlockValidationResult> {
-        return BlockValidationResult.NOT_READY;
-    }
-
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {

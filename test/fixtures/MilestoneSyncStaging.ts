@@ -10,6 +10,7 @@ import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import type { StateProofVerification } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession } from "@test/harness";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
@@ -1116,4 +1117,344 @@ export async function expectInitialSyncSkipped(
     expect(await h.control(spectator).query.getForkId().request()).to.equal(
         forkId
     );
+}
+
+/**
+ * Participants 0 and 1 open the channel and participant 0 joins its key;
+ * participant 1 then restarts with a fresh runtime that has not connected.
+ */
+async function restartSecondParticipant(h: MathPeerTestHarness) {
+    await h.setup(2, { autoConnect: false });
+    await h.lifecycle.openChannelForParticipants([0, 1]);
+    await h.network.joinSelectedKey([0], String(h.channelId));
+    const participant = h.getPeer(0);
+    const founder = h.getPeer(1);
+    await founder.p2pInstance.dispose();
+    founder.logger.dispose();
+    await h.createPeer(1, founder.signer);
+    return { participant, responder: h.getPeer(1) };
+}
+
+/**
+ * Participants 0 and 1 open the channel; participant 1 then restarts with a
+ * fresh runtime and connects, so its own initial sync runs from participant
+ * 0. That sync is held at its application step, and participant 1 stays
+ * OPENED. A fresh observer whose pairs with participant 0 are blacklisted
+ * both ways reaches only participant 1, its first chain-eligible handshake,
+ * and its initial sync request reaches participant 1 while it is OPENED.
+ * Then the held sync is released: applied (`success`) or failed
+ * (`failure`). Returns the observer, both connect results, the observer's
+ * sync targets and participant 1's status when the request arrived.
+ */
+export async function syncFromSyncingParticipant(
+    h: MathPeerTestHarness,
+    outcome: "success" | "failure"
+) {
+    const { participant, responder } = await restartSecondParticipant(h);
+    const observerIndex = h.peers.length;
+    await h.createPeer(
+        observerIndex,
+        h.signerFor(slotAccountIndex(observerIndex))
+    );
+    const observer = h.getPeer(observerIndex);
+    for (const [from, to] of [
+        [observer, participant],
+        [participant, observer]
+    ])
+        await h
+            .control(from)
+            .network.blacklistAndDisconnectPeerByAddress(to.address)
+            .request();
+    await h.rpcStub.recordSpectateSync(observer.index, { forward: true });
+    await h.rpcStub.stubCountSpectateRequests(responder.index);
+    const held = await h.rpcStub.holdSpectateSyncApplication(
+        responder.index,
+        participant.index,
+        outcome === "failure"
+    );
+    // a failed application aborts both runtimes: release only once
+    let released = false;
+    try {
+        const responderConnect =
+            responder.p2pInstance.p2pSigner.connectToChannel(h.channelId);
+        await waitFor(
+            async () => (await held.entered()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const observerConnect = observer.p2pInstance.p2pSigner.connectToChannel(
+            h.channelId
+        );
+        const observerSyncTargets = await h.rpcStub.spectateSyncTargetsWait(
+            observer.index,
+            1
+        );
+        await waitFor(
+            async () =>
+                (await h.rpcStub.getSpectateRequestCount(responder.index)) ===
+                1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const responderStatusAtRequest = await h
+            .control(responder)
+            .query.getStatus()
+            .request();
+        released = true;
+        await held.release();
+        return {
+            participant,
+            responder,
+            observer,
+            responderStatusAtRequest,
+            observerSyncTargets,
+            responderConnected: await responderConnect,
+            observerConnected: await observerConnect
+        };
+    } finally {
+        if (!released) await held.release();
+    }
+}
+
+/**
+ * The restarted participant 1's own initial sync from participant 0 is held
+ * at its application step, so participant 1 stays OPENED. Participant 0 then
+ * probes it with a plain sync, bounded by one agreement window, and the probe
+ * times out while participant 1 still waits. Then the held sync is released
+ * and participant 1 builds its late answer, which is held once built and
+ * then sent. Returns the probe result, its duration and the window,
+ * participant 1's status at the timeout, its connect result, the late
+ * answers sent, and participant 0's `onSetState` count before the probe.
+ */
+export async function probeSyncingParticipantPastTimeout(
+    h: MathPeerTestHarness
+) {
+    const { participant, responder } = await restartSecondParticipant(h);
+    const releaseLateAnswer = await h.rpcStub.holdSpectateResponses(
+        responder.index
+    );
+    const held = await h.rpcStub.holdSpectateSyncApplication(
+        responder.index,
+        participant.index
+    );
+    let released = false;
+    try {
+        const responderConnect =
+            responder.p2pInstance.p2pSigner.connectToChannel(h.channelId);
+        await waitFor(
+            async () => (await held.entered()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const setStatesBefore = h.event.getEventCallCount(
+            participant.index,
+            "onSetState"
+        );
+        const probe = await h.execOnHost(
+            participant,
+            async (sm, a) => {
+                const started = Date.now();
+                const synced =
+                    await sm.p2pManager.localRpc.spectateService.sync(
+                        a.responder,
+                        sm.channelId
+                    );
+                return {
+                    synced,
+                    elapsedMs: Date.now() - started,
+                    windowMs: sm.timeConfig.agreementTime * 1000
+                };
+            },
+            { responder: responder.address }
+        );
+        const responderStatusAtTimeout = await h
+            .control(responder)
+            .query.getStatus()
+            .request();
+        released = true;
+        await held.release();
+        const responderConnected = await responderConnect;
+        await waitFor(
+            async () =>
+                (await h
+                    .control(responder)
+                    .stub.getHeldSpectateResponseCount()
+                    .request()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const lateAnswers = await releaseLateAnswer();
+        return {
+            participant,
+            responder,
+            probe,
+            responderStatusAtTimeout,
+            responderConnected,
+            lateAnswers,
+            setStatesBefore
+        };
+    } finally {
+        if (!released) await held.release();
+    }
+}
+
+/**
+ * The restarted participant 1's own initial sync from participant 0 is held
+ * at its application step and fails at release. A spectate request from
+ * participant 0 is held at participant 1's ingress before the endpoint runs.
+ * In one host step participant 1's own sync is failed, its outcome awaited,
+ * and only then the held request let into the endpoint. Returns participant
+ * 0's raw request outcome (the refusal message), participant 1's own sync
+ * outcome and its connect result.
+ */
+export async function requestAfterFailedOwnSync(h: MathPeerTestHarness) {
+    const { participant, responder } = await restartSecondParticipant(h);
+    await h.rpcStub.holdSpectateResponses(responder.index, false, true);
+    const held = await h.rpcStub.holdSpectateSyncApplication(
+        responder.index,
+        participant.index,
+        true
+    );
+    let released = false;
+    try {
+        const responderConnect =
+            responder.p2pInstance.p2pSigner.connectToChannel(h.channelId);
+        await waitFor(
+            async () => (await held.entered()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const request = h.execOnHost(
+            participant,
+            async (sm, a) => {
+                try {
+                    await sm.p2pManager.remoteRpc.spectateService
+                        .onSpectateRequest({ channelId: sm.channelId })
+                        .request(a.responder, {
+                            timeoutMs: sm.timeConfig.agreementTime * 1000
+                        });
+                    return "answered";
+                } catch (error) {
+                    return error instanceof Error
+                        ? error.message
+                        : String(error);
+                }
+            },
+            { responder: responder.address }
+        );
+        await waitFor(
+            async () =>
+                (await h
+                    .control(responder)
+                    .stub.getHeldSpectateResponseCount()
+                    .request()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        released = true;
+        // The failure aborts participant 1, so no later control call reaches
+        // it: the request enters in the same host step.
+        const ownSyncSucceeded = await h.execOnHost(responder, async (sm) => {
+            const stub = sm.p2pManager.localRpc.stub;
+            stub.spectateSyncApplicationGate!.release();
+            const succeeded = await sm.p2pManager.isInitialSyncSuccessfulWait();
+            stub.releaseSpectateResponses();
+            return succeeded;
+        });
+        return {
+            participant,
+            responder,
+            ownSyncSucceeded,
+            refusal: await request,
+            responderConnected: await responderConnect
+        };
+    } finally {
+        if (!released) await held.release();
+    }
+}
+
+/**
+ * Participants 0 and 1 open the channel and a spectator syncs from them. A
+ * fresh runtime whose pairs with both participants are blacklisted both ways
+ * connects, so its only handshake is with the spectator: it stays OPENED and
+ * starts no initial sync. The spectator probes it with a sync bounded past
+ * the fresh runtime's initial-sync deadline. Returns the probe result, whether
+ * the fresh runtime had aborted when the probe returned, its connect result,
+ * and its status, own sync calls and spectate requests while the probe waited.
+ */
+export async function probeOpenedRuntimeWithoutParticipant(
+    h: MathPeerTestHarness
+) {
+    await h.setup(2, { autoConnect: false });
+    await h.lifecycle.openChannelForParticipants([0, 1]);
+    await h.network.joinSelectedKey([0, 1], String(h.channelId));
+    const participants = [h.getPeer(0), h.getPeer(1)];
+    const spectatorIndex = h.peers.length;
+    await h.createPeer(
+        spectatorIndex,
+        h.signerFor(slotAccountIndex(spectatorIndex))
+    );
+    const spectator = h.getPeer(spectatorIndex);
+    const spectatorConnected =
+        await spectator.p2pInstance.p2pSigner.connectToChannel(h.channelId);
+    const responderIndex = h.peers.length;
+    await h.createPeer(
+        responderIndex,
+        h.signerFor(slotAccountIndex(responderIndex))
+    );
+    const responder = h.getPeer(responderIndex);
+    for (const participant of participants)
+        for (const [from, to] of [
+            [responder, participant],
+            [participant, responder]
+        ])
+            await h
+                .control(from)
+                .network.blacklistAndDisconnectPeerByAddress(to.address)
+                .request();
+    await h.rpcStub.recordSpectateSync(responder.index, { forward: true });
+    await h.rpcStub.stubCountSpectateRequests(responder.index);
+    const responderConnect = responder.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId
+    );
+    await waitFor(
+        async () =>
+            (await h
+                .control(spectator)
+                .query.isConnectedTo(responder.address)
+                .request()) &&
+            (await h
+                .control(responder)
+                .query.isConnectedTo(spectator.address)
+                .request()),
+        h.event.protocolEventTimeoutMs()
+    );
+    const probe = h.execOnHost(
+        spectator,
+        async (sm, a) =>
+            // three windows outlast the responder's two-window deadline
+            await sm.p2pManager.localRpc.spectateService.sync(
+                a.responder,
+                sm.channelId,
+                undefined,
+                undefined,
+                sm.timeConfig.agreementTime * 3 * 1000
+            ),
+        { responder: responder.address }
+    );
+    await waitFor(
+        async () =>
+            (await h.rpcStub.getSpectateRequestCount(responder.index)) === 1,
+        h.event.protocolEventTimeoutMs()
+    );
+    const responderWhileWaiting = {
+        status: await h.control(responder).query.getStatus().request(),
+        syncCalls: await h.rpcStub.spectateSyncCallCount(responder.index)
+    };
+    const synced = await probe;
+    const responderAbortedFirst = responder.eventSpies.onAbort?.called ?? false;
+    return {
+        participants,
+        spectator,
+        responder,
+        spectatorConnected,
+        responderWhileWaiting,
+        synced,
+        responderAbortedFirst,
+        responderConnected: await responderConnect
+    };
 }

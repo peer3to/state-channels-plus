@@ -8,7 +8,7 @@ const {
 const {
     REVERSE_DIAL_WINDOW_MS
 } = require("../../../scripts/e2e-parallel/distributed/poolTransport.js");
-const DHT = require("@hyperswarm/dht");
+const DHT = require("hyperdht");
 
 export const TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS =
     DISCOVERY_AUTH_TIMEOUT_MS + REVERSE_DIAL_WINDOW_MS + 5_000;

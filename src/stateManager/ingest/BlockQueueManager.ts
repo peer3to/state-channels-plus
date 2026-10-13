@@ -154,12 +154,14 @@ export default class BlockQueueManager {
                           senderAddress: options.senderAddress
                       }
                     : { origin: options.origin };
-            if (this.isBlockStored(block)) {
-                const entry = this.stateManager.storage.queues.createEntry(
-                    block,
-                    queueOptions
+            if (this.isPastBlock(block, strategy)) {
+                this.settlePastBlock(
+                    this.stateManager.storage.queues.createEntry(
+                        block,
+                        queueOptions
+                    ),
+                    strategy
                 );
-                this.scheduleStoredBlockConfirmationMerge(entry, strategy);
                 return true;
             }
 
@@ -310,14 +312,59 @@ export default class BlockQueueManager {
             `BlockQueueManager.handleStoredBlockConfirmationMerge - fork ${entry.block.forkId} - block ${entry.block.height}`
         );
     }
+
+    /**
+     * Is this peer already past the block? Either the block is stored, or
+     * its height is at or below the local height on its fork with no block
+     * stored there: a sync moved this peer ahead and it never had that
+     * block. Dispute replay judges blocks out of live order, so only a
+     * stored block is past for it.
+     */
+    public isPastBlock(block: Block, strategy: AValidationStrategy): boolean {
+        return (
+            this.isBlockStored(block) ||
+            (strategy.enforcesLiveForkAndOrderingGates &&
+                this.isFreeHeightBelowInstalledHistory(block))
+        );
+    }
+
+    /**
+     * Settles a past block (see `isPastBlock`): a stored block merges its
+     * confirmation; any other one is dropped with no execution, merge,
+     * probe or fraud proof.
+     */
+    public settlePastBlock(
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
+    ): void {
+        if (this.isBlockStored(entry.block)) {
+            this.scheduleStoredBlockConfirmationMerge(entry, strategy);
+            return;
+        }
+        this.logger.verbose(
+            "Dropping an unstored block at or below the local height",
+            {
+                block: LoggerUtils.getBlockMetadata(
+                    entry.block,
+                    this.stateManager.storage
+                )
+            }
+        );
+        P2pEventHooksUtils.notifyBlockConfirmationProcessed({
+            blockHash: entry.block.hash,
+            keepConnection: true,
+            p2pEventHooks: this.stateManager.p2pEventHooks
+        });
+    }
+
     /**
      * The ONLY sanctioned way to put a dequeued entry back. Strategy hooks reach
      * this while `onBlockConfirmation` holds the StateManager mutex, so all work
      * here is either synchronous storage mutation or a scheduled task - never an
      * inline timeout (that would re-enter validation on the wrong stack).
      *
-     * - If the block became stored while it was out of the queue, merge the
-     *   stored confirmation instead of waiting out the timeout, under the
+     * - If the block became past while it was out of the queue, settle it
+     *   (`settlePastBlock`) instead of waiting out the timeout, under the
      *   caller's `strategy` (falling back to the active one).
      * - Otherwise restore + (re)arm the remaining-window timeout; if the window
      *   already elapsed, run the timeout logic as an immediate task.
@@ -326,12 +373,11 @@ export default class BlockQueueManager {
         entry: QueuedBlockEntry,
         strategy?: AValidationStrategy
     ): void {
-        if (this.isBlockStored(entry.block)) {
-            this.scheduleStoredBlockConfirmationMerge(
-                entry,
-                strategy ??
-                    this.stateManager.getActiveValidationStrategy(entry.block)
-            );
+        const restoreStrategy =
+            strategy ??
+            this.stateManager.getActiveValidationStrategy(entry.block);
+        if (this.isPastBlock(entry.block, restoreStrategy)) {
+            this.settlePastBlock(entry, restoreStrategy);
             return;
         }
 
@@ -447,11 +493,11 @@ export default class BlockQueueManager {
             return;
         }
 
-        if (this.isBlockStored(entry.block)) {
-            this.scheduleStoredBlockConfirmationMerge(
-                entry,
-                this.stateManager.getActiveValidationStrategy(entry.block)
-            );
+        const strategy = this.stateManager.getActiveValidationStrategy(
+            entry.block
+        );
+        if (this.isPastBlock(entry.block, strategy)) {
+            this.settlePastBlock(entry, strategy);
             return;
         }
 
@@ -727,13 +773,16 @@ export default class BlockQueueManager {
         }
         // a free height below the installed history: a compact proof does
         // not store the blocks under its final point, so it is inconclusive
+        if (this.isFreeHeightBelowInstalledHistory(block)) return false;
+        return block.forkId === this.stateManager.forkId;
+    }
+
+    private isFreeHeightBelowInstalledHistory(block: Block): boolean {
         const blocks = this.stateManager.storage.blocks;
-        if (
+        return (
             block.height < blocks.getNextBlockHeight(block.forkId) &&
             !blocks.getBlock(block.forkId, block.height)
-        )
-            return false;
-        return block.forkId === this.stateManager.forkId;
+        );
     }
 
     private isBlockForThisChannel(block: Block): boolean {

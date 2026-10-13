@@ -1,5 +1,5 @@
 const { loadPersistentKeyPair } = require("./persistentIdentity");
-const DHT = require("@hyperswarm/dht");
+const DHT = require("hyperdht");
 
 function keyPairFromSeed(seedHex) {
     if (!/^[a-f0-9]{64}$/.test(seedHex || "")) {

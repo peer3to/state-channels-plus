@@ -15,5 +15,5 @@ Scheduling lifecycle
 
 - [ ] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P1` — fire
 - [ ] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P2` — cancel
-- [ ] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P3` — dispose drain
+- [x] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P3` — dispose drain: it waits for running tasks and clears its wait bound once they settle, so no timer outlives the disposal
 - [ ] `UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P4` — reschedule patterns

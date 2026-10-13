@@ -1,74 +1,11 @@
+import {
+    loadBrowserTestDependency,
+    startBrowserGateServer
+} from "./browserGateServer.mjs";
 import { launchChromium } from "./chromiumLaunch.js";
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
 import assert from "node:assert/strict";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "../..");
-
-async function loadBrowserTestDependency(name) {
-    try {
-        return await import(name);
-    } catch (error) {
-        if (error?.code === "ERR_MODULE_NOT_FOUND") {
-            throw new Error(
-                `Missing browser test dependency "${name}". Run yarn install before yarn test:e2e:browser.`
-            );
-        }
-        throw error;
-    }
-}
-
-const platformAliases = {
-    "@platform/contractExecutorRootUrl": path.join(
-        projectRoot,
-        "src/rpc/internal/browser/ContractExecutorRootUrl.ts"
-    ),
-    "@platform/p2pRuntimeHostRootUrl": path.join(
-        projectRoot,
-        "src/rpc/internal/browser/P2pRuntimeHostRootUrl.ts"
-    ),
-    "@platform/rootWorkerRuntime": path.join(
-        projectRoot,
-        "src/rpc/internal/browser/RootWorkerRuntime.ts"
-    ),
-    "@platform/createLogger": path.join(
-        projectRoot,
-        "src/utils/logging/browser/createLogger.ts"
-    ),
-    "@platform/DeployUtils": path.join(
-        projectRoot,
-        "src/utils/browser/DeployUtils.ts"
-    ),
-    "@platform/evmJumpdestCache": path.join(
-        projectRoot,
-        "src/evm/browser/evmJumpdestCache.ts"
-    ),
-    "@platform/LocalDiscoveryServer": path.join(
-        projectRoot,
-        "src/utils/browser/LocalDiscoveryServer.ts"
-    ),
-    "@platform/precompileModuleLoader": path.join(
-        projectRoot,
-        "src/evm/browser/precompileModuleLoader.ts"
-    ),
-    "@platform/moduleLoader": path.join(
-        projectRoot,
-        "src/utils/moduleLoader/browser/importModuleFromManifest.ts"
-    ),
-    "@platform/p2pRuntimeChannel": path.join(
-        projectRoot,
-        "src/transport/browser/RuntimeChannel.ts"
-    ),
-    "@": path.join(projectRoot, "src"),
-    "@test": path.join(projectRoot, "test"),
-    "@typechain-types": path.join(projectRoot, "typechain-types"),
-    // The SDK reaches deploy helpers via the bare `scripts/...` specifier
-    // (resolved by tsconfig `baseUrl` in the node build); map it for Vite.
-    scripts: path.join(projectRoot, "scripts")
-};
 
 const runtimeServer = await startSdkRuntimeServer();
 
@@ -85,40 +22,13 @@ const cleanup = async () => {
 try {
     hub = await startLocalDiscoveryRelayHub({ host: "127.0.0.1", port: 0 });
 
-    const [{ createServer }, { chromium }] = await Promise.all([
-        loadBrowserTestDependency("vite"),
-        loadBrowserTestDependency("playwright")
-    ]);
-
-    server = await createServer({
-        configFile: false,
-        root: projectRoot,
-        // Its own dependency pre-bundle: both gates run at once in one workspace
-        // on a worker, and a shared cache re-optimized by one answers the other's
-        // page with 504 Outdated Optimize Dep.
-        cacheDir: path.join(
-            projectRoot,
-            "node_modules/.vite/run-p2p-webrtc-e2e"
-        ),
-        resolve: { alias: platformAliases },
-        server: {
-            host: "127.0.0.1",
-            port: 0,
-            strictPort: false,
-            // Same-origin RPC proxy so the page and its workers reach the
-            // hardhat node without cross-origin (CORS) requests. `ws: true`
-            // also forwards the WebSocket upgrade: the SDK worker builds a
-            // `WebSocketProvider` (push-based events) from the same URL.
-            proxy: runtimeServer.proxy
-        }
-    });
-
-    await server.listen();
-    const address = server.httpServer?.address();
-    if (!address || typeof address === "string") {
-        throw new Error("Vite did not expose a browser test server port");
-    }
-    const origin = `http://127.0.0.1:${address.port}`;
+    const { chromium } = await loadBrowserTestDependency("playwright");
+    let origin;
+    ({ origin, server } = await startBrowserGateServer({
+        cacheName: "run-p2p-webrtc-e2e",
+        rpcProxy: runtimeServer.proxy,
+        page: "test/browser/p2p-webrtc-e2e.html"
+    }));
     const providerUrl = `${origin}/rpc`;
 
     browser = await launchChromium(chromium);

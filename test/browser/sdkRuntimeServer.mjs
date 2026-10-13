@@ -11,8 +11,13 @@ const projectRoot = path.resolve(
     "../.."
 );
 
-/** Each browser gate owns its node, including its interval-mining setting. */
-export async function startSdkRuntimeServer() {
+/**
+ * Each browser gate owns its node, including its interval-mining setting.
+ * Every interval mines a block one second past the last, so an interval below
+ * one second runs the chain clock ahead of the wall clock; a gate that runs
+ * into the protocol's time windows mines once a second.
+ */
+export async function startSdkRuntimeServer({ miningIntervalMs = 100 } = {}) {
     const reservation = createServer();
     reservation.listen(0, "127.0.0.1");
     await once(reservation, "listening");
@@ -65,7 +70,9 @@ export async function startSdkRuntimeServer() {
                 // mining queues future nonces in the mempool and mines them in
                 // order.
                 await provider.send("evm_setAutomine", [false]);
-                await provider.send("evm_setIntervalMining", [100]);
+                await provider.send("evm_setIntervalMining", [
+                    miningIntervalMs
+                ]);
                 break;
             } catch (error) {
                 if (Date.now() - startedAt > 30_000)

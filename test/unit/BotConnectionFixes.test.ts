@@ -12,6 +12,7 @@ import {
     countFinalizedBlocks,
     disputeOmittedJoin,
     exitOnLeaveTurn,
+    latestRequestToResponderBehindChainFork,
     latestSyncFromResponderBehindDerivedFork,
     prepareJoinWithAuthorization,
     readForceExit,
@@ -19,7 +20,6 @@ import {
     recordLeaveChannelLogs,
     recordedForceJoinDeadlineDelays,
     recordSnapshotPostWaitResults,
-    requestLatestFrom,
     stageInboundBlockedExit,
     stageExitReplacedBySeatingFork,
     stageInboundBlockedProtocolExit,
@@ -44,7 +44,6 @@ import {
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
-import { withHeldFreshRequester } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
@@ -358,13 +357,6 @@ describe("Unit: bot-connection fixes", function () {
                 await stageInboundBlockedExit(h);
             const finalized = countFinalizedBlocks(leaver);
             try {
-                // a post of the staging still running would skip the block
-                await waitFor(
-                    async () =>
-                        (await posts.results()).length ===
-                        (await posts.started()),
-                    h.event.protocolEventTimeoutMs()
-                );
                 await posts.holdResults();
                 const startedBefore = await posts.started();
                 await h.transition.advanceState({
@@ -612,12 +604,6 @@ describe("Unit: bot-connection fixes", function () {
             } = await stageInboundBlockedExit(h);
             const finalized = countFinalizedBlocks(leaver);
             const leaverNonce = await chainNonceReader(h, leaver);
-            // a post of the staging still running would skip the block
-            await waitFor(
-                async () =>
-                    (await posts.results()).length === (await posts.started()),
-                h.event.protocolEventTimeoutMs()
-            );
             const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
             try {
                 const startedBefore = await posts.started();
@@ -667,12 +653,6 @@ describe("Unit: bot-connection fixes", function () {
             const h = TestSession.getHarness();
             const { leaver, remainingPeerIndices, posts, disputes } =
                 await stageInboundBlockedExit(h);
-            // a post of the staging still running would log before the probe
-            await waitFor(
-                async () =>
-                    (await posts.results()).length === (await posts.started()),
-                h.event.protocolEventTimeoutMs()
-            );
             const logs = await recordLeaveChannelLogs(h, leaver);
             const refused = {
                 message: "The chain refused the exit snapshot post",
@@ -865,35 +845,19 @@ describe("Unit: bot-connection fixes", function () {
     });
 
     describe("latest-state spectate request", function () {
-        it("U73: a latest-state request to a responder whose own state is not installed → refused for the chain-derived fork, requester not blacklisted", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
-            const requester = h.getPeer(1);
-
-            const result = await withHeldFreshRequester(
-                h,
-                async (responder) => {
-                    const { refusal, synced } = await requestLatestFrom(
-                        h,
-                        requester,
-                        responder.address
-                    );
-                    return {
-                        refusal,
-                        synced,
-                        requesterBlacklisted: await h
-                            .control(responder)
-                            .query.isBlacklisted(requester.address)
-                            .request()
-                    };
-                }
+        it("U73: a latest-state request to a responder past its initial load that has not installed the chain's fork → refused for that fork, requester not blacklisted", async function () {
+            const result = await latestRequestToResponderBehindChainFork(
+                TestSession.getHarness()
             );
 
+            // premise: the responder's own fork is the source fork, and it
+            // holds no genesis of the chain's successor
+            expect(result.responderForkId).to.equal(result.sourceForkId);
+            expect(result.isSuccessorInstalled).to.equal(false);
             // The responder serves the fork it derives from the chain, not its
-            // own (absent) fork; without that fork's genesis it throws.
+            // own fork; without that fork's genesis it refuses.
             expect(result.refusal).to.equal(
-                `No genesis snapshot found for fork ${forkId}`
+                `No genesis snapshot found for fork ${result.successor}`
             );
             expect(result.synced).to.equal(false);
             expect(result.requesterBlacklisted).to.equal(false);
@@ -1626,7 +1590,12 @@ describe("Unit: bot-connection fixes", function () {
 
         it("U75e: a leaving joiner whose landed join a founder's timeout dispute reduces away while the chain still lists it → once the chain drops it, its force-join check starts no dispute and lowers it to SYNCED with one onLeftChannel", async function () {
             const h = TestSession.getHarness();
-            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(4);
+            // engineer decision (Luka, 2026-10-12): 6s, not the staging's 4s.
+            // The leaving joiner audits the founder's timeout dispute before
+            // its self-removal; under load that path can outlast 4 s.
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(4, {
+                timeConfig: { evidenceTime: 6 }
+            });
             const joiner = prepared.joiner;
             const joinerQuery = h.control(joiner).query;
             // The founders omit the join, so the joiner stays pending.

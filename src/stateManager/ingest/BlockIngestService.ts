@@ -121,12 +121,12 @@ export default class BlockIngestService {
                 return keepConnection;
             }
 
-            // a replayed block is re-judged from its predecessor even when stored
-            if (!entry.predecessor && sm.storage.blocks.getBlock(block.hash)) {
-                sm.blockQueueManager.scheduleStoredBlockConfirmationMerge(
-                    entry,
-                    strategy
-                );
+            // a replayed block is re-judged from its predecessor even when past
+            if (
+                !entry.predecessor &&
+                sm.blockQueueManager.isPastBlock(block, strategy)
+            ) {
+                sm.blockQueueManager.settlePastBlock(entry, strategy);
                 return true;
             }
 

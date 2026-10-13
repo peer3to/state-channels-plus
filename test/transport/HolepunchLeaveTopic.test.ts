@@ -108,3 +108,90 @@ describe("Holepunch topic lifecycle", function () {
         ]);
     });
 });
+
+describe("Holepunch topic lookup", function () {
+    let fixture: P2PManagerFixture;
+    const topicA = Buffer.from("topic-a").toString("hex");
+    const topicB = Buffer.from("topic-b").toString("hex");
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("looks a joined topic up once after its announce completes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchAnnounceLookup("flushed")
+            .request();
+
+        expect(result.lookupsBeforeFlush).to.deep.equal([]);
+        expect(result.lookupsAfterFlush).to.deep.equal([topicA]);
+    });
+
+    it("does not look up a topic left before its announce completes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchAnnounceLookup("left-before-flush")
+            .request();
+
+        expect(result.lookupsAfterFlush).to.deep.equal([]);
+    });
+
+    it("does not look up a topic after the swarm is destroyed", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchAnnounceLookup(
+                "destroyed-before-flush"
+            )
+            .request();
+
+        expect(result.lookupsAfterFlush).to.deep.equal([]);
+    });
+
+    it("looks each joined topic up once when a peer's ban is released", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchBanReleaseLookup(false)
+            .request();
+
+        expect(result.banCalls).to.deep.equal([false]);
+        expect(result.lookups).to.deep.equal([topicA, topicB]);
+    });
+
+    it("looks no topic up when a peer is banned", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchBanReleaseLookup(true)
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.lookups).to.deep.equal([]);
+    });
+
+    it("logs a failed announce at debug level and does not look the topic up", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchAnnounceLookup("flush-failed")
+            .request();
+
+        expect(result.debugs).to.include("Holepunch announce failed");
+        expect(result.warningsAndErrors).to.deep.equal([]);
+        expect(result.lookupsAfterFlush).to.deep.equal([]);
+    });
+
+    it("logs a failed topic lookup at debug level", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchAnnounceLookup("lookup-failed")
+            .request();
+
+        expect(result.lookupsAfterFlush).to.deep.equal([topicA]);
+        expect(result.debugs).to.include("Holepunch topic lookup failed");
+        expect(result.warningsAndErrors).to.deep.equal([]);
+    });
+});

@@ -1,3 +1,7 @@
+import {
+    loadBrowserTestDependency,
+    startBrowserGateServer
+} from "./browserGateServer.mjs";
 import { launchChromium } from "./chromiumLaunch.js";
 import {
     startSdkRuntimeServer,
@@ -10,10 +14,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "../..");
 const require = createRequire(import.meta.url);
 
 // the crash-log smoke's crash is deliberate; every other console error fails
@@ -85,107 +86,21 @@ async function waitForStoredThreads(logDir, threadNames, timeoutMs, channelId) {
     }
 }
 
-async function loadBrowserTestDependency(name) {
-    try {
-        return await import(name);
-    } catch (error) {
-        if (error?.code === "ERR_MODULE_NOT_FOUND") {
-            throw new Error(
-                `Missing browser test dependency "${name}". Run yarn install before yarn test:browser:worker.`
-            );
-        }
-        throw error;
-    }
-}
-
-const [{ createServer }, { chromium }] = await Promise.all([
-    loadBrowserTestDependency("vite"),
-    loadBrowserTestDependency("playwright")
-]);
+const { chromium } = await loadBrowserTestDependency("playwright");
 
 const runtimeServer = await startSdkRuntimeServer();
-const server = await createServer({
-    configFile: false,
-    root: projectRoot,
-    // Its own dependency pre-bundle: both gates run at once in one workspace
-    // on a worker, and a shared cache re-optimized by one answers the other's
-    // page with 504 Outdated Optimize Dep.
-    cacheDir: path.join(
-        projectRoot,
-        "node_modules/.vite/run-worker-contract-executor"
-    ),
-    resolve: {
-        alias: {
-            "@platform/contractExecutorRootUrl": path.join(
-                projectRoot,
-                "src/rpc/internal/browser/ContractExecutorRootUrl.ts"
-            ),
-            "@platform/p2pRuntimeHostRootUrl": path.join(
-                projectRoot,
-                "src/rpc/internal/browser/P2pRuntimeHostRootUrl.ts"
-            ),
-            "@platform/rootWorkerRuntime": path.join(
-                projectRoot,
-                "src/rpc/internal/browser/RootWorkerRuntime.ts"
-            ),
-            "@platform/createLogger": path.join(
-                projectRoot,
-                "src/utils/logging/browser/createLogger.ts"
-            ),
-            "@platform/DeployUtils": path.join(
-                projectRoot,
-                "src/utils/browser/DeployUtils.ts"
-            ),
-            "@platform/LocalDiscoveryServer": path.join(
-                projectRoot,
-                "src/utils/browser/LocalDiscoveryServer.ts"
-            ),
-            "@platform/precompileModuleLoader": path.join(
-                projectRoot,
-                "src/evm/browser/precompileModuleLoader.ts"
-            ),
-            "@platform/evmJumpdestCache": path.join(
-                projectRoot,
-                "src/evm/browser/evmJumpdestCache.ts"
-            ),
-            "@platform/moduleLoader": path.join(
-                projectRoot,
-                "src/utils/moduleLoader/browser/importModuleFromManifest.ts"
-            ),
-            "@platform/p2pRuntimeChannel": path.join(
-                projectRoot,
-                "src/transport/browser/RuntimeChannel.ts"
-            ),
-            "@platform/evmJumpdestCache": path.join(
-                projectRoot,
-                "src/evm/browser/evmJumpdestCache"
-            ),
-            scripts: path.join(projectRoot, "scripts"),
-            "@": path.join(projectRoot, "src"),
-            "@test": path.join(projectRoot, "test"),
-            "@typechain-types": path.join(projectRoot, "typechain-types")
-        }
-    },
-    server: {
-        host: "127.0.0.1",
-        port: 0,
-        strictPort: false,
-        proxy: runtimeServer.proxy
-    }
+const { origin, server } = await startBrowserGateServer({
+    cacheName: "run-worker-contract-executor",
+    rpcProxy: runtimeServer.proxy,
+    page: "test/browser/index.html"
 });
 
 let browser;
 const crashLogServer = await startCrashLogServer();
 try {
-    await server.listen();
-    const address = server.httpServer?.address();
-    if (!address || typeof address === "string") {
-        throw new Error("Vite did not expose a browser test server port");
-    }
-
     browser = await launchChromium(chromium);
     const page = await browser.newPage();
-    await installSdkRuntimeConfig(page, `http://127.0.0.1:${address.port}`);
+    await installSdkRuntimeConfig(page, origin);
     page.setDefaultTimeout(PAGE_TIMEOUT_MS);
     const browserErrors = [];
 
@@ -217,10 +132,9 @@ try {
         );
     });
 
-    await page.goto(
-        `http://127.0.0.1:${address.port}/test/browser/index.html`,
-        { waitUntil: "networkidle" }
-    );
+    await page.goto(`${origin}/test/browser/index.html`, {
+        waitUntil: "networkidle"
+    });
 
     try {
         await page.waitForFunction(

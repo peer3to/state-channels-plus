@@ -27,7 +27,7 @@ import { HolepunchTransport, WebRTCTransport } from "@/transport";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType, type OpenConnection } from "@/transport/TransportType";
 import { Status } from "@/types";
-import type { Address } from "@/types/types";
+import type { Address, ChannelId } from "@/types/types";
 import type { Bytes } from "@/types/types";
 import {
     Codec,
@@ -48,6 +48,21 @@ import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 import sinon from "sinon";
+
+const HyperDHT = require("hyperdht");
+const Hyperswarm = require("hyperswarm");
+
+/** Holepunch log messages a logger spy recorded, in order. */
+function holepunchMessages(spy: sinon.SinonSpy): string[] {
+    return spy.args
+        .map((args) => String(args[0]))
+        .filter((message) => message.startsWith("Holepunch"));
+}
+
+/** Let every pending promise callback run. */
+function settleCallbacks(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 class RecordingTransport extends NetworkTransport {
     public transportType = TransportType.HOLEPUNCH;
@@ -440,9 +455,10 @@ export type LifecycleProbe = {
 
 export type HolepunchSocketErrorProbe = {
     /** Holepunch log messages by level, in order. */
+    debugs: string[];
     warnings: string[];
     errors: string[];
-    /** Whether each errored transport closed: [reset, other]. */
+    /** Whether each errored transport closed: [duplicate, reset, relayed reset, other]. */
     closed: boolean[];
 };
 
@@ -592,6 +608,47 @@ export type HolepunchTopicProbe = {
     leaveCalls: string[];
 };
 
+/** How the announce of one joined topic ends before its lookup. */
+export type HolepunchAnnounceScenario =
+    | "flushed"
+    | "left-before-flush"
+    | "destroyed-before-flush"
+    | "flush-failed"
+    | "lookup-failed";
+
+export type HolepunchAnnounceLookupProbe = {
+    /** Topic lookups (topic hex) while the announce is still pending. */
+    lookupsBeforeFlush: string[];
+    /** Topic lookups (topic hex) once the announce settled. */
+    lookupsAfterFlush: string[];
+    /** Holepunch log messages by level, in order. */
+    debugs: string[];
+    warningsAndErrors: string[];
+};
+
+export type HolepunchBanReleaseProbe = {
+    /** Values Hyperswarm's own peer info received. */
+    banCalls: boolean[];
+    /** Topic lookups (topic hex) the ban call started. */
+    lookups: string[];
+};
+
+/** One runtime's Holepunch connections to one peer over a real swarm. */
+export type HolepunchSwarmProbe = {
+    /** Connections the swarm handed to Holepunch since it was created. */
+    swarmConnections: number;
+    /** Open swarm connections now. */
+    openSwarmConnections: number;
+    /** Authenticated open Holepunch connections to the peer. */
+    authenticatedToPeer: number;
+    /** Connections this swarm dialed since it was created. */
+    dialAttempts: number;
+    /** Hyperswarm's verdict on each incoming connection, in order: true refused it. */
+    firewallVerdicts: boolean[];
+    /** This swarm's public key (hex). */
+    publicKey: string;
+};
+
 export type LateHandshakeProbe = {
     connected: boolean;
     hookCount: number;
@@ -612,6 +669,11 @@ export class P2PManagerProbeService extends ANetworkRpcService<
     public dispatchCalls = 0;
     /** Profile of the selector staged by probeLobbyRecovery. */
     private lobbyRecoveryProfile?: PeerProfile;
+    /** Hyperswarm's verdicts on incoming connections of the local DHT swarm. */
+    private readonly firewallVerdicts: boolean[] = [];
+    private readonly firewallVerdictWaiters: (() => void)[] = [];
+    /** While set, the local DHT swarm accepts no connection. */
+    private incomingHold?: Promise<void>;
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
@@ -1868,33 +1930,46 @@ export class P2PManagerProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Errors one Holepunch socket with a peer reset (ECONNRESET) and another
-     * with a different socket error, recording the logger level each reaches.
+     * Errors four Holepunch sockets: a dropped duplicate connection, a peer
+     * reset with its code (ECONNRESET), a peer reset that carries only the
+     * message (as dht-relay forwards it), and another socket error. Records
+     * the logger level each reaches.
      */
     public probeHolepunchSocketErrors(): HolepunchSocketErrorProbe {
         const logger = this.p2pManager.logger;
+        const debug = sinon.spy(logger, "debug");
         const warn = sinon.spy(logger, "warn");
         const error = sinon.spy(logger, "error");
         try {
+            const duplicate = this.holepunchTransport();
             const reset = this.holepunchTransport();
+            const relayedReset = this.holepunchTransport();
             const other = this.holepunchTransport();
+            duplicate.socket.emit("error", new Error("Duplicate connection"));
             reset.socket.emit(
                 "error",
                 Object.assign(new Error("connection reset by peer"), {
                     code: "ECONNRESET"
                 })
             );
+            relayedReset.socket.emit(
+                "error",
+                new Error("connection reset by peer")
+            );
             other.socket.emit("error", new Error("socket hang up"));
-            const holepunchMessages = (spy: sinon.SinonSpy) =>
-                spy.args
-                    .map((args) => String(args[0]))
-                    .filter((message) => message.startsWith("Holepunch"));
             return {
+                debugs: holepunchMessages(debug),
                 warnings: holepunchMessages(warn),
                 errors: holepunchMessages(error),
-                closed: [reset.transport.isClosed, other.transport.isClosed]
+                closed: [
+                    duplicate.transport.isClosed,
+                    reset.transport.isClosed,
+                    relayedReset.transport.isClosed,
+                    other.transport.isClosed
+                ]
             };
         } finally {
+            debug.restore();
             warn.restore();
             error.restore();
         }
@@ -2768,6 +2843,293 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             joinCalls: [...swarm.joinCalls],
             leaveCalls: [...swarm.leaveCalls]
         };
+    }
+
+    /**
+     * Join one topic on a recording swarm, end its announce as `scenario`
+     * says, and record the topic lookups and the Holepunch log messages.
+     */
+    public async probeHolepunchAnnounceLookup(
+        scenario: HolepunchAnnounceScenario
+    ): Promise<HolepunchAnnounceLookupProbe> {
+        const holepunch = this.p2pManager.holepunch;
+        const logger = this.p2pManager.logger;
+        const swarm = new RecordingSwarm();
+        const previousSwarm = holepunch.swarm;
+        const debug = sinon.spy(logger, "debug");
+        const warn = sinon.spy(logger, "warn");
+        const error = sinon.spy(logger, "error");
+        holepunch.swarm = swarm;
+        try {
+            const topic = Buffer.from("topic-a");
+            await holepunch.join(topic);
+            if (scenario === "left-before-flush") await holepunch.leave(topic);
+            if (scenario === "destroyed-before-flush") swarm.destroyed = true;
+            if (scenario === "lookup-failed")
+                swarm.refreshError = new Error("lookup failed");
+            await settleCallbacks();
+            const lookupsBeforeFlush = [...swarm.refreshCalls];
+            if (scenario === "flush-failed")
+                swarm.rejectFlush(0, new Error("announce failed"));
+            else swarm.resolveFlush(0);
+            await settleCallbacks();
+            return {
+                lookupsBeforeFlush,
+                lookupsAfterFlush: swarm.refreshCalls.slice(
+                    lookupsBeforeFlush.length
+                ),
+                debugs: holepunchMessages(debug),
+                warningsAndErrors: [
+                    ...holepunchMessages(warn),
+                    ...holepunchMessages(error)
+                ]
+            };
+        } finally {
+            debug.restore();
+            warn.restore();
+            error.restore();
+            holepunch.swarm = previousSwarm;
+            holepunch.topics = [];
+        }
+    }
+
+    /**
+     * Join two topics, let both announces complete, then call `ban(value)`
+     * on the peer info Holepunch hands to a new connection's transport.
+     */
+    public async probeHolepunchBanReleaseLookup(
+        value: boolean
+    ): Promise<HolepunchBanReleaseProbe> {
+        const holepunch = this.p2pManager.holepunch;
+        const swarm = new RecordingSwarm();
+        const setPeerInfo = sinon.spy(
+            this.p2pManager.profileManager,
+            "setBannablePeerInfo"
+        );
+        const previousSwarm = holepunch.swarm;
+        const previousInjectedSwarm = Object.getOwnPropertyDescriptor(
+            globalThis,
+            "Hyperswarm"
+        );
+        // Holepunch wires its connection listener only on a swarm it creates.
+        Object.defineProperty(globalThis, "Hyperswarm", {
+            configurable: true,
+            value: swarm
+        });
+        holepunch.swarm = undefined;
+        try {
+            await holepunch.join(Buffer.from("topic-a"));
+            await holepunch.join(Buffer.from("topic-b"));
+            swarm.resolveFlush(0);
+            swarm.resolveFlush(1);
+            await settleCallbacks();
+            const lookupsBeforeBan = swarm.refreshCalls.length;
+            const info = new RecordingBannablePeerInfo(`0x${"5b".repeat(32)}`);
+            swarm.emitConnection(new RecordingHolepunchSocket(), info);
+            const [transport, peerInfo] = setPeerInfo.firstCall.args;
+            peerInfo.ban(value);
+            await settleCallbacks();
+            transport.close();
+            return {
+                banCalls: [...info.banCalls],
+                lookups: swarm.refreshCalls.slice(lookupsBeforeBan)
+            };
+        } finally {
+            setPeerInfo.restore();
+            if (previousInjectedSwarm) {
+                Object.defineProperty(
+                    globalThis,
+                    "Hyperswarm",
+                    previousInjectedSwarm
+                );
+            } else {
+                Reflect.deleteProperty(globalThis, "Hyperswarm");
+            }
+            holepunch.swarm = previousSwarm;
+            holepunch.topics = [];
+        }
+    }
+
+    /**
+     * Join `channelId` as a Holepunch topic on a real Hyperswarm whose DHT
+     * node bootstraps from the local testnet at `bootstrapPort`.
+     */
+    public async joinHolepunchOnLocalDht(
+        channelId: string,
+        bootstrapPort: number
+    ): Promise<void> {
+        await this.p2pManager.stateManager.setChannelId(channelId as ChannelId);
+        const swarm = new Hyperswarm({
+            dht: new HyperDHT({
+                host: "127.0.0.1",
+                ephemeral: false,
+                firewalled: false,
+                bootstrap: [`127.0.0.1:${String(bootstrapPort)}`]
+            })
+        });
+        // Record each verdict of Hyperswarm's own firewall (which refuses a
+        // banned peer) without changing it.
+        const firewall = swarm.server.firewall;
+        swarm.server.firewall = async (...args: unknown[]) => {
+            await this.incomingHold;
+            const refused = Boolean(firewall(...args));
+            this.firewallVerdicts.push(refused);
+            for (const wake of this.firewallVerdictWaiters.splice(0)) wake();
+            return refused;
+        };
+        const previousInjectedSwarm = Object.getOwnPropertyDescriptor(
+            globalThis,
+            "Hyperswarm"
+        );
+        // Holepunch takes the injected swarm when join creates its swarm;
+        // that happens before join's first await.
+        Object.defineProperty(globalThis, "Hyperswarm", {
+            configurable: true,
+            value: swarm
+        });
+        try {
+            const join = this.p2pManager.holepunch.join(
+                Buffer.from(channelId.slice(2), "hex")
+            );
+            if (this.p2pManager.holepunch.swarm !== swarm)
+                throw new Error("Holepunch did not take the local DHT swarm");
+            await join;
+        } finally {
+            if (previousInjectedSwarm) {
+                Object.defineProperty(
+                    globalThis,
+                    "Hyperswarm",
+                    previousInjectedSwarm
+                );
+            } else {
+                Reflect.deleteProperty(globalThis, "Hyperswarm");
+            }
+        }
+    }
+
+    /**
+     * Look every joined Holepunch topic up once. The swarm dials each peer
+     * found that it may dial before the lookup resolves.
+     */
+    public async lookUpHolepunchTopics(): Promise<void> {
+        const holepunch = this.p2pManager.holepunch;
+        for (const topic of holepunch.topics)
+            await holepunch.swarm.status(topic).refresh();
+    }
+
+    /**
+     * Resolve once the announce of every joined Holepunch topic and the one
+     * lookup Holepunch runs after it are done.
+     */
+    public async waitForHolepunchAnnounced(): Promise<void> {
+        const holepunch = this.p2pManager.holepunch;
+        for (const topic of holepunch.topics) {
+            const discovery = holepunch.swarm.status(topic);
+            await discovery.flushed();
+            await discovery.refresh();
+        }
+    }
+
+    /** Leave `channelId` as a Holepunch topic; resolves once the unannounce is done. */
+    public async leaveHolepunchOnLocalDht(channelId: string): Promise<void> {
+        await this.p2pManager.holepunch.leave(
+            Buffer.from(channelId.slice(2), "hex")
+        );
+    }
+
+    /** Close every open swarm connection and wait until each one closed. */
+    public async closeHolepunchSwarmConnections(): Promise<void> {
+        const connections: Set<NodeJS.EventEmitter & { destroy(): void }> =
+            this.p2pManager.holepunch.swarm.connections;
+        await Promise.all(
+            [...connections].map(
+                (connection) =>
+                    new Promise<void>((closed) => {
+                        connection.once("close", closed);
+                        connection.destroy();
+                    })
+            )
+        );
+    }
+
+    /** Resolve once the swarm has exactly `count` open connections. */
+    public async waitForOpenSwarmConnections(count: number): Promise<void> {
+        const swarm = this.p2pManager.holepunch.swarm;
+        while (swarm.connections.size !== count)
+            await new Promise<void>((update) => swarm.once("update", update));
+    }
+
+    /**
+     * Run a DHT lookup of `channelId` and return the public key (hex) of each
+     * announced peer it found. It dials nothing.
+     */
+    public async lookUpHolepunchPeerKeys(channelId: string): Promise<string[]> {
+        const keys: string[] = [];
+        const query = this.p2pManager.holepunch.swarm.dht.lookup(
+            Buffer.from(channelId.slice(2), "hex")
+        );
+        for await (const data of query)
+            for (const peer of data.peers)
+                keys.push(Buffer.from(peer.publicKey).toString("hex"));
+        return keys;
+    }
+
+    /**
+     * Hold every incoming connection of the local DHT swarm until this swarm
+     * dials once more. When both swarms of a pair hold, neither accepts the
+     * other's dial before it dialed too, so the two dials cross.
+     */
+    public holdIncomingUntilOwnDial(): void {
+        const swarm = this.p2pManager.holepunch.swarm;
+        const dialsBefore = swarm.stats.connects.client.attempted;
+        this.incomingHold = new Promise<void>((release) => {
+            const onUpdate = () => {
+                if (swarm.stats.connects.client.attempted === dialsBefore)
+                    return;
+                swarm.off("update", onUpdate);
+                this.incomingHold = undefined;
+                release();
+            };
+            swarm.on("update", onUpdate);
+        });
+    }
+
+    /** Resolve with every firewall verdict once there are `count` of them. */
+    public async waitForFirewallVerdicts(count: number): Promise<boolean[]> {
+        while (this.firewallVerdicts.length < count)
+            await new Promise<void>((wake) =>
+                this.firewallVerdictWaiters.push(wake)
+            );
+        return [...this.firewallVerdicts];
+    }
+
+    public holepunchSwarmState(peerAddress: string): HolepunchSwarmProbe {
+        const holepunch = this.p2pManager.holepunch;
+        const peer = getChecksumAddress(peerAddress);
+        return {
+            swarmConnections: holepunch.connectionCount,
+            openSwarmConnections: holepunch.swarm.connections.size,
+            authenticatedToPeer: this.p2pManager
+                .getOpenConnections()
+                .filter(
+                    (connection) =>
+                        connection.peerAddress === peer &&
+                        connection.transportType === TransportType.HOLEPUNCH
+                ).length,
+            dialAttempts: holepunch.swarm.stats.connects.client.attempted,
+            firewallVerdicts: [...this.firewallVerdicts],
+            publicKey: Buffer.from(holepunch.swarm.keyPair.publicKey).toString(
+                "hex"
+            )
+        };
+    }
+
+    /** One request/response to `peerAddress` over its current transport. */
+    public async requestSumFrom(peerAddress: string): Promise<number> {
+        const response = await this.p2pManager.remoteRpc.pingService
+            .sum(1, 2, "holepunch")
+            .request(getChecksumAddress(peerAddress));
+        return response.sum;
     }
 
     /**

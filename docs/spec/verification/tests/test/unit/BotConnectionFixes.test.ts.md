@@ -74,7 +74,7 @@ is timed out.
 - `U72: an exit post that fails with an error that is no chain refusal is a fatal runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P43, REQ-LIF-10-QR8NQ9.T1.P25
 - `U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P38, REQ-TJOIN-7-NNGTAY.T1.P12
 - `U72: a reduction that replaces the fork of an exit block the application authored with no leave call by a state that still seats the leaver restarts the exit there as a requested leave: its leave turn comes, self-removal stays set and its exit settles`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P39
-- `U73: a latest-state request to a responder whose own state is not installed → refused for the chain-derived fork, requester not blacklisted`: REQ-SYNC-1-T2589H.T2.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42
+- `U73: a latest-state request to a responder past its initial load that has not installed the chain's fork → refused for that fork, requester not blacklisted`: REQ-SYNC-1-T2589H.T2.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42
 - `U73: a latest-state request to a responder whose own fork is behind the chain-derived fork → served from the derived fork, neither side blacklisted`: REQ-SYNC-1-T2589H.T2.P2, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43
 - `RO2: seating a join during its deadline membership read prevents a stale dispute request`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P46, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P72
 - `RO2: the block bound passing while the deadline awaits membership requests only one dispute`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P47

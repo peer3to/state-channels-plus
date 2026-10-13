@@ -1,7 +1,10 @@
 import { TransportType } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    resolveTestTimeConfig
+} from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -1070,6 +1073,258 @@ describe("E2E: lobby matching", function () {
             await releaseMatched();
             await releaseSetChannelId();
             await h.network.leaveLobby([0, 1], topic);
+        }
+    });
+
+    it("defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-terms-before-commit-ack");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const advertiser = h.control(h.peers[advertiserIndex]);
+        await advertiser.stub.delayCommitReplyUntilNegotiation().request();
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            let ids: string[] = [];
+            await waitFor(
+                async () => {
+                    ids = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getChannelId().request()
+                        )
+                    );
+                    return ids.every((id) => id !== ethers.ZeroHash);
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(ids[0]).to.equal(ids[1]);
+            await waitFor(
+                () =>
+                    h
+                        .control(h.peers[selectorIndex])
+                        .query.isChannelOpen(ids[0])
+                        .request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                50
+            );
+            for (const [observer, target] of [
+                [advertiserIndex, selectorIndex],
+                [selectorIndex, advertiserIndex]
+            ]) {
+                expect(
+                    await h
+                        .control(h.peers[observer])
+                        .query.isBlacklisted(h.peers[target].address)
+                        .request(),
+                    `peer ${observer} must not blacklist peer ${target}`
+                ).to.equal(false);
+            }
+        } finally {
+            await advertiser.stub.releaseLobbyReply().request();
+        }
+    });
+
+    it("blacklists a third peer's negotiation request that reaches the selector while its commit is in flight: the pair still opens one channel without it", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-third-peer-during-commit");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const thirdIndex = 2;
+        const selector = h.control(h.peers[selectorIndex]);
+        const third = h.peers[thirdIndex];
+        // The commit stays in flight until the test releases it: the reply
+        // is parked and neither side's agreement bound fires.
+        const releaseCommit = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit"
+        );
+        const selectorTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.commit"
+        );
+        const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
+            advertiserIndex,
+            "lobby advertiser reservation expiry"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () => (await selectorTimeout.heldCount()) === 1,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            await h.network.joinLobby([thirdIndex], topic);
+            await waitFor(
+                async () =>
+                    !(await selector.query
+                        .isTransportClosed(third.address)
+                        .request()) &&
+                    !(await h
+                        .control(third)
+                        .query.isTransportClosed(h.peers[selectorIndex].address)
+                        .request()),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+
+            await h.byzantine.sendRawNegotiationRpc(
+                thirdIndex,
+                selectorIndex,
+                "exchangeTerms",
+                [
+                    `0x${"a1".repeat(32)}`,
+                    `0x${"a2".repeat(32)}`,
+                    `0x${"a3".repeat(32)}`,
+                    "0x"
+                ]
+            );
+            // A deferred request waits two agreement windows before it is
+            // refused; a refusal inside one window was never deferred.
+            await waitFor(
+                () => selector.query.isBlacklisted(third.address).request(),
+                resolveTestTimeConfig(h.options.timeConfig).agreementTime *
+                    1000,
+                50
+            );
+            expect(
+                (await selector.query.getLobbyAvailability().request())
+                    .inFlight,
+                "the selector's commit is still in flight"
+            ).to.equal(true);
+            expect(await selectorTimeout.heldCount()).to.equal(1);
+            expect(
+                await selector.query.getNegotiationAttempt().request()
+            ).to.equal(null);
+
+            await releaseCommit();
+            let ids: string[] = [];
+            await waitFor(
+                async () => {
+                    ids = await Promise.all(
+                        [advertiserIndex, selectorIndex].map((index) =>
+                            h
+                                .control(h.peers[index])
+                                .query.getChannelId()
+                                .request()
+                        )
+                    );
+                    return (
+                        ids[0] !== ethers.ZeroHash &&
+                        ids[0] === ids[1] &&
+                        (await selector.query.isChannelOpen(ids[0]).request())
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(
+                await h.control(third).query.getChannelId().request()
+            ).to.equal(ethers.ZeroHash);
+            expect(
+                await selector.query
+                    .isBlacklisted(h.peers[advertiserIndex].address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await releaseCommit();
+            await selectorTimeout.release(false);
+            await advertiserExpiry.release(false);
+            await h.network.leaveLobby([0, 1, 2], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("refuses the advertiser's deferred negotiation request when the selector's commit is rejected: the request expires, the selector blacklists the advertiser, and no channel opens", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id(
+            "e2e-lobby-deferred-request-after-rejected-commit"
+        );
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const selector = h.control(h.peers[selectorIndex]);
+        const advertiserAddress = h.peers[advertiserIndex].address;
+        // The advertiser's commit reply is parked and then rejected without
+        // running the endpoint. Its reservation bound and the selector's
+        // commit timeout are held, so only that reply settles the commit.
+        const rejectCommit = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit",
+            true
+        );
+        const selectorTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.commit"
+        );
+        const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
+            advertiserIndex,
+            "lobby advertiser reservation expiry"
+        );
+        const restoreDurations = await Promise.all(
+            [advertiserIndex, selectorIndex].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () => (await selectorTimeout.heldCount()) === 1,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            // Sent before the reply on the same transport, so the selector
+            // reads it while its commit is in flight and defers it.
+            await h.byzantine.sendRawNegotiationRpc(
+                advertiserIndex,
+                selectorIndex,
+                "exchangeTerms",
+                [
+                    `0x${"b1".repeat(32)}`,
+                    `0x${"b2".repeat(32)}`,
+                    `0x${"b3".repeat(32)}`,
+                    "0x"
+                ]
+            );
+            await rejectCommit();
+            await waitFor(
+                async () =>
+                    !(await selector.query.getLobbyAvailability().request())
+                        .inFlight,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+            expect(
+                await selector.query.isBlacklisted(advertiserAddress).request(),
+                "the request was deferred, not refused on arrival"
+            ).to.equal(false);
+
+            await waitFor(
+                () => selector.query.isBlacklisted(advertiserAddress).request(),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            expect(
+                await selector.query.getNegotiationAttempt().request()
+            ).to.equal(null);
+            for (const peer of h.peers) {
+                expect(
+                    await h.control(peer).query.getChannelId().request()
+                ).to.equal(ethers.ZeroHash);
+            }
+        } finally {
+            await rejectCommit();
+            await selectorTimeout.release(false);
+            await advertiserExpiry.release(false);
+            await h.network.leaveLobby([advertiserIndex, selectorIndex], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
 

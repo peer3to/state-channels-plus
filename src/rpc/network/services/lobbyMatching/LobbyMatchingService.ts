@@ -217,13 +217,17 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         return this.activeTopic;
     }
 
+    /**
+     * The handed-off peer, or the peer this selector's commit is in flight
+     * to: the advertiser's acknowledgement and its first negotiation request
+     * can arrive in one read, so that request runs before the commit resolves.
+     */
     public ownsNegotiationPeer(transport: NetworkTransport): boolean {
         const peerAddress = this.peerAddress(transport);
-        return (
-            !!peerAddress &&
-            !this.matchResolve &&
-            this.handedOffPeerAddress === peerAddress
-        );
+        if (!peerAddress) return false;
+        if (this.commitInFlight)
+            return this.inFlightSelection?.peerAddress === peerAddress;
+        return !this.matchResolve && this.handedOffPeerAddress === peerAddress;
     }
 
     public takeObservedTargetOpen(channelId: string): boolean {

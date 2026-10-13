@@ -51,6 +51,14 @@ staging through a new `evidenceTime` option of `stageOmittedInboundJoin` and a `
 `syncSpectator`. This is a protocol input chosen for the test host's load, not a wait budget; no oracle
 changed.
 
+Engineer decision (Luka, 2026-10-12): `evidenceTime` 4 → 6 in U75e of
+[BotConnectionFixes.test.ts](../../../test/unit/BotConnectionFixes.test.ts) (a leaving joiner whose landed join
+a founder's timeout dispute reduces away), through the `timeConfig` override of `syncSpectatorAndPrepareJoin`;
+the staging's other tests keep 4 s. The leaving joiner audits the founder's timeout dispute before it submits its
+self-removal. Under full-gate load that audit took about 2 s and the self-removal was refused with
+`RaceConditionDisputeEvidencePeriodExpired` 3 s after the window opened, so the reduction kept the joiner's
+landed join. This is a protocol input chosen for the test host's load, not a wait budget; no oracle changed.
+
 ## Test timing inputs — 2026-10-10
 
 Engineer decision (Luka, 2026-10-10): the harness baseline `MIN_TEST_TIME_CONFIG.p2pTime` is 5 instead of 2

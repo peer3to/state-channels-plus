@@ -46,6 +46,7 @@ import {
     OPEN_CHANNEL_MIN_REMAINING_SECONDS
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
+import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Status } from "@/types";
@@ -372,22 +373,37 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Hold this peer's own sync at its application step, so the sync stays
-     * in flight toward its responder after the response arrived.
+     * in flight toward its responder after the response arrived. With
+     * `responderAddress`, only the responses of that responder are held.
+     * With `fail`, a held application fails at release without applying.
+     * Each held application's result is recorded.
      */
-    public stubHoldSpectateSyncApplication(): boolean {
+    public stubHoldSpectateSyncApplication(
+        responderAddress?: Address,
+        fail = false
+    ): boolean {
         this.restoreHoldSpectateSyncApplication();
         const spectate = this.p2pManager.localRpc.spectateService;
         const original = spectate.applySyncResponse;
         this.service.stubOriginals.set("spectateSyncApplication", original);
         const gate = this.service.createGate();
         this.service.spectateSyncApplicationGate = gate;
+        const results: boolean[] = [];
+        this.service.spectateSyncApplicationResults = results;
         Reflect.set(
             spectate,
             "applySyncResponse",
-            async (...parameters: unknown[]) => {
+            async (
+                ...parameters: Parameters<SpectateService["applySyncResponse"]>
+            ) => {
+                const apply = () => original.apply(spectate, parameters);
+                if (responderAddress && parameters[0] !== responderAddress)
+                    return apply();
                 gate.entered += 1;
                 await gate.gate;
-                return Reflect.apply(original, spectate, parameters);
+                const result = fail ? false : await apply();
+                results.push(result);
+                return result;
             }
         );
         return true;
@@ -395,6 +411,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getHeldSpectateSyncApplicationCount(): number {
         return this.service.spectateSyncApplicationGate?.entered ?? 0;
+    }
+
+    /** Results of the held applications that finished after their release. */
+    public getHeldSpectateSyncApplicationResults(): boolean[] {
+        return this.service.spectateSyncApplicationResults;
     }
 
     public restoreHoldSpectateSyncApplication(): boolean {
@@ -1326,6 +1347,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             }
         }
         return { ran: held.length, errors };
+    }
+
+    /** Hold one running timeout-manager task until that manager's dispose starts. */
+    public holdScheduledTaskUntilDispose(): boolean {
+        this.service.holdScheduledTaskUntilDispose();
+        return true;
+    }
+
+    public getDisposeWaitTask(): { entered: number; running: number } {
+        return this.service.getDisposeWaitTask();
     }
 
     public holdNextSignature(match?: SignatureBlockMatch): boolean {
@@ -3229,13 +3260,21 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public holdLobbyReply(kind: HeldLobbyReplyKind): boolean {
-        this.service.holdLobbyReply(kind);
+    public holdLobbyReply(
+        kind: HeldLobbyReplyKind,
+        rejectOnRelease = false
+    ): boolean {
+        this.service.holdLobbyReply(kind, rejectOnRelease);
         return true;
     }
 
     public releaseLobbyReply(): number {
         return this.service.releaseLobbyReply();
+    }
+
+    public delayCommitReplyUntilNegotiation(): boolean {
+        this.service.delayCommitReplyUntilNegotiation();
+        return true;
     }
 
     public holdNegotiationReply(kind: HeldNegotiationReplyKind): boolean {

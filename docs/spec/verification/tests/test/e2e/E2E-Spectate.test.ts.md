@@ -23,8 +23,13 @@ block-0 joins, concurrent
 sync dedup, mutual blacklisting on an unprovable target, minimum-height payload proving (heights 0/1
 and requests at or below a leave), and dispute-window recovery inside `generateSyncPayload`. Oracles are peer
 status and sync/block-height assertions, storage and blacklist queries through control RPC, event
-spies, and direct decode of generated sync payloads against the responder's latest height. Three tests are
-currently blocked or flaky on known product bugs (#351–#353) and carry no IDs. Out of scope: the
+spies, and direct decode of generated sync payloads against the responder's latest height. One test is
+currently blocked on known product bugs (#352, #353) and carries no ID. The fork-traversal and
+post-dispute writes wait for tip agreement (hash, height, state) on the honest peers, not for every
+explicit signature on the tip: a peer that commits a block from calldata can miss a signature sent
+before it held the block, and the next block finalizes the tip by virtual voting. The fork-traversal
+case then waits until the chain snapshot reaches the reduced fork: its own post can run before the
+reduction is final, and the peers' adoption post moves the chain snapshot. Out of scope: the
 forged-payload element matrix, balance-invariant checks, and chain-level no-transaction
 observation (`INV-SYNC-4-Z6HER7`). The former bundled permutations have been atomized into
 one-scenario IDs, so the latest/pinned successes, refusals, no-op skips, and abort cases here
@@ -36,6 +41,16 @@ The finalized-window joiner scenario selects surviving honest responders. Recove
 The kill-period case runs the real `sync` RPC, parks the requester at its window persistence after the proof arrived, commits a dispute on the pinned fork, and releases: the sync resolves `true`, neither peer blacklists the other, the requester stays on the fork, and the dispute still resolves with no host error.
 
 The two chain-final window cases lose participant 2's InboundMessagesProcessed delivery from before a top-up of peer 0: one holds its handler, the other drops the subscribed log so that only chain-log recovery can deliver it. That recovery can already run while participant 2 audits the dispute, before the sync. Each then lands only the reduction on chain, so the window is chain-final while the chain stays on the source fork. Peer 0 serves a payload whose window inbound list carries an extra fabricated successor of the top-up, and participant 2 accepts it. Releasing the holds replays the reduction events and, in the held case, the held chain event; the chain adopts the reduced fork. Participant 2 then holds the genuine top-up, from the replayed event or, in the dropped case, from chain-log recovery. The dropped case checks only this end state, not that the block arrives after the sync, because the recovery may run before it. The participants then author three blocks; the test decodes every new block on the reduced fork and requires one authored by participant 2 whose signature recovers to it and whose inbound blocks do not include the fabricated successor. All three stay in sync, none of them holds the fabricated block, and every inbound head equals the genuine top-up.
+
+The overlapping-sync case (staging in `test/fixtures/MonotonicSyncInstallStaging.ts`) replays the
+race of two queue-expiry probes. One source has finalized up to the tip; the other, the tip's
+author, still serves the final point below it with the tail. The observer takes the tip block from
+both sources through its control port while blind to gossip; at the queue timeout it probes both.
+Only the application of the author's answer is held: the other source's sync installs the tip, the
+observer's tip then keeps only its author's signature, and the held answer is released. Its sync
+returns true, the install entry is never called, the VM state equals the first source's, and after
+three more live blocks the observer has executed them with no fraud proof, dispute or blacklisted
+participant.
 
 ## Tests
 
@@ -65,6 +80,7 @@ The two chain-final window cases lose participant 2's InboundMessagesProcessed d
 - `should spectate successfully when joining at genesis state`: none
 - `should spectate successfully when joining at block 0`: none
 - `collapses two concurrent sync() calls for the same peer into a single on-the-wire request`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P6, INV-SPC-3-EP3TPG.T1.P1, REQ-RPC-4-9VX0B9.T1.P3, REQ-RPC-4-9VX0B9.T1.P8, INTEGRATION-TEST-RPC-6-009EGG.P9
+- `the source with the older final point answers after the other source's sync installed a later base → the local state is kept, no source is cut, and the next live blocks execute`: INV-SYNC-3-A7A2ED.T1.P33
 - `an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P3, UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P2, REQ-SYNC-1-T2589H.T1.P6
 - `serves the latest sync payload for minimum height 0 while ahead`: REQ-SYNC-1-T2589H.T1.P3, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2
 - `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17

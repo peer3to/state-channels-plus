@@ -4,6 +4,7 @@ import {
     servedPayload,
     syncFromResponder
 } from "@test/fixtures/MilestoneSyncStaging";
+import { assertStaleBaseKeepsLocalState } from "@test/fixtures/MonotonicSyncInstallStaging";
 import {
     assertConflictBeforeSyncCommit,
     assertConflictWhileHoldingBase,
@@ -14,9 +15,10 @@ import { stageSpectatorBehindUnfinalizedTail } from "@test/fixtures/SyncReplayBa
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
-// persistSyncPayload keeps the requester's own state when it already holds
-// the replay base's state at that height or a later one
-// (localLatestHeight >= baseHeight); otherwise it installs the base.
+// persistSyncPayload keeps the requester's own state when its height on the
+// base's fork is at or above the replay base (localLatestHeight >=
+// baseHeight), with or without the base's state; otherwise it installs the
+// base.
 
 describe("Unit: SpectateService replay base", function () {
     it("requester's latest height equals the served base height → it keeps its own state as the replay base and syncs to the tip", async function () {
@@ -108,6 +110,22 @@ describe("Unit: SpectateService replay base", function () {
                 .query.getLatestStateMachineStateHash(forkId)
                 .request()
         );
+    });
+
+    describe("monotonic install", function () {
+        it("requester jumped past the base through another source's sync, then a payload based there → local state kept, no install, the next live blocks execute with no fraud proof", async function () {
+            await assertStaleBaseKeepsLocalState(
+                TestSession.getHarness(),
+                false
+            );
+        });
+
+        it("pending joiner jumped past the base through another source's sync, then a payload based there → local state kept, stays pending, the next live blocks execute with no dispute", async function () {
+            await assertStaleBaseKeepsLocalState(
+                TestSession.getHarness(),
+                true
+            );
+        });
     });
 
     describe("staged install", function () {
