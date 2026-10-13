@@ -69,7 +69,7 @@ describe("StateMachineStateStorage", () => {
             stateMachineStateHash = ethers.keccak256(encodedStateMachineState);
 
             // Create genesis state snapshot with the stateMachineStateHash
-            const baseSnapshot = factory.stateSnapshot();
+            const baseSnapshot = factory.stateSnapshot({ blockHeight: 0 });
             const genesisSnapshotStruct = baseSnapshot.toStruct();
             // link it to the state machine state
             genesisSnapshotStruct.snapshotData.stateMachineStateHash =

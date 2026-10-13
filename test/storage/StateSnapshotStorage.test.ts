@@ -32,8 +32,8 @@ describe("StateSnapshotStorage", () => {
 
         stateSnapshot = stateSnapshotFactory();
 
-        // Create genesis state snapshot (forkId === snapshotDataHash)
-        const genesisSnapshot = stateSnapshotFactory();
+        // Create genesis state snapshot (forkId === snapshotDataHash, height 0)
+        const genesisSnapshot = stateSnapshotFactory({ blockHeight: 0 });
         const genesisSnapshotStruct = genesisSnapshot.toStruct();
         genesisSnapshotStruct.forkId = genesisSnapshot.snapshotDataHash;
         genesisStateSnapshot = StateSnapshot.from(genesisSnapshotStruct);
@@ -183,7 +183,7 @@ describe("StateSnapshotStorage", () => {
 
         it("registers a genesis for a different fork id next to an existing one", () => {
             storage.storeStateSnapshot(genesisStateSnapshot);
-            const otherSnapshot = stateSnapshotFactory();
+            const otherSnapshot = stateSnapshotFactory({ blockHeight: 0 });
             const otherGenesis = StateSnapshot.from({
                 ...otherSnapshot.toStruct(),
                 forkId: otherSnapshot.snapshotDataHash
@@ -210,6 +210,34 @@ describe("StateSnapshotStorage", () => {
 
             storage.storeStateSnapshot(forkSnapshot);
 
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+            expect(warnings()).to.have.length(0);
+        });
+
+        it("stores a later-height snapshot with the genesis snapshotData by hash only, without touching the genesis index or warning", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            const unchangedStateBlockSnapshot = StateSnapshot.from({
+                ...genesisStateSnapshot.toStruct(),
+                blockHeight: 7n
+            });
+            expect(unchangedStateBlockSnapshot.forkID).to.equal(
+                genesisStateSnapshot.forkID
+            );
+            expect(unchangedStateBlockSnapshot.hash).to.not.equal(
+                genesisStateSnapshot.hash
+            );
+
+            const hash = storage.storeStateSnapshot(
+                unchangedStateBlockSnapshot
+            );
+
+            expect(hash).to.equal(unchangedStateBlockSnapshot.hash);
+            expect(
+                storage.getStateSnapshotByHash(hash)?.toStruct()
+            ).to.deep.equal(unchangedStateBlockSnapshot.toStruct());
             expect(
                 storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
                     ?.hash

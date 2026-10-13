@@ -20,7 +20,7 @@ describe("Storage", () => {
         let storage: Storage;
 
         before(() => {
-            const stateSnapshot = factory.stateSnapshot();
+            const stateSnapshot = factory.stateSnapshot({ blockHeight: 0 });
             forkId = stateSnapshot.snapshotDataHash;
 
             // Create genesis state snapshot
@@ -173,6 +173,7 @@ describe("Storage participant union", () => {
     it("stored lookup equals direct computation with the same snapshots", () => {
         const f = new QueueAdmissionFixture();
         const initial = factory.stateSnapshot({
+            blockHeight: 0,
             snapshotData: {
                 ...factory.snapshotData(),
                 participants: [f.wallets[0].address]

@@ -15,6 +15,9 @@ and log unchanged) or a copy with a later timestamp under the same fork id: the 
 first registration, the refused copy is still stored and returned under its own hash, and the
 storage's real logger records exactly one warning naming both snapshot hashes. A genesis of another
 fork id and a non-genesis snapshot of the registered fork leave the registered genesis unchanged.
+Geneses are built at block height 0. A copy of the registered genesis at a later block height is
+stored and read back under its own hash, while the index keeps the genesis and the logger records
+no warning.
 
 ## Tests
 
@@ -34,3 +37,4 @@ fork id and a non-genesis snapshot of the registered fork leave the registered g
 - `logs one warning naming the registered and the refused genesis on a conflict`: REQ-SNAPSTORE-1-AJW0HJ.T1.P5, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P9
 - `registers a genesis for a different fork id next to an existing one`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P10
 - `keeps the registered genesis when a non-genesis snapshot of the same fork is stored`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P11
+- `stores a later-height snapshot with the genesis snapshotData by hash only, without touching the genesis index or warning`: REQ-SNAPSTORE-1-AJW0HJ.T1.P6, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P12

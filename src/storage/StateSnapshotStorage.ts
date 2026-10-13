@@ -62,9 +62,12 @@ export class StateSnapshotStorage {
     // PRIVATE
     // ====================================
 
-    // A genesis fork id pins its snapshotData, so the full snapshot hash
-    // differs exactly when the outer fields (timestamp, blockHeight) differ.
+    // Only height 0 is a genesis: a later block that changes no state has
+    // genesis-shaped snapshotData and is stored by hash only.
+    // A genesis fork id pins its snapshotData, so the full snapshot hash of
+    // two height-0 snapshots differs exactly when their timestamps differ.
     private registerGenesis(snapshot: StateSnapshot): void {
+        if (snapshot.blockHeight !== 0) return;
         const registered = this.genesisSnapshotByForkId.get(snapshot.forkID);
         if (!registered) {
             this.genesisSnapshotByForkId.set(snapshot.forkID, snapshot);
