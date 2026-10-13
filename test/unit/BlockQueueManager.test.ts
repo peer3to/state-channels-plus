@@ -4,7 +4,11 @@ import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
-import { stagePrunedObserver } from "@test/fixtures/PastBlockStaging";
+import {
+    restoreDequeuedEntry,
+    stagePrunedObserver,
+    withQueuedBlockMadePast
+} from "@test/fixtures/PastBlockStaging";
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
@@ -709,6 +713,103 @@ describe("Unit: BlockQueueManager", () => {
                     .query.getBlockHashAt(forkId, 1)
                     .request()
             ).to.equal(null);
+        });
+
+        it("queue expiry: a queued block whose height became free below the next height → dropped: no sync probe, no queue entry or stored block, no source cut, no fraud proof", async function () {
+            const h = MathTestSession.getHarness();
+            await withQueuedBlockMadePast(
+                h,
+                async ({
+                    requester,
+                    forkId,
+                    hash,
+                    premise,
+                    queueTimeouts,
+                    executions
+                }) => {
+                    const control = h.control(requester);
+                    // premise - queued above the next height, then a compact
+                    // sync left its height free below the next height
+                    expect(premise).to.deep.equal({
+                        beforeSync: { queued: true, nextHeight: 0 },
+                        syncAccepted: true,
+                        queued: true,
+                        heldTimeouts: 1,
+                        nextHeight: 3,
+                        storedAtHeight: null
+                    });
+                    const restoreSync = await h.rpcStub.recordSpectateSync(
+                        requester.index,
+                        { forward: false }
+                    );
+                    try {
+                        expect(await queueTimeouts.runHeld()).to.deep.equal({
+                            ran: 1,
+                            errors: []
+                        });
+                        // settled at expiry, not handed to queued execution
+                        expect(await executions.heldCount()).to.equal(0);
+                        expect(
+                            await h.rpcStub.spectateSyncCallCount(
+                                requester.index
+                            )
+                        ).to.equal(0);
+                    } finally {
+                        await restoreSync();
+                    }
+                    expect(
+                        await control.query.isBlockQueued(hash).request()
+                    ).to.equal(false);
+                    expect(
+                        await control.query.getBlockHashAt(forkId, 1).request()
+                    ).to.equal(null);
+                    for (const peer of h.peers) {
+                        expect(
+                            await control.query
+                                .isBlacklisted(peer.address)
+                                .request()
+                        ).to.equal(false);
+                        expect(
+                            await control.query
+                                .getFraudProofType(peer.address)
+                                .request()
+                        ).to.equal(null);
+                    }
+                }
+            );
+        });
+
+        it("restore: a dequeued entry whose height became free below the next height → settled as past: processed, not queued again, no new queue timeout", async function () {
+            const h = MathTestSession.getHarness();
+            await withQueuedBlockMadePast(
+                h,
+                async ({ requester, forkId, hash, premise, queueTimeouts }) => {
+                    expect(premise).to.deep.equal({
+                        beforeSync: { queued: true, nextHeight: 0 },
+                        syncAccepted: true,
+                        queued: true,
+                        heldTimeouts: 1,
+                        nextHeight: 3,
+                        storedAtHeight: null
+                    });
+                    expect(
+                        await restoreDequeuedEntry(h, requester, hash)
+                    ).to.deep.equal({ queued: false });
+                    await h.event.waitForBlockConfirmationProcessed({
+                        peerIndex: requester.index,
+                        blockHash: hash as Hash,
+                        keepConnection: true
+                    });
+                    // a restore would have armed a second timeout
+                    expect(await queueTimeouts.heldCount()).to.equal(1);
+                    expect(
+                        await h
+                            .control(requester)
+                            .query.getBlockHashAt(forkId, 1)
+                            .request()
+                    ).to.equal(null);
+                }
+            );
         });
 
         it("dispute replay at a free height below the next height → not past: validation reaches the linkage guard", async function () {

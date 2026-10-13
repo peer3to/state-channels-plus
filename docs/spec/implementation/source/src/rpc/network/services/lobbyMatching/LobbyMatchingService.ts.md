@@ -74,6 +74,8 @@ Caller-topic matching and channel opening
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16` — an abort against a locally signed attempt keeps the attempt observing the chain and the channel opens on the released submission
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17` — a targeted connect that ends in a remote abort strikes no one and a second connect on the same runtime opens the channel
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18` — the advertiser's first negotiation request that reaches the selector before its commit acknowledgement waits like other early negotiation: the pair opens one channel and neither side blacklists the other
+- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P19` — a negotiation request from a third authenticated peer that reaches the selector while its commit is in flight is refused through the negotiation failure policy on arrival, not deferred; the selector blacklists that peer, and the committed pair still opens one channel without it
+- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P20` — the advertiser's negotiation request deferred while the selector's commit is in flight expires when that commit is rejected: the selector refuses it through the negotiation failure policy at the readiness bound, blacklists the advertiser, and no channel opens
 
 ## UNIT-TEST-LOBBY-MATCHING-SERVICE-32-R6FA7Z
 

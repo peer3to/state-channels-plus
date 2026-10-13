@@ -1,8 +1,11 @@
 import { StateSnapshot } from "@/models";
-import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
+import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
+import {
+    postSnapshotFrom,
+    stageUninstalledFinalReducedFork
+} from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("SnapshotUpdateService", function () {
@@ -132,42 +135,53 @@ describe("SnapshotUpdateService", function () {
         }
     });
 
-    it("a walk to a final reduced fork this peer has not installed yet waits: no fork calldata, the post resolves undefined", async function () {
+    it("a walk to a final reduced fork this peer has not installed yet waits: no fork calldata, the post resolves undefined; after the install the post adopts that fork", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup({
-            peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
-        });
-        // the chain anchor stays on the disputed fork
-        for (const index of [1, 2, 3])
-            await h
-                .control(h.getPeer(index))
-                .stub.stubPostStateSnapshot()
-                .request();
-        const lagging = await h.rpcStub.holdReductionRace(0);
-        const forkId = h.activeForkId!;
-        await h.byzantine.submitInvalidStateTransitionBlock(1);
-        // peer 0 stays seated on the reduced fork without installing it
-        const { newForkId: reducedForkId } = await h.dispute.resolveDisputeWait(
-            {
-                forkId,
-                maliciousPeerIndices: [1],
-                honestPeerIndices: [2, 3],
-                syntheticOnChainParticipants: 1
-            }
-        );
-        await waitFor(
-            async () =>
-                await h.channelManager.isReduceChallengePeriodExpired(
-                    h.channelId,
-                    forkId
-                ),
-            h.event.protocolEventTimeoutMs()
-        );
+        const { forkId, reducedForkId, release, installedWait } =
+            await stageUninstalledFinalReducedFork(h);
+        try {
+            const result = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, { reducedForkId }) => {
+                    const prepared =
+                        await sm.snapshotUpdateService[
+                            "prepareUpdateStateSnapshotFork"
+                        ]();
+                    const posted =
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
+                            sm.forkId
+                        );
+                    return {
+                        isInstalled:
+                            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                                reducedForkId
+                            ) !== undefined,
+                        canPost: prepared.canPost,
+                        callDataCount: prepared.callData.length,
+                        posted: posted !== undefined
+                    };
+                },
+                { reducedForkId }
+            );
 
-        const result = await h.execOnHost(
+            expect(result.isInstalled, "premise: the fork is not installed").to
+                .be.false;
+            expect(result.canPost).to.equal(false);
+            expect(result.callDataCount).to.equal(0);
+            expect(result.posted).to.equal(false);
+        } finally {
+            await release();
+        }
+
+        // the held reduction installs; the next post adopts the reduced fork
+        await installedWait();
+        expect(
+            (await chainSnapshot(h)).forkID,
+            "premise: no other post moved the chain off the disputed fork"
+        ).to.equal(forkId);
+        const recovered = await h.execOnHost(
             h.getPeer(0),
-            async (sm, { reducedForkId }) => {
+            async (sm) => {
                 const prepared =
                     await sm.snapshotUpdateService[
                         "prepareUpdateStateSnapshotFork"
@@ -177,24 +191,19 @@ describe("SnapshotUpdateService", function () {
                         sm.forkId
                     );
                 return {
-                    isInstalled:
-                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                            reducedForkId
-                        ) !== undefined,
                     canPost: prepared.canPost,
                     callDataCount: prepared.callData.length,
                     posted: posted !== undefined
                 };
             },
-            { reducedForkId }
+            {}
         );
-
-        expect(result.isInstalled, "premise: the fork is not installed").to.be
-            .false;
-        expect(result.canPost).to.equal(false);
-        expect(result.callDataCount).to.equal(0);
-        expect(result.posted).to.equal(false);
-        await lagging.release();
+        expect(recovered).to.deep.equal({
+            canPost: true,
+            callDataCount: 1,
+            posted: true
+        });
+        expect((await chainSnapshot(h)).forkID).to.equal(reducedForkId);
     });
 
     it("a same-fork post whose snapshot has not consumed the on-chain inbound head reverts with the pending-inbound refusal", async function () {

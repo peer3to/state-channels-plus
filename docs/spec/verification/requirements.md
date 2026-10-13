@@ -219,7 +219,7 @@ Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
 Specification cases tested: 2/3. Untested: T1.P2.
 
 [`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)
-Specification cases tested: 7/10. Untested: T1.P1, T1.P3, T1.P4.
+Specification cases tested: 9/12. Untested: T1.P1, T1.P3, T1.P4.
 
 [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 Specification cases tested: 3/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
@@ -729,7 +729,7 @@ Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5.
 Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985)
-Specification cases tested: 16/18. Untested: T1.P2, T1.P6.
+Specification cases tested: 17/18. Untested: T1.P6.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.
@@ -1011,7 +1011,7 @@ Specification cases tested: 8/8.
 Specification cases tested: 6/6.
 
 [`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
-Specification cases tested: 4/6. Untested: T1.P5, T1.P6.
+Specification cases tested: 7/7.
 
 [`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)
 Specification cases tested: 2/2.

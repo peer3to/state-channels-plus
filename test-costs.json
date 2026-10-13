@@ -1393,6 +1393,12 @@
       "peakRssGb": 1.219,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant waits until that runtime's initial-sync deadline fires and is then refused with only a retry-tier close": {
+      "durationMs": 12441,
+      "avgCores": 0.497,
+      "peakRssGb": 0.938,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (not a member): a fresh spectator whose first handshake is with a synced spectator that is not slashed and not a member skips it and syncs from a participant": {
       "durationMs": 33869,
       "avgCores": 0.943,
@@ -1405,10 +1411,22 @@
       "peakRssGb": 1.239,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (requester times out): a probe to a participant whose own initial sync is still in flight times out after one window with only a retry-tier close, neither side blacklists the other, and the late answer changes nothing on the requester": {
+      "durationMs": 13352,
+      "avgCores": 0.519,
+      "peakRssGb": 0.467,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder still syncing): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight gets its answer once that sync succeeds and syncs from it": {
       "durationMs": 9780,
       "avgCores": 0.652,
       "peakRssGb": 0.707,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync already failed): a spectate request that enters the endpoint after the responder's own initial sync failed is refused at once with the own-sync failure": {
+      "durationMs": 9401,
+      "avgCores": 0.696,
+      "peakRssGb": 0.479,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync fails): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight aborts when that sync fails, adopting nothing": {
@@ -2221,6 +2239,12 @@
       "peakRssGb": 1.031,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching blacklists a third peer's negotiation request that reaches the selector while its commit is in flight: the pair still opens one channel without it": {
+      "durationMs": 8608,
+      "avgCores": 0.617,
+      "peakRssGb": 0.64,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching closes the peer without a strike and rematches when a live attempt's own opening is mined after the deadline": {
       "durationMs": 21027,
       "avgCores": 0.633,
@@ -2315,6 +2339,12 @@
       "durationMs": 12058,
       "avgCores": 1.041,
       "peakRssGb": 0.596,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching refuses the advertiser's deferred negotiation request when the selector's commit is rejected: the request expires, the selector blacklists the advertiser, and no channel opens": {
+      "durationMs": 9902,
+      "avgCores": 0.398,
+      "peakRssGb": 0.486,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching rejects retained opening signatures submitted on chain after the SDK expired the opening terms": {
@@ -3637,10 +3667,10 @@
       "peakRssGb": 0.791,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-WorkerShutdown.test.ts|E2E: worker shutdown tears down threaded peers promptly right after a block is signed, while the other peers still run it": {
-      "durationMs": 7174,
-      "avgCores": 0.528,
-      "peakRssGb": 0.723,
+    "hardhat|test/e2e/E2E-WorkerShutdown.test.ts|E2E: worker shutdown tears down threaded peers promptly when disposal starts with a scheduled task still running": {
+      "durationMs": 8132,
+      "avgCores": 0.651,
+      "peakRssGb": 0.742,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-AnchorCountersAndChallengeBoundary.test.ts|E2E: dispute validation / anchor counters and block-challenge boundary E02: block zero's resulting snapshot as the anchor E02 ext: an auditor whose local mirror never applied the block-zero snapshot post kills the stale empty-proof genesis dispute from the chain's anchor": {
@@ -13741,10 +13771,10 @@
       "peakRssGb": 1.061,
       "measurementReason": null
     },
-    "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService a walk to a final reduced fork this peer has not installed yet waits: no fork calldata, the post resolves undefined": {
-      "durationMs": 13267,
-      "avgCores": 0.716,
-      "peakRssGb": 1.018,
+    "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService a walk to a final reduced fork this peer has not installed yet waits: no fork calldata, the post resolves undefined; after the install the post adopts that fork": {
+      "durationMs": 13989,
+      "avgCores": 0.82,
+      "peakRssGb": 1,
       "measurementReason": null
     },
     "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService blocks fork calldata while the current dispute has no final reduced result": {
@@ -15157,6 +15187,12 @@
       "peakRssGb": 0.53,
       "measurementReason": null
     },
+    "hardhat|test/transport/HolepunchBanPolicy.test.ts|ProfileManager Holepunch ban policy logs a peer reset that carries only the message as a warning, not an error, and closes the transport": {
+      "durationMs": 6094,
+      "avgCores": 0.553,
+      "peakRssGb": 0.417,
+      "measurementReason": null
+    },
     "hardhat|test/transport/HolepunchBanPolicy.test.ts|ProfileManager Holepunch ban policy rejects an authenticated Holepunch fallback while WebRTC is healthy": {
       "durationMs": 6951,
       "avgCores": 1.017,
@@ -15239,6 +15275,66 @@
       "durationMs": 8694,
       "avgCores": 0.993,
       "peakRssGb": 0.534,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup does not look up a topic after the swarm is destroyed": {
+      "durationMs": 2783,
+      "avgCores": 1.139,
+      "peakRssGb": 0.548,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup does not look up a topic left before its announce completes": {
+      "durationMs": 2936,
+      "avgCores": 1.076,
+      "peakRssGb": 0.476,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup logs a failed announce at debug level and does not look the topic up": {
+      "durationMs": 2952,
+      "avgCores": 1.064,
+      "peakRssGb": 0.541,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup logs a failed topic lookup at debug level": {
+      "durationMs": 2956,
+      "avgCores": 1.008,
+      "peakRssGb": 0.517,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup looks a joined topic up once after its announce completes": {
+      "durationMs": 3211,
+      "avgCores": 0.828,
+      "peakRssGb": 0.412,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup looks each joined topic up once when a peer's ban is released": {
+      "durationMs": 2553,
+      "avgCores": 0.76,
+      "peakRssGb": 0.379,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup looks no topic up when a peer is banned": {
+      "durationMs": 2853,
+      "avgCores": 1.094,
+      "peakRssGb": 0.468,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLocalDht.test.ts|Holepunch discovery on a local Hyperswarm DHT connects two Node runtimes that join one topic at the same moment": {
+      "durationMs": 2861,
+      "avgCores": 1.087,
+      "peakRssGb": 0.43,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLocalDht.test.ts|Holepunch discovery on a local Hyperswarm DHT leaves one working connection that carries requests when both runtimes release their bans and dial each other at the same moment": {
+      "durationMs": 6653,
+      "avgCores": 0.51,
+      "peakRssGb": 0.438,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLocalDht.test.ts|Holepunch discovery on a local Hyperswarm DHT neither dials nor accepts a blacklisted peer while it stays announced, and connects it once after the release": {
+      "durationMs": 7496,
+      "avgCores": 0.54,
+      "peakRssGb": 0.528,
       "measurementReason": null
     },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport closes once and rejects only calls owned by that connection": {
@@ -16163,6 +16259,18 @@
       "durationMs": 7531,
       "avgCores": 0.68,
       "peakRssGb": 0.655,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager past blocks queue expiry: a queued block whose height became free below the next height → dropped: no sync probe, no queue entry or stored block, no source cut, no fraud proof": {
+      "durationMs": 10984,
+      "avgCores": 0.738,
+      "peakRssGb": 0.814,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager past blocks restore: a dequeued entry whose height became free below the next height → settled as past: processed, not queued again, no new queue timeout": {
+      "durationMs": 11565,
+      "avgCores": 0.691,
+      "peakRssGb": 0.687,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager posted calldata keeps its strategy through the queue a queued copy that merged a gossip copy → the gossip source is cut and a forced check is requested": {

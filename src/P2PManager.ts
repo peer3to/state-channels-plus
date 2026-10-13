@@ -407,6 +407,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     /**
+     * The outcome of this runtime's initial sync: resolves once it settles
+     * (success, abort, disposal, or the status leaving OPENED).
+     */
+    public isInitialSyncSuccessfulWait(): Promise<boolean> {
+        if (this.initialSyncSettled) {
+            return Promise.resolve(this.initialSyncOutcome);
+        }
+        if (!this.initialSyncPromise) {
+            this.initialSyncPromise = new Promise<boolean>((resolve) => {
+                this.resolveInitialSync = resolve;
+            });
+        }
+        return this.initialSyncPromise;
+    }
+
+    /**
      * The initial sync request carries its own two-window timeout. This bound
      * covers the phase before that request exists: if no participant completes
      * a handshake within the same two windows, the observer stops waiting and
@@ -441,22 +457,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (!this.initialSyncDeadline) return;
         this.stateManager.timeoutManager.cancelTask(this.initialSyncDeadline);
         this.initialSyncDeadline = undefined;
-    }
-
-    /**
-     * The outcome of this runtime's initial sync: resolves once it settles
-     * (success, abort, disposal, or the status leaving OPENED).
-     */
-    public isInitialSyncSuccessfulWait(): Promise<boolean> {
-        if (this.initialSyncSettled) {
-            return Promise.resolve(this.initialSyncOutcome);
-        }
-        if (!this.initialSyncPromise) {
-            this.initialSyncPromise = new Promise<boolean>((resolve) => {
-                this.resolveInitialSync = resolve;
-            });
-        }
-        return this.initialSyncPromise;
     }
 
     public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {

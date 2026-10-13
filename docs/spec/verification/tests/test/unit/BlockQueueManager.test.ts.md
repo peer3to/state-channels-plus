@@ -51,6 +51,17 @@ validation: no deviation hook fires, nothing is restored, disconnected or disput
 under the dispute strategy is not settled as past and reaches that strategy's linkage guard, which
 throws.
 
+Two more past-block cases cover the queue expiry and the restore. An early requester whose gossip
+is dropped holds no block after three final blocks; its queue timeouts, queued-entry executions and
+queue drains are held. The genuine block 1, ingested from its author, queues above the next height 0. The requester then installs peer 0's served compact sync proof: the next height is 3 and height
+1 holds no block, while the entry is still queued. Run, the held queue timeout drops the entry
+itself: no queued execution is scheduled, no `sync` call is recorded, the entry is not queued or
+stored, and no peer is blacklisted or has a fraud proof. In the second case the entry is dequeued
+and handed to the real `restoreQueuedEntry`, as a strategy hook does: it is processed with the
+connection kept, it is not queued again, and no second queue timeout is armed. Without the past
+check at expiry the entry goes to queued execution; without it at restore the entry is queued
+again.
+
 ## Tests
 
 - `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
@@ -76,3 +87,5 @@ throws.
 - `gossip: a stored block below the next height carrying signatures the observer lacks → still merges them`: REQ-BLOCK-PIPE-1-SS24D1.T1.P8, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P49
 - `pipeline: a live entry at a free height below the next height → settled as past before validation: no deviation hook, restore, disconnect or dispute`: REQ-BLOCK-PIPE-1-SS24D1.T1.P9, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P50
 - `dispute replay at a free height below the next height → not past: validation reaches the linkage guard`: REQ-BLOCK-PIPE-1-SS24D1.T1.P10, REQ-BLOCK-PIPE-3-WW2SB7.T2.P1, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P51
+- `queue expiry: a queued block whose height became free below the next height → dropped: no sync probe, no queue entry or stored block, no source cut, no fraud proof`: REQ-BLOCK-PIPE-1-SS24D1.T1.P11, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P52
+- `restore: a dequeued entry whose height became free below the next height → settled as past: processed, not queued again, no new queue timeout`: REQ-BLOCK-PIPE-1-SS24D1.T1.P12, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P53

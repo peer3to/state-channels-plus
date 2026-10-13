@@ -103,7 +103,10 @@ describe("E2E: State Snapshots", function () {
 
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
         await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
-        await h.transition.fromHonestPeersOnly((c) => c.add(3));
+        // the post below proves this tip: it must be final in every view
+        await h.transition.fromHonestPeersOnly((c) => c.add(3), {
+            waitForFinalization: true
+        });
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
         await h.contextApi.capturePrePostSnapshotContext();
@@ -133,7 +136,10 @@ describe("E2E: State Snapshots", function () {
             await h.control(peer).stub.failStateSnapshotPost().request();
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
         await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
-        await h.transition.fromHonestPeersOnly((c) => c.add(3));
+        // the post below proves this tip: it must be final in every view
+        await h.transition.fromHonestPeersOnly((c) => c.add(3), {
+            waitForFinalization: true
+        });
 
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();

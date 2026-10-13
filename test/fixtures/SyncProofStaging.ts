@@ -232,7 +232,7 @@ export async function withHeldFreshRequester<T>(
  * must stay inside the authoring window. The staging is undone at the end
  * (`run` may release the queue hold earlier).
  */
-async function withEarlyHeldRequester<T>(
+export async function withEarlyHeldRequester<T>(
     h: MathPeerTestHarness,
     options: { blockCount: number; gossip: "drop" | "holdQueue" },
     run: (requester: Peer, forkId: string) => Promise<T>

@@ -207,43 +207,40 @@ export class TransitionActions<
         return blocksAuthored;
     }
 
+    /**
+     * One write from the next honest writer; waits for tip agreement on the
+     * active honest peers. A later block finalizes this one by virtual
+     * voting, so only a caller whose next step needs this tip final in every
+     * view (a snapshot post of it) passes `waitForFinalization`.
+     */
     async fromHonestPeersOnly(
         txFn: (contract: TContract) => Promise<any>,
-        options?: { waitForSync?: boolean }
+        options?: { waitForSync?: boolean; waitForFinalization?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
             .getActiveHonestPeers()
             .map((p) => p.index);
 
-        // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
         await this.submitNext(txFn, {
             waitForTurn: true,
             waitForPeers: syncIndices,
             waitForSync: options?.waitForSync ?? true,
-            waitForFinalization: true
+            waitForFinalization: options?.waitForFinalization ?? false
         });
     }
 
+    /**
+     * Writes from the honest writers in turn. Each write waits for tip
+     * agreement only: the next block finalizes the previous one by virtual
+     * voting, while full explicit signatures on a tip can stay short (a peer
+     * that commits a block from calldata never gets a signature sent before
+     * it held the block), so waiting for them would starve the next write.
+     */
     async sequenceFromHonestPeers(
         txFns: Array<(contract: TContract) => Promise<any>>
     ): Promise<void> {
-        const syncIndices = this.harness
-            .getActiveHonestPeers()
-            .map((p) => p.index);
-        if (!syncIndices) {
-            throw new Error(
-                "honestPeerIndices not set - resolve dispute context first"
-            );
-        }
-
         for (const txFn of txFns) {
-            await this.submitNext(txFn, {
-                waitForTurn: true,
-                waitForPeers: syncIndices,
-                waitForSync: true,
-                // Same as fromHonestPeersOnly: filtered barrier, full finalization on waited peers.
-                waitForFinalization: true
-            });
+            await this.fromHonestPeersOnly(txFn);
         }
     }
 
@@ -356,22 +353,6 @@ export class TransitionActions<
             ),
             transaction
         };
-    }
-
-    async validWithoutPeer(
-        excludePeer: number,
-        txFn: (contract: TContract) => Promise<any>
-    ): Promise<void> {
-        const includedPeers = this.harness.peers
-            .map((_: unknown, i: number) => i)
-            .filter((i: number) => i !== excludePeer);
-
-        await this.submitNext(txFn, {
-            waitForPeers: includedPeers,
-            waitForSync: true,
-            // Exclude one peer from the sync barrier only; still require finalized tips on included peers.
-            waitForFinalization: true
-        });
     }
 
     /**

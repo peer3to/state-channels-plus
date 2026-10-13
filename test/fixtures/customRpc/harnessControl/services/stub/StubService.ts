@@ -636,6 +636,8 @@ export class StubService extends ANetworkRpcService<
      * the real scheduler comes back only when the last one goes.
      */
     heldScheduledTaskBase?: TimeoutManager["scheduleTask"];
+    /** The scheduled task held in flight until the timeout manager's dispose. */
+    disposeWaitTaskGate?: StubGate;
     /** Chain writes attempted by a reduction submission while the submit hold is installed. */
     reductionSubmitCalls = 0;
     /** Label + delay of every scheduled task, captured by the record stub. */
@@ -1213,7 +1215,8 @@ export class StubService extends ANetworkRpcService<
     >(
         original: (transport: NetworkTransport) => M,
         kind: K,
-        hold: HeldRpcReply
+        hold: HeldRpcReply,
+        releasedReply?: Awaited<ReturnType<M[K]>>
     ): (transport: NetworkTransport) => M {
         return (transport) => {
             const methods = original(transport);
@@ -1221,20 +1224,34 @@ export class StubService extends ANetworkRpcService<
             Reflect.set(methods, kind, async (...parameters: unknown[]) => {
                 hold.entered += 1;
                 await hold.gate;
+                if (releasedReply !== undefined) return releasedReply;
                 return Reflect.apply(endpoint, methods, parameters);
             });
             return methods;
         };
     }
 
-    public holdLobbyReply(kind: HeldLobbyReplyKind): void {
+    /**
+     * Parks the `kind` lobby reply until `releaseLobbyReply`. With
+     * `rejectOnRelease` the released call skips the endpoint and replies
+     * `rejected`, so the reservation stays as it was.
+     */
+    public holdLobbyReply(
+        kind: HeldLobbyReplyKind,
+        rejectOnRelease = false
+    ): void {
         this.restoreLobbyReply();
         const service = this.p2pManager.localRpc.lobbyMatchingService;
         const original = service.createRPCMethods.bind(service);
         this.stubOriginals.set("lobbyCreateRpcMethods", original);
         const hold = this.createRpcHold(kind);
         this.heldLobbyReply = hold;
-        service.createRPCMethods = this.holdRpcMethod(original, kind, hold);
+        service.createRPCMethods = this.holdRpcMethod(
+            original,
+            kind,
+            hold,
+            rejectOnRelease ? { status: "rejected" } : undefined
+        );
     }
 
     public releaseLobbyReply(): number {
@@ -2572,6 +2589,44 @@ export class StubService extends ANetworkRpcService<
         Reflect.set(service, "roleDurationMaxMs", original.max);
         this.stubOriginals.delete("lobbyRoleDuration");
         return true;
+    }
+
+    /**
+     * Start one real timeout-manager task that stays running until the
+     * timeout manager's own dispose begins. The release runs after the
+     * synchronous part of dispose, so dispose provably starts its bounded
+     * wait with this task in flight, and the task then settles inside it.
+     */
+    public holdScheduledTaskUntilDispose(): void {
+        const timeoutManager = this.sm.timeoutManager;
+        const gate = this.createGate();
+        this.disposeWaitTaskGate = gate;
+        const dispose = timeoutManager.dispose.bind(timeoutManager);
+        timeoutManager.dispose = () => {
+            const disposal = dispose();
+            gate.release();
+            return disposal;
+        };
+        timeoutManager.scheduleTask(
+            async () => {
+                gate.entered += 1;
+                await gate.gate;
+            },
+            0,
+            "harness dispose-wait task"
+        );
+    }
+
+    /** Entries of the dispose-wait task and the manager's running task count. */
+    public getDisposeWaitTask(): { entered: number; running: number } {
+        const running = Reflect.get(
+            this.sm.timeoutManager,
+            "runningTasks"
+        ) as Set<Promise<void>>;
+        return {
+            entered: this.disposeWaitTaskGate?.entered ?? 0,
+            running: running.size
+        };
     }
 
     /** One releasable pause shared by the reduction-control stubs. */

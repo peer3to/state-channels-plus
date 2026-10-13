@@ -60,10 +60,12 @@ export class LocalDiscoveryServer {
         this.memberships.add(membership);
         ws.addEventListener("close", () => this.memberships.delete(membership));
         ws.addEventListener("message", (event: MessageEvent) => {
-            const announce = JSON.parse(String(event.data)) as {
-                type?: string;
-                address?: string;
-            };
+            let announce: { type?: string; address?: string };
+            try {
+                announce = JSON.parse(String(event.data));
+            } catch {
+                return; // not a hub announcement
+            }
             if (announce.type !== "peer" || !announce.address) return;
             void this.link(p2pManager, myPeerAddress, announce.address);
         });

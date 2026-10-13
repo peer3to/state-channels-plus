@@ -357,13 +357,6 @@ describe("Unit: bot-connection fixes", function () {
                 await stageInboundBlockedExit(h);
             const finalized = countFinalizedBlocks(leaver);
             try {
-                // a post of the staging still running would skip the block
-                await waitFor(
-                    async () =>
-                        (await posts.results()).length ===
-                        (await posts.started()),
-                    h.event.protocolEventTimeoutMs()
-                );
                 await posts.holdResults();
                 const startedBefore = await posts.started();
                 await h.transition.advanceState({
@@ -611,12 +604,6 @@ describe("Unit: bot-connection fixes", function () {
             } = await stageInboundBlockedExit(h);
             const finalized = countFinalizedBlocks(leaver);
             const leaverNonce = await chainNonceReader(h, leaver);
-            // a post of the staging still running would skip the block
-            await waitFor(
-                async () =>
-                    (await posts.results()).length === (await posts.started()),
-                h.event.protocolEventTimeoutMs()
-            );
             const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
             try {
                 const startedBefore = await posts.started();
@@ -666,12 +653,6 @@ describe("Unit: bot-connection fixes", function () {
             const h = TestSession.getHarness();
             const { leaver, remainingPeerIndices, posts, disputes } =
                 await stageInboundBlockedExit(h);
-            // a post of the staging still running would log before the probe
-            await waitFor(
-                async () =>
-                    (await posts.results()).length === (await posts.started()),
-                h.event.protocolEventTimeoutMs()
-            );
             const logs = await recordLeaveChannelLogs(h, leaver);
             const refused = {
                 message: "The chain refused the exit snapshot post",

@@ -23,8 +23,13 @@ block-0 joins, concurrent
 sync dedup, mutual blacklisting on an unprovable target, minimum-height payload proving (heights 0/1
 and requests at or below a leave), and dispute-window recovery inside `generateSyncPayload`. Oracles are peer
 status and sync/block-height assertions, storage and blacklist queries through control RPC, event
-spies, and direct decode of generated sync payloads against the responder's latest height. Three tests are
-currently blocked or flaky on known product bugs (#351–#353) and carry no IDs. Out of scope: the
+spies, and direct decode of generated sync payloads against the responder's latest height. One test is
+currently blocked on known product bugs (#352, #353) and carries no ID. The fork-traversal and
+post-dispute writes wait for tip agreement (hash, height, state) on the honest peers, not for every
+explicit signature on the tip: a peer that commits a block from calldata can miss a signature sent
+before it held the block, and the next block finalizes the tip by virtual voting. The fork-traversal
+case then waits until the chain snapshot reaches the reduced fork: its own post can run before the
+reduction is final, and the peers' adoption post moves the chain snapshot. Out of scope: the
 forged-payload element matrix, balance-invariant checks, and chain-level no-transaction
 observation (`INV-SYNC-4-Z6HER7`). The former bundled permutations have been atomized into
 one-scenario IDs, so the latest/pinned successes, refusals, no-op skips, and abort cases here

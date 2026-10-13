@@ -207,6 +207,12 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   one message are a signature-level offense for every message type, so they are
   detected in `SignerRecoveryCache` and punished by `P2PManager`, not through
   `AValidationStrategy`.
+- **Exception: past blocks.** A block this peer is already past (stored, or an
+  unstored block at or below the local height on its fork) is deduplicated
+  before validation by `BlockQueueManager.isPastBlock` / `settlePastBlock`,
+  not through `AValidationStrategy`: the rule is the same for every live
+  pipeline, and dispute replay (no live gates) treats only a stored block as
+  past.
 - **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
   block + ad-hoc sender parameter.** Entries merge signatures and
   `sourcesToSignatures` in QueueStorage until dequeued. Each source has its own

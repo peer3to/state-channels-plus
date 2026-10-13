@@ -1,4 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: worker shutdown", function () {
@@ -18,16 +19,22 @@ describe("E2E: worker shutdown", function () {
         expect(harness.peers.length).to.equal(0);
     });
 
-    it("tears down threaded peers promptly right after a block is signed, while the other peers still run it", async function () {
+    it("tears down threaded peers promptly when disposal starts with a scheduled task still running", async function () {
         const harness = TestSession.getHarness();
         await harness.lifecycle.start(3, 1, {
             configOverrides: { RUN_SDK_IN_THREAD: true }
         });
-        const writer = harness.getPeer(
-            (await harness.query.getNextPeerToWrite()).index
+        const stub = harness.control(harness.getPeer(0)).stub;
+        // the task runs until the timeout manager's dispose starts its wait
+        await stub.holdScheduledTaskUntilDispose().request();
+        await waitFor(
+            async () =>
+                (await stub.getDisposeWaitTask().request()).entered === 1,
+            harness.event.hostExecTimeoutMs()
         );
-        // resolves once the writer signed its block, before the others run it
-        await writer.p2pInstance.p2pContractInstance.add(1);
+        const inFlight = await stub.getDisposeWaitTask().request();
+        expect(inFlight.entered).to.equal(1);
+        expect(inFlight.running).to.be.greaterThan(0);
 
         const startedAt = Date.now();
         await harness.cleanup();

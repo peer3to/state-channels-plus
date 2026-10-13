@@ -100,10 +100,14 @@ export class RpcStubActions<
 
     async holdLobbyReply(
         peerIndex: number,
-        kind: HeldLobbyReplyKind
+        kind: HeldLobbyReplyKind,
+        rejectOnRelease = false
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
-        await this.harness.control(peer).stub.holdLobbyReply(kind).request();
+        await this.harness
+            .control(peer)
+            .stub.holdLobbyReply(kind, rejectOnRelease)
+            .request();
         return async () =>
             await this.harness.control(peer).stub.releaseLobbyReply().request();
     }

@@ -8,6 +8,9 @@ import {
 import {
     expectInitialSyncSkipped,
     postSnapshotSeenBy,
+    probeOpenedRuntimeWithoutParticipant,
+    probeSyncingParticipantPastTimeout,
+    requestAfterFailedOwnSync,
     spawnSpectatorAfterFirstHandshake,
     stageReducedWithoutAdoption,
     syncFromSyncingParticipant,
@@ -404,6 +407,83 @@ describe("E2E: Bot connection fixes", function () {
         expect(
             h.event.getEventCallCount(observer.index, "onSetState")
         ).to.equal(0);
+    });
+
+    it("H11 (requester times out): a probe to a participant whose own initial sync is still in flight times out after one window with only a retry-tier close, neither side blacklists the other, and the late answer changes nothing on the requester", async function () {
+        const h = TestSession.getHarness();
+        const {
+            participant,
+            responder,
+            probe,
+            responderStatusAtTimeout,
+            responderConnected,
+            lateAnswers,
+            setStatesBefore
+        } = await probeSyncingParticipantPastTimeout(h);
+        expect(probe.synced).to.equal(false);
+        expect(probe.elapsedMs).to.be.at.least(probe.windowMs);
+        expect(responderStatusAtTimeout).to.equal(Status.OPENED);
+        expect(responderConnected).to.equal(true);
+        expect(lateAnswers).to.equal(1);
+        await h.assert.rpc.peerStruckWithoutBlacklist({
+            observer: participant,
+            target: responder,
+            expectedStrikes: 1
+        });
+        await h.assert.rpc.peerNotExcluded({
+            observer: participant,
+            target: responder
+        });
+        await h.assert.rpc.peerNotExcluded({
+            observer: responder,
+            target: participant
+        });
+        expect(
+            h.event.getEventCallCount(participant.index, "onSetState")
+        ).to.equal(setStatesBefore);
+        expect(
+            await h.control(participant).query.getStatus().request()
+        ).to.equal(Status.PARTICIPATING);
+        expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
+    });
+
+    it("H11 (responder sync already failed): a spectate request that enters the endpoint after the responder's own initial sync failed is refused at once with the own-sync failure", async function () {
+        const h = TestSession.getHarness();
+        const { responder, ownSyncSucceeded, refusal, responderConnected } =
+            await requestAfterFailedOwnSync(h);
+        expect(ownSyncSucceeded).to.equal(false);
+        expect(refusal).to.equal("onSpectateRequest - own initial sync failed");
+        expect(responderConnected).to.equal(false);
+        expect(responder.eventSpies.onAbort?.called).to.equal(true);
+    });
+
+    it("H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant waits until that runtime's initial-sync deadline fires and is then refused with only a retry-tier close", async function () {
+        const h = TestSession.getHarness();
+        const {
+            spectator,
+            responder,
+            spectatorConnected,
+            responderWhileWaiting,
+            synced,
+            responderAbortedFirst,
+            responderConnected
+        } = await probeOpenedRuntimeWithoutParticipant(h);
+        expect(spectatorConnected).to.equal(true);
+        expect(responderWhileWaiting).to.deep.equal({
+            status: Status.OPENED,
+            syncCalls: 0
+        });
+        expect(synced).to.equal(false);
+        expect(responderAbortedFirst).to.equal(true);
+        expect(responderConnected).to.equal(false);
+        await h.assert.rpc.peerStruckWithoutBlacklist({
+            observer: spectator,
+            target: responder,
+            expectedStrikes: 1
+        });
+        expect(await h.control(spectator).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
     });
 
     it("E27: a joiner whose join no block includes, while writers produce no blocks, forces it by dispute once its time bound passes", async function () {

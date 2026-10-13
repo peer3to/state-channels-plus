@@ -46,6 +46,7 @@ import {
     OPEN_CHANNEL_MIN_REMAINING_SECONDS
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
+import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Status } from "@/types";
@@ -63,7 +64,6 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
-import { getChecksumAddress } from "@/utils/address";
 import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
@@ -393,17 +393,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         Reflect.set(
             spectate,
             "applySyncResponse",
-            async (peerAddress: string, ...parameters: unknown[]) => {
-                const apply = () =>
-                    Reflect.apply(original, spectate, [
-                        peerAddress,
-                        ...parameters
-                    ]) as Promise<boolean>;
-                if (
-                    responderAddress &&
-                    getChecksumAddress(peerAddress as Address) !==
-                        getChecksumAddress(responderAddress)
-                )
+            async (
+                ...parameters: Parameters<SpectateService["applySyncResponse"]>
+            ) => {
+                const apply = () => original.apply(spectate, parameters);
+                if (responderAddress && parameters[0] !== responderAddress)
                     return apply();
                 gate.entered += 1;
                 await gate.gate;
@@ -1353,6 +1347,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             }
         }
         return { ran: held.length, errors };
+    }
+
+    /** Hold one running timeout-manager task until that manager's dispose starts. */
+    public holdScheduledTaskUntilDispose(): boolean {
+        this.service.holdScheduledTaskUntilDispose();
+        return true;
+    }
+
+    public getDisposeWaitTask(): { entered: number; running: number } {
+        return this.service.getDisposeWaitTask();
     }
 
     public holdNextSignature(match?: SignatureBlockMatch): boolean {
@@ -3256,8 +3260,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public holdLobbyReply(kind: HeldLobbyReplyKind): boolean {
-        this.service.holdLobbyReply(kind);
+    public holdLobbyReply(
+        kind: HeldLobbyReplyKind,
+        rejectOnRelease = false
+    ): boolean {
+        this.service.holdLobbyReply(kind, rejectOnRelease);
         return true;
     }
 

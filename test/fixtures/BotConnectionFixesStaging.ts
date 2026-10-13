@@ -329,11 +329,32 @@ async function stageOmittedInboundJoin(
 }
 
 /**
+ * Until the peer runs no exit snapshot post and has none queued
+ * (`LeaveChannelService`'s `isPosting`; a queued post starts in the same
+ * tick its predecessor ends).
+ */
+async function waitUntilExitPostsIdle(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<void> {
+    await waitFor(
+        () =>
+            h.execOnHost(
+                peer,
+                (sm) =>
+                    Reflect.get(sm.leaveChannelService, "isPosting") === false
+            ),
+        h.event.protocolEventTimeoutMs()
+    );
+}
+
+/**
  * U72 staging. On the omitted join (see `stageOmittedInboundJoin`), founder
  * 1 leaves and sends its exit on its leave turn; its first snapshot post
  * after the exit block is blocked by that join. Returns once that post
- * resolved false; `includeInboundAgain` lets the founders include the join
- * again.
+ * resolved false and no exit post runs or waits (blocks finalized during
+ * that post queue one more, also refused); `includeInboundAgain` lets the
+ * founders include the join again.
  */
 export async function stageInboundBlockedExit(
     h: MathPeerTestHarness,
@@ -352,6 +373,7 @@ export async function stageInboundBlockedExit(
     expect((await posts.resultsWait(1))[0]).to.equal(
         "RaceConditionPendingInboundNotConsumed"
     );
+    await waitUntilExitPostsIdle(h, leaver);
     return staged;
 }
 
@@ -384,6 +406,7 @@ export async function stageInboundBlockedProtocolExit(
     expect((await staged.posts.resultsWait(1))[0]).to.equal(
         "RaceConditionPendingInboundNotConsumed"
     );
+    await waitUntilExitPostsIdle(h, staged.leaver);
     return staged;
 }
 

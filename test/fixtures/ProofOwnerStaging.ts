@@ -1711,3 +1711,69 @@ export async function stageExactJoinAboveView(h: MathPeerTestHarness) {
         frozenNextHeight: before
     };
 }
+
+/**
+ * A four-peer fork reduced to final on-chain (challenge period expired) that
+ * peer 0 has not installed: peer 0's reduction entry points are held. Peers
+ * 1-3 send no snapshot post, their reduction's fork adoption post included,
+ * so the chain snapshot stays on the disputed fork until peer 0 posts.
+ * `release` lets peer 0's held reduction run; `installedWait` resolves once
+ * peer 0 holds the reduced fork's genesis.
+ */
+export async function stageUninstalledFinalReducedFork(
+    h: MathPeerTestHarness
+): Promise<{
+    forkId: ForkId;
+    reducedForkId: ForkId;
+    release: () => Promise<void>;
+    installedWait: () => Promise<void>;
+}> {
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 3 }
+    });
+    for (const index of [1, 2, 3])
+        await h
+            .control(h.getPeer(index))
+            .stub.failStateSnapshotPost()
+            .request();
+    const lagging = await h.rpcStub.holdReductionRace(0);
+    const forkId = h.activeForkId! as ForkId;
+    try {
+        await h.byzantine.submitInvalidStateTransitionBlock(1);
+        const { newForkId } = await h.dispute.resolveDisputeWait({
+            forkId,
+            maliciousPeerIndices: [1],
+            honestPeerIndices: [2, 3],
+            syntheticOnChainParticipants: 1
+        });
+        const reducedForkId = newForkId as ForkId;
+        await waitFor(
+            async () =>
+                await h.channelManager.isReduceChallengePeriodExpired(
+                    h.channelId,
+                    forkId
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        const isInstalled = async () =>
+            await h.execOnHost(
+                h.getPeer(0),
+                async (sm, { reducedForkId }) =>
+                    sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        reducedForkId
+                    ) !== undefined,
+                { reducedForkId }
+            );
+        return {
+            forkId,
+            reducedForkId,
+            release: async () => await lagging.release(),
+            installedWait: async () =>
+                await waitFor(isInstalled, h.event.protocolEventTimeoutMs())
+        };
+    } catch (error) {
+        await lagging.release();
+        throw error;
+    }
+}

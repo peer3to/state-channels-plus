@@ -2,7 +2,7 @@
 const { relay } = require("@hyperswarm/dht-relay");
 const Stream = require("@hyperswarm/dht-relay/ws");
 const DHT = require("hyperdht");
-const dgram = require("node:dgram");
+const { randomInt } = require("node:crypto");
 const { once } = require("node:events");
 const { WebSocketServer } = require("ws");
 
@@ -20,13 +20,12 @@ const { WebSocketServer } = require("ws");
  */
 async function startLocalHolepunch({ relays = 2 } = {}) {
     const host = "127.0.0.1";
-    // A bootstrapper needs a fixed port; take one the OS just handed out.
-    const reservation = dgram.createSocket("udp4");
-    reservation.bind(0, host);
-    await once(reservation, "listening");
-    const port = reservation.address().port;
-    await new Promise((resolve) => reservation.close(resolve));
-    const bootstrapper = DHT.bootstrapper(port, host);
+    // The bootstrapper requires a positive port. Pick an ephemeral-range
+    // preference and let the library handle collisions; never probe a free port.
+    const bootstrapper = DHT.bootstrapper(randomInt(49152, 65536), host, {
+        host,
+        anyPort: true
+    });
     await bootstrapper.ready();
     const bootstrap = [{ host, port: bootstrapper.address().port }];
     const nodes = [bootstrapper];

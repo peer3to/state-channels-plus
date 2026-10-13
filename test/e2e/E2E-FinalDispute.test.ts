@@ -63,7 +63,10 @@ describe("E2E: final dispute resolution", function () {
         expect(validationCalls).to.equal(0);
 
         await h.assert.sync.onlyHonestPeersInSync();
-        await h.transition.fromHonestPeersOnly((contract) => contract.add(1));
+        // the post below proves this tip: it must be final in every view
+        await h.transition.fromHonestPeersOnly((contract) => contract.add(1), {
+            waitForFinalization: true
+        });
         const expectedSnapshot = await h.transition.postSnapshot({
             peerIndex: honestPeerIndices[0],
             forkId: String(staged.finalResolution.forkId)

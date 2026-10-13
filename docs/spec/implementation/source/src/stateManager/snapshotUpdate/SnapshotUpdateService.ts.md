@@ -39,3 +39,4 @@ Walk, gates, and submission
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P19` — a mined post resolves with the snapshot it posted: its hash is the chain's new snapshot hash and its participants are the chain snapshot's participants
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P20` — a post with no admissible calldata resolves with `undefined`, not a snapshot
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P21` — a walk that reaches a final reduced fork whose genesis this node has not installed yet waits for its own reduction: no fork calldata, and the post resolves `undefined` without throwing
+- [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P22` — after that reduction installs, the next post sends one fork update and the chain snapshot moves to the reduced fork

@@ -653,15 +653,6 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Fork Traversal Spectating", function () {
-        // TODO(#351): product/protocol bug, NOT a harness-conversion issue.
-        // After the dispute reduction all 4 remaining peers agree on the reduced
-        // fork's genesis block (identical hash) but it only collects 3/4
-        // signatures, so finalization stalls (`sigs=3/4 union=4`). One
-        // participant never produces/propagates its block-confirmation signature
-        // on the new fork. This path was never exercised before (the throwing
-        // stateManager proxy hid it) and reproduces identically inline. Likely a
-        // post-reduction P2P signature-propagation / re-sync gap to fix on the
-        // product side.
         it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(5, 0, {
@@ -724,7 +715,10 @@ describe("E2E: Spectate Service", function () {
                 expectedCount: 4,
                 peerIndex: 5
             });
-            await h.assert.snapshot.onChainSnapshotOnFork();
+            // the post above can run before the reduction is final and then
+            // posts nothing; the peers' adoption post moves the chain
+            // snapshot to the reduced fork once the reduction is final
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         });
     });
 
@@ -744,11 +738,6 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Spectators before and after dispute", function () {
-        // TODO(#351): flaky due to the same post-dispute-reduction
-        // finalization product bug as the "traverse forks" test — after the
-        // dispute the reduced fork's genesis block intermittently collects only
-        // N-1 of N signatures (e.g. sigs=2/3), so sync stalls. Passes on some
-        // runs, fails on others; not a harness-conversion issue.
         it("pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
@@ -796,8 +785,7 @@ describe("E2E: Spectate Service", function () {
 
                 await h.transition.advanceState({
                     count: 2,
-                    waitForPeers: honestPeerIndices,
-                    waitForFinalization: true
+                    waitForPeers: honestPeerIndices
                 });
 
                 //  first joiner has observed the dispute and disconnected
@@ -834,8 +822,7 @@ describe("E2E: Spectate Service", function () {
                         },
                         authoringPeerIndices: honestPeerIndices,
                         minimumBlocks: 1,
-                        maximumBlocks: 20,
-                        waitForFinalization: true
+                        maximumBlocks: 20
                     });
                 const reductionInputs = await h
                     .control(postDisputeSpectator)

@@ -63,27 +63,76 @@ export class RecordingWebRTCDataChannel implements WebRTCDataChannelLike {
     }
 }
 
+type HolepunchConnectionListener = (
+    socket: RecordingHolepunchSocket,
+    info: RecordingBannablePeerInfo
+) => void;
+
+/**
+ * Hyperswarm stand-in. Each join's announce stays pending until the test
+ * settles it with `resolveFlush` or `rejectFlush`; topic lookups
+ * (`status(topic).refresh()`) are recorded in `refreshCalls`.
+ */
 export class RecordingSwarm {
     public readonly joinCalls: {
         topicHex: string;
         options: { server: boolean; client: boolean };
     }[] = [];
     public readonly leaveCalls: string[] = [];
+    public readonly refreshCalls: string[] = [];
+    public destroyed = false;
+    /** When set, every topic lookup rejects with it. */
+    public refreshError?: Error;
+    private readonly flushes: {
+        resolve: () => void;
+        reject: (error: Error) => void;
+    }[] = [];
+    private connectionListener?: HolepunchConnectionListener;
 
-    public on(): void {}
+    public on(event: string, listener: HolepunchConnectionListener): void {
+        if (event === "connection") this.connectionListener = listener;
+    }
 
-    public removeAllListeners(): void {}
+    public removeAllListeners(): void {
+        this.connectionListener = undefined;
+    }
 
     public join(
         topic: Buffer,
         options: { server: boolean; client: boolean }
     ): { flushed(): Promise<void> } {
         this.joinCalls.push({ topicHex: topic.toString("hex"), options });
-        return { flushed: async () => {} };
+        const flushed = new Promise<void>((resolve, reject) =>
+            this.flushes.push({ resolve, reject })
+        );
+        return { flushed: () => flushed };
     }
 
-    public status(): { refresh(): Promise<void> } {
-        return { refresh: async () => {} };
+    /** Complete the announce of the join at `index`. */
+    public resolveFlush(index: number): void {
+        this.flushes[index].resolve();
+    }
+
+    /** Fail the announce of the join at `index`. */
+    public rejectFlush(index: number, error: Error): void {
+        this.flushes[index].reject(error);
+    }
+
+    public status(topic: Buffer): { refresh(): Promise<void> } {
+        return {
+            refresh: async () => {
+                this.refreshCalls.push(topic.toString("hex"));
+                if (this.refreshError) throw this.refreshError;
+            }
+        };
+    }
+
+    /** Deliver a new peer connection to the registered listener. */
+    public emitConnection(
+        socket: RecordingHolepunchSocket,
+        info: RecordingBannablePeerInfo
+    ): void {
+        this.connectionListener?.(socket, info);
     }
 
     public leave(topic: Buffer): void {

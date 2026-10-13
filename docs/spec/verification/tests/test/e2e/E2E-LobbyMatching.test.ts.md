@@ -23,6 +23,25 @@ The pending-selection upgrade case holds the pick reply and its matching RPC-exp
 
 The disconnect-during-selection case holds the completion of the higher peer's channel selection (its event listener's subscription removal) after the lower peer's terms validated, then isolates the lower peer, so the unsigned attempt is cleared while the selection is still pending. A third peer joins the same topic; once both sides of the new pair selected the new ID and one `openProposal` reply is parked, the stale selection is released. The oracle is that the new pair opens exactly the negotiated channel, both peers reach `PARTICIPATING` on it, the dead ID never opens, and neither new partner blacklists the other. Without the selection guards the released selection re-subscribes the higher peer's listener to the dead channel, the higher peer never observes its own opening, and the case times out waiting for `PARTICIPATING`.
 
+The two commit-in-flight refusal cases keep the selector's commit open on purpose: they park the
+advertiser's commit reply and hold the selector's commit RPC timeout and the advertiser's reservation
+expiry, so only the released reply settles the commit. In the third-peer case a third peer joins the
+topic and, once its transport to the selector is live, sends a raw `exchangeTerms` request to the
+selector. The oracle is that the selector blacklists the third peer within one agreement window while
+the same commit is still in flight and the selector has no negotiation attempt. A deferred request
+waits two agreement windows, so this refusal was not a deferral. After the reply is released, the
+advertiser and the selector open one channel, the third peer has no channel ID, and the selector does
+not blacklist the advertiser. When the commit-in-flight branch admits any peer, the third peer's
+request is deferred and the case times out waiting for the blacklist.
+
+In the rejected-commit case the advertiser sends a raw `exchangeTerms` request to the selector before
+the parked reply, on the same transport, and the reply is then released as `rejected` without running
+the advertiser's commit endpoint. Right after the selector's commit settles, the selector has not
+blacklisted the advertiser, so the request was deferred. The oracle is that the deferred request later
+expires and the selector blacklists the advertiser, the selector has no negotiation attempt, and
+neither peer has a channel ID. When expiry does not apply the failure policy, the case times out
+waiting for the blacklist.
+
 The signed-attempt remote-abort case waits for both peers to observe transport closure before checking their respective zero/one strike outcomes. Run 453 queried the lower peer before its socket-close event arrived. The signature retention and eventual chain-opening assertions remain unchanged; runtime revalidation is pending.
 
 The expired-opening case shortens the lower proposer's opening window to six seconds with a host stub
@@ -72,6 +91,8 @@ deadline before leaving the lobby.
 - `keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P7, REQ-LOBBY-4-E0TARV.T1.P4, REQ-LOBBY-9-N894C0.T1.P1, REQ-LOBBY-2-TSWRV6.T1.P5
 - `queues early negotiation while matched initialization and ID selection are held`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P8
 - `defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18
+- `blacklists a third peer's negotiation request that reaches the selector while its commit is in flight: the pair still opens one channel without it`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P19
+- `refuses the advertiser's deferred negotiation request when the selector's commit is rejected: the request expires, the selector blacklists the advertiser, and no channel opens`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P20, REQ-NEG-4-ZQ0985.T1.P2
 - `rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel`: none
 - `leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P11, REQ-LOBBY-9-N894C0.T1.P14
 - `leaves the targeted lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P12, REQ-LOBBY-9-N894C0.T1.P15

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: browser local-transport relay used by the browser gates; evidence is mapped from run-transport-local-e2e.mjs and run-p2p-webrtc-e2e.mjs
 import { WebSocketServer } from "ws";
 
 /**
@@ -8,7 +9,8 @@ import { WebSocketServer } from "ws";
  * serves two kinds of client sockets:
  *  - a membership socket, `?channelId=<topic>&address=<peer>`: the hub
  *    announces every other member of the topic to it as
- *    `{ type: "peer", address }`, now and whenever one joins;
+ *    `{ type: "peer", address }`, now and whenever one joins. It also sends
+ *    one non-JSON text frame on join, which members must ignore;
  *  - a link socket, `?link=<id>`: the hub pairs the two sockets that open the
  *    same link and relays raw frames between them. Frames sent before the
  *    second socket arrives are buffered and flushed on pairing; when either
@@ -36,6 +38,7 @@ export async function startLocalDiscoveryRelayHub({
             member.send(JSON.stringify({ type: "peer", address }));
         }
         members.set(address, ws);
+        ws.send("not-json");
         ws.on("close", () => {
             if (members.get(address) !== ws) return;
             members.delete(address);

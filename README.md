@@ -202,8 +202,10 @@ yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
 ### Browser tests
 
 Each `test/browser/run-*.mjs` gate is one task. A gate boots a Vite server, its
-own Hardhat node and one headless Chromium, then drives every scenario on a
-single page, so splitting a gate per case would relaunch that stack per case.
+own Hardhat node and one headless Chromium, then drives every scenario in that
+browser; a scenario may use several isolated pages (the transport gates open one
+browser context per peer). Splitting a gate per case would relaunch that stack
+per case.
 Like forge tasks, gates need neither a warm slot nor a funded account partition,
 and they reach the worker through a Hardhat task — `browser-test` in
 `tasks/browserTest.ts`, which runs the gate with Node and passes its exit code
@@ -217,6 +219,8 @@ run holds a gate.
 ```shell
 yarn test:parallel --browser-only
 yarn hardhat browser-test --script test/browser/run-p2p-webrtc-e2e.mjs
+yarn test:browser:transport:local
+yarn test:browser:transport:holepunch
 ```
 
 A gate needs the Chromium that Playwright ships with the version `yarn.lock`

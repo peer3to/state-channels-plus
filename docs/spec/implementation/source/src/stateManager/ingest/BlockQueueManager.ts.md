@@ -64,3 +64,5 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P49` — a network copy of a stored block below the next height carrying signatures the stored block lacks is still merged
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P50` — a live entry at an empty height below the next height that reaches `onBlockConfirmation` is settled as past before validation: no deviation hook, restore, disconnect or dispute
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P51` — a dispute-replay entry at an empty height below the next height is not past: validation reaches the dispute strategy's linkage guard
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P52` — a queued entry whose height a compact sync left empty below the next height is dropped at queue expiry: no queued execution, no `sync` call, no queue entry or stored block, no cut source, no fraud proof
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P53` — a dequeued entry handed to `restoreQueuedEntry` after a compact sync left its height empty below the next height is settled as past: processed, not queued again, no new queue timeout

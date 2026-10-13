@@ -45,11 +45,27 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.debugs).to.include(
             "Holepunch dropped a duplicate connection"
         );
+        expect(result.warnings).to.include(
+            "Holepunch peer reset the connection"
+        );
+        expect(result.errors).to.deep.equal(["Holepunch socket error"]);
+        expect(result.closed).to.deep.equal([true, true, true, true]);
+    });
+
+    it("logs a peer reset that carries only the message as a warning, not an error, and closes the transport", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchSocketErrors()
+            .request();
+
+        // The coded reset and the message-only reset each warn once; only
+        // the unrelated socket error reaches the error level.
         expect(result.warnings).to.deep.equal([
+            "Holepunch peer reset the connection",
             "Holepunch peer reset the connection"
         ]);
         expect(result.errors).to.deep.equal(["Holepunch socket error"]);
-        expect(result.closed).to.deep.equal([true, true, true]);
+        expect(result.closed[2]).to.equal(true);
     });
 
     it("bans the Holepunch fallback after a WebRTC upgrade", async function () {
