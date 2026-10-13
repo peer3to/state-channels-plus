@@ -6,6 +6,7 @@ import {
     countJoinSignatureRequests,
     waitForHeldJoins
 } from "@test/fixtures/JoinSnapshotRetryStaging";
+import { assertTwoSourceProbeKeepsLocalState } from "@test/fixtures/MonotonicSyncInstallStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
@@ -1322,6 +1323,12 @@ describe("E2E: Spectate Service", function () {
             );
 
             await restore();
+        });
+    });
+
+    describe("Overlapping queue-expiry syncs from two sources", function () {
+        it("the source with the older final point answers after the other source's sync installed a later base → the local state is kept, no source is cut, and the next live blocks execute", async function () {
+            await assertTwoSourceProbeKeepsLocalState(TestSession.getHarness());
         });
     });
 

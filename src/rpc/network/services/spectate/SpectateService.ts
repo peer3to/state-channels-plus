@@ -763,10 +763,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
 
         // A request without a fork asks for the latest state: the fork derived
-        // above, not this responder's own fork. A responder whose own state is
-        // not installed yet holds no fork of its own, and the mismatch below
-        // would wrongly cut the requester; without that fork's genesis it
-        // throws instead, which spends only the requester's retry bound.
+        // above, not this responder's own fork, which can lag it (a computed
+        // reduction not installed yet); the mismatch below would wrongly cut
+        // the requester.
         let forkId = _forkId ?? currentForkId;
 
         if (
@@ -1025,9 +1024,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     /**
      * Persists the verified sync: dispute windows, the genesis, outbound
      * runs, the proof material the walk verified (final history advances the
-     * view), then installs the replay base unless this peer already holds
-     * that point or a later one. Existing data is never overwritten. The
-     * history is stored in the same synchronous step that installs the base,
+     * view), then installs the replay base unless this peer's height on the
+     * base's fork is already at or above it. Existing data is never
+     * overwritten. The history is stored in the same synchronous step that installs the base,
      * so no task sees it before the fork swap. A runtime disposed before that
      * step persists and installs nothing (abort).
      */
@@ -1096,15 +1095,14 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     return true;
                 };
 
+                // the install is monotonic: on the same fork it never moves
+                // the height the live pipeline executes at down
                 const baseHeight =
                     base.fromIndex === 0 ? -1 : base.snapshot.blockHeight;
                 const localLatestHeight =
-                    storage.blocks.getLatestBlock(forkId)?.height ?? -1;
+                    storage.blocks.getNextBlockHeight(forkId) - 1;
                 const holdsBase =
                     stateManager.forkId === forkId &&
-                    storage.stateMachineStates.getStateMachineState(
-                        base.snapshot.stateMachineStateHash
-                    ) !== undefined &&
                     localLatestHeight >= baseHeight;
                 if (holdsBase) {
                     if (!persistHistory()) return { shouldAbort: true };

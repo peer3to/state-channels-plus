@@ -22,8 +22,8 @@
 
 Intake gates, lifetime and drain scheduling
 
-- Setup: Ingest across channel/fork/dup/dead-fork cases; expire entries in each state; hold a sync while queued copies wait on the unsynced fork, queue timeouts suppressed
-- Oracle: Gates apply in order; after a dequeued entry runs, the next eligible height applies without its queue timeout; lifetime fixed under duplicates/restores; a probed source is kept when its same-fork proof carries the block or a verified successor makes the old-fork absence inconclusive; admitted-source expiry probes remain separate from ordinary unknown-source sync
+- Setup: Ingest across channel/fork/dup/dead-fork cases and past blocks at empty or stored heights below the next height; expire entries in each state; hold a sync while queued copies wait on the unsynced fork, queue timeouts suppressed
+- Oracle: Gates apply in order; after a dequeued entry runs, the next eligible height applies without its queue timeout; lifetime fixed under duplicates/restores; a probed source is kept when its same-fork proof carries the block or a verified successor makes the old-fork absence inconclusive; admitted-source expiry probes remain separate from ordinary unknown-source sync; a block at an empty height below the next height is dropped with no effect while a stored one still merges
 
 - [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P1` — gate order
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P2` — lifetime never extends
@@ -60,3 +60,7 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45` — a fork recovery held in flight when `stop()` starts: `stop()` stays pending with the recovery scheduled and the timeout manager alive; after release nothing stays in flight, the recovery state is cleared and the timeout manager is disposed
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46` — a fork recovery scheduled after `stop()` began, or whose scheduled run fires after it began, never runs: nothing enters recovery and nothing stays in flight
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47` — a drain that dequeues a queued copy of a block a sync already stored still drains the queued next block, with no queue timeout armed
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P48` — a network copy of a genuine block at an empty height below the next height is dropped at intake: not queued, stored or executed, no `sync` call, no cut source, no fraud proof
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P49` — a network copy of a stored block below the next height carrying signatures the stored block lacks is still merged
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P50` — a live entry at an empty height below the next height that reaches `onBlockConfirmation` is settled as past before validation: no deviation hook, restore, disconnect or dispute
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P51` — a dispute-replay entry at an empty height below the next height is not past: validation reaches the dispute strategy's linkage guard

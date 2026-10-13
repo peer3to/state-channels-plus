@@ -10,6 +10,7 @@ import {
     postSnapshotSeenBy,
     spawnSpectatorAfterFirstHandshake,
     stageReducedWithoutAdoption,
+    syncFromSyncingParticipant,
     syncLatestFromUninstalledSuccessor
 } from "@test/fixtures/MilestoneSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -342,6 +343,67 @@ describe("E2E: Bot connection fixes", function () {
             participants,
             h.activeForkId!
         );
+    });
+
+    it("H11 (responder still syncing): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight gets its answer once that sync succeeds and syncs from it", async function () {
+        const h = TestSession.getHarness();
+        const {
+            participant,
+            responder,
+            observer,
+            responderStatusAtRequest,
+            observerSyncTargets,
+            responderConnected,
+            observerConnected
+        } = await syncFromSyncingParticipant(h, "success");
+        expect(responderStatusAtRequest).to.equal(Status.OPENED);
+        expect(observerSyncTargets).to.deep.equal([responder.address]);
+        expect(responderConnected).to.equal(true);
+        expect(observerConnected).to.equal(true);
+        expect(await h.control(responder).query.getStatus().request()).to.equal(
+            Status.PARTICIPATING
+        );
+        expect(await h.control(observer).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        expect(await h.control(observer).query.getForkId().request()).to.equal(
+            await h.control(participant).query.getForkId().request()
+        );
+        expect(observer.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(responder.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(responder.address)
+                .request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(responder)
+                .query.isBlacklisted(observer.address)
+                .request()
+        ).to.equal(false);
+    });
+
+    it("H11 (responder sync fails): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight aborts when that sync fails, adopting nothing", async function () {
+        const h = TestSession.getHarness();
+        const {
+            responder,
+            observer,
+            responderStatusAtRequest,
+            observerSyncTargets,
+            responderConnected,
+            observerConnected
+        } = await syncFromSyncingParticipant(h, "failure");
+        expect(responderStatusAtRequest).to.equal(Status.OPENED);
+        expect(observerSyncTargets).to.deep.equal([responder.address]);
+        expect(responderConnected).to.equal(false);
+        expect(observerConnected).to.equal(false);
+        expect(responder.eventSpies.onAbort?.called).to.equal(true);
+        expect(observer.eventSpies.onAbort?.called).to.equal(true);
+        expect(
+            h.event.getEventCallCount(observer.index, "onSetState")
+        ).to.equal(0);
     });
 
     it("E27: a joiner whose join no block includes, while writers produce no blocks, forces it by dispute once its time bound passes", async function () {

@@ -19,6 +19,20 @@ commit callback throws after the VM write, the VM is written back to the pre-ins
 state equals the state before the sync, the sync rejects with that same error and the responder is not
 blacklisted.
 
+The `monotonic install` cases (staging in `test/fixtures/MonotonicSyncInstallStaging.ts`) give two
+honest sources different final points on one fork: the second tail writer and the observer stop
+taking network confirmations, and the blind third writer takes the tail through its control port
+and signs it, so only the first tail writer finalizes up to the tip. The observer syncs from that
+source and installs the tip without ever holding the state at the other source's final point. Its
+tip then keeps only the author's signature, so it cannot prove its own tip final and the other
+source's proof is walked from below that point. The observer then syncs from the other source:
+the sync succeeds with no blacklist, the install entry is recorded as never called, the replayed
+block it never held stays absent, and its VM state equals the first source's. After network
+confirmations flow again the participants author three blocks: the observer executes them, its
+state matches, and it has no fraud proof, no dispute and no blacklisted participant. The spectator
+stays `SYNCED`; the pending joiner stays `PENDING_PARTICIPANT` through the sync and is
+`PARTICIPATING` once a live block seats it.
+
 ## Tests
 
 - `requester's latest height equals the served base height → it keeps its own state as the replay base and syncs to the tip`: REQ-SP-10-JMVHTB.T5.P17, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P89
@@ -28,3 +42,5 @@ blacklisted.
 - `requester holds the base and a stored block conflicts with the served history → aborted, local state kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107
 - `runtime stops while the install is held → nothing installed, no verdict on the responder`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P101
 - `the install's commit callback throws after the VM write → VM restored to the pre-install state, fork unchanged, the sync rejects with that error and no verdict on the responder`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P18
+- `requester jumped past the base through another source's sync, then a payload based there → local state kept, no install, the next live blocks execute with no fraud proof`: INV-SYNC-3-A7A2ED.T1.P31, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108
+- `pending joiner jumped past the base through another source's sync, then a payload based there → local state kept, stays pending, the next live blocks execute with no dispute`: INV-SYNC-3-A7A2ED.T1.P32, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109

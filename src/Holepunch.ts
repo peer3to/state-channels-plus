@@ -1,5 +1,6 @@
 import HolepunchRelay from "@/HolepunchRelay";
 import type P2PManager from "@/P2PManager";
+import type { BannablePeerInfo } from "@/PeerProfile";
 import { isWorkerRuntime } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCProvider";
 import { HolepunchTransport, TransportType } from "@/transport";
 import { config } from "@/utils/config";
@@ -19,7 +20,7 @@ class Holepunch {
         // `window` is absent in a Web Worker, so RUN_SDK_IN_THREAD (Holepunch
         // running inside the SDK's browser worker) must also detect the worker
         // scope — otherwise it falls through to the node path and
-        // `@hyperswarm/dht` throws "not supported in browsers".
+        // `hyperdht` throws "not supported in browsers".
         this.isBrowserRuntime =
             typeof window !== "undefined" || isWorkerRuntime();
         if (this.isBrowserRuntime) {
@@ -54,9 +55,28 @@ class Holepunch {
             this.p2pManager.logger.debug("Holepunch peer info", {
                 peerInfo: info
             });
-            new HolepunchTransport(socket, info, this.p2pManager.rpcRouter);
+            new HolepunchTransport(
+                socket,
+                this.bannablePeerInfo(info),
+                this.p2pManager.rpcRouter
+            );
         });
         this.rejoinTopics();
+    }
+
+    /**
+     * Hyperswarm's peer info. Releasing a ban only clears Hyperswarm's flag:
+     * a peer whose connection closed while banned has left the retry queue.
+     * A lookup of the joined topics finds it again if it is still announced.
+     */
+    private bannablePeerInfo(info: any): BannablePeerInfo {
+        return {
+            publicKey: info.publicKey,
+            ban: (value = true) => {
+                info.ban(value);
+                if (!value) this.refreshTopics();
+            }
+        };
     }
 
     private ensureNodeSwarm() {
@@ -96,14 +116,49 @@ class Holepunch {
         });
     }
 
+    /**
+     * A lookup that runs while another peer's announce is still in flight
+     * misses that peer, and Hyperswarm looks up a topic again only every 10
+     * minutes. So once this announce is done, the topic is looked up once:
+     * of two peers that joined together, the one that finishes later finds
+     * the other.
+     */
     private announceTopic(topic: Buffer): void {
-        this.swarm.join(topic, {
+        const discovery = this.swarm.join(topic, {
             server: true,
             client: true
         });
         this.p2pManager.logger.debug("Joined holepunch topic", {
             topic: topic.toString("hex")
         });
+        discovery
+            .flushed()
+            .then(() => this.refreshTopic(topic))
+            .catch((error: unknown) =>
+                this.p2pManager.logger.debug("Holepunch announce failed", {
+                    topic: topic.toString("hex"),
+                    error
+                })
+            );
+    }
+
+    private refreshTopics() {
+        for (const topic of this.topics) this.refreshTopic(topic);
+    }
+
+    /** One lookup of a still-joined topic; a failed one is retried by Hyperswarm's own refresh. */
+    private refreshTopic(topic: Buffer) {
+        if (!this.swarm || this.swarm.destroyed) return;
+        if (!this.topics.some((joined) => joined.equals(topic))) return;
+        this.swarm
+            .status(topic)
+            ?.refresh()
+            .catch((error: unknown) =>
+                this.p2pManager.logger.debug("Holepunch topic lookup failed", {
+                    topic: topic.toString("hex"),
+                    error
+                })
+            );
     }
 
     private rejoinTopics() {

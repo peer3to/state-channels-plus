@@ -235,16 +235,18 @@ export async function assertHonestPeersContributeAfterSelfRemoval(
     h: MathPeerTestHarness
 ): Promise<void> {
     // The leaver's exit post is refused while an inbound join no snapshot
-    // has consumed is pending. The watchdog outlasts the staging, so the
-    // leaver's self-removal dispute starts only after the others moved on.
+    // has consumed is pending. Its leave watchdog is held and expires once
+    // the others moved on, so the self-removal dispute follows the staging
+    // it must outlast, not a fixed delay.
     const {
         joiner,
         leaver,
         remainingPeerIndices,
         disputes,
-        includeInboundAgain
+        includeInboundAgain,
+        expireWatchdog
     } = await stageInboundBlockedExit(h, {
-        watchdogMs: 60_000,
+        holdWatchdog: true,
         forwardDisputes: true,
         // engineer decision (Luka, 2026-10-12): 6s, not the staging's 4s. The
         // others audit the leaver's dispute, then contribute into its window;
@@ -266,6 +268,7 @@ export async function assertHonestPeersContributeAfterSelfRemoval(
             status: Status.PARTICIPATING,
             waitForPeers: remainingPeerIndices
         });
+        await expireWatchdog();
         await h.transition.keepAuthoringUntil({
             until: async () => (await disputes.submissions()).length > 0,
             waitForPeers: honest,

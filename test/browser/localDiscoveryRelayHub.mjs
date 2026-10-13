@@ -1,103 +1,95 @@
 import { WebSocketServer } from "ws";
 
 /**
- * Minimal local-discovery relay hub for the browser e2e.
+ * Local-discovery relay hub for the browser gates.
  *
  * Browser/worker peers can't run a WebSocket server (the node LocalDiscovery
- * peer-mesh needs one each), so they rendezvous through this hub instead: each
- * peer opens one client socket with `?channelId=<id>`, and the hub relays raw
- * frames between peers on the same channel. Frames sent before the second peer
- * arrives are buffered and flushed on join, so no handshake frame is lost.
+ * peer-mesh needs one each), so they rendezvous through this hub instead. It
+ * serves two kinds of client sockets:
+ *  - a membership socket, `?channelId=<topic>&address=<peer>`: the hub
+ *    announces every other member of the topic to it as
+ *    `{ type: "peer", address }`, now and whenever one joins;
+ *  - a link socket, `?link=<id>`: the hub pairs the two sockets that open the
+ *    same link and relays raw frames between them. Frames sent before the
+ *    second socket arrives are buffered and flushed on pairing; when either
+ *    socket closes, the hub closes the other. A third socket for a link ends
+ *    the old pair and starts a new one.
  */
 export async function startLocalDiscoveryRelayHub({
     host = "127.0.0.1",
     port = 0
 } = {}) {
     const wss = new WebSocketServer({ host, port });
+    // topic -> address -> membership socket
+    const topics = new Map();
+    // link id -> { sockets: ws[], buffer: string[] }
+    const links = new Map();
 
-    // channelId -> { sockets: Set<ws>, buffer: Array<{ from, frame }> }
-    const channels = new Map();
-
-    const relay = (channel, from, frame) => {
-        for (const peer of channel.sockets) {
-            if (peer !== from && peer.readyState === peer.OPEN) {
-                peer.send(frame);
-            }
+    const join = (ws, topic, address) => {
+        let members = topics.get(topic);
+        if (!members) {
+            members = new Map();
+            topics.set(topic, members);
         }
+        for (const [memberAddress, member] of members) {
+            ws.send(JSON.stringify({ type: "peer", address: memberAddress }));
+            member.send(JSON.stringify({ type: "peer", address }));
+        }
+        members.set(address, ws);
+        ws.on("close", () => {
+            if (members.get(address) !== ws) return;
+            members.delete(address);
+            if (members.size === 0) topics.delete(topic);
+        });
+    };
+
+    const pair = (ws, id) => {
+        let link = links.get(id);
+        if (link?.sockets.length === 2) {
+            for (const socket of link.sockets) socket.close();
+            link = undefined;
+        }
+        if (!link) {
+            link = { sockets: [], buffer: [] };
+            links.set(id, link);
+        }
+        const current = link;
+        current.sockets.push(ws);
+        if (current.sockets.length === 2) {
+            for (const frame of current.buffer) ws.send(frame);
+            current.buffer = [];
+        }
+        ws.on("message", (data) => {
+            const frame = data.toString();
+            const other = current.sockets.find((socket) => socket !== ws);
+            if (other) other.send(frame);
+            else current.buffer.push(frame);
+        });
+        ws.on("close", () => {
+            for (const socket of current.sockets) socket.close();
+            if (links.get(id) === current) links.delete(id);
+        });
     };
 
     wss.on("connection", (ws, req) => {
-        const requestUrl = new URL(req.url ?? "/", "ws://localhost");
-        const channelId = requestUrl.searchParams.get("channelId") ?? "";
-        ws.peerAddress = requestUrl.searchParams.get("address") ?? "";
-
-        let channel = channels.get(channelId);
-        if (!channel) {
-            channel = { sockets: new Set(), buffer: [] };
-            channels.set(channelId, channel);
-        }
-        channel.sockets.add(ws);
-
-        // On pairing, announce each peer's address to the other. This lets the
-        // two sides pick a dial/accept role by address ordering (only one
-        // initiates the handshake), so a single relayed transport carries one
-        // handshake session — not two, which would double-ack and disconnect.
-        if (channel.sockets.size >= 2) {
-            const peers = [...channel.sockets];
-            for (const peer of peers) {
-                const other = peers.find((candidate) => candidate !== peer);
-                if (peer.readyState === peer.OPEN && other) {
-                    peer.send(
-                        JSON.stringify({
-                            type: "peer",
-                            address: other.peerAddress
-                        })
-                    );
-                }
-            }
-        }
-
-        // A peer just completed the pair — flush anything buffered before it
-        // arrived to the newly-present peers.
-        if (channel.sockets.size >= 2 && channel.buffer.length > 0) {
-            for (const { from, frame } of channel.buffer) {
-                relay(channel, from, frame);
-            }
-            channel.buffer = [];
-        }
-
-        ws.on("message", (data) => {
-            const frame = data.toString();
-            if (channel.sockets.size < 2) {
-                channel.buffer.push({ from: ws, frame });
-                return;
-            }
-            relay(channel, ws, frame);
-        });
-
-        ws.on("close", () => {
-            channel.sockets.delete(ws);
-            if (channel.sockets.size === 0) channels.delete(channelId);
-        });
+        const params = new URL(req.url ?? "/", "ws://localhost").searchParams;
+        const link = params.get("link");
+        if (link) pair(ws, link);
+        else
+            join(
+                ws,
+                params.get("channelId") ?? "",
+                params.get("address") ?? ""
+            );
     });
 
     await new Promise((resolve) => wss.on("listening", resolve));
     const address = wss.address();
-    const url = `ws://${host}:${address.port}`;
-
     return {
-        url,
+        url: `ws://${host}:${address.port}`,
         close: () =>
             new Promise((resolve) => {
-                for (const channel of channels.values()) {
-                    for (const ws of channel.sockets) {
-                        try {
-                            ws.close();
-                        } catch {
-                            // ignore
-                        }
-                    }
-                }
+                for (const ws of wss.clients) ws.terminate();
                 wss.close(() => resolve());
             })
     };

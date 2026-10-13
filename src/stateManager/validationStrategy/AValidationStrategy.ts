@@ -23,7 +23,8 @@ export default abstract class AValidationStrategy {
      * all three. Dispute replay audits a fixed proof out of live order on an
      * already-disputed fork, so it skips these gates (and never pays for the
      * disputed-fork lookup). When false, `blockForkIsDisputed` and
-     * `blockIsNotNextAndIsInTheFuture` and `blockIsBelowInstalledHistory` are never called.
+     * `blockIsNotNextAndIsInTheFuture` are never called, and a block is past
+     * only when stored (`BlockQueueManager.isPastBlock`).
      */
     public abstract get enforcesLiveForkAndOrderingGates(): boolean;
 
@@ -103,10 +104,6 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockForkIsDisputed(
-        entry: QueuedBlockEntry
-    ): Promise<BlockValidationResult>;
-
-    public abstract blockIsBelowInstalledHistory(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 

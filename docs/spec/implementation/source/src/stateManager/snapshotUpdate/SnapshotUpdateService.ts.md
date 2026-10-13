@@ -17,7 +17,7 @@
 Walk, gates, and submission
 
 - Setup: Advance across zero/one/multiple generations, unresolved disputes, and consumed/unconsumed inbound heads
-- Oracle: Correct link chains and ranges; a fork walk that waits for a reduction produces no transaction; an admissible submission lands and the post resolves with the snapshot it posted; a post with nothing admissible to send resolves undefined; a chain revert rejects the post with its custom error and changes no snapshot
+- Oracle: Correct link chains and ranges; a fork walk that waits for a reduction (on chain, or a final reduced fork this node has not installed yet) produces no transaction; an admissible submission lands and the post resolves with the snapshot it posted; a post with nothing admissible to send resolves undefined; a chain revert rejects the post with its custom error and changes no snapshot
 
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P1` — multi-generation walk
 - [ ] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P2` — range boundary at processed tip
@@ -38,3 +38,4 @@ Walk, gates, and submission
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P18` — Overlapping join support and a later finalized point remain separate milestones in finalized-only update evidence; the submitted update adopts the later point, not the join block
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P19` — a mined post resolves with the snapshot it posted: its hash is the chain's new snapshot hash and its participants are the chain snapshot's participants
 - [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P20` — a post with no admissible calldata resolves with `undefined`, not a snapshot
+- [x] `UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P21` — a walk that reaches a final reduced fork whose genesis this node has not installed yet waits for its own reduction: no fork calldata, and the post resolves `undefined` without throwing

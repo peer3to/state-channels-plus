@@ -16,7 +16,7 @@ const {
 const {
     DISTRIBUTED_PROTOCOL_VERSION
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
-const DHT = require("@hyperswarm/dht");
+const DHT = require("hyperdht");
 
 const workspaceManifest = {
     version: 3,

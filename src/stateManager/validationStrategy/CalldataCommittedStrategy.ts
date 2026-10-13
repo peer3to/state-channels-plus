@@ -131,12 +131,6 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.blockForkIsDisputed(entry);
     }
-    public async blockIsBelowInstalledHistory(
-        entry: QueuedBlockEntry
-    ): Promise<BlockValidationResult> {
-        return this.blockValidationStrategy.blockIsBelowInstalledHistory(entry);
-    }
-
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {

@@ -511,9 +511,10 @@ export class LoggerUtils {
         const meta = this.getTransportMetadata(transport);
         const logger = transport.p2pManager.logger;
 
-        logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
-            ...meta
-        });
+        // An expected close (a refused, retired or replaced transport) ends
+        // one pipe; the peer may still be connected over another.
+        if (isInfoLevel) logger.info("🔌 Peer transport closed", meta);
+        else logger.warn("🔌 Peer disconnected", meta);
     }
 
     static logTransportReplacement(

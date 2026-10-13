@@ -51,10 +51,8 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P28` — duplicate malformed bytes use one charged slot and are removed once
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P29` — sourceless replay strips irrelevant malformed confirmations without transport punishment
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P30` — calldata strategy strips a merged malformed confirmation as the live strategy does
-- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P31` — With installed next height 3 and pruned free height 1 lacking its predecessor, live validation returns NOT_READY through its strategy deviation hook, without disconnect, dispute or requeue
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P32` — With older history pruned but a different block retained at height 2 below next height 3, a conflicting unlinked arrival still reaches conflictingButNotLinkedBlockDetected and returns DISCONNECT without a dispute
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P33` — With older history pruned, an unlinked arrival at the actual next height reaches blockIsNotLinkedAndIsNotFirstBlock and returns DISCONNECT without a dispute
-- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P34` — Dispute-context validation at a pruned free height bypasses the live free-height drop and reaches its impossible nonzero-linkage guard, which throws
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY

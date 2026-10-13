@@ -10,6 +10,7 @@ import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import type { StateProofVerification } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession } from "@test/harness";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
@@ -1116,4 +1117,91 @@ export async function expectInitialSyncSkipped(
     expect(await h.control(spectator).query.getForkId().request()).to.equal(
         forkId
     );
+}
+
+/**
+ * Participants 0 and 1 open the channel; participant 1 then restarts with a
+ * fresh runtime and connects, so its own initial sync runs from participant
+ * 0. That sync is held at its application step, and participant 1 stays
+ * OPENED. A fresh observer whose pairs with participant 0 are blacklisted
+ * both ways reaches only participant 1, its first chain-eligible handshake,
+ * and its initial sync request reaches participant 1 while it is OPENED.
+ * Then the held sync is released: applied (`success`) or failed
+ * (`failure`). Returns the observer, both connect results, the observer's
+ * sync targets and participant 1's status when the request arrived.
+ */
+export async function syncFromSyncingParticipant(
+    h: MathPeerTestHarness,
+    outcome: "success" | "failure"
+) {
+    await h.setup(2, { autoConnect: false });
+    await h.lifecycle.openChannelForParticipants([0, 1]);
+    await h.network.joinSelectedKey([0], String(h.channelId));
+    const participant = h.getPeer(0);
+    const founder = h.getPeer(1);
+    await founder.p2pInstance.dispose();
+    founder.logger.dispose();
+    await h.createPeer(1, founder.signer);
+    const responder = h.getPeer(1);
+    const observerIndex = h.peers.length;
+    await h.createPeer(
+        observerIndex,
+        h.signerFor(slotAccountIndex(observerIndex))
+    );
+    const observer = h.getPeer(observerIndex);
+    for (const [from, to] of [
+        [observer, participant],
+        [participant, observer]
+    ])
+        await h
+            .control(from)
+            .network.blacklistAndDisconnectPeerByAddress(to.address)
+            .request();
+    await h.rpcStub.recordSpectateSync(observer.index, { forward: true });
+    await h.rpcStub.stubCountSpectateRequests(responder.index);
+    const held = await h.rpcStub.holdSpectateSyncApplication(
+        responder.index,
+        participant.index,
+        outcome === "failure"
+    );
+    // a failed application aborts both runtimes: release only once
+    let released = false;
+    try {
+        const responderConnect =
+            responder.p2pInstance.p2pSigner.connectToChannel(h.channelId);
+        await waitFor(
+            async () => (await held.entered()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const observerConnect = observer.p2pInstance.p2pSigner.connectToChannel(
+            h.channelId
+        );
+        const observerSyncTargets = await h.rpcStub.spectateSyncTargetsWait(
+            observer.index,
+            1
+        );
+        await waitFor(
+            async () =>
+                (await h.rpcStub.getSpectateRequestCount(responder.index)) ===
+                1,
+            h.event.protocolEventTimeoutMs()
+        );
+        const responderStatusAtRequest = await h
+            .control(responder)
+            .query.getStatus()
+            .request();
+        released = true;
+        await held.release();
+        return {
+            participant,
+            responder,
+            observer,
+            responderStatusAtRequest,
+            observerSyncTargets,
+            responderConnected: await responderConnect,
+            observerConnected: await observerConnect
+        };
+    } finally {
+        if (!released) await held.release();
+    }
 }

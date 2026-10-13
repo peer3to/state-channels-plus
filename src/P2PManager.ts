@@ -350,7 +350,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         const normalizedKey = ethers.hexlify(discoveryKey);
         const waitForInitialSync = this.stateManager.status === Status.OPENED;
         const initialSync = waitForInitialSync
-            ? this.getInitialSyncPromise()
+            ? this.isInitialSyncSuccessfulWait()
             : undefined;
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
@@ -443,7 +443,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.initialSyncDeadline = undefined;
     }
 
-    private getInitialSyncPromise(): Promise<boolean> {
+    /**
+     * The outcome of this runtime's initial sync: resolves once it settles
+     * (success, abort, disposal, or the status leaving OPENED).
+     */
+    public isInitialSyncSuccessfulWait(): Promise<boolean> {
         if (this.initialSyncSettled) {
             return Promise.resolve(this.initialSyncOutcome);
         }

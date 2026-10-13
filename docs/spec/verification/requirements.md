@@ -162,7 +162,7 @@ Specification cases tested: 9/17. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T
 Specification cases tested: 3/4. Untested: T1.P2.
 
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-Specification cases tested: 8/28. Untested: T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22, T1.P25, T1.P26, T1.P27, T1.P28.
+Specification cases tested: 11/31. Untested: T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22, T1.P25, T1.P26, T1.P27, T1.P28.
 
 [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 Specification cases tested: 0/5.
@@ -219,10 +219,10 @@ Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
 Specification cases tested: 2/3. Untested: T1.P2.
 
 [`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)
-Specification cases tested: 3/6. Untested: T1.P1, T1.P3, T1.P4.
+Specification cases tested: 7/10. Untested: T1.P1, T1.P3, T1.P4.
 
 [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-Specification cases tested: 4/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 3/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
@@ -903,7 +903,7 @@ Specification cases tested: 79/79.
 Specification cases tested: 45/45.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
-Specification cases tested: 0/1.
+Specification cases tested: 2/3. Untested: T1.P1.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.
@@ -1002,13 +1002,19 @@ Specification cases tested: 2/5. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 0/6.
 
 [`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)
-Specification cases tested: 12/12.
+Specification cases tested: 14/14.
 
 [`REQ-UPG-5-YQV7MJ` (Relay retries converge without stale work)](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj)
 Specification cases tested: 8/8.
 
 [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
 Specification cases tested: 6/6.
+
+[`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
+Specification cases tested: 4/6. Untested: T1.P5, T1.P6.
+
+[`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)
+Specification cases tested: 2/2.
 
 [`REQ-WRTC-1-B12MMP` (Untrusted signaling payloads)](../specification/peer-communication/transport-upgrade.md#req-wrtc-1-b12mmp)
 Specification cases tested: 0/1.

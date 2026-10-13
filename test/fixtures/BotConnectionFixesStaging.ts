@@ -257,10 +257,12 @@ export function countFinalizedBlocks(peer: HarnessPeer): () => number {
  * the three founders omit it, so the chain holds an inbound message no
  * snapshot has consumed (the joiner's force-join dispute is suppressed).
  * Founder 1's snapshot posts are recorded; its self-removal disputes are
- * recorded and, with `forwardDisputes`, also sent.
+ * recorded and, with `forwardDisputes`, also sent. With `holdWatchdog`, its
+ * leave watchdog is held and expires only on `expireWatchdog`.
  */
 type InboundJoinStagingOptions = {
     watchdogMs?: number;
+    holdWatchdog?: boolean;
     forwardDisputes?: boolean;
     evidenceTime?: number;
 };
@@ -289,6 +291,12 @@ async function stageOmittedInboundJoin(
             await h.byzantine.stubPendingInboundInclusion(peerIndex)
         );
     }
+    const watchdog = options.holdWatchdog
+        ? await h.rpcStub.holdScheduledTasks(
+              leaver.index,
+              "channel leave watchdog"
+          )
+        : undefined;
     const posts = await recordSnapshotPostWaitResults(h, leaver);
     const disputes = await h.rpcStub.recordDisputeSubmissions(leaver.index, {
         forward: options.forwardDisputes ?? false
@@ -310,6 +318,12 @@ async function stageOmittedInboundJoin(
         includeInboundAgain: async () => {
             for (const restoreInclusion of restoreInclusions)
                 await restoreInclusion();
+        },
+        /** Runs the one leave watchdog the leave armed, as its expiry does. */
+        expireWatchdog: async () => {
+            if (!watchdog) throw new Error("Staged without holdWatchdog");
+            expect(await watchdog.heldCount()).to.equal(1);
+            await watchdog.release(true);
         }
     };
 }
@@ -481,7 +495,7 @@ export async function recordedForceJoinDeadlineDelays(
  * against it. Returns the request's refusal message ("" when served) and
  * the sync verdict.
  */
-export async function requestLatestFrom(
+async function requestLatestFrom(
     h: MathPeerTestHarness,
     requester: HarnessPeer,
     responderAddress: string
@@ -507,6 +521,85 @@ export async function requestLatestFrom(
         { source: responderAddress },
         { timeoutMs: h.event.hostExecTimeoutMs() }
     );
+}
+
+/**
+ * Peer 0 is past its initial load but lags the chain: peers 2 and 3 reduce
+ * the fork that peer 1 corrupted and the chain adopts the successor, while
+ * peer 0's own install of that successor is held at its VM write. Once
+ * peer 0's chain mirror holds the adopted successor, participant peer 2 asks
+ * it for the latest state. Returns the successor, peer 0's fork and whether
+ * it installed the successor, the request result and whether peer 0
+ * blacklisted peer 2.
+ */
+export async function latestRequestToResponderBehindChainFork(
+    h: MathPeerTestHarness
+) {
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 3 }
+    });
+    const forkId = h.activeForkId!;
+    const responder = h.getPeer(0);
+    const requester = h.getPeer(2);
+    const lagging = await h.rpcStub.holdReductionGenesisApplication(
+        responder.index,
+        { outcome: "hold", at: "setState" }
+    );
+    try {
+        await h.byzantine.submitInvalidStateTransitionBlock(1);
+        // peer 0 stays seated on the successor without installing it
+        const { newForkId: successor } = await h.dispute.resolveDisputeWait({
+            forkId,
+            maliciousPeerIndices: [1],
+            honestPeerIndices: [2, 3],
+            syntheticOnChainParticipants: 1
+        });
+        await waitFor(
+            async () =>
+                await h.execOnHost(
+                    responder,
+                    async (sm, args) =>
+                        (
+                            await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                                sm.channelId
+                            )
+                        ).forkId === args.successor,
+                    { successor }
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        const { responderForkId, isSuccessorInstalled } = await h.execOnHost(
+            responder,
+            async (sm, args) => ({
+                responderForkId: sm.forkId,
+                isSuccessorInstalled:
+                    sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        args.successor
+                    ) !== undefined
+            }),
+            { successor }
+        );
+        const { refusal, synced } = await requestLatestFrom(
+            h,
+            requester,
+            responder.address
+        );
+        return {
+            sourceForkId: forkId,
+            successor,
+            responderForkId,
+            isSuccessorInstalled,
+            refusal,
+            synced,
+            requesterBlacklisted: await h
+                .control(responder)
+                .query.isBlacklisted(requester.address)
+                .request()
+        };
+    } finally {
+        await lagging.release();
+    }
 }
 
 /**

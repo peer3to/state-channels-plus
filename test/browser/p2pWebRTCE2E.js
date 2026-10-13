@@ -202,8 +202,7 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
     );
 
     try {
-        // The genesis signer and observers must join the raw topic together.
-        // A local discovery join remains pending until another peer appears.
+        // The genesis signer and observers join the raw topic together.
         const connectResults = await Promise.race([
             Promise.all(
                 peerInstances.map((peer) =>

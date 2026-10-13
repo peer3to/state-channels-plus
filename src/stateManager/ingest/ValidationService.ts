@@ -157,24 +157,6 @@ export default class ValidationService {
             return await strategy.blockIsNotNextAndIsInTheFuture(entry);
         }
 
-        // A free height below the installed history: a compact sync proof
-        // skipped it, so the block is inconclusive, not misbehaviour - drop it
-        if (
-            strategy.enforcesLiveForkAndOrderingGates &&
-            block.height < expectedNextHeight &&
-            !this.storage.blocks.getBlock(block.forkId, block.height)
-        ) {
-            this.logger.verbose(
-                "validateBlockConfirmation - free height below the installed history",
-                {
-                    strategy: strategy.name,
-                    expectedNextHeight,
-                    block: LoggerUtils.getBlockMetadata(block, this.storage)
-                }
-            );
-            return await strategy.blockIsBelowInstalledHistory(entry);
-        }
-
         // Is linked
         if (!this.isLinked(block, this.previousOf(entry))) {
             // if first block -> wrong genesis fraud proof

@@ -1,4 +1,4 @@
-const DHT = require("@hyperswarm/dht");
+const DHT = require("hyperdht");
 const { randomInt } = require("node:crypto");
 async function createNetwork() {
     // The installed bootstrapper requires a positive port. Pick an ephemeral-range

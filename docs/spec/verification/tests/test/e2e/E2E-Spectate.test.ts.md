@@ -37,6 +37,16 @@ The kill-period case runs the real `sync` RPC, parks the requester at its window
 
 The two chain-final window cases lose participant 2's InboundMessagesProcessed delivery from before a top-up of peer 0: one holds its handler, the other drops the subscribed log so that only chain-log recovery can deliver it. That recovery can already run while participant 2 audits the dispute, before the sync. Each then lands only the reduction on chain, so the window is chain-final while the chain stays on the source fork. Peer 0 serves a payload whose window inbound list carries an extra fabricated successor of the top-up, and participant 2 accepts it. Releasing the holds replays the reduction events and, in the held case, the held chain event; the chain adopts the reduced fork. Participant 2 then holds the genuine top-up, from the replayed event or, in the dropped case, from chain-log recovery. The dropped case checks only this end state, not that the block arrives after the sync, because the recovery may run before it. The participants then author three blocks; the test decodes every new block on the reduced fork and requires one authored by participant 2 whose signature recovers to it and whose inbound blocks do not include the fabricated successor. All three stay in sync, none of them holds the fabricated block, and every inbound head equals the genuine top-up.
 
+The overlapping-sync case (staging in `test/fixtures/MonotonicSyncInstallStaging.ts`) replays the
+race of two queue-expiry probes. One source has finalized up to the tip; the other, the tip's
+author, still serves the final point below it with the tail. The observer takes the tip block from
+both sources through its control port while blind to gossip; at the queue timeout it probes both.
+Only the application of the author's answer is held: the other source's sync installs the tip, the
+observer's tip then keeps only its author's signature, and the held answer is released. Its sync
+returns true, the install entry is never called, the VM state equals the first source's, and after
+three more live blocks the observer has executed them with no fraud proof, dispute or blacklisted
+participant.
+
 ## Tests
 
 - `overlapping newcomer gossip waits for its membership proof without blacklisting`: none
@@ -65,6 +75,7 @@ The two chain-final window cases lose participant 2's InboundMessagesProcessed d
 - `should spectate successfully when joining at genesis state`: none
 - `should spectate successfully when joining at block 0`: none
 - `collapses two concurrent sync() calls for the same peer into a single on-the-wire request`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P6, INV-SPC-3-EP3TPG.T1.P1, REQ-RPC-4-9VX0B9.T1.P3, REQ-RPC-4-9VX0B9.T1.P8, INTEGRATION-TEST-RPC-6-009EGG.P9
+- `the source with the older final point answers after the other source's sync installed a later base → the local state is kept, no source is cut, and the next live blocks execute`: INV-SYNC-3-A7A2ED.T1.P33
 - `an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P3, UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P2, REQ-SYNC-1-T2589H.T1.P6
 - `serves the latest sync payload for minimum height 0 while ahead`: REQ-SYNC-1-T2589H.T1.P3, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2
 - `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17

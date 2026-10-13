@@ -440,9 +440,10 @@ export type LifecycleProbe = {
 
 export type HolepunchSocketErrorProbe = {
     /** Holepunch log messages by level, in order. */
+    debugs: string[];
     warnings: string[];
     errors: string[];
-    /** Whether each errored transport closed: [reset, other]. */
+    /** Whether each errored transport closed: [duplicate, reset, other]. */
     closed: boolean[];
 };
 
@@ -1873,11 +1874,14 @@ export class P2PManagerProbeService extends ANetworkRpcService<
      */
     public probeHolepunchSocketErrors(): HolepunchSocketErrorProbe {
         const logger = this.p2pManager.logger;
+        const debug = sinon.spy(logger, "debug");
         const warn = sinon.spy(logger, "warn");
         const error = sinon.spy(logger, "error");
         try {
+            const duplicate = this.holepunchTransport();
             const reset = this.holepunchTransport();
             const other = this.holepunchTransport();
+            duplicate.socket.emit("error", new Error("Duplicate connection"));
             reset.socket.emit(
                 "error",
                 Object.assign(new Error("connection reset by peer"), {
@@ -1890,11 +1894,17 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                     .map((args) => String(args[0]))
                     .filter((message) => message.startsWith("Holepunch"));
             return {
+                debugs: holepunchMessages(debug),
                 warnings: holepunchMessages(warn),
                 errors: holepunchMessages(error),
-                closed: [reset.transport.isClosed, other.transport.isClosed]
+                closed: [
+                    duplicate.transport.isClosed,
+                    reset.transport.isClosed,
+                    other.transport.isClosed
+                ]
             };
         } finally {
+            debug.restore();
             warn.restore();
             error.restore();
         }

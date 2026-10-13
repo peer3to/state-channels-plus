@@ -1,8 +1,10 @@
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
-import type { Hash } from "@/types/types";
+import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import * as factory from "@test/factory";
+import { stagePrunedObserver } from "@test/fixtures/PastBlockStaging";
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
@@ -578,6 +580,163 @@ describe("Unit: BlockQueueManager", () => {
             } finally {
                 await tasks.restore();
             }
+        });
+    });
+
+    describe("past blocks", function () {
+        it("gossip: a genuine block at a free height below the next height → dropped: not queued, stored or executed, no sync probe, no source cut, no fraud proof", async function () {
+            const h = MathTestSession.getHarness();
+            const { observer, source, forkId, pruned, prunedHeights } =
+                await stagePrunedObserver(h, { stripStoredHead: false });
+            const control = h.control(observer);
+            // premise - height 1 is free below the next height
+            expect(prunedHeights).to.deep.equal([0, 1]);
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(3);
+            const restoreSync = await h.rpcStub.recordSpectateSync(
+                observer.index,
+                { forward: false }
+            );
+            try {
+                expect(
+                    await control.transition
+                        .ingestBlockConfirmation(
+                            pruned.encodedBlockConfirmation,
+                            {
+                                origin: BlockOrigin.NETWORK,
+                                senderAddress: source.address
+                            }
+                        )
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await control.query.isBlockQueued(pruned.hash).request()
+                ).to.equal(false);
+                expect(
+                    await control.query.getBlockHashAt(forkId, 1).request()
+                ).to.equal(null);
+                expect(
+                    await control.query.getNextBlockHeight(forkId).request()
+                ).to.equal(3);
+                expect(
+                    await h.rpcStub.spectateSyncCallCount(observer.index)
+                ).to.equal(0);
+            } finally {
+                await restoreSync();
+            }
+            for (const peer of h.peers) {
+                expect(
+                    await control.query.isBlacklisted(peer.address).request()
+                ).to.equal(false);
+                expect(
+                    await control.query
+                        .getFraudProofType(peer.address)
+                        .request()
+                ).to.equal(null);
+            }
+        });
+
+        it("gossip: a stored block below the next height carrying signatures the observer lacks → still merges them", async function () {
+            const h = MathTestSession.getHarness();
+            const { observer, source, forkId, head } =
+                await stagePrunedObserver(h, { stripStoredHead: true });
+            const control = h.control(observer);
+            const signers = async () =>
+                (await control.query.getBlockByHeight(forkId, 2).request())!
+                    .confirmationSignerAddresses;
+            // premise - the stored head is below the next height and lacks
+            // the confirmations the full copy carries
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(3);
+            expect(await signers()).to.deep.equal([]);
+            expect(head.confirmationSignerAddresses).to.not.be.empty;
+
+            expect(
+                await control.transition
+                    .ingestBlockConfirmation(head.encodedBlockConfirmation, {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: source.address
+                    })
+                    .request()
+            ).to.equal(true);
+            await waitFor(
+                async () =>
+                    (await signers()).length ===
+                    head.confirmationSignerAddresses.length,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(await signers()).to.have.members(
+                head.confirmationSignerAddresses
+            );
+            expect(
+                await control.query.isBlacklisted(source.address).request()
+            ).to.equal(false);
+        });
+
+        it("pipeline: a live entry at a free height below the next height → settled as past before validation: no deviation hook, restore, disconnect or dispute", async function () {
+            const h = MathTestSession.getHarness();
+            const { observer, forkId } = await stagePrunedObserver(h, {
+                stripStoredHead: false
+            });
+            // a participant's block at the pruned height; its link cannot be
+            // judged without the history the proof skipped
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: 1,
+                    participant: observer.address as Address
+                },
+                previousBlockHash: factory.hash()
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockIngest(encoded)
+                .request();
+
+            expect(r.threw).to.equal(null);
+            expect(r.keepConnection).to.equal(true);
+            expect(r.firedHooks).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.deep.equal([]);
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.restoreQueuedEntryCalled).to.equal(false);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockHashAt(forkId, 1)
+                    .request()
+            ).to.equal(null);
+        });
+
+        it("dispute replay at a free height below the next height → not past: validation reaches the linkage guard", async function () {
+            const h = MathTestSession.getHarness();
+            const { observer, forkId } = await stagePrunedObserver(h, {
+                stripStoredHead: false
+            });
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: 1,
+                    participant: observer.address as Address
+                },
+                previousBlockHash: factory.hash()
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockIngest(encoded, { strategy: "dispute" })
+                .request();
+
+            // the linkage hook throws on this strategy (a replayed block is
+            // always linked), so reaching it proves the entry was not settled
+            // as past
+            expect(r.threw).to.match(
+                /blockIsNotLinkedAndIsNotFirstBlock should not be called/
+            );
         });
     });
 });

@@ -269,14 +269,6 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             "DisputeValidationStrategy - blockForkIsDisputed should not be called"
         );
     }
-    public async blockIsBelowInstalledHistory(
-        _entry: QueuedBlockEntry
-    ): Promise<BlockValidationResult> {
-        throw new Error(
-            "Dispute replay cannot reach the missing-old-block gate"
-        );
-    }
-
     public async blockIsNotNextAndIsInTheFuture(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {

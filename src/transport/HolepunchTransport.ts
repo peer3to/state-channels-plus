@@ -32,9 +32,21 @@ class HolepunchTransport extends NetworkTransport {
                 socketState: this.holepunchSocket?.readyState,
                 error
             };
+            // Hyperswarm keeps one of two connections to the same peer (two
+            // crossing dials) and destroys the other with this error.
+            if (error.message === "Duplicate connection")
+                this.p2pManager.logger.debug(
+                    "Holepunch dropped a duplicate connection",
+                    details
+                );
             // A peer that resets its connection (it left or its runtime
-            // ended) is ordinary churn, not a failure of this runtime.
-            if ((error as NodeJS.ErrnoException).code === "ECONNRESET")
+            // ended) is ordinary churn, not a failure of this runtime. A
+            // relayed (browser) socket carries only the message: dht-relay
+            // forwards the remote error's text without its code.
+            else if (
+                (error as NodeJS.ErrnoException).code === "ECONNRESET" ||
+                error.message === "connection reset by peer"
+            )
                 this.p2pManager.logger.warn(
                     "Holepunch peer reset the connection",
                     details

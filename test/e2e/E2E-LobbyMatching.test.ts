@@ -1073,6 +1073,56 @@ describe("E2E: lobby matching", function () {
         }
     });
 
+    it("defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-terms-before-commit-ack");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const advertiser = h.control(h.peers[advertiserIndex]);
+        await advertiser.stub.delayCommitReplyUntilNegotiation().request();
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            let ids: string[] = [];
+            await waitFor(
+                async () => {
+                    ids = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getChannelId().request()
+                        )
+                    );
+                    return ids.every((id) => id !== ethers.ZeroHash);
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(ids[0]).to.equal(ids[1]);
+            await waitFor(
+                () =>
+                    h
+                        .control(h.peers[selectorIndex])
+                        .query.isChannelOpen(ids[0])
+                        .request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                50
+            );
+            for (const [observer, target] of [
+                [advertiserIndex, selectorIndex],
+                [selectorIndex, advertiserIndex]
+            ]) {
+                expect(
+                    await h
+                        .control(h.peers[observer])
+                        .query.isBlacklisted(h.peers[target].address)
+                        .request(),
+                    `peer ${observer} must not blacklist peer ${target}`
+                ).to.equal(false);
+            }
+        } finally {
+            await advertiser.stub.releaseLobbyReply().request();
+        }
+    });
+
     it("rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });

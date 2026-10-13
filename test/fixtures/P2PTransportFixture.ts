@@ -77,8 +77,13 @@ export class RecordingSwarm {
     public join(
         topic: Buffer,
         options: { server: boolean; client: boolean }
-    ): void {
+    ): { flushed(): Promise<void> } {
         this.joinCalls.push({ topicHex: topic.toString("hex"), options });
+        return { flushed: async () => {} };
+    }
+
+    public status(): { refresh(): Promise<void> } {
+        return { refresh: async () => {} };
     }
 
     public leave(topic: Buffer): void {

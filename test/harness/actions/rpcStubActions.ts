@@ -1452,17 +1452,34 @@ export class RpcStubActions<
 
     /**
      * Hold a peer's own sync at its application step, keeping it in flight
-     * toward its responder. Returns the entered count and a release.
+     * toward its responder; with `responderIndex`, only that responder's
+     * answers; with `fail`, each held application fails at release. Returns
+     * the entered count, the held applications' results once they finish,
+     * and a release.
      */
-    async holdSpectateSyncApplication(peerIndex: number): Promise<{
+    async holdSpectateSyncApplication(
+        peerIndex: number,
+        responderIndex?: number,
+        fail = false
+    ): Promise<{
         entered: () => Promise<number>;
+        results: () => Promise<boolean[]>;
         release: () => Promise<void>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubHoldSpectateSyncApplication().request();
+        await ctl()
+            .stubHoldSpectateSyncApplication(
+                responderIndex === undefined
+                    ? undefined
+                    : this.harness.getPeer(responderIndex).address,
+                fail
+            )
+            .request();
         return {
             entered: async () =>
                 await ctl().getHeldSpectateSyncApplicationCount().request(),
+            results: async () =>
+                await ctl().getHeldSpectateSyncApplicationResults().request(),
             release: async () => {
                 await ctl().restoreHoldSpectateSyncApplication().request();
             }

@@ -73,6 +73,7 @@ Caller-topic matching and channel opening
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P14` — profile loss after an accepted lease with the selector's commit rejection firing first strikes both sides without a verdict
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16` — an abort against a locally signed attempt keeps the attempt observing the chain and the channel opens on the released submission
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17` — a targeted connect that ends in a remote abort strikes no one and a second connect on the same runtime opens the channel
+- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18` — the advertiser's first negotiation request that reaches the selector before its commit acknowledgement waits like other early negotiation: the pair opens one channel and neither side blacklists the other
 
 ## UNIT-TEST-LOBBY-MATCHING-SERVICE-32-R6FA7Z
 

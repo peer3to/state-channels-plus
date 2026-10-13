@@ -63,6 +63,7 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { getChecksumAddress } from "@/utils/address";
 import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
@@ -372,22 +373,43 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Hold this peer's own sync at its application step, so the sync stays
-     * in flight toward its responder after the response arrived.
+     * in flight toward its responder after the response arrived. With
+     * `responderAddress`, only the responses of that responder are held.
+     * With `fail`, a held application fails at release without applying.
+     * Each held application's result is recorded.
      */
-    public stubHoldSpectateSyncApplication(): boolean {
+    public stubHoldSpectateSyncApplication(
+        responderAddress?: Address,
+        fail = false
+    ): boolean {
         this.restoreHoldSpectateSyncApplication();
         const spectate = this.p2pManager.localRpc.spectateService;
         const original = spectate.applySyncResponse;
         this.service.stubOriginals.set("spectateSyncApplication", original);
         const gate = this.service.createGate();
         this.service.spectateSyncApplicationGate = gate;
+        const results: boolean[] = [];
+        this.service.spectateSyncApplicationResults = results;
         Reflect.set(
             spectate,
             "applySyncResponse",
-            async (...parameters: unknown[]) => {
+            async (peerAddress: string, ...parameters: unknown[]) => {
+                const apply = () =>
+                    Reflect.apply(original, spectate, [
+                        peerAddress,
+                        ...parameters
+                    ]) as Promise<boolean>;
+                if (
+                    responderAddress &&
+                    getChecksumAddress(peerAddress as Address) !==
+                        getChecksumAddress(responderAddress)
+                )
+                    return apply();
                 gate.entered += 1;
                 await gate.gate;
-                return Reflect.apply(original, spectate, parameters);
+                const result = fail ? false : await apply();
+                results.push(result);
+                return result;
             }
         );
         return true;
@@ -395,6 +417,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getHeldSpectateSyncApplicationCount(): number {
         return this.service.spectateSyncApplicationGate?.entered ?? 0;
+    }
+
+    /** Results of the held applications that finished after their release. */
+    public getHeldSpectateSyncApplicationResults(): boolean[] {
+        return this.service.spectateSyncApplicationResults;
     }
 
     public restoreHoldSpectateSyncApplication(): boolean {
@@ -3236,6 +3263,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public releaseLobbyReply(): number {
         return this.service.releaseLobbyReply();
+    }
+
+    public delayCommitReplyUntilNegotiation(): boolean {
+        this.service.delayCommitReplyUntilNegotiation();
+        return true;
     }
 
     public holdNegotiationReply(kind: HeldNegotiationReplyKind): boolean {

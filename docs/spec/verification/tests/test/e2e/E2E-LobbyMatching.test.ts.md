@@ -71,6 +71,7 @@ deadline before leaving the lobby.
 - `keeps the committed pair intact when transport upgrade completes during negotiation handoff`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P10, REQ-LOBBY-8-31BE0F.T1.P6
 - `keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P7, REQ-LOBBY-4-E0TARV.T1.P4, REQ-LOBBY-9-N894C0.T1.P1, REQ-LOBBY-2-TSWRV6.T1.P5
 - `queues early negotiation while matched initialization and ID selection are held`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P8
+- `defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18
 - `rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel`: none
 - `leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P11, REQ-LOBBY-9-N894C0.T1.P14
 - `leaves the targeted lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P12, REQ-LOBBY-9-N894C0.T1.P15

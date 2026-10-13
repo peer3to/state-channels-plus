@@ -671,6 +671,8 @@ export class StubService extends ANetworkRpcService<
     readonly controlIngestContext = new AsyncLocalStorage<true>();
     /** Gate holding this peer's own sync at its application step. */
     spectateSyncApplicationGate?: StubGate;
+    /** Results of the held sync applications, in finishing order. */
+    spectateSyncApplicationResults: boolean[] = [];
     reductionApplicationGate?: StubGate;
     /** Calls that reached the control; survives the restore that an abort triggers. */
     reductionApplicationEntered = 0;
@@ -1240,6 +1242,43 @@ export class StubService extends ANetworkRpcService<
         this.heldLobbyReply?.release();
         this.restoreLobbyReply();
         return entered;
+    }
+
+    /**
+     * The advertiser's commit acknowledgement leaves only after its matched
+     * negotiation armed its attempt, which sends its first negotiation
+     * request: the selector gets that request while its commit is in flight.
+     * `releaseLobbyReply` restores it.
+     */
+    public delayCommitReplyUntilNegotiation(): void {
+        this.restoreLobbyReply();
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const negotiation =
+            this.p2pManager.localRpc.openChannelNegotiationService;
+        const original = service.createRPCMethods.bind(service);
+        this.stubOriginals.set("lobbyCreateRpcMethods", original);
+        service.createRPCMethods = (transport) => {
+            const methods = original(transport);
+            const commit = methods.commit.bind(methods);
+            Reflect.set(
+                methods,
+                "commit",
+                async (...parameters: Parameters<typeof commit>) => {
+                    const result = commit(...parameters);
+                    await negotiation["readiness"].waitFor(
+                        () => negotiation.state.attempt !== undefined,
+                        {
+                            timeoutMs: this.sm.timeConfig.agreementTime * 1000,
+                            label: "delayed lobby commit reply"
+                        }
+                    );
+                    // the request leaves in the turn that armed the attempt
+                    await new Promise((resolve) => setImmediate(resolve));
+                    return result;
+                }
+            );
+            return methods;
+        };
     }
 
     public holdNegotiationReply(kind: HeldNegotiationReplyKind): void {
