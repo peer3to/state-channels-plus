@@ -119,43 +119,6 @@ export class NetworkController<
         );
     }
 
-    private async leaveSelectedKey(peerIndices: number[]): Promise<void> {
-        const peers = this.harness.getFilteredPeers(peerIndices);
-        // Isolation can stop discovery's retry loop. Restart this observation
-        // explicitly; joining an already observed topic is idempotent.
-        await Promise.all(
-            peers.map((peer) =>
-                this.harness
-                    .control(peer)
-                    .network.leaveSelectedKey(
-                        this.harness.channelId!.toString()
-                    )
-                    .request()
-            )
-        );
-    }
-
-    private async clearPeerIsolation(peerIndices: number[]): Promise<void> {
-        const peers = this.harness.getFilteredPeers(peerIndices);
-        await this.leaveSelectedKey(peerIndices);
-        await Promise.all(
-            peers.flatMap((peer) =>
-                this.harness.peers
-                    .filter((other) => other.index !== peer.index)
-                    .flatMap((other) => [
-                        this.harness
-                            .control(peer)
-                            .network.unblacklistPeerByAddress(other.address)
-                            .request(),
-                        this.harness
-                            .control(other)
-                            .network.unblacklistPeerByAddress(peer.address)
-                            .request()
-                    ])
-            )
-        );
-    }
-
     async joinLobby(peerIndices: number[], rendezvousTopic: string) {
         const peers = this.harness.getFilteredPeers(peerIndices);
         await Promise.all(
@@ -344,5 +307,42 @@ export class NetworkController<
             ])
         );
         peer.logger.warn("Blacklisted and disconnected to simulate timeout");
+    }
+
+    private async leaveSelectedKey(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        // Isolation can stop discovery's retry loop. Restart this observation
+        // explicitly; joining an already observed topic is idempotent.
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveSelectedKey(
+                        this.harness.channelId!.toString()
+                    )
+                    .request()
+            )
+        );
+    }
+
+    private async clearPeerIsolation(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await this.leaveSelectedKey(peerIndices);
+        await Promise.all(
+            peers.flatMap((peer) =>
+                this.harness.peers
+                    .filter((other) => other.index !== peer.index)
+                    .flatMap((other) => [
+                        this.harness
+                            .control(peer)
+                            .network.unblacklistPeerByAddress(other.address)
+                            .request(),
+                        this.harness
+                            .control(other)
+                            .network.unblacklistPeerByAddress(peer.address)
+                            .request()
+                    ])
+            )
+        );
     }
 }
