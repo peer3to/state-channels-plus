@@ -27,6 +27,7 @@ Store and tip semantics
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P10` — verified run from the zero hash into an empty store moves the tip
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P11` — verified run with a nonzero predecessor into an empty store sets no tip
 - [ ] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P12` — `headNotBehind` returns the snapshot head while the tip is absent or lower, the tip otherwise
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P13` — verified run whose predecessor is held but not the tip is persisted, tip unchanged
 
 ## UNIT-TEST-MESSAGE-BLOCK-STORAGE-2-9NC6VV
 
