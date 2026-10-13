@@ -25,17 +25,14 @@ channel), one the outbound (channel → base layer); the module contract is iden
 ## Requirements and invariants
 
 **<a id="req-msgstore-1-6me9d7"></a>`REQ-MSGSTORE-1-6ME9D7` — Content-addressed store with tip tracking.** A block is stored under the hash of
-its canonical encoding. The latest-tip pointer is the highest block delivered by a store that does
-not opt out of tip advancement: such a store moves the tip when the block's height is at least the
-tip height, so an equal-height block replaces the tip and a lower block leaves it. Height alone
-moves the tip; linkage to the current tip is not required, so the tip MAY sit above a gap in held
-history. Storing historical blocks (backfill) never moves the tip, and a store operation MAY
-explicitly opt out of tip advancement. A store of a chain-verified run moves the tip only when the
-run extends the current tip exactly — the run's predecessor hash equals the current tip's hash, or
-the zero hash when no tip is held; otherwise its blocks are persisted and the tip stays. Because the
-tip can sit above a gap, a read from it follows
-[`REQ-MSGSTORE-2-8RDXPZ`](message-blocks.md#req-msgstore-2-8rdxpz): it verifies linkage and reports the first missing block instead of
-crossing the gap. A consumer never treats a truncated range as complete: it recovers the missing
+its canonical encoding. A store that does not opt out of tip advancement moves the latest-tip
+pointer when the block's height is at least the tip height: an equal-height block replaces the tip,
+a lower block leaves it, and linkage to the current tip is not required, so the tip MAY sit above a
+gap in held history. Storing historical blocks (backfill) never moves the tip, and a store operation
+MAY explicitly opt out of tip advancement. A store of a chain-verified run moves the tip only when
+the run extends the current tip exactly — the run's predecessor hash equals the current tip's hash,
+or the zero hash when no tip is held; otherwise its blocks are persisted and the tip stays. A read
+from a tip above a gap follows [`REQ-MSGSTORE-2-8RDXPZ`](message-blocks.md#req-msgstore-2-8rdxpz) and reports the first missing block. A consumer never treats a truncated range as complete: it recovers the missing
 blocks before acting on the range, or acts without it.
 
 **<a id="req-msgstore-2-8rdxpz"></a>`REQ-MSGSTORE-2-8RDXPZ` — Linked backward range reads.** A range read walks the chain backward by
@@ -65,11 +62,9 @@ whose precondition is a complete run; the truncating read remains the range-read
 
 Range reads feed settlement proofs and sync payloads; returning a gap-bridged or height-substituted
 range would turn a storage convenience into a forged linkage claim, which is why
-[`REQ-MSGSTORE-2-8RDXPZ`](message-blocks.md#req-msgstore-2-8rdxpz) forbids it. The tip is a height pointer, not a linkage claim: it can sit above a
-gap and grants no validity to the chain itself. Only a range read proves linkage, and it reports the
-first missing block. An equal-height replacement happens only when the feed delivers a second block
-at the tip height (a reorg or a forged event); the tip takes the later one and the store does not judge
-between them.
+[`REQ-MSGSTORE-2-8RDXPZ`](message-blocks.md#req-msgstore-2-8rdxpz) forbids it. The tip is a height pointer, not a linkage claim: it grants no validity to the chain
+itself, and only a range read proves linkage. The store does not judge between two blocks at the
+tip height; the later one becomes the tip.
 
 ## Verification and test plan
 

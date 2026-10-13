@@ -10,11 +10,9 @@ message blocks. Its range cases cover a complete walk, a missing middle block, a
 hash, the zero/zero empty anchor, zero upper with a nonzero lower, a linked suffix that reaches
 zero before its requested lower boundary, and the strict all-or-nothing rejection. Each tolerant
 incomplete case asserts both the proven suffix and `missingBlockHash`. Store tests cover computed
-and supplied hashes and duplicate insertion. Tip tests use a factory-built linked chain: a higher
-block above an unheld gap moves the tip and a read from that tip reports the missing hash, an
-equal-height block replaces the tip, a `justPersist` store leaves it, and a verified run moves it
-only when the run extends the current tip. The out-of-order test shows a lower block leaves the
-tip.
+and supplied hashes and duplicate insertion. Tip tests use a factory-built linked chain and cover a
+height move above a gap with a read from that tip, equal-height replacement, `justPersist`,
+verified-run extension, and a lower block leaving the tip.
 
 ## Tests
 
