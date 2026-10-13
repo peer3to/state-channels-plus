@@ -1008,7 +1008,7 @@ Specification cases tested: 14/14.
 Specification cases tested: 8/8.
 
 [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
-Specification cases tested: 6/7. Untested: T1.P7.
+Specification cases tested: 7/8. Untested: T1.P8.
 
 [`REQ-UPG-7-61PHDB` (Discovery converges for every join order)](../specification/peer-communication/transport-upgrade.md#req-upg-7-61phdb)
 Specification cases tested: 8/8.

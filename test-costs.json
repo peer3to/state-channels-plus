@@ -15325,6 +15325,12 @@
       "peakRssGb": 0.43,
       "measurementReason": null
     },
+    "hardhat|test/transport/HolepunchLocalDht.test.ts|Holepunch discovery on a local Hyperswarm DHT does not find, dial or connect a direct peer once its leave of the topic completed": {
+      "durationMs": 7925,
+      "avgCores": 0.428,
+      "peakRssGb": 0.578,
+      "measurementReason": null
+    },
     "hardhat|test/transport/HolepunchLocalDht.test.ts|Holepunch discovery on a local Hyperswarm DHT leaves one working connection that carries requests when both runtimes release their bans and dial each other at the same moment": {
       "durationMs": 6653,
       "avgCores": 0.51,

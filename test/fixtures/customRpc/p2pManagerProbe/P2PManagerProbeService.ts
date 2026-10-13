@@ -645,6 +645,8 @@ export type HolepunchSwarmProbe = {
     dialAttempts: number;
     /** Hyperswarm's verdict on each incoming connection, in order: true refused it. */
     firewallVerdicts: boolean[];
+    /** This swarm's public key (hex). */
+    publicKey: string;
 };
 
 export type LateHandshakeProbe = {
@@ -3016,6 +3018,63 @@ export class P2PManagerProbeService extends ANetworkRpcService<
     }
 
     /**
+     * Resolve once the announce of every joined Holepunch topic and the one
+     * lookup Holepunch runs after it are done.
+     */
+    public async waitForHolepunchAnnounced(): Promise<void> {
+        const holepunch = this.p2pManager.holepunch;
+        for (const topic of holepunch.topics) {
+            const discovery = holepunch.swarm.status(topic);
+            await discovery.flushed();
+            await discovery.refresh();
+        }
+    }
+
+    /** Leave `channelId` as a Holepunch topic; resolves once the unannounce is done. */
+    public async leaveHolepunchOnLocalDht(channelId: string): Promise<void> {
+        await this.p2pManager.holepunch.leave(
+            Buffer.from(channelId.slice(2), "hex")
+        );
+    }
+
+    /** Close every open swarm connection and wait until each one closed. */
+    public async closeHolepunchSwarmConnections(): Promise<void> {
+        const connections: Set<NodeJS.EventEmitter & { destroy(): void }> =
+            this.p2pManager.holepunch.swarm.connections;
+        await Promise.all(
+            [...connections].map(
+                (connection) =>
+                    new Promise<void>((closed) => {
+                        connection.once("close", closed);
+                        connection.destroy();
+                    })
+            )
+        );
+    }
+
+    /** Resolve once the swarm has exactly `count` open connections. */
+    public async waitForOpenSwarmConnections(count: number): Promise<void> {
+        const swarm = this.p2pManager.holepunch.swarm;
+        while (swarm.connections.size !== count)
+            await new Promise<void>((update) => swarm.once("update", update));
+    }
+
+    /**
+     * Run a DHT lookup of `channelId` and return the public key (hex) of each
+     * announced peer it found. It dials nothing.
+     */
+    public async lookUpHolepunchPeerKeys(channelId: string): Promise<string[]> {
+        const keys: string[] = [];
+        const query = this.p2pManager.holepunch.swarm.dht.lookup(
+            Buffer.from(channelId.slice(2), "hex")
+        );
+        for await (const data of query)
+            for (const peer of data.peers)
+                keys.push(Buffer.from(peer.publicKey).toString("hex"));
+        return keys;
+    }
+
+    /**
      * Hold every incoming connection of the local DHT swarm until this swarm
      * dials once more. When both swarms of a pair hold, neither accepts the
      * other's dial before it dialed too, so the two dials cross.
@@ -3058,7 +3117,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                         connection.transportType === TransportType.HOLEPUNCH
                 ).length,
             dialAttempts: holepunch.swarm.stats.connects.client.attempted,
-            firewallVerdicts: [...this.firewallVerdicts]
+            firewallVerdicts: [...this.firewallVerdicts],
+            publicKey: Buffer.from(holepunch.swarm.keyPair.publicKey).toString(
+                "hex"
+            )
         };
     }
 

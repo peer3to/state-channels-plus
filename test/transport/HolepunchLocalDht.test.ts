@@ -25,6 +25,28 @@ describe("Holepunch discovery on a local Hyperswarm DHT", function () {
         }
     });
 
+    it("does not find, dial or connect a direct peer once its leave of the topic completed", async function () {
+        await fixture.joinInOrder();
+        await fixture.waitForConnections(1);
+        const leaver = await fixture.state(1);
+        expect(await fixture.announcedPeerKeys(0)).to.include(leaver.publicKey);
+
+        expect(await fixture.leave(1)).to.equal(true);
+        expect(await fixture.closeConnections(1)).to.equal(true);
+        expect(await fixture.waitForOpenSwarmConnections(0, 0)).to.equal(true);
+        const left = await fixture.state(0);
+
+        expect(await fixture.announcedPeerKeys(0)).to.not.include(
+            leaver.publicKey
+        );
+        await fixture.lookUp(0);
+        const after = await fixture.stateAfterRedialWindow(0);
+        expect(after.dialAttempts).to.equal(left.dialAttempts);
+        expect(after.swarmConnections).to.equal(left.swarmConnections);
+        expect(after.openSwarmConnections).to.equal(0);
+        expect(after.authenticatedToPeer).to.equal(0);
+    });
+
     it("neither dials nor accepts a blacklisted peer while it stays announced, and connects it once after the release", async function () {
         await fixture.joinTogether();
         await fixture.waitForConnections(1);

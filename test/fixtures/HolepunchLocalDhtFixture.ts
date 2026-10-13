@@ -8,6 +8,10 @@ import {
 } from "@test/fixtures/distributed/testTransport";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { ethers } from "ethers";
+import { setTimeout } from "node:timers/promises";
+
+/** Longer than Hyperswarm 4.17's shortest redial backoff plus its jitter (2 s). */
+const REDIAL_WINDOW_MS = 3_000;
 
 /**
  * Two runtimes whose Holepunch joins one topic on real Hyperswarm. Their DHT
@@ -44,6 +48,65 @@ export class HolepunchLocalDhtFixture {
                     .request()
             )
         );
+    }
+
+    /**
+     * Runtime 0 joins and finishes its announce and its lookup before
+     * runtime 1 joins, so only runtime 1 finds the other and dials it.
+     */
+    public async joinInOrder(): Promise<void> {
+        const bootstrapPort = this.network!.bootstrapPort;
+        await this.control(0)
+            .p2pManagerProbe.joinHolepunchOnLocalDht(this.topic, bootstrapPort)
+            .request();
+        await this.control(0)
+            .p2pManagerProbe.waitForHolepunchAnnounced()
+            .request();
+        await this.control(1)
+            .p2pManagerProbe.joinHolepunchOnLocalDht(this.topic, bootstrapPort)
+            .request();
+    }
+
+    /** Runtime `index` leaves the topic; resolves once its unannounce is done. */
+    public async leave(index: number): Promise<boolean> {
+        return this.control(index)
+            .p2pManagerProbe.leaveHolepunchOnLocalDht(this.topic)
+            .request();
+    }
+
+    /** Runtime `index` closes every swarm connection it has. */
+    public async closeConnections(index: number): Promise<boolean> {
+        return this.control(index)
+            .p2pManagerProbe.closeHolepunchSwarmConnections()
+            .request();
+    }
+
+    public async waitForOpenSwarmConnections(
+        index: number,
+        count: number
+    ): Promise<boolean> {
+        return this.control(index)
+            .p2pManagerProbe.waitForOpenSwarmConnections(count)
+            .request();
+    }
+
+    /** Public keys (hex) a DHT lookup of the topic from runtime `index` finds. */
+    public async announcedPeerKeys(index: number): Promise<string[]> {
+        return this.control(index)
+            .p2pManagerProbe.lookUpHolepunchPeerKeys(this.topic)
+            .request();
+    }
+
+    /**
+     * Runtime `index`'s state after a window longer than Hyperswarm's
+     * shortest redial backoff (at most 2 s), so a dial or connection that
+     * follows the lookup shows in it.
+     */
+    public async stateAfterRedialWindow(
+        index: number
+    ): Promise<HolepunchSwarmProbe> {
+        await setTimeout(REDIAL_WINDOW_MS);
+        return this.state(index);
     }
 
     /** Wait until each runtime saw `count` authenticated connections. */

@@ -456,6 +456,30 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return true;
     }
 
+    public async waitForHolepunchAnnounced(): Promise<boolean> {
+        await this.service.waitForHolepunchAnnounced();
+        return true;
+    }
+
+    public async leaveHolepunchOnLocalDht(channelId: string): Promise<boolean> {
+        await this.service.leaveHolepunchOnLocalDht(channelId);
+        return true;
+    }
+
+    public async closeHolepunchSwarmConnections(): Promise<boolean> {
+        await this.service.closeHolepunchSwarmConnections();
+        return true;
+    }
+
+    public async waitForOpenSwarmConnections(count: number): Promise<boolean> {
+        await this.service.waitForOpenSwarmConnections(count);
+        return true;
+    }
+
+    public lookUpHolepunchPeerKeys(channelId: string): Promise<string[]> {
+        return this.service.lookUpHolepunchPeerKeys(channelId);
+    }
+
     public holdIncomingUntilOwnDial(): boolean {
         this.service.holdIncomingUntilOwnDial();
         return true;

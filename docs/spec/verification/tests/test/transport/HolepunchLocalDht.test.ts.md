@@ -12,12 +12,18 @@ relay is involved. The fixture records Hyperswarm's firewall verdict on each inc
 without changing it. The ban case blacklists the peer through the SDK API, makes both runtimes look
 the topic up, and checks that the banning runtime dials nothing and Hyperswarm refuses the banned
 peer's dial; it then releases the ban and checks one authenticated connection that carries a
-request. The crossing case holds each runtime's incoming connections until that runtime dialed too,
-so both release dials cross; it then checks that one connection remains on each side and carries a
-request.
+request. The leave case joins runtime 0 first and runtime 1 only after runtime 0's announce and
+lookup are done, so runtime 1 is the dialer. Runtime 1 then leaves the topic through
+`Holepunch.leave`, which waits for Hyperswarm's unannounce, and closes its connection. A DHT
+lookup from runtime 0 no longer returns runtime 1's key (it did before the leave); after a topic
+lookup and a window longer than Hyperswarm's shortest redial backoff, runtime 0 made no dial and
+has no new or open connection. The crossing case holds each runtime's incoming connections until
+that runtime dialed too, so both release dials cross; it then checks that one connection remains on
+each side and carries a request.
 
 ## Tests
 
 - `connects two Node runtimes that join one topic at the same moment`: REQ-UPG-7-61PHDB.T1.P7
+- `does not find, dial or connect a direct peer once its leave of the topic completed`: REQ-UPG-6-BC60XD.T1.P7
 - `neither dials nor accepts a blacklisted peer while it stays announced, and connects it once after the release`: REQ-UPG-7-61PHDB.T1.P5
 - `leaves one working connection that carries requests when both runtimes release their bans and dial each other at the same moment`: REQ-UPG-7-61PHDB.T1.P6
