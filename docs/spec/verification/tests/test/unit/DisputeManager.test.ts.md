@@ -27,7 +27,9 @@ lands), resolves a four-peer dispute, adds one honest transition on the successo
 chain anchor is still on the parent fork; the parked posts are sent when the case ends. The dispute constructed on the
 successor is accepted by the chain's proof check, and an honest auditor accepts it (posted data, an
 existing window required) with no counter.
-Other real sends and on-chain dispute settlement are out of scope (owned by the dispute e2e
+The recoverable mid-gap case also sends for real: one inbound log is dropped on the lagging peer so
+its head sits above a missed block, its self-removal dispute is committed on chain naming the head
+the other peers hold, and the missing block is then held. Other real sends and on-chain dispute settlement are out of scope (owned by the dispute e2e
 flows). The permutation pool has since been atomized, so the formerly bundled
 comparisons (empty vs held timeout, plain vs calldata upload, each named race revert, the
 posted-auditing probe both ways) are now assigned one side per test below. Still unassigned:
@@ -106,6 +108,7 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `recoverable gap → complete, and the hash still agrees with the disputer's`: none
 - `unrecoverable gap → the auditing-data build throws`: none
 - `own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw`: REQ-MSGSTORE-1-6ME9D7.T2.P4
+- `own head above a recoverable mid-gap → the self-removal dispute names that head, recovers the missing block and lands on chain`: REQ-MSGSTORE-1-6ME9D7.T2.P6
 - `an empty state proof → latest state snapshot falls back to genesis`: none
 - `no fraud proof, settled fork → uploadDispute alone`: UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P2, UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P5, UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P3
 - `no fraud proof, unfinalized fork → uploadDisputeWithCalldata alone`: UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P3

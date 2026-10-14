@@ -29,6 +29,7 @@ import {
     MISMATCH_TIMEOUT_ERROR,
     mismatchRefusalArgs
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
+import { waitForCommittedDisputeOf } from "@test/fixtures/EvidenceComparisonStaging";
 import { stageOutboundAroundAnchor } from "@test/fixtures/HistoricSyncStaging";
 import {
     runKillSentAfterKillPeriod,
@@ -1050,6 +1051,66 @@ describe("Unit: DisputeManager", function () {
                     "the inbound run is unavailable after event recovery"
                 );
                 expect(r.threw).to.not.contain("not found in storage");
+                await dropped.release();
+            });
+
+            it("own head above a recoverable mid-gap → the self-removal dispute names that head, recovers the missing block and lands on chain", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const forkId = h.activeForkId!;
+                // exactly one log is lost, so the next one lands and moves the
+                // store head above the hole
+                const dropped = await h.rpcStub.dropInboundMessageLogs(
+                    lagging,
+                    {
+                        dropCount: 1
+                    }
+                );
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(0).address,
+                    observePeerIndices: [0, 1]
+                });
+                await dropped.waitUntilDropped();
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(1).address,
+                    observePeerIndices: [0, 1, lagging]
+                });
+                const observedInboundHead =
+                    await h.query.getLatestInboundMessageHash(0);
+                const laggingCtl = h.control(h.getPeer(lagging));
+                const before = await h.execOnHost(h.getPeer(lagging), (sm) => ({
+                    storedHead:
+                        sm.storage.inboundMessages.getLatestBlockHash() ?? null,
+                    missingBlockHash:
+                        sm.storage.inboundMessages.tryGetMessageBlocksInRange()
+                            .missingBlockHash ?? null
+                }));
+                // premise - the head is the one the other peers hold, above a
+                // block this peer never received
+                expect(before.storedHead).to.equal(observedInboundHead);
+                expect(before.missingBlockHash).to.not.equal(null);
+
+                const started = await laggingCtl.dispute
+                    .startSelfRemovalDispute(forkId)
+                    .request();
+                expect(started).to.equal(true);
+                const committed = await waitForCommittedDisputeOf(
+                    h,
+                    0,
+                    h.getPeer(lagging).address
+                );
+
+                expect(committed.input.latestInboundMessageBlockHash).to.equal(
+                    observedInboundHead
+                );
+                // the run was recovered from the base layer, not skipped
+                expect(
+                    await laggingCtl.query
+                        .getInboundMessageBlock(before.missingBlockHash!)
+                        .request()
+                ).to.not.equal(null);
                 await dropped.release();
             });
         });
