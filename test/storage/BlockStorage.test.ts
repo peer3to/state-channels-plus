@@ -441,6 +441,60 @@ describe("BlockStorage", () => {
             );
             expect(retrievedBlock1).to.not.equal(retrievedBlock2);
         });
+
+        it("mutating a block yielded by getIterator leaves the stored block unchanged", () => {
+            storageWithProxy.blocks.storeBlock(mockBlock);
+            const storedSignatureCount =
+                storageWithProxy.blocks.getBlock(mockBlockHash)!
+                    .confirmationSignatures.size;
+
+            const [yieldedBlock] = storageWithProxy.blocks.getIterator(
+                mockForkId,
+                SortOrder.DESC
+            );
+            yieldedBlock.expandSignatures([sig(), sig()]);
+
+            expect(yieldedBlock.confirmationSignatures.size).to.equal(
+                storedSignatureCount + 2
+            );
+            expect(
+                storageWithProxy.blocks.getBlock(mockBlockHash)!
+                    .confirmationSignatures.size
+            ).to.equal(storedSignatureCount);
+        });
+
+        it("getIterator through the proxy reads each block only when it is requested and yields copies", () => {
+            const forkId = factory.hash();
+            const [block0, block1, block2] = [0, 1, 2].map((height) =>
+                factory.block({
+                    header: factory.transactionHeader({
+                        forkId,
+                        transactionCnt: height
+                    })
+                })
+            );
+            for (const block of [block0, block1, block2]) {
+                storageWithProxy.blocks.storeBlock(block);
+            }
+            const storedSignatureCount = block2.confirmationSignatures.size;
+
+            const iterator = storageWithProxy.blocks.getIterator(
+                forkId,
+                SortOrder.DESC
+            );
+            const first = iterator.next().value!;
+            first.expandSignatures([sig(), sig()]);
+            // deleted after the walk started: a lazy walk no longer finds it
+            storageWithProxy.blocks.deleteBlock(block1.hash);
+            const remainingHeights = [...iterator].map((block) => block.height);
+
+            expect(first.height).to.equal(2);
+            expect(remainingHeights).to.deep.equal([0]);
+            expect(
+                storageWithProxy.blocks.getBlock(block2.hash)!
+                    .confirmationSignatures.size
+            ).to.equal(storedSignatureCount);
+        });
     });
 
     describe("CONFLICT DETECTION - _storeBlockEntryWithOptions()", () => {
