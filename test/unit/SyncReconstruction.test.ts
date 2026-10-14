@@ -24,6 +24,7 @@ import {
     stageMergedSignaturePayload,
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
+    stageUnadoptedSuccessorGenesis,
     stageUnfinalizedGenesisRun,
     storedBlocks,
     syncSpectatorFromAllRunningPeers
@@ -880,6 +881,94 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 blockZero.hash
             ]);
             expect(outcome.genesisSnapshotHash).to.equal(chainGenesis.hash);
+            expect(outcome.genesisRefusals).to.equal(0);
+        });
+
+        it("a successor fork with no block served with its genesis one second later than its origin window's kill period end → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId, successorForkId, payload, killPeriodEnd } =
+                await stageUnadoptedSuccessorGenesis(h);
+            // premise: an empty proof of a successor the chain has not
+            // adopted, its genesis dated at the origin window's kill period end
+            expect(successorForkId).to.not.equal(sourceForkId);
+            expect(payload.stateProof.milestones).to.deep.equal([]);
+            expect((await chainSnapshot(h)).forkID).to.equal(sourceForkId);
+            expect(
+                StateSnapshot.from(payload.latestForkGenesisSnapshot).timestamp
+            ).to.equal(killPeriodEnd);
+            const shifted = withGenesisTimestampShifted(payload, 1);
+            const shiftedGenesis = StateSnapshot.from(
+                shifted.latestForkGenesisSnapshot
+            );
+            expect(shiftedGenesis.timestamp).to.equal(killPeriodEnd + 1);
+
+            const outcome = await applyOnFreshRequester(
+                h,
+                successorForkId,
+                [shifted],
+                {
+                    inspect: { snapshotHashes: [String(shiftedGenesis.hash)] },
+                    countGenesisRefusals: true,
+                    // premise: the requester holds no successor genesis of
+                    // its own
+                    beforeApply: async (requester) => {
+                        expect(
+                            await h
+                                .control(requester)
+                                .query.getGenesisSnapshotHash(successorForkId)
+                                .request()
+                        ).to.equal(null);
+                    }
+                }
+            );
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: -1 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([
+                "genesis snapshot invalid"
+            ]);
+            expect(outcome.blacklisted).to.equal(true);
+            expect(outcome.genesisSnapshotHash).to.equal(null);
+            expect(outcome.snapshotsStored).to.deep.equal([false]);
+            expect(outcome.genesisRefusals).to.equal(0);
+        });
+
+        it("a successor fork with no block served with its genesis dated at its origin window's kill period end → accepted, that genesis registered, responder not blacklisted and no refusal logged", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId, successorForkId, payload, killPeriodEnd } =
+                await stageUnadoptedSuccessorGenesis(h);
+            expect(successorForkId).to.not.equal(sourceForkId);
+            expect(payload.stateProof.milestones).to.deep.equal([]);
+            expect((await chainSnapshot(h)).forkID).to.equal(sourceForkId);
+            const servedGenesis = StateSnapshot.from(
+                payload.latestForkGenesisSnapshot
+            );
+            expect(servedGenesis.timestamp).to.equal(killPeriodEnd);
+
+            const outcome = await applyOnFreshRequester(
+                h,
+                successorForkId,
+                [payload],
+                {
+                    countGenesisRefusals: true,
+                    beforeApply: async (requester) => {
+                        expect(
+                            await h
+                                .control(requester)
+                                .query.getGenesisSnapshotHash(successorForkId)
+                                .request()
+                        ).to.equal(null);
+                    }
+                }
+            );
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: -1 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(outcome.genesisSnapshotHash).to.equal(servedGenesis.hash);
             expect(outcome.genesisRefusals).to.equal(0);
         });
     });

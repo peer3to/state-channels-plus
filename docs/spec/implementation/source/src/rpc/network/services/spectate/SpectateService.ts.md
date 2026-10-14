@@ -143,6 +143,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — Every participant serves that payload to a fresh spectator's real initial sync: the sync is rejected, the spectator never reaches SYNCED, aborts and its runtime closes
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — A fresh requester applies a proof whose only run is an unfinal block 0, with the supplied genesis one second later than the chain's: the replay base is the chain-dated genesis, so the sync is rejected as `genesis snapshot invalid`, the responder is blacklisted, no genesis is registered, neither the supplied genesis nor block 0 is stored and no refusal is logged
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — The same unfinal block-0 proof with the chain's genesis: the sync is accepted, block 0 replays from the genesis and is stored, the chain's genesis is registered, the responder is not blacklisted and no refusal is logged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — A fresh requester applies an empty proof of a successor fork with no block, reduced on chain but not adopted, whose supplied genesis is one second later than the origin window's kill period end: the replay base is the genesis the walk dated from that window, so the sync is rejected as `genesis snapshot invalid`, the responder is blacklisted, no genesis is registered, the supplied genesis is not stored and no refusal is logged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — The same successor-fork empty proof with the genesis the responder reduced, dated at the origin window's kill period end: the sync is accepted, that genesis is registered, the responder is not blacklisted and no refusal is logged
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

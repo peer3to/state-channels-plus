@@ -234,8 +234,10 @@ An empty proof whose genesis the chain cannot date accepts only a supplied genes
 
 Tracked regressions:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
-covers the genesis-start case;
+covers the genesis-start case on the first fork, whose genesis the chain dates from the on-chain
+snapshot;
 [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13)
-is still an obligation, not a passing-test claim. Owners are the
+covers it on a successor fork the chain has not adopted, whose genesis the walk dates from the
+origin window's kill period end. Owners are the
 [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
 and [synchronization](../specification/peer-communication/synchronization.md).

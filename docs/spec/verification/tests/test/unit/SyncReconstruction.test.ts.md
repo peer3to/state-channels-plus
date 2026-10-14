@@ -38,6 +38,18 @@ refusal is logged. In the fifth, the honest payload is accepted with head 0, blo
 with peer 0's hash, the chain's genesis is registered, peer 0 is not blacklisted and no refusal
 is logged.
 
+The sixth and seventh genesis-index cases stage a disputed fork of four participants (peer 1
+slashed) past its kill period, with every timeout check suppressed. Only peer 0 reduces: its
+reduction lands on chain, and its adopt-only posts fail, so the chain snapshot stays on the
+source fork and the successor has no block. Peer 0's real payload for the successor's latest
+state is the empty proof; the tests check that its genesis is dated at the source window's kill
+period end read from the chain, and that the fresh requester holds no successor genesis before
+the apply. In the sixth, that genesis is moved one second
+later: the sync is rejected as `genesis snapshot invalid`, peer 0 is blacklisted, no genesis is
+registered, the shifted genesis is not stored and no refusal is logged. In the seventh, the
+honest payload is accepted with no block, the served genesis is registered, peer 0 is not
+blacklisted and no refusal is logged.
+
 ## Tests
 
 - `U54/U56: a proof from the anchor reaching the receiver's own finalized head → accepted again without installing its state again or re-running a block, stored blocks, signers and state unchanged`: REQ-SP-10-JMVHTB.T5.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P71
@@ -63,3 +75,5 @@ is logged.
 - `a fork with no block served with its genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged`: INV-SYNC-1-XCQZ28.T1.P12, REQ-SNAPSTORE-1-AJW0HJ.T2.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111
 - `an unfinal block 0 served with its fork genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and block 0 not stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113
 - `an unfinal block 0 served with the chain's fork genesis → accepted, block 0 replayed from the genesis, the chain's genesis registered and no refusal logged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
+- `a successor fork with no block served with its genesis one second later than its origin window's kill period end → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged`: INV-SYNC-1-XCQZ28.T1.P13, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115
+- `a successor fork with no block served with its genesis dated at its origin window's kill period end → accepted, that genesis registered, responder not blacklisted and no refusal logged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116

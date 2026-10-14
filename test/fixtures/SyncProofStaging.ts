@@ -9,13 +9,15 @@ import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
     proofHeights,
+    servedLatestPayload,
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
 import { postAnchor } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
+import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { getBytes } from "ethers";
+import { getBytes, ZeroHash } from "ethers";
 
 type Peer = ReturnType<MathPeerTestHarness["getPeer"]>;
 type SnapshotStruct = SyncPayload["milestoneSnapshots"][number];
@@ -644,6 +646,52 @@ export async function stageUnfinalizedGenesisRun(h: MathPeerTestHarness) {
         await h.control(responder).query.getLatestBlockHeight(forkId).request()
     ).to.equal(0);
     return { forkId, payload: await servedPayload(h, responder, forkId) };
+}
+
+/**
+ * `stageReducibleDisputedFork` (peer 1 slashed); only peer 0 gets its
+ * reduction task back, and every adopt-only post of it fails, so its
+ * reduction lands on chain while the chain snapshot stays on the source
+ * fork. Every timeout check is suppressed and no block is authored, so the
+ * successor has no block. Peer 0 serves the successor's latest state: an
+ * empty proof whose final point is the successor genesis it installed.
+ * Returns the forks, that payload and the source window's kill period end
+ * read from the chain.
+ */
+export async function stageUnadoptedSuccessorGenesis(h: MathPeerTestHarness) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    for (const index of [0, 2, 3]) await h.rpcStub.suppressTimeoutCheck(index);
+    const reducer = h.getPeer(0);
+    await h.rpcStub.failFirstAdoptionPost(
+        reducer.index,
+        Number.MAX_SAFE_INTEGER
+    );
+    await h.control(reducer).stub.restoreReductionTasks(true).request();
+    let successorForkId = ZeroHash;
+    await waitFor(async () => {
+        const { reducedForkId } = await h.channelManager.getReducedResult(
+            h.channelId,
+            sourceForkId
+        );
+        successorForkId = String(reducedForkId);
+        return successorForkId !== ZeroHash;
+    }, h.event.protocolEventTimeoutMs());
+    // every failed adopt-only post, now or from a later retry, is expected
+    await MathTestSession.expectFirstDetachedError({
+        includes: "injected adoption post send failure",
+        required: false
+    });
+    const payload = await servedLatestPayload(h, reducer, successorForkId);
+    const { killPeriodEnd } = await h.channelManager.isKillPeriodExpired(
+        h.channelId,
+        sourceForkId
+    );
+    return {
+        sourceForkId: String(sourceForkId),
+        successorForkId,
+        payload,
+        killPeriodEnd: Number(killPeriodEnd)
+    };
 }
 
 type ServedBlock = {
