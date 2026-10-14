@@ -139,7 +139,10 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
    Pinned-mode: prove the pinned fork or a successor whose verified reduction lineage contains the pinned fork.
 9. **Verify finality.** Try the latest local final state, local mirror, then chain. Missing or
    completed false local results fall through; thrown internal and RPC errors are fatal. The
-   selected full state must match the verified replay-start snapshot. A requester that already
+   selected full state must match the verified replay-start snapshot. When the replay starts at
+   the fork genesis, that snapshot is the genesis the walk dated from chain history, and the
+   supplied genesis must equal it, timestamp included; otherwise the sync aborts as an invalid
+   genesis before the supplied genesis or any state is persisted. A requester that already
    holds that matching state may use it when the responder supplies an earlier genuine state;
    those earlier supplied bytes do not replace or invalidate the requester’s verified state. Retain only the region
    checked from the successful trusted start ([state proofs](../disputes/state-proofs.md)).

@@ -226,9 +226,15 @@ canonical time, with the relevant stored snapshot and first-block commitment obs
 unauthenticated timestamp can reach a trusted consumer, its binding to chain or reduction history
 still needs correction. No new behavior is selected here.
 
+Genesis-start case closed (2026-10-14): when the replay starts at the fork genesis, the sync
+rejects a supplied genesis that differs from the genesis the walk dated from the chain, before
+anything is persisted. A replay starting past the genesis, and an empty proof whose genesis the
+chain cannot date, still accept the supplied timestamp.
+
 Tracked regressions:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
-and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
-These are obligations, not passing-test claims. Owners are the
+covers the genesis-start case;
+[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13)
+is still an obligation, not a passing-test claim. Owners are the
 [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
 and [synchronization](../specification/peer-communication/synchronization.md).

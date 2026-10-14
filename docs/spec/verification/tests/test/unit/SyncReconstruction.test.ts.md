@@ -11,8 +11,8 @@ setup before live authoring resumes. Agreement-time validation and the proof
 assertions are unchanged; this fixture timing is not a protocol default.
 Runtime verification of this timing adjustment is pending.
 
-The genesis-index cases run on three participants after one final block, and a record-only stub
-counts the requester's genesis refusal warnings across its applies. In the first, peer 0's payload
+The first two genesis-index cases run on three participants after one final block, and a
+record-only stub counts the requester's genesis refusal warnings across its applies. In the first, peer 0's payload
 is rewritten to prove block 0, one second after the genesis, committing the genesis data at its
 timestamp, re-signed by its author and both confirmers, with the genesis state as the finalized
 state; a fresh requester with no genesis of its own (checked before the apply) accepts it and
@@ -20,6 +20,13 @@ installs that result as its replay base. It stores the result by hash, its genes
 served genesis and no refusal is logged. In the second, a fresh requester applies peer 0's real
 payload twice: both applies are accepted, the served genesis stays registered and no refusal is
 logged.
+
+The third genesis-index case opens a channel of three participants with no block, with every
+participant's timeout check suppressed. Peer 0's real payload for the latest state (no pinned
+height) is the empty proof, and its genesis equals the chain's on-chain genesis; the test moves
+that genesis one second later and nothing else. A fresh requester applies it: the sync is
+rejected as `genesis snapshot invalid`, peer 0 is blacklisted, the requester registers no
+genesis for the fork, the shifted genesis is not stored by hash and no refusal is logged.
 
 ## Tests
 
@@ -43,3 +50,4 @@ logged.
 - `U85: the chain adopts a newer anchor after the sync and local progress → the rebuilt proof starts at it and needs none of the older evidence, which stays stored`: REQ-SP-10-JMVHTB.T5.P16, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86
 - `a proof finalizing a block 0 that changes no state → accepted, its result stored by hash, the served fork genesis is the registered genesis and no refusal is logged`: REQ-SNAPSTORE-1-AJW0HJ.T2.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66
 - `the same served sync response applied twice → the served fork genesis stays registered and no refusal is logged`: REQ-SNAPSTORE-1-AJW0HJ.T2.P3, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110
+- `a fork with no block served with its genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged`: INV-SYNC-1-XCQZ28.T1.P12, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111

@@ -71,7 +71,9 @@ designed flow.
 These stores back state proofs, sync serving, and dispute audit. Substituted content under a stale
 key would break every downstream commitment check — exact content addressing is the defense. Derived
 reads that silently bridged gaps would let an incomplete local view masquerade as a proven one;
-explicit-failure joins prevent that.
+explicit-failure joins prevent that. The first genesis registered for a fork is authoritative, so
+every path that registers a genesis must verify its timestamp against the authoritative date
+before storing it; a wrong date registered first would otherwise skew every later timing read.
 
 ## Verification and test plan
 
