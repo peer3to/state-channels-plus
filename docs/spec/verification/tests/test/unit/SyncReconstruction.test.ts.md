@@ -12,7 +12,7 @@ assertions are unchanged; this fixture timing is not a protocol default.
 Runtime verification of this timing adjustment is pending.
 
 The genesis-index cases run on three participants after one final block. In the first, peer 0's
-payload is rewritten to prove block 0 committing the genesis data at block 0's timestamp, signed by
+payload is rewritten to prove block 0, one second after the genesis, committing the genesis data at its timestamp, signed by
 all three, with the genesis state as the finalized state; a fresh requester with no genesis of its
 own (checked before the apply) accepts it, stores that result by hash, and its genesis index holds
 the served genesis. In the second, a fresh requester applies peer 0's real payload twice while a

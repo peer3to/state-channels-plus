@@ -693,9 +693,12 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             );
             const served = await servedBlock(h, forkId, 0);
             // block 0's result had it changed no state: the genesis data at
-            // block 0's own timestamp
+            // block 0's timestamp, one second after the genesis (the real
+            // block 0 may share the genesis second)
+            const blockZeroTimestamp = BigInt(genesis.timestamp + 1);
             const unchangedResult = StateSnapshot.from({
                 ...served.snapshot,
+                timestamp: blockZeroTimestamp,
                 snapshotData: payload.latestForkGenesisSnapshot.snapshotData
             });
             expect(unchangedResult.isGenesis).to.equal(true);
@@ -707,12 +710,20 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                     (index) => h.getPeer(index).address === served.author
                 )!
             );
+            const servedStruct = Codec.decode(
+                served.confirmation.signedBlock.encodedBlock,
+                Type.Block
+            );
             const block = await Block.fromBlockStruct(
                 {
-                    ...Codec.decode(
-                        served.confirmation.signedBlock.encodedBlock,
-                        Type.Block
-                    ),
+                    ...servedStruct,
+                    transaction: {
+                        ...servedStruct.transaction,
+                        header: {
+                            ...servedStruct.transaction.header,
+                            timestamp: blockZeroTimestamp
+                        }
+                    },
                     stateSnapshotHash: unchangedResult.hash
                 },
                 author.signer
