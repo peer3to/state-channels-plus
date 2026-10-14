@@ -21,6 +21,12 @@ const TEARDOWN_ENTRY = path.join(__dirname, "TeardownExecutorEntry.ts");
 const NATIVE_HANDLE_HOST = resolveRuntimeModulePath(
     path.join(__dirname, "NativeHandleDrainHost.ts")
 );
+/**
+ * How long the native-handle host may run: the drain bound plus generous
+ * process and TypeScript startup, below the 60s Mocha timeout.
+ */
+const NATIVE_HANDLE_HOST_EXIT_DEADLINE_MS =
+    ROOT_WORKER_DRAIN_TIMEOUT_MS + 40_000;
 const DRAIN_WARNING = "Root worker did not drain its loop and exited itself";
 // What the hidden parent logs for a worker failure, an unexpected exit included.
 const PARENT_ERROR_LOG = "Parentless worker reported an error";
@@ -29,6 +35,13 @@ type DrainWarningMeta = {
     worker?: string;
     drainTimeoutMs: number;
     diagnostics?: RootWorkerDrainDiagnostics;
+};
+
+/** What the native-handle host reports about its disposed worker. */
+type NativeHandleDrainResult = {
+    exitCode: number;
+    handleTypes: (string[] | undefined)[];
+    failures: number;
 };
 
 /** The teardown fault TeardownExecutorEntry stages, selected by the test. */
@@ -182,7 +195,7 @@ export async function assertUnrequestedDrainExitCodeIsFatal(): Promise<void> {
 export const NATIVE_HANDLE_RESULT_PREFIX = "##NATIVE_HANDLE_DRAIN## ";
 
 /** Runs the native-handle case in this process; the child-process host calls it. */
-export async function runNativeHandleDrain() {
+export async function runNativeHandleDrain(): Promise<NativeHandleDrainResult> {
     const disposed = await disposeExecutorWorker(
         TEARDOWN_ENTRY,
         "native-socket"
@@ -222,12 +235,28 @@ export async function assertNativeHandleExitsWithoutAbort(): Promise<void> {
     child.stdout.on("data", (chunk: Buffer) => {
         output += chunk.toString();
     });
-    const [code, signal] = await new Promise<[number | null, string | null]>(
-        (resolve) =>
-            child.once("exit", (exitCode, exitSignal) =>
-                resolve([exitCode, exitSignal])
-            )
-    );
+    let deadline: NodeJS.Timeout | undefined;
+    let code: number | null, signal: string | null;
+    try {
+        [code, signal] = await Promise.race([
+            new Promise<[number | null, string | null]>((resolve) =>
+                child.once("exit", (exitCode, exitSignal) =>
+                    resolve([exitCode, exitSignal])
+                )
+            ),
+            new Promise<never>((_, reject) => {
+                deadline = setTimeout(
+                    () => reject(new Error("native handle host did not exit")),
+                    NATIVE_HANDLE_HOST_EXIT_DEADLINE_MS
+                );
+            })
+        ]);
+    } finally {
+        clearTimeout(deadline);
+        // A hung host must not keep its worker and socket alive after the test.
+        if (child.exitCode === null && child.signalCode === null)
+            child.kill("SIGKILL");
+    }
     expect(signal).to.equal(null);
     expect(code).to.equal(0);
     const line = output
@@ -236,7 +265,7 @@ export async function assertNativeHandleExitsWithoutAbort(): Promise<void> {
     expect(line, "native handle host result").to.not.equal(undefined);
     const result = JSON.parse(
         line!.slice(NATIVE_HANDLE_RESULT_PREFIX.length)
-    ) as Awaited<ReturnType<typeof runNativeHandleDrain>>;
+    ) as NativeHandleDrainResult;
     expect(result.exitCode).to.equal(ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE);
     expect(result.handleTypes).to.have.length(1);
     expect(result.handleTypes[0]).to.include("udp");

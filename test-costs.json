@@ -2288,9 +2288,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching keeps a pending selection intact through a successful transport upgrade": {
-      "durationMs": 10295,
-      "avgCores": 0.915,
-      "peakRssGb": 0.626,
+      "durationMs": 7270,
+      "avgCores": 1.252,
+      "peakRssGb": 0.772,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs": {

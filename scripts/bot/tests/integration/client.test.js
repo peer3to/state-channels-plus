@@ -20,7 +20,7 @@ const { ReviewConnection } = require("../../transport");
 const { callService } = require("../../client");
 const { clientSeed } = require("../../identity");
 const { DEFAULTS } = require("../../config");
-const { request, result } = require("../fixtures/records");
+const { request, resolvedThreads, result } = require("../fixtures/records");
 /**
  * Connect deadline for the deadline cases: short against the review budget
  * (queueMs 5000 in the fixture), long enough that a loaded host still
@@ -73,6 +73,7 @@ async function fixture(body, identityRun = {}) {
         dht: network.node()
     };
     let handler,
+        onAuthenticated,
         refusing = false;
     const accept = (stream) => {
         if (refusing) {
@@ -95,10 +96,12 @@ async function fixture(body, identityRun = {}) {
             authorization
         });
         tasks.push(task);
-        task.catch(() => {});
+        task.then(() => onAuthenticated?.(connection)).catch(() => {});
     };
-    const serve = (serveHandler) => {
+    // `authenticated` sees each worker connection once it is authenticated.
+    const serve = (serveHandler, authenticated) => {
         handler = serveHandler;
+        onAuthenticated = authenticated;
         server.onConnection(accept);
     };
     // Hyperswarm retries a lost peer after at least one second, so the worker
@@ -886,6 +889,52 @@ describe("review client visible activity", function () {
             const rejectedAt = Date.now();
             assert.ok(closedAt !== undefined);
             assert.ok(rejectedAt - closedAt >= CONNECT_DEADLINE_MS);
+            assert.ok(rejectedAt - startedAt < options.limits.queueMs);
+        });
+    });
+    it("fails as unavailable at the connect deadline after the authenticated worker drops the stream mid-request and stops answering", async function () {
+        await fixture(async ({ options, serve, stopServing }) => {
+            const {
+                dropOnFirstRequestChunk
+            } = require("../fixtures/dropping-worker");
+            // Several 256 KiB chunks, so the client is still writing the
+            // request when the worker drops the stream.
+            const largeRequest = {
+                ...options.request,
+                resolvedThreads: resolvedThreads(2 * 1024 * 1024)
+            };
+            let dropped,
+                delivered = false;
+            serve(
+                async () => {
+                    delivered = true;
+                },
+                (connection) => {
+                    stopServing();
+                    dropped = dropOnFirstRequestChunk(connection);
+                }
+            );
+            const progress = [];
+            const startedAt = Date.now();
+            await assert.rejects(
+                callService({
+                    ...options,
+                    request: largeRequest,
+                    connectTimeoutMs: CONNECT_DEADLINE_MS,
+                    onProgress: (message) => progress.push(message)
+                }),
+                { code: "SERVICE_UNAVAILABLE" }
+            );
+            const rejectedAt = Date.now();
+            assert.ok(dropped, "the worker must authenticate the caller");
+            const droppedAt = await dropped;
+            assert.equal(delivered, false);
+            assert.ok(
+                progress.includes(
+                    "Review service contact lost; waiting for reconnection."
+                )
+            );
+            assert.ok(rejectedAt - droppedAt >= CONNECT_DEADLINE_MS);
             assert.ok(rejectedAt - startedAt < options.limits.queueMs);
         });
     });

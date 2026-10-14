@@ -112,22 +112,20 @@ async function callService({
                 // running deadline as it is, so a worker that keeps dropping
                 // streams cannot hold the call for the whole review budget.
                 let authenticated = false;
-                connection.on("close", () => {
-                    if (activeConnection === connection) {
-                        activeConnection = null;
-                        if (authenticated && !terminal) {
-                            armConnectDeadline();
-                            onProgress(
-                                "Review service contact lost; waiting for reconnection."
-                            );
-                        }
-                    }
-                });
+                // Every way this connection ends (close, protocol failure, a
+                // failed send) drops it here, whichever comes first.
+                const loseConnection = () => {
+                    if (activeConnection !== connection) return;
+                    activeConnection = null;
+                    if (!authenticated || terminal) return;
+                    armConnectDeadline();
+                    onProgress(
+                        "Review service contact lost; waiting for reconnection."
+                    );
+                };
+                connection.on("close", loseConnection);
                 connection.on("failure", () => {
-                    if (activeConnection === connection) {
-                        activeConnection = null;
-                        if (authenticated && !terminal) armConnectDeadline();
-                    }
+                    loseConnection();
                     connection.close();
                 });
                 connection.on("progress", (progress) => {
@@ -250,8 +248,7 @@ async function callService({
                         );
                     })
                     .catch((error) => {
-                        if (activeConnection === connection)
-                            activeConnection = null;
+                        loseConnection();
                         connection.close();
                         pool.yieldFailedOutgoingDial(stream, info, error).catch(
                             reject

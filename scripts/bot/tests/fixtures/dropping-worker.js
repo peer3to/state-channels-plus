@@ -46,4 +46,23 @@ async function streamDroppingWorker({
         }
     };
 }
-module.exports = { streamDroppingWorker };
+/**
+ * Destroys the worker side of an authenticated review connection with an
+ * error when the caller's first request chunk arrives, so the caller is still
+ * writing the rest of a multi-chunk request. Resolves with the drop time.
+ */
+function dropOnFirstRequestChunk(connection) {
+    return new Promise((resolve) => {
+        const onMessage = (message) => {
+            if (message.kind !== "REVIEW_CHUNK") return;
+            connection.peer.off("message", onMessage);
+            const droppedAt = Date.now();
+            connection.peer.stream.destroy(
+                new Error("review worker dropped the stream")
+            );
+            resolve(droppedAt);
+        };
+        connection.peer.on("message", onMessage);
+    });
+}
+module.exports = { streamDroppingWorker, dropOnFirstRequestChunk };

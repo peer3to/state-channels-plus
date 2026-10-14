@@ -17,7 +17,6 @@ import {
 } from "@/rpc/internal/node/RootWorkerRuntime";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import type { LogEntry } from "@/utils/logging/Logger";
 import { expect } from "chai";
 
 const DRAIN_WARNING = "Root worker did not drain its loop and exited itself";
@@ -68,12 +67,7 @@ async function disposeTeardownHost(fault: "closing-udp" | "leaked-timer") {
             }
         );
         // The client root's own store receives the worker's warning.
-        const logs = () =>
-            (
-                client.rootLogger["logStore"] as {
-                    getAllLogs(): LogEntry[];
-                }
-            ).getAllLogs();
+        const logs = () => client.rootLogger["logStore"].getAllLogs();
         const started = Date.now();
         await instance.dispose();
         const elapsedMs = Date.now() - started;
