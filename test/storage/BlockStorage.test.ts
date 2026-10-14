@@ -466,12 +466,7 @@ describe("BlockStorage", () => {
         it("getIterator through the proxy reads each block only when it is requested", () => {
             const forkId = factory.hash();
             const [block0, block1, block2] = [0, 1, 2].map((height) =>
-                factory.block({
-                    header: factory.transactionHeader({
-                        forkId,
-                        transactionCnt: height
-                    })
-                })
+                factory.blockAt(forkId, height)
             );
             for (const block of [block0, block1, block2]) {
                 storageWithProxy.blocks.storeBlock(block);
@@ -493,12 +488,7 @@ describe("BlockStorage", () => {
         it("mutating the second block yielded by getIterator leaves the stored block unchanged", () => {
             const forkId = factory.hash();
             const [block0, block1] = [0, 1].map((height) =>
-                factory.block({
-                    header: factory.transactionHeader({
-                        forkId,
-                        transactionCnt: height
-                    })
-                })
+                factory.blockAt(forkId, height)
             );
             storageWithProxy.blocks.storeBlock(block0);
             storageWithProxy.blocks.storeBlock(block1);
@@ -522,12 +512,7 @@ describe("BlockStorage", () => {
         it("breaking out of getIterator through the proxy finishes the walk", () => {
             const forkId = factory.hash();
             const [block0, block1, block2] = [0, 1, 2].map((height) =>
-                factory.block({
-                    header: factory.transactionHeader({
-                        forkId,
-                        transactionCnt: height
-                    })
-                })
+                factory.blockAt(forkId, height)
             );
             for (const block of [block0, block1, block2]) {
                 storageWithProxy.blocks.storeBlock(block);
@@ -672,29 +657,13 @@ describe("ForkIdToMaxHeightMap", () => {
         forkId = factory.hash();
     });
 
-    // Convenience method to create blocks with specific coordinates
-    function createBlockWithCoordinates(
-        forkId: ForkId,
-        height: BlockHeight
-    ): BlockConfirmationStruct {
-        const block = factory.block({
-            transaction: factory.transaction({
-                header: factory.transactionHeader({
-                    forkId: forkId,
-                    transactionCnt: height
-                })
-            })
-        });
-
-        // `factory.block()` returns a `Block` model (already backed by an encoded `BlockStruct`).
-        // Use its confirmation struct directly rather than trying to ABI-encode the class instance.
-        return block.blockConfirmationStruct;
-    }
-
     describe("ADDING - Max Height Updates", () => {
         it("should update max height when adding block with higher height", () => {
             // Add block at height 5
-            const blockConfirmation1 = createBlockWithCoordinates(forkId, 5);
+            const blockConfirmation1 = factory.blockAt(
+                forkId,
+                5
+            ).blockConfirmationStruct;
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation1));
 
             let heighestBlock = storage
@@ -706,7 +675,10 @@ describe("ForkIdToMaxHeightMap", () => {
             expect(heighestBlockData.coordinates.height).to.equal(5);
 
             // Add block at height 10
-            const blockConfirmation2 = createBlockWithCoordinates(forkId, 10);
+            const blockConfirmation2 = factory.blockAt(
+                forkId,
+                10
+            ).blockConfirmationStruct;
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation2));
 
             heighestBlock = storage
@@ -722,14 +694,14 @@ describe("ForkIdToMaxHeightMap", () => {
             // Add block at height 10 first
             storage.storeBlock(
                 Block.fromBlockConfirmation(
-                    createBlockWithCoordinates(forkId, 10)
+                    factory.blockAt(forkId, 10).blockConfirmationStruct
                 )
             );
 
             // Add block at height 5
             storage.storeBlock(
                 Block.fromBlockConfirmation(
-                    createBlockWithCoordinates(forkId, 5)
+                    factory.blockAt(forkId, 5).blockConfirmationStruct
                 )
             );
 
@@ -754,10 +726,16 @@ describe("ForkIdToMaxHeightMap", () => {
             const forkId2 = factory.hash();
 
             // Add blocks to different forks
-            const blockConfirmation1 = createBlockWithCoordinates(forkId1, 10);
+            const blockConfirmation1 = factory.blockAt(
+                forkId1,
+                10
+            ).blockConfirmationStruct;
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation1));
 
-            const blockConfirmation2 = createBlockWithCoordinates(forkId2, 5);
+            const blockConfirmation2 = factory.blockAt(
+                forkId2,
+                5
+            ).blockConfirmationStruct;
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation2));
 
             // Verify each fork has correct blocks
@@ -772,10 +750,10 @@ describe("ForkIdToMaxHeightMap", () => {
         it("should update max height when removing the highest block", () => {
             // Add blocks at heights 0, 5, 10
             for (const height of [0, 5, 10]) {
-                const blockConfirmation = createBlockWithCoordinates(
+                const blockConfirmation = factory.blockAt(
                     forkId,
                     height
-                );
+                ).blockConfirmationStruct;
                 storage.storeBlock(
                     Block.fromBlockConfirmation(blockConfirmation)
                 );
@@ -799,10 +777,10 @@ describe("ForkIdToMaxHeightMap", () => {
         it("should not update max height when removing non-highest block", () => {
             // Add blocks at heights 0, 5, 10
             for (const height of [0, 5, 10]) {
-                const blockConfirmation = createBlockWithCoordinates(
+                const blockConfirmation = factory.blockAt(
                     forkId,
                     height
-                );
+                ).blockConfirmationStruct;
                 storage.storeBlock(
                     Block.fromBlockConfirmation(blockConfirmation)
                 );
@@ -825,7 +803,10 @@ describe("ForkIdToMaxHeightMap", () => {
 
         it("should handle removing the only block in a fork", () => {
             // Add single block at height 5
-            const blockConfirmation = createBlockWithCoordinates(forkId, 5);
+            const blockConfirmation = factory.blockAt(
+                forkId,
+                5
+            ).blockConfirmationStruct;
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation));
 
             // Remove the block
@@ -845,10 +826,10 @@ describe("ForkIdToMaxHeightMap", () => {
         it("should return blocks in correct order", () => {
             // Add blocks in random order
             for (const height of [10, 0, 5]) {
-                const blockConfirmation = createBlockWithCoordinates(
+                const blockConfirmation = factory.blockAt(
                     forkId,
                     height
-                );
+                ).blockConfirmationStruct;
                 storage.storeBlock(
                     Block.fromBlockConfirmation(blockConfirmation)
                 );
