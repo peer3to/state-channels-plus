@@ -109,6 +109,13 @@ contract DisputeManagerFacet is StateChannelCommon {
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
 
+        // after the race checks, before the commitment is recorded: a
+        // non-canonical dispute encoding is refused, and the refusal
+        // reverts every write this upload already made in this call
+        require(
+            UtilityFacet(utilityFacetAddress).isCanonicalDispute(disputeConfirmation.signedDispute.encodedDispute),
+            ErrorNonCanonicalEncoding()
+        );
         if (isThresholdFinal) {
             //finalize the dispute window by making the evidence and kill period expire -> which sets the genesisTimestamp to the current block.timestamp
             disputeWindow.evidence.creationTimestamp = block.timestamp - _getEvidenceTime();

@@ -552,11 +552,22 @@ Block decoding is at parity on the covered paths since 2026-10-12 (partial resol
 [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v)). The client decodes `Type.Block` with
 `Codec`'s canonical round-trip rule and the contracts decode through `UtilityFacet.decodeBlock`
 with the identical rule (`ErrorNonCanonicalBlock`); `postBlockCalldata` routes through it, so the
-posted noncanonical bypass is fixed and a trailing zero word is rejected on both sides. Retained by
-engineer decision: direct `abi.decode` Block sites outside `tryDecodeBlock`/`postBlockCalldata` and
-non-block `Codec` trailing acceptance stay open under the finding; the planned complete resolution
-remains identical encoding and decoding in the contracts and TypeScript, so both accept and reject
-the same inputs. The
+posted noncanonical bypass is fixed and a trailing zero word is rejected on both sides. Since
+2026-10-14 the client rule is universal: `Codec.decode` enforces the canonical round trip for every
+type it serves, and the contract entries that decode caller-supplied bytes — channel open
+(`UtilityFacet.decodeOpenChannel`), join (`decodeJoinChannel`) and both dispute uploads
+(`UtilityFacet.isCanonicalDispute`, checked after the race checks and before the commitment is
+recorded) — reject non-canonical encodings with `ErrorNonCanonicalEncoding` before any
+state change. A nested join message whose bytes are non-canonical is skipped by membership
+observation instead of failing inbound processing. Retained under the finding: the fraud and
+dispute-fraud proof handlers' direct decodes (including nested block bytes and the placeholder
+proofs whose bytes they do not decode) — `DisputeFraudProofFacet` sits 127 bytes below the
+EIP-170 runtime limit, so per-handler canonical checks do not fit and the work is deferred to a
+separate size-budgeted design; the execution-internal message decodes in `StateChannelCommon` and
+`AStateMachine`, `DisputeUtils._getLatestBlock`, the `LocalDiamond` internal decodes, delegatecall
+result decodes, and `Codec.decodeEvmResult` over trusted local contract results also stay open.
+The planned complete resolution remains identical encoding and decoding in the contracts and
+TypeScript, so both accept and reject the same inputs. The
 ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
 functions and change no answer.
 

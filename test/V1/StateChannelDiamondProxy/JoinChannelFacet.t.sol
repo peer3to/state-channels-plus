@@ -9,6 +9,7 @@ import {
     ErrorJoinChannelConfirmationNotThresholdSigned,
     ErrorJoinChannelInvalidSignature,
     ErrorJoinChannelParticipantAlreadyExists,
+    ErrorNonCanonicalEncoding,
     ErrorTopUpBalanceParticipantNotFound,
     ErrorTopUpBalanceParticipantSlashed,
     RaceConditionJoinChannelForkDisputed,
@@ -130,6 +131,28 @@ contract JoinChannelFacetTest is Test {
         assertEq(thresholdSet[0], vm.addr(ELIGIBLE_PK));
         assertTrue(harness.depositCalled());
         assertEq(harness.depositedParticipant(), joinChannel.participant);
+    }
+
+    function test_joinChannel_nonCanonicalEncodedJoinChannel_reverts() public {
+        JoinChannel memory joinChannel = JoinChannel({
+            channelId: CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedJoinChannel = bytes.concat(abi.encode(joinChannel), abi.encode(uint256(0)));
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel = SignedJoinChannel({
+            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
+        });
+        confirmation.signatures = new bytes[](1);
+        confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
+        vm.prank(joinChannel.participant);
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
     }
 
     function test_topUpBalance_slashedParticipantRejected() public {

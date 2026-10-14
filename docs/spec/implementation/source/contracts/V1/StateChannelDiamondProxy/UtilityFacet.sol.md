@@ -36,6 +36,9 @@ Threshold and shape predicates
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P14` — `decodeBlock` accepts canonical block bytes with exact fields and re-encodes them byte-identically
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15` — `decodeBlock` rejects decodable noncanonical encodings with `ErrorNonCanonicalBlock` and malformed bytes with an ordinary revert
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16` — `tryDecodeBlock` reports canonical bytes true with exact fields and every noncanonical or malformed input false with the default block
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P17` — `decodeOpenChannel` accepts canonical bytes with exact fields and rejects decodable noncanonical encodings with `ErrorNonCanonicalEncoding`
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P18` — `decodeJoinChannel` accepts canonical bytes with exact fields and rejects decodable noncanonical encodings with `ErrorNonCanonicalEncoding`
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P19` — `isCanonicalDispute` reports canonical dispute bytes true and decodable noncanonical encodings false
 
 ## UNIT-TEST-UTILITY-FACET-2-89EC3Q
 

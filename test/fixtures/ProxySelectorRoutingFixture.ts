@@ -65,10 +65,13 @@ const notRoutedByFacet: Record<
         concatExitChannelArrays:
             "stateless helper called on the facet directly",
         decodeBlock: "stateless helper called on the facet directly",
+        decodeJoinChannel: "stateless helper called on the facet directly",
+        decodeOpenChannel: "stateless helper called on the facet directly",
         insertBytesInByteArray: "stateless helper called on the facet directly",
         insertIntoAddressArrayNoDuplicates:
             "stateless helper called on the facet directly",
         isAddressInArray: "stateless helper called on the facet directly",
+        isCanonicalDispute: "stateless helper called on the facet directly",
         retrieveSignerAddress: "stateless helper called on the facet directly",
         retrieveSignerAddresses:
             "stateless helper called on the facet directly",

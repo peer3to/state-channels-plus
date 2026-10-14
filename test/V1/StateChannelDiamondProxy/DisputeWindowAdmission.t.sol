@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import {Test} from "forge-std/Test.sol";
 import "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
 import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
+import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 
 contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeeding {
     constructor() {
@@ -128,6 +129,25 @@ contract DisputeWindowAdmissionTest is Test {
         vm.prank(disputer);
         if (withCalldata) target.uploadDisputeWithCalldata(confirmation, auditing);
         else target.uploadDispute(confirmation);
+    }
+
+    function test_uploadDispute_nonCanonicalEncodedDispute_reverts() public {
+        (DisputeConfirmation memory confirmation,) = _confirmation(false, false, inboundHead, inboundHeight);
+        confirmation.signedDispute.encodedDispute =
+            bytes.concat(confirmation.signedDispute.encodedDispute, abi.encode(uint256(0)));
+        vm.prank(disputer);
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        target.uploadDispute(confirmation);
+    }
+
+    function test_uploadDisputeWithCalldata_nonCanonicalEncodedDispute_reverts() public {
+        (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing) =
+            _confirmation(false, true, inboundHead, inboundHeight);
+        confirmation.signedDispute.encodedDispute =
+            bytes.concat(confirmation.signedDispute.encodedDispute, abi.encode(uint256(0)));
+        vm.prank(disputer);
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        target.uploadDisputeWithCalldata(confirmation, auditing);
     }
 
     function _state() internal view returns (bytes32) {

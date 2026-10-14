@@ -1,7 +1,7 @@
 import { hash as randomHash } from "../factory";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
-import { sleep } from "@/utils";
+import { Codec, Type, sleep } from "@/utils";
 import {
     checkForceJoinOnLatestBlock,
     readTrackedJoin,
@@ -57,6 +57,65 @@ describe("Unit: MembershipService", function () {
         expect(observed.result).to.equal(SourceEligibility.ABSENT);
         expect(observed.reads.chainReads).to.equal(1);
         expect(observed.blacklisted).to.equal(false);
+    });
+
+    it("an undecodable join message is skipped without failing inbound membership observation", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const skipped = ethers.Wallet.createRandom().address;
+        const observed = ethers.Wallet.createRandom().address;
+        const baseJoin = {
+            channelId: randomHash(),
+            deadlineTimestamp: 1n,
+            balance: { amount: 0n, data: "0x" }
+        };
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            (sm, args) => {
+                sm.membershipService.observeInboundMembership({
+                    messages: [
+                        {
+                            messageType: args.joinMessageType,
+                            participant: args.skipped,
+                            balance: { amount: 0n, data: "0x" },
+                            data: args.nonCanonicalData
+                        },
+                        {
+                            messageType: args.joinMessageType,
+                            participant: args.observed,
+                            balance: { amount: 0n, data: "0x" },
+                            data: args.canonicalData
+                        }
+                    ]
+                } as never);
+                return [
+                    sm.membershipService.getCachedSourceEligibility(
+                        args.skipped
+                    ),
+                    sm.membershipService.getCachedSourceEligibility(
+                        args.observed
+                    )
+                ];
+            },
+            {
+                joinMessageType: ethers.id("JOIN_CHANNEL_MESSAGE"),
+                skipped,
+                observed,
+                nonCanonicalData:
+                    Codec.encode(
+                        { ...baseJoin, participant: skipped },
+                        Type.JoinChannel
+                    ) + "00".repeat(32),
+                canonicalData: Codec.encode(
+                    { ...baseJoin, participant: observed },
+                    Type.JoinChannel
+                )
+            }
+        );
+        expect(result).to.deep.equal([
+            SourceEligibility.ABSENT,
+            SourceEligibility.ELIGIBLE
+        ]);
     });
 
     it("the storage-clear event clears chain, off-chain and slashed eligibility", async () => {

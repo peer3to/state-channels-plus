@@ -5,6 +5,7 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant,
+    ErrorNonCanonicalEncoding,
     ErrorTooManyParticipants,
     RaceConditionChannelAlreadyOpen,
     RaceConditionOpenChannelExpired
@@ -41,6 +42,16 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         confirmation.signatures[1] = sig;
 
         vm.expectRevert(abi.encodeWithSelector(ErrorDuplicateParticipant.selector, signer));
+        diamond.open(confirmation);
+    }
+
+    function test_open_nonCanonicalEncodedOpenChannel_reverts() public {
+        address signer = vm.addr(SIGNER_PK);
+        OpenChannelConfirmation memory confirmation;
+        confirmation.encodedOpenChannel = bytes.concat(_encodeOpenChannel(signer, signer), abi.encode(uint256(0)));
+        confirmation.signatures = new bytes[](2);
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         diamond.open(confirmation);
     }
 

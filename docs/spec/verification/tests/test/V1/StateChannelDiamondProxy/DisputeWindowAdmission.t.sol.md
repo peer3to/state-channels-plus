@@ -8,6 +8,8 @@ Exercises the public component behavior listed below with real contract or runti
 
 ## Tests
 
+- `test_uploadDispute_nonCanonicalEncodedDispute_reverts`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P20, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P19, REQ-DATA-1-1KNRQS.T1.P17
+- `test_uploadDisputeWithCalldata_nonCanonicalEncodedDispute_reverts`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P21, REQ-DATA-1-1KNRQS.T1.P18
 - `testFuzz_trueAbsentWindowRefused`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P7, UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P1
 - `testFuzz_trueWindowInAnotherForkRefused`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P8, UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P2
 - `testFuzz_trueWindowInAnotherChannelRefused`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P9, UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P3

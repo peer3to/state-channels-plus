@@ -330,7 +330,7 @@ Specification cases tested: 0/3.
 Specification cases tested: 2/3. Untested: T1.P3.
 
 [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-Specification cases tested: 3/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 9/18. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-DATA-2-A5HMZP` (Field and collection ordering, duplicate policy, optionality, and nested-byte…)](../specification/protocol-model/data-types.md#req-data-2-a5hmzp)
 Specification cases tested: 0/7.

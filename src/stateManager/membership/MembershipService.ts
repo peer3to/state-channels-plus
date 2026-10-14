@@ -100,9 +100,17 @@ export default class MembershipService {
     public observeInboundMembership(block: MessageBlockStruct): void {
         for (const message of block.messages) {
             if (message.messageType !== id("JOIN_CHANNEL_MESSAGE")) continue;
-            const join = Codec.decode(message.data, Type.JoinChannel);
-            this.onChainEligibility.add(getChecksumAddress(join.participant));
-            // this signer's own join is observed by ChannelJoinService: it
+            try {
+                const join = Codec.decode(message.data, Type.JoinChannel);
+                this.onChainEligibility.add(
+                    getChecksumAddress(join.participant)
+                );
+            } catch {
+                this.logger.warn(
+                    "Skipping undecodable join message in inbound block"
+                );
+                continue;
+            }
             // subscribes to the inbound and snapshot events and reads the
             // local diamond's pending set
         }

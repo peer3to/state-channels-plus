@@ -570,14 +570,12 @@ export class Codec {
     ): T {
         const abiTypes = this.getAbiTypes(type);
         const decoded = this.abiCoder.decode(abiTypes, encoded);
-        if (type === Type.Block) {
-            const reencoded = ethers
-                .hexlify(this.abiCoder.encode(abiTypes, decoded))
-                .toLowerCase();
-            const normalizedInput = ethers.hexlify(encoded).toLowerCase();
-            if (reencoded !== normalizedInput)
-                throw new Error("Non-canonical block encoding");
-        }
+        const reencoded = ethers
+            .hexlify(this.abiCoder.encode(abiTypes, decoded))
+            .toLowerCase();
+        const normalizedInput = ethers.hexlify(encoded).toLowerCase();
+        if (reencoded !== normalizedInput)
+            throw new Error("Non-canonical encoding");
         return this.ethersResultToObjectRecursive(decoded[0]) as T;
     }
 

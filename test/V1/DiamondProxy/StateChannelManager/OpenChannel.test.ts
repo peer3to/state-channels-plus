@@ -2,6 +2,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { Bytes } from "@/types/types";
 import { SignatureUtils } from "@/utils";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import {
     deployMathChannelProxyFixture,
     getSigners,
@@ -256,9 +257,16 @@ describe("StateChannelManagerProxy", function () {
                     ).then((s) => s.signature as Bytes)
                 ]
             });
-            await expect(res).to.be.revertedWith(
-                "Cryptography: Not enough valid signatures"
-            );
+            try {
+                await res;
+                expect.fail("expected revert");
+            } catch (error: unknown) {
+                expectDecodedError(
+                    error,
+                    "ErrorNonCanonicalEncoding",
+                    "expected ErrorNonCanonicalEncoding"
+                );
+            }
         });
 
         it("2 participants no signatures - fail", async function () {

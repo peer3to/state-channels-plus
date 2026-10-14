@@ -9,6 +9,7 @@
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
 - [`INV-ENFADM-1-H53AQY` (Inbound append is the only membership/value entry)](../../../../../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy)
 - [`REQ-MSG-10-7JS45Q` (Joining MUST carry the joiner's signature plus the full threshold set's…)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q)
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
 
 ## UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A
 
@@ -45,3 +46,4 @@ Admission and atomic deposit
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P26` — disputed-fork top-up revert names the rejected channel and the disputed fork as two distinct operands
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P27` — A join targeting the current snapshot passes its guard and deposits for the authorized joiner
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P28` — A same-fork join targeting a different snapshot reverts with both current and submitted snapshot hashes before any deposit
+- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P29` — a noncanonical encoded join reverts with `ErrorNonCanonicalEncoding` before any admission effect
