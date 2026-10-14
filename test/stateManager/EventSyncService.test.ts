@@ -145,16 +145,13 @@ describe("EventSyncService", function () {
             const inboundHead = await stageInboundHead(h, lagging);
             await dropped.waitUntilDropped();
             const laggingCtl = h.control(h.getPeer(lagging));
-            const tipBefore = await laggingCtl.query
-                .getLatestInboundMessageHash()
-                .request();
+            const tipBefore =
+                await h.query.getLatestInboundMessageHash(lagging);
 
             const probe = await laggingCtl.validation
                 .probeInboundRunRecovery(inboundHead)
                 .request();
-            const tipAfter = await laggingCtl.query
-                .getLatestInboundMessageHash()
-                .request();
+            const tipAfter = await h.query.getLatestInboundMessageHash(lagging);
 
             // premise - the store really was empty
             expect(tipBefore).to.equal(null);

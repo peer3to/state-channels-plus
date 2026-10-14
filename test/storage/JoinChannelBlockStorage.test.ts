@@ -353,55 +353,44 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
             expect(storage.getLatestBlockHeight()).to.equal(1);
         });
-    });
 
-    describe("headNotBehind", () => {
-        // a linked chain at heights 0..2, built from the zero hash
-        let chain: MessageBlockStruct[];
-        let chainHashes: Hash[];
+        describe("headNotBehind", () => {
+            it("an empty store returns the snapshot head at height 0", () => {
+                const snapshotHash = factory.hash();
 
-        beforeEach(() => {
-            chain = factory.linkedMessageBlocks(3, ethers.ZeroHash);
-            chainHashes = chain.map((block) =>
-                hash(Codec.encode(block, Type.MessageBlock))
-            );
-        });
+                const head = storage.headNotBehind(snapshotHash, 0);
 
-        it("an empty store returns the snapshot head at height 0", () => {
-            const snapshotHash = factory.hash();
+                expect(head).to.deep.equal({ hash: snapshotHash, height: 0 });
+            });
 
-            const head = storage.headNotBehind(snapshotHash, 0);
+            it("a tip below the snapshot returns the snapshot head", () => {
+                storage.store(chain[0]);
+                storage.store(chain[1]);
 
-            expect(head).to.deep.equal({ hash: snapshotHash, height: 0 });
-        });
+                const head = storage.headNotBehind(chainHashes[2], 2);
 
-        it("a tip below the snapshot returns the snapshot head", () => {
-            storage.store(chain[0]);
-            storage.store(chain[1]);
+                expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+            });
 
-            const head = storage.headNotBehind(chainHashes[2], 2);
+            it("a tip at the snapshot height with a different hash returns the tip", () => {
+                storage.store(chain[0]);
+                storage.store(chain[1]);
+                const snapshotHash = factory.hash();
 
-            expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
-        });
+                const head = storage.headNotBehind(snapshotHash, 1);
 
-        it("a tip at the snapshot height with a different hash returns the tip", () => {
-            storage.store(chain[0]);
-            storage.store(chain[1]);
-            const snapshotHash = factory.hash();
+                expect(head).to.deep.equal({ hash: chainHashes[1], height: 1 });
+            });
 
-            const head = storage.headNotBehind(snapshotHash, 1);
+            it("a tip above the snapshot returns the tip", () => {
+                storage.store(chain[0]);
+                storage.store(chain[1]);
+                storage.store(chain[2]);
 
-            expect(head).to.deep.equal({ hash: chainHashes[1], height: 1 });
-        });
+                const head = storage.headNotBehind(chainHashes[1], 1);
 
-        it("a tip above the snapshot returns the tip", () => {
-            storage.store(chain[0]);
-            storage.store(chain[1]);
-            storage.store(chain[2]);
-
-            const head = storage.headNotBehind(chainHashes[1], 1);
-
-            expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+                expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+            });
         });
     });
 
