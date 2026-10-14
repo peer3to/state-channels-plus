@@ -27,16 +27,20 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /** Generate a sync payload, returned encoded (or null if not provable). */
+    /**
+     * Generate a sync payload, returned encoded (or null if not provable).
+     * A null `blockHeight` pins no height: the fork's latest state, also
+     * before its first block.
+     */
     public async generateSyncPayload(
         channelId: ChannelId,
         forkId: ForkId,
-        blockHeight: number
+        blockHeight: number | null
     ): Promise<{ encodedSyncPayload: string } | null> {
         const payload = await this.service.spectate.generateSyncPayload(
             channelId,
             forkId,
-            blockHeight
+            blockHeight ?? undefined
         );
         // `Codec.encode` returns an ABI hex string (serializable across the port).
         return payload

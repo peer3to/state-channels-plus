@@ -3,7 +3,9 @@ import { reissueConfirmation } from "@test/fixtures/ChallengeBoundaryStaging";
 import { stageAnchoredSyncPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
     chainSnapshot,
-    servedPayload
+    servedLatestPayload,
+    servedPayload,
+    withGenesisTimestampShifted
 } from "@test/fixtures/MilestoneSyncStaging";
 import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
 import {
@@ -774,6 +776,45 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 { accepted: true, threw: "", head: 0 }
             ]);
             expect(outcome.genesisSnapshotHash).to.equal(genesisHash);
+            expect(outcome.genesisRefusals).to.equal(0);
+        });
+
+        it("a fork with no block served with its genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged", async function () {
+            const h = TestSession.getHarness();
+            const forkId = String(await h.lifecycle.start(3, 0));
+            // block 0 is due from the genesis on: no timeout dispute meanwhile
+            for (const index of [0, 1, 2])
+                await h.rpcStub.suppressTimeoutCheck(index);
+            const honest = await servedLatestPayload(h, h.getPeer(0), forkId);
+            // premise: no block yet, and the honest genesis is the chain's
+            expect(honest.stateProof.milestones).to.deep.equal([]);
+            const chainGenesis = await chainSnapshot(h);
+            expect(chainGenesis.isGenesis).to.equal(true);
+            expect(
+                StateSnapshot.from(honest.latestForkGenesisSnapshot).hash
+            ).to.equal(chainGenesis.hash);
+            const shifted = withGenesisTimestampShifted(honest, 1);
+            const shiftedGenesis = StateSnapshot.from(
+                shifted.latestForkGenesisSnapshot
+            );
+            expect(shiftedGenesis.timestamp).to.equal(
+                chainGenesis.timestamp + 1
+            );
+
+            const outcome = await applyOnFreshRequester(h, forkId, [shifted], {
+                inspect: { snapshotHashes: [String(shiftedGenesis.hash)] },
+                countGenesisRefusals: true
+            });
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: -1 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([
+                "genesis snapshot invalid"
+            ]);
+            expect(outcome.blacklisted).to.equal(true);
+            expect(outcome.genesisSnapshotHash).to.equal(null);
+            expect(outcome.snapshotsStored).to.deep.equal([false]);
             expect(outcome.genesisRefusals).to.equal(0);
         });
     });

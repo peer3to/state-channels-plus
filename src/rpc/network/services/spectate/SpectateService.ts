@@ -656,6 +656,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     peerAddress,
                     "served state does not reach the final point"
                 );
+            // a base at the genesis is the genesis the walk dated from the
+            // chain: the served genesis, persisted with it, must be the same
+            if (
+                base.fromIndex === 0 &&
+                base.snapshot.hash !== genesisSnapshot.hash
+            )
+                return this.rejectSync(peerAddress, "genesis snapshot invalid");
 
             // 2.10) verify outboundMessageBlocks of the latest fork from the on-chain anchor (1) when it is on
             // this fork, else from the fork genesis (2.6), to the installed state. Only the run above the
