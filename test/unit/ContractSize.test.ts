@@ -86,6 +86,47 @@ describe("contract size", function () {
         ]);
     });
 
+    it("reports forge-std console under its library-path and package source names", function () {
+        const classified = classifyContractArtifacts(
+            [
+                {
+                    fullyQualifiedName: "contracts/Adapter.sol:Adapter",
+                    artifact: { ...artifact(1), contractName: "Adapter" },
+                    sourceNames: [
+                        "contracts/Adapter.sol",
+                        "lib/forge-std/src/console.sol",
+                        "forge-std/src/console.sol"
+                    ]
+                }
+            ],
+            []
+        );
+
+        expect(productionConsoleImports(classified)).to.deep.equal([
+            "contracts/Adapter.sol:Adapter imports lib/forge-std/src/console.sol",
+            "contracts/Adapter.sol:Adapter imports forge-std/src/console.sol"
+        ]);
+    });
+
+    it("ignores a console library name nested under another path or extended past .sol", function () {
+        const classified = classifyContractArtifacts(
+            [
+                {
+                    fullyQualifiedName: "contracts/Lookalike.sol:Lookalike",
+                    artifact: { ...artifact(1), contractName: "Lookalike" },
+                    sourceNames: [
+                        "contracts/Lookalike.sol",
+                        "contracts/hardhat/console.sol",
+                        "hardhat/console.sol.bak"
+                    ]
+                }
+            ],
+            []
+        );
+
+        expect(productionConsoleImports(classified)).to.deep.equal([]);
+    });
+
     it("accepts a console import in an explicitly exempt local-only contract", function () {
         const classified = classifyContractArtifacts(
             [
@@ -198,7 +239,7 @@ describe("contract size", function () {
         );
     });
 
-    it("recognizes every explicit local or test-only exemption", async function () {
+    it("recognizes every explicit non-production exemption", async function () {
         const classified = await compiledContractArtifacts();
         expect(
             classified

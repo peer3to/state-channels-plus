@@ -23,5 +23,5 @@ Contract-size policy
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P8` — structured violation details
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9` — aggregate runtime and initcode violations in one result
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P10` — no production artifact compiles in a development console library
-- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11` — Hardhat and forge-std console libraries reached through an import are reported per contract; a non-console source under a `console` directory is not
+- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11` — Hardhat and forge-std console libraries reached through an import are reported per contract under each accepted source-name form; a non-console source under a `console` directory, or a console name nested under another path or extended past `.sol`, is not
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P12` — a console import in an explicitly exempt local-only contract is accepted
