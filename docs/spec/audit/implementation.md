@@ -913,3 +913,17 @@ scheduled after stop never runs
 timeout bounds only a probe's request. `SpectateService` returns early once disposed and does not
 blame the responder for a disposal. Both are instances of
 [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).
+
+## Browser late link after disposal — 2026-10-14
+
+**A browser local-discovery link that opens after its runtime was disposed gets no transport.** The
+link socket's open handler now closes the socket when its P2P manager is disposed, as the Node
+discovery already does for its dial
+([LocalDiscoveryServer.ts](../../../src/utils/browser/LocalDiscoveryServer.ts#L157)). Before, an
+inline browser runtime disposed while a link was still connecting built a transport on the disposed
+manager, and its logger threw `Logger "P2PManager" has been disposed` on the page (seen in the
+`run-transport-local-e2e.mjs` gate). Evidence: [`REQ-RUNTIME-3-VQXW59.T1.P83`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p83) in that gate, red before
+the fix and green after. Mirror:
+[LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md).
+Another instance of
+[`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).

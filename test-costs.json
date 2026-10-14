@@ -1904,9 +1904,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Handshake Completion should update existing profile transport on WebRTC upgrade": {
-      "durationMs": 14160,
-      "avgCores": 1.014,
-      "peakRssGb": 0.622,
+      "durationMs": 7528,
+      "avgCores": 1.217,
+      "peakRssGb": 0.759,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Time Validation should blacklist peer answering with an undecodable (junk) signature": {
@@ -4169,6 +4169,12 @@
       "durationMs": 36435,
       "avgCores": 0.527,
       "peakRssGb": 0.811,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/disputeValidation/disputeInputFields/timeout.test.ts|E2E: dispute validation / disputeInputFields / timeout bad-signature posted calldata cannot refute an honest forced timeout": {
+      "durationMs": 43052,
+      "avgCores": 0.419,
+      "peakRssGb": 0.994,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/timeout.test.ts|E2E: dispute validation / disputeInputFields / timeout dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState": {
@@ -9425,6 +9431,12 @@
       "durationMs": 2082,
       "avgCores": 0.624,
       "peakRssGb": 0.187,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration keeps a worker-targeted command waiting after that worker's stream drops before authentication, and completes it over the next connection": {
+      "durationMs": 1450,
+      "avgCores": 0.345,
+      "peakRssGb": 0.103,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration keeps identity inspection out of the admin command namespace": {
@@ -15349,10 +15361,28 @@
       "peakRssGb": 0.333,
       "measurementReason": null
     },
+    "hardhat|test/transport/InternalTransport.test.ts|InternalTransport drops a held outgoing request on close and rejects its pending call": {
+      "durationMs": 27989,
+      "avgCores": 0.169,
+      "peakRssGb": 0.252,
+      "measurementReason": null
+    },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport has a neutral transport surface without network identity metadata": {
       "durationMs": 18117,
       "avgCores": 0.249,
       "peakRssGb": 0.351,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/InternalTransport.test.ts|InternalTransport holds the next outgoing request before it reaches the port": {
+      "durationMs": 16710,
+      "avgCores": 0.217,
+      "peakRssGb": 0.214,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/InternalTransport.test.ts|InternalTransport posts a released outgoing request and settles it with the real answer": {
+      "durationMs": 15388,
+      "avgCores": 0.149,
+      "peakRssGb": 0.196,
       "measurementReason": null
     },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport preserves the supplied close reason for a pending caller": {

@@ -5,7 +5,8 @@ const path = require("path");
 const {
     DISCOVERY_AUTH_TIMEOUT_MS,
     authenticateClient,
-    derivePoolKeys
+    derivePoolKeys,
+    isDiscoveryAuthenticationFailure
 } = require("./authentication");
 const { createPool, DISCOVERY_REFRESH_MS } = require("./poolTransport");
 const { ProtocolPeer, waitForMessage } = require("./protocol");
@@ -334,12 +335,22 @@ async function runAdmin(options, dependencies = {}) {
             if (options.worker) finish(null, outcome);
             else peer.close("distributed admin operation completed");
         } catch (error) {
+            const isUnauthenticated = !workers.has(workerId);
             const retryingReverseDial =
-                !workers.has(workerId) &&
+                isUnauthenticated &&
                 (await pool.yieldFailedOutgoingDial(stream, info, error));
             if (retryingReverseDial) {
                 peer.close(
                     `distributed admin is waiting for a reverse dial after: ${error.message}`
+                );
+                return;
+            }
+            // A stream dropped before authentication, in either direction,
+            // is routine discovery churn, as for the orchestrator: the next
+            // connection retries until the discovery timeout.
+            if (isUnauthenticated && isDiscoveryAuthenticationFailure(error)) {
+                peer.close(
+                    `distributed admin is waiting for another connection after: ${error.message}`
                 );
                 return;
             }

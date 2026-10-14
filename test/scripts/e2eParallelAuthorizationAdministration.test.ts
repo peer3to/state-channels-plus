@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
+    dropOneOrchestratorStreamAsWorker,
     LeasePoolHarness,
     startLeaseWorkerServer
 } from "../fixtures/distributed/leasePool";
@@ -23,6 +24,9 @@ const {
 const {
     loadOrchestratorKeyPair
 } = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
+const {
+    loadWorkerKeyPair
+} = require("../../scripts/e2e-parallel/distributed/workerIdentity.js");
 
 describe("distributed authorization administration", function () {
     it("prints the persistent orchestrator identity through its own CLI", function () {
@@ -426,6 +430,63 @@ describe("distributed authorization administration", function () {
             });
         } finally {
             await worker.shutdown();
+            await network.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps a worker-targeted command waiting after that worker's stream drops before authentication, and completes it over the next connection", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "authorization-dropped-stream-")
+        );
+        const network = await createLocalDhtNetwork();
+        const poolSecret = `admin-dropped-${process.pid}-${Date.now()}`;
+        const adminKeyPair = loadOrchestratorKeyPair(path.join(root, "admin"));
+        const workRoot = path.join(root, "worker");
+        const name = "worker-dropped-stream";
+        const shutdowns: Array<() => Promise<void>> = [];
+        try {
+            const workerId = loadWorkerKeyPair(
+                workRoot,
+                name
+            ).publicKey.toString("hex");
+            const listing = runAdmin(
+                {
+                    command: "authorization-list",
+                    stateDir: path.join(root, "admin"),
+                    discoveryTimeoutMs: 30000,
+                    worker: workerId,
+                    role: "orchestrator",
+                    note: "",
+                    poolSecret,
+                    keyPair: adminKeyPair
+                },
+                { dht: network.createNode() }
+            );
+            listing.catch(() => undefined);
+            await dropOneOrchestratorStreamAsWorker({
+                dht: network.createNode(),
+                name,
+                poolSecret,
+                workRoot
+            });
+            const worker = await startLeaseWorkerServer({
+                dht: network.createNode(),
+                name,
+                poolSecret,
+                workRoot,
+                adminPublicKeys: [adminKeyPair.publicKey.toString("hex")],
+                allowUnlistedOrchestrators: false
+            });
+            shutdowns.push(worker.shutdown);
+
+            const listed = await listing;
+
+            expect(worker.workerId).to.equal(workerId);
+            expect(listed.worker).to.deep.equal({ name, publicKey: workerId });
+            expect(listed.accepted).to.equal(true);
+        } finally {
+            for (const shutdown of shutdowns) await shutdown();
             await network.close();
             fs.rmSync(root, { recursive: true, force: true });
         }

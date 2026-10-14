@@ -4,7 +4,7 @@ Test file: [test/transport/InternalTransport.test.ts](../../../../../../test/tra
 
 ## Overview
 
-The suite exercises actual SDK-owned components and connections. Each declaration checks its named outcome through the production implementation; shared setup and fault controls live in fixtures.
+The suite exercises actual SDK-owned components and connections. Each declaration checks its named outcome through the production implementation; shared setup and fault controls live in fixtures. Three declarations check the fixture's outgoing-request hold: a held request stays off the port while later calls are answered, a released one gets its real answer, and a close drops it unposted while the router rejects its pending call.
 
 ## Tests
 
@@ -16,3 +16,6 @@ The suite exercises actual SDK-owned components and connections. Each declaratio
 - `removes both port subscriptions exactly once on close`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P7
 - `rejects sends after the runtime connection closes`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P5
 - `preserves the supplied close reason for a pending caller`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P6
+- `holds the next outgoing request before it reaches the port`: none
+- `posts a released outgoing request and settles it with the real answer`: none
+- `drops a held outgoing request on close and rejects its pending call`: none
