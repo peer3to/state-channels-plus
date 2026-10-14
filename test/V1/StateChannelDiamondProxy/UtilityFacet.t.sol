@@ -2,8 +2,19 @@ pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
-import {ErrorNonCanonicalBlock} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
-import {Balance, Block, Message, MessageBlock} from "../../../contracts/V1/types/DataTypes.sol";
+import {
+    ErrorNonCanonicalBlock,
+    ErrorNonCanonicalEncoding
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    Balance,
+    Block,
+    JoinChannel,
+    Message,
+    MessageBlock,
+    OpenChannel
+} from "../../../contracts/V1/types/DataTypes.sol";
+import {Dispute} from "../../../contracts/V1/types/DisputeTypes.sol";
 
 // stateless property fuzz of the pure array helpers of UtilityFacet.sol, plus
 // direct cases for the signer-set report the join rejection payload is built from
@@ -268,5 +279,69 @@ contract UtilityFacetTest is Test {
             assertEq(blockData.transaction.header.participant, address(0), "failure must yield default block");
             assertEq(blockData.messageBlocks.length, 0, "failure must yield default block");
         }
+    }
+
+    function test_decodeOpenChannel_canonicalRoundTripAndRejectsNonCanonical() public {
+        OpenChannel memory openChannel;
+        openChannel.channelId = keccak256("open-channel");
+        openChannel.participants = new address[](2);
+        openChannel.participants[0] = address(0xA11CE);
+        openChannel.participants[1] = address(0xB0B);
+        openChannel.balances = new Balance[](2);
+        openChannel.balances[0] = Balance({amount: 500, data: hex"1234"});
+        openChannel.balances[1] = Balance({amount: 700, data: ""});
+        openChannel.deadlineTimestamp = 1_000_000;
+        openChannel.isAtomic = true;
+        openChannel.data = hex"abcd";
+        bytes memory canonical = abi.encode(openChannel);
+
+        OpenChannel memory decoded = util.decodeOpenChannel(canonical);
+        assertEq(decoded.channelId, openChannel.channelId, "channel id changed");
+        assertEq(decoded.participants.length, 2, "participant count changed");
+        assertEq(decoded.participants[0], openChannel.participants[0], "first participant changed");
+        assertEq(decoded.participants[1], openChannel.participants[1], "second participant changed");
+        assertEq(decoded.balances[0].amount, 500, "first balance changed");
+        assertEq(decoded.balances[1].amount, 700, "second balance changed");
+        assertEq(decoded.deadlineTimestamp, openChannel.deadlineTimestamp, "deadline changed");
+        assertTrue(decoded.isAtomic, "atomic flag changed");
+        assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeOpenChannel(bytes.concat(canonical, abi.encode(uint256(0))));
+    }
+
+    function test_decodeJoinChannel_canonicalRoundTripAndRejectsNonCanonical() public {
+        JoinChannel memory joinChannel;
+        joinChannel.channelId = keccak256("join-channel");
+        joinChannel.participant = address(0xCAFE);
+        joinChannel.deadlineTimestamp = 2_000_000;
+        joinChannel.balance = Balance({amount: 900, data: hex"99"});
+        bytes memory canonical = abi.encode(joinChannel);
+
+        JoinChannel memory decoded = util.decodeJoinChannel(canonical);
+        assertEq(decoded.channelId, joinChannel.channelId, "channel id changed");
+        assertEq(decoded.participant, joinChannel.participant, "participant changed");
+        assertEq(decoded.deadlineTimestamp, joinChannel.deadlineTimestamp, "deadline changed");
+        assertEq(decoded.balance.amount, 900, "balance changed");
+        assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeJoinChannel(bytes.concat(canonical, abi.encode(uint256(0))));
+    }
+
+    function test_isCanonicalDispute_reportsCanonicalAndNonCanonical() public view {
+        Dispute memory dispute;
+        dispute.input.channelId = keccak256("dispute-channel");
+        dispute.input.forkId = keccak256("dispute-fork");
+        dispute.input.disputer = address(0xD15);
+        dispute.postedAuditingData = true;
+        dispute.outputSnapshotDataHash = keccak256("output");
+        bytes memory canonical = abi.encode(dispute);
+
+        assertTrue(util.isCanonicalDispute(canonical), "canonical dispute must be canonical");
+        assertFalse(
+            util.isCanonicalDispute(bytes.concat(canonical, abi.encode(uint256(0)))),
+            "trailing word must not be canonical"
+        );
     }
 }

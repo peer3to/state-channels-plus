@@ -60,7 +60,7 @@ remain open there.
 ## Tests
 
 - `test_open_duplicateParticipants_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12
-- `test_open_nonCanonicalEncodedOpenChannel_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P23, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P17, REQ-DATA-1-1KNRQS.T1.P14
+- `test_open_nonCanonicalEncodedOpenChannel_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P23, REQ-DATA-1-1KNRQS.T1.P14
 - `test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13
 - `test_open_participantsAboveMaximum_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16
 - `test_open_participantsAtMaximum_passesTheBoundCheck`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17

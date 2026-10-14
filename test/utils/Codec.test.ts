@@ -676,7 +676,7 @@ describe("Codec", function () {
         );
     });
 
-    it("rejects trailing-word encodings for every Codec type", function () {
+    it("accepts canonical and rejects trailing-word encodings for every Codec type", function () {
         const cases: [
             unknown,
             Type | FraudProofType | DisputeFraudProofType
@@ -813,6 +813,11 @@ describe("Codec", function () {
         ];
         for (const [value, type] of cases) {
             const encoded = Codec.encode(value as never, type);
+            const decoded = Reflect.apply(Codec.decode, Codec, [encoded, type]);
+            expect(
+                Codec.encode(decoded, type),
+                `type ${type} must re-encode canonical bytes identically`
+            ).to.equal(encoded);
             expect(
                 () =>
                     Reflect.apply(Codec.decode, Codec, [

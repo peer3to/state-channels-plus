@@ -73,21 +73,25 @@ describe("Unit: MembershipService", function () {
             h.getPeer(0),
             (sm, args) => {
                 sm.membershipService.observeInboundMembership({
+                    previousBlockHash: args.previousBlockHash,
+                    blockHeight: 0n,
                     messages: [
                         {
                             messageType: args.joinMessageType,
                             participant: args.skipped,
                             balance: { amount: 0n, data: "0x" },
-                            data: args.nonCanonicalData
+                            data: args.encodedNonCanonicalJoin
                         },
                         {
                             messageType: args.joinMessageType,
                             participant: args.observed,
                             balance: { amount: 0n, data: "0x" },
-                            data: args.canonicalData
+                            data: args.encodedCanonicalJoin
                         }
-                    ]
-                } as never);
+                    ],
+                    totalBalance: { amount: 0n, data: "0x" },
+                    timestamp: 0n
+                });
                 return [
                     sm.membershipService.getCachedSourceEligibility(
                         args.skipped
@@ -99,14 +103,15 @@ describe("Unit: MembershipService", function () {
             },
             {
                 joinMessageType: ethers.id("JOIN_CHANNEL_MESSAGE"),
+                previousBlockHash: randomHash(),
                 skipped,
                 observed,
-                nonCanonicalData:
+                encodedNonCanonicalJoin:
                     Codec.encode(
                         { ...baseJoin, participant: skipped },
                         Type.JoinChannel
                     ) + "00".repeat(32),
-                canonicalData: Codec.encode(
+                encodedCanonicalJoin: Codec.encode(
                     { ...baseJoin, participant: observed },
                     Type.JoinChannel
                 )

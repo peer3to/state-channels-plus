@@ -86,5 +86,5 @@ by the wrapper declaration here and owns `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`.
 - `rejects unmapped encode and decode type values`: UNIT-TEST-CODEC-1-HFAA3B.P53
 - `rejects noncanonical block bytes identically to UtilityFacet`: UNIT-TEST-CODEC-1-HFAA3B.P54, INV-MIRROR-1-VAF778.T1.P11, REQ-DATA-1-1KNRQS.T1.P10, REQ-DATA-1-1KNRQS.T1.P11, REQ-DATA-1-1KNRQS.T1.P12
 - `accepts canonical block bytes across hex casing and byte arrays`: UNIT-TEST-CODEC-1-HFAA3B.P55
-- `rejects trailing-word encodings for every Codec type`: UNIT-TEST-CODEC-1-HFAA3B.P56, REQ-DATA-1-1KNRQS.T1.P13
+- `accepts canonical and rejects trailing-word encodings for every Codec type`: UNIT-TEST-CODEC-1-HFAA3B.P56, REQ-DATA-1-1KNRQS.T1.P13
 - `Block model wrappers enforce canonical decoding failure policy`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P30

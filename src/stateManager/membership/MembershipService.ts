@@ -111,6 +111,7 @@ export default class MembershipService {
                 );
                 continue;
             }
+            // this signer's own join is observed by ChannelJoinService: it
             // subscribes to the inbound and snapshot events and reads the
             // local diamond's pending set
         }

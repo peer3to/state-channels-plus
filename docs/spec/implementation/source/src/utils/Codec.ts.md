@@ -74,7 +74,7 @@ Complete codec public surface
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P53` — unmapped encode/decode type rejection
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P54` — differential corpus rejection: noncanonical block bytes throw exactly when the contract decoder rejects them
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P55` — normalized canonical acceptance: canonical block bytes decode across hex casing and byte arrays and re-encode byte-identically
-- [x] `UNIT-TEST-CODEC-1-HFAA3B.P56` — trailing-word rejection for every client codec type
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P56` — canonical acceptance with byte-identical re-encoding and trailing-word rejection for every client codec type
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P57` — DisputeInboundAnchorBehindLatestState proof round trip
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P58` — DisputeStateProofBelowOnChainAnchor proof round trip
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P59` — TimeoutSupersededByFinalState proof round trip
