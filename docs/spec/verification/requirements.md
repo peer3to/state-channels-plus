@@ -924,7 +924,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 0/6.
 
 [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../specification/storage/durability.md#req-stor-6-skp0km)
-Specification cases tested: 0/6.
+Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P4, T1.P7, T1.P16.
