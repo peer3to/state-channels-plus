@@ -617,6 +617,35 @@ export async function stageAnchoredHistory(
     };
 }
 
+/**
+ * Three participants, no snapshot post: one peer that does not write block 0
+ * is cut off first, so block 0 stays unfinal and the proof is the genesis
+ * run [0]. Every timeout check is suppressed and the two others do not post
+ * block 0 on chain (as `stageAnchoredHistory` with `cutPeer`). Returns peer
+ * 0's payload for block 0.
+ */
+export async function stageUnfinalizedGenesisRun(h: MathPeerTestHarness) {
+    await h.lifecycle.start(3, 0);
+    const forkId = String(h.activeForkId!);
+    const writer = await h.query.getNextPeerToWrite();
+    // peer 0 stays connected: it serves the payload
+    const cutIndex = writer.index === 2 ? 1 : 2;
+    const remaining = [0, 1, 2].filter((index) => index !== cutIndex);
+    for (const index of [0, 1, 2]) await h.rpcStub.suppressTimeoutCheck(index);
+    for (const index of remaining)
+        await h
+            .control(h.getPeer(index))
+            .stub.stubSuppressMaybePostBlockOnChain()
+            .request();
+    await h.network.blacklistAndDisconnectPeer(cutIndex);
+    await h.transition.advanceState({ count: 1, waitForPeers: remaining });
+    const responder = h.getPeer(0);
+    expect(
+        await h.control(responder).query.getLatestBlockHeight(forkId).request()
+    ).to.equal(0);
+    return { forkId, payload: await servedPayload(h, responder, forkId) };
+}
+
 type ServedBlock = {
     hash: string;
     author: string;

@@ -24,6 +24,7 @@ import {
     stageMergedSignaturePayload,
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
+    stageUnfinalizedGenesisRun,
     storedBlocks,
     syncSpectatorFromAllRunningPeers
 } from "@test/fixtures/SyncProofStaging";
@@ -815,6 +816,70 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(outcome.blacklisted).to.equal(true);
             expect(outcome.genesisSnapshotHash).to.equal(null);
             expect(outcome.snapshotsStored).to.deep.equal([false]);
+            expect(outcome.genesisRefusals).to.equal(0);
+        });
+
+        it("an unfinal block 0 served with its fork genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and block 0 not stored", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, payload: honest } =
+                await stageUnfinalizedGenesisRun(h);
+            // premise: the proof is the unfinal genesis run, served from the
+            // genesis state, and the honest genesis is the chain's
+            expect(proofHeights(honest)).to.deep.equal([[0]]);
+            expect(honest.latestFinalizedEncodedState).to.equal(
+                honest.latestForkGenesisEncodedState
+            );
+            const chainGenesis = await chainSnapshot(h);
+            expect(
+                StateSnapshot.from(honest.latestForkGenesisSnapshot).hash
+            ).to.equal(chainGenesis.hash);
+            const shifted = withGenesisTimestampShifted(honest, 1);
+            const shiftedGenesis = StateSnapshot.from(
+                shifted.latestForkGenesisSnapshot
+            );
+
+            const outcome = await applyOnFreshRequester(h, forkId, [shifted], {
+                inspect: {
+                    heights: [0],
+                    snapshotHashes: [String(shiftedGenesis.hash)]
+                },
+                countGenesisRefusals: true
+            });
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: -1 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([
+                "genesis snapshot invalid"
+            ]);
+            expect(outcome.blacklisted).to.equal(true);
+            expect(outcome.genesisSnapshotHash).to.equal(null);
+            expect(outcome.snapshotsStored).to.deep.equal([false]);
+            expect(outcome.blocks).to.deep.equal([null]);
+            expect(outcome.genesisRefusals).to.equal(0);
+        });
+
+        it("an unfinal block 0 served with the chain's fork genesis → accepted, block 0 replayed from the genesis, the chain's genesis registered and no refusal logged", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, payload } = await stageUnfinalizedGenesisRun(h);
+            expect(proofHeights(payload)).to.deep.equal([[0]]);
+            const chainGenesis = await chainSnapshot(h);
+            const blockZero = await servedBlock(h, forkId, 0);
+
+            const outcome = await applyOnFreshRequester(h, forkId, [payload], {
+                inspect: { heights: [0] },
+                countGenesisRefusals: true
+            });
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: 0 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(outcome.blocks.map((block) => block?.hash)).to.deep.equal([
+                blockZero.hash
+            ]);
+            expect(outcome.genesisSnapshotHash).to.equal(chainGenesis.hash);
             expect(outcome.genesisRefusals).to.equal(0);
         });
     });
