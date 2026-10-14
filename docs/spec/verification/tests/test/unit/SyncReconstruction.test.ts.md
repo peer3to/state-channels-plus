@@ -28,6 +28,16 @@ that genesis one second later and nothing else. A fresh requester applies it: th
 rejected as `genesis snapshot invalid`, peer 0 is blacklisted, the requester registers no
 genesis for the fork, the shifted genesis is not stored by hash and no refusal is logged.
 
+The fourth and fifth genesis-index cases open a channel of three participants with no block and
+suppress every timeout check. One peer that does not write block 0 (never peer 0) is cut off and
+the other two do not post on chain, so block 0 stays unfinal and peer 0's payload is the genesis
+run [0], served from the genesis state, with the chain's genesis. In the fourth, that genesis is
+moved one second later: the sync is rejected as `genesis snapshot invalid`, peer 0 is
+blacklisted, no genesis is registered, the shifted genesis and block 0 are not stored and no
+refusal is logged. In the fifth, the honest payload is accepted with head 0, block 0 is stored
+with peer 0's hash, the chain's genesis is registered, peer 0 is not blacklisted and no refusal
+is logged.
+
 ## Tests
 
 - `U54/U56: a proof from the anchor reaching the receiver's own finalized head → accepted again without installing its state again or re-running a block, stored blocks, signers and state unchanged`: REQ-SP-10-JMVHTB.T5.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P71
@@ -50,4 +60,6 @@ genesis for the fork, the shifted genesis is not stored by hash and no refusal i
 - `U85: the chain adopts a newer anchor after the sync and local progress → the rebuilt proof starts at it and needs none of the older evidence, which stays stored`: REQ-SP-10-JMVHTB.T5.P16, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86
 - `a proof finalizing a block 0 that changes no state → accepted, its result stored by hash, the served fork genesis is the registered genesis and no refusal is logged`: REQ-SNAPSTORE-1-AJW0HJ.T2.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66
 - `the same served sync response applied twice → the served fork genesis stays registered and no refusal is logged`: REQ-SNAPSTORE-1-AJW0HJ.T2.P3, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110
-- `a fork with no block served with its genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged`: INV-SYNC-1-XCQZ28.T1.P12, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111
+- `a fork with no block served with its genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and no refusal logged`: INV-SYNC-1-XCQZ28.T1.P12, REQ-SNAPSTORE-1-AJW0HJ.T2.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111
+- `an unfinal block 0 served with its fork genesis one second later than the chain's → rejected as an invalid genesis, responder blacklisted, no genesis registered or stored and block 0 not stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113
+- `an unfinal block 0 served with the chain's fork genesis → accepted, block 0 replayed from the genesis, the chain's genesis registered and no refusal logged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
