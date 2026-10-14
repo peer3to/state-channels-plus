@@ -21,6 +21,12 @@ const { callService } = require("../../client");
 const { clientSeed } = require("../../identity");
 const { DEFAULTS } = require("../../config");
 const { request, result } = require("../fixtures/records");
+/**
+ * Connect deadline for the deadline cases: short against the review budget
+ * (queueMs 5000 in the fixture), long enough that a loaded host still
+ * authenticates a healthy worker in time.
+ */
+const CONNECT_DEADLINE_MS = 1500;
 async function fixture(body, identityRun = {}) {
     const network = await createNetwork(),
         root = await fs.mkdtemp(path.join(os.tmpdir(), "review-client-"));
@@ -66,30 +72,56 @@ async function fixture(body, identityRun = {}) {
         limits,
         dht: network.node()
     };
-    const serve = (handler) =>
-        server.onConnection((stream) => {
-            const connection = new ReviewConnection(stream, limits);
-            connections.push(connection);
-            connection.on("failure", () => connection.close());
-            connection.on("payload", (message) => {
-                const task = handler(connection, message);
-                tasks.push(task);
-                task.catch(() => connection.close());
-            });
-            const task = connection.authenticate({
-                server: true,
-                authKey: keys.authKey,
-                localKey: server.publicKey,
-                remoteKey: stream.remotePublicKey,
-                authorization
-            });
+    let handler,
+        refusing = false;
+    const accept = (stream) => {
+        if (refusing) {
+            stream.destroy();
+            return;
+        }
+        const connection = new ReviewConnection(stream, limits);
+        connections.push(connection);
+        connection.on("failure", () => connection.close());
+        connection.on("payload", (message) => {
+            const task = handler(connection, message);
             tasks.push(task);
-            task.catch(() => {});
+            task.catch(() => connection.close());
         });
+        const task = connection.authenticate({
+            server: true,
+            authKey: keys.authKey,
+            localKey: server.publicKey,
+            remoteKey: stream.remotePublicKey,
+            authorization
+        });
+        tasks.push(task);
+        task.catch(() => {});
+    };
+    const serve = (serveHandler) => {
+        handler = serveHandler;
+        server.onConnection(accept);
+    };
+    // Hyperswarm retries a lost peer after at least one second, so the worker
+    // dials the caller back directly to be reachable again within a short
+    // connect deadline.
+    const redial = () => {
+        const stream = server.swarm.dht.connect(key.publicKey, {
+            keyPair: server.swarm.keyPair
+        });
+        stream.on("error", () => {});
+        stream.once("open", () => accept(stream));
+    };
+    // The worker stops answering: it closes every later stream before
+    // authentication.
+    const stopServing = () => {
+        refusing = true;
+    };
     try {
         await body({
             options,
             serve,
+            redial,
+            stopServing,
             input,
             originalSeed,
             network,
@@ -764,7 +796,7 @@ describe("review client visible activity", function () {
                     ...options,
                     // No worker announces this pool's review topic.
                     secret: "no-review-worker",
-                    connectTimeoutMs: 300
+                    connectTimeoutMs: CONNECT_DEADLINE_MS
                 }),
                 { code: "SERVICE_UNAVAILABLE" }
             );
@@ -775,7 +807,10 @@ describe("review client visible activity", function () {
         // The worker's pool accepts the stream but no review service answers it.
         await fixture(async ({ options }) => {
             await assert.rejects(
-                callService({ ...options, connectTimeoutMs: 300 }),
+                callService({
+                    ...options,
+                    connectTimeoutMs: CONNECT_DEADLINE_MS
+                }),
                 { code: "SERVICE_UNAVAILABLE" }
             );
         });
@@ -783,7 +818,9 @@ describe("review client visible activity", function () {
     it("keeps a review whose worker authenticated in time running past the connect deadline", async function () {
         await fixture(async ({ options, serve, input }) => {
             serve(async (connection, message) => {
-                await new Promise((resolve) => setTimeout(resolve, 600));
+                await new Promise((resolve) =>
+                    setTimeout(resolve, CONNECT_DEADLINE_MS * 2)
+                );
                 await connection.send(
                     "result",
                     message.requestId,
@@ -793,8 +830,87 @@ describe("review client visible activity", function () {
             });
             const value = await callService({
                 ...options,
-                connectTimeoutMs: 300
+                connectTimeoutMs: CONNECT_DEADLINE_MS
             });
+            assert.equal(value.executionId, result(input).executionId);
+        });
+    });
+    it("fails as unavailable at the connect deadline while a worker keeps dropping streams before authentication", async function () {
+        await fixture(async ({ options, network }) => {
+            const {
+                streamDroppingWorker
+            } = require("../fixtures/dropping-worker");
+            const worker = await streamDroppingWorker({
+                dht: network.node(),
+                callerKey: Buffer.from(options.request.caller, "hex")
+            });
+            try {
+                const startedAt = Date.now();
+                await assert.rejects(
+                    callService({
+                        ...options,
+                        // Only the dropping worker reaches this caller.
+                        secret: "dropping-review-worker",
+                        serverKey: worker.publicKey.toString("hex"),
+                        connectTimeoutMs: CONNECT_DEADLINE_MS
+                    }),
+                    { code: "SERVICE_UNAVAILABLE" }
+                );
+                const rejectedAt = Date.now();
+                assert.ok(
+                    worker.drops.some((droppedAt) => droppedAt < rejectedAt),
+                    "the worker must drop a stream before the deadline"
+                );
+                assert.ok(rejectedAt - startedAt < options.limits.queueMs);
+            } finally {
+                await worker.close();
+            }
+        });
+    });
+    it("fails as unavailable at the connect deadline after the authenticated worker closes and stops answering", async function () {
+        await fixture(async ({ options, serve, stopServing }) => {
+            let closedAt;
+            serve(async (connection) => {
+                closedAt = Date.now();
+                stopServing();
+                connection.close();
+            });
+            const startedAt = Date.now();
+            await assert.rejects(
+                callService({
+                    ...options,
+                    connectTimeoutMs: CONNECT_DEADLINE_MS
+                }),
+                { code: "SERVICE_UNAVAILABLE" }
+            );
+            const rejectedAt = Date.now();
+            assert.ok(closedAt !== undefined);
+            assert.ok(rejectedAt - closedAt >= CONNECT_DEADLINE_MS);
+            assert.ok(rejectedAt - startedAt < options.limits.queueMs);
+        });
+    });
+    it("returns the result when the authenticated worker closes and is reachable again within the connect deadline", async function () {
+        await fixture(async ({ options, serve, redial, input }) => {
+            let requests = 0;
+            serve(async (connection, message) => {
+                requests++;
+                if (requests === 1) {
+                    connection.close();
+                    redial();
+                    return;
+                }
+                await connection.send(
+                    "result",
+                    message.requestId,
+                    message.attemptId,
+                    result(input)
+                );
+            });
+            const value = await callService({
+                ...options,
+                connectTimeoutMs: CONNECT_DEADLINE_MS
+            });
+            assert.equal(requests, 2);
             assert.equal(value.executionId, result(input).executionId);
         });
     });

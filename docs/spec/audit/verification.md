@@ -11,6 +11,20 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Worker drain bound and refused handle close — 2026-10-14
+
+[RootWorkerDrain](../verification/tests/test/rpc/RootWorkerDrain.test.ts.md) gains three cases on a real
+parentless executor worker: a diagnostics report that throws (exit still happens, no diagnostics are posted, the
+warning is still logged without them; review FY1), an exit with code 86 the owner did not request (stays a failure, no warning; review TO1), and a bound
+native udx socket with the parent in a child process (no abort, exit 86, warning names `udp`; review FO1).
+[RuntimeLifecycle](../verification/tests/test/rpc/RuntimeLifecycle.test.ts.md) gains two worker-SDK cases through
+the real client and runtime-host worker path: a UDP socket already closing when the worker closes its handles,
+ahead of an open one (the root-cause reproduction: on `c4948a5` the `closeRootWorker` throw leaves the open socket
+holding the loop and `P2pInstance.dispose()` never resolves; with the fix the worker exits 0 with no warning), and
+a leaked referenced timer (review TY1). The three earlier drain cases keep their oracles. Two cases for the
+removed per-step teardown bounds (a final close that never settles, a domain disposal that never settles) were
+deleted with that code, and their permutations `.P5` and `.P6` retired. The new cases are pending the lead's gate.
+
 ## Exit post in flight across the channel close — 2026-10-14
 
 Two E2E cases in the
@@ -22,7 +36,8 @@ only after the chain snapshot is deleted. They cover
 [`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27) (rejected at the
 estimate) and [`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28)
 (mined revert, custom error read back by the replay in `SnapshotUpdateService`). No production code changes.
-The tests are added in this pass and have not run yet; their runs are pending the next gate.
+Both passed in the canonical gate run-3197 on 2026-10-14 (`yarn test:parallel:distributed --test-parallel-script
+--test-browser`, 3770/3770), which ran the content committed as `c4948a5`.
 
 ## Join and top-up retry after a snapshot move — 2026-10-10
 
@@ -51,6 +66,16 @@ The retry tests wait for two held submissions; they do not prove that no third o
 submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the retry condition, which needs
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
+
+## Test timing inputs — 2026-10-14
+
+Engineer decision (Luka, 2026-10-14): `evidenceTime` 8 → 12 in `stageSpamAfterOwnDispute`
+([DisputeWindowWorkflowStaging](../../../test/fixtures/DisputeWindowWorkflowStaging.ts)), the staging of both E22
+cases in [E2E-KillAndDispute](../verification/tests/test/e2e/E2E-KillAndDispute.test.ts.md). The staged spam
+`uploadDispute` must land inside peer 0's evidence window after three peers' full commit handling of peer 0's own
+dispute, one estimate and send, and one 1 s interval-mining block. Under load it was mined 1 s after the 8 s
+evidence window. Approved by Luka 2026-10-14. This is a protocol input, not a wait budget; no oracle changed.
+Both E22 cases passed with 12 s in the canonical gate run-3197 on 2026-10-14 (3770/3770).
 
 ## Test timing inputs — 2026-10-12
 

@@ -17,10 +17,11 @@ import { ethers } from "ethers";
 const EXIT_POST_REFUSED = "The chain refused the exit snapshot post";
 
 /**
- * Three founders open the channel and one of them leaves; its exit lands on
- * chain, so the chain's outbound head is that exit's message block. A
- * spectator then syncs and joins while the two remaining founders author: it
- * syncs from that on-chain snapshot, so it never stores that outbound block.
+ * Three founders open the channel and one of them leaves; the other two keep
+ * authoring until its exit lands on chain, so the chain's outbound head is
+ * that exit's message block. A spectator then syncs and joins while the two
+ * remaining founders author: it syncs from that on-chain snapshot, so it
+ * never stores that outbound block.
  * Returns the remaining founders, the seated joiner and the outbound block
  * hash the joiner lacks.
  */
@@ -28,8 +29,15 @@ export async function stageLateJoinerMissingPostedExitBlock(
     h: MathPeerTestHarness
 ) {
     await h.lifecycle.start(3, 0);
-    const leftIndex = await h.transition.participantLeaveWait();
+    const leftIndex = await h.transition.participantLeaveStateTransition();
     const founders = [0, 1, 2].filter((index) => index !== leftIndex);
+    // The founders keep authoring while the exit post lands, so the post
+    // never idles the table past the block time window.
+    await h.transition.keepAuthoringUntilPeersStatus({
+        peerIndices: [leftIndex],
+        status: Status.SYNCED,
+        waitForPeers: founders
+    });
     const postedExitBlockHash = (await chainSnapshot(h)).snapshotData
         .latestOutboundMessageBlockHash as Hash;
     expect(
@@ -71,15 +79,12 @@ export async function stageLateJoinerMissingPostedExitBlock(
     if (join.failure) throw join.failure.error;
 
     expect(
-        await h.execOnHost(
-            joiner,
-            (sm, args) =>
-                sm.storage.outboundMessages.getMessageBlock(args.hash) ===
-                undefined,
-            { hash: postedExitBlockHash }
-        ),
+        await h
+            .control(joiner)
+            .query.getOutboundMessageBlock(postedExitBlockHash)
+            .request(),
         "premise: the joiner does not store the exit block posted before its sync"
-    ).to.equal(true);
+    ).to.equal(null);
     return { founders, joiner, postedExitBlockHash };
 }
 
@@ -178,9 +183,12 @@ export async function stageExitPostInFlightAcrossClose(
                 expect(
                     h.event.getEventCallCount(leaver.index, "onLeftChannel")
                 ).to.equal(1);
-                expect(
-                    await h.control(leaver).query.getStatus().request()
-                ).to.equal(Status.NOT_OPENED);
+                // the leave's own membership check can drop the leaver to
+                // SYNCED before its close event moves it to NOT_OPENED
+                await h.event.waitUntilPeerStatus(
+                    leaver.index,
+                    Status.NOT_OPENED
+                );
                 expect(hostErrors).to.deep.equal([]);
             },
             restore

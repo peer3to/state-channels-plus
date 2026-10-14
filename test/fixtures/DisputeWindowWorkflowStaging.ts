@@ -213,7 +213,11 @@ export async function stageKillAndReplacement(
     return { forkId, replacer, spammer, spam, replacement, loneKills };
 }
 
-/** Evidence window (seconds) for the E22 staging; see its use below. */
+/**
+ * Evidence window (seconds) for the E22 staging, widened from the default 8
+ * (approved by Luka 2026-10-14; see "Test timing inputs" in
+ * docs/spec/audit/verification.md). A protocol input, not a wait budget.
+ */
 const SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME = 12;
 
 /**
@@ -229,8 +233,9 @@ export async function stageSpamAfterOwnDispute(
     options: { holdKill: boolean }
 ) {
     // The spam upload must land inside peer 0's evidence window, after the
-    // three peers' full commit handling, one estimate and send, and one
-    // mining interval; the default eight seconds leave no margin under load.
+    // three peers' full commit handling, one estimate and send, and one 1 s
+    // interval-mining block; under load it was mined 1 s after the default
+    // 8 s window.
     await h.scenario.preDisputeSetup({
         peerCount: 4,
         timeConfig: { evidenceTime: SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME }

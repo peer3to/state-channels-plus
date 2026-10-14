@@ -492,6 +492,106 @@ describe("distributed authorization administration", function () {
         }
     });
 
+    it("reports a worker as accepted when a pool-wide command's stream to it drops before authentication and it reconnects", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "authorization-bulk-reconnected-")
+        );
+        const network = await createLocalDhtNetwork();
+        const poolSecret = `admin-bulk-reconnected-${process.pid}-${Date.now()}`;
+        const adminKeyPair = loadOrchestratorKeyPair(path.join(root, "admin"));
+        const workRoot = path.join(root, "worker");
+        const name = "worker-bulk-reconnected";
+        const shutdowns: Array<() => Promise<void>> = [];
+        try {
+            const listing = runAdmin(
+                {
+                    command: "authorization-list",
+                    stateDir: path.join(root, "admin"),
+                    discoveryTimeoutMs: TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                    role: "orchestrator",
+                    note: "",
+                    poolSecret,
+                    keyPair: adminKeyPair
+                },
+                { dht: network.createNode() }
+            );
+            listing.catch(() => undefined);
+            const workerId = await dropOneOrchestratorStreamAsWorker({
+                dht: network.createNode(),
+                name,
+                poolSecret,
+                workRoot
+            });
+            const worker = await startLeaseWorkerServer({
+                dht: network.createNode(),
+                name,
+                poolSecret,
+                workRoot,
+                adminPublicKeys: [adminKeyPair.publicKey.toString("hex")],
+                allowUnlistedOrchestrators: false
+            });
+            shutdowns.push(worker.shutdown);
+
+            const listed = await listing;
+
+            expect(listed.results).to.have.length(1);
+            expect(listed.results[0].worker).to.deep.equal({
+                name,
+                publicKey: workerId
+            });
+            expect(listed.results[0].accepted).to.equal(true);
+        } finally {
+            for (const shutdown of shutdowns) await shutdown();
+            await network.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("reports a worker as not accepted when a pool-wide command's stream to it drops before authentication and it never reconnects", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "authorization-bulk-dropped-")
+        );
+        const network = await createLocalDhtNetwork();
+        const poolSecret = `admin-bulk-dropped-${process.pid}-${Date.now()}`;
+        const adminKeyPair = loadOrchestratorKeyPair(path.join(root, "admin"));
+        try {
+            const listing = runAdmin(
+                {
+                    command: "authorization-list",
+                    stateDir: path.join(root, "admin"),
+                    discoveryTimeoutMs: 5000,
+                    role: "orchestrator",
+                    note: "",
+                    poolSecret,
+                    keyPair: adminKeyPair
+                },
+                { dht: network.createNode() }
+            );
+            listing.catch(() => undefined);
+            const workerId = await dropOneOrchestratorStreamAsWorker({
+                dht: network.createNode(),
+                name: "worker-bulk-dropped",
+                poolSecret,
+                workRoot: path.join(root, "worker")
+            });
+
+            const listed = await listing;
+
+            expect(listed.results).to.have.length(1);
+            expect(listed.results[0]).to.deep.include({
+                worker: { publicKey: workerId },
+                accepted: false,
+                entries: []
+            });
+            expect(listed.results[0].message).to.match(
+                /^Stream dropped before authentication and the worker did not reconnect before the discovery timeout: /
+            );
+        } finally {
+            await network.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("lists, persists, removes, and applies worker-targeted authorization changes without ending an existing connection", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "authorization-e2e-")

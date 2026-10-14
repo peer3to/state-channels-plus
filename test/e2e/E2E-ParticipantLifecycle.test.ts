@@ -357,9 +357,12 @@ describe("E2E: Participant Lifecycle", function () {
                 expect(results).to.deep.equal(results.map(() => "no-op"));
                 for (const index of members)
                     await h.event.waitUntilLeftChannel(index);
-                expect(
-                    await h.control(joiner).query.getStatus().request()
-                ).to.equal(Status.NOT_OPENED);
+                // the leave's own membership check can drop the joiner to
+                // SYNCED before its close event moves it to NOT_OPENED
+                await h.event.waitUntilPeerStatus(
+                    joiner.index,
+                    Status.NOT_OPENED
+                );
                 expect(hostErrors).to.deep.equal([]);
             } finally {
                 removeHostErrorListener();

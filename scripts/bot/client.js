@@ -107,10 +107,15 @@ async function callService({
                 const connection = new ReviewConnection(stream, limits);
                 connections.add(connection);
                 activeConnection = connection;
+                // Only losing an authenticated worker restarts the connect
+                // deadline. A stream lost before authentication leaves the
+                // running deadline as it is, so a worker that keeps dropping
+                // streams cannot hold the call for the whole review budget.
+                let authenticated = false;
                 connection.on("close", () => {
                     if (activeConnection === connection) {
                         activeConnection = null;
-                        if (!terminal) {
+                        if (authenticated && !terminal) {
                             armConnectDeadline();
                             onProgress(
                                 "Review service contact lost; waiting for reconnection."
@@ -121,7 +126,7 @@ async function callService({
                 connection.on("failure", () => {
                     if (activeConnection === connection) {
                         activeConnection = null;
-                        if (!terminal) armConnectDeadline();
+                        if (authenticated && !terminal) armConnectDeadline();
                     }
                     connection.close();
                 });
@@ -182,6 +187,7 @@ async function callService({
                         authKey: keys.authKey
                     })
                     .then(() => {
+                        authenticated = true;
                         clearTimeout(connectTimer);
                         if (interact) {
                             if (operation === "publication" && !waiting)

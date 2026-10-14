@@ -7645,6 +7645,24 @@
       "peakRssGb": 0.155,
       "measurementReason": null
     },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain exits after the drain bound without aborting the parent process when a native socket stays open": {
+      "durationMs": 8590,
+      "avgCores": 0.339,
+      "peakRssGb": 0.361,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain reports a drain-timeout exit code the owner did not request as a worker failure": {
+      "durationMs": 1933,
+      "avgCores": 0.993,
+      "peakRssGb": 0.212,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain still exits after the drain bound when the worker cannot collect its diagnostics report": {
+      "durationMs": 7156,
+      "avgCores": 0.319,
+      "peakRssGb": 0.235,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain warns with diagnostics naming the leaked timer when the worker exits after the drain bound": {
       "durationMs": 6535,
       "avgCores": 0.228,
@@ -8117,6 +8135,18 @@
       "durationMs": 18650,
       "avgCores": 0.305,
       "peakRssGb": 0.342,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle completes worker SDK disposal after the drain bound when the host leaks a referenced timer": {
+      "durationMs": 18650,
+      "avgCores": 0.222,
+      "peakRssGb": 0.312,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle completes worker SDK disposal when a handle refuses a second close during the worker's handle close": {
+      "durationMs": 17008,
+      "avgCores": 0.214,
+      "peakRssGb": 0.304,
       "measurementReason": null
     },
     "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle disposes a parent after its last child was already removed": {
@@ -9533,6 +9563,18 @@
       "durationMs": 2683,
       "avgCores": 1.01,
       "peakRssGb": 0.366,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration reports a worker as accepted when a pool-wide command's stream to it drops before authentication and it reconnects": {
+      "durationMs": 29394,
+      "avgCores": 0.023,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration reports a worker as not accepted when a pool-wide command's stream to it drops before authentication and it never reconnects": {
+      "durationMs": 6424,
+      "avgCores": 0.054,
+      "peakRssGb": 0.093,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration sets and reports public-key authorization policy on every discovered worker": {
@@ -12355,6 +12397,12 @@
       "peakRssGb": 0.345,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator keeps the zero worker-boot wire field that older orchestrators require and ignores worker-boot markers": {
+      "durationMs": 591,
+      "avgCores": 0.389,
+      "peakRssGb": 0.07,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator leaves the cost cache alone when a redundant speculative copy succeeds": {
       "durationMs": 2536,
       "avgCores": 1.08,
@@ -13373,6 +13421,24 @@
       "durationMs": 2310,
       "avgCores": 0.74,
       "peakRssGb": 0.249,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageBrowserHarnessExports.test.ts|package browser-harness exports imports the local-discovery-relay-hub export through the package self-reference": {
+      "durationMs": 634,
+      "avgCores": 0.521,
+      "peakRssGb": 0.081,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageBrowserHarnessExports.test.ts|package browser-harness exports resolves the chromium-launch export through the package self-reference": {
+      "durationMs": 417,
+      "avgCores": 0.815,
+      "peakRssGb": 0.078,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageBrowserHarnessExports.test.ts|package browser-harness exports ships every package export target in the published files": {
+      "durationMs": 398,
+      "avgCores": 0.829,
+      "peakRssGb": 0.081,
       "measurementReason": null
     },
     "hardhat|test/stateManager/DisputeCommitReductionSchedule.test.ts|Dispute commit reduction schedule a commit whose evidence-improvement upload is skipped as already initiated still schedules the reduction": {

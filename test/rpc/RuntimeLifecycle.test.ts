@@ -5,6 +5,10 @@ import {
 import { assertWorkerParentLoss } from "@test/fixtures/node/LostParentFixture";
 import { assertRootDiagnostics } from "@test/fixtures/node/RootDiagnosticsFixture";
 import { assertTwoHopFailure } from "@test/fixtures/node/TwoHopFailureFixture";
+import {
+    assertRefusedHandleCloseStillDrains,
+    assertWorkerSdkLeakEndsAfterDrainBound
+} from "@test/fixtures/node/WorkerTeardownFixture";
 import { assertWorkerDomainDisposal } from "@test/fixtures/RuntimeLifecycleFixture";
 import {
     assertLostDisposalReply,
@@ -120,5 +124,11 @@ describe("RuntimeLifecycle", () => {
     });
     it("marks worker shutdown expected before parent port closure while client cleanup is held", async () => {
         await assertWorkerParentLoss("closed-parent");
+    });
+    it("completes worker SDK disposal when a handle refuses a second close during the worker's handle close", async () => {
+        await assertRefusedHandleCloseStillDrains();
+    });
+    it("completes worker SDK disposal after the drain bound when the host leaks a referenced timer", async () => {
+        await assertWorkerSdkLeakEndsAfterDrainBound();
     });
 });

@@ -801,7 +801,7 @@ Specification cases tested: 0/17.
 Specification cases tested: 2/2.
 
 [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0)
-Specification cases tested: 3/3.
+Specification cases tested: 8/8.
 
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.

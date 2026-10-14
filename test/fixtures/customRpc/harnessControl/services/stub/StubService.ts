@@ -3465,7 +3465,7 @@ export class StubService extends ANetworkRpcService<
                 .forEach((resolve) => resolve());
         };
         // Encoded multicall data of each post to park at its broadcast.
-        const broadcastHolds = new Set<string>();
+        const encodedBroadcastMulticalls = new Set<string>();
         if (at === "broadcast") {
             this.restoreSnapshotPostBroadcast?.();
             // The wrapped wallet signs after the host nonce manager's
@@ -3478,7 +3478,7 @@ export class StubService extends ANetworkRpcService<
             wallet.signTransaction = async (tx) => {
                 if (
                     typeof tx.data === "string" &&
-                    broadcastHolds.delete(tx.data)
+                    encodedBroadcastMulticalls.delete(tx.data)
                 ) {
                     enter();
                     await gate;
@@ -3501,7 +3501,7 @@ export class StubService extends ANetworkRpcService<
                 }
                 let sent: ReturnType<typeof original>;
                 if (at === "broadcast") {
-                    broadcastHolds.add(
+                    encodedBroadcastMulticalls.add(
                         contract.interface.encodeFunctionData("multicall", [
                             parameters[0] as string[]
                         ])

@@ -24,8 +24,11 @@ or fork update can land (the same-fork update needs equal fork IDs; the fork upd
 current fork), so the fallback prepared nothing usable here. Every other path is unchanged. The specification states
 the case in [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9). Evidence:
 [`UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P23`](../implementation/source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md#unit-test-snapshot-update-service-1-a4b38n)
-and [`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26); both tests are
-added in this pass and their runs are pending the next gate.
+and [`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26); both passed in
+the canonical gate run-3197 on 2026-10-14 (`yarn test:parallel:distributed --test-parallel-script --test-browser`,
+3770/3770), which ran the content committed as `c4948a5`. After that run the P26 staging was changed in review
+(AO2: the remaining founders keep authoring until the leaver is SYNCED, CY1: the missing-block premise uses the
+control query); the oracle is unchanged.
 
 ## Bounded root worker drain — 2026-10-14
 
@@ -46,7 +49,51 @@ warns through the parent root's logger, which [`createRoot`](../implementation/s
 now passes in. The parent still never terminates a worker. The browser worker is unchanged: its shutdown
 terminates the worker, which is safe in browsers, so it cannot hang this way. Requirement:
 [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0).
-Implemented; the three drain cases are added in this pass and their verification is pending the next gate.
+The three drain cases passed in the SDK gates run-3195, run-3196 and run-3197 on 2026-10-14; run-3197
+(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3770/3770) ran the content committed as
+`c4948a5`.
+
+## Worker teardown stall before the drain bound — 2026-10-14
+
+Observed 2026-10-14 on live poker bots that run the SDK built from `c4948a5`: right after a protocol bust
+("Left the channel", SYNCED, peers disconnected) the application disposed the runtime. The parent logged the
+host's lifecycle `dispose` reply (`ok`, about 1.4 s) and then waited for the worker's `exit` forever; no drain
+warning ever appeared, in two of three bots within five minutes. The parent had closed its connection
+(`isClosed`) and waited in `createWorkerShutdown`. The worker listed no active handle or request and one
+referenced `Timeout` resource. A drain bound that had been armed would have ended that worker within five seconds
+whatever held its loop, so the worker never armed it: its teardown stopped before `closeRootWorker` armed the
+deadline.
+
+Cause, reproduced with real workers: the node `closeRootWorker` closes every handle Node lists, in one
+`forEach`. A dgram (UDP) socket whose owner already called `close()` stays listed until its close completes,
+and a second `close()` throws `ERR_SOCKET_DGRAM_NOT_RUNNING` synchronously. The throw rejected `closeRootWorker`
+before it closed the remaining handles, unreferenced the bootstrap port or armed the deadline. The rejection
+reached `RuntimeLifecycleService.completeDisposal`'s catch, which reports to the host root; that root is
+disposing, its logger is disposed, so its error callback swallows the report. A worker whose loop is then still
+held, by a remaining handle or by a referenced timer, lives forever with no warning. In the SDK runtime host the
+only dgram owner is werift (WebRTC in Node through `get-webrtc`), whose ICE sockets close asynchronously when
+peer connections close at disposal and whose own `close` wraps the same throw; werift's referenced timers match
+the one `Timeout` seen. The bots' WebRTC use at the bust is not confirmed from their logs. The first hypothesis,
+a `disposed` request that stays pending when the parent closes its connection first, is refuted: an
+instrumented worker shows the close rejecting the pending request and the teardown continuing.
+
+Fix: `closeHandle` absorbs a handle's refusal of a second close (`ERR_SOCKET_DGRAM_NOT_RUNNING` only; any
+other close error is rethrown), so the remaining handles still close and the loop drains. `closeRootWorker` now arms the 5 s `ROOT_WORKER_DRAIN_TIMEOUT_MS` deadline first, before it closes
+any handle, so nothing in the handle closing can skip the bound. The exit is unconditional: diagnostics
+collection and the post run in `try` and `process.exit(86)` in `finally`, so a failed collection posts no
+diagnostics and the worker still exits (review FY1). The parent handler is unchanged: an expected shutdown that ends with exit 86
+warns with the worker, `drainTimeoutMs` and the diagnostics, and an exit the owner did not request stays fatal,
+code 86 included (review TO1). The parent still never terminates a worker.
+
+A first version of this fix also bounded the whole worker teardown: per-step deadlines (a 30 s teardown bound
+from accepting the dispose, the drain bound from closing connections) reported through a lifecycle hook, with the
+pending step in the diagnostics. It was removed in review as over-engineered: the observed stall was the refused
+close, which the fix above removes, and a domain cleanup that never settles is not observed.
+
+Native resources (review FO1): a worker that exits itself with a bound native udx socket open ends cleanly and
+the parent process survives (child-process case; also scratch runs with a live Hyperswarm and with udx sockets
+mid-close, where the parent's `terminate()` did not abort either). The `workerShutdown.ts` premise holds for that
+case; a native request that never completes is still not covered.
 
 The worker startup timing hook (`workerStartupTiming.ts`) is deleted with its report. It timed a worker's
 first `message`, which root workers never posted, so it never ran; the drain message would have made it log a

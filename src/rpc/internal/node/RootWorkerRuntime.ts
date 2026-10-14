@@ -43,15 +43,6 @@ export interface RootWorkerDrainDiagnostics {
     resources: string[];
 }
 
-/** The libuv section of `process.report.getReport()`; Node types it as `object`. */
-type LibuvReportHandle = {
-    type: string;
-    is_active: boolean;
-    is_referenced?: boolean;
-    fd?: number;
-    address?: string;
-};
-
 /** Resolve a package root module for compiled Node or the source test runner. */
 export function rootWorkerUrl(file: string): string {
     return resolveRuntimeModulePath(path.join(__dirname, "../roots", file));
@@ -164,15 +155,32 @@ export function onRootBootstrap<T>(
     });
 }
 
-/** Initiate closing a lingering handle; the loop drain awaits completion. */
+/**
+ * Initiate closing a lingering handle; the loop drain awaits completion. A
+ * handle its owner is already closing can refuse a second close (a dgram
+ * socket throws ERR_SOCKET_DGRAM_NOT_RUNNING while its close is pending and
+ * Node still lists it). Its own close completes the drain, so that refusal
+ * must not stop the remaining handles from closing. Any other close failure
+ * is rethrown; the drain deadline is armed before any close, so the throw
+ * cannot skip the bound.
+ */
 function closeHandle(handle: any): void {
-    // Sockets and streams (provider keep-alive sockets, torn-transport WS).
-    if (typeof handle.destroy === "function") return void handle.destroy();
-    // Timers — clearTimeout accepts a Timeout from setInterval too.
-    if (typeof handle.refresh === "function") return clearTimeout(handle);
-    // Servers, message ports, and other closeables.
-    if (typeof handle.close === "function") return void handle.close();
-    handle.unref?.();
+    try {
+        // Sockets and streams (provider keep-alive sockets, torn-transport WS).
+        if (typeof handle.destroy === "function") return void handle.destroy();
+        // Timers — clearTimeout accepts a Timeout from setInterval too.
+        if (typeof handle.refresh === "function") return clearTimeout(handle);
+        // Servers, message ports, and other closeables.
+        if (typeof handle.close === "function") return void handle.close();
+        handle.unref?.();
+    } catch (error) {
+        // Already closing: see above.
+        if (
+            (error as NodeJS.ErrnoException)?.code !==
+            "ERR_SOCKET_DGRAM_NOT_RUNNING"
+        )
+            throw error;
+    }
 }
 
 /**
@@ -185,6 +193,14 @@ function closeHandle(handle: any): void {
 export async function closeRootWorker(): Promise<void> {
     const port = parentPort;
     if (!port) return;
+    // Armed before any close, so nothing below can skip the bound. The
+    // unreferenced deadline never keeps the loop alive itself. Collect in the
+    // next check phase: inside a timer callback the report shows the timer
+    // handle as unreferenced and would hide a leaked timer.
+    setTimeout(
+        () => setImmediate(() => exitAfterDrainTimeout(port)),
+        ROOT_WORKER_DRAIN_TIMEOUT_MS
+    ).unref();
 
     // The worker realm is disposed, but torn-down transports/providers can
     // leave referenced handles behind (idle keep-alive sockets, reconnect
@@ -214,30 +230,37 @@ export async function closeRootWorker(): Promise<void> {
     port.unref();
     // Leaked JS timers are not in _getActiveHandles, and native addon handles
     // or requests are not listed by Node at all, so the passes above cannot
-    // close them. The unreferenced deadline never keeps the loop alive itself.
-    // Collect in the next check phase: inside a timer callback the report
-    // shows the timer handle as unreferenced and would hide a leaked timer.
-    setTimeout(
-        () => setImmediate(() => exitAfterDrainTimeout(port)),
-        ROOT_WORKER_DRAIN_TIMEOUT_MS
-    ).unref();
+    // close them: the deadline armed above ends a loop they keep alive.
 }
 
 /**
  * Report what still holds the loop over the bootstrap port, then end this
- * thread only. Node delivers the message before the parent sees `exit`.
+ * thread only. Node delivers the message before the parent sees `exit`. The
+ * exit is unconditional: if collecting the report throws, no message is
+ * posted, and the throw would otherwise reach the worker's error funnel,
+ * which keeps the worker alive.
  */
 function exitAfterDrainTimeout(port: MessagePort): never {
-    port.postMessage({
-        type: DRAIN_TIMEOUT_MESSAGE,
-        diagnostics: collectDrainDiagnostics()
-    });
-    process.exit(ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE);
+    try {
+        port.postMessage({
+            type: DRAIN_TIMEOUT_MESSAGE,
+            diagnostics: collectDrainDiagnostics()
+        });
+    } finally {
+        process.exit(ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE);
+    }
 }
 
 function collectDrainDiagnostics(): RootWorkerDrainDiagnostics {
+    // Node types the report as `object`; its libuv section is this shape.
     const report = process.report.getReport() as {
-        libuv: LibuvReportHandle[];
+        libuv: {
+            type: string;
+            is_active: boolean;
+            is_referenced?: boolean;
+            fd?: number;
+            address?: string;
+        }[];
     };
     const handles = report.libuv
         // The idle handle is this collection's own setImmediate; a leaked
