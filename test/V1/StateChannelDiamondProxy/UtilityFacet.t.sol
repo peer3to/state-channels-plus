@@ -14,7 +14,6 @@ import {
     MessageBlock,
     OpenChannel
 } from "../../../contracts/V1/types/DataTypes.sol";
-import {Dispute} from "../../../contracts/V1/types/DisputeTypes.sol";
 
 // stateless property fuzz of the pure array helpers of UtilityFacet.sol, plus
 // direct cases for the signer-set report the join rejection payload is built from
@@ -217,12 +216,11 @@ contract UtilityFacetTest is Test {
         revert("no dirty-padding word found");
     }
 
-    function _assertRevertsWithoutCanonicalityError(bytes memory encodedBlock) internal view {
-        (bool ok, bytes memory revertData) =
-            address(util).staticcall(abi.encodeCall(UtilityFacet.decodeBlock, (encodedBlock)));
+    function _assertRevertsWithoutCanonicalityError(bytes memory callData, bytes4 forbiddenSelector) internal view {
+        (bool ok, bytes memory revertData) = address(util).staticcall(callData);
         assertFalse(ok, "malformed bytes must revert");
         assertTrue(
-            revertData.length < 4 || bytes4(revertData) != ErrorNonCanonicalBlock.selector,
+            revertData.length < 4 || bytes4(revertData) != forbiddenSelector,
             "malformed bytes must not reach the canonicality check"
         );
     }
@@ -250,8 +248,12 @@ contract UtilityFacetTest is Test {
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
         util.decodeBlock(dirty);
         // Malformed inputs revert without the canonicality error.
-        _assertRevertsWithoutCanonicalityError(truncated);
-        _assertRevertsWithoutCanonicalityError(hex"");
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeBlock, (truncated)), ErrorNonCanonicalBlock.selector
+        );
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeBlock, (hex"")), ErrorNonCanonicalBlock.selector
+        );
         // The offset gap decodes but is rejected as noncanonical.
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
         util.decodeBlock(gap);
@@ -288,7 +290,7 @@ contract UtilityFacetTest is Test {
         openChannel.participants[0] = address(0xA11CE);
         openChannel.participants[1] = address(0xB0B);
         openChannel.balances = new Balance[](2);
-        openChannel.balances[0] = Balance({amount: 500, data: hex"1234"});
+        openChannel.balances[0] = Balance({amount: 500, data: hex"ab"});
         openChannel.balances[1] = Balance({amount: 700, data: ""});
         openChannel.deadlineTimestamp = 1_000_000;
         openChannel.isAtomic = true;
@@ -308,6 +310,23 @@ contract UtilityFacetTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         util.decodeOpenChannel(bytes.concat(canonical, abi.encode(uint256(0))));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeOpenChannel(bytes.concat(canonical, hex"00"));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeOpenChannel(_withDirtyPadding(canonical));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeOpenChannel(_withOffsetGap(canonical));
+        // Malformed inputs revert without the canonicality error.
+        bytes memory truncated = new bytes(canonical.length / 2);
+        for (uint256 i = 0; i < truncated.length; i++) {
+            truncated[i] = canonical[i];
+        }
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeOpenChannel, (truncated)), ErrorNonCanonicalEncoding.selector
+        );
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeOpenChannel, (hex"")), ErrorNonCanonicalEncoding.selector
+        );
     }
 
     function test_decodeJoinChannel_canonicalRoundTripAndRejectsNonCanonical() public {
@@ -315,7 +334,7 @@ contract UtilityFacetTest is Test {
         joinChannel.channelId = keccak256("join-channel");
         joinChannel.participant = address(0xCAFE);
         joinChannel.deadlineTimestamp = 2_000_000;
-        joinChannel.balance = Balance({amount: 900, data: hex"99"});
+        joinChannel.balance = Balance({amount: 900, data: hex"ab"});
         bytes memory canonical = abi.encode(joinChannel);
 
         JoinChannel memory decoded = util.decodeJoinChannel(canonical);
@@ -327,21 +346,22 @@ contract UtilityFacetTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         util.decodeJoinChannel(bytes.concat(canonical, abi.encode(uint256(0))));
-    }
-
-    function test_isCanonicalDispute_reportsCanonicalAndNonCanonical() public view {
-        Dispute memory dispute;
-        dispute.input.channelId = keccak256("dispute-channel");
-        dispute.input.forkId = keccak256("dispute-fork");
-        dispute.input.disputer = address(0xD15);
-        dispute.postedAuditingData = true;
-        dispute.outputSnapshotDataHash = keccak256("output");
-        bytes memory canonical = abi.encode(dispute);
-
-        assertTrue(util.isCanonicalDispute(canonical), "canonical dispute must be canonical");
-        assertFalse(
-            util.isCanonicalDispute(bytes.concat(canonical, abi.encode(uint256(0)))),
-            "trailing word must not be canonical"
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeJoinChannel(bytes.concat(canonical, hex"00"));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeJoinChannel(_withDirtyPadding(canonical));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeJoinChannel(_withOffsetGap(canonical));
+        // Malformed inputs revert without the canonicality error.
+        bytes memory truncatedJoin = new bytes(canonical.length / 2);
+        for (uint256 i = 0; i < truncatedJoin.length; i++) {
+            truncatedJoin[i] = canonical[i];
+        }
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeJoinChannel, (truncatedJoin)), ErrorNonCanonicalEncoding.selector
+        );
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeJoinChannel, (hex"")), ErrorNonCanonicalEncoding.selector
         );
     }
 }

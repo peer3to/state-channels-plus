@@ -5,8 +5,8 @@ Exercises: [DisputeFraudProofFacet.sol](../../../../../implementation/source/con
 
 ## Overview
 
-Five Foundry component tests pin the operands the dispute race-condition reverts carry, so a
-payload that names the right error with the wrong values fails. Three drive the deployed diamond
+Six Foundry component tests pin the operands the dispute race-condition reverts carry, so a
+payload that names the right error with the wrong values fails. Four drive the deployed diamond
 (`DiamondHarness`); two drive `TimeoutTooEarlyPayloadHarness`, a test-only contract that inherits
 `DisputeFraudProofFacet` and `UtilityFacet` and exposes the internal `_handleTimeoutTooEarly`
 handler plus a single block-calldata-commitment seed — the production handler body still runs.
@@ -28,6 +28,7 @@ from the timed-out block's corresponding value, so a payload built from the wron
 ## Tests
 
 - `test_uploadDispute_evidencePeriodExpired_revertsCarryingPeriodEndAndCurrentTimestamp`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16
+- `test_uploadDispute_nonCanonicalEncodedDispute_revertsThroughDiamond`: none
 - `test_handleTimeoutTooEarly_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P24
 - `test_handleTimeoutTooEarly_previousBlockCalldataPosted_revertsCarryingForkHeightAuthorAndCommitment`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P25
 - `test_validateTimeoutCalldataPostedProof_genesisTimestampUnavailable_revertsCarryingChannelOriginAndTargetForks`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P26

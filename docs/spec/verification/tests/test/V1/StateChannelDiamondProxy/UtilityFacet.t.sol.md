@@ -43,4 +43,3 @@ permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8`, the decode pair is no
 - `test_tryDecodeBlock_rejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P4, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P7, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16
 - `test_decodeOpenChannel_canonicalRoundTripAndRejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P17
 - `test_decodeJoinChannel_canonicalRoundTripAndRejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P18
-- `test_isCanonicalDispute_reportsCanonicalAndNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P19

@@ -12,6 +12,8 @@
   Missing: Order-sensitivity of the positional match is documented but unresolved; engineer decision pending. See [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../../verification/open-questions.md#oq-4-jgdcnx).
 - [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 - [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
+  Partial: `_getLatestBlock` decodes the latest signed block with raw `abi.decode`, which accepts non-canonical encodings ([`FIND-DECODE-1-FD1V6V`](../../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 
 ## UNIT-TEST-DISPUTE-UTILS-1-30FXAM
 

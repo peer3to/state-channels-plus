@@ -71,7 +71,6 @@ const notRoutedByFacet: Record<
         insertIntoAddressArrayNoDuplicates:
             "stateless helper called on the facet directly",
         isAddressInArray: "stateless helper called on the facet directly",
-        isCanonicalDispute: "stateless helper called on the facet directly",
         retrieveSignerAddress: "stateless helper called on the facet directly",
         retrieveSignerAddresses:
             "stateless helper called on the facet directly",

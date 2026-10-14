@@ -707,7 +707,9 @@ export default class EventSyncService {
             commitments
                 .filter(
                     (commitment) =>
-                        !this.storage.disputes.getDispute(commitment)
+                        this.storage.disputes.getDisputeConfirmation(
+                            commitment
+                        ) === undefined
                 )
                 .map((commitment) => String(commitment).toLowerCase())
         );

@@ -556,10 +556,11 @@ posted noncanonical bypass is fixed and a trailing zero word is rejected on both
 2026-10-14 the client rule is universal: `Codec.decode` enforces the canonical round trip for every
 type it serves, and the contract entries that decode caller-supplied bytes — channel open
 (`UtilityFacet.decodeOpenChannel`), join (`decodeJoinChannel`) and both dispute uploads
-(`UtilityFacet.isCanonicalDispute`, checked after the race checks and before the commitment is
-recorded) — reject non-canonical encodings with `ErrorNonCanonicalEncoding` before any
-state change. A nested join message whose bytes are non-canonical is skipped by membership
-observation instead of failing inbound processing. Retained under the finding: the fraud and
+(the recorded commitment must equal the hash of the submitted dispute bytes, checked after
+the race checks and before the commitment is recorded) — reject non-canonical encodings with
+`ErrorNonCanonicalEncoding` before any state change. A nested join message whose bytes are
+non-canonical is skipped by membership observation instead of failing inbound processing.
+Retained under the finding: the fraud and
 dispute-fraud proof handlers' direct decodes (including nested block bytes and the placeholder
 proofs whose bytes they do not decode) — `DisputeFraudProofFacet` sits 127 bytes below the
 EIP-170 runtime limit, so per-handler canonical checks do not fit and the work is deferred to a

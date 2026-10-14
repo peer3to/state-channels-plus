@@ -658,6 +658,98 @@ describe("Codec", function () {
         );
     });
 
+    it("accepts and rejects open-channel and join-channel bytes identically to UtilityFacet", async function () {
+        const util = await deployUtilityFacetTestContract(hreEthers);
+        const subjects: {
+            value: Parameters<typeof Codec.encode>[0];
+            type: Type.OpenChannel | Type.JoinChannel;
+            decodeContract: (encoded: string) => Promise<unknown>;
+        }[] = [
+            {
+                value: {
+                    ...codecValues.openChannel(),
+                    balances: [
+                        { amount: 20n, data: "0xab" },
+                        { amount: 30n, data: "0x" }
+                    ]
+                },
+                type: Type.OpenChannel,
+                decodeContract: (encoded) =>
+                    util.decodeOpenChannel.staticCall(encoded)
+            },
+            {
+                value: {
+                    ...codecValues.joinChannel(),
+                    balance: { amount: 43n, data: "0xab" }
+                },
+                type: Type.JoinChannel,
+                decodeContract: (encoded) =>
+                    util.decodeJoinChannel.staticCall(encoded)
+            }
+        ];
+        for (const { value, type, decodeContract } of subjects) {
+            const canonical = ethers.hexlify(Codec.encode(value, type));
+            const hex = canonical.slice(2);
+            const paddingAt = hex.indexOf("ab" + "00".repeat(31));
+            expect(
+                paddingAt,
+                "single-byte data word not located"
+            ).to.be.greaterThan(-1);
+            const dirty =
+                "0x" +
+                hex.slice(0, paddingAt) +
+                "ab" +
+                "00".repeat(30) +
+                "01" +
+                hex.slice(paddingAt + 64);
+            const members = [
+                canonical,
+                canonical + "00".repeat(32),
+                canonical + "00",
+                "0x" +
+                    ethers.toBeHex(64, 32).slice(2) +
+                    "00".repeat(32) +
+                    hex.slice(64),
+                dirty
+            ];
+            for (const bytes of members) {
+                let clientAccepts = true;
+                let clientDecoded:
+                    | Parameters<typeof Codec.encode>[0]
+                    | undefined;
+                try {
+                    clientDecoded = Reflect.apply(Codec.decode, Codec, [
+                        bytes,
+                        type
+                    ]);
+                } catch {
+                    clientAccepts = false;
+                }
+                let contractAccepts = true;
+                let contractDecoded:
+                    | Parameters<typeof Codec.encode>[0]
+                    | undefined;
+                try {
+                    contractDecoded = (await decodeContract(
+                        bytes
+                    )) as Parameters<typeof Codec.encode>[0];
+                } catch {
+                    contractAccepts = false;
+                }
+                expect(
+                    clientAccepts,
+                    `client acceptance of type ${type} member ${bytes.slice(0, 18)}`
+                ).to.equal(contractAccepts);
+                if (clientAccepts) {
+                    expect(Codec.encode(clientDecoded!, type)).to.equal(bytes);
+                    expect(Codec.encode(contractDecoded!, type)).to.equal(
+                        bytes
+                    );
+                }
+            }
+        }
+    });
+
     it("accepts canonical block bytes across hex casing and byte arrays", function () {
         const corpus = canonicalBlockCorpus();
         const upperCased =
@@ -678,7 +770,7 @@ describe("Codec", function () {
 
     it("accepts canonical and rejects trailing-word encodings for every Codec type", function () {
         const cases: [
-            unknown,
+            Parameters<typeof Codec.encode>[0],
             Type | FraudProofType | DisputeFraudProofType
         ][] = [
             [codecValues.block(), Type.Block],
@@ -812,7 +904,7 @@ describe("Codec", function () {
             ]
         ];
         for (const [value, type] of cases) {
-            const encoded = Codec.encode(value as never, type);
+            const encoded = Codec.encode(value, type);
             const decoded = Reflect.apply(Codec.decode, Codec, [encoded, type]);
             expect(
                 Codec.encode(decoded, type),

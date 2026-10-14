@@ -11,6 +11,8 @@
 - [`INV-HIST-1-5N44K9` (Block commits to the state snapshot hash)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-1-5n44k9)
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
+  Partial: the fraud handlers (`_handleBlockDoubleSign`, `_handleBlockInvalidStateTransition`, `_handleInvalidTimestamp`, `_handleWrongGenesis`, `_handleForgedInboundMessageBlock`) decode caller-supplied proof and block bytes with raw `abi.decode`, which accepts non-canonical encodings ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
   Partial: `_handleBlockInvalidStateTransition` sums withdrawals through the integrator's `addBalance`; overflow rejection is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)

@@ -120,11 +120,6 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return decodedJoinChannel;
     }
 
-    function isCanonicalDispute(bytes memory encodedDispute) external pure returns (bool) {
-        Dispute memory decodedDispute = abi.decode(encodedDispute, (Dispute));
-        return keccak256(abi.encode(decodedDispute)) == keccak256(encodedDispute);
-    }
-
     function tryDecodeBlock(bytes memory encodedBlock)
         public
         view

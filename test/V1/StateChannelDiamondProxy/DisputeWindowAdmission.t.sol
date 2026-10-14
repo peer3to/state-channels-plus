@@ -150,6 +150,27 @@ contract DisputeWindowAdmissionTest is Test {
         target.uploadDisputeWithCalldata(confirmation, auditing);
     }
 
+    // Insert a top-level offset gap: a 0x40 head word plus a zero word ahead
+    // of the original body.
+    function _withOffsetGap(bytes memory canonical) internal pure returns (bytes memory gap) {
+        gap = new bytes(canonical.length + 32);
+        assembly ("memory-safe") {
+            mstore(add(gap, 0x20), 0x40)
+            mstore(add(gap, 0x40), 0x00)
+        }
+        for (uint256 i = 32; i < canonical.length; i++) {
+            gap[i + 32] = canonical[i];
+        }
+    }
+
+    function test_uploadDispute_offsetGapEncodedDispute_reverts() public {
+        (DisputeConfirmation memory confirmation,) = _confirmation(false, false, inboundHead, inboundHeight);
+        confirmation.signedDispute.encodedDispute = _withOffsetGap(confirmation.signedDispute.encodedDispute);
+        vm.prank(disputer);
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        target.uploadDispute(confirmation);
+    }
+
     function _state() internal view returns (bytes32) {
         (uint256 created, uint256 last, uint256 count, uint256 posted, uint256 throttle) =
             target.readAdmissionState(CHANNEL, FORK, disputer);
