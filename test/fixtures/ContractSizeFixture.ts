@@ -15,6 +15,9 @@ export type ContractSizeExemption = {
     reason: string;
 };
 
+// Artifacts that are not production contracts: local-only contracts, test
+// helpers, and the development console library compiled only for them. Both
+// the size scan and the console-import scan skip every entry.
 export const contractSizeExemptions: readonly ContractSizeExemption[] = [
     {
         fullyQualifiedName:

@@ -6,8 +6,8 @@ Exercises: [contractSize.ts](../../../../implementation/source/src/utils/contrac
 ## Overview
 
 Twelve direct cases scan all compiled production artifacts, exercise both exact EIP boundaries,
-count constructor data, reject a missing required field, and keep the local/test exemption list
-exact. A synthetic two-contract case proves runtime and initcode violations are returned together
+count constructor data, reject a missing required field, and keep the exemption list of
+non-production artifacts exact. A synthetic two-contract case proves runtime and initcode violations are returned together
 so one oversize contract cannot hide another. The console cases scan the real compiler metadata of
 every production contract for a development console library, report synthetic Hardhat and
 forge-std console sources per contract while ignoring a non-console source under a `console`
