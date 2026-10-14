@@ -34,8 +34,10 @@ rejected alternative was strict extension with forward catch-up and a snapshot-a
 production code changed. Blocks recovered from base-layer logs take the tip-moving
 store and follow the height rule; only proof material and non-extending verified runs opt out. The
 consumer rules have their own plan,
-[`REQ-MSGSTORE-1-6ME9D7.T2`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t2). `getLatestMessageBlocks` still truncates a walk from the
-tip without reporting the gap ([`FIND-STORAGE-7-GK913E`](open-findings.md#find-storage-7-gk913e)). Engineer review remains pending.
+[`REQ-MSGSTORE-1-6ME9D7.T2`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t2). On 2026-10-14 Ljuba decided to remove
+`getLatestMessageBlocks`, which truncated a walk from the tip without reporting the gap and had no
+production caller ([`FIND-STORAGE-7-GK913E`](open-findings.md#find-storage-7-gk913e)); every range read now reports the missing
+hash. Engineer review remains pending.
 
 ## 2026-08-31 — Targeted pre-open channel join
 

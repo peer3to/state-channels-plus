@@ -397,7 +397,6 @@ describe("MessageBlockStorage - inbound blocks", () => {
     describe("latest block helpers", () => {
         it("returns undefined when storage is empty", () => {
             expect(storage.getLatestMessageBlock()).to.be.undefined;
-            expect(storage.getLatestMessageBlocks()).to.deep.equal([]);
             expect(storage.getLatestBlockHeight()).to.be.undefined;
         });
 
@@ -428,9 +427,6 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(latest).to.deep.equal(highestBlock);
             expect(storage.getLatestBlockHash()).to.equal(highestHash);
             expect(storage.getLatestBlockHeight()).to.equal(5);
-
-            const latestTwo = storage.getLatestMessageBlocks(2);
-            expect(latestTwo).to.deep.equal([highestBlock, middleBlock]);
         });
     });
 });

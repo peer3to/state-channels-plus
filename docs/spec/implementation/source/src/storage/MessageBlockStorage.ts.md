@@ -6,7 +6,6 @@
 
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 - [`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)
-  Contradicts: `getLatestMessageBlocks` walks back from the tip and truncates at a gap without reporting the missing hash; no production code calls it ([`FIND-STORAGE-7-GK913E`](../../../../audit/open-findings.md#find-storage-7-gk913e)).
 - [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../../../../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 
 ## UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1
