@@ -18,6 +18,7 @@
 - [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the…)](../../../../../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
 - [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../../../../../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
 - [`REQ-FP-2-CH4DA1` (Every block fraud-proof handler is sound)](../../../../../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1)
+  Contradicts: `_handleWrongGenesis` compares block 0's `previousBlockHash` with an on-chain unchanged block-0 result read as the genesis and returns a valid verdict against the honest author ([`FIND-GENESIS-ANCHOR-1-E18SBX`](../../../../../audit/open-findings.md#find-genesis-anchor-1-e18sbx)).
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)

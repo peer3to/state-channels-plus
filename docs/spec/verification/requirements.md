@@ -897,7 +897,7 @@ Specification cases tested: 0/8.
 Specification cases tested: 22/35. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
 [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
-Specification cases tested: 14/28. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 14/30. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
 
 [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
 Specification cases tested: 0/12.
