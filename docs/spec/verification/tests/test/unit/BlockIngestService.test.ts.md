@@ -46,8 +46,8 @@ proof, no hook, and the height advances by one.
 - `a sourceless bad confirmation → rejected without cutting any peer`: none
 - `an undecodable replayed block whose state-proof structure is valid → true, no proof, no throw`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P8
 - `a block one peer's local EVM refuses to run throws out of its ingest with no fraud proof, no dispute and the VM restored, while another peer commits it`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P9, REQ-ENFSM-1-DKJCY2.T1.P13
-- `a run linked to a held inbound block → the store head advances with the snapshot`: REQ-MSGSTORE-1-6ME9D7.T1.P10
-- `runs with no reachable ancestor → persisted, the head never moves above the gap`: REQ-MSGSTORE-1-6ME9D7.T1.P13
+- `a run linked to a held inbound block → the store head advances with the snapshot`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P13
+- `runs with no reachable ancestor → persisted, the head never moves above the gap`: UNIT-TEST-BLOCK-INGEST-1-JV64AS.P14
 - `a linked writer block with a wrong snapshot hash → invalid transition, VM turn restored`: none
 - `a forged inbound message block → forged hook fires, block rejected`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P28
 - `a rejected block carrying a real inbound run → the run is not stored, the head stays put`: none
