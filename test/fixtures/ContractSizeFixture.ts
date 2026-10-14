@@ -145,8 +145,19 @@ export function productionConsoleImports(
 }
 
 // Fully qualified contract name -> the source names in that contract's
-// compiler metadata. Each build-info file is read once.
-async function compiledSourceNames(): Promise<Map<string, readonly string[]>> {
+// compiler metadata. The build-info files are parsed once per run.
+let sourceNamesByContractOnce:
+    | Promise<Map<string, readonly string[]>>
+    | undefined;
+
+function compiledSourceNames(): Promise<Map<string, readonly string[]>> {
+    sourceNamesByContractOnce ??= readCompiledSourceNames();
+    return sourceNamesByContractOnce;
+}
+
+async function readCompiledSourceNames(): Promise<
+    Map<string, readonly string[]>
+> {
     const sourceNamesByContract = new Map<string, readonly string[]>();
     for (const buildInfoPath of await artifacts.getBuildInfoPaths()) {
         const buildInfo = JSON.parse(
