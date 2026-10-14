@@ -3,6 +3,102 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Exit post after the channel closed — 2026-10-14
+
+Observed 2026-10-14 in the poker gate: two members left in the same snapshot post and the chain closed the
+channel. A third member, seated through spectator sync after an early outbound block was already on chain, still
+had an exit post queued. That post ran after the close was mined. The same-fork preparation read the deleted chain
+snapshot (fork ID zero), took the local fork-genesis fallback and walked the outbound blocks from that genesis to
+the finalized head. The member did not hold the early block, so the walk threw `Block hash … not found in
+storage`. The leave service rethrows any error that is not a chain refusal, so the runtime host failed and the
+application treated the runtime as dead before its terminal leave settled.
+
+Luka approved the fix. `prepareUpdateSnapshotSameFork` in the
+[SnapshotUpdateService report](../implementation/source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md)
+now returns the empty, not postable result when the base snapshot read from the chain has fork ID zero, before the
+genesis fallback, the state proof and the outbound walk. Fork ID zero means the chain holds no snapshot for the
+channel: it was never opened or it was closed (the zero-participant close deletes the snapshot). An open channel
+always has a nonzero fork ID (a hash of its snapshot data), and a base passed in from the fork-update preparation is
+a genesis snapshot with a nonzero fork ID, so no other path reaches the check. With no chain snapshot, no same-fork
+or fork update can land (the same-fork update needs equal fork IDs; the fork update needs a reduction chain from the
+current fork), so the fallback prepared nothing usable here. Every other path is unchanged. The specification states
+the case in [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9). Evidence:
+[`UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P23`](../implementation/source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md#unit-test-snapshot-update-service-1-a4b38n)
+and [`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26); both passed in
+the canonical gate run-3197 on 2026-10-14 (`yarn test:parallel:distributed --test-parallel-script --test-browser`,
+3770/3770), which ran the content committed as `c4948a5`. After that run the P26 staging was changed in review
+(AO2: the remaining founders keep authoring until the leaver is SYNCED, CY1: the missing-block premise uses the
+control query); the oracle is unchanged.
+
+## Bounded root worker drain — 2026-10-14
+
+Observed 2026-10-14: a poker bot disposed a `P2pInstance` whose runtime host ran in a worker thread. The host
+acknowledged its lifecycle dispose, but the worker thread never exited. `createWorkerShutdown` waits for
+`exit` with no timeout, so `P2pInstance.dispose()` and the client's leave stayed pending forever. Inspection
+of the stuck worker found no active handle or request, only one `Timeout` resource (most likely the
+inspector's), Hyperswarm and HyperDHT destroyed and both UDX sockets closed. Something Node does not list
+held the loop ([`FIND-WORKER-DRAIN-1-EKYJQV`](open-findings.md#find-worker-drain-1-ekyjqv)).
+
+Luka approved a bounded drain and its diagnostics. The node
+[`closeRootWorker`](../implementation/source/src/rpc/internal/node/RootWorkerRuntime.ts.md) now unreferences the
+bootstrap port instead of closing it and arms an unreferenced deadline (`ROOT_WORKER_DRAIN_TIMEOUT_MS`, five
+seconds). If the loop has not drained by then, the worker posts its active, referenced libuv handles and its
+active resource kinds over the bootstrap port and exits itself with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE`
+(86). `createRootWorker` treats that code during an expected shutdown as a drain timeout, not a failure, and
+warns through the parent root's logger, which [`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md)
+now passes in. The parent still never terminates a worker. The browser worker is unchanged: its shutdown
+terminates the worker, which is safe in browsers, so it cannot hang this way. Requirement:
+[`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0).
+The three drain cases passed in the SDK gates run-3195, run-3196 and run-3197 on 2026-10-14; run-3197
+(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3770/3770) ran the content committed as
+`c4948a5`.
+
+## Worker teardown stall before the drain bound — 2026-10-14
+
+Observed 2026-10-14 on live poker bots that run the SDK built from `c4948a5`: right after a protocol bust
+("Left the channel", SYNCED, peers disconnected) the application disposed the runtime. The parent logged the
+host's lifecycle `dispose` reply (`ok`, about 1.4 s) and then waited for the worker's `exit` forever; no drain
+warning ever appeared, in two of three bots within five minutes. The parent had closed its connection
+(`isClosed`) and waited in `createWorkerShutdown`. The worker listed no active handle or request and one
+referenced `Timeout` resource. A drain bound that had been armed would have ended that worker within five seconds
+whatever held its loop, so the worker never armed it: its teardown stopped before `closeRootWorker` armed the
+deadline.
+
+Cause, reproduced with real workers: the node `closeRootWorker` closes every handle Node lists, in one
+`forEach`. A dgram (UDP) socket whose owner already called `close()` stays listed until its close completes,
+and a second `close()` throws `ERR_SOCKET_DGRAM_NOT_RUNNING` synchronously. The throw rejected `closeRootWorker`
+before it closed the remaining handles, unreferenced the bootstrap port or armed the deadline. The rejection
+reached `RuntimeLifecycleService.completeDisposal`'s catch, which reports to the host root; that root is
+disposing, its logger is disposed, so its error callback swallows the report. A worker whose loop is then still
+held, by a remaining handle or by a referenced timer, lives forever with no warning. In the SDK runtime host the
+only dgram owner is werift (WebRTC in Node through `get-webrtc`), whose ICE sockets close asynchronously when
+peer connections close at disposal and whose own `close` wraps the same throw; werift's referenced timers match
+the one `Timeout` seen. The bots' WebRTC use at the bust is not confirmed from their logs. The first hypothesis,
+a `disposed` request that stays pending when the parent closes its connection first, is refuted: an
+instrumented worker shows the close rejecting the pending request and the teardown continuing.
+
+Fix: `closeHandle` absorbs a handle's refusal of a second close (`ERR_SOCKET_DGRAM_NOT_RUNNING` only; any
+other close error is rethrown), so the remaining handles still close and the loop drains. `closeRootWorker` now arms the 5 s `ROOT_WORKER_DRAIN_TIMEOUT_MS` deadline first, before it closes
+any handle, so nothing in the handle closing can skip the bound. The exit is unconditional: diagnostics
+collection and the post run in `try` and `process.exit(86)` in `finally`, so a failed collection posts no
+diagnostics and the worker still exits (review FY1). The parent handler is unchanged: an expected shutdown that ends with exit 86
+warns with the worker, `drainTimeoutMs` and the diagnostics, and an exit the owner did not request stays fatal,
+code 86 included (review TO1). The parent still never terminates a worker.
+
+A first version of this fix also bounded the whole worker teardown: per-step deadlines (a 30 s teardown bound
+from accepting the dispose, the drain bound from closing connections) reported through a lifecycle hook, with the
+pending step in the diagnostics. It was removed in review as over-engineered: the observed stall was the refused
+close, which the fix above removes, and a domain cleanup that never settles is not observed.
+
+Native resources (review FO1): a worker that exits itself with a bound native udx socket open ends cleanly and
+the parent process survives (child-process case; also scratch runs with a live Hyperswarm and with udx sockets
+mid-close, where the parent's `terminate()` did not abort either). The `workerShutdown.ts` premise holds for that
+case; a native request that never completes is still not covered.
+
+The worker startup timing hook (`workerStartupTiming.ts`) is deleted with its report. It timed a worker's
+first `message`, which root workers never posted, so it never ran; the drain message would have made it log a
+wrong boot time. The runner's `workerBootMs` marker summing now has no emitter (it always read 0).
+
 ## PR #520 third-review and CI corrections (2026-10-07)
 
 The [localDiamond report](../implementation/source/src/utils/localDiamond.ts.md) now anchors its
@@ -912,4 +1008,18 @@ scheduled after stop never runs
 ([BlockQueueManager.ts](../../../src/stateManager/ingest/BlockQueueManager.ts#L632-L644)). The sync
 timeout bounds only a probe's request. `SpectateService` returns early once disposed and does not
 blame the responder for a disposal. Both are instances of
+[`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).
+
+## Browser late link after disposal — 2026-10-14
+
+**A browser local-discovery link that opens after its runtime was disposed gets no transport.** The
+link socket's open handler now closes the socket when its P2P manager is disposed, as the Node
+discovery already does for its dial
+([LocalDiscoveryServer.ts](../../../src/utils/browser/LocalDiscoveryServer.ts#L157)). Before, an
+inline browser runtime disposed while a link was still connecting built a transport on the disposed
+manager, and its logger threw `Logger "P2PManager" has been disposed` on the page (seen in the
+`run-transport-local-e2e.mjs` gate). Evidence: [`REQ-RUNTIME-3-VQXW59.T1.P83`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p83) in that gate, red before
+the fix and green after. Mirror:
+[LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md).
+Another instance of
 [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).

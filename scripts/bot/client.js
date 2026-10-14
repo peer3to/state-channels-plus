@@ -17,6 +17,13 @@ const { check, writeJson } = require("./data");
 const { ReviewError, sanitized, MESSAGES } = require("./errors");
 const protocol = require("./protocol");
 const { clientSeed } = require("./identity");
+/**
+ * How long a call waits for an authenticated review worker, at the start and
+ * after losing contact, before it fails as unavailable. A worker that is down
+ * otherwise holds CI for the whole review budget. Client-only: it is not part
+ * of the policy digest the worker checks.
+ */
+const SERVICE_CONNECT_TIMEOUT_MS = 60_000;
 async function callService({
     request,
     operation = "request",
@@ -28,7 +35,8 @@ async function callService({
     limits = DEFAULTS,
     dht,
     interact,
-    onProgress = () => {}
+    onProgress = () => {},
+    connectTimeoutMs = SERVICE_CONNECT_TIMEOUT_MS
 }) {
     protocol.request(request);
     check(serverKey === undefined || /^[a-f0-9]{64}$/.test(serverKey));
@@ -45,6 +53,7 @@ async function callService({
     const connections = new Set();
     const requestId = crypto.randomUUID();
     let timer,
+        connectTimer,
         progressTimer,
         activeConnection,
         waiting,
@@ -70,6 +79,14 @@ async function callService({
                     limits.queueMs + limits.setupMs + limits.transferMs * 2
                 );
             };
+            const armConnectDeadline = () => {
+                clearTimeout(connectTimer);
+                connectTimer = setTimeout(
+                    () => reject(new ReviewError("SERVICE_UNAVAILABLE")),
+                    connectTimeoutMs
+                );
+            };
+            armConnectDeadline();
             if (operation === "publication") armPublicationTimer();
             else
                 timer = setTimeout(
@@ -90,18 +107,25 @@ async function callService({
                 const connection = new ReviewConnection(stream, limits);
                 connections.add(connection);
                 activeConnection = connection;
-                connection.on("close", () => {
-                    if (activeConnection === connection) {
-                        activeConnection = null;
-                        if (!terminal)
-                            onProgress(
-                                "Review service contact lost; waiting for reconnection."
-                            );
-                    }
-                });
+                // Only losing an authenticated worker restarts the connect
+                // deadline. A stream lost before authentication leaves the
+                // running deadline as it is, so a worker that keeps dropping
+                // streams cannot hold the call for the whole review budget.
+                let authenticated = false;
+                // Every way this connection ends (close, protocol failure, a
+                // failed send) drops it here, whichever comes first.
+                const loseConnection = () => {
+                    if (activeConnection !== connection) return;
+                    activeConnection = null;
+                    if (!authenticated || terminal) return;
+                    armConnectDeadline();
+                    onProgress(
+                        "Review service contact lost; waiting for reconnection."
+                    );
+                };
+                connection.on("close", loseConnection);
                 connection.on("failure", () => {
-                    if (activeConnection === connection)
-                        activeConnection = null;
+                    loseConnection();
                     connection.close();
                 });
                 connection.on("progress", (progress) => {
@@ -161,6 +185,8 @@ async function callService({
                         authKey: keys.authKey
                     })
                     .then(() => {
+                        authenticated = true;
+                        clearTimeout(connectTimer);
                         if (interact) {
                             if (operation === "publication" && !waiting)
                                 clearTimeout(timer);
@@ -222,8 +248,7 @@ async function callService({
                         );
                     })
                     .catch((error) => {
-                        if (activeConnection === connection)
-                            activeConnection = null;
+                        loseConnection();
                         connection.close();
                         pool.yieldFailedOutgoingDial(stream, info, error).catch(
                             reject
@@ -246,6 +271,7 @@ async function callService({
         terminal = true;
         waiting?.reject(new ReviewError("SERVICE_UNAVAILABLE"));
         clearTimeout(timer);
+        clearTimeout(connectTimer);
         clearInterval(progressTimer);
         for (const connection of connections) connection.close();
         await pool.close();
@@ -292,4 +318,4 @@ if (require.main === module)
         console.error(sanitized(error).message);
         process.exitCode = 1;
     });
-module.exports = { callService };
+module.exports = { callService, SERVICE_CONNECT_TIMEOUT_MS };

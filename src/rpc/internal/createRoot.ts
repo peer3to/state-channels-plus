@@ -316,7 +316,13 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         if (options.mode === "worker") {
             if (!options.workerUrl)
                 throw new Error("Worker roots require an explicit workerUrl");
-            worker = createRootWorker(options.workerUrl, failed, entry.name);
+            // The parent's logger receives the worker's drain-timeout warning.
+            worker = createRootWorker(
+                options.workerUrl,
+                failed,
+                parent.rootLogger,
+                entry.name
+            );
             worker.postMessage(
                 {
                     type: "connect",
