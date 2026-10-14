@@ -228,8 +228,9 @@ still needs correction. No new behavior is selected here.
 
 Genesis-start case closed (2026-10-14): when the replay starts at the fork genesis, the sync
 rejects a supplied genesis that differs from the genesis the walk dated from the chain, before
-anything is persisted. A replay starting past the genesis, and an empty proof whose genesis the
-chain cannot date, still accept the supplied timestamp.
+anything is persisted. A replay starting past the genesis still accepts the supplied timestamp.
+An empty proof whose genesis the chain cannot date accepts only a supplied genesis with timestamp
+0 (one with the real date is rejected).
 
 Tracked regressions:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
