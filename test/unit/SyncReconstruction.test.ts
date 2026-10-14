@@ -1,6 +1,5 @@
-import { Block } from "@/models";
 import StateSnapshot from "@/models/StateSnapshot";
-import { Codec, Type } from "@/utils";
+import { reissueConfirmation } from "@test/fixtures/ChallengeBoundaryStaging";
 import { stageAnchoredSyncPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
     chainSnapshot,
@@ -9,7 +8,6 @@ import {
 import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyOnFreshRequester,
-    applyPayloads,
     constructProof,
     craftProofBlock,
     postSnapshotAt,
@@ -25,8 +23,7 @@ import {
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
     storedBlocks,
-    syncSpectatorFromAllRunningPeers,
-    withHeldFreshRequester
+    syncSpectatorFromAllRunningPeers
 } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -684,7 +681,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
     });
 
     describe("genesis index", function () {
-        it("a proof finalizing a block 0 that changes no state → accepted, its result stored by hash, the served fork genesis is the registered genesis", async function () {
+        it("a proof finalizing a block 0 that changes no state → accepted, its result stored by hash, the served fork genesis is the registered genesis and no refusal is logged", async function () {
             const h = TestSession.getHarness();
             const forkId = String(await h.lifecycle.start(3, 1));
             const payload = await servedPayload(h, h.getPeer(0), forkId);
@@ -705,37 +702,25 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(unchangedResult.blockHeight).to.equal(0);
             expect(unchangedResult.hash).to.not.equal(genesis.hash);
             // the same block 0 committing that result, signed by all three
-            const author = h.peers.find(
-                (peer) => peer.address === served.author
-            )!;
-            const servedStruct = Codec.decode(
-                served.confirmation.signedBlock.encodedBlock,
-                Type.Block
-            );
-            const block = await Block.fromBlockStruct(
-                {
-                    ...servedStruct,
+            expect(new Set(served.signers).size).to.equal(3);
+            const blockZero = await reissueConfirmation(
+                h,
+                served.confirmation,
+                (struct) => ({
+                    ...struct,
                     transaction: {
-                        ...servedStruct.transaction,
+                        ...struct.transaction,
                         header: {
-                            ...servedStruct.transaction.header,
+                            ...struct.transaction.header,
                             timestamp: blockZeroTimestamp
                         }
                     },
                     stateSnapshotHash: unchangedResult.hash
-                },
-                author.signer
-            );
-            block.expandSignatures(
-                await Promise.all(
-                    [0, 1, 2]
-                        .filter((index) => index !== author.index)
-                        .map((index) => block.sign(h.getPeer(index).signer))
-                )
+                })
             );
             const unchangedPayload = servingProof(
                 payload,
-                [[block.blockConfirmationStruct]],
+                [[blockZero]],
                 [unchangedResult.toStruct()],
                 payload.latestForkGenesisEncodedState
             );
@@ -746,6 +731,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 [unchangedPayload],
                 {
                     inspect: { snapshotHashes: [String(unchangedResult.hash)] },
+                    countGenesisRefusals: true,
                     // premise: no genesis of its own, so the proof's stores
                     // reach the empty index before the served genesis
                     beforeApply: async (requester) => {
@@ -765,6 +751,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(outcome.rejections).to.deep.equal([]);
             expect(outcome.snapshotsStored).to.deep.equal([true]);
             expect(outcome.genesisSnapshotHash).to.equal(genesis.hash);
+            expect(outcome.genesisRefusals).to.equal(0);
         });
 
         it("the same served sync response applied twice → the served fork genesis stays registered and no refusal is logged", async function () {
@@ -775,28 +762,11 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 payload.latestForkGenesisSnapshot
             ).hash;
 
-            const outcome = await withHeldFreshRequester(
+            const outcome = await applyOnFreshRequester(
                 h,
-                async (requester) => {
-                    const stub = h.control(requester).stub;
-                    await stub.observeGenesisRefusalLogs().request();
-                    try {
-                        const applied = await applyPayloads(
-                            h,
-                            requester,
-                            forkId,
-                            [payload, payload]
-                        );
-                        return {
-                            ...applied,
-                            refusals: await stub
-                                .getGenesisRefusalLogCount()
-                                .request()
-                        };
-                    } finally {
-                        await stub.restoreGenesisRefusalLogs().request();
-                    }
-                }
+                forkId,
+                [payload, payload],
+                { countGenesisRefusals: true }
             );
 
             expect(outcome.outcomes).to.deep.equal([
@@ -804,7 +774,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 { accepted: true, threw: "", head: 0 }
             ]);
             expect(outcome.genesisSnapshotHash).to.equal(genesisHash);
-            expect(outcome.refusals).to.equal(0);
+            expect(outcome.genesisRefusals).to.equal(0);
         });
     });
 });

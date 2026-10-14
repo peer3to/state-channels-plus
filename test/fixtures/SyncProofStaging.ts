@@ -55,6 +55,8 @@ export type ApplyOptions = {
     reconstructHeight?: number;
     /** Read the requester's local finalized height after each apply (a trusted-start walk). */
     readLocalFinality?: boolean;
+    /** Count the requester's genesis refusal warnings across the applies. */
+    countGenesisRefusals?: boolean;
     inspect?: SyncInspection;
 };
 
@@ -302,7 +304,8 @@ export async function applyAfterMissedTopUp(
  * spectate request pinned to `forkId`. Returns per payload the verdict or
  * the thrown message and the head after it; then the rejection reasons, the
  * responder blacklist, the head, the hash of the state the machine holds,
- * the registered genesis of `forkId`, the inspected storage, the
+ * the registered genesis of `forkId`, the genesis refusal warnings logged
+ * during the applies (when counted), the inspected storage, the
  * participant-set change heights, the observed walks and the rebuilt proof.
  */
 export async function applyPayloads(
@@ -331,6 +334,8 @@ export async function applyPayloads(
           }
         : undefined;
     try {
+        if (options.countGenesisRefusals)
+            await control.stub.observeGenesisRefusalLogs().request();
         if (options.walkFault === "localFinalized")
             await h.mirror.failNextLocalRead(
                 requester.index,
@@ -450,6 +455,9 @@ export async function applyPayloads(
             },
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
+        const genesisRefusals = options.countGenesisRefusals
+            ? await control.stub.getGenesisRefusalLogCount().request()
+            : undefined;
         const persisted = await h.execOnHost(
             requester,
             async (sm, a, { ethers }) => ({
@@ -492,6 +500,7 @@ export async function applyPayloads(
                 .isBlacklisted(responder.address)
                 .request(),
             ...persisted,
+            genesisRefusals,
             changeHeights: await control.query
                 .getParticipantChangeHeights(forkId)
                 .request(),
@@ -512,6 +521,8 @@ export async function applyPayloads(
         await walks?.trustedStart.restore();
         await walks?.storage.restore();
         await control.stub.restoreRecordedSyncRejections().request();
+        if (options.countGenesisRefusals)
+            await control.stub.restoreGenesisRefusalLogs().request();
     }
 }
 

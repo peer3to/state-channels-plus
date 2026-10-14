@@ -9,13 +9,14 @@
 - [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
   Partial: the staged install writes the candidate into the VM before its commit, so a reader outside the state mutex can see the new VM state together with the old fork ([`FIND-STATE-2-4BH3Y1`](../../../../../audit/open-findings.md#find-state-2-4bh3y1)).
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
+- [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
 
 ## UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR
 
 Canonical snapshot application
 
-- Setup: Apply genesis and participant/non-participant snapshots through the existing owner
-- Oracle: Storage, active fork, and local status update atomically before readiness is reported; the reduction path commits nothing when `shouldCommit` is false or a read rejects
+- Setup: Apply genesis and participant/non-participant snapshots through the existing owner, and an unchanged block-0 result with and without the block-result option
+- Oracle: Storage, active fork, and local status update atomically before readiness is reported; the reduction path commits nothing when `shouldCommit` is false or a read rejects; a block result is stored by hash and never touches the genesis index or warns, while the same snapshot without the option is refused as a conflicting genesis
 
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P1` — genesis height-zero storage and active fork
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P2` — participant status
@@ -33,3 +34,5 @@ Canonical snapshot application
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P14` — failed snapshot inspection restores the VM without publishing eligibility
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P15` — failed chain membership inspection restores VM state without publishing storage, fork or eligibility
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P18` — a sync install whose commit callback throws after the VM write restores the VM to the pre-install state, keeps the fork and stored state, and rethrows the error
+- [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P19` — an unchanged block-0 result installed as a block result is stored by hash; the registered genesis stays and no refusal is logged
+- [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P20` — an unchanged block-0 result installed without the block-result option is stored by hash and refused as a conflicting genesis with one warning; the first genesis stays registered

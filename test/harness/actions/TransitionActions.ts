@@ -517,16 +517,23 @@ export class TransitionActions<
     /**
      * White-box: run `StateApplicationService.unsafeSetLatestState` with the
      * peer's own latest stored snapshot/state, optionally shifting the
-     * snapshot timestamp, and return the recomputed status.
+     * snapshot timestamp and storing it as a block result, and return the
+     * recomputed status.
      */
     async runSetLatestState(options: {
         peerIndex: number;
         forkId: ForkId;
         timestampOverride?: number;
         timestampOffsetSeconds?: number;
+        blockResult?: boolean;
     }): Promise<Status> {
-        const { peerIndex, forkId, timestampOverride, timestampOffsetSeconds } =
-            options;
+        const {
+            peerIndex,
+            forkId,
+            timestampOverride,
+            timestampOffsetSeconds,
+            blockResult
+        } = options;
         return await this.harness.execOnHost(
             this.harness.getPeer(peerIndex),
             async (sm, args) => {
@@ -551,11 +558,14 @@ export class TransitionActions<
                                 (args.timestampOffsetSeconds ?? 0),
                         snapshotData: model.snapshotData
                     },
-                    encodedState
+                    encodedState,
+                    undefined,
+                    undefined,
+                    { blockResult: args.blockResult }
                 );
                 return sm.status;
             },
-            { forkId, timestampOverride, timestampOffsetSeconds }
+            { forkId, timestampOverride, timestampOffsetSeconds, blockResult }
         );
     }
 

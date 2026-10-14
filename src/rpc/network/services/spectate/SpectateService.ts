@@ -1250,13 +1250,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                     return { shouldAbort: false };
                 }
-                // a conflict found after the VM write restores the VM
+                // a conflict found after the VM write restores the VM; a base
+                // past the genesis is a block's result, never a fork genesis
                 const installed =
                     await stateManager.stateApplicationService.unsafeSetLatestState(
                         base.snapshot.toStruct(),
                         base.state,
                         undefined,
-                        persistHistory
+                        persistHistory,
+                        { blockResult: base.fromIndex !== 0 }
                     );
                 this.logger.debug(`Finished persisting sync payload`);
                 return { shouldAbort: !installed };
