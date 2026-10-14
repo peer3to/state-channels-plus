@@ -705,11 +705,9 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(unchangedResult.blockHeight).to.equal(0);
             expect(unchangedResult.hash).to.not.equal(genesis.hash);
             // the same block 0 committing that result, signed by all three
-            const author = h.getPeer(
-                [0, 1, 2].find(
-                    (index) => h.getPeer(index).address === served.author
-                )!
-            );
+            const author = h.peers.find(
+                (peer) => peer.address === served.author
+            )!;
             const servedStruct = Codec.decode(
                 served.confirmation.signedBlock.encodedBlock,
                 Type.Block
