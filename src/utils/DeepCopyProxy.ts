@@ -35,6 +35,7 @@ export function deepCopyProxy<T extends object>(original: T): T {
 }
 
 // closing the copy (break, return, throw) closes the wrapped generator too
+// limits: next(x) values are not forwarded, throw() closes the wrapped generator via return(), its return value is dropped
 function* copyYieldedValues<TValue>(
     generator: Iterable<TValue>
 ): Generator<TValue, void, unknown> {
