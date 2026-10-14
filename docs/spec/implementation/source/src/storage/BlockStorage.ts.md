@@ -10,7 +10,6 @@
   Contradicts: Timestamp clause violated here: unconditional overwrite in setter and merge — later replaces earlier; earliest-wins holds only upstream, so a later calldata copy bypasses it. See [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](../../../open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs).
 - [`REQ-BLKSTORE-3-S9V2KC` (Tip tracking and bounded traversal)](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)
 - [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
-  Contradicts: `getIterator` yields the store's own `Block` objects and the wrapping proxy exempts generators, so a caller can mutate stored blocks without a store operation ([`FIND-STORAGE-6-MT9Z2D`](../../../../audit/open-findings.md#find-storage-6-mt9z2d)).
 
 ## UNIT-TEST-BLOCK-STORAGE-1-FY94TH
 

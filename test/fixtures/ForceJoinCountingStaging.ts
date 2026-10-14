@@ -98,6 +98,13 @@ export async function authorUntilForceJoinCountingStarted(
         waitForPeers: [...writers, joinerIndex],
         maximumBlocks: 20
     });
+    // The wait above ends once the joiner counts the last block, maybe
+    // before every writer stores it. A writer behind the tip would author
+    // a stale height that the SDK drops, and the caller's next blocks
+    // would fall short of the bound.
+    await h.assert.sync.peersInSyncWait({
+        peerIndices: [...writers, joinerIndex]
+    });
     return await readForceJoinBounds(h, joiner);
 }
 

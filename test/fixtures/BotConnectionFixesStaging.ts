@@ -73,7 +73,9 @@ export type RecordedSnapshotPost = string;
  * and returns its own snapshot or rejects with its own error. Returns the
  * number of started posts, the results in call order, a wait for the first
  * `count` results, and the restore. While `holdResults` is on, each recorded
- * post parks before it returns, until `releaseResults`.
+ * post parks before it returns, until `releaseResults`. While `holdStarts` is
+ * on, each recorded post is counted as started and parks before it prepares
+ * anything, until `releaseStarts`.
  */
 export async function recordSnapshotPostWaitResults(
     h: MathPeerTestHarness,
@@ -84,6 +86,8 @@ export async function recordSnapshotPostWaitResults(
     resultsWait: (count: number) => Promise<RecordedSnapshotPost[]>;
     holdResults: () => Promise<void>;
     releaseResults: () => Promise<void>;
+    holdStarts: () => Promise<void>;
+    releaseStarts: () => Promise<void>;
     restore: () => Promise<void>;
 }> {
     await h.execOnHost(peer, (sm, _, { tryDecodeCustomError }) => {
@@ -91,18 +95,30 @@ export async function recordSnapshotPostWaitResults(
         const original = service.postStateSnapshotWait;
         const post = original.bind(service);
         const record = { started: 0, results: [] as string[] };
-        let release = () => undefined as void;
-        let gate: Promise<void> | undefined;
+        // one gate per park point: before the post prepares, after it returns
+        const createGate = () => {
+            let release = () => undefined as void;
+            const gate: { current?: Promise<void> } = {};
+            return {
+                gate,
+                start: () => {
+                    gate.current ??= new Promise<void>((resolve) => {
+                        release = resolve;
+                    });
+                },
+                release: () => {
+                    gate.current = undefined;
+                    release();
+                }
+            };
+        };
+        const results = createGate();
+        const starts = createGate();
         const hold = {
-            start: () => {
-                gate ??= new Promise<void>((resolve) => {
-                    release = resolve;
-                });
-            },
-            release: () => {
-                gate = undefined;
-                release();
-            }
+            start: results.start,
+            release: results.release,
+            startStarts: starts.start,
+            releaseStarts: starts.release
         };
         Reflect.set(service, "recordedPostWaits", record);
         Reflect.set(service, "recordedPostWaitHold", hold);
@@ -110,6 +126,7 @@ export async function recordSnapshotPostWaitResults(
         service.postStateSnapshotWait = async (forkId, options) => {
             if (options?.forkAdoptionOnly) return post(forkId, options);
             record.started += 1;
+            if (starts.gate.current) await starts.gate.current;
             let posted: StateSnapshot | undefined;
             try {
                 posted = await post(forkId, options);
@@ -117,11 +134,11 @@ export async function recordSnapshotPostWaitResults(
                 record.results.push(
                     tryDecodeCustomError(error)?.name ?? "failed"
                 );
-                if (gate) await gate;
+                if (results.gate.current) await results.gate.current;
                 throw error;
             }
             record.results.push(posted === undefined ? "no-op" : "posted");
-            if (gate) await gate;
+            if (results.gate.current) await results.gate.current;
             return posted;
         };
         return true;
@@ -134,14 +151,19 @@ export async function recordSnapshotPostWaitResults(
             ) as { started: number; results: RecordedSnapshotPost[] };
             return { started: record.started, results: [...record.results] };
         });
-    const controlHold = (action: "start" | "release") =>
+    const controlHold = (
+        action: "start" | "release" | "startStarts" | "releaseStarts"
+    ) =>
         h.execOnHost(
             peer,
             (sm, args) => {
                 const hold = Reflect.get(
                     sm.snapshotUpdateService,
                     "recordedPostWaitHold"
-                ) as Record<"start" | "release", () => void>;
+                ) as Record<
+                    "start" | "release" | "startStarts" | "releaseStarts",
+                    () => void
+                >;
                 hold[args.action]();
                 return true;
             },
@@ -159,7 +181,10 @@ export async function recordSnapshotPostWaitResults(
         },
         holdResults: () => controlHold("start").then(() => undefined),
         releaseResults: () => controlHold("release").then(() => undefined),
+        holdStarts: () => controlHold("startStarts").then(() => undefined),
+        releaseStarts: () => controlHold("releaseStarts").then(() => undefined),
         restore: async () => {
+            await controlHold("releaseStarts");
             await controlHold("release");
             await h.execOnHost(peer, (sm) => {
                 const original = Reflect.get(
