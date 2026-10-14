@@ -306,7 +306,7 @@ Specification cases tested: 2/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
 Specification cases tested: 0/6.
 
 [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../specification/enforcement/contracts.md#req-contract-size-1-881q6e)
-Specification cases tested: 11/12. Untested: T1.P12.
+Specification cases tested: 12/12.
 
 [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../specification/security/data-availability.md#req-da-1-nvv85z)
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5.
