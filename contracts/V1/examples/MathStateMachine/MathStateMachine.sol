@@ -2,7 +2,6 @@
 pragma solidity ^0.8.8;
 
 import "../../AStateMachine.sol";
-import "hardhat/console.sol";
 
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
@@ -140,7 +139,6 @@ contract MathStateMachine is AStateMachine {
         if (success) {
             _addExitChannel(exitChannel);
         }
-        console.log("Player leaving:", leavingPlayer, "Success:", success);
 
         return success;
     }
