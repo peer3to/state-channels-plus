@@ -656,8 +656,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     peerAddress,
                     "served state does not reach the final point"
                 );
-            // a base at the genesis is the genesis the walk dated from the
-            // chain: the served genesis, persisted with it, must be the same
+            // a walk that finalized nothing past the genesis installs the
+            // walk's genesis (the served data with the chain's date, or no
+            // date for an empty proof the chain cannot date): the served
+            // genesis, persisted with it, must hash the same. A base built
+            // from the served genesis itself always passes here.
             if (
                 base.fromIndex === 0 &&
                 base.snapshot.hash !== genesisSnapshot.hash
