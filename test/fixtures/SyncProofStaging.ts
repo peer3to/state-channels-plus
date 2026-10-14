@@ -302,8 +302,8 @@ export async function applyAfterMissedTopUp(
  * spectate request pinned to `forkId`. Returns per payload the verdict or
  * the thrown message and the head after it; then the rejection reasons, the
  * responder blacklist, the head, the hash of the state the machine holds,
- * the inspected storage, the participant-set change heights, the observed
- * walks and the rebuilt proof.
+ * the registered genesis of `forkId`, the inspected storage, the
+ * participant-set change heights, the observed walks and the rebuilt proof.
  */
 export async function applyPayloads(
     h: MathPeerTestHarness,
@@ -454,6 +454,10 @@ export async function applyPayloads(
             requester,
             async (sm, a, { ethers }) => ({
                 head: sm.storage.blocks.getLatestBlockHeight(a.forkId),
+                genesisSnapshotHash:
+                    sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        a.forkId
+                    )?.hash ?? null,
                 installedStateHash: ethers.keccak256(
                     await sm.diamondStateMachine.getState()
                 ),

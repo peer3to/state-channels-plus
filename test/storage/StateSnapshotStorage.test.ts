@@ -244,6 +244,76 @@ describe("StateSnapshotStorage", () => {
             ).to.equal(genesisStateSnapshot.hash);
             expect(warnings()).to.have.length(0);
         });
+
+        it("does not register a later-height snapshot with the genesis snapshotData into an empty index, and a height-0 genesis then registers", () => {
+            const unchangedStateBlockSnapshot = StateSnapshot.from({
+                ...genesisStateSnapshot.toStruct(),
+                blockHeight: 7n
+            });
+
+            storage.storeStateSnapshot(unchangedStateBlockSnapshot);
+
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+            ).to.be.undefined;
+            expect(
+                storage
+                    .getStateSnapshotByHash(unchangedStateBlockSnapshot.hash)
+                    ?.toStruct()
+            ).to.deep.equal(unchangedStateBlockSnapshot.toStruct());
+
+            storage.storeStateSnapshot(genesisStateSnapshot);
+
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+            expect(warnings()).to.have.length(0);
+        });
+
+        it("stores a height-0 block result with the genesis snapshotData by hash only after the genesis, without touching the genesis index or warning", () => {
+            storage.storeStateSnapshot(genesisStateSnapshot);
+            // block 0 changed no state: genesis data, block 0's later timestamp
+            const unchangedBlockZeroResult =
+                conflictingGenesisOf(genesisStateSnapshot);
+            expect(unchangedBlockZeroResult.isGenesis).to.be.true;
+            expect(unchangedBlockZeroResult.blockHeight).to.equal(0);
+
+            const hash = storage.storeStateSnapshot(unchangedBlockZeroResult, {
+                blockResult: true
+            });
+
+            expect(hash).to.equal(unchangedBlockZeroResult.hash);
+            expect(
+                storage.getStateSnapshotByHash(hash)?.toStruct()
+            ).to.deep.equal(unchangedBlockZeroResult.toStruct());
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+            expect(warnings()).to.have.length(0);
+        });
+
+        it("does not register a height-0 block result with the genesis snapshotData into an empty index, so the genesis stored after it registers", () => {
+            const unchangedBlockZeroResult =
+                conflictingGenesisOf(genesisStateSnapshot);
+
+            storage.storeStateSnapshot(unchangedBlockZeroResult, {
+                blockResult: true
+            });
+
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+            ).to.be.undefined;
+
+            storage.storeStateSnapshot(genesisStateSnapshot);
+
+            expect(
+                storage.getGenesisSnapshotByForkId(genesisStateSnapshot.forkID)
+                    ?.hash
+            ).to.equal(genesisStateSnapshot.hash);
+            expect(warnings()).to.have.length(0);
+        });
     });
 
     describe("READ operations", () => {

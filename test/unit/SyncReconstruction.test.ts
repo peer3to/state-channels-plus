@@ -1,4 +1,6 @@
+import { Block } from "@/models";
 import StateSnapshot from "@/models/StateSnapshot";
+import { Codec, Type } from "@/utils";
 import { stageAnchoredSyncPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
     chainSnapshot,
@@ -7,6 +9,7 @@ import {
 import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyOnFreshRequester,
+    applyPayloads,
     constructProof,
     craftProofBlock,
     postSnapshotAt,
@@ -22,7 +25,8 @@ import {
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
     storedBlocks,
-    syncSpectatorFromAllRunningPeers
+    syncSpectatorFromAllRunningPeers,
+    withHeldFreshRequester
 } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -676,6 +680,122 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                     support.height
                 ])
             ).to.deep.equal([first.block, support.block]);
+        });
+    });
+
+    describe("genesis index", function () {
+        it("a proof finalizing a block 0 that changes no state → accepted, its result stored by hash, the served fork genesis is the registered genesis", async function () {
+            const h = TestSession.getHarness();
+            const forkId = String(await h.lifecycle.start(3, 1));
+            const payload = await servedPayload(h, h.getPeer(0), forkId);
+            const genesis = StateSnapshot.from(
+                payload.latestForkGenesisSnapshot
+            );
+            const served = await servedBlock(h, forkId, 0);
+            // block 0's result had it changed no state: the genesis data at
+            // block 0's own timestamp
+            const unchangedResult = StateSnapshot.from({
+                ...served.snapshot,
+                snapshotData: payload.latestForkGenesisSnapshot.snapshotData
+            });
+            expect(unchangedResult.isGenesis).to.equal(true);
+            expect(unchangedResult.blockHeight).to.equal(0);
+            expect(unchangedResult.hash).to.not.equal(genesis.hash);
+            // the same block 0 committing that result, signed by all three
+            const author = h.getPeer(
+                [0, 1, 2].find(
+                    (index) => h.getPeer(index).address === served.author
+                )!
+            );
+            const block = await Block.fromBlockStruct(
+                {
+                    ...Codec.decode(
+                        served.confirmation.signedBlock.encodedBlock,
+                        Type.Block
+                    ),
+                    stateSnapshotHash: unchangedResult.hash
+                },
+                author.signer
+            );
+            block.expandSignatures(
+                await Promise.all(
+                    [0, 1, 2]
+                        .filter((index) => index !== author.index)
+                        .map((index) => block.sign(h.getPeer(index).signer))
+                )
+            );
+            const unchangedPayload = servingProof(
+                payload,
+                [[block.blockConfirmationStruct]],
+                [unchangedResult.toStruct()],
+                payload.latestForkGenesisEncodedState
+            );
+
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [unchangedPayload],
+                {
+                    inspect: { snapshotHashes: [String(unchangedResult.hash)] },
+                    // premise: no genesis of its own, so the proof's stores
+                    // reach the empty index before the served genesis
+                    beforeApply: async (requester) => {
+                        expect(
+                            await h
+                                .control(requester)
+                                .query.getGenesisSnapshotHash(forkId)
+                                .request()
+                        ).to.equal(null);
+                    }
+                }
+            );
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: 0 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.snapshotsStored).to.deep.equal([true]);
+            expect(outcome.genesisSnapshotHash).to.equal(genesis.hash);
+        });
+
+        it("the same served sync response applied twice → the served fork genesis stays registered and no refusal is logged", async function () {
+            const h = TestSession.getHarness();
+            const forkId = String(await h.lifecycle.start(3, 1));
+            const payload = await servedPayload(h, h.getPeer(0), forkId);
+            const genesisHash = StateSnapshot.from(
+                payload.latestForkGenesisSnapshot
+            ).hash;
+
+            const outcome = await withHeldFreshRequester(
+                h,
+                async (requester) => {
+                    const stub = h.control(requester).stub;
+                    await stub.observeGenesisRefusalLogs().request();
+                    try {
+                        const applied = await applyPayloads(
+                            h,
+                            requester,
+                            forkId,
+                            [payload, payload]
+                        );
+                        return {
+                            ...applied,
+                            refusals: await stub
+                                .getGenesisRefusalLogCount()
+                                .request()
+                        };
+                    } finally {
+                        await stub.restoreGenesisRefusalLogs().request();
+                    }
+                }
+            );
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: 0 },
+                { accepted: true, threw: "", head: 0 }
+            ]);
+            expect(outcome.genesisSnapshotHash).to.equal(genesisHash);
+            expect(outcome.refusals).to.equal(0);
         });
     });
 });

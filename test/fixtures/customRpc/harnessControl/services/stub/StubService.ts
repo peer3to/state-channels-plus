@@ -560,6 +560,11 @@ export class StubService extends ANetworkRpcService<
         entries: DoubleSignatureLogEntry[];
         restore: () => void;
     };
+    // Genesis refusal warnings of the snapshot storage, counted while forwarded.
+    private genesisRefusalLogObservation?: {
+        count: number;
+        restore: () => void;
+    };
     // Restores the real blacklist write after an injected failure.
     private restoreBlacklistWrite?: () => void;
     private disputeParticipationObservation?: {
@@ -1017,6 +1022,40 @@ export class StubService extends ANetworkRpcService<
     public restoreDoubleSignatureLogs(): void {
         this.doubleSignatureLogObservation?.restore();
         this.doubleSignatureLogObservation = undefined;
+    }
+
+    /**
+     * Count the snapshot storage's genesis refusal warnings, forwarding every
+     * entry. Reads the shared log store: the storage's logger is its child.
+     */
+    public observeGenesisRefusalLogs(): void {
+        this.restoreGenesisRefusalLogs();
+        const logStore = this.sm.logger["logStore"];
+        const store = logStore.store;
+        const observation = {
+            count: 0,
+            restore: () => {
+                logStore.store = store;
+            }
+        };
+        logStore.store = (entry) => {
+            if (
+                entry.level === "warn" &&
+                entry.context.component === "StateSnapshotStorage"
+            )
+                observation.count++;
+            store.call(logStore, entry);
+        };
+        this.genesisRefusalLogObservation = observation;
+    }
+
+    public getGenesisRefusalLogCount(): number {
+        return this.genesisRefusalLogObservation?.count ?? 0;
+    }
+
+    public restoreGenesisRefusalLogs(): void {
+        this.genesisRefusalLogObservation?.restore();
+        this.genesisRefusalLogObservation = undefined;
     }
 
     /** Make every blacklist write fail until restored. */
@@ -3033,6 +3072,7 @@ export class StubService extends ANetworkRpcService<
 
     public releaseReductionHolds(): void {
         this.restoreDoubleSignatureLogs();
+        this.restoreGenesisRefusalLogs();
         this.restoreBlacklistWriteFailure();
         this.restoreDisputeParticipationObservation();
         this.restoreAdmissionObservation();

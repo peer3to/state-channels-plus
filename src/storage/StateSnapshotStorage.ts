@@ -7,6 +7,7 @@ type StateSnapshotHash = Hash;
 
 type StoreOptions = {
     hash?: StateSnapshotHash;
+    blockResult?: boolean; // a block's resulting snapshot: never a fork genesis
 };
 
 export class StateSnapshotStorage {
@@ -34,7 +35,7 @@ export class StateSnapshotStorage {
 
         this.snapshotsByHash.set(hash, snapshot);
 
-        if (snapshot.isGenesis) {
+        if (!options?.blockResult && snapshot.isGenesis) {
             this.registerGenesis(snapshot);
         }
 
@@ -62,8 +63,9 @@ export class StateSnapshotStorage {
     // PRIVATE
     // ====================================
 
-    // Only height 0 is a genesis: a later block that changes no state has
-    // genesis-shaped snapshotData and is stored by hash only.
+    // A block that changes no state has genesis-shaped snapshotData. Callers
+    // storing a block's result say so (blockResult); for any other store only
+    // height 0 is a genesis, so a later unchanged state is stored by hash only.
     // A genesis fork id pins its snapshotData, so the full snapshot hash of
     // two height-0 snapshots differs exactly when their timestamps differ.
     private registerGenesis(snapshot: StateSnapshot): void {
