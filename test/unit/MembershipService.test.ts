@@ -470,6 +470,57 @@ describe("Unit: MembershipService", function () {
         }
     });
 
+    it("a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const lagging = h.getPeer(2);
+        // exactly one inbound log is lost, so the next one still lands and the
+        // store tip moves above the hole
+        const dropped = await h.rpcStub.dropInboundMessageLogs(lagging.index, {
+            dropCount: 1
+        });
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(0).address,
+            observePeerIndices: [0, 1]
+        });
+        await dropped.waitUntilDropped();
+        // a new participant's JOIN lands above the hole
+        const { participant } = await h.join.forceInboundJoinWait();
+
+        const result = await h.execOnHost(
+            lagging,
+            async (sm, args) => {
+                const snapshot =
+                    await sm.stateChannelManagerContract.getStateSnapshot(
+                        sm.channelId
+                    );
+                const inbound = sm.storage.inboundMessages;
+                const pending = inbound.tryGetMessageBlocksInRange({
+                    lowerBlockHash:
+                        snapshot.snapshotData.latestInboundMessageBlockHash
+                });
+                // only what the pushed snapshot itself observes counts
+                sm.membershipService.resetEligibility();
+                sm.membershipService.publishOnChainSnapshot(snapshot);
+                return {
+                    linkedBlockCount: pending.blocks.length,
+                    missingBlockHash: pending.missingBlockHash ?? null,
+                    eligibility:
+                        sm.membershipService.getCachedSourceEligibility(
+                            args.participant
+                        )
+                };
+            },
+            { participant }
+        );
+
+        // premise - the range from the tip down to the snapshot is truncated
+        expect(result.missingBlockHash).to.not.equal(null);
+        expect(result.linkedBlockCount).to.equal(1);
+        expect(result.eligibility).to.equal(SourceEligibility.ELIGIBLE);
+        await dropped.release();
+    });
+
     it("a pushed snapshot preserves unconsumed pending JOINs without a membership read", async () => {
         const h = TestSession.getHarness();
         const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);

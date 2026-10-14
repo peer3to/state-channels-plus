@@ -300,6 +300,109 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(storage.getLatestBlockHash()).to.be.undefined;
             expect(storage.getLatestBlockHeight()).to.be.undefined;
         });
+
+        it("a block whose predecessor is not held, stored into an empty store, becomes the tip", () => {
+            // blocks 0 and 1 never arrive
+            storage.store(chain[2]);
+
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[2]);
+            expect(storage.getLatestBlockHeight()).to.equal(2);
+            const run = storage.tryGetMessageBlocksInRange();
+            expect(run.blocks).to.deep.equal([chain[2]]);
+            expect(run.missingBlockHash).to.equal(chainHashes[1]);
+        });
+
+        it("a verified run from the zero hash while a tip is held is persisted and leaves the tip", () => {
+            // block 0 is not held, so the tip at block 1 sits above a gap
+            storage.store(chain[1]);
+
+            storage.storeVerifiedRun(
+                [chain[0], chain[1], chain[2]],
+                ethers.ZeroHash
+            );
+
+            expect(storage.getMessageBlock(chainHashes[0])).to.deep.equal(
+                chain[0]
+            );
+            expect(storage.getMessageBlock(chainHashes[2])).to.deep.equal(
+                chain[2]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+
+        it("a later direct store of a held block keeps its first content and moves the tip", () => {
+            storage.store(chain[0]);
+            // held as proof material only, so the tip stays at block 0
+            storage.store(chain[1], { justPersist: true });
+            // a later delivery of the same hash with different content
+            const laterContent = factory.messageBlock({
+                previousBlockHash: chainHashes[0],
+                blockHeight: 1n,
+                timestamp: BigInt(chain[1].timestamp) + 1n
+            });
+
+            const storedHash = storage.store(laterContent, {
+                hash: chainHashes[1]
+            });
+
+            expect(storedHash).to.equal(chainHashes[1]);
+            expect(storage.getMessageBlock(chainHashes[1])).to.deep.equal(
+                chain[1]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+    });
+
+    describe("headNotBehind", () => {
+        // a linked chain at heights 0..2, built from the zero hash
+        let chain: MessageBlockStruct[];
+        let chainHashes: Hash[];
+
+        beforeEach(() => {
+            chain = factory.linkedMessageBlocks(3, ethers.ZeroHash);
+            chainHashes = chain.map((block) =>
+                hash(Codec.encode(block, Type.MessageBlock))
+            );
+        });
+
+        it("an empty store returns the snapshot head at height 0", () => {
+            const snapshotHash = factory.hash();
+
+            const head = storage.headNotBehind(snapshotHash, 0);
+
+            expect(head).to.deep.equal({ hash: snapshotHash, height: 0 });
+        });
+
+        it("a tip below the snapshot returns the snapshot head", () => {
+            storage.store(chain[0]);
+            storage.store(chain[1]);
+
+            const head = storage.headNotBehind(chainHashes[2], 2);
+
+            expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+        });
+
+        it("a tip at the snapshot height with a different hash returns the tip", () => {
+            storage.store(chain[0]);
+            storage.store(chain[1]);
+            const snapshotHash = factory.hash();
+
+            const head = storage.headNotBehind(snapshotHash, 1);
+
+            expect(head).to.deep.equal({ hash: chainHashes[1], height: 1 });
+        });
+
+        it("a tip above the snapshot returns the tip", () => {
+            storage.store(chain[0]);
+            storage.store(chain[1]);
+            storage.store(chain[2]);
+
+            const head = storage.headNotBehind(chainHashes[1], 1);
+
+            expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+        });
     });
 
     describe("latest block helpers", () => {

@@ -12,7 +12,7 @@ zero before its requested lower boundary, and the strict all-or-nothing rejectio
 incomplete case asserts both the proven suffix and `missingBlockHash`. Store tests cover computed
 and supplied hashes and duplicate insertion. Tip tests use a factory-built linked chain and cover a
 height move above a gap with a read from that tip, equal-height replacement, `justPersist`,
-verified-run extension into populated and empty stores (including a held predecessor that is not the tip), and a lower block leaving the tip.
+verified-run extension into populated and empty stores (including a held predecessor that is not the tip, and a zero-hash run while a tip is held), an unlinked block becoming the tip of an empty store, a later direct store of a block held only as proof material (first content kept, tip moved), and a lower block leaving the tip. The `headNotBehind` cases read the tip against a snapshot with no tip held at height 0, a lower tip, a tip at the snapshot height under a different hash, and a higher tip.
 
 ## Tests
 
@@ -38,4 +38,11 @@ verified-run extension into populated and empty stores (including a held predece
 - `a verified run whose predecessor is held but is not the tip is persisted and leaves the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P15, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P13
 - `a verified run from the zero hash into an empty store moves the tip to its last block`: REQ-MSGSTORE-1-6ME9D7.T1.P12, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P10
 - `a verified run with a nonzero predecessor into an empty store is persisted and sets no tip`: REQ-MSGSTORE-1-6ME9D7.T1.P13, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P11
+- `a block whose predecessor is not held, stored into an empty store, becomes the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P16, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P14
+- `a verified run from the zero hash while a tip is held is persisted and leaves the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P17, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P15
+- `a later direct store of a held block keeps its first content and moves the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P4, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P4
+- `an empty store returns the snapshot head at height 0`: REQ-MSGSTORE-1-6ME9D7.T1.P18, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P16
+- `a tip below the snapshot returns the snapshot head`: REQ-MSGSTORE-1-6ME9D7.T1.P19, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P17
+- `a tip at the snapshot height with a different hash returns the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P20, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P18
+- `a tip above the snapshot returns the tip`: REQ-MSGSTORE-1-6ME9D7.T1.P21, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P19
 - `tracks the highest block height even when stored out of order`: REQ-MSGSTORE-1-6ME9D7.T1.P2, UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P7

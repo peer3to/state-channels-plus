@@ -105,7 +105,7 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `the chain anchor holds the fork's first outbound block and a later exit sits above it → the outbound run is only the block above the anchor, the chain accepts the dispute`: UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P8
 - `recoverable gap → complete, and the hash still agrees with the disputer's`: none
 - `unrecoverable gap → the auditing-data build throws`: none
-- `own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw`: none
+- `own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw`: REQ-MSGSTORE-1-6ME9D7.T2.P4
 - `an empty state proof → latest state snapshot falls back to genesis`: none
 - `no fraud proof, settled fork → uploadDispute alone`: UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P2, UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P5, UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P3
 - `no fraud proof, unfinalized fork → uploadDisputeWithCalldata alone`: UNIT-TEST-DISPUTE-MANAGER-3-0KFW5T.P3
