@@ -29,7 +29,7 @@ Store and tip semantics
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P13` — verified run whose predecessor is held but not the tip is persisted, tip unchanged
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P14` — unlinked block stored into an empty store becomes the tip; a read from it reports the missing predecessor
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P15` — verified run from the zero hash while a tip is held is persisted, tip unchanged
-- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P16` — `headNotBehind` with no tip held returns the snapshot head, also at snapshot height 0
+- [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P16` — `headNotBehind` with no tip held returns the snapshot head (snapshot height 0)
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P17` — `headNotBehind` with a lower tip returns the snapshot head
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P18` — `headNotBehind` with a tip at the snapshot height and a different hash returns the tip
 - [x] `UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P19` — `headNotBehind` with a higher tip returns the tip
