@@ -30,8 +30,8 @@ now describes the height tip: a direct store moves it by height and it may sit a
 verified run moves it only on exact extension. Exact extension broke block production above a missed
 inbound log and late-auditor dispute construction. Safety stays at the read layer through
 [`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz). The strongest
-rejected alternative was strict extension with forward catch-up and a snapshot-anchor seed. No
-production code changed. Blocks recovered from base-layer logs take the tip-moving
+rejected alternative was strict extension with forward catch-up and a snapshot-anchor seed. The tip
+decision changed no production code. Blocks recovered from base-layer logs take the tip-moving
 store and follow the height rule; only proof material and non-extending verified runs opt out. The
 consumer rules have their own plan,
 [`REQ-MSGSTORE-1-6ME9D7.T2`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t2). On 2026-10-14 Ljuba decided to remove
