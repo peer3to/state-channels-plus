@@ -1,6 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const os = require("node:os");
+const { realTmpdir } = require("./temp");
 const { createNetwork } = require("./dht");
 const {
     createPool
@@ -16,7 +16,7 @@ const { DEFAULTS } = require("../../config");
 
 async function reviewWorker(body, allowUnlisted = true) {
     const root = await fs.mkdtemp(
-        path.join(os.tmpdir(), "integrated-review-worker-")
+        path.join(realTmpdir(), "integrated-review-worker-")
     );
     const network = await createNetwork();
     const previous = process.env.SCP_TEST_POOL_SECRET;

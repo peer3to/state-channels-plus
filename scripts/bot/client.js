@@ -17,6 +17,13 @@ const { check, writeJson } = require("./data");
 const { ReviewError, sanitized, MESSAGES } = require("./errors");
 const protocol = require("./protocol");
 const { clientSeed } = require("./identity");
+/**
+ * How long a call waits for an authenticated review worker, at the start and
+ * after losing contact, before it fails as unavailable. A worker that is down
+ * otherwise holds CI for the whole review budget. Client-only: it is not part
+ * of the policy digest the worker checks.
+ */
+const SERVICE_CONNECT_TIMEOUT_MS = 60_000;
 async function callService({
     request,
     operation = "request",
@@ -28,7 +35,8 @@ async function callService({
     limits = DEFAULTS,
     dht,
     interact,
-    onProgress = () => {}
+    onProgress = () => {},
+    connectTimeoutMs = SERVICE_CONNECT_TIMEOUT_MS
 }) {
     protocol.request(request);
     check(serverKey === undefined || /^[a-f0-9]{64}$/.test(serverKey));
@@ -45,6 +53,7 @@ async function callService({
     const connections = new Set();
     const requestId = crypto.randomUUID();
     let timer,
+        connectTimer,
         progressTimer,
         activeConnection,
         waiting,
@@ -70,6 +79,14 @@ async function callService({
                     limits.queueMs + limits.setupMs + limits.transferMs * 2
                 );
             };
+            const armConnectDeadline = () => {
+                clearTimeout(connectTimer);
+                connectTimer = setTimeout(
+                    () => reject(new ReviewError("SERVICE_UNAVAILABLE")),
+                    connectTimeoutMs
+                );
+            };
+            armConnectDeadline();
             if (operation === "publication") armPublicationTimer();
             else
                 timer = setTimeout(
@@ -93,15 +110,19 @@ async function callService({
                 connection.on("close", () => {
                     if (activeConnection === connection) {
                         activeConnection = null;
-                        if (!terminal)
+                        if (!terminal) {
+                            armConnectDeadline();
                             onProgress(
                                 "Review service contact lost; waiting for reconnection."
                             );
+                        }
                     }
                 });
                 connection.on("failure", () => {
-                    if (activeConnection === connection)
+                    if (activeConnection === connection) {
                         activeConnection = null;
+                        if (!terminal) armConnectDeadline();
+                    }
                     connection.close();
                 });
                 connection.on("progress", (progress) => {
@@ -161,6 +182,7 @@ async function callService({
                         authKey: keys.authKey
                     })
                     .then(() => {
+                        clearTimeout(connectTimer);
                         if (interact) {
                             if (operation === "publication" && !waiting)
                                 clearTimeout(timer);
@@ -246,6 +268,7 @@ async function callService({
         terminal = true;
         waiting?.reject(new ReviewError("SERVICE_UNAVAILABLE"));
         clearTimeout(timer);
+        clearTimeout(connectTimer);
         clearInterval(progressTimer);
         for (const connection of connections) connection.close();
         await pool.close();
@@ -292,4 +315,4 @@ if (require.main === module)
         console.error(sanitized(error).message);
         process.exitCode = 1;
     });
-module.exports = { callService };
+module.exports = { callService, SERVICE_CONNECT_TIMEOUT_MS };

@@ -756,6 +756,48 @@ describe("review client visible activity", function () {
             );
         });
     });
+    it("fails as unavailable when no review worker is reachable within the connect deadline instead of waiting out the review budget", async function () {
+        await fixture(async ({ options }) => {
+            const startedAt = Date.now();
+            await assert.rejects(
+                callService({
+                    ...options,
+                    // No worker announces this pool's review topic.
+                    secret: "no-review-worker",
+                    connectTimeoutMs: 300
+                }),
+                { code: "SERVICE_UNAVAILABLE" }
+            );
+            assert.ok(Date.now() - startedAt < options.limits.queueMs);
+        });
+    });
+    it("fails as unavailable when the reached worker never authenticates within the connect deadline", async function () {
+        // The worker's pool accepts the stream but no review service answers it.
+        await fixture(async ({ options }) => {
+            await assert.rejects(
+                callService({ ...options, connectTimeoutMs: 300 }),
+                { code: "SERVICE_UNAVAILABLE" }
+            );
+        });
+    });
+    it("keeps a review whose worker authenticated in time running past the connect deadline", async function () {
+        await fixture(async ({ options, serve, input }) => {
+            serve(async (connection, message) => {
+                await new Promise((resolve) => setTimeout(resolve, 600));
+                await connection.send(
+                    "result",
+                    message.requestId,
+                    message.attemptId,
+                    result(input)
+                );
+            });
+            const value = await callService({
+                ...options,
+                connectTimeoutMs: 300
+            });
+            assert.equal(value.executionId, result(input).executionId);
+        });
+    });
     it("preserves the original interactive publication deadline after reconnecting near expiry", async function () {
         await fixture(async ({ options, serve }) => {
             const { clientClock } = require("../fixtures/client-clock");
