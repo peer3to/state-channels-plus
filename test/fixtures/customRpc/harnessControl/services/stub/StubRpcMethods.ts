@@ -33,6 +33,7 @@ import type {
     BlockWorkHoldPoint,
     StubService,
     SignatureBlockMatch,
+    SnapshotPostHoldPoint,
     StateMutexStateHold
 } from "./StubService";
 
@@ -2019,9 +2020,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreCalldataPost();
     }
 
-    /** Park this peer's snapshot post at its contract send until restored. */
-    public stubHoldSnapshotPostSend(adoptionOnly?: boolean): boolean {
-        this.service.installSnapshotPostSendHold(adoptionOnly);
+    /** Park this peer's snapshot post at its contract send (or, with `at: "broadcast"`, after its estimate) until restored. */
+    public stubHoldSnapshotPostSend(
+        adoptionOnly?: boolean,
+        at?: SnapshotPostHoldPoint
+    ): boolean {
+        this.service.installSnapshotPostSendHold(adoptionOnly, at);
         return true;
     }
 

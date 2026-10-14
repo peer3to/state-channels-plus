@@ -184,6 +184,13 @@ export function block(
     return Block.fromSignedBlock(signedBlockStruct);
 }
 
+/** A mock block at the given fork and height (`transactionCnt`). */
+export function blockAt(forkId: ForkId, height: BlockHeight): Block {
+    return block({
+        header: transactionHeader({ forkId, transactionCnt: height })
+    });
+}
+
 /** Copy of `blockStruct` with `transaction.header` shallow-merged with `header`. */
 export function blockStructWithTransactionHeader(
     bs: BlockStruct,

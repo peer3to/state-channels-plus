@@ -1904,9 +1904,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Handshake Completion should update existing profile transport on WebRTC upgrade": {
-      "durationMs": 14160,
-      "avgCores": 1.014,
-      "peakRssGb": 0.622,
+      "durationMs": 7051,
+      "avgCores": 1.385,
+      "peakRssGb": 0.771,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Time Validation should blacklist peer answering with an undecodable (junk) signature": {
@@ -2288,9 +2288,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching keeps a pending selection intact through a successful transport upgrade": {
-      "durationMs": 10295,
-      "avgCores": 0.915,
-      "peakRssGb": 0.626,
+      "durationMs": 7270,
+      "avgCores": 1.252,
+      "peakRssGb": 0.772,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs": {
@@ -2749,10 +2749,28 @@
       "peakRssGb": 1.219,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a late joiner's exit post that runs after its co-leavers' exits closed the channel posts nothing and does not fail, and its runtime stays alive and leaves": {
+      "durationMs": 27256,
+      "avgCores": 0.8,
+      "peakRssGb": 0.983,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort": {
       "durationMs": 26967,
       "avgCores": 1.022,
       "peakRssGb": 1.068,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path an exit post prepared against the open fork and still unsent when its co-leavers' exits close the channel is rejected at its estimate with RaceConditionSnapshotForkMismatch, logged as a chain refusal, and the leaver's runtime stays alive and leaves": {
+      "durationMs": 14850,
+      "avgCores": 0.892,
+      "peakRssGb": 0.78,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path an exit post whose estimate passed before its co-leavers' exits closed the channel and that is mined after the close reverts in its block, its replay recovers RaceConditionSnapshotForkMismatch, it is logged as a chain refusal, and the leaver's runtime stays alive and leaves": {
+      "durationMs": 13130,
+      "avgCores": 0.783,
+      "peakRssGb": 0.774,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path exiting participant does not sign blocks authored after its leave": {
@@ -3902,9 +3920,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E10: auditors with different final points E10: posted data, the row of an earlier milestone above the chain anchor is the head's snapshot → the earlier-start auditor kills it on chain from the posted data; newer-start auditors accept": {
-      "durationMs": 43972,
-      "avgCores": 0.672,
-      "peakRssGb": 1.038,
+      "durationMs": 28822,
+      "avgCores": 0.968,
+      "peakRssGb": 1.327,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E15: balance judged on the unfinalized latest state E15 control: the same blind pending auditor with the real final head and its correct tail (a good balance invariant), posted data → the tail replays on the head and every auditor accepts the dispute": {
@@ -4169,6 +4187,12 @@
       "durationMs": 36435,
       "avgCores": 0.527,
       "peakRssGb": 0.811,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/disputeValidation/disputeInputFields/timeout.test.ts|E2E: dispute validation / disputeInputFields / timeout bad-signature posted calldata cannot refute an honest forced timeout": {
+      "durationMs": 43052,
+      "avgCores": 0.419,
+      "peakRssGb": 0.994,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/timeout.test.ts|E2E: dispute validation / disputeInputFields / timeout dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState": {
@@ -7609,6 +7633,42 @@
       "peakRssGb": 0.316,
       "measurementReason": null
     },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain completes disposal after the drain bound when the disposed worker leaks a referenced timer": {
+      "durationMs": 6882,
+      "avgCores": 0.311,
+      "peakRssGb": 0.237,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain drains a worker with no leaked handle before the bound without a warning": {
+      "durationMs": 1249,
+      "avgCores": 0.673,
+      "peakRssGb": 0.155,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain exits after the drain bound without aborting the parent process when a native socket stays open": {
+      "durationMs": 8590,
+      "avgCores": 0.339,
+      "peakRssGb": 0.361,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain reports a drain-timeout exit code the owner did not request as a worker failure": {
+      "durationMs": 1933,
+      "avgCores": 0.993,
+      "peakRssGb": 0.212,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain still exits after the drain bound when the worker cannot collect its diagnostics report": {
+      "durationMs": 7156,
+      "avgCores": 0.319,
+      "peakRssGb": 0.235,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain warns with diagnostics naming the leaked timer when the worker exits after the drain bound": {
+      "durationMs": 6535,
+      "avgCores": 0.228,
+      "peakRssGb": 0.236,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/Rpc.test.ts|deserializeRpc - params schema accepts a well-formed RPC with array params": {
       "durationMs": 1746,
       "avgCores": 1.031,
@@ -8075,6 +8135,18 @@
       "durationMs": 18650,
       "avgCores": 0.305,
       "peakRssGb": 0.342,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle completes worker SDK disposal after the drain bound when the host leaks a referenced timer": {
+      "durationMs": 18650,
+      "avgCores": 0.222,
+      "peakRssGb": 0.312,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle completes worker SDK disposal when a handle refuses a second close during the worker's handle close": {
+      "durationMs": 17008,
+      "avgCores": 0.214,
+      "peakRssGb": 0.304,
       "measurementReason": null
     },
     "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle disposes a parent after its last child was already removed": {
@@ -9427,6 +9499,12 @@
       "peakRssGb": 0.187,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration keeps a worker-targeted command waiting after that worker's stream drops before authentication, and completes it over the next connection": {
+      "durationMs": 1450,
+      "avgCores": 0.345,
+      "peakRssGb": 0.103,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration keeps identity inspection out of the admin command namespace": {
       "durationMs": 1749,
       "avgCores": 1.006,
@@ -9485,6 +9563,18 @@
       "durationMs": 2683,
       "avgCores": 1.01,
       "peakRssGb": 0.366,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration reports a worker as accepted when a pool-wide command's stream to it drops before authentication and it reconnects": {
+      "durationMs": 29394,
+      "avgCores": 0.023,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration reports a worker as not accepted when a pool-wide command's stream to it drops before authentication and it never reconnects": {
+      "durationMs": 6424,
+      "avgCores": 0.054,
+      "peakRssGb": 0.093,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelAuthorizationAdministration.test.ts|distributed authorization administration sets and reports public-key authorization policy on every discovered worker": {
@@ -12307,6 +12397,12 @@
       "peakRssGb": 0.345,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator keeps the zero worker-boot wire field that older orchestrators require and ignores worker-boot markers": {
+      "durationMs": 591,
+      "avgCores": 0.389,
+      "peakRssGb": 0.07,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelTaskCoordinator.test.ts|distributed task coordinator leaves the cost cache alone when a redundant speculative copy succeeds": {
       "durationMs": 2536,
       "avgCores": 1.08,
@@ -13327,6 +13423,24 @@
       "peakRssGb": 0.249,
       "measurementReason": null
     },
+    "hardhat|test/scripts/packageBrowserHarnessExports.test.ts|package browser-harness exports imports the local-discovery-relay-hub export through the package self-reference": {
+      "durationMs": 634,
+      "avgCores": 0.521,
+      "peakRssGb": 0.081,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageBrowserHarnessExports.test.ts|package browser-harness exports resolves the chromium-launch export through the package self-reference": {
+      "durationMs": 417,
+      "avgCores": 0.815,
+      "peakRssGb": 0.078,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageBrowserHarnessExports.test.ts|package browser-harness exports ships every package export target in the published files": {
+      "durationMs": 398,
+      "avgCores": 0.829,
+      "peakRssGb": 0.081,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/DisputeCommitReductionSchedule.test.ts|Dispute commit reduction schedule a commit whose evidence-improvement upload is skipped as already initiated still schedules the reduction": {
       "durationMs": 83496,
       "avgCores": 0.294,
@@ -13781,6 +13895,12 @@
       "durationMs": 17059,
       "avgCores": 1.278,
       "peakRssGb": 1.013,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService once the channel is closed on chain, the same-fork preparation returns nothing to post without building a state proof or reading local outbound blocks, and the post resolves undefined": {
+      "durationMs": 8624,
+      "avgCores": 0.855,
+      "peakRssGb": 0.573,
       "measurementReason": null
     },
     "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService rejects with the disputed-fork refusal when a dispute commits between preparation and send": {
@@ -15349,10 +15469,28 @@
       "peakRssGb": 0.333,
       "measurementReason": null
     },
+    "hardhat|test/transport/InternalTransport.test.ts|InternalTransport drops a held outgoing request on close and rejects its pending call": {
+      "durationMs": 27989,
+      "avgCores": 0.169,
+      "peakRssGb": 0.252,
+      "measurementReason": null
+    },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport has a neutral transport surface without network identity metadata": {
       "durationMs": 18117,
       "avgCores": 0.249,
       "peakRssGb": 0.351,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/InternalTransport.test.ts|InternalTransport holds the next outgoing request before it reaches the port": {
+      "durationMs": 16710,
+      "avgCores": 0.217,
+      "peakRssGb": 0.214,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/InternalTransport.test.ts|InternalTransport posts a released outgoing request and settles it with the real answer": {
+      "durationMs": 15388,
+      "avgCores": 0.149,
+      "peakRssGb": 0.196,
       "measurementReason": null
     },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport preserves the supplied close reason for a pending caller": {

@@ -505,6 +505,23 @@ describe("distributed task coordinator", function () {
         });
     });
 
+    it("keeps the zero worker-boot wire field that older orchestrators require and ignores worker-boot markers", function () {
+        const metadata = reduceAttemptOutput(
+            '##E2E_TIMING## {"startupMs":5,"workerBootMs":9}\n',
+            ""
+        );
+        expect(metadata.timing.startupMs).to.equal(5);
+        expect(metadata.timing.workerBootMs).to.equal(0);
+        expect(validateReducedAttempt(metadata).timing.workerBootMs).to.equal(
+            0
+        );
+        const { workerBootMs, ...withoutWorkerBoot } = metadata.timing;
+        expect(workerBootMs).to.equal(0);
+        expect(() =>
+            validateReducedAttempt({ ...metadata, timing: withoutWorkerBoot })
+        ).to.throw("Worker returned invalid attempt metadata");
+    });
+
     it("rejects malformed reduced resource measurements", function () {
         const metadata = reduceAttemptOutput();
         expect(() =>

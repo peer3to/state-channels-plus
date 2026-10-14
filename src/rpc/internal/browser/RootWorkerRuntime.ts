@@ -2,11 +2,15 @@ import "../threadName";
 import type { RootWorker } from "../createRoot";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import { createConfig } from "@/utils/config";
+import type { Logger } from "@/utils/logging/Logger";
 import { adaptPort } from "@platform/p2pRuntimeChannel";
 
+// The logger is unused: browser shutdown terminates the worker, which is
+// safe in browsers, so there is no drain to bound or report.
 export function createRootWorker(
     workerUrl: string | URL,
     onError: (error: Error) => void,
+    _logger: Logger,
     name?: string
 ): RootWorker & { shutdown(): Promise<void> } {
     return observeWorker(

@@ -78,6 +78,9 @@ function validateReducedAttempt(reduced) {
     const timingFields = [
         "startupMs",
         "deployMs",
+        // Always 0 and unused. It stays required until the distributed
+        // protocol version is bumped: older orchestrators reject a reduced
+        // attempt without it, so worker hosts keep sending it.
         "workerBootMs",
         "runtimeReadyMs",
         "maxEventLoopDelayMs"
@@ -121,7 +124,6 @@ function reduceAttempt(task, attempt) {
     task.starveCount = (task.starveCount || 0) + starveCount;
     task.startupMs = (task.startupMs || 0) + timing.startupMs;
     task.deployMs = (task.deployMs || 0) + timing.deployMs;
-    task.workerBootMs = (task.workerBootMs || 0) + timing.workerBootMs;
     task.runtimeReadyMs = (task.runtimeReadyMs || 0) + timing.runtimeReadyMs;
     task.maxEventLoopDelayMs = Math.max(
         task.maxEventLoopDelayMs || 0,

@@ -76,6 +76,13 @@ export type BlockWorkHoldPoint =
     | "storedMerge"
     | "stateApplicationInspection";
 
+/**
+ * Where a held snapshot post parks: `send` before the contract method (it is
+ * prepared, not estimated); `broadcast` in the signer after its gas estimate
+ * passed, before it is signed and broadcast.
+ */
+export type SnapshotPostHoldPoint = "send" | "broadcast";
+
 export type SignatureBlockMatch = {
     forkId: ForkId;
     participant: Address;
@@ -762,6 +769,8 @@ export class StubService extends ANetworkRpcService<
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
     private readonly heldSnapshotPostSendWaiters: (() => void)[] = [];
+    /** Restores the signer patched by a snapshot post hold at its broadcast. */
+    private restoreSnapshotPostBroadcast?: () => void;
     private heldLobbyReply?: HeldRpcReply;
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
@@ -3418,9 +3427,15 @@ export class StubService extends ANetworkRpcService<
      * runs for real against the chain state at release. With `adoptionOnly`
      * only an adopt-only post (a multicall whose only call is
      * `updateStateSnapshotFork`) is parked; every other multicall, such as a
-     * reduction, runs at once.
+     * reduction, runs at once. With `at: "broadcast"` the post parks in the
+     * signer instead, after its gas estimate passed against the chain state
+     * of that moment; at release it is signed, broadcast and mined against
+     * the chain state then.
      */
-    public installSnapshotPostSendHold(adoptionOnly = false): void {
+    public installSnapshotPostSendHold(
+        adoptionOnly = false,
+        at: SnapshotPostHoldPoint = "send"
+    ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("snapshotPostSend")) {
             this.stubOriginals.set("snapshotPostSend", contract.multicall);
@@ -3443,6 +3458,34 @@ export class StubService extends ANetworkRpcService<
         };
         this.heldSnapshotPostSend = held;
         this.snapshotPostSendOutcome = undefined;
+        const enter = () => {
+            held.entered += 1;
+            this.heldSnapshotPostSendWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+        };
+        // Encoded multicall data of each post to park at its broadcast.
+        const encodedBroadcastMulticalls = new Set<string>();
+        if (at === "broadcast") {
+            this.restoreSnapshotPostBroadcast?.();
+            // The wrapped wallet signs after the host nonce manager's
+            // estimate and before its broadcast.
+            const wallet = this.sm.signer.signer;
+            const sign = wallet.signTransaction;
+            this.restoreSnapshotPostBroadcast = () => {
+                wallet.signTransaction = sign;
+            };
+            wallet.signTransaction = async (tx) => {
+                if (
+                    typeof tx.data === "string" &&
+                    encodedBroadcastMulticalls.delete(tx.data)
+                ) {
+                    enter();
+                    await gate;
+                }
+                return sign.call(wallet, tx);
+            };
+        }
         // Only the send is held; simulation and population keep the real
         // contract method's properties, including when another hold wraps it.
         contract.multicall = new Proxy(original, {
@@ -3456,15 +3499,23 @@ export class StubService extends ANetworkRpcService<
                     if (!isAdoption)
                         return Reflect.apply(target, receiver, parameters);
                 }
-                held.entered += 1;
-                this.heldSnapshotPostSendWaiters
-                    .splice(0)
-                    .forEach((resolve) => resolve());
-                const sent = gate.then(
-                    (): ReturnType<typeof original> =>
-                        Reflect.apply(target, receiver, parameters)
-                );
-                if (held.entered === 1)
+                let sent: ReturnType<typeof original>;
+                if (at === "broadcast") {
+                    encodedBroadcastMulticalls.add(
+                        contract.interface.encodeFunctionData("multicall", [
+                            parameters[0] as string[]
+                        ])
+                    );
+                    sent = Reflect.apply(target, receiver, parameters);
+                } else {
+                    enter();
+                    sent = gate.then(
+                        (): ReturnType<typeof original> =>
+                            Reflect.apply(target, receiver, parameters)
+                    );
+                }
+                // the first post this hold parks
+                if (!this.snapshotPostSendOutcome)
                     this.snapshotPostSendOutcome = sent
                         .then((response) => response.wait())
                         .then(
@@ -3481,6 +3532,8 @@ export class StubService extends ANetworkRpcService<
     public releaseSnapshotPostSendHold(): boolean {
         this.heldSnapshotPostSend?.release();
         this.heldSnapshotPostSend = undefined;
+        this.restoreSnapshotPostBroadcast?.();
+        this.restoreSnapshotPostBroadcast = undefined;
         const original = this.stubOriginals.get("snapshotPostSend");
         if (original === undefined) return false;
         this.sm.stateChannelManagerContract.multicall =

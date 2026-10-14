@@ -36,7 +36,9 @@ const BAN_WINDOW_MS = 10_000;
  *  (d, e) three pages select one opened channel by connectToChannel (no
  *      lobby) and all three connect pairwise;
  *  (f) local only: a blacklisted peer that the hub announces again is not
- *      linked, and releasing the blacklist links it exactly once.
+ *      linked, and releasing the blacklist links it exactly once;
+ *  (g) local only: a link socket that opens after its runtime was disposed
+ *      is closed without a transport, so the disposed page logs no error.
  */
 export async function runTransportPermutations(mode) {
     const resources = [];
@@ -152,6 +154,18 @@ export async function runTransportPermutations(mode) {
                 hub
             );
             for (const page of banPages) await page.close();
+
+            const latePages = [
+                await openPage("late-link-a"),
+                await openPage("late-link-b")
+            ];
+            results.lateLink = await runLateLinkPermutation(
+                mode,
+                latePages,
+                scmAddress,
+                hub
+            );
+            for (const page of latePages) await page.close();
         }
 
         console.log(
@@ -449,6 +463,60 @@ async function runBanPermutation(mode, pages, scmAddress, hub) {
         `(f) one bootstrap connection per page: ${JSON.stringify(relinked)}`
     );
     return { unlinkedSamples: samples.length, bootstrapLinks };
+}
+
+/**
+ * (g) The hub holds every link socket while both pages join one lobby topic,
+ * so each page has a link to the other still connecting. Page A disposes its
+ * runtime, then the hub lets the sockets open: A's link opens after its
+ * runtime is gone and must be closed without a transport (any error A logs
+ * fails the gate).
+ */
+async function runLateLinkPermutation(mode, pages, scmAddress, hub) {
+    const [disposed, other] = pages;
+    // Inline runtimes: disposing a worker runtime ends its worker, so a late
+    // socket event could never run there.
+    const addresses = await Promise.all(
+        pages.map((page, index) =>
+            page.call("start", {
+                scmAddress,
+                walletIndex: 8 + index,
+                inline: true
+            })
+        )
+    );
+    const linkId = addresses
+        .map((address) => address.toLowerCase())
+        .sort()
+        .join(":");
+    hub.holdLinks();
+    const topic = ethers.id(`transport-${mode}-late-link`);
+    // The lobby never matches: page A is disposed while it waits.
+    for (const page of pages) page.call("joinLobby", topic).catch(() => {});
+    await waitUntil(
+        () => hub.heldLinks() === 2,
+        AGREEMENT_MS,
+        "(g) both link sockets held at the hub"
+    );
+
+    await disposed.call("dispose");
+    hub.releaseLinks();
+    await waitUntil(
+        () => hub.linkCloses(linkId) > 0,
+        AGREEMENT_MS,
+        "(g) the disposed page closes its late link"
+    );
+    await other.call("dispose");
+    return { linkCloses: hub.linkCloses(linkId) };
+}
+
+/** Polls `isMet` until it holds; throws `label` after `timeoutMs`. */
+async function waitUntil(isMet, timeoutMs, label) {
+    const deadline = Date.now() + timeoutMs;
+    while (!isMet()) {
+        if (Date.now() > deadline) throw new Error(`${label} timed out`);
+        await new Promise((resolve) => setTimeout(resolve, SAMPLE_MS));
+    }
 }
 
 function isOnly(state, transportTypes) {
