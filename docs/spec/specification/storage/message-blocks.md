@@ -31,8 +31,7 @@ a lower block leaves it, and linkage to the current tip is not required, so the 
 gap in held history. A store operation MAY explicitly opt out of tip advancement: blocks persisted
 only as proof material, and the blocks of a non-extending chain-verified run, use that opt-out and
 never move the tip. Blocks recovered later from base-layer logs, and the inbound list of a window
-this node reduced itself, use the tip-moving store and follow the height rule: below the tip they
-leave it, into an empty store they set it, and at the tip's height they replace it. A store of a chain-verified run moves the tip only when
+this node reduced itself, use the tip-moving store and follow the height rule above. A store of a chain-verified run moves the tip only when
 the run extends the current tip exactly — the run's predecessor hash equals the current tip's hash,
 or the zero hash when no tip is held; otherwise its blocks are persisted and the tip stays. A read
 from a tip above a gap follows [`REQ-MSGSTORE-2-8RDXPZ`](message-blocks.md#req-msgstore-2-8rdxpz) and reports the first missing block. A tip read against a snapshot returns the snapshot's head while the
