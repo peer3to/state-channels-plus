@@ -11,6 +11,14 @@ setup before live authoring resumes. Agreement-time validation and the proof
 assertions are unchanged; this fixture timing is not a protocol default.
 Runtime verification of this timing adjustment is pending.
 
+The genesis-index cases run on three participants after one final block. In the first, peer 0's
+payload is rewritten to prove block 0 committing the genesis data at block 0's timestamp, signed by
+all three, with the genesis state as the finalized state; a fresh requester with no genesis of its
+own (checked before the apply) accepts it, stores that result by hash, and its genesis index holds
+the served genesis. In the second, a fresh requester applies peer 0's real payload twice while a
+record-only stub counts the snapshot storage's warnings: both applies are accepted, the served
+genesis stays registered and no refusal is logged.
+
 ## Tests
 
 - `U54/U56: a proof from the anchor reaching the receiver's own finalized head → accepted again without installing its state again or re-running a block, stored blocks, signers and state unchanged`: REQ-SP-10-JMVHTB.T5.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P71
@@ -31,3 +39,5 @@ Runtime verification of this timing adjustment is pending.
 - `U84: a threshold hop above the anchor with no run back to it → accepted, the gap history is never stored, the rebuilt proof verifies from the anchor`: REQ-SP-10-JMVHTB.T5.P14, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P84
 - `U85: a synced spectator follows two more final blocks → its rebuilt proof reaches the new head and verifies, the synced evidence is still stored`: REQ-SP-10-JMVHTB.T5.P15, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P85
 - `U85: the chain adopts a newer anchor after the sync and local progress → the rebuilt proof starts at it and needs none of the older evidence, which stays stored`: REQ-SP-10-JMVHTB.T5.P16, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86
+- `a proof finalizing a block 0 that changes no state → accepted, its result stored by hash, the served fork genesis is the registered genesis`: REQ-SNAPSTORE-1-AJW0HJ.T2.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66
+- `the same served sync response applied twice → the served fork genesis stays registered and no refusal is logged`: REQ-SNAPSTORE-1-AJW0HJ.T2.P3, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110

@@ -11,8 +11,8 @@
 
 Content addressing and genesis index
 
-- Setup: Store snapshots (genesis and not), repeat stores, store a conflicting genesis (same fork id, later timestamp) for a registered fork, store a later-height snapshot with the genesis data, query both indexes and the logger's store
-- Oracle: Round trips exact; repeats idempotent; genesis index maps fork id to its first height-0 genesis only; a conflict is refused by the index, kept by hash and logged as one warning; absence explicit
+- Setup: Store snapshots (genesis and not), repeat stores, store a conflicting genesis (same fork id, later timestamp) for a registered fork, store a later-height snapshot with the genesis data before and after the genesis, store a height-0 snapshot with the genesis data as a block result before and after the genesis, query both indexes and the logger's store
+- Oracle: Round trips exact; repeats idempotent; genesis index maps fork id to its first height-0 genesis only, never to a block result; a conflict is refused by the index, kept by hash and logged as one warning; a block result or a later-height snapshot is kept by hash with no warning; absence explicit
 
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P1` — round trip by hash
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P2` — genesis registration and lookup
@@ -26,3 +26,6 @@ Content addressing and genesis index
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P10` — genesis of another fork id registers alongside
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P11` — non-genesis snapshot of a registered fork leaves its genesis unchanged
 - [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P12` — later-height snapshot with the genesis data stored by hash only, index unchanged, no warning
+- [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P13` — later-height snapshot with the genesis data stored into an empty index does not register; the height-0 genesis then registers
+- [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P14` — height-0 block result with the genesis data stored after the genesis: stored by hash, index unchanged, no warning
+- [x] `UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P15` — height-0 block result with the genesis data stored into an empty index does not register; the genesis stored after it registers without a warning

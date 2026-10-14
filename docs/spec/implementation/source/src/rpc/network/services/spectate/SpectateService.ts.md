@@ -24,6 +24,8 @@
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
   Contradicts: retained, unexecuted proof support can contaminate installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+- [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../../../../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
+  Partial: `persistSyncPayload` stores the replay base (through `StateApplicationService.unsafeSetLatestState`) and the `latestStateSnapshot` of each window the chain has not reduced without marking a block result, so an unchanged block-0 result there falls back to the height-0 genesis rule ([`FIND-STORAGE-7-1KSR89`](../../../../../../../audit/open-findings.md#find-storage-7-1ksr89)).
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT
 
@@ -135,6 +137,7 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107` — A requester that already holds the base, with a stored block at the base height that conflicts with the served history: the conflict is found when the proof is staged, no install runs, the sync aborts with the local state kept and the responder is blacklisted.
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108` — A spectator that installed a later point from one source, without the state at an earlier point, applies another source's payload based at that earlier point: `persistSyncPayload` keeps the local state (`unsafeSetLatestState` not called), the VM state equals the source's at the same height, and the next live blocks execute with no fraud proof or cut source
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109` — The P108 case for a pending participant: it stays pending through the sync, disputes nothing, and the next live block seats it
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — A fresh requester applies the same served payload twice: the served fork genesis stays registered and no genesis refusal is logged
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

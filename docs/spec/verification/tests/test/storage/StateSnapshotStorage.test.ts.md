@@ -17,7 +17,12 @@ storage's real logger records exactly one warning naming both snapshot hashes. A
 fork id and a non-genesis snapshot of the registered fork leave the registered genesis unchanged.
 Geneses are built at block height 0. A copy of the registered genesis at a later block height is
 stored and read back under its own hash, while the index keeps the genesis and the logger records
-no warning.
+no warning. Stored first into an empty index, that later-height copy does not register, and the height-0
+genesis stored after it does. A copy at height 0 with a later timestamp stored with the
+`blockResult` option (block 0's result when block 0 changes no state) is stored under its own hash
+and never registers: after the genesis the index keeps the genesis, and into an empty index it stays
+unregistered so the genesis stored after it registers; the logger records no warning in either
+order.
 
 ## Tests
 
@@ -38,3 +43,6 @@ no warning.
 - `registers a genesis for a different fork id next to an existing one`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P10
 - `keeps the registered genesis when a non-genesis snapshot of the same fork is stored`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P11
 - `stores a later-height snapshot with the genesis snapshotData by hash only, without touching the genesis index or warning`: REQ-SNAPSTORE-1-AJW0HJ.T1.P6, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P12
+- `does not register a later-height snapshot with the genesis snapshotData into an empty index, and a height-0 genesis then registers`: REQ-SNAPSTORE-1-AJW0HJ.T1.P7, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P13
+- `stores a height-0 block result with the genesis snapshotData by hash only after the genesis, without touching the genesis index or warning`: REQ-SNAPSTORE-1-AJW0HJ.T1.P8, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P14
+- `does not register a height-0 block result with the genesis snapshotData into an empty index, so the genesis stored after it registers`: REQ-SNAPSTORE-1-AJW0HJ.T1.P9, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P15
