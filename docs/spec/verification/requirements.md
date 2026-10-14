@@ -609,7 +609,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 26/26.
+Specification cases tested: 29/29.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -799,6 +799,9 @@ Specification cases tested: 0/17.
 
 [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../specification/runtime/execution.md#req-runtime-6-6f4ssm)
 Specification cases tested: 2/2.
+
+[`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0)
+Specification cases tested: 3/3.
 
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.

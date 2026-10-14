@@ -1904,9 +1904,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Handshake Completion should update existing profile transport on WebRTC upgrade": {
-      "durationMs": 7528,
-      "avgCores": 1.217,
-      "peakRssGb": 0.759,
+      "durationMs": 7051,
+      "avgCores": 1.385,
+      "peakRssGb": 0.771,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Time Validation should blacklist peer answering with an undecodable (junk) signature": {
@@ -2749,10 +2749,28 @@
       "peakRssGb": 1.219,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a late joiner's exit post that runs after its co-leavers' exits closed the channel posts nothing and does not fail, and its runtime stays alive and leaves": {
+      "durationMs": 27256,
+      "avgCores": 0.8,
+      "peakRssGb": 0.983,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort": {
       "durationMs": 26967,
       "avgCores": 1.022,
       "peakRssGb": 1.068,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path an exit post prepared against the open fork and still unsent when its co-leavers' exits close the channel is rejected at its estimate with RaceConditionSnapshotForkMismatch, logged as a chain refusal, and the leaver's runtime stays alive and leaves": {
+      "durationMs": 14850,
+      "avgCores": 0.892,
+      "peakRssGb": 0.78,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path an exit post whose estimate passed before its co-leavers' exits closed the channel and that is mined after the close reverts in its block, its replay recovers RaceConditionSnapshotForkMismatch, it is logged as a chain refusal, and the leaver's runtime stays alive and leaves": {
+      "durationMs": 13130,
+      "avgCores": 0.783,
+      "peakRssGb": 0.774,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path exiting participant does not sign blocks authored after its leave": {
@@ -3902,9 +3920,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E10: auditors with different final points E10: posted data, the row of an earlier milestone above the chain anchor is the head's snapshot → the earlier-start auditor kills it on chain from the posted data; newer-start auditors accept": {
-      "durationMs": 43972,
-      "avgCores": 0.672,
-      "peakRssGb": 1.038,
+      "durationMs": 28822,
+      "avgCores": 0.968,
+      "peakRssGb": 1.327,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E15: balance judged on the unfinalized latest state E15 control: the same blind pending auditor with the real final head and its correct tail (a good balance invariant), posted data → the tail replays on the head and every auditor accepts the dispute": {
@@ -7613,6 +7631,24 @@
       "durationMs": 18319,
       "avgCores": 0.242,
       "peakRssGb": 0.316,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain completes disposal after the drain bound when the disposed worker leaks a referenced timer": {
+      "durationMs": 6882,
+      "avgCores": 0.311,
+      "peakRssGb": 0.237,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain drains a worker with no leaked handle before the bound without a warning": {
+      "durationMs": 1249,
+      "avgCores": 0.673,
+      "peakRssGb": 0.155,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RootWorkerDrain.test.ts|RootWorkerDrain warns with diagnostics naming the leaked timer when the worker exits after the drain bound": {
+      "durationMs": 6535,
+      "avgCores": 0.228,
+      "peakRssGb": 0.236,
       "measurementReason": null
     },
     "hardhat|test/rpc/Rpc.test.ts|deserializeRpc - params schema accepts a well-formed RPC with array params": {
@@ -13793,6 +13829,12 @@
       "durationMs": 17059,
       "avgCores": 1.278,
       "peakRssGb": 1.013,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService once the channel is closed on chain, the same-fork preparation returns nothing to post without building a state proof or reading local outbound blocks, and the post resolves undefined": {
+      "durationMs": 8624,
+      "avgCores": 0.855,
+      "peakRssGb": 0.573,
       "measurementReason": null
     },
     "hardhat|test/stateManager/SnapshotUpdateService.test.ts|SnapshotUpdateService rejects with the disputed-fork refusal when a dispute commits between preparation and send": {

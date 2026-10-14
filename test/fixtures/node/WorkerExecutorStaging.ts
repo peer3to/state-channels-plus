@@ -88,12 +88,15 @@ export const createLogOnlyInitCode = (topic: string) => {
 export async function assertWorkerFailureOrder() {
     const { workerUrl, workerData } = watchdogWorkerRuntime("prefunnel");
     const errors: Error[] = [];
+    const { logger } = createUploaderFixture({ uploadEndpoint: "" });
     const worker = await RootWorkerControl.run(
         "vm",
         { workerUrl, workerData },
         async () =>
-            createRootWorker(contractExecutorRootUrl, (error) =>
-                errors.push(error)
+            createRootWorker(
+                contractExecutorRootUrl,
+                (error) => errors.push(error),
+                logger
             )
     );
     try {
@@ -109,5 +112,6 @@ export async function assertWorkerFailureOrder() {
         expect(errors[1].message).to.equal("Root worker exited with 1");
     } finally {
         await worker.shutdown();
+        logger.dispose();
     }
 }

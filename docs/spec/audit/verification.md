@@ -11,6 +11,19 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Exit post in flight across the channel close — 2026-10-14
+
+Two E2E cases in the
+[participant-lifecycle report](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md) stage the
+race where the other leavers' exits close the channel while a third leaver's exit post is already prepared
+against the open fork. The stub action `holdSnapshotPostSend` parks that post at its contract send (before its
+gas estimate) or, with the new `at: "broadcast"` option, in the signer after its estimate passed; it is released
+only after the chain snapshot is deleted. They cover
+[`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27) (rejected at the
+estimate) and [`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28)
+(mined revert, custom error read back by the replay in `SnapshotUpdateService`). No production code changes.
+The tests are added in this pass and have not run yet; their runs are pending the next gate.
+
 ## Join and top-up retry after a snapshot move — 2026-10-10
 
 The [join snapshot guard report](../verification/tests/test/e2e/E2E-JoinSnapshotGuard.test.ts.md) holds the

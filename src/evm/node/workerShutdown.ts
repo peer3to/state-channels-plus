@@ -8,10 +8,11 @@ import { Worker } from "node:worker_threads";
 // "uv_loop_close() while having open handles" when the worker still holds
 // native handles (udx/hyperswarm sockets; observed on Node 22.12 and 22.17
 // under parallel-test load). A worker's own process.exit() is different: node
-// closes that thread's handles and ends only that thread. That is also why
-// this wait has no timeout: abandoning a live worker only converts a slow
-// drain into that abort at process exit, while a genuinely stuck drain
-// surfaces here as a visible hang that names the leaking teardown.
+// closes that thread's handles and ends only that thread. That is why this
+// wait has no timeout of its own: the bound lives in the worker. A disposed
+// root worker whose loop has not drained after ROOT_WORKER_DRAIN_TIMEOUT_MS
+// reports what still holds it and exits itself with
+// ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE, and the parent logs that as a warning.
 export function createWorkerShutdown(worker: Worker): () => Promise<void> {
     return () =>
         new Promise<void>((resolve) => {

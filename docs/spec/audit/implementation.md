@@ -3,6 +3,55 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Exit post after the channel closed — 2026-10-14
+
+Observed 2026-10-14 in the poker gate: two members left in the same snapshot post and the chain closed the
+channel. A third member, seated through spectator sync after an early outbound block was already on chain, still
+had an exit post queued. That post ran after the close was mined. The same-fork preparation read the deleted chain
+snapshot (fork ID zero), took the local fork-genesis fallback and walked the outbound blocks from that genesis to
+the finalized head. The member did not hold the early block, so the walk threw `Block hash … not found in
+storage`. The leave service rethrows any error that is not a chain refusal, so the runtime host failed and the
+application treated the runtime as dead before its terminal leave settled.
+
+Luka approved the fix. `prepareUpdateSnapshotSameFork` in the
+[SnapshotUpdateService report](../implementation/source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md)
+now returns the empty, not postable result when the base snapshot read from the chain has fork ID zero, before the
+genesis fallback, the state proof and the outbound walk. Fork ID zero means the chain holds no snapshot for the
+channel: it was never opened or it was closed (the zero-participant close deletes the snapshot). An open channel
+always has a nonzero fork ID (a hash of its snapshot data), and a base passed in from the fork-update preparation is
+a genesis snapshot with a nonzero fork ID, so no other path reaches the check. With no chain snapshot, no same-fork
+or fork update can land (the same-fork update needs equal fork IDs; the fork update needs a reduction chain from the
+current fork), so the fallback prepared nothing usable here. Every other path is unchanged. The specification states
+the case in [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9). Evidence:
+[`UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P23`](../implementation/source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md#unit-test-snapshot-update-service-1-a4b38n)
+and [`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26); both tests are
+added in this pass and their runs are pending the next gate.
+
+## Bounded root worker drain — 2026-10-14
+
+Observed 2026-10-14: a poker bot disposed a `P2pInstance` whose runtime host ran in a worker thread. The host
+acknowledged its lifecycle dispose, but the worker thread never exited. `createWorkerShutdown` waits for
+`exit` with no timeout, so `P2pInstance.dispose()` and the client's leave stayed pending forever. Inspection
+of the stuck worker found no active handle or request, only one `Timeout` resource (most likely the
+inspector's), Hyperswarm and HyperDHT destroyed and both UDX sockets closed. Something Node does not list
+held the loop ([`FIND-WORKER-DRAIN-1-EKYJQV`](open-findings.md#find-worker-drain-1-ekyjqv)).
+
+Luka approved a bounded drain and its diagnostics. The node
+[`closeRootWorker`](../implementation/source/src/rpc/internal/node/RootWorkerRuntime.ts.md) now unreferences the
+bootstrap port instead of closing it and arms an unreferenced deadline (`ROOT_WORKER_DRAIN_TIMEOUT_MS`, five
+seconds). If the loop has not drained by then, the worker posts its active, referenced libuv handles and its
+active resource kinds over the bootstrap port and exits itself with `ROOT_WORKER_DRAIN_TIMEOUT_EXIT_CODE`
+(86). `createRootWorker` treats that code during an expected shutdown as a drain timeout, not a failure, and
+warns through the parent root's logger, which [`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md)
+now passes in. The parent still never terminates a worker. The browser worker is unchanged: its shutdown
+terminates the worker, which is safe in browsers, so it cannot hang this way. Requirement:
+[`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0).
+Implemented; the three drain cases are added in this pass and their verification is pending the next gate.
+
+The worker startup timing hook (`workerStartupTiming.ts`) is deleted with its report. It timed a worker's
+first `message`, which root workers never posted, so it never ran; the drain message would have made it log a
+wrong boot time. The runner's `workerBootMs` marker summing now has no emitter (it always read 0).
+
 ## PR #520 third-review and CI corrections (2026-10-07)
 
 The [localDiamond report](../implementation/source/src/utils/localDiamond.ts.md) now anchors its

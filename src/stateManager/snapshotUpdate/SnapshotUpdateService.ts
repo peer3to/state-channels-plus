@@ -392,6 +392,23 @@ export default class SnapshotUpdateService {
                 );
             let canPost = true;
 
+            // No open channel on chain (closed, its snapshot deleted): no
+            // snapshot can land, and the local blocks may not reach the
+            // fork genesis, so nothing is prepared.
+            if (preparationBaseSnapshot.forkID === ethers.ZeroHash) {
+                this.logger.debug(
+                    "No same-fork snapshot update: the channel is not open on chain",
+                    { requestedForkId: forkId }
+                );
+                return {
+                    canPost: false,
+                    callData: [],
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    outboundMessageBlocks: []
+                };
+            }
+
             // A locally reduced fork can have finalized milestones before its
             // fork snapshot reaches the chain. Use that fork's genesis as the
             // prospective base so callers can inspect the prepared update, but

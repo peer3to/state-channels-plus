@@ -2,6 +2,11 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { recordSnapshotPostWaitResults } from "@test/fixtures/BotConnectionFixesStaging";
+import {
+    stageExitPostInFlightAcrossClose,
+    stageLateJoinerMissingPostedExitBlock
+} from "@test/fixtures/ClosedChannelExitPostStaging";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -302,6 +307,113 @@ describe("E2E: Participant Lifecycle", function () {
 
         it("remaining peers do not blacklist the leaver after its exit and it can be force-joined back", async function () {
             await assertLeaverCanBeForceJoinedBackAfterExit();
+        });
+
+        it("a late joiner's exit post that runs after its co-leavers' exits closed the channel posts nothing and does not fail, and its runtime stays alive and leaves", async function () {
+            const h = TestSession.getHarness();
+            const { founders, joiner } =
+                await stageLateJoinerMissingPostedExitBlock(h);
+            const members = [...founders, joiner.index];
+            const hostErrors: string[] = [];
+            const removeHostErrorListener = joiner.p2pInstance.onHostError(
+                (error) => hostErrors.push(error.message)
+            );
+            const posts = await recordSnapshotPostWaitResults(h, joiner);
+            try {
+                await posts.holdStarts();
+                await h.transition.keepAuthoringUntil({
+                    until: async () =>
+                        (await h.query.getNextPeerToWrite()).index ===
+                        joiner.index,
+                    waitForPeers: members,
+                    maximumBlocks: 6
+                });
+                // The joiner exits first: its exit post parks before it
+                // prepares anything.
+                await h.transition.participantLeaveStateTransition({
+                    leaverIndex: joiner.index
+                });
+                await waitFor(
+                    async () => (await posts.started()) >= 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                // Both founders exit next; their posts land every exit and
+                // the empty snapshot closes the channel.
+                await h.transition.participantLeaveStateTransition();
+                await h.transition.participantLeaveStateTransition();
+                await waitFor(
+                    async () =>
+                        !(await h.channelManager.isChannelOpen(h.channelId))[0],
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await posts.results(),
+                    "premise: the joiner's exit post had prepared nothing before the close"
+                ).to.deep.equal([]);
+
+                await posts.releaseStarts();
+                const results = await posts.resultsWait(await posts.started());
+
+                expect(results).to.deep.equal(results.map(() => "no-op"));
+                for (const index of members)
+                    await h.event.waitUntilLeftChannel(index);
+                expect(
+                    await h.control(joiner).query.getStatus().request()
+                ).to.equal(Status.NOT_OPENED);
+                expect(hostErrors).to.deep.equal([]);
+            } finally {
+                removeHostErrorListener();
+                await posts.restore();
+            }
+        });
+
+        it("an exit post prepared against the open fork and still unsent when its co-leavers' exits close the channel is rejected at its estimate with RaceConditionSnapshotForkMismatch, logged as a chain refusal, and the leaver's runtime stays alive and leaves", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageExitPostInFlightAcrossClose(h, "send");
+            try {
+                // the released send is estimated against the closed channel
+                expect(await staged.releasePost()).to.equal(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                await staged.assertRefusedAndLeft(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                // rejected before broadcast: no transaction was mined
+                expect(await staged.readNonce()).to.equal(
+                    staged.nonceBeforeRelease
+                );
+                // no detached error: settleDetached throws on one
+                await TestSession.settleDetached();
+            } finally {
+                await staged.restore();
+            }
+        });
+
+        it("an exit post whose estimate passed before its co-leavers' exits closed the channel and that is mined after the close reverts in its block, its replay recovers RaceConditionSnapshotForkMismatch, it is logged as a chain refusal, and the leaver's runtime stays alive and leaves", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageExitPostInFlightAcrossClose(
+                h,
+                "broadcast"
+            );
+            try {
+                const rawOutcome = await staged.releasePost();
+                // the mined revert's receipt names no custom error
+                expect(rawOutcome).to.be.a("string");
+                expect(rawOutcome).to.not.equal(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                // the transaction was mined: the leaver's nonce moved
+                expect(await staged.readNonce()).to.equal(
+                    staged.nonceBeforeRelease + 1
+                );
+                await staged.assertRefusedAndLeft(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                // no detached error: settleDetached throws on one
+                await TestSession.settleDetached();
+            } finally {
+                await staged.restore();
+            }
         });
 
         it("public terminal leave settles before disposal and excludes the former signer", async function () {

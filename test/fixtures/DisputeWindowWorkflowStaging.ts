@@ -213,6 +213,9 @@ export async function stageKillAndReplacement(
     return { forkId, replacer, spammer, spam, replacement, loneKills };
 }
 
+/** Evidence window (seconds) for the E22 staging; see its use below. */
+const SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME = 12;
+
 /**
  * E22: four peers, reductions held. Peer 0 opens the window with its own
  * self-removal dispute, so it audits the later spam dispute of peer 1 as a
@@ -225,7 +228,13 @@ export async function stageSpamAfterOwnDispute(
     h: MathPeerTestHarness,
     options: { holdKill: boolean }
 ) {
-    await h.scenario.preDisputeSetup({ peerCount: 4 });
+    // The spam upload must land inside peer 0's evidence window, after the
+    // three peers' full commit handling, one estimate and send, and one
+    // mining interval; the default eight seconds leave no margin under load.
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME }
+    });
     const forkId = h.activeForkId!;
     const killer = h.getPeer(0);
     const spammer = h.getPeer(1);
