@@ -10,6 +10,7 @@ import {
     classifyContractArtifacts,
     compiledContractArtifacts,
     contractSizeExemptions,
+    productionConsoleImports,
     productionSizeViolations
 } from "@test/fixtures/ContractSizeFixture";
 import { expect } from "chai";
@@ -38,6 +39,73 @@ describe("contract size", function () {
         ).to.deep.equal([]);
     });
 
+    it("keeps every compiled production artifact free of development console imports", async function () {
+        expect(
+            productionConsoleImports(await compiledContractArtifacts()),
+            "production contracts that compile in a console library"
+        ).to.deep.equal([]);
+    });
+
+    it("reports Hardhat and forge-std console libraries reached through an import", function () {
+        const classified = classifyContractArtifacts(
+            [
+                {
+                    fullyQualifiedName: "contracts/Facet.sol:Facet",
+                    artifact: { ...artifact(1), contractName: "Facet" },
+                    sourceNames: [
+                        "contracts/Facet.sol",
+                        "contracts/Helper.sol",
+                        "hardhat/console.sol"
+                    ]
+                },
+                {
+                    fullyQualifiedName: "contracts/Machine.sol:Machine",
+                    artifact: { ...artifact(1), contractName: "Machine" },
+                    sourceNames: [
+                        "contracts/Machine.sol",
+                        "forge-std/console2.sol",
+                        "lib/forge-std/src/safeconsole.sol"
+                    ]
+                },
+                {
+                    fullyQualifiedName: "contracts/Clean.sol:Clean",
+                    artifact: { ...artifact(1), contractName: "Clean" },
+                    sourceNames: [
+                        "contracts/Clean.sol",
+                        "contracts/console/Ledger.sol"
+                    ]
+                }
+            ],
+            []
+        );
+
+        expect(productionConsoleImports(classified)).to.deep.equal([
+            "contracts/Facet.sol:Facet imports hardhat/console.sol",
+            "contracts/Machine.sol:Machine imports forge-std/console2.sol",
+            "contracts/Machine.sol:Machine imports lib/forge-std/src/safeconsole.sol"
+        ]);
+    });
+
+    it("accepts a console import in an explicitly exempt local-only contract", function () {
+        const classified = classifyContractArtifacts(
+            [
+                {
+                    fullyQualifiedName: "contracts/Local.sol:Local",
+                    artifact: { ...artifact(1), contractName: "Local" },
+                    sourceNames: ["contracts/Local.sol", "hardhat/console.sol"]
+                }
+            ],
+            [
+                {
+                    fullyQualifiedName: "contracts/Local.sol:Local",
+                    reason: "local-only test entry"
+                }
+            ]
+        );
+
+        expect(productionConsoleImports(classified)).to.deep.equal([]);
+    });
+
     it("reports every production violation in one result", function () {
         const violations = productionSizeViolations([
             {
@@ -46,7 +114,8 @@ describe("contract size", function () {
                 artifact: {
                     ...artifact(EIP170_RUNTIME_LIMIT_BYTES + 1),
                     contractName: "RuntimeTooLarge"
-                }
+                },
+                sourceNames: ["contracts/RuntimeTooLarge.sol"]
             },
             {
                 fullyQualifiedName:
@@ -54,7 +123,8 @@ describe("contract size", function () {
                 artifact: {
                     ...artifact(1, EIP3860_INITCODE_LIMIT_BYTES + 1),
                     contractName: "InitcodeTooLarge"
-                }
+                },
+                sourceNames: ["contracts/InitcodeTooLarge.sol"]
             }
         ]);
 
@@ -148,7 +218,8 @@ describe("contract size", function () {
                 [
                     {
                         fullyQualifiedName: "contracts/A.sol:A",
-                        artifact: artifact(1)
+                        artifact: artifact(1),
+                        sourceNames: ["contracts/A.sol"]
                     }
                 ],
                 [

@@ -3,9 +3,12 @@ import {
     assertArtifactRuntimeSize,
     assertDeploymentInitcodeSize,
     ContractSizeLimitError,
+    developmentConsoleSources,
     NamedContractBytecode
 } from "@/utils/contractSize";
 import { artifacts } from "hardhat";
+import { BuildInfo, CompilerOutputContract } from "hardhat/types";
+import { readFile } from "node:fs/promises";
 
 export type ContractSizeExemption = {
     fullyQualifiedName: string;
@@ -19,6 +22,10 @@ export const contractSizeExemptions: readonly ContractSizeExemption[] = [
         reason: "local-only mirror deployed on allowUnlimitedContractSize networks"
     },
     {
+        fullyQualifiedName: "hardhat/console.sol:console",
+        reason: "development console library, compiled only for the local-only LocalDiamond"
+    },
+    {
         fullyQualifiedName:
             "contracts/V1/helpers/LibraryTestContract.sol:LibraryTestContract",
         reason: "contract test helper"
@@ -30,17 +37,20 @@ export const contractSizeExemptions: readonly ContractSizeExemption[] = [
     }
 ];
 
-export type ClassifiedArtifact = {
+export type CompiledContract = {
     fullyQualifiedName: string;
     artifact: NamedContractBytecode;
+    // Every source file the compiler read for this contract, imports
+    // included, as recorded in its metadata.
+    sourceNames: readonly string[];
+};
+
+export type ClassifiedArtifact = CompiledContract & {
     exemption?: ContractSizeExemption;
 };
 
 export function classifyContractArtifacts(
-    compiled: readonly {
-        fullyQualifiedName: string;
-        artifact: NamedContractBytecode;
-    }[],
+    compiled: readonly CompiledContract[],
     exemptions: readonly ContractSizeExemption[] = contractSizeExemptions
 ): ClassifiedArtifact[] {
     const byName = new Map(
@@ -57,10 +67,9 @@ export function classifyContractArtifacts(
             `Stale contract-size exemptions: ${stale.map((item) => item.fullyQualifiedName).join(", ")}`
         );
     }
-    return compiled.map(({ fullyQualifiedName, artifact }) => ({
-        fullyQualifiedName,
-        artifact,
-        exemption: byName.get(fullyQualifiedName)
+    return compiled.map((contract) => ({
+        ...contract,
+        exemption: byName.get(contract.fullyQualifiedName)
     }));
 }
 
@@ -68,11 +77,21 @@ export async function compiledContractArtifacts(): Promise<
     ClassifiedArtifact[]
 > {
     const names = await artifacts.getAllFullyQualifiedNames();
+    const sourceNamesByContract = await compiledSourceNames();
     const compiled = await Promise.all(
-        names.map(async (fullyQualifiedName) => ({
-            fullyQualifiedName,
-            artifact: await artifacts.readArtifact(fullyQualifiedName)
-        }))
+        names.map(async (fullyQualifiedName) => {
+            const sourceNames = sourceNamesByContract.get(fullyQualifiedName);
+            if (!sourceNames) {
+                throw new Error(
+                    `No compiler metadata for ${fullyQualifiedName}`
+                );
+            }
+            return {
+                fullyQualifiedName,
+                artifact: await artifacts.readArtifact(fullyQualifiedName),
+                sourceNames
+            };
+        })
     );
     return classifyContractArtifacts(
         compiled.filter(({ artifact }) => artifact.bytecode !== "0x")
@@ -105,4 +124,49 @@ export function productionSizeViolations(
         }
     }
     return violations;
+}
+
+// Lists each production contract that compiles in a development console
+// library, directly or through an import.
+export function productionConsoleImports(
+    classified: readonly ClassifiedArtifact[]
+): string[] {
+    const violations: string[] = [];
+    for (const { fullyQualifiedName, sourceNames, exemption } of classified) {
+        if (exemption) continue;
+        for (const sourceName of developmentConsoleSources(sourceNames)) {
+            violations.push(`${fullyQualifiedName} imports ${sourceName}`);
+        }
+    }
+    return violations;
+}
+
+// Fully qualified contract name -> the source names in that contract's
+// compiler metadata. Each build-info file is read once.
+async function compiledSourceNames(): Promise<Map<string, readonly string[]>> {
+    const sourceNamesByContract = new Map<string, readonly string[]>();
+    for (const buildInfoPath of await artifacts.getBuildInfoPaths()) {
+        const buildInfo = JSON.parse(
+            await readFile(buildInfoPath, "utf8")
+        ) as BuildInfo;
+        for (const [sourceName, contracts] of Object.entries(
+            buildInfo.output.contracts
+        )) {
+            for (const [contractName, output] of Object.entries(contracts)) {
+                // Hardhat's CompilerOutputContract does not type the
+                // metadata output that hardhat.config selects by default.
+                const { metadata } = output as CompilerOutputContract & {
+                    metadata: string;
+                };
+                const { sources } = JSON.parse(metadata) as {
+                    sources: Record<string, unknown>;
+                };
+                sourceNamesByContract.set(
+                    `${sourceName}:${contractName}`,
+                    Object.keys(sources)
+                );
+            }
+        }
+    }
+    return sourceNamesByContract;
 }

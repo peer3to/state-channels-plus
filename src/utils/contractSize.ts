@@ -1,6 +1,11 @@
 export const EIP170_RUNTIME_LIMIT_BYTES = 24_576;
 export const EIP3860_INITCODE_LIMIT_BYTES = 49_152;
 
+// Development console libraries: Hardhat's, and forge-std's under its
+// remapped or library-path source name.
+const DEVELOPMENT_CONSOLE_SOURCE =
+    /^(hardhat\/console\.sol|(lib\/)?forge-std\/(src\/)?(console2?|safeconsole)\.sol)$/;
+
 export type NamedContractBytecode = {
     contractName: string;
     bytecode: string;
@@ -103,4 +108,14 @@ export function assertDeploymentInitcodeSize(
         );
     }
     return measuredBytes;
+}
+
+// Returns the development console libraries among the source files a
+// contract's compilation read. A production artifact must have none.
+export function developmentConsoleSources(
+    sourceNames: readonly string[]
+): string[] {
+    return sourceNames.filter((sourceName) =>
+        DEVELOPMENT_CONSOLE_SOURCE.test(sourceName)
+    );
 }
