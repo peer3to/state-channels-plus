@@ -25,7 +25,7 @@
   Contradicts: retained, unexecuted proof support can contaminate installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 - [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../../../../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
-  Partial: `persistSyncPayload` stores the replay base (through `StateApplicationService.unsafeSetLatestState`) and the `latestStateSnapshot` of each window the chain has not reduced without marking a block result, so an unchanged block-0 result there falls back to the height-0 genesis rule ([`FIND-STORAGE-7-1KSR89`](../../../../../../../audit/open-findings.md#find-storage-7-1ksr89)).
+  Partial: `persistSyncPayload` stores the replay base (through `StateApplicationService.unsafeSetLatestState`) and the `latestStateSnapshot` of each window the chain has not reduced without marking a block result, so an unchanged block-0 result there falls back to the height-0 genesis rule ([`FIND-STORAGE-8-FQW5EE`](../../../../../../../audit/open-findings.md#find-storage-8-fqw5ee)).
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT
 
