@@ -3,8 +3,6 @@ pragma solidity ^0.8.8;
 
 import "../../AStateMachine.sol";
 
-// Uncomment this line to use console.log
-// import "hardhat/console.sol";
 struct MathState {
     uint256 number;
     address[] participants;
