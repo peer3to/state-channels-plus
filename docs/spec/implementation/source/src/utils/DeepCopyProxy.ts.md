@@ -18,4 +18,7 @@ Copy semantics
 - [ ] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P2` — input mutation isolated
 - [ ] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P3` — nested handling
 - [ ] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P4` — cyclic handling
-- [x] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P5` — a wrapped method returning a generator: the generator still works lazily and each yielded value is isolated from store state
+- [x] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P5` — a wrapped method returning a generator: the generator still works lazily, reading each value only when it is requested
+- [x] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P6` — a wrapped generator: a value yielded after the first is isolated from store state
+- [x] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P7` — a wrapped generator closed early by the caller (break) is finished and yields nothing more
+- [x] `UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P8` — a wrapped generator that yields nothing yields nothing through the wrapper

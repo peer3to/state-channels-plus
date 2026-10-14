@@ -463,7 +463,7 @@ describe("BlockStorage", () => {
             ).to.equal(storedSignatureCount);
         });
 
-        it("getIterator through the proxy reads each block only when it is requested and yields copies", () => {
+        it("getIterator through the proxy reads each block only when it is requested", () => {
             const forkId = factory.hash();
             const [block0, block1, block2] = [0, 1, 2].map((height) =>
                 factory.block({
@@ -476,24 +476,87 @@ describe("BlockStorage", () => {
             for (const block of [block0, block1, block2]) {
                 storageWithProxy.blocks.storeBlock(block);
             }
-            const storedSignatureCount = block2.confirmationSignatures.size;
 
             const iterator = storageWithProxy.blocks.getIterator(
                 forkId,
                 SortOrder.DESC
             );
             const first = iterator.next().value!;
-            first.expandSignatures([sig(), sig()]);
             // deleted after the walk started: a lazy walk no longer finds it
             storageWithProxy.blocks.deleteBlock(block1.hash);
             const remainingHeights = [...iterator].map((block) => block.height);
 
             expect(first.height).to.equal(2);
             expect(remainingHeights).to.deep.equal([0]);
+        });
+
+        it("mutating the second block yielded by getIterator leaves the stored block unchanged", () => {
+            const forkId = factory.hash();
+            const [block0, block1] = [0, 1].map((height) =>
+                factory.block({
+                    header: factory.transactionHeader({
+                        forkId,
+                        transactionCnt: height
+                    })
+                })
+            );
+            storageWithProxy.blocks.storeBlock(block0);
+            storageWithProxy.blocks.storeBlock(block1);
+            const storedSignatureCount = storageWithProxy.blocks.getBlock(
+                block0.hash
+            )!.confirmationSignatures.size;
+
+            const [, secondYielded] = storageWithProxy.blocks.getIterator(
+                forkId,
+                SortOrder.DESC
+            );
+            secondYielded.expandSignatures([sig(), sig()]);
+
+            expect(secondYielded.height).to.equal(0);
             expect(
-                storageWithProxy.blocks.getBlock(block2.hash)!
+                storageWithProxy.blocks.getBlock(block0.hash)!
                     .confirmationSignatures.size
             ).to.equal(storedSignatureCount);
+        });
+
+        it("breaking out of getIterator through the proxy finishes the walk", () => {
+            const forkId = factory.hash();
+            const [block0, block1, block2] = [0, 1, 2].map((height) =>
+                factory.block({
+                    header: factory.transactionHeader({
+                        forkId,
+                        transactionCnt: height
+                    })
+                })
+            );
+            for (const block of [block0, block1, block2]) {
+                storageWithProxy.blocks.storeBlock(block);
+            }
+
+            const iterator = storageWithProxy.blocks.getIterator(
+                forkId,
+                SortOrder.DESC
+            );
+            for (const _block of iterator) {
+                break;
+            }
+
+            // blocks at heights 1 and 0 remain, but the closed walk yields none
+            expect(iterator.next()).to.deep.equal({
+                value: undefined,
+                done: true
+            });
+        });
+
+        it("getIterator through the proxy yields nothing for a fork with no blocks", () => {
+            const yieldedBlocks = [
+                ...storageWithProxy.blocks.getIterator(
+                    factory.hash(),
+                    SortOrder.DESC
+                )
+            ];
+
+            expect(yieldedBlocks).to.deep.equal([]);
         });
     });
 
