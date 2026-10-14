@@ -7,7 +7,7 @@ import {
 } from "@test/fixtures/CommitEligibilityFixture";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverRelaysNothingAfterItsLeave } from "@test/fixtures/LeaverRelayFixture";
-import { craftProofBlock } from "@test/fixtures/SyncProofStaging";
+import { craftProofBlock, servedState } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -291,22 +291,18 @@ describe("Unit: BlockCommitService", function () {
             await h.join.connectSpectator(spectator);
             await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const control = h.control(spectator);
-            const genesisHash = await control.query
-                .getGenesisSnapshotHash(forkId)
+            const encodedGenesis = await control.dispute
+                .getGenesisSnapshotStruct(forkId)
                 .request();
-            expect(genesisHash).to.not.equal(null);
+            expect(encodedGenesis).to.not.equal(null);
             const genesis = StateSnapshot.from(
                 Codec.decode(
-                    (await control.query
-                        .getStateSnapshotStructByHash(genesisHash!)
-                        .request())!.encodedSnapshot,
+                    encodedGenesis!.encodedSnapshot,
                     Type.StateSnapshot
                 )
             );
-            const encodedState = await control.query
-                .getStateMachineState(genesis.stateMachineStateHash)
-                .request();
-            expect(encodedState).to.not.equal(null);
+            const genesisHash = genesis.hash;
+            const encodedState = await servedState(h, genesis.toStruct());
             // block 0's result: the genesis data at block 0's later timestamp
             const unchangedResult = StateSnapshot.from({
                 ...genesis.toStruct(),
@@ -334,7 +330,7 @@ describe("Unit: BlockCommitService", function () {
                             unchangedResult.toStruct(),
                             Type.StateSnapshot
                         ) as string,
-                        encodedState!
+                        encodedState
                     )
                     .request();
 

@@ -1026,7 +1026,8 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Count the snapshot storage's genesis refusal warnings, forwarding every
-     * entry. Reads the shared log store: the storage's logger is its child.
+     * entry. Reads the shared log store: the storage's logger is its child,
+     * so the p2pManager logger's methods never see its entries.
      */
     public observeGenesisRefusalLogs(): void {
         this.restoreGenesisRefusalLogs();
@@ -1041,7 +1042,8 @@ export class StubService extends ANetworkRpcService<
         logStore.store = (entry) => {
             if (
                 entry.level === "warn" &&
-                entry.context.component === "StateSnapshotStorage"
+                entry.context.component === "StateSnapshotStorage" &&
+                entry.message.startsWith("Refused conflicting genesis snapshot")
             )
                 observation.count++;
             store.call(logStore, entry);
