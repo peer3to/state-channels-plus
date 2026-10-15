@@ -568,7 +568,14 @@ export class Codec {
         encoded: Bytes,
         type: Type | FraudProofType | DisputeFraudProofType
     ): T {
-        const decoded = this.abiCoder.decode(this.getAbiTypes(type), encoded);
+        const abiTypes = this.getAbiTypes(type);
+        const decoded = this.abiCoder.decode(abiTypes, encoded);
+        const reencoded = ethers
+            .hexlify(this.abiCoder.encode(abiTypes, decoded))
+            .toLowerCase();
+        const normalizedInput = ethers.hexlify(encoded).toLowerCase();
+        if (reencoded !== normalizedInput)
+            throw new Error("Non-canonical encoding");
         return this.ethersResultToObjectRecursive(decoded[0]) as T;
     }
 

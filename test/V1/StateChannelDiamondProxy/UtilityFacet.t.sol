@@ -2,6 +2,9 @@ pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+import {CanonicalMutations} from "../harness/CanonicalMutations.sol";
+import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {Balance, Block, Message, MessageBlock} from "../../../contracts/V1/types/DataTypes.sol";
 
 // stateless property fuzz of the pure array helpers of UtilityFacet.sol, plus
 // direct cases for the signer-set report the join rejection payload is built from
@@ -118,5 +121,120 @@ contract UtilityFacetTest is Test {
         bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(encodedData)));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
+    }
+
+    // A block with a nonempty dynamic body and a nested message: every dynamic
+    // segment below carries data, so padding and offsets exist to corrupt.
+    function _canonicalBlock() internal view returns (Block memory b) {
+        Message[] memory messages = new Message[](1);
+        messages[0] = Message({
+            messageType: keccak256("canonical-message-type"),
+            participant: address(0xCAFE),
+            balance: Balance({amount: 11, data: hex""}),
+            data: hex"1234"
+        });
+        MessageBlock[] memory messageBlocks = new MessageBlock[](1);
+        messageBlocks[0] = MessageBlock({
+            previousBlockHash: keccak256("canonical-mb-prev"),
+            blockHeight: 7,
+            messages: messages,
+            totalBalance: Balance({amount: 11, data: hex""}),
+            timestamp: 9
+        });
+        b.transaction.header.channelId = keccak256("canonical-channel");
+        b.transaction.header.participant = address(0xB10C);
+        b.transaction.header.forkId = keccak256("canonical-fork");
+        b.transaction.header.transactionCnt = 1;
+        b.transaction.header.timestamp = 1;
+        b.transaction.body.encodedData = hex"123456";
+        b.transaction.body.data = hex"ab";
+        b.stateSnapshotHash = keccak256("canonical-snapshot");
+        b.previousBlockHash = keccak256("canonical-prev");
+        b.messageBlocks = messageBlocks;
+    }
+
+    function _assertCanonicalFields(Block memory decoded) internal view {
+        assertEq(decoded.transaction.header.channelId, keccak256("canonical-channel"), "channelId changed");
+        assertEq(decoded.transaction.header.participant, address(0xB10C), "participant changed");
+        assertEq(decoded.transaction.header.forkId, keccak256("canonical-fork"), "forkId changed");
+        assertEq(decoded.transaction.header.transactionCnt, 1, "transactionCnt changed");
+        assertEq(decoded.transaction.header.timestamp, 1, "timestamp changed");
+        assertEq(keccak256(decoded.transaction.body.encodedData), keccak256(hex"123456"), "encodedData changed");
+        assertEq(keccak256(decoded.transaction.body.data), keccak256(hex"ab"), "body data changed");
+        assertEq(decoded.messageBlocks.length, 1, "messageBlocks length changed");
+        assertEq(decoded.messageBlocks[0].messages.length, 1, "messages length changed");
+        assertEq(
+            decoded.messageBlocks[0].messages[0].messageType,
+            keccak256("canonical-message-type"),
+            "nested messageType changed"
+        );
+        assertEq(keccak256(decoded.messageBlocks[0].messages[0].data), keccak256(hex"1234"), "nested data changed");
+    }
+
+    function _assertRevertsWithoutCanonicalityError(bytes memory callData, bytes4 forbiddenSelector) internal view {
+        (bool ok, bytes memory revertData) = address(util).staticcall(callData);
+        assertFalse(ok, "malformed bytes must revert");
+        assertTrue(
+            revertData.length < 4 || bytes4(revertData) != forbiddenSelector,
+            "malformed bytes must not reach the canonicality check"
+        );
+    }
+
+    function test_decodeBlock_canonicalRoundTrip() public view {
+        bytes memory canonical = abi.encode(_canonicalBlock());
+        Block memory decoded = util.decodeBlock(canonical);
+        _assertCanonicalFields(decoded);
+        assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
+    }
+
+    function test_decodeBlock_rejectsNonCanonical() public {
+        bytes memory canonical = abi.encode(_canonicalBlock());
+        bytes memory dirty = CanonicalMutations.withDirtyPadding(canonical);
+        bytes memory gap = CanonicalMutations.withOffsetGap(canonical);
+        bytes memory truncated = new bytes(canonical.length - 1);
+        for (uint256 i = 0; i < truncated.length; i++) {
+            truncated[i] = canonical[i];
+        }
+        // Decodable but noncanonical inputs revert with the typed custom error.
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeBlock(abi.encodePacked(canonical, bytes32(uint256(0x1234))));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeBlock(abi.encodePacked(canonical, hex"00"));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeBlock(dirty);
+        // Malformed inputs revert without the canonicality error.
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeBlock, (truncated)), ErrorNonCanonicalEncoding.selector
+        );
+        _assertRevertsWithoutCanonicalityError(
+            abi.encodeCall(UtilityFacet.decodeBlock, (hex"")), ErrorNonCanonicalEncoding.selector
+        );
+        // The offset gap decodes but is rejected as noncanonical.
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        util.decodeBlock(gap);
+        (bool gapOk,) = util.tryDecodeBlock(gap);
+        assertFalse(gapOk, "offset gap must not decode");
+    }
+
+    function test_tryDecodeBlock_rejectsNonCanonical() public {
+        bytes memory canonical = abi.encode(_canonicalBlock());
+        (bool ok, Block memory decoded) = util.tryDecodeBlock(canonical);
+        assertTrue(ok, "canonical bytes must decode");
+        _assertCanonicalFields(decoded);
+        assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
+        bytes memory dirty = CanonicalMutations.withDirtyPadding(canonical);
+        bytes[5] memory rejected = [
+            abi.encodePacked(canonical, bytes32(uint256(0x1234))),
+            abi.encodePacked(canonical, hex"00"),
+            dirty,
+            CanonicalMutations.withOffsetGap(canonical),
+            hex""
+        ];
+        for (uint256 i = 0; i < rejected.length; i++) {
+            (bool decodedOk, Block memory blockData) = util.tryDecodeBlock(rejected[i]);
+            assertFalse(decodedOk, "noncanonical bytes must not decode");
+            assertEq(blockData.transaction.header.participant, address(0), "failure must yield default block");
+            assertEq(blockData.messageBlocks.length, 0, "failure must yield default block");
+        }
     }
 }

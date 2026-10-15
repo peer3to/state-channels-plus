@@ -95,35 +95,27 @@ export class NetworkController<
         );
     }
 
-    private async clearPeerIsolation(peerIndices: number[]): Promise<void> {
-        const peers = this.harness.getFilteredPeers(peerIndices);
-        // Isolation can stop discovery's retry loop. Restart this observation
-        // explicitly; joining an already observed topic is idempotent.
-        await Promise.all(
-            peers.map((peer) =>
-                this.harness
-                    .control(peer)
-                    .network.leaveSelectedKey(
-                        this.harness.channelId!.toString()
-                    )
-                    .request()
-            )
-        );
-        await Promise.all(
-            peers.flatMap((peer) =>
-                this.harness.peers
-                    .filter((other) => other.index !== peer.index)
-                    .flatMap((other) => [
-                        this.harness
-                            .control(peer)
-                            .network.unblacklistPeerByAddress(other.address)
-                            .request(),
-                        this.harness
-                            .control(other)
-                            .network.unblacklistPeerByAddress(peer.address)
-                            .request()
-                    ])
-            )
+    /**
+     * Resume discovery between two peers only; every other blacklist entry
+     * either peer holds stays in place.
+     */
+    async restorePairDiscovery(indexA: number, indexB: number): Promise<void> {
+        const peerA = this.harness.getPeer(indexA);
+        const peerB = this.harness.getPeer(indexB);
+        await this.leaveSelectedKey([indexA, indexB]);
+        await Promise.all([
+            this.harness
+                .control(peerA)
+                .network.unblacklistPeerByAddress(peerB.address)
+                .request(),
+            this.harness
+                .control(peerB)
+                .network.unblacklistPeerByAddress(peerA.address)
+                .request()
+        ]);
+        await this.joinSelectedKey(
+            [indexA, indexB],
+            this.harness.channelId!.toString()
         );
     }
 
@@ -315,5 +307,42 @@ export class NetworkController<
             ])
         );
         peer.logger.warn("Blacklisted and disconnected to simulate timeout");
+    }
+
+    private async leaveSelectedKey(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        // Isolation can stop discovery's retry loop. Restart this observation
+        // explicitly; joining an already observed topic is idempotent.
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveSelectedKey(
+                        this.harness.channelId!.toString()
+                    )
+                    .request()
+            )
+        );
+    }
+
+    private async clearPeerIsolation(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await this.leaveSelectedKey(peerIndices);
+        await Promise.all(
+            peers.flatMap((peer) =>
+                this.harness.peers
+                    .filter((other) => other.index !== peer.index)
+                    .flatMap((other) => [
+                        this.harness
+                            .control(peer)
+                            .network.unblacklistPeerByAddress(other.address)
+                            .request(),
+                        this.harness
+                            .control(other)
+                            .network.unblacklistPeerByAddress(peer.address)
+                            .request()
+                    ])
+            )
+        );
     }
 }

@@ -164,7 +164,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
             block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate(maxTimestamp, block.timestamp)
         );
         bytes32 commitment = keccak256(abi.encode(signedBlock, block.timestamp));
-        Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
+        Block memory _block = UtilityFacet(utilityFacetAddress).decodeBlock(signedBlock.encodedBlock);
 
         // Extract values for better readability
         bytes32 channelId = _block.transaction.header.channelId;

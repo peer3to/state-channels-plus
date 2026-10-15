@@ -1308,8 +1308,8 @@ Evidence: end-to-end junk, unlinked, future-turn and valid-calldata races in
 [TimeoutStorage](../verification/tests/test/unit/TimeoutStorage.test.ts.md). The on-chain exposure
 of a forced timeout, a writer refuting it with its own unauthenticated calldata, is resolved in
 [`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts); a non-canonical encoding of the
-posted block remains tracked in [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v), and
-the sibling previous-producer refusal, resolved in
+posted block was tracked in [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) and is
+resolved there, and the sibling previous-producer refusal, resolved in
 [`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah).
 
 **Proposed direction:** None — resolved; the residual items have their own findings.
@@ -1711,9 +1711,9 @@ decodes each confirmation once with `Block.tryFromBlockConfirmation` and checks 
 ([L81-L90](../../../src/stateManager/ingest/BlockQueueManager.ts#L81-L90)); the public
 `UtilityFacet.isBlockAuthentic` route and interface declaration were removed as dead surface. The
 carve-out covers signatures only: block decoding stays `Codec`, and decoding parity with the
-contracts is the separate open finding
+contracts is the separate finding
 [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) (engineer decision 2026-09-27; the
-contract-decode path of 2026-09-26 was removed). Evidence:
+contract-decode path of 2026-09-26 was removed; resolved 2026-10-15 on the narrowed boundary). Evidence:
 [`INV-MIRROR-1-VAF778.T1`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1) P7,
 P9 and P10, mapped in the signer-recovery, validation-service and queue-manager verification
 reports.
@@ -1722,38 +1722,44 @@ reports.
 
 ### FIND-DECODE-1-FD1V6V
 
-**Defect:** _Open (2026-09-27), engineer decision recorded._ The client and the contracts decode a
-signed block with different decoders: the client with `Codec` (ethers ABI decoding,
-[Block.ts](../implementation/source/src/models/Block.ts.md)), the contracts with Solidity
-`abi.decode` in `UtilityFacet.tryDecodeBlock`
-([UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)).
-Neither applies a canonical-encoding rule, and they are not proven to accept and reject the same
-byte strings. Known difference class: an encoding that is not the canonical encoding of its fields,
-for example the canonical bytes plus a trailing zero word, which the contracts decode to the same
-block; `postBlockCalldata` stores any bytes and has no canonical check. Consequences: (1) a
-Byzantine participant can post, sign or relay an encoding the chain accepts that peers decode
-differently or refuse, so local history and on-chain proof checks can disagree about one block; (2)
-in particular, an author can post such bytes as calldata for its own slot and use the posting to
-refute an honest timeout dispute (`TimeoutCalldataPosted`), while honest peers never accepted the
-block; (3) the signed bytes, not their fields, are the block identity, so two encodings of one block
-are two blocks to the client. Signature parity is not affected: it is exact and tested
-differentially
-([`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-signature carve-out). Specification (neutral, no defect text since review 6 DY5):
-[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-excludes decoding from the signature carve-out and requires one encoding rule on both sides, and
-block-processing stage 1
-([`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6))
-requires the client decode to accept and reject what the contracts' decoder does; the current code
-contradicts both, which this finding and the Block, Codec and UtilityFacet reports record. Both
-decoders also fall short of
-[`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../specification/protocol-model/data-types.md#req-data-1-1knrqs),
-which requires decoders to reject trailing and non-canonical encodings.
+**Defect:** _Resolved (2026-10-15)._ Client and contract decoders once accepted different byte
+strings for the same logical values, including a signed block encoding with trailing or otherwise
+non-canonical bytes. A Byzantine author could post such a block encoding as calldata and use it to
+refute an honest timeout while peers had never accepted that block; signed bytes, not merely
+decoded fields, also form block identity. The block boundary was resolved on 2026-10-12:
+`UtilityFacet.decodeBlock` and `Codec.decode` for `Type.Block` enforce the canonical round trip
+with `ErrorNonCanonicalEncoding`, and `postBlockCalldata` decodes through `decodeBlock`. On
+2026-10-14 `Codec.decode` became universal for every client type, and both dispute uploads began
+requiring the recorded commitment to equal the hash of the submitted dispute bytes after the race
+checks and before the commitment is recorded. Evidence:
+[UtilityFacet.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md),
+[StateChannelManagerProxyRegistration.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md),
+[Codec.test.ts](../verification/tests/test/utils/Codec.test.ts.md),
+[DisputeWindowAdmission.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeWindowAdmission.t.sol.md), and
+[E2E-FraudProofsBlockConfirmation.test.ts](../verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md).
+On 2026-10-15 the engineer narrowed the remaining scope: canonicality is required where bytes
+become an identity, commitment, stored or emitted chain data, posted calldata, or data decoded by
+clients from chain data. Signature-bound open and join inputs are exempt because their exact bytes
+are signature-verified and only their decoded fields are used afterward; transient fraud-proof
+payloads are exempt because they are never hashed, committed, or stored and their verdicts use
+decoded fields alone, while nested signed blocks remain governed by the block boundary where their
+bytes are identity-bearing; inbound JOIN message data is produced by the chain as the canonical
+encoding of each admitted join; execution-internal decodes of contract-produced bytes,
+delegatecall results, and `Codec.decodeEvmResult` over trusted local contract results are likewise
+outside the defect scope. A future change that hashes, stores, emits, or has clients decode an
+exempt input must restore a canonical check at that boundary.
 
-**Proposed direction:** Decision (Luka, 2026-09-27): decoding parity is not done in this change;
-`Codec` stays the only client decoder and `ValidationService` has no decoding logic. Planned
-resolution: make the contract and TypeScript encoding and decoding identical, so both accept and
-reject exactly the same inputs; deferred to a later PR. Until then the exposure above is open.
+**Proposed direction:** Decision (Luka, 2026-09-27): `Codec` stays the only client decoder and
+`ValidationService` has no decoding logic; the original planned resolution was identical contract
+and TypeScript acceptance for every input. Engineer decision (2026-10-15): that parity rule is
+narrowed to the identity, commitment, storage, emission, posted-calldata, and
+client-decoded-chain-data boundary recorded in
+[`REQ-DATA-1-1KNRQS`](../specification/protocol-model/data-types.md#req-data-1-1knrqs).
+Signature-bound and transient proof inputs are exempt for the reasons in the finding. On that
+boundary the 2026-10-12 and 2026-10-14 resolutions close this finding; reopen it if an exempt
+input crosses the boundary. The same pass amended the decoding clause of
+[`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) to this
+boundary, so no normative statement requires identical acceptance of exempt envelopes.
 
 <a id="find-gasest-2-94yfz6"></a>
 
