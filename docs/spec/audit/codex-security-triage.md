@@ -238,10 +238,9 @@ covers the genesis-start case on the first fork, whose genesis the chain dates f
 snapshot;
 [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13)
 covers it on a successor fork the chain has not adopted, whose genesis the walk dates from the
-origin window's kill period end. Owed regressions for the remaining cases:
-[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18)
-for a replay starting past the genesis, and
-[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19)
-for the empty proof whose genesis the chain cannot date. Owners are the
+origin window's kill period end. Owed regression for a replay starting past the genesis:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18).
+The empty proof whose genesis the chain cannot date stays an open gap with no planned test; its
+expected outcome waits for the fix of this finding. Owners are the
 [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
 and [synchronization](../specification/peer-communication/synchronization.md).
