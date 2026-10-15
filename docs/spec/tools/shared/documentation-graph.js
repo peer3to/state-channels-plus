@@ -508,15 +508,17 @@ function implementationSpecificSpecificationLinks(documents) {
     return issues;
 }
 
-// A finding is withdrawn when its status opens with that word: the first
-// labelled paragraph of a headed entry, or the first cell after its ID in a
-// table row. The word anywhere else in its prose does not count.
+// A finding is withdrawn when its status opens with that word, in any
+// emphasis or case: the first labelled paragraph of a headed entry, else its
+// `Status:` line, else the first cell after its ID in a table row. The word
+// anywhere else in its prose does not count.
 function isWithdrawnFinding(entry) {
     const status =
         /^\*\*[^*\n]+:\*\*\s*(.*)$/m.exec(entry.raw)?.[1] ??
+        /^Status:\s*(.*)$/m.exec(entry.raw)?.[1] ??
         /^\|[^|]*\|\s*(.*)$/m.exec(entry.raw)?.[1] ??
         "";
-    return /^_?Withdrawn\b/.test(status);
+    return /^(?:\*\*|_)?withdrawn\b/i.test(status);
 }
 
 function headingEntries(documents, pattern, kind) {

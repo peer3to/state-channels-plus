@@ -142,4 +142,43 @@ test("a finding is withdrawn only by its leading status, not by the word in its 
         }),
         true
     );
+    assert.equal(
+        isWithdrawnFinding({
+            raw: "### FIND-X-3-AAAAA3\n\n**Defect:** **Withdrawn (2026-10-15).** Not a defect."
+        }),
+        true
+    );
+    assert.equal(
+        isWithdrawnFinding({
+            raw: "### FIND-X-4-AAAAA4\n\nStatus: withdrawn, not a defect."
+        }),
+        true
+    );
+    assert.equal(
+        isWithdrawnFinding({
+            raw: "### FIND-X-5-AAAAA5\n\nStatus: open verification gap. An earlier claim was withdrawn."
+        }),
+        false
+    );
 });
+
+test("the audit summary leaves out a withdrawn finding but keeps one that only mentions the word", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/audit/open-findings.md",
+            `# Open findings\n\n<a id="find-graph-1-aaaaa1"></a>\n\n### FIND-GRAPH-1-AAAAA1\n\n**Defect:** _Withdrawn (2026-08-10)._ Not a defect of ${requirement}.\n\n<a id="find-graph-2-aaaaa2"></a>\n\n### FIND-GRAPH-2-AAAAA2\n\n**Defect:** _Resolved (2026-09-15)._ A set ${requirement} took from the latest state was withdrawn.\n`
+        );
+        const summary = f.node(
+            `const { generateAuditSummary } = require("./docs/spec/tools/generate-audit-summary");
+             process.stdout.write(generateAuditSummary().report);`
+        );
+        assert.equal(summary.status, 0, summary.stderr);
+        assert.match(summary.stdout, /Active findings: 1\b/);
+        const row = summary.stdout
+            .split("\n")
+            .find((line) => line.startsWith("|") && line.includes(requirement));
+        assert.ok(row, "the requirement has a dashboard row");
+        assert.match(row, /FIND-GRAPH-2-AAAAA2/);
+        assert.doesNotMatch(row, /FIND-GRAPH-1-AAAAA1/);
+        assert.match(row, /Blocked/);
+    }));
