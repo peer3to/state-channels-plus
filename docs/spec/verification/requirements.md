@@ -390,7 +390,7 @@ Specification cases tested: 17/22. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P9.
 Specification cases tested: 3/3.
 
 [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
-Specification cases tested: 8/8.
+Specification cases tested: 9/9.
 
 [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
 Specification cases tested: 39/41. Untested: T1.P37, T1.P39.
@@ -612,7 +612,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 33/33.
+Specification cases tested: 36/36.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -870,7 +870,7 @@ Specification cases tested: 3/13. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T
 Specification cases tested: 0/17.
 
 [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
-Specification cases tested: 7/7.
+Specification cases tested: 8/8.
 
 [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
 Specification cases tested: 18/18.

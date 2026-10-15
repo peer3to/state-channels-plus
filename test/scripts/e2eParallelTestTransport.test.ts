@@ -1,16 +1,20 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
     createLocalDhtNetwork,
+    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
     type LocalDhtNetwork
 } from "../fixtures/distributed/testTransport";
 import { expect } from "chai";
+import { randomBytes } from "crypto";
 import dgram from "dgram";
 
-type DhtNode = {
-    ready(): Promise<void>;
-    destroy(options?: { force?: boolean }): Promise<void>;
-    address(): { port: number } | null;
-    ping(address: { host: string; port: number }): Promise<unknown>;
+const {
+    createPool
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+
+type Pool = {
+    onConnection(listener: () => void): void;
+    close(): Promise<void>;
 };
 
 async function holdUdpPort(): Promise<{
@@ -26,30 +30,45 @@ async function holdUdpPort(): Promise<{
 }
 
 describe("distributed test transport fixture", function () {
-    it("binds the bootstrapper elsewhere when the preferred UDP port is taken and the nodes still reach it", async function () {
+    it("moves the bootstrapper to a free port when the preferred UDP port is taken and announced topics are still found", async function () {
         const held = await holdUdpPort();
         let network: LocalDhtNetwork | undefined;
-        const nodes: DhtNode[] = [];
+        const pools: Pool[] = [];
+        let timer: NodeJS.Timeout | undefined;
         try {
             network = await createLocalDhtNetwork({
                 preferredPort: held.port
             });
             expect(network.bootstrapPort).to.not.equal(held.port);
-            for (let i = 0; i < 2; i += 1) {
-                const node = network.createNode() as DhtNode;
-                nodes.push(node);
-                await node.ready();
-            }
-            // Each node reaches the bootstrapper on the port it actually
-            // bound, not on the preferred port another socket holds.
-            for (const node of nodes) {
-                await node.ping({
-                    host: "127.0.0.1",
-                    port: network.bootstrapPort
-                });
-            }
+            const announced = randomBytes(32);
+            const looked = randomBytes(32);
+            const announcer: Pool = await createPool({
+                announceTopics: [announced],
+                lookupTopics: [looked],
+                dht: network.createNode(),
+                refreshIntervalMs: 5000
+            });
+            pools.push(announcer);
+            const looker: Pool = await createPool({
+                announceTopics: [looked],
+                lookupTopics: [announced],
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(looker);
+            // Discovery needs a bootstrapper whose DHT id matches the
+            // address it answers from; otherwise no announce is stored and
+            // the two pools never find each other.
+            await new Promise<void>((resolve, reject) => {
+                timer = setTimeout(
+                    () => reject(new Error("pools did not connect")),
+                    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+                );
+                looker.onConnection(resolve);
+            });
         } finally {
-            for (const node of nodes) await node.destroy({ force: true });
+            clearTimeout(timer);
+            for (const pool of pools.reverse()) await pool.close();
             await network?.close();
             await held.close();
         }

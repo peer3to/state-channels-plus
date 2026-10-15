@@ -19,10 +19,14 @@ import {
     recordDiscoveryKeyJoins,
     recordLeaveChannelLogs,
     recordedForceJoinDeadlineDelays,
+    recordHostErrors,
     recordSnapshotPostWaitResults,
+    runLeaveCheck,
     stageInboundBlockedExit,
+    stageExitPostAndOwnDisputeHeld,
     stageExitReplacedBySeatingFork,
     stageInboundBlockedProtocolExit,
+    stageLastExitBlockedByJoin,
     stageLeaveAwaitingTurn
 } from "@test/fixtures/BotConnectionFixesStaging";
 import { UNEXPECTED_SNAPSHOT_POST_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
@@ -154,6 +158,39 @@ describe("Unit: bot-connection fixes", function () {
             expect(
                 await h.control(second).query.getStatus().request()
             ).to.equal(Status.NOT_OPENED);
+        });
+
+        it("U71: a last leaver whose exit leaves no participant and whose posts a JOIN that no block consumes refuses makes one follow-up post per queued trigger, never back-to-back posts", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, posts, restore } =
+                await stageLastExitBlockedByJoin(h);
+            try {
+                // the parked post runs and its refusal is parked
+                await posts.holdResults();
+                await posts.releaseStarts();
+                expect(
+                    await posts.resultsWait(1),
+                    "premise: the unconsumed JOIN refuses the post"
+                ).to.deep.equal(["RaceConditionPendingInboundNotConsumed"]);
+
+                // one check while that post is parked: the state has no
+                // participant and the chain still lists the leaver, so it
+                // queues one post
+                expect(await runLeaveCheck(h, leaver)).to.equal(true);
+                await posts.releaseResults();
+                expect(await posts.resultsWait(2)).to.deep.equal([
+                    "RaceConditionPendingInboundNotConsumed",
+                    "RaceConditionPendingInboundNotConsumed"
+                ]);
+
+                // absence window: no member is left to finalize a block and
+                // nothing lands on chain, so no trigger comes; a replay of
+                // the follow-up post would have started by now
+                await sleep(3_000);
+                expect(await posts.started()).to.equal(2);
+            } finally {
+                await restore();
+            }
         });
     });
 
@@ -563,6 +600,117 @@ describe("Unit: bot-connection fixes", function () {
             } finally {
                 await comparisons.restore();
                 await disputes.restore();
+            }
+        });
+
+        it("U72: a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the leave completes once on the reduced snapshot that drops it", async function () {
+            const h = TestSession.getHarness();
+            const { joiner, leaver, disputes, expireWatchdog } =
+                await stageLeaveAwaitingTurn(h, {
+                    holdWatchdog: true,
+                    forwardDisputes: true
+                });
+            const forkId = h.activeForkId!;
+            const hostErrors = recordHostErrors(leaver);
+            const logs = await recordLeaveChannelLogs(h, leaver);
+            try {
+                // the observed dispute makes the leaver submit its own
+                await disputeOmittedJoin(h, joiner.index);
+                await waitFor(
+                    async () => (await disputes.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const [submission] = await disputes.submissions();
+                expect(
+                    Codec.decode(submission.encodedDispute, Type.Dispute).input
+                        .selfRemoval
+                ).to.equal(true);
+                // the fork is still disputed and not reduced
+                expect(
+                    await h.control(leaver).query.didIDispute(forkId).request()
+                ).to.equal(true);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.include(leaver.address);
+
+                // the watchdog expires while that dispute is open: it
+                // starts nothing
+                await expireWatchdog();
+                expect(
+                    (await logs.entries()).map((entry) => entry.message)
+                ).to.not.include("Starting the leave's self-removal dispute");
+
+                await h.dispute.resolveDisputeWait({
+                    forkId,
+                    honestPeerIndices: [0, 2],
+                    assertMaliciousRemoved: false
+                });
+                await h.event.waitUntilLeftChannel(leaver.index);
+                await TestSession.settleDetached();
+                expect(await disputes.submissions()).to.have.length(1);
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(1);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+                expect(hostErrors.errors).to.deep.equal([]);
+            } finally {
+                await logs.restore();
+                await disputes.restore();
+                hostErrors.remove();
+            }
+        });
+
+        it("U72: an exit snapshot that lands before the leaver's self-removal dispute is sent makes the chain refuse that upload with ErrorCantParticipateInDispute; the refusal is not fatal and the leave completes once, SYNCED with no abort", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, send, disputes, hostErrors, restore } =
+                await stageExitPostAndOwnDisputeHeld(h);
+            try {
+                // the exit snapshot lands first: the released post, or the
+                // post queued behind it when the released one was of an
+                // earlier finalized state
+                expect(await send.release()).to.equal(null);
+                await waitFor(
+                    async () =>
+                        !(
+                            await h.channelManager.getParticipants(h.channelId)
+                        ).includes(leaver.address),
+                    h.event.protocolEventTimeoutMs()
+                );
+
+                // then the parked dispute is sent, and the chain refuses it
+                await disputes.release();
+                await waitFor(
+                    async () =>
+                        (await disputes.submissions())[0].revert !== null,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const [submission] = await disputes.submissions();
+                expect(
+                    Codec.decode(submission.encodedDispute, Type.Dispute).input
+                        .selfRemoval
+                ).to.equal(true);
+                expect(submission.revert?.name).to.equal(
+                    "ErrorCantParticipateInDispute"
+                );
+
+                await h.event.waitUntilPeerStatus(leaver.index, Status.SYNCED);
+                await h.event.waitUntilLeftChannel(leaver.index);
+                await TestSession.settleDetached();
+                expect(await disputes.submissions()).to.have.length(1);
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(1);
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onAbort")
+                ).to.equal(0);
+                expect(
+                    await h.control(leaver).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+                expect(hostErrors).to.deep.equal([]);
+            } finally {
+                await restore();
             }
         });
 

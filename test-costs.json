@@ -2863,6 +2863,12 @@
       "peakRssGb": 0.774,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block": {
+      "durationMs": 24641,
+      "avgCores": 0.541,
+      "peakRssGb": 0.812,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path exiting participant does not sign blocks authored after its leave": {
       "durationMs": 23626,
       "avgCores": 0.882,
@@ -4229,6 +4235,12 @@
       "durationMs": 25574,
       "avgCores": 0.761,
       "peakRssGb": 0.822,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit block is finalized off-chain and its exit post is refused → its self-removal dispute on a state that already excludes it; the reduced fork pays its exit exactly once at the exit block amount, the balance invariant holds, it is not slashed, and it gets onLeftChannel once": {
+      "durationMs": 29919,
+      "avgCores": 0.825,
+      "peakRssGb": 1.238,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash": {
@@ -12673,16 +12685,16 @@
       "peakRssGb": 0.292,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture binds the bootstrapper elsewhere when the preferred UDP port is taken and the nodes still reach it": {
-      "durationMs": 2135,
-      "avgCores": 0.712,
-      "peakRssGb": 0.187,
-      "measurementReason": null
-    },
     "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture fails on the taken port when the fallback is off": {
       "durationMs": 2286,
       "avgCores": 0.7,
       "peakRssGb": 0.186,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture moves the bootstrapper to a free port when the preferred UDP port is taken and announced topics are still found": {
+      "durationMs": 379,
+      "avgCores": 0.923,
+      "peakRssGb": 0.091,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelWorkerLease.test.ts|distributed worker lease allows shared-host servers with distinct resolved work roots": {
@@ -16729,6 +16741,12 @@
       "peakRssGb": 1.063,
       "measurementReason": null
     },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the leave completes once on the reduced snapshot that drops it": {
+      "durationMs": 20125,
+      "avgCores": 0.805,
+      "peakRssGb": 1.003,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leaver posts the latest state snapshot once its exit block is final, and that snapshot settles the leave with no dispute": {
       "durationMs": 11915,
       "avgCores": 1.004,
@@ -16787,6 +16805,12 @@
       "durationMs": 12751,
       "avgCores": 1.017,
       "peakRssGb": 0.83,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: an exit snapshot that lands before the leaver's self-removal dispute is sent makes the chain refuse that upload with ErrorCantParticipateInDispute; the refusal is not fatal and the leave completes once, SYNCED with no abort": {
+      "durationMs": 11481,
+      "avgCores": 0.762,
+      "peakRssGb": 0.789,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: blocks finalized while the exit's snapshot post runs queue one more post after it when that post did not land the exit, and the next finalized block posts again": {
@@ -16949,6 +16973,12 @@
       "durationMs": 25144,
       "avgCores": 0.399,
       "peakRssGb": 0.953,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes terminal leave settlement U71: a last leaver whose exit leaves no participant and whose posts a JOIN that no block consumes refuses makes one follow-up post per queued trigger, never back-to-back posts": {
+      "durationMs": 14380,
+      "avgCores": 0.518,
+      "peakRssGb": 0.574,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes terminal leave settlement U71: both founders leave and the last exit closes the channel → both get onLeftChannel on NOT_OPENED": {
@@ -17762,9 +17792,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager dispute admission refuses a changed fork before construction": {
-      "durationMs": 35583,
-      "avgCores": 0.742,
-      "peakRssGb": 1.033,
+      "durationMs": 24066,
+      "avgCores": 0.952,
+      "peakRssGb": 1.29,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager dispute admission refuses disposal while waiting for the state mutex": {

@@ -29,6 +29,27 @@ and its retry fail. Evidence:
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P48`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9),
 which fails without the replay.
 
+That replay first ran both follow-ups. For an exit-block leaver whose exit leaves no participant, both post, so
+the check queued another post behind the exit-block post, and refused posts ran back to back with no new block.
+A queued post now gets one follow-up: the exit-block post when an exit block is committed, the membership check
+otherwise. Evidence:
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P49`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9),
+which fails with both follow-ups.
+
+New tests close the leaver self-removal gaps, with no behavior change. A leaver whose latest state already excludes
+it disputes with self-removal; removing an absent signer is a no-op, so the reduced fork pays its exit-block exit
+exactly once ([`REQ-SM-10-JD8TSF.T1.P8`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf.t1.p8)).
+A watchdog that expires after the leaver's observed-dispute submission starts no second dispute
+([`REQ-LIF-10-QR8NQ9.T1.P33`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p33)); a self-removal
+upload refused because the exit snapshot already landed is not fatal
+([`REQ-LIF-10-QR8NQ9.T1.P34`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p34)); and a JOIN that
+lands after every participant's exit block makes every exit post wait for the watchdogs' self-removal disputes, whose
+reduction seats the joiner as the only participant and keeps the channel open
+([`REQ-LIF-10-QR8NQ9.T1.P35`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p35)). The honest-leaver
+overlap of [`REQ-DISPUTE-PIPE-8-BVR8XV.T1`](../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv.t1)
+had lost its permutation; it is restored as `P11` and mapped to its existing test. Each new test fails with its guard
+removed.
+
 New tests close three join gaps, with no behavior change:
 [`REQ-JOINSIG-4-3NBKHK.T1.P6`](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk.t1.p6)
 with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P104`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
@@ -39,7 +60,7 @@ with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P105`](../implementation/source/s
 [`REQ-JOINSIG-1-8X1A4V.T1.P24`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p24)
 with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P106`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
 (the top-up retry cap). Each of the five tests fails with its guard removed. They passed in the full SDK gate on
-2026-10-15 (`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3842/3842).
+2026-10-15 (`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3847/3847).
 
 ## Concurrent joins exhaust the one join retry — 2026-10-15
 
@@ -87,7 +108,7 @@ keeps its evidence:
 with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P92`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb).
 Concurrent joiners still race on chain and pay gas for refused submissions; coordinating them is deferred in
 [`FIND-JOIN-2-EK5DWW`](open-findings.md#find-join-2-ek5dww). These passed in the full SDK gate on 2026-10-15
-(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3842/3842).
+(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3847/3847).
 
 Luka's decision 2026-10-15 on full channels: a connect's first join reads the chain's seated and pending
 participants before it collects; a channel already at its maximum participant count gets no countersignature
@@ -110,7 +131,7 @@ with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P100`](../implementation/source/s
 with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P101`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
 (a pending participant fills the channel; a seated-only read would collect),
 and the updated [`REQ-JOINSIG-1-8X1A4V.T1.P21`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p21) (now an abort). These passed in the full SDK gate on 2026-10-15
-(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3842/3842).
+(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3847/3847).
 
 ## Lone leaver's self-removal reduction is never posted — 2026-10-14
 
@@ -138,7 +159,7 @@ Evidence: [`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#
 (both time out waiting for `onLeftChannel` on the code before the fix), and
 [`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30) with
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) for the reduced state that keeps other participants. These passed
-in the full SDK gate on 2026-10-15 (`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3842/3842).
+in the full SDK gate on 2026-10-15 (`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3847/3847).
 
 ## Exit post after the channel closed — 2026-10-14
 

@@ -293,11 +293,12 @@ export default class LeaveChannelService {
                 );
             if (this.isPostQueued) {
                 this.isPostQueued = false;
+                // one follow-up per queued trigger: an exit block posts
+                // again; a reduction that left no participant posts from the
+                // check
                 if (!hasExitLanded) {
-                    this.postLatestSnapshot();
-                    // a reduction that left no participant posts from the
-                    // check, not from an exit block
-                    this.requestCheck();
+                    if (this.exit?.isExitBlockCommitted) this.postSnapshot();
+                    else this.requestCheck();
                 }
             }
         }

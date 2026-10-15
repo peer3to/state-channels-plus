@@ -7,6 +7,28 @@ const { once } = require("node:events");
 const { WebSocketServer } = require("ws");
 
 /**
+ * The bootstrapper's DHT id derives from the port it was created with, so it
+ * must bind exactly that port: on a fallback port peers reject its id and no
+ * announce is stored. Retry on a fresh ephemeral-range port instead.
+ */
+async function startBootstrapper(host) {
+    for (let attempt = 1; ; attempt++) {
+        const bootstrapper = DHT.bootstrapper(randomInt(49152, 65536), host, {
+            host,
+            anyPort: false
+        });
+        try {
+            await bootstrapper.ready();
+            return bootstrapper;
+        } catch (error) {
+            // destroy() rethrows the bind error of the failed ready().
+            await bootstrapper.destroy({ force: true }).catch(() => {});
+            if (error.code !== "EADDRINUSE" || attempt >= 20) throw error;
+        }
+    }
+}
+
+/**
  * A private Holepunch network for one browser gate: a HyperDHT testnet (one
  * bootstrapper and persistent nodes on 127.0.0.1) and dht-relay WebSocket
  * servers, each backed by its own DHT node on that testnet. Browser peers set
@@ -20,13 +42,7 @@ const { WebSocketServer } = require("ws");
  */
 async function startLocalHolepunch({ relays = 2 } = {}) {
     const host = "127.0.0.1";
-    // The bootstrapper requires a positive port. Pick an ephemeral-range
-    // preference and let the library handle collisions; never probe a free port.
-    const bootstrapper = DHT.bootstrapper(randomInt(49152, 65536), host, {
-        host,
-        anyPort: true
-    });
-    await bootstrapper.ready();
+    const bootstrapper = await startBootstrapper(host);
     const bootstrap = [{ host, port: bootstrapper.address().port }];
     const nodes = [bootstrapper];
     // A HyperDHT routing table needs a few persistent nodes to store announces.

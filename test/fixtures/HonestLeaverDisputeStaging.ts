@@ -2,12 +2,14 @@
 import { stageInboundBlockedExit } from "./BotConnectionFixesStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeIsClosed } from "./RuntimeRootObservation";
+import { StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { ForkId, Hash } from "@/types/types";
-import { addressesEqual } from "@/utils";
+import { addressesEqual, Codec, Type } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { id } from "ethers";
 
 async function findDisputeBy(
     h: MathPeerTestHarness,
@@ -66,11 +68,67 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
         leaver.index,
         "auditingData"
     );
+    // chain events from here on include every payout of the leaver's exit
+    const fromBlock = await h
+        .getPeer(others[0]!)
+        .p2pInstance.chainSigner.provider!.getBlockNumber();
     await h.transition.participantLeaveStateTransition({
         leaverIndex: leaver.index,
         waitForPeers: others
     });
-    return { forkId, leaver, others, leaverReduction, send, rebuild };
+    return {
+        forkId,
+        leaver,
+        others,
+        leaverReduction,
+        send,
+        rebuild,
+        fromBlock
+    };
+}
+
+// the exit amounts for `participant` in the observer's latest outbound block
+async function latestOutboundExitAmounts(
+    h: MathPeerTestHarness,
+    observerIndex: number,
+    participant: string
+): Promise<bigint[]> {
+    const amounts = await h.execOnHost(
+        h.getPeer(observerIndex),
+        (sm, args) =>
+            (
+                sm.storage.outboundMessages.getLatestMessageBlock()?.messages ??
+                []
+            )
+                .filter((message) => message.participant === args.participant)
+                .map((message) => String(message.balance.amount)),
+        { participant }
+    );
+    return amounts.map((amount) => BigInt(amount));
+}
+
+// the exit amounts the chain paid to `participant` from `fromBlock` on
+async function chainExitAmounts(
+    h: MathPeerTestHarness,
+    participant: string,
+    fromBlock: number
+): Promise<bigint[]> {
+    const logs = await h.channelManager.queryFilter(
+        h.channelManager.filters.OutboundMessagesProcessed(h.channelId),
+        fromBlock
+    );
+    return logs.flatMap((log) =>
+        Codec.decode(
+            Codec.encode(log.args.messageBlock, Type.MessageBlock),
+            Type.MessageBlock
+        )
+            .messages.filter(
+                (message) => message.messageType === id("EXIT_CHANNEL_MESSAGE")
+            )
+            .map((message) => Codec.decode(message.data, Type.ExitChannel))
+            .filter((exit) => exit.participant === participant)
+            .map((exit) => BigInt(exit.balance.amount))
+    );
 }
 
 // the leaver's committed dispute is its latest signed state for every auditor
@@ -116,13 +174,20 @@ async function assertLeaverDisputeIsLatestState(
     return dispute;
 }
 
-export async function assertHonestLeaverKillPeriodRefusal(
-    h: MathPeerTestHarness
-): Promise<void> {
-    // a dispute commits between the post's chain read and its broadcast ->
-    // the chain refuses the post because the fork is disputed
-    const { forkId, leaver, others, leaverReduction, send, rebuild } =
-        await stageHeldLeaverExitPost(h);
+// The leaver's exit post is refused inside a kill period, and its
+// self-removal dispute is committed. A dispute commits between the post's
+// chain read and its broadcast -> the chain refuses the post because the
+// fork is disputed. The caller releases the leaver's parked reduction.
+async function stageKillPeriodSelfRemoval(h: MathPeerTestHarness) {
+    const {
+        forkId,
+        leaver,
+        others,
+        leaverReduction,
+        send,
+        rebuild,
+        fromBlock
+    } = await stageHeldLeaverExitPost(h);
     let reductionReleased = false;
     // the reduced state's terminal abort may already have removed the host
     const releaseReduction = async () => {
@@ -139,6 +204,12 @@ export async function assertHonestLeaverKillPeriodRefusal(
     let offender: number | undefined;
     let snapshotBeforeRelease: Hash | undefined;
     try {
+        // the exit block's outbound block holds the leaver's exit
+        const exitAmounts = await latestOutboundExitAmounts(
+            h,
+            others[0]!,
+            leaver.address
+        );
         try {
             await send.waitUntilHeld();
             offender = (await h.query.getNextPeerToWrite()).index;
@@ -168,18 +239,39 @@ export async function assertHonestLeaverKillPeriodRefusal(
             await rebuild.release();
             await send.release();
         }
+        return {
+            forkId,
+            leaver,
+            honest: others.filter((index) => index !== offender),
+            offender: offender!,
+            signedAtDispute,
+            snapshotBeforeRelease: snapshotBeforeRelease!,
+            exitAmounts,
+            fromBlock,
+            releaseReduction
+        };
+    } catch (error) {
+        await releaseReduction();
+        throw error;
+    }
+}
 
-        const honest = others.filter((index) => index !== offender);
+export async function assertHonestLeaverKillPeriodRefusal(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const staged = await stageKillPeriodSelfRemoval(h);
+    const { forkId, leaver, honest, offender, releaseReduction } = staged;
+    try {
         const dispute = await assertLeaverDisputeIsLatestState(
             h,
             forkId,
             leaver.address,
             honest,
-            signedAtDispute
+            staged.signedAtDispute
         );
         // the refused post changed nothing on chain
         expect(await h.query.getOnChainSnapshotHash()).to.equal(
-            snapshotBeforeRelease
+            staged.snapshotBeforeRelease
         );
         expect(dispute.postedAuditingData).to.equal(false);
         for (const peerIndex of honest) {
@@ -207,7 +299,7 @@ export async function assertHonestLeaverKillPeriodRefusal(
             honestPeerIndices: honest
         });
         await h.assert.dispute.slashedOnChainExactly([
-            h.getPeer(offender!).address
+            h.getPeer(offender).address
         ]);
         // the reduced state removed the leaver for every honest peer
         for (const peerIndex of honest) {
@@ -223,6 +315,83 @@ export async function assertHonestLeaverKillPeriodRefusal(
         }
         // the leaver's parked reduction submit settles before quiesce
         await releaseReduction();
+        expect(
+            (await h.quiesceHosts()).map((error) => error.message)
+        ).to.deep.equal([]);
+    } finally {
+        await releaseReduction();
+    }
+}
+
+export async function assertHonestLeaverExitPaidOnce(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const staged = await stageKillPeriodSelfRemoval(h);
+    const { forkId, leaver, honest, offender, releaseReduction } = staged;
+    try {
+        // the exit block holds exactly one exit for the leaver
+        expect(staged.exitAmounts.length).to.equal(1);
+        // the leaver's self-removal dispute is its exit block state, which
+        // already excludes it
+        await assertLeaverDisputeIsLatestState(
+            h,
+            forkId,
+            leaver.address,
+            honest,
+            staged.signedAtDispute
+        );
+        const { newForkId } = await h.dispute.resolveDisputeWait({
+            forkId,
+            honestPeerIndices: honest
+        });
+        // only the invalid-block author is slashed, never the leaver
+        await h.assert.dispute.slashedOnChainExactly([
+            h.getPeer(offender).address
+        ]);
+        // no honest peer holds a stale-state proof against the leaver
+        for (const peerIndex of honest) {
+            expect(
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.not.include(
+                String(DisputeFraudProofType.DisputeNotLatestState)
+            );
+        }
+        // the leaver's parked reduction submit settles
+        await releaseReduction();
+
+        // the reduced fork can be posted once its result is committed
+        await h.event.waitForEventCounts(
+            "onDisputeReducedResultCommitted",
+            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
+            h.event.protocolEventTimeoutMs(),
+            { mode: "atLeast" }
+        );
+        // an honest peer posts the reduced fork; it pays the exits
+        await h
+            .control(h.getPeer(honest[0]!))
+            .transition.postStateSnapshot(newForkId)
+            .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+        expect(
+            StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            ).forkID
+        ).to.equal(newForkId);
+
+        // the chain paid the leaver one exit, with its exit block amount;
+        // the self-removal added no second exit
+        expect(
+            await chainExitAmounts(h, leaver.address, staged.fromBlock)
+        ).to.deep.equal(staged.exitAmounts);
+        // deposits still equal withdrawals plus the state balance
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant({
+            peerIndex: honest[0]
+        });
+        // the chain dropped the leaver: it left the channel once
+        await h.event.waitUntilLeftChannel(leaver.index);
+        expect(leaver.eventSpies.onLeftChannel?.callCount).to.equal(1);
         expect(
             (await h.quiesceHosts()).map((error) => error.message)
         ).to.deep.equal([]);

@@ -67,6 +67,7 @@ status and no host error.
 - `an exit post whose estimate passed before its co-leavers' exits closed the channel and that is mined after the close reverts in its block, its replay recovers RaceConditionSnapshotForkMismatch, it is logged as a chain refusal, and the leaver's runtime stays alive and leaves`: REQ-LIF-10-QR8NQ9.T1.P28
 - `public terminal leave settles before disposal and excludes the former signer`: REQ-LIF-10-QR8NQ9.T1.P5
 - `a lone participant's leave that falls back to its self-removal dispute posts the reduced fork that has no participant: the channel closes and the leaver gets onLeftChannel once`: REQ-LIF-10-QR8NQ9.T1.P29
+- `every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block`: REQ-LIF-10-QR8NQ9.T1.P35
 - `should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P4
 - `pending join fault survives until a failed receipt restores SYNCED`: INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P1, INV-TJOIN-2-H7JSQM.T1.P1, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P8
 - `pending join fault preserves the successful on-chain join and inbound message`: INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P2, INV-TJOIN-2-H7JSQM.T1.P2, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P9

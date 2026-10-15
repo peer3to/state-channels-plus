@@ -34,6 +34,13 @@ fires it while the joiner's clock is still at or before the deadline; a record-o
 shows the check armed the `join authorization expiry` timer again, and once the chain passed the
 deadline the joiner ends `SYNCED` with one `onLeftChannel`.
 
+The second `U71` case runs the same two-founder flow with both founders' exit posts parked before they
+prepare. Once both exit blocks are committed, a JOIN lands that no block can consume, because no member is
+left to author one. The last leaver's parked post is released and refused, and its result is parked. One
+membership check then runs and queues one post, and the result is released. The oracles are the two
+recorded refusals and, after a three-second absence window with no block or chain event, exactly two
+started posts.
+
 The `U72` exit cases stage an exit, with a leave call or without one (an exit block the application
 authors on its own turn), and most of them block its same-fork post with a JOIN the founders omit (the
 joiner's force-join dispute is suppressed; the leaver's self-removal disputes are recorded, and sent only
@@ -80,6 +87,7 @@ is timed out.
 
 - `U70: a lobby open makes both founders join the opened channel's discovery key as participants`: REQ-TJOIN-2-MFWADG.T2.P1, UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6
 - `U71: both founders leave and the last exit closes the channel → both get onLeftChannel on NOT_OPENED`: REQ-LIF-10-QR8NQ9.T2.P1, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23
+- `U71: a last leaver whose exit leaves no participant and whose posts a JOIN that no block consumes refuses makes one follow-up post per queued trigger, never back-to-back posts`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P49
 - `U72: a same-fork snapshot post waiting on an inbound message its snapshot has not consumed reverts with the pending-inbound refusal and posts nothing`: REQ-ENFSNAP-3-VD9T8A.T2.P1, UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P10
 - `U72: a leaver posts the latest state snapshot once its exit block is final, and that snapshot settles the leave with no dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P32
 - `U72: a leaver whose exit is blocked by an inbound join that no block consumes posts again on each finalized block and starts one self-removal dispute when the one leave watchdog expires`: REQ-ENFSNAP-3-VD9T8A.T2.P2, REQ-LIF-10-QR8NQ9.T1.P13, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P34
@@ -89,6 +97,8 @@ is timed out.
 - `U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P30
 - `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants`: REQ-LIF-10-QR8NQ9.T1.P18, REQ-LIF-10-QR8NQ9.T1.P30, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46
 - `U72: a dispute observed after an exit block the application authored with no leave call makes the leaver submit its self-removal dispute at once, with no evidence comparison; the reduced snapshot drops it and its runtime is SYNCED with the self-removal still set`: REQ-LIF-10-QR8NQ9.T1.P19, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P37
+- `U72: a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the leave completes once on the reduced snapshot that drops it`: REQ-LIF-10-QR8NQ9.T1.P33, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P50
+- `U72: an exit snapshot that lands before the leaver's self-removal dispute is sent makes the chain refuse that upload with ErrorCantParticipateInDispute; the refusal is not fatal and the leave completes once, SYNCED with no abort`: REQ-LIF-10-QR8NQ9.T1.P34, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P51
 - `U72: an exit block the application authored with no leave call is posted the same way: a later finalized block's post lands it once the join is consumed, and the runtime ends SYNCED with onLeftChannel, the self-removal still set and no dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P36, REQ-LIF-10-QR8NQ9.T1.P21
 - `U72: a block finalized while the exit's snapshot post runs queues no further post when that post lands the exit: the leaver sends once and posts no more`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P44
 - `U72: a chain refusal of the exit's snapshot post reaches the leave's logger with its custom error and is not fatal: the next finalized block posts again`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P42, REQ-LIF-10-QR8NQ9.T1.P24

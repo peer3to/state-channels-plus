@@ -403,6 +403,94 @@ export async function stageInboundBlockedExit(
 }
 
 /**
+ * U71's two-founder flow, then a JOIN that no block can consume. Both
+ * founders leave and send their exits on their leave turns; the second exit
+ * leaves no participant. Both founders' exit posts are recorded and park
+ * before they prepare, so none of them lands. Once both exit blocks are
+ * committed, a JOIN lands on chain: no member is left to author a block that
+ * consumes it, so every exit post is refused. Returns the last leaver (the
+ * author of the exit that left no participant), its post recorder with its
+ * one started post parked before it prepares, and the restore of both
+ * recorders.
+ */
+export async function stageLastExitBlockedByJoin(h: MathPeerTestHarness) {
+    await h.lifecycle.start(2, 0, {
+        // the leave watchdog's dispute is not the subject
+        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60_000 }
+    });
+    const forkId = h.activeForkId!;
+    const founders = [h.getPeer(0), h.getPeer(1)];
+    const posts = [
+        await recordSnapshotPostWaitResults(h, founders[0]),
+        await recordSnapshotPostWaitResults(h, founders[1])
+    ];
+    const restore = async () => {
+        for (const recorder of posts) await recorder.restore();
+    };
+    try {
+        for (const recorder of posts) await recorder.holdStarts();
+        const exits = founders.map((founder) => exitOnLeaveTurn(founder));
+        for (const founder of founders)
+            await founder.p2pInstance.p2pSigner.leaveChannel();
+        // one block hands the turn to the leavers; each sends its exit on
+        // its leave turn
+        await h.transition.advanceState({ waitForPeers: [0, 1] });
+        await h.event.waitForPeers("onLeaveTurn", [0, 1], 1);
+        for (const exit of exits) await exit();
+        for (const founder of founders)
+            await h.event.waitUntilLeaveState(
+                founder.index,
+                "isExitBlockCommitted"
+            );
+        // the last leaver authored the latest block, and its state has no
+        // participant
+        let lastIndex = -1;
+        await waitFor(async () => {
+            for (const [index, founder] of founders.entries()) {
+                const query = h.control(founder).query;
+                const latest = await query.getLatestBlockInfo(forkId).request();
+                if (
+                    latest?.author === founder.address &&
+                    (await query.getParticipants().request()).length === 0
+                )
+                    lastIndex = index;
+            }
+            return lastIndex !== -1;
+        }, h.event.protocolEventTimeoutMs());
+        const leaverPosts = posts[lastIndex];
+        // its exit block's post is parked before it prepares
+        await waitFor(
+            async () => (await leaverPosts.started()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        await h.join.forceInboundJoinWait({
+            waitForHonestPeersObserve: false
+        });
+        return { leaver: founders[lastIndex], posts: leaverPosts, restore };
+    } catch (error) {
+        await restore();
+        throw error;
+    }
+}
+
+/**
+ * Runs one membership check of the peer's leave service, as its event
+ * subscriptions request it, and waits until it ended. Returns whether an
+ * exit post is then queued behind the running one.
+ */
+export function runLeaveCheck(
+    h: MathPeerTestHarness,
+    peer: HarnessPeer
+): Promise<boolean> {
+    return h.execOnHost(peer, async (sm) => {
+        const service = sm.leaveChannelService;
+        service["requestCheck"]();
+        await service["checks"];
+        return service["isPostQueued"];
+    });
+}
+
+/**
  * On the omitted join (see `stageOmittedInboundJoin`), founder 1 leaves and
  * never sends its exit: its leave awaits its leave turn.
  */
@@ -449,6 +537,77 @@ export async function disputeOmittedJoin(
             return sm.storage.disputes.didIDispute(sm.forkId);
         })
     ).to.equal(true);
+}
+
+/**
+ * Records the peer's host errors (fatal runtime errors). Returns the error
+ * messages and the removal of the listener.
+ */
+export function recordHostErrors(peer: HarnessPeer): {
+    errors: string[];
+    remove: () => void;
+} {
+    const errors: string[] = [];
+    const remove = peer.p2pInstance.onHostError((error) =>
+        errors.push(error.message)
+    );
+    return { errors, remove: () => void remove() };
+}
+
+/**
+ * Three founders; founder 1 leaves and sends its exit on its leave turn. Its
+ * post of the finalized exit block is parked at its send. Then its held
+ * leave watchdog expires, and the self-removal dispute it starts is parked
+ * at its send, before the chain sees it. Participant-timeout checks are off:
+ * no block follows the exit, and a timeout dispute is not the subject.
+ * Returns the leaver, both parked sends, its host errors and the restore.
+ */
+export async function stageExitPostAndOwnDisputeHeld(h: MathPeerTestHarness) {
+    await h.lifecycle.start(3, 0);
+    const leaver = h.getPeer(1);
+    for (const peer of h.peers)
+        await h.rpcStub.suppressTimeoutCheck(peer.index);
+    const hostErrors = recordHostErrors(leaver);
+    const watchdog = await h.rpcStub.holdScheduledTasks(
+        leaver.index,
+        "channel leave watchdog"
+    );
+    const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+    const disputes = await h.rpcStub.recordDisputeSubmissions(leaver.index, {
+        hold: true,
+        forward: true
+    });
+    const restore = async () => {
+        await send.release();
+        await disputes.restore();
+        hostErrors.remove();
+    };
+    try {
+        const exit = exitOnLeaveTurn(leaver);
+        await leaver.p2pInstance.p2pSigner.leaveChannel();
+        await h.transition.keepAuthoringUntil({
+            until: () => exit() !== undefined,
+            waitForPeers: [0, 1, 2],
+            maximumBlocks: 6
+        });
+        await exit();
+        // the finalized exit block's post is parked at its send
+        await send.waitUntilHeld();
+        // the one leave watchdog expires; its dispute is parked at its send
+        expect(await watchdog.heldCount()).to.equal(1);
+        await watchdog.release(true);
+        await disputes.waitUntilHeld();
+        return {
+            leaver,
+            send,
+            disputes,
+            hostErrors: hostErrors.errors,
+            restore
+        };
+    } catch (error) {
+        await restore();
+        throw error;
+    }
 }
 
 /** Whether the peer's disputes carry its self-removal (its force-exit flag). */
