@@ -239,7 +239,9 @@ export default class LeaveChannelService {
     private postSnapshot(): void {
         // the block finalized during a post can be the one that lands the
         // exit, and a leaver commits no later block to post again: it posts
-        // once more after this post, unless this post landed the exit
+        // once more after this post, unless this post landed the exit. Only a
+        // committed exit block posts again here: a reduction that left no
+        // participant is posted again only when a later check runs
         if (this.isPosting) {
             this.isPostQueued = true;
             return;

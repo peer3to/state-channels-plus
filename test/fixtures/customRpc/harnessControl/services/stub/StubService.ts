@@ -246,6 +246,7 @@ type HeldRpcReply = {
         | "eventListenerRemoval"
         | "joinThresholdRead"
         | "joinRetryEligibilityRead"
+        | "joinRetryDecision"
         | "joinCollectionResult";
     entered: number;
     gate: Promise<void>;
@@ -628,6 +629,12 @@ export class StubService extends ANetworkRpcService<
     /** The held chain snapshot read of a join or top-up retry-eligibility check, and the restore of the real read. */
     private joinRetryEligibilityReadHold?: HeldRpcReply;
     private restoreJoinRetryEligibilityRead?: () => void;
+    /** The held retry decision of a join or top-up refusal, and the restore of the real decision. */
+    private joinRetryDecisionHold?: HeldRpcReply;
+    private restoreJoinRetryDecision?: () => void;
+    // the custom error name of each refusal that entered the held retry
+    // decision, in order; null for a refusal with no decoded error
+    private joinRetryDecisionRefusals: (string | null)[] = [];
     /** The held result of a join collection, and the restore of the real collection. */
     private joinCollectionResultHold?: HeldRpcReply;
     private restoreJoinCollectionResult?: () => void;
@@ -1768,6 +1775,60 @@ export class StubService extends ANetworkRpcService<
         this.restoreJoinRetryEligibilityRead = undefined;
         this.joinRetryEligibilityReadHold?.release();
         this.joinRetryEligibilityReadHold = undefined;
+    }
+
+    /**
+     * Hold this runtime's next join or top-up retry decision
+     * (`ChannelJoinService.shouldRetryWithFreshConfirmation`) at its entry,
+     * before it reads anything, and record the refusal it decides on: the
+     * retry is decided once released.
+     */
+    public holdJoinRetryDecision(): void {
+        this.releaseJoinRetryDecision();
+        this.joinRetryDecisionRefusals = [];
+        const joinService = this.sm.channelJoinService;
+        const decide = Reflect.get(
+            joinService,
+            "shouldRetryWithFreshConfirmation"
+        ) as (
+            prepared: unknown,
+            refusal: { custom: { name: string } | null }
+        ) => Promise<boolean>;
+        const hold = this.createRpcHold("joinRetryDecision");
+        this.joinRetryDecisionHold = hold;
+        this.restoreJoinRetryDecision = () => {
+            Reflect.deleteProperty(
+                joinService,
+                "shouldRetryWithFreshConfirmation"
+            );
+        };
+        Reflect.set(
+            joinService,
+            "shouldRetryWithFreshConfirmation",
+            async (
+                prepared: unknown,
+                refusal: { custom: { name: string } | null }
+            ) => {
+                this.restoreJoinRetryDecision?.();
+                this.joinRetryDecisionRefusals.push(
+                    refusal.custom?.name ?? null
+                );
+                hold.entered += 1;
+                await hold.gate;
+                return decide.call(joinService, prepared, refusal);
+            }
+        );
+    }
+
+    public getJoinRetryDecisionRefusals(): (string | null)[] {
+        return this.joinRetryDecisionRefusals;
+    }
+
+    public releaseJoinRetryDecision(): void {
+        this.restoreJoinRetryDecision?.();
+        this.restoreJoinRetryDecision = undefined;
+        this.joinRetryDecisionHold?.release();
+        this.joinRetryDecisionHold = undefined;
     }
 
     /**

@@ -2197,6 +2197,12 @@
       "peakRssGb": 1.269,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose retry is refused because a second landed join filled the channel is not retried even when the snapshot moves to a stored one before the retry is decided: connect returns false after two submissions with no further collection, and the joiner aborts": {
+      "durationMs": 16761,
+      "avgCores": 1.207,
+      "peakRssGb": 1.388,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose snapshot moves to one this joiner does not store is not prepared again: the join fails and the joiner aborts": {
       "durationMs": 16692,
       "avgCores": 0.66,
@@ -2225,6 +2231,18 @@
       "durationMs": 10460,
       "avgCores": 0.837,
       "peakRssGb": 0.794,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a prepared join submitted to a channel that a landed pending join fills makes no full-channel read and is refused for too many participants: joinChannel returns false after one submission, onLeftChannel then onAbort fire once each, and no JOIN lands for the joiner": {
+      "durationMs": 13457,
+      "avgCores": 1.01,
+      "peakRssGb": 1.17,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up refused on a moved snapshot at every submission stops retrying at the channel's maximum participant count: after that many retries it returns false, no further confirmation is collected, and the participation is kept with no abort": {
+      "durationMs": 16429,
+      "avgCores": 1.009,
+      "peakRssGb": 0.995,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up that fails while the snapshot stays put is not retried: it returns false after one submission and keeps the participation": {
@@ -16735,6 +16753,12 @@
       "peakRssGb": 1.671,
       "measurementReason": null
     },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leaver's exit post of a non-final reduction that leaves no participant, held at its send while the reducer's adoption post closes the channel, is refused with RaceConditionGenesisTimestampNotAvailable, logged as a chain refusal and not fatal, and the leaver leaves once": {
+      "durationMs": 20893,
+      "avgCores": 0.317,
+      "peakRssGb": 0.582,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave": {
       "durationMs": 18751,
       "avgCores": 0.587,
@@ -16775,6 +16799,12 @@
       "durationMs": 27113,
       "avgCores": 0.621,
       "peakRssGb": 1.749,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a leaver's post closes the channel, the reducer's later adoption post of that fork is refused with RaceConditionGenesisTimestampNotAvailable and not retried, and each leaver leaves once with no abort": {
+      "durationMs": 20820,
+      "avgCores": 0.328,
+      "peakRssGb": 0.586,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join block bound grace U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it": {

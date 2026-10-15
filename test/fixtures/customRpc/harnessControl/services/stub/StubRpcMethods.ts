@@ -1421,6 +1421,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdJoinRetryDecision(): boolean {
+        this.service.holdJoinRetryDecision();
+        return true;
+    }
+    public getJoinRetryDecisionRefusals(): (string | null)[] {
+        return this.service.getJoinRetryDecisionRefusals();
+    }
+    public releaseJoinRetryDecision(): boolean {
+        this.service.releaseJoinRetryDecision();
+        return true;
+    }
+
     public recordPublishedSnapshots(): boolean {
         this.service.recordPublishedSnapshots();
         return true;

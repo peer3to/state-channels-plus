@@ -292,7 +292,7 @@ export async function joinFullChannel(
 }
 
 /** A new spectator syncs and its join lands pending; returns that peer. */
-async function landPendingJoin(h: MathPeerTestHarness) {
+export async function landPendingJoin(h: MathPeerTestHarness) {
     const { peer } = await h.join.addSpectatorAuthoring({
         authoringPeerIndices: [0, 1, 2],
         minimumBlocks: 0,

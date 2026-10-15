@@ -14,7 +14,7 @@
 Terminal leave state machine
 
 - Setup: Enter through `P2pInstance.leaveChannel` or the internal signer route from every commitment state, or through the signer's own exit block with no leave call; block, fail or hold the exit's snapshot posts.
-- Oracle: Hook substitution, the one watchdog bound, self-removal dispute input, one exit post per finalized block with at most one in flight, one post of an installed threshold-final reduction that leaves no participant, one `onLeftChannel` per drop to `SYNCED`, one terminal disposal and fatal errors for a stopped leave are exact; no cross-channel work starts.
+- Oracle: Hook substitution, the one watchdog bound, self-removal dispute input, one exit post per finalized block with at most one in flight, one post in flight of an installed reduction that leaves no participant (threshold-final, or once its reduced result is committed), an expected refusal of that post when another post closed the channel first, one `onLeftChannel` per drop to `SYNCED`, one terminal disposal and fatal errors for a stopped leave are exact; no cross-channel work starts.
 
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P1` — immediate non-committed leave
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P2` — authored exit
@@ -56,3 +56,4 @@ Terminal leave state machine
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P44` — a block finalized while a post runs queues no further post when that post returns a snapshot that drops the signer: one send, no second post
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45` — a lone leaver whose installed self-removal reduction has no participant while the chain still lists it starts exactly one post of that reduced fork; the post closes the channel and the leave settles
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46` — a leaver whose installed self-removal reduction keeps other participants starts no post while the chain still lists it; the remaining participants' adoption settles the leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P47` — a leaver's exit post of a non-final reduction that leaves no participant, prepared and held at its send while the reducer's adoption post closes the channel, is refused with `RaceConditionGenesisTimestampNotAvailable`: the refusal is logged once, no runtime error is raised and the leaver gets `onLeftChannel` once

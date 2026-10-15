@@ -15,6 +15,7 @@ import {
     chainJoinAmounts,
     countJoinSignatureRequests,
     joinFullChannel,
+    landPendingJoin,
     moveChainSnapshot,
     raceJoinPastTwoLandingJoins,
     refuseHeldJoinsOnSnapshotMoves,
@@ -476,6 +477,51 @@ describe("E2E: join snapshot guard", function () {
         ).to.equal(Status.PARTICIPATING);
         expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
         await releaseAll();
+    });
+
+    it("a top-up refused on a moved snapshot at every submission stops retrying at the channel's maximum participant count: after that many retries it returns false, no further confirmation is collected, and the participation is kept with no abort", async function () {
+        const h = TestSession.getHarness();
+        // four seats: at most four retries
+        await h.scenario.syncSpectator(4, { maxChannelParticipants: 4 });
+        const participant = h.getPeer(0);
+        const fromBlock =
+            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+        await h.rpcStub.holdMembershipSubmission(
+            participant.index,
+            "topUpBalance"
+        );
+        const countersigned = await countJoinSignatureRequests(
+            h,
+            await remoteThresholdPeerIndices(h, participant.index)
+        );
+        const topUp = participant.p2pInstance.p2pSigner.connectToChannel(
+            h.channelId!,
+            { shouldJoin: true, balance: { amount: 5, data: "0x" } }
+        );
+        // observed below; keeps a failure from being an unhandled rejection meanwhile
+        topUp.catch(() => undefined);
+
+        // the first submission and its four retries are each refused on a stale pin
+        await refuseHeldJoinsOnSnapshotMoves(h, participant.index, 5);
+
+        expect(await topUp).to.equal(false);
+        // later submissions stay held: the count read below is the total
+        expect(
+            await h
+                .control(participant)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(5);
+        // five collections (the first and four retries), each asking the two
+        // other founders once: none after the fifth refusal
+        expect(await countersigned()).to.equal(10);
+        expect(
+            await h.control(participant).query.getStatus().request()
+        ).to.equal(Status.PARTICIPATING);
+        expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(
+            await chainJoinAmounts(h, participant.address, fromBlock)
+        ).to.deep.equal([]);
     });
 
     it("a top-up that fails while the snapshot stays put is not retried: it returns false after one submission and keeps the participation", async function () {
@@ -1242,6 +1288,57 @@ describe("E2E: join snapshot guard", function () {
         await race.releaseJoiner().catch(() => undefined);
     });
 
+    it("a join whose retry is refused because a second landed join filled the channel is not retried even when the snapshot moves to a stored one before the retry is decided: connect returns false after two submissions with no further collection, and the joiner aborts", async function () {
+        const h = TestSession.getHarness();
+        // the three founders and the two landed joiners fill the channel
+        const race = await raceJoinPastTwoLandingJoins(h, {
+            maxChannelParticipants: 5
+        });
+        expect(race.isFirstJoined).to.equal(true);
+        expect(race.isSecondJoined).to.equal(true);
+        const stub = h.control(race.joiner).stub;
+        await stub.holdJoinRetryDecision().request();
+        try {
+            // the held retry meets the full channel: too many participants
+            await h.rpcStub.releaseOneMembershipSubmission(race.joiner.index);
+            await waitFor(
+                async () =>
+                    (await stub.getJoinRetryDecisionRefusals().request())
+                        .length === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await stub.getJoinRetryDecisionRefusals().request()
+            ).to.deep.equal(["ErrorTooManyParticipants"]);
+            // before the retry is decided, the snapshot moves to one the
+            // joiner stores: a snapshot race would now be retried
+            await moveChainSnapshot(h);
+        } finally {
+            await stub.releaseJoinRetryDecision().request();
+        }
+
+        expect(await race.join).to.equal(false);
+        await waitFor(
+            async () => race.joiner.eventSpies.onAbort?.called === true,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(race.joiner.eventSpies.onAbort?.callCount).to.equal(1);
+        // later submissions stay held: the count read below is the total
+        expect(
+            await h
+                .control(race.joiner)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(2);
+        expect(await race.countersignedByFirst()).to.equal(0);
+        expect(await race.countersignedBySecond()).to.equal(0);
+        expect(
+            await h.channelManager.getPendingParticipants(h.channelId)
+        ).to.not.include(race.joiner.address);
+        // the abort disposed the runtime, so the release may reject
+        await race.releaseJoiner().catch(() => undefined);
+    });
+
     it("a join with shouldSpectateWhenFull whose retry after a threshold set refusal is refused because a second landed join filled the channel ends on that refusal: connect returns false after two submissions with no further collection, and the joiner is back to SYNCED with no abort", async function () {
         const h = TestSession.getHarness();
         // the three founders and the two landed joiners fill the channel
@@ -1282,6 +1379,82 @@ describe("E2E: join snapshot guard", function () {
         expect(pending).to.not.include(race.joiner.address);
         expect(participants.length + pending.length).to.equal(5);
         await race.releaseJoiner();
+    });
+
+    it("a prepared join submitted to a channel that a landed pending join fills makes no full-channel read and is refused for too many participants: joinChannel returns false after one submission, onLeftChannel then onAbort fire once each, and no JOIN lands for the joiner", async function () {
+        const h = TestSession.getHarness();
+        // the three founders and one landed join fill four seats
+        const joiner = await h.scenario.syncSpectator(4, {
+            maxChannelParticipants: 4
+        });
+        await landPendingJoin(h);
+        // prepared once the channel is full, so its deadline and pin are fresh
+        const { confirmation, expectedSnapshotHash, expectedForkId } =
+            await h.join.buildJoinChannelConfirmation({
+                joiner,
+                channelId: h.channelId!
+            });
+        const fromBlock =
+            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+        const releaseAll = await h.rpcStub.holdMembershipSubmission(
+            joiner.index,
+            "joinChannel"
+        );
+        const join = joiner.p2pInstance.p2pSigner.joinChannel(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        );
+        // observed below; keeps a failure from being an unhandled rejection meanwhile
+        join.catch(() => undefined);
+        // no full-channel read stops the prepared join: it is submitted
+        await waitForHeldJoins(h, joiner.index, 1);
+        // the retry decision names the refusal: a moved snapshot would be
+        // refused first, and could abort for the wrong reason
+        const stub = h.control(joiner).stub;
+        await stub.holdJoinRetryDecision().request();
+        try {
+            await h.rpcStub.releaseOneMembershipSubmission(joiner.index);
+            await waitFor(
+                async () =>
+                    (await stub.getJoinRetryDecisionRefusals().request())
+                        .length === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await stub.getJoinRetryDecisionRefusals().request()
+            ).to.deep.equal(["ErrorTooManyParticipants"]);
+        } finally {
+            await stub.releaseJoinRetryDecision().request();
+        }
+
+        // the abort disposes the runtime, so the call may also reject
+        expect(await join.catch(() => false)).to.equal(false);
+        await waitFor(
+            async () => joiner.eventSpies.onAbort?.called === true,
+            h.event.protocolEventTimeoutMs()
+        );
+        await h.event.waitUntilLeftChannel(joiner.index);
+        const spies = joiner.eventSpies;
+        expect(spies.onLeftChannel?.callCount).to.equal(1);
+        expect(spies.onAbort?.callCount).to.equal(1);
+        expect(
+            spies
+                .onLeftChannel!.getCall(0)
+                .calledBefore(spies.onAbort!.getCall(0))
+        ).to.equal(true);
+        // later submissions stay held: the count read below is the total
+        expect(
+            await h
+                .control(joiner)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(1);
+        expect(
+            await chainJoinAmounts(h, joiner.address, fromBlock)
+        ).to.deep.equal([]);
+        // the abort disposed the runtime, so the release may reject
+        await releaseAll().catch(() => undefined);
     });
 
     it("a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED", async function () {

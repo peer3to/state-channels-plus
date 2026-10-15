@@ -56,7 +56,16 @@ and the chain participants after its second exit. The lone-leaver case starts tw
 leave turn and its posted exit leaves founder 1 alone. Founder 1 then leaves without sending its exit, and its held
 leave watchdog is run, so its self-removal dispute (final at upload) leaves no participant. Its oracles are one
 started exit post recorded as posted, one recorded self-removal submission, the closed channel and the leaver's
-`onLeftChannel`. The case where the leave awaits its leave turn also checks that the leaver starts no post of the
+`onLeftChannel`. The two two-leaver cases start two founders that both leave without sending their exits, with
+timeout checks suppressed and both leave watchdogs held. Founder 0's watchdog is run, and founder 1 answers its
+self-removal dispute with its own, so the window holds two disputes and none is final. Founder 1's reduction
+attempts are held, so founder 0 alone reduces; its adopt-only post is parked at its send and its exit posts park
+before they prepare. After the kill period founder 1's attempt is released and it installs the reduced fork with no
+participant. In the first case founder 1's exit post closes the channel; the parked adoption is then sent, and its
+oracles are its revert name, the recorded `adoptReducedFork-*` retries, the deleted chain snapshot, both
+`onLeftChannel` and `onAbort` counts and the host errors. In the second case founder 1's exit post is parked at its
+send, the adoption closes the channel and the post is then sent; its oracles are the post's revert name, the
+recorded post result, the leave logger's refusal entry, the host errors and its `onLeftChannel` count. The case where the leave awaits its leave turn also checks that the leaver starts no post of the
 reduced state, which keeps the other founders. While a watchdog expiry is awaited the remaining participants keep authoring, so no idle writer
 is timed out.
 
@@ -80,6 +89,8 @@ is timed out.
 - `U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P38, REQ-TJOIN-7-NNGTAY.T1.P12
 - `U72: a reduction that replaces the fork of an exit block the application authored with no leave call by a state that still seats the leaver restarts the exit there as a requested leave: its leave turn comes, self-removal stays set and its exit settles`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P39
 - `U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45
+- `U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a leaver's post closes the channel, the reducer's later adoption post of that fork is refused with RaceConditionGenesisTimestampNotAvailable and not retried, and each leaver leaves once with no abort`: REQ-LIF-10-QR8NQ9.T1.P31, UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P23
+- `U72: a leaver's exit post of a non-final reduction that leaves no participant, held at its send while the reducer's adoption post closes the channel, is refused with RaceConditionGenesisTimestampNotAvailable, logged as a chain refusal and not fatal, and the leaver leaves once`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P47
 - `U73: a latest-state request to a responder past its initial load that has not installed the chain's fork → refused for that fork, requester not blacklisted`: REQ-SYNC-1-T2589H.T2.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42
 - `U73: a latest-state request to a responder whose own fork is behind the chain-derived fork → served from the derived fork, neither side blacklisted`: REQ-SYNC-1-T2589H.T2.P2, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43
 - `RO2: seating a join during its deadline membership read prevents a stale dispute request`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P46, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P72

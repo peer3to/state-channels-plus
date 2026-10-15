@@ -43,6 +43,10 @@ import {
 } from "@test/fixtures/ForceJoinCountingStaging";
 import { stageLoneLeaverSelfRemoval } from "@test/fixtures/LoneLeaverStaging";
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
+import {
+    stageAdoptionClosingBeforeLeavePost,
+    stageLeavePostClosingBeforeAdoption
+} from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -870,6 +874,78 @@ describe("Unit: bot-connection fixes", function () {
             } finally {
                 await posts.restore();
                 await disputes.restore();
+            }
+        });
+
+        it("U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a leaver's post closes the channel, the reducer's later adoption post of that fork is refused with RaceConditionGenesisTimestampNotAvailable and not retried, and each leaver leaves once with no abort", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageLeavePostClosingBeforeAdoption(h);
+            const { reducer, leaver } = staged;
+            try {
+                expect(await staged.leaverPosts.resultsWait(1)).to.deep.equal([
+                    "posted"
+                ]);
+                expect(await staged.adoption.release()).to.equal(
+                    "RaceConditionGenesisTimestampNotAvailable"
+                );
+                expect(
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId
+                ).to.equal(ethers.ZeroHash);
+                // the reducer's own exit post runs after the close: it sends nothing
+                await staged.reducerPosts.releaseStarts();
+                const reducerResults = await staged.reducerPosts.resultsWait(1);
+                expect(reducerResults).to.deep.equal(
+                    reducerResults.map(() => "no-op")
+                );
+                for (const peer of [reducer, leaver])
+                    await h.event.waitUntilLeftChannel(peer.index);
+                await TestSession.settleDetached();
+                expect(
+                    await staged.adoptionRetries(),
+                    "no adoption retry"
+                ).to.equal(0);
+                for (const peer of [reducer, leaver]) {
+                    expect(
+                        h.event.getEventCallCount(peer.index, "onLeftChannel")
+                    ).to.equal(1);
+                    expect(
+                        h.event.getEventCallCount(peer.index, "onAbort")
+                    ).to.equal(0);
+                }
+                expect(staged.hostErrors).to.deep.equal([]);
+            } finally {
+                await staged.restore();
+            }
+        });
+
+        it("U72: a leaver's exit post of a non-final reduction that leaves no participant, held at its send while the reducer's adoption post closes the channel, is refused with RaceConditionGenesisTimestampNotAvailable, logged as a chain refusal and not fatal, and the leaver leaves once", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageAdoptionClosingBeforeLeavePost(h);
+            const { reducer, leaver } = staged;
+            const refusal = "RaceConditionGenesisTimestampNotAvailable";
+            try {
+                expect(await staged.releaseLeaverPost()).to.equal(refusal);
+                expect(await staged.leaverPosts.resultsWait(1)).to.deep.equal([
+                    refusal
+                ]);
+                await waitFor(
+                    async () => (await staged.leaverRefusals()).length > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await staged.leaverRefusals()).to.deep.equal([
+                    [{ refusal }]
+                ]);
+                await staged.reducerPosts.releaseStarts();
+                for (const peer of [reducer, leaver])
+                    await h.event.waitUntilLeftChannel(peer.index);
+                await TestSession.settleDetached();
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(1);
+                expect(staged.hostErrors).to.deep.equal([]);
+            } finally {
+                await staged.restore();
             }
         });
     });

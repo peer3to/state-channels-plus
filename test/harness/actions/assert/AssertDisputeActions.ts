@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared dispute assertions exercised by owning mapped test declarations
 import type { ForkId } from "@/types/types";
 import { addressesEqual } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";

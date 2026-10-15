@@ -43,7 +43,7 @@ second and last held submission, the call returns `true`, the spectator answered
 request, the chain's `InboundMessagesProcessed` logs credit the amount once, and the participant is
 still `PARTICIPATING` without abort.
 
-Three cases race three synced spectators (`raceJoinPastTwoLandingJoins`). The joiner's connect submission is
+Four cases race three synced spectators (`raceJoinPastTwoLandingJoins`). The joiner's connect submission is
 held; the first spectator's join lands, the joiner's submission is released and refused for the widened set,
 and its retry is held; the second spectator's join then lands. In the first case the held retry is released,
 refused for the set the second widened, and a third submission is held and then lands: the call returns
@@ -55,6 +55,12 @@ so the second landed join fills it: the held retry is refused for too many parti
 `false` after two submissions, the landed joiners answer no further request, and the two landed joiners fill
 the on-chain membership. By default the joiner aborts once; with `shouldSpectateWhenFull` it is `SYNCED`
 without abort with one `onLeftChannel`.
+A fourth case stages the default race and holds the joiner's retry decision at its entry
+(`holdJoinRetryDecision`). The decision is entered once, for `ErrorTooManyParticipants`; while it is held the
+participants move the chain snapshot to one the joiner stores, then the decision is released. The call still
+returns `false` after two submissions, the landed joiners answer no further request, and the joiner aborts
+once. Without the full-channel check at the start of the retry decision it fails: the moved snapshot makes
+the refusal look like a snapshot race, and a third collection and submission follow.
 
 Two cases connect a synced spectator with a join to a channel whose maximum participant count is three, so
 the three founders already fill it. The founders answer no countersignature request, the chain's
@@ -65,6 +71,19 @@ it is in sync with them. A third case uses a maximum of four: a second spectator
 just before the connect the chain lists it as pending and not seated, with three seated participants. The
 threshold set answers no countersignature request, no JOIN lands for the joiner, connect returns `false`,
 and the joiner aborts once.
+
+One case submits a prepared join through the public `joinChannel` to a channel of four seats that the three
+founders and one landed pending join fill; the confirmation is built after that join landed. The join is
+still submitted once (held at its send, then released), and the held retry decision records the refusal as
+`ErrorTooManyParticipants`. The call returns `false` (or rejects), `onLeftChannel` fires once before the one
+`onAbort`, the held submission count stays one, and the chain's `InboundMessagesProcessed` logs carry no JOIN for
+the joiner. Without the full-channel case in `onJoinRefused` it fails: no abort follows.
+
+One case holds participant 0's top-up submissions on a channel of four seats and meets each held submission
+with a snapshot move to a stored one before releasing it. After five submissions (the first and four
+retries) the call returns `false`, the two other founders answered ten countersignature requests in total,
+the participant is still `PARTICIPATING` without abort, and the chain logs carry no JOIN for it. Without the
+cap in the top-up retry loop it fails: a sixth collection and submission follow.
 
 One case aborts a joiner while its retry's submission is pending. The connect's first held submission meets
 a snapshot move and is refused; the retry is the second held submission, and a second move makes its pin
@@ -107,6 +126,7 @@ because the runtime is no longer `SYNCED`.
 - `a top-up whose fresh confirmation for its retry cannot be collected returns false with no second submission, and the participant keeps participating`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P64, REQ-JOINSIG-1-8X1A4V.T1.P7
 - `a join whose submission outcome is uncertain while the snapshot moved to a stored one is not prepared again: it keeps PENDING_PARTICIPANT after one submission`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P57, REQ-TJOIN-5-Q795M7.T1.P23
 - `a top-up whose snapshot moves again before its retry lands is collected again and lands on its third submission: the amount credited once and the participation kept`: REQ-JOINSIG-1-8X1A4V.T1.P22, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P96
+- `a top-up refused on a moved snapshot at every submission stops retrying at the channel's maximum participant count: after that many retries it returns false, no further confirmation is collected, and the participation is kept with no abort`: REQ-JOINSIG-1-8X1A4V.T1.P24, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P106
 - `a top-up that fails while the snapshot stays put is not retried: it returns false after one submission and keeps the participation`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P63
 - `a top-up whose submission outcome is uncertain while the snapshot moved to a stored one is not prepared again: it returns false after one submission and keeps the participation`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P66
 - `a join whose snapshot moves to one this joiner has not stored is not prepared again: no fresh confirmation is collected and the join fails on its race`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P58
@@ -124,7 +144,9 @@ because the runtime is no longer `SYNCED`.
 - `a connect's join with shouldSpectateWhenFull to a channel already full is neither collected nor submitted: connect returns false, and the joiner stays SYNCED with no abort and follows the next block`: REQ-JOINSIG-4-3NBKHK.T1.P2, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P99
 - `a connect's join to a channel that a pending participant fills is neither collected nor submitted: connect returns false and the joiner aborts`: REQ-JOINSIG-4-3NBKHK.T1.P4, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P101
 - `a join whose retry after a threshold set refusal is refused because a second landed join filled the channel ends on that refusal: connect returns false after two submissions with no further collection, and the joiner aborts`: REQ-JOINSIG-1-8X1A4V.T1.P21, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P95
+- `a join whose retry is refused because a second landed join filled the channel is not retried even when the snapshot moves to a stored one before the retry is decided: connect returns false after two submissions with no further collection, and the joiner aborts`: REQ-JOINSIG-4-3NBKHK.T1.P7, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P105
 - `a join with shouldSpectateWhenFull whose retry after a threshold set refusal is refused because a second landed join filled the channel ends on that refusal: connect returns false after two submissions with no further collection, and the joiner is back to SYNCED with no abort`: REQ-JOINSIG-4-3NBKHK.T1.P3, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P100
+- `a prepared join submitted to a channel that a landed pending join fills makes no full-channel read and is refused for too many participants: joinChannel returns false after one submission, onLeftChannel then onAbort fire once each, and no JOIN lands for the joiner`: REQ-JOINSIG-4-3NBKHK.T1.P6, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P104
 - `a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED`: REQ-JOINSIG-1-8X1A4V.T1.P18, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P92
 - `a participant's top-up held at its send while a spectator's join lands is refused for the threshold set that join widened, collected again once with the new pending participant's countersignature, and lands: two submissions, the amount credited once, and the participation kept`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P87, REQ-JOINSIG-1-8X1A4V.T1.P14
 - `concurrent topUpBalance calls with one prepared request: the second call reuses the running top-up, so one funded submission credits the amount once and both calls return the same result`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P82

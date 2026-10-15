@@ -68,7 +68,8 @@ export default class ChannelJoinService {
      * or the channel's on-chain snapshot moved to a stored one) is collected
      * again with the same balance and submitted again, for each such refusal
      * up to the channel's maximum participant count of retries; any other
-     * refusal, or one past that cap, is final.
+     * refusal, or one past that cap, is final. A refusal for a full channel
+     * aborts the runtime: this route makes no full-channel read first.
      */
     public joinChannel(
         confirmation: JoinChannelConfirmationStruct,
