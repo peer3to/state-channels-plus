@@ -811,6 +811,20 @@ describe("Codec", function () {
                 DisputeFraudProofType.DisputeInvalidOutboundRun
             ]
         ];
+        const testedTypes = new Set(cases.map(([, type]) => type));
+        for (const [enumName, enumValues] of [
+            ["Type", Type],
+            ["FraudProofType", FraudProofType],
+            ["DisputeFraudProofType", DisputeFraudProofType]
+        ] as const) {
+            for (const value of Object.values(enumValues)) {
+                if (typeof value !== "number") continue;
+                expect(
+                    testedTypes.has(value),
+                    `${enumName}.${enumValues[value]} is missing from the every-type codec corpus`
+                ).to.be.true;
+            }
+        }
         for (const [value, type] of cases) {
             const encoded = Codec.encode(value, type);
             const decoded = Reflect.apply(Codec.decode, Codec, [encoded, type]);
