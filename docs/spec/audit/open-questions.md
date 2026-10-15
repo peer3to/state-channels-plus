@@ -15,8 +15,10 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x) | Watchdog threshold under gate load                           | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [runtime/configuration.md](../specification/runtime/configuration.md)                                                                                      | Open                  |
 | [`OQ-AUDIT-DISPUTE-1-ER4Y3D`](open-questions.md#oq-audit-dispute-1-er4y3d) | State contributions without another reason                   | Plan 30 decision 9              | [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)                                                                                                       | Resolved (2026-09-05) |
 | [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                                                                                                     | Resolved (2026-09-05) |
+| [`OQ-AUDIT-RUNTIME-1-3P2PTW`](open-questions.md#oq-audit-runtime-1-3p2ptw) | Application module cloneability                              | Implementation audit            | [`REQ-RUNTIME-1-RSM6MZ`](../specification/runtime/execution.md#req-runtime-1-rsm6mz), [implementation.md](./implementation.md)                                                                                 | Open                  |
 | [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
 | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send and subscribe to multiple nodes                         | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
+| [`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0)         | Universal keepalive for idle chain WebSocket connections     | Live poker bots (2026-10-15)    | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                      | Open                  |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -130,3 +132,43 @@ replicate a transaction in the mempool anyway, so sending it to several should n
 behavior. It raises the chance of success when the selected endpoint dies: there is no wait to
 recover and reconnect to another endpoint, which could be fatal if it takes long. Every response
 can be deduplicated: treat the endpoints as redundant connections where the first response wins.
+
+<a id="oq-audit-rpc-2-4vvat0"></a>
+
+## OQ-AUDIT-RPC-2-4VVAT0 — Universal keepalive for idle chain WebSocket connections
+
+Open. Seen three times in live poker bots (2026-10-15). An application's own ethers
+`WebSocketProvider` that stays idle for minutes was dropped on the path to
+`wss://dev.peer3.network/private-testnet-ws/`. The case is the poker client's discovery provider: it is
+idle during play, because the SDK runtime uses its own RPC connections. The first read after a long
+table session hung for 20–30 s, the socket closed with code 1006, and the bot exited on provider
+loss. The most likely cause is a proxy idle timeout. As a stopgap, poker-contracts' `PokerClient` now
+sends a cheap keepalive read every 30 s on its provider (Luka, 2026-10-15).
+
+The SDK's own node connections already have a liveness check. Each open node socket runs
+`checkHeartbeat` every 10 s (`HEARTBEAT_INTERVAL_MS`,
+[RpcNodeProvider.ts:21](../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L21), started at
+[RpcNodeProvider.ts:445](../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L445)). It sends
+`eth_blockNumber`
+([RpcNodeProvider.ts:476](../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L476)); no answer
+within 5 s (`HEARTBEAT_TIMEOUT_MS`,
+[RpcNodeProvider.ts:23](../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L23)) ends the
+socket and starts a reconnect
+([RpcNodeProvider.ts:494](../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L494)). This
+traffic keeps the path busy below a minutes-long idle timeout, and a dropped socket reconnects with
+requests held until then. So the SDK's own connections are not exposed to this drop. The gap is
+only the providers that applications create themselves: `RpcNodeProvider` and `MultiRpcProvider`
+are not exported from `src/index.ts`.
+
+Alternatives: (a) every application keeps its own keepalive (the current state); (b) the SDK gives
+applications a provider factory or helper built on its node layer
+(`src/evm/p2pRuntime/rpcNodes`), so every WebSocket an application opens gets the same heartbeat,
+idle detection and reconnect, and the poker client's keepalive is then removed. Blocking effect:
+none; the stopgap keeps the bots running. Requested decision: whether the SDK should own one
+universal keepalive for every chain WebSocket, including the ones applications open. A timer-based
+keepalive also has a browser limit (not verified): browsers throttle timers in hidden tabs, for
+example to about once per minute, so a hidden tab's keepalive can fall behind a short proxy idle
+timeout; the universal solution must account for that.
+
+Related: [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a),
+[chain-observation.md](../specification/runtime/chain-observation.md).

@@ -41,6 +41,16 @@ describe("connectToChannel input validation", function () {
         await assertClean(h);
     });
 
+    it("non-boolean shouldSpectateWhenFull rejects before state mutation", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("bad-spectate-when-full"), {
+                shouldSpectateWhenFull: "yes" as never
+            })
+        ).to.be.rejectedWith("shouldSpectateWhenFull must be a boolean");
+        await assertClean(h);
+    });
+
     it("balance missing amount rejects before port dispatch", async function () {
         const { h, signer } = await setup();
         await expect(
@@ -550,6 +560,31 @@ describe("connectToChannel signer contract", function () {
         expect(
             await h.control(h.peers[2]).query.getStatus().request()
         ).to.equal(Status.PENDING_PARTICIPANT);
+    });
+
+    it("shouldJoin with shouldSpectateWhenFull on an already-open full target reaches the host: connect returns false and the runtime stays SYNCED with no abort", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false, maxChannelParticipants: 2 });
+        const channelId = ethers.id("already-open-full-spectate-join");
+        await Promise.all(
+            h.peers.slice(0, 2).map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true
+                })
+            )
+        );
+
+        expect(
+            await h.peers[2].p2pInstance.p2pSigner.connectToChannel(channelId, {
+                shouldJoin: true,
+                shouldSpectateWhenFull: true
+            })
+        ).to.equal(false);
+        // without the option the host aborts the runtime on the full channel
+        expect(
+            await h.control(h.peers[2]).query.getStatus().request()
+        ).to.equal(Status.SYNCED);
+        expect(h.peers[2].eventSpies.onAbort?.called ?? false).to.equal(false);
     });
 
     it("shouldJoin on an already-open target preserves supplied amount and data", async function () {

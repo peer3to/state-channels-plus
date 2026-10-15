@@ -686,6 +686,7 @@ export class MathScenarioActions extends ScenarioActions {
         options?: {
             configOverrides?: HarnessOptions["configOverrides"];
             timeConfig?: HarnessOptions["timeConfig"];
+            maxChannelParticipants?: HarnessOptions["maxChannelParticipants"];
         }
     ): Promise<TestPeer> {
         const h = this.harness;
@@ -697,7 +698,8 @@ export class MathScenarioActions extends ScenarioActions {
                 evidenceTime: 4,
                 ...options?.timeConfig
             },
-            configOverrides: options?.configOverrides
+            configOverrides: options?.configOverrides,
+            maxChannelParticipants: options?.maxChannelParticipants
         });
 
         const { peer: joiner } = await h.join.addSpectatorAuthoring({

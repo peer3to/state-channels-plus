@@ -41,6 +41,7 @@ import {
     runForceJoinBlockBound,
     waitForJoinChecks
 } from "@test/fixtures/ForceJoinCountingStaging";
+import { stageLoneLeaverSelfRemoval } from "@test/fixtures/LoneLeaverStaging";
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
@@ -468,15 +469,13 @@ describe("Unit: bot-connection fixes", function () {
             ).to.include(leaver.address);
         });
 
-        it("U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it", async function () {
+        it("U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants", async function () {
             const h = TestSession.getHarness();
-            const { joiner, leaver, disputes } = await stageLeaveAwaitingTurn(
-                h,
-                {
+            const { joiner, leaver, disputes, posts } =
+                await stageLeaveAwaitingTurn(h, {
                     watchdogMs: 60_000,
                     forwardDisputes: true
-                }
-            );
+                });
             const forkId = h.activeForkId!;
             const comparisons = await h.rpcStub.recordEvidenceComparisons(
                 leaver.index
@@ -509,6 +508,8 @@ describe("Unit: bot-connection fixes", function () {
                     await h.channelManager.getParticipants(h.channelId)
                 ).to.not.include(leaver.address);
                 expect(await disputes.submissions()).to.have.length(1);
+                // a remaining participant adopts the reduced fork
+                expect(await posts.started()).to.equal(0);
             } finally {
                 await comparisons.restore();
                 await disputes.restore();
@@ -841,6 +842,35 @@ describe("Unit: bot-connection fixes", function () {
             expect(participants).to.not.include(leaver.address);
             expect(participants).to.include(h.getPeer(2).address);
             expect(await readForceExit(h, leaver)).to.equal(true);
+        });
+
+        it("U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave", async function () {
+            const h = TestSession.getHarness();
+            const { lone, expireWatchdog } =
+                await stageLoneLeaverSelfRemoval(h);
+            const posts = await recordSnapshotPostWaitResults(h, lone);
+            const disputes = await h.rpcStub.recordDisputeSubmissions(
+                lone.index,
+                { forward: true }
+            );
+            try {
+                await expireWatchdog();
+                await h.event.waitUntilLeftChannel(lone.index);
+                expect(await posts.resultsWait(1)).to.deep.equal(["posted"]);
+                expect(await posts.started()).to.equal(1);
+                const [submission] = await disputes.submissions();
+                expect(
+                    Codec.decode(submission.encodedDispute, Type.Dispute).input
+                        .selfRemoval
+                ).to.equal(true);
+                expect(await disputes.submissions()).to.have.length(1);
+                expect(
+                    (await h.channelManager.isChannelOpen(h.channelId))[0]
+                ).to.equal(false);
+            } finally {
+                await posts.restore();
+                await disputes.restore();
+            }
         });
     });
 

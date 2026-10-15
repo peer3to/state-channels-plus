@@ -14,7 +14,7 @@
 Terminal leave state machine
 
 - Setup: Enter through `P2pInstance.leaveChannel` or the internal signer route from every commitment state, or through the signer's own exit block with no leave call; block, fail or hold the exit's snapshot posts.
-- Oracle: Hook substitution, the one watchdog bound, self-removal dispute input, one exit post per finalized block with at most one in flight, one `onLeftChannel` per drop to `SYNCED`, one terminal disposal and fatal errors for a stopped leave are exact; no cross-channel work starts.
+- Oracle: Hook substitution, the one watchdog bound, self-removal dispute input, one exit post per finalized block with at most one in flight, one post of an installed threshold-final reduction that leaves no participant, one `onLeftChannel` per drop to `SYNCED`, one terminal disposal and fatal errors for a stopped leave are exact; no cross-channel work starts.
 
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P1` — immediate non-committed leave
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P2` — authored exit
@@ -54,3 +54,5 @@ Terminal leave state machine
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P42` — an expected exit-post chain refusal reaches the internal logger and normal later posting remains enabled
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P43` — an unexpected exit-post error reaches fatal runtime handling instead of being swallowed
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P44` — a block finalized while a post runs queues no further post when that post returns a snapshot that drops the signer: one send, no second post
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45` — a lone leaver whose installed self-removal reduction has no participant while the chain still lists it starts exactly one post of that reduced fork; the post closes the channel and the leave settles
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46` — a leaver whose installed self-removal reduction keeps other participants starts no post while the chain still lists it; the remaining participants' adoption settles the leave

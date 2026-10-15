@@ -10,15 +10,17 @@ import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 
 /**
  * Chain refusals of an exit post: the snapshot has not consumed the inbound
- * head, another post or a later reduction landed first, or the fork is
- * disputed (the leave's dispute settles it).
+ * head, another post or a later reduction landed first, the fork is
+ * disputed (the leave's dispute settles it), or a 0-participant fork was
+ * already closed by an earlier post.
  */
 const EXIT_POST_REFUSALS = [
     "RaceConditionPendingInboundNotConsumed",
     "RaceConditionBlockHeightTooOld",
     "RaceConditionSnapshotForkMismatch",
     "RaceConditionSnapshotUpdateNotLatestFork",
-    "RaceConditionSnapshotUpdateDisputedFork"
+    "RaceConditionSnapshotUpdateDisputedFork",
+    "RaceConditionGenesisTimestampNotAvailable"
 ] as const;
 
 /** This runtime's exit, from a leave request or from its own exit block. */
@@ -35,7 +37,9 @@ export type LeaveChannelState = {
  * is committed, each finalized block posts the latest state snapshot: any
  * posted snapshot that includes the exit lands it. Every dispute of an
  * exiting signer carries its self-removal (the force-exit flag), and the
- * leave watchdog starts one. Once the runtime observes that it is in
+ * leave watchdog starts one. A reduction that leaves no participant is
+ * posted by the leaver once installed: no member is left to post it, and
+ * only that post closes the channel. Once the runtime observes that it is in
  * neither the local state nor the chain's membership it drops to SYNCED.
  * Every drop of a member or pending joiner to SYNCED, whatever caused it
  * (a leave, a removal, a refused or expired join), emits `onLeftChannel`.
@@ -186,7 +190,8 @@ export default class LeaveChannelService {
         // a tracked join ends the membership itself: seated, refused,
         // expired, or dropped by an installed state
         if (sm.channelJoinService.isJoinInProgress()) return;
-        if (await membership.isSignerInLocalState()) {
+        const participants = await sm.getParticipantsCurrent();
+        if (membership.includesSigner(participants)) {
             const exit = this.exit;
             // a new fork that keeps the signer: an exit block of the
             // replaced fork no longer holds; a started exit leaves there. A
@@ -201,7 +206,12 @@ export default class LeaveChannelService {
             this.startExit().isLeaveRequested = true;
             return;
         }
-        if (await membership.isSignerOnChain()) return;
+        if (await membership.isSignerOnChain()) {
+            // an installed reduction that left no participant: only its
+            // fork post closes the channel, and no member is left to post it
+            if (this.exit && participants.length === 0) this.postSnapshot();
+            return;
+        }
         // onStatusChanged below ends the exit and emits onLeftChannel
         membership.dropMembership();
     }
@@ -223,7 +233,10 @@ export default class LeaveChannelService {
     }
 
     private postLatestSnapshot(): void {
-        if (!this.exit?.isExitBlockCommitted) return;
+        if (this.exit?.isExitBlockCommitted) this.postSnapshot();
+    }
+
+    private postSnapshot(): void {
         // the block finalized during a post can be the one that lands the
         // exit, and a leaver commits no later block to post again: it posts
         // once more after this post, unless this post landed the exit

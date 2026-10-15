@@ -244,7 +244,8 @@ type HeldRpcReply = {
         | "timeoutBuild"
         | "eventListenerRemoval"
         | "joinThresholdRead"
-        | "joinRetryEligibilityRead";
+        | "joinRetryEligibilityRead"
+        | "joinCollectionResult";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -626,6 +627,15 @@ export class StubService extends ANetworkRpcService<
     /** The held chain snapshot read of a join or top-up retry-eligibility check, and the restore of the real read. */
     private joinRetryEligibilityReadHold?: HeldRpcReply;
     private restoreJoinRetryEligibilityRead?: () => void;
+    /** The held result of a join collection, and the restore of the real collection. */
+    private joinCollectionResultHold?: HeldRpcReply;
+    private restoreJoinCollectionResult?: () => void;
+    /** The top-up recorded while a join collection result is held, and the restore of the real top-up. */
+    private recordedTopUp?: Promise<boolean>;
+    private restoreTopUpRecording?: () => void;
+    /** Calls that entered the recorded collect-and-join, and the restore of the real one. */
+    private collectAndJoinEntered = 0;
+    private restoreCollectAndJoinRecording?: () => void;
     /** The last snapshot membership published while recorded, and the restore of the real publication. */
     private lastPublishedSnapshotHash?: Hash;
     private originalPublishOnChainSnapshot?: MembershipService["publishOnChainSnapshot"];
@@ -781,6 +791,8 @@ export class StubService extends ANetworkRpcService<
     private postMatchTargetRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
+    /** The latest call a membership submission hold let through. */
+    private releasedMembershipSubmission?: Promise<unknown>;
     /** Record-only probe on the post-audit evidence comparison. */
     readonly evidenceComparisons = new EvidenceComparisonRecorder();
     /** Record-only probe on live block RPCs and their sync-wait retention. */
@@ -1537,8 +1549,39 @@ export class StubService extends ANetworkRpcService<
                 hold.entered += 1;
                 await hold.gate;
             }
-            return Reflect.apply(original, contract, parameters);
+            const submission = Reflect.apply(
+                original,
+                contract,
+                parameters
+            ) as Promise<unknown>;
+            this.releasedMembershipSubmission = submission;
+            return submission;
         });
+    }
+
+    /**
+     * Abort the runtime, then release the held membership submissions into
+     * the disposed runtime. Both run in one timeout-manager task, which the
+     * teardown drains until the released submission settled and its caller
+     * handled the outcome: that handling meets a disposed runtime that is not
+     * torn down yet.
+     */
+    public abortReleasingMembershipSubmission(): void {
+        const nextTick = () =>
+            new Promise<void>((resolve) => setTimeout(resolve, 0));
+        this.sm.timeoutManager.scheduleTask(
+            async () => {
+                this.sm.abort();
+                this.releaseOneMembershipSubmission();
+                // the released call starts after the gate's continuation
+                await nextTick();
+                await this.releasedMembershipSubmission?.catch(() => undefined);
+                // the caller's handling of the outcome runs in microtasks
+                await nextTick();
+            },
+            0,
+            "harness abort releasing a held membership submission"
+        );
     }
 
     /**
@@ -1640,6 +1683,30 @@ export class StubService extends ANetworkRpcService<
         this.joinThresholdReadHold = undefined;
     }
 
+    /** Record-only: count each call that enters this runtime's collect-and-join, then run it. */
+    public recordCollectAndJoinEntries(): void {
+        this.restoreCollectAndJoinEntries();
+        const joinService = this.sm.channelJoinService;
+        const original = joinService.collectAndJoinChannel;
+        this.restoreCollectAndJoinRecording = () => {
+            joinService.collectAndJoinChannel = original;
+        };
+        joinService.collectAndJoinChannel = (...args) => {
+            this.collectAndJoinEntered += 1;
+            return original.apply(joinService, args);
+        };
+    }
+
+    public getCollectAndJoinEntered(): number {
+        return this.collectAndJoinEntered;
+    }
+
+    public restoreCollectAndJoinEntries(): void {
+        this.restoreCollectAndJoinRecording?.();
+        this.restoreCollectAndJoinRecording = undefined;
+        this.collectAndJoinEntered = 0;
+    }
+
     /**
      * Hold the chain snapshot read of this runtime's next join or top-up
      * retry-eligibility check (`ChannelJoinService.hasSnapshotMovedToStoredOne`)
@@ -1696,6 +1763,73 @@ export class StubService extends ANetworkRpcService<
         this.restoreJoinRetryEligibilityRead = undefined;
         this.joinRetryEligibilityReadHold?.release();
         this.joinRetryEligibilityReadHold = undefined;
+    }
+
+    /**
+     * Hold this runtime's next join confirmation collection once it has
+     * collected, before the confirmation reaches its caller, and record the
+     * next top-up this runtime runs.
+     */
+    public holdJoinCollectionResult(): void {
+        this.releaseJoinCollectionResult();
+        this.recordedTopUp = undefined;
+        const channelJoin = this.sm.channelJoinService;
+        const originalTopUp = channelJoin.topUpBalance;
+        this.restoreTopUpRecording = () => {
+            channelJoin.topUpBalance = originalTopUp;
+        };
+        channelJoin.topUpBalance = (...args) => {
+            this.restoreTopUpRecording?.();
+            this.recordedTopUp = originalTopUp.apply(channelJoin, args);
+            return this.recordedTopUp;
+        };
+        const joinService = this.p2pManager.localRpc.joinChannelService;
+        const original = joinService.prepareJoinChannelConfirmation;
+        const hold = this.createRpcHold("joinCollectionResult");
+        this.joinCollectionResultHold = hold;
+        this.restoreJoinCollectionResult = () => {
+            joinService.prepareJoinChannelConfirmation = original;
+        };
+        joinService.prepareJoinChannelConfirmation = async (...args) => {
+            this.restoreJoinCollectionResult?.();
+            const prepared = await original.apply(joinService, args);
+            hold.entered += 1;
+            await hold.gate;
+            return prepared;
+        };
+    }
+
+    public getJoinCollectionResultEntered(): number {
+        return this.joinCollectionResultHold?.entered ?? 0;
+    }
+
+    public releaseJoinCollectionResult(): void {
+        this.restoreTopUpRecording?.();
+        this.restoreTopUpRecording = undefined;
+        this.restoreJoinCollectionResult?.();
+        this.restoreJoinCollectionResult = undefined;
+        this.joinCollectionResultHold?.release();
+        this.joinCollectionResultHold = undefined;
+    }
+
+    /**
+     * Abort the runtime, then release the held join collection result into
+     * the disposed runtime. Both run in one timeout-manager task, which the
+     * teardown drains until the recorded top-up settled: its caller meets a
+     * disposed runtime that is not torn down yet.
+     */
+    public abortReleasingJoinCollectionResult(): void {
+        this.sm.timeoutManager.scheduleTask(
+            async () => {
+                this.sm.abort();
+                this.releaseJoinCollectionResult();
+                const topUp = this.recordedTopUp;
+                this.recordedTopUp = undefined;
+                await topUp?.catch(() => undefined);
+            },
+            0,
+            "harness abort releasing a held join collection result"
+        );
     }
 
     /** Record-only: record each snapshot membership publishes, then publish it. */

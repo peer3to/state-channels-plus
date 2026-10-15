@@ -52,7 +52,12 @@ no leave call, so that block is never final; another founder then signs an out-o
 height, a real invalid state transition that the blind founder disputes from the state before the exit.
 The offender contributes no evidence and the leaver's own disputes are recorded, not sent, so the reduction
 proves the state before the exit: the successor fork drops the offender and still seats the leaver; the oracles are its leave state on the new fork, its `onLeaveTurn` count, its self-removal flag
-and the chain participants after its second exit. While a watchdog expiry is awaited the remaining participants keep authoring, so no idle writer
+and the chain participants after its second exit. The lone-leaver case starts two founders; founder 0 exits on its
+leave turn and its posted exit leaves founder 1 alone. Founder 1 then leaves without sending its exit, and its held
+leave watchdog is run, so its self-removal dispute (final at upload) leaves no participant. Its oracles are one
+started exit post recorded as posted, one recorded self-removal submission, the closed channel and the leaver's
+`onLeftChannel`. The case where the leave awaits its leave turn also checks that the leaver starts no post of the
+reduced state, which keeps the other founders. While a watchdog expiry is awaited the remaining participants keep authoring, so no idle writer
 is timed out.
 
 ## Tests
@@ -66,7 +71,7 @@ is timed out.
 - `U72: blocks finalized while the exit's snapshot post runs queue one more post after it when that post did not land the exit, and the next finalized block posts again`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P35
 - `U72: a leaver whose exit the remaining participants post while it sees no further block settles the leave, and the leave watchdog starts no self-removal dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P29, REQ-LIF-10-QR8NQ9.T1.P17
 - `U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P30
-- `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it`: REQ-LIF-10-QR8NQ9.T1.P18
+- `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants`: REQ-LIF-10-QR8NQ9.T1.P18, REQ-LIF-10-QR8NQ9.T1.P30, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46
 - `U72: a dispute observed after an exit block the application authored with no leave call makes the leaver submit its self-removal dispute at once, with no evidence comparison; the reduced snapshot drops it and its runtime is SYNCED with the self-removal still set`: REQ-LIF-10-QR8NQ9.T1.P19, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P37
 - `U72: an exit block the application authored with no leave call is posted the same way: a later finalized block's post lands it once the join is consumed, and the runtime ends SYNCED with onLeftChannel, the self-removal still set and no dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P36, REQ-LIF-10-QR8NQ9.T1.P21
 - `U72: a block finalized while the exit's snapshot post runs queues no further post when that post lands the exit: the leaver sends once and posts no more`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P44
@@ -74,6 +79,7 @@ is timed out.
 - `U72: an exit post that fails with an error that is no chain refusal is a fatal runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P43, REQ-LIF-10-QR8NQ9.T1.P25
 - `U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P38, REQ-TJOIN-7-NNGTAY.T1.P12
 - `U72: a reduction that replaces the fork of an exit block the application authored with no leave call by a state that still seats the leaver restarts the exit there as a requested leave: its leave turn comes, self-removal stays set and its exit settles`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P39
+- `U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45
 - `U73: a latest-state request to a responder past its initial load that has not installed the chain's fork → refused for that fork, requester not blacklisted`: REQ-SYNC-1-T2589H.T2.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42
 - `U73: a latest-state request to a responder whose own fork is behind the chain-derived fork → served from the derived fork, neither side blacklisted`: REQ-SYNC-1-T2589H.T2.P2, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43
 - `RO2: seating a join during its deadline membership read prevents a stale dispute request`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P46, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P72

@@ -150,6 +150,7 @@ class ClientP2pSigner implements Signer {
         const hasOptions =
             options.autoOpen !== undefined ||
             options.shouldJoin !== undefined ||
+            options.shouldSpectateWhenFull !== undefined ||
             options.balance !== undefined ||
             options.timeoutMs !== undefined;
         return this.client.p2pSigner
@@ -159,6 +160,8 @@ class ClientP2pSigner implements Signer {
                     ? {
                           autoOpen: options.autoOpen,
                           shouldJoin: options.shouldJoin,
+                          shouldSpectateWhenFull:
+                              options.shouldSpectateWhenFull,
                           encodedBalance,
                           timeoutMs: options.timeoutMs
                       }
@@ -290,6 +293,12 @@ class ClientP2pSigner implements Signer {
             typeof options.shouldJoin !== "boolean"
         ) {
             throw new Error("shouldJoin must be a boolean");
+        }
+        if (
+            options.shouldSpectateWhenFull !== undefined &&
+            typeof options.shouldSpectateWhenFull !== "boolean"
+        ) {
+            throw new Error("shouldSpectateWhenFull must be a boolean");
         }
         if (
             options.timeoutMs !== undefined &&

@@ -3,6 +3,104 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Concurrent joins exhaust the one join retry — 2026-10-15
+
+Observed 2026-10-15 on a live poker bot: a synced spectator submitted its first join to a new table and was
+refused with `ErrorJoinChannelConfirmationNotThresholdSigned`. The join retried at once: the fresh collection read
+the threshold set, collected from it and was refused again with the same error within one second, and the refusal
+aborted the runtime. Root cause: several peers joined the table at the same time. Each join that lands widens the
+threshold set, so the retry's fresh confirmation was refused again for yet another newly landed joiner, and the
+rule of one retry made that second refusal final.
+
+A first fix waited, before the retry, until the joiner's threshold set read listed the refused set. Luka rejected
+it: a threshold refusal proves the wider set is already on chain, so a fresh read at the refusal or later sees it,
+and the wait guarded a case that does not occur. The wait, its staging and its evidence were removed.
+
+Luka approved the fix. In the [ChannelJoinService report](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md)
+`runJoin` and `runTopUp` now retry recursively: while a submission is refused and
+`shouldRetryWithFreshConfirmation` judges the refusal a race against the latest submission's pins (a widened
+threshold set, or a snapshot moved to a stored one), they collect a fresh confirmation and submit again. The
+number of retries is capped at the channel's maximum participant count (the deployed value the runtime already
+holds in its queue storage; no extra chain read). One cap covers both races: each threshold
+refusal means one more member landed, and the set cannot grow past that count, since enforcement refuses a join
+to a full channel finally with `ErrorTooManyParticipants`. The join keeps its earlier invariants each round: the
+refused attempt is marked retrying before the decision, a join that ended or a runtime disposed during the fresh
+collection submits nothing more, a collection that fails ends the join `SYNCED` without abort (a top-up returns
+`false` and keeps its participation), and a runtime disposed while a submission is pending handles no refusal.
+The specification states the rule in
+[`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
+and [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
+Evidence: [`REQ-JOINSIG-1-8X1A4V.T1.P19`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p19)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P93`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+(two joins land one after another while the joiner's submissions are held; it lands on its third submission),
+[`REQ-TJOIN-5-Q795M7.T1.P25`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7.t1.p25)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P97`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+and [`REQ-JOINSIG-1-8X1A4V.T1.P22`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p22)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P96`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+(a join and a top-up whose snapshot moves twice); all three fail on the code with one retry. The cap:
+[`REQ-JOINSIG-1-8X1A4V.T1.P20`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p20)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P94`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+(a channel of four, a snapshot move before each of five submissions) and
+[`REQ-JOINSIG-1-8X1A4V.T1.P21`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p21)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P95`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+(the second landed join fills the channel; the retry's `ErrorTooManyParticipants` is final). The disposal guard
+keeps its evidence:
+[`REQ-JOINSIG-1-8X1A4V.T1.P18`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p18)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P92`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb).
+Concurrent joiners still race on chain and pay gas for refused submissions; coordinating them is deferred in
+[`FIND-JOIN-2-EK5DWW`](open-findings.md#find-join-2-ek5dww). These passed in focused local runs only; the canonical
+gate has not run them yet.
+
+Luka's decision 2026-10-15 on full channels: a connect's first join reads the chain's seated and pending
+participants before it collects; a channel already at its maximum participant count gets no countersignature
+request and no submission. A full channel, found by that read or by enforcement's `ErrorTooManyParticipants`
+refusal (also of a retry), aborts the runtime by default, which suits bots; the new connect option
+`shouldSpectateWhenFull` keeps it `SYNCED` spectating instead. This changes the earlier final refusal, which only
+returned to `SYNCED`. `ChannelJoinService` owns the rule: `collectAndJoinChannel` does the read
+(`isChannelFull`, through `MembershipService.getOnChainParticipantUnion`) and the collection, and both the read
+and `onJoinRefused` use `onChannelFull` for the reaction; the prepared-confirmation `joinChannel` makes no read
+and uses the default. The specification states it in
+[`REQ-JOINSIG-4-3NBKHK` (Full-channel join)](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk).
+Evidence: [`REQ-JOINSIG-4-3NBKHK.T1.P1`](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk.t1.p1)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P98`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+(fails on the code without the read: the founders answer three requests),
+[`REQ-JOINSIG-4-3NBKHK.T1.P2`](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk.t1.p2)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P99`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb),
+[`REQ-JOINSIG-4-3NBKHK.T1.P3`](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk.t1.p3)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P100`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb),
+[`REQ-JOINSIG-4-3NBKHK.T1.P4`](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk.t1.p4)
+with [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P101`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb)
+(a pending participant fills the channel; a seated-only read would collect),
+and the updated [`REQ-JOINSIG-1-8X1A4V.T1.P21`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p21) (now an abort). Focused local runs only.
+
+## Lone leaver's self-removal reduction is never posted — 2026-10-14
+
+Observed 2026-10-14 on a live poker bot: the last participant of a channel left. No one could co-sign its exit,
+so the leave watchdog started the self-removal dispute. That dispute is threshold-final at upload: the chain
+commits the reduced result at once but does not change the channel's snapshot. The leaver installed the reduced
+genesis, which has no participant, and kept `PARTICIPATING` until the chain drops it. Only a post of the reduced
+fork drops it (with no participant the post closes the channel), and nobody posted it: the reduction executor
+adopts a fork only after its own non-final reduce is mined, the leave posts only on finalized blocks after a
+committed exit block, and a fork with no participant has no further block. `checkLeft` then found the signer gone
+locally but still on chain and returned, so `onLeftChannel` never came and the application's leave waited forever.
+
+Luka approved the fix. In the [LeaveChannelService report](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md)
+`checkLeft` now starts one exit post when an exit is pending, the signer is not in the installed state, the chain
+still lists it, and the installed state has no participant. The post runs through the existing exit-post path
+(`postStateSnapshotWait` on the installed fork), so its single-flight rule, refusal list and fatal handling are
+unchanged. The fork preparation walks from the disputed on-chain fork through its final reduced result to the
+installed genesis; the same-fork part is empty because the new fork holds no block. The mined post closes the
+channel, and the existing snapshot event path drops the membership and emits `onLeftChannel`. A reduced state
+that keeps other participants is left to them (their next post or the reducer's fork adoption carries it), so the
+leaver posts nothing there; a signer already off the chain drops its membership as before. The specification
+states the case in [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+Evidence: [`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p29) and
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)
+(both time out waiting for `onLeftChannel` on the code before the fix), and
+[`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30) with
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) for the reduced state that keeps other participants. These passed
+in focused local runs only; the canonical gate has not run them yet.
+
 ## Exit post after the channel closed — 2026-10-14
 
 Observed 2026-10-14 in the poker gate: two members left in the same snapshot post and the chain closed the

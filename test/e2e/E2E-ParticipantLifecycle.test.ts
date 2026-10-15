@@ -1,4 +1,4 @@
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
@@ -9,10 +9,12 @@ import {
 } from "@test/fixtures/ClosedChannelExitPostStaging";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
+import { stageLoneLeaverSelfRemoval } from "@test/fixtures/LoneLeaverStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -483,6 +485,33 @@ describe("E2E: Participant Lifecycle", function () {
                         .request()
                 ).to.equal(false);
             }
+        });
+        it("a lone participant's leave that falls back to its self-removal dispute posts the reduced fork that has no participant: the channel closes and the leaver gets onLeftChannel once", async function () {
+            const h = TestSession.getHarness();
+            const { lone, expireWatchdog } =
+                await stageLoneLeaverSelfRemoval(h);
+
+            // its self-removal dispute is final at upload and leaves no
+            // participant; only the leaver can post that reduced fork
+            await expireWatchdog();
+            await h.event.waitUntilLeftChannel(lone.index);
+
+            expect(
+                (await h.channelManager.isChannelOpen(h.channelId))[0]
+            ).to.equal(false);
+            expect(
+                StateSnapshot.from(
+                    await h.channelManager.getStateSnapshot(h.channelId)
+                ).forkID
+            ).to.equal(ethers.ZeroHash);
+            expect(
+                (await h.channelManager.getParticipants(h.channelId)).length
+            ).to.equal(0);
+            expect(lone.eventSpies.onLeftChannel?.callCount).to.equal(1);
+            expect(lone.eventSpies.onAbort?.called).to.equal(false);
+            expect(await h.control(lone).query.getStatus().request()).to.equal(
+                Status.NOT_OPENED
+            );
         });
     });
 

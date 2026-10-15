@@ -215,14 +215,15 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         thresholdParticipants: string[],
         localAddress: string
     ): Promise<void> {
-        const isReady = () =>
-            thresholdParticipants.every(
+        const getUnreachable = () =>
+            thresholdParticipants.filter(
                 (participant) =>
-                    addressesEqual(participant, localAddress) ||
-                    !!this.p2pManager.profileManager.getTransportByEvmAddress(
+                    !addressesEqual(participant, localAddress) &&
+                    !this.p2pManager.profileManager.getTransportByEvmAddress(
                         participant
                     )
             );
+        const isReady = () => getUnreachable().length === 0;
         if (isReady()) return;
 
         await new Promise<void>((resolve, reject) => {
@@ -248,7 +249,7 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
                         unsubscribe();
                         reject(
                             new Error(
-                                "collectJoinChannelConfirmation: threshold participant unavailable"
+                                `collectJoinChannelConfirmation: threshold participant unavailable: ${getUnreachable().join(", ")}`
                             )
                         );
                     },
