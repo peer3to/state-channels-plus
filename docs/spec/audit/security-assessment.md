@@ -558,8 +558,9 @@ type it serves, and the contract entries that decode caller-supplied bytes — c
 (`UtilityFacet.decodeOpenChannel`), join (`decodeJoinChannel`) and both dispute uploads
 (the recorded commitment must equal the hash of the submitted dispute bytes, checked after
 the race checks and before the commitment is recorded) — reject non-canonical encodings with
-`ErrorNonCanonicalEncoding` before any state change. A nested join message whose bytes are
-non-canonical is skipped by membership observation instead of failing inbound processing.
+`ErrorNonCanonicalEncoding` before any state change. Inbound JOIN message bytes are produced
+by the chain as the canonical encoding of the join, so the client's strict decoder rejects a
+non-canonical encoding instead of observing that join.
 Retained under the finding: the fraud and
 dispute-fraud proof handlers' direct decodes (including nested block bytes and the placeholder
 proofs whose bytes they do not decode) — `DisputeFraudProofFacet` sits 127 bytes below the

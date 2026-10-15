@@ -47,4 +47,4 @@ Source eligibility and membership facts
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P75` — the direct-chain lookup of the expiry/drop checks (`isSignerOnChain`) answers true for a real peer seated on chain with no pending entry
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P76` — the direct-chain lookup of the expiry/drop checks (`isSignerOnChain`) answers true for a real joiner pending on chain that its local mirror misses
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P77` — the direct-chain expiry/drop check finds the signer in neither chain set and permits the existing expiry/drop decision
-- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P78` — an undecodable join message in an inbound block is skipped and not observed, while a canonical join in the same block is observed and observation does not throw
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P78` — a non-canonical join message in an inbound block is rejected and not observed, while a canonical join in the same block is observed

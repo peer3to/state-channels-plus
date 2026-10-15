@@ -59,63 +59,74 @@ describe("Unit: MembershipService", function () {
         expect(observed.blacklisted).to.equal(false);
     });
 
-    it("an undecodable join message is skipped without failing inbound membership observation", async () => {
+    it("a non-canonical join message is rejected while a canonical join in the same block is observed", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
-        const skipped = ethers.Wallet.createRandom().address;
+        const rejected = ethers.Wallet.createRandom().address;
         const observed = ethers.Wallet.createRandom().address;
         const baseJoin = {
             channelId: randomHash(),
             deadlineTimestamp: 1n,
             balance: { amount: 0n, data: "0x" }
         };
+        const args = {
+            joinMessageType: ethers.id("JOIN_CHANNEL_MESSAGE"),
+            previousBlockHash: randomHash(),
+            rejected,
+            observed,
+            encodedNonCanonicalJoin:
+                Codec.encode(
+                    { ...baseJoin, participant: rejected },
+                    Type.JoinChannel
+                ) + "00".repeat(32),
+            encodedCanonicalJoin: Codec.encode(
+                { ...baseJoin, participant: observed },
+                Type.JoinChannel
+            )
+        };
+        let threw = false;
+        try {
+            await h.execOnHost(
+                h.getPeer(0),
+                (sm, hostArgs) => {
+                    sm.membershipService.observeInboundMembership({
+                        previousBlockHash: hostArgs.previousBlockHash,
+                        blockHeight: 0n,
+                        messages: [
+                            {
+                                messageType: hostArgs.joinMessageType,
+                                participant: hostArgs.observed,
+                                balance: { amount: 0n, data: "0x" },
+                                data: hostArgs.encodedCanonicalJoin
+                            },
+                            {
+                                messageType: hostArgs.joinMessageType,
+                                participant: hostArgs.rejected,
+                                balance: { amount: 0n, data: "0x" },
+                                data: hostArgs.encodedNonCanonicalJoin
+                            }
+                        ],
+                        totalBalance: { amount: 0n, data: "0x" },
+                        timestamp: 0n
+                    });
+                },
+                args
+            );
+        } catch {
+            threw = true;
+        }
+        expect(threw).to.equal(true);
         const result = await h.execOnHost(
             h.getPeer(0),
-            (sm, args) => {
-                sm.membershipService.observeInboundMembership({
-                    previousBlockHash: args.previousBlockHash,
-                    blockHeight: 0n,
-                    messages: [
-                        {
-                            messageType: args.joinMessageType,
-                            participant: args.skipped,
-                            balance: { amount: 0n, data: "0x" },
-                            data: args.encodedNonCanonicalJoin
-                        },
-                        {
-                            messageType: args.joinMessageType,
-                            participant: args.observed,
-                            balance: { amount: 0n, data: "0x" },
-                            data: args.encodedCanonicalJoin
-                        }
-                    ],
-                    totalBalance: { amount: 0n, data: "0x" },
-                    timestamp: 0n
-                });
-                return [
-                    sm.membershipService.getCachedSourceEligibility(
-                        args.skipped
-                    ),
-                    sm.membershipService.getCachedSourceEligibility(
-                        args.observed
-                    )
-                ];
-            },
-            {
-                joinMessageType: ethers.id("JOIN_CHANNEL_MESSAGE"),
-                previousBlockHash: randomHash(),
-                skipped,
-                observed,
-                encodedNonCanonicalJoin:
-                    Codec.encode(
-                        { ...baseJoin, participant: skipped },
-                        Type.JoinChannel
-                    ) + "00".repeat(32),
-                encodedCanonicalJoin: Codec.encode(
-                    { ...baseJoin, participant: observed },
-                    Type.JoinChannel
+            (sm, hostArgs) => [
+                sm.membershipService.getCachedSourceEligibility(
+                    hostArgs.rejected
+                ),
+                sm.membershipService.getCachedSourceEligibility(
+                    hostArgs.observed
                 )
-            }
+            ],
+            args
         );
         expect(result).to.deep.equal([
             SourceEligibility.ABSENT,
