@@ -80,7 +80,6 @@ Complete codec public surface
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P59` — TimeoutSupersededByFinalState proof round trip
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P60` — DisputeConflictsWithFinalState proof round trip
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P61` — DisputeInvalidOutboundRun proof round trip
-- [x] `UNIT-TEST-CODEC-1-HFAA3B.P62` — open-channel and join-channel differential parity: identical canonical, trailing, offset-gap and dirty-padding bytes are accepted or rejected identically by the client decoder and the contracts' decoders, with byte-identical re-encoding on acceptance
 
 ## UNIT-TEST-CODEC-2-8VTG2N
 

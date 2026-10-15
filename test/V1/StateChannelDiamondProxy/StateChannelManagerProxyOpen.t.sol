@@ -2,10 +2,12 @@ pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
+import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant,
-    ErrorNonCanonicalEncoding,
     ErrorTooManyParticipants,
     RaceConditionChannelAlreadyOpen,
     RaceConditionOpenChannelExpired
@@ -45,14 +47,31 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         diamond.open(confirmation);
     }
 
-    function test_open_nonCanonicalEncodedOpenChannel_reverts() public {
-        address signer = vm.addr(SIGNER_PK);
-        OpenChannelConfirmation memory confirmation;
-        confirmation.encodedOpenChannel = bytes.concat(_encodeOpenChannel(signer, signer), abi.encode(uint256(0)));
-        confirmation.signatures = new bytes[](2);
+    function test_open_inboundJoinMessageDataIsCanonicalJoinEncoding() public {
+        vm.recordLogs();
+        diamond.open(_deadlineOpenConfirmation());
+        Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        diamond.open(confirmation);
+        bool foundInboundBlock;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length < 2) continue;
+            if (logs[i].topics[0] != StateChannelManagerEvents.InboundMessagesProcessed.selector) continue;
+            if (logs[i].topics[1] != DEADLINE_CHANNEL_ID) continue;
+            foundInboundBlock = true;
+            MessageBlock memory inbound = abi.decode(logs[i].data, (MessageBlock));
+            assertEq(inbound.messages.length, 2, "inbound join count changed");
+            for (uint256 j = 0; j < inbound.messages.length; j++) {
+                assertEq(inbound.messages[j].messageType, MESSAGE_TYPE_JOIN, "inbound message is not a join");
+                JoinChannel memory join = abi.decode(inbound.messages[j].data, (JoinChannel));
+                assertEq(join.participant, inbound.messages[j].participant, "join participant changed");
+                assertEq(
+                    keccak256(inbound.messages[j].data),
+                    keccak256(abi.encode(join)),
+                    "inbound join data is not the canonical join encoding"
+                );
+            }
+        }
+        assertTrue(foundInboundBlock, "open did not emit its inbound block");
     }
 
     /// The count in the payload must be the number of SUCCESSFUL joins, not the

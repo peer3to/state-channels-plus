@@ -12,8 +12,6 @@
   Partial: `_validateTimeoutCalldataPostedProof` rebuilds the posted block's snapshot differently from clients, so an honest refutation can fail ([`FIND-TIMEOUT-4-5YNPT3`](../../../../../audit/open-findings.md#find-timeout-4-5ynpt3)).
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
-- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-  Partial: the dispute-fraud handlers decode caller-supplied proof and block bytes with raw `abi.decode`, which accepts non-canonical encodings; per-handler canonical checks do not fit this facet's EIP-170 headroom ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)

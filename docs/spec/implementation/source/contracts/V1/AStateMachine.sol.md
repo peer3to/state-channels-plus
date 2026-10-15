@@ -12,8 +12,6 @@
 - [`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
-- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-  Partial: `_processInboundMessage` decodes `JoinChannel` message bytes with raw `abi.decode`, which accepts non-canonical encodings ([`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
   Partial: determinism of the integrator logic `stateTransition` calls is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).

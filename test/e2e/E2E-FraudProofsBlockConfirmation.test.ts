@@ -625,7 +625,7 @@ describe("E2E: Block Fraud Proofs", function () {
         }
         expect(
             tryDecodeCustomError(revertError)?.errorDescription.name
-        ).to.equal("ErrorNonCanonicalBlock");
+        ).to.equal("ErrorNonCanonicalEncoding");
         const [found, commitment] =
             await author!.p2pInstance.stateChannelManagerContract.getBlockCallDataCommitment(
                 canonicalBlock.transaction.header.channelId,

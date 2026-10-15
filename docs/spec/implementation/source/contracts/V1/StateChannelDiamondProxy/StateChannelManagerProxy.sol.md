@@ -54,9 +54,9 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18` — terms submitted at exactly their opening deadline open, so the deadline gate is inclusive like join
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19` — terms submitted after their opening deadline revert with `RaceConditionOpenChannelExpired` carrying the deadline and chain time
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20` — an already-open channel whose terms are past their deadline reports `RaceConditionChannelAlreadyOpen` first, not `RaceConditionOpenChannelExpired`
-- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P21` — a noncanonical post reverts with `ErrorNonCanonicalBlock` and stores no commitment
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P21` — a noncanonical post reverts with `ErrorNonCanonicalEncoding` and stores no commitment
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P22` — a canonical post stores the signed-block/timestamp commitment, including a retry at a previously rejected key
-- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P23` — a noncanonical open reverts with `ErrorNonCanonicalEncoding` before any state change
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P24` — an admitted open emits inbound JOIN message data equal to the canonical encoding of each admitted join
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 

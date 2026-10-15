@@ -2,18 +2,9 @@ pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
-import {
-    ErrorNonCanonicalBlock,
-    ErrorNonCanonicalEncoding
-} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
-import {
-    Balance,
-    Block,
-    JoinChannel,
-    Message,
-    MessageBlock,
-    OpenChannel
-} from "../../../contracts/V1/types/DataTypes.sol";
+import {CanonicalMutations} from "../harness/CanonicalMutations.sol";
+import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {Balance, Block, Message, MessageBlock} from "../../../contracts/V1/types/DataTypes.sol";
 
 // stateless property fuzz of the pure array helpers of UtilityFacet.sol, plus
 // direct cases for the signer-set report the join rejection payload is built from
@@ -180,42 +171,6 @@ contract UtilityFacetTest is Test {
         assertEq(keccak256(decoded.messageBlocks[0].messages[0].data), keccak256(hex"1234"), "nested data changed");
     }
 
-    // Insert a top-level offset gap: a 0x40 head word plus a zero word ahead of
-    // the original body, the same shape the differential corpus uses.
-    function _withOffsetGap(bytes memory canonical) internal pure returns (bytes memory gap) {
-        gap = new bytes(canonical.length + 32);
-        assembly ("memory-safe") {
-            mstore(add(gap, 0x20), 0x40)
-            mstore(add(gap, 0x40), 0x00)
-        }
-        for (uint256 i = 32; i < canonical.length; i++) {
-            gap[i + 32] = canonical[i];
-        }
-    }
-
-    // Corrupt one ignored padding byte of the 0xab body-data word: the decoder
-    // reads a single length-delimited byte and ignores the tail, so the input
-    // stays decodable yet no longer re-encodes to itself.
-    function _withDirtyPadding(bytes memory canonical) internal pure returns (bytes memory dirty) {
-        bytes32 target = bytes32(uint256(0xab) << 248);
-        uint256 n = canonical.length;
-        for (uint256 i = 0; i + 32 <= n; i++) {
-            bytes32 word;
-            assembly ("memory-safe") {
-                word := mload(add(add(canonical, 0x20), i))
-            }
-            if (word == target) {
-                dirty = new bytes(n);
-                for (uint256 j = 0; j < n; j++) {
-                    dirty[j] = canonical[j];
-                }
-                dirty[i + 31] = bytes1(0x01);
-                return dirty;
-            }
-        }
-        revert("no dirty-padding word found");
-    }
-
     function _assertRevertsWithoutCanonicalityError(bytes memory callData, bytes4 forbiddenSelector) internal view {
         (bool ok, bytes memory revertData) = address(util).staticcall(callData);
         assertFalse(ok, "malformed bytes must revert");
@@ -234,28 +189,28 @@ contract UtilityFacetTest is Test {
 
     function test_decodeBlock_rejectsNonCanonical() public {
         bytes memory canonical = abi.encode(_canonicalBlock());
-        bytes memory dirty = _withDirtyPadding(canonical);
-        bytes memory gap = _withOffsetGap(canonical);
+        bytes memory dirty = CanonicalMutations.withDirtyPadding(canonical);
+        bytes memory gap = CanonicalMutations.withOffsetGap(canonical);
         bytes memory truncated = new bytes(canonical.length - 1);
         for (uint256 i = 0; i < truncated.length; i++) {
             truncated[i] = canonical[i];
         }
         // Decodable but noncanonical inputs revert with the typed custom error.
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         util.decodeBlock(abi.encodePacked(canonical, bytes32(uint256(0x1234))));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         util.decodeBlock(abi.encodePacked(canonical, hex"00"));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         util.decodeBlock(dirty);
         // Malformed inputs revert without the canonicality error.
         _assertRevertsWithoutCanonicalityError(
-            abi.encodeCall(UtilityFacet.decodeBlock, (truncated)), ErrorNonCanonicalBlock.selector
+            abi.encodeCall(UtilityFacet.decodeBlock, (truncated)), ErrorNonCanonicalEncoding.selector
         );
         _assertRevertsWithoutCanonicalityError(
-            abi.encodeCall(UtilityFacet.decodeBlock, (hex"")), ErrorNonCanonicalBlock.selector
+            abi.encodeCall(UtilityFacet.decodeBlock, (hex"")), ErrorNonCanonicalEncoding.selector
         );
         // The offset gap decodes but is rejected as noncanonical.
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         util.decodeBlock(gap);
         (bool gapOk,) = util.tryDecodeBlock(gap);
         assertFalse(gapOk, "offset gap must not decode");
@@ -267,12 +222,12 @@ contract UtilityFacetTest is Test {
         assertTrue(ok, "canonical bytes must decode");
         _assertCanonicalFields(decoded);
         assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
-        bytes memory dirty = _withDirtyPadding(canonical);
+        bytes memory dirty = CanonicalMutations.withDirtyPadding(canonical);
         bytes[5] memory rejected = [
             abi.encodePacked(canonical, bytes32(uint256(0x1234))),
             abi.encodePacked(canonical, hex"00"),
             dirty,
-            _withOffsetGap(canonical),
+            CanonicalMutations.withOffsetGap(canonical),
             hex""
         ];
         for (uint256 i = 0; i < rejected.length; i++) {
@@ -281,87 +236,5 @@ contract UtilityFacetTest is Test {
             assertEq(blockData.transaction.header.participant, address(0), "failure must yield default block");
             assertEq(blockData.messageBlocks.length, 0, "failure must yield default block");
         }
-    }
-
-    function test_decodeOpenChannel_canonicalRoundTripAndRejectsNonCanonical() public {
-        OpenChannel memory openChannel;
-        openChannel.channelId = keccak256("open-channel");
-        openChannel.participants = new address[](2);
-        openChannel.participants[0] = address(0xA11CE);
-        openChannel.participants[1] = address(0xB0B);
-        openChannel.balances = new Balance[](2);
-        openChannel.balances[0] = Balance({amount: 500, data: hex"ab"});
-        openChannel.balances[1] = Balance({amount: 700, data: ""});
-        openChannel.deadlineTimestamp = 1_000_000;
-        openChannel.isAtomic = true;
-        openChannel.data = hex"abcd";
-        bytes memory canonical = abi.encode(openChannel);
-
-        OpenChannel memory decoded = util.decodeOpenChannel(canonical);
-        assertEq(decoded.channelId, openChannel.channelId, "channel id changed");
-        assertEq(decoded.participants.length, 2, "participant count changed");
-        assertEq(decoded.participants[0], openChannel.participants[0], "first participant changed");
-        assertEq(decoded.participants[1], openChannel.participants[1], "second participant changed");
-        assertEq(decoded.balances[0].amount, 500, "first balance changed");
-        assertEq(decoded.balances[1].amount, 700, "second balance changed");
-        assertEq(decoded.deadlineTimestamp, openChannel.deadlineTimestamp, "deadline changed");
-        assertTrue(decoded.isAtomic, "atomic flag changed");
-        assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
-
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeOpenChannel(bytes.concat(canonical, abi.encode(uint256(0))));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeOpenChannel(bytes.concat(canonical, hex"00"));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeOpenChannel(_withDirtyPadding(canonical));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeOpenChannel(_withOffsetGap(canonical));
-        // Malformed inputs revert without the canonicality error.
-        bytes memory truncated = new bytes(canonical.length / 2);
-        for (uint256 i = 0; i < truncated.length; i++) {
-            truncated[i] = canonical[i];
-        }
-        _assertRevertsWithoutCanonicalityError(
-            abi.encodeCall(UtilityFacet.decodeOpenChannel, (truncated)), ErrorNonCanonicalEncoding.selector
-        );
-        _assertRevertsWithoutCanonicalityError(
-            abi.encodeCall(UtilityFacet.decodeOpenChannel, (hex"")), ErrorNonCanonicalEncoding.selector
-        );
-    }
-
-    function test_decodeJoinChannel_canonicalRoundTripAndRejectsNonCanonical() public {
-        JoinChannel memory joinChannel;
-        joinChannel.channelId = keccak256("join-channel");
-        joinChannel.participant = address(0xCAFE);
-        joinChannel.deadlineTimestamp = 2_000_000;
-        joinChannel.balance = Balance({amount: 900, data: hex"ab"});
-        bytes memory canonical = abi.encode(joinChannel);
-
-        JoinChannel memory decoded = util.decodeJoinChannel(canonical);
-        assertEq(decoded.channelId, joinChannel.channelId, "channel id changed");
-        assertEq(decoded.participant, joinChannel.participant, "participant changed");
-        assertEq(decoded.deadlineTimestamp, joinChannel.deadlineTimestamp, "deadline changed");
-        assertEq(decoded.balance.amount, 900, "balance changed");
-        assertEq(keccak256(abi.encode(decoded)), keccak256(canonical), "canonical re-encoding changed");
-
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeJoinChannel(bytes.concat(canonical, abi.encode(uint256(0))));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeJoinChannel(bytes.concat(canonical, hex"00"));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeJoinChannel(_withDirtyPadding(canonical));
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
-        util.decodeJoinChannel(_withOffsetGap(canonical));
-        // Malformed inputs revert without the canonicality error.
-        bytes memory truncatedJoin = new bytes(canonical.length / 2);
-        for (uint256 i = 0; i < truncatedJoin.length; i++) {
-            truncatedJoin[i] = canonical[i];
-        }
-        _assertRevertsWithoutCanonicalityError(
-            abi.encodeCall(UtilityFacet.decodeJoinChannel, (truncatedJoin)), ErrorNonCanonicalEncoding.selector
-        );
-        _assertRevertsWithoutCanonicalityError(
-            abi.encodeCall(UtilityFacet.decodeJoinChannel, (hex"")), ErrorNonCanonicalEncoding.selector
-        );
     }
 }

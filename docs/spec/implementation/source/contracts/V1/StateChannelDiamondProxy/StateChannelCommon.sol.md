@@ -10,8 +10,6 @@
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 - [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 - [`REQ-MSG-2-7YAD1A` (A dispute's claimed inbound tip MUST be an ancestor of the chain tip with…)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-2-7yad1a)
-- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-  Partial: `_derivePendingParticipantsFromInboundHash` decodes `JoinChannel` message bytes and `_processOutboundMessage` decodes `ExitChannel` message bytes with raw `abi.decode` over chain-delivered blocks, which accepts non-canonical encodings ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../../../../../specification/disputes/disputes.md#req-dis-4-6j6yyg)
 - [`REQ-DIS-6-Y92H1M` (Every initiated dispute window MUST end in a canonical successor fork, genesis…)](../../../../../specification/disputes/disputes.md#req-dis-6-y92h1m)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)

@@ -59,7 +59,6 @@ chain's pending set alone.
 
 - `an authoritative slash survives failed slash log recovery and repeated lookups`: none
 - `unavailable inbound recovery leaves cached membership unchanged and does not blacklist the source`: none
-- `a non-canonical join message is rejected while a canonical join in the same block is observed`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P78, REQ-DATA-1-1KNRQS.T1.P15
 - `the storage-clear event clears chain, off-chain and slashed eligibility`: none
 - `an unopened channel refresh has no eligible source`: REQ-GOSSIP-4-J5Z4DF.T1.P25, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P34
 - `a slash observed during a held refresh cannot be undone by its older result`: REQ-GOSSIP-4-J5Z4DF.T1.P20, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P15

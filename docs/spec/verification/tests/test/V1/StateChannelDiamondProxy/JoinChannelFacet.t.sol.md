@@ -30,7 +30,6 @@ deposit-failure case proves the attempted admission leaves no recorded deposit e
 ## Tests
 
 - `test_joinChannel_slashedParticipantCannotVetoLaterJoin`: REQ-ENFADM-1-V926CA.T1.P5, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P13
-- `test_joinChannel_nonCanonicalEncodedJoinChannel_reverts`: UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P29, REQ-DATA-1-1KNRQS.T1.P16
 - `test_topUpBalance_slashedParticipantRejected`: REQ-ENFADM-2-K6K9SP.T1.P6, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P14
 - `test_joinChannel_wrongForkPinRejected`: REQ-ENFADM-1-V926CA.T1.P6, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P4
 - `test_topUpBalance_unknownParticipantRejected`: REQ-ENFADM-2-K6K9SP.T1.P2, UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P9

@@ -19,7 +19,7 @@ facet's signature-threshold verification and genesis/ordering predicates are not
 touched here (the Hardhat `SignatureVerification.test.ts` suite covers the threshold path). Block
 decode is covered directly: a canonical block with a nonempty dynamic body and a nested message
 round-trips byte-identically through `decodeBlock`, decodable noncanonical encodings (trailing
-byte/word, dirty padding) revert with `ErrorNonCanonicalBlock`, malformed bytes revert ordinarily,
+byte/word, dirty padding) revert with `ErrorNonCanonicalEncoding`, malformed bytes revert ordinarily,
 and `tryDecodeBlock` reports canonical bytes true with exact fields and every other input false
 with the default block. The obsolete trailing-word-acceptance permutation is deleted and its number
 left gapped, so the gap at `P11` (between `P10` and `P12`) is intentional rather than a missing case. Of the planned
@@ -41,5 +41,3 @@ permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8`, the decode pair is no
 - `test_decodeBlock_canonicalRoundTrip`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P14
 - `test_decodeBlock_rejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15
 - `test_tryDecodeBlock_rejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P4, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P7, UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16
-- `test_decodeOpenChannel_canonicalRoundTripAndRejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P17
-- `test_decodeJoinChannel_canonicalRoundTripAndRejectsNonCanonical`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P18

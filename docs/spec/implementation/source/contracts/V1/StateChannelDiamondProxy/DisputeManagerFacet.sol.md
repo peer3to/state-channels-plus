@@ -59,3 +59,5 @@ Upload bookkeeping
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P19` — anchor at the inbound head is accepted, in both upload modes
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P20` — a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` on the plain upload, without mutation
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P21` — a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` on the upload with calldata, without mutation
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P22` — an offset-gap encoded dispute reverts with `ErrorNonCanonicalEncoding` on the plain upload, without mutation
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P23` — routed through the deployed diamond, a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` and creates no window

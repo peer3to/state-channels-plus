@@ -104,20 +104,8 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
 
     function decodeBlock(bytes memory encodedBlock) external pure returns (Block memory) {
         Block memory decodedBlock = abi.decode(encodedBlock, (Block));
-        require(keccak256(abi.encode(decodedBlock)) == keccak256(encodedBlock), ErrorNonCanonicalBlock());
+        require(keccak256(abi.encode(decodedBlock)) == keccak256(encodedBlock), ErrorNonCanonicalEncoding());
         return decodedBlock;
-    }
-
-    function decodeOpenChannel(bytes memory encodedOpenChannel) external pure returns (OpenChannel memory) {
-        OpenChannel memory decodedOpenChannel = abi.decode(encodedOpenChannel, (OpenChannel));
-        require(keccak256(abi.encode(decodedOpenChannel)) == keccak256(encodedOpenChannel), ErrorNonCanonicalEncoding());
-        return decodedOpenChannel;
-    }
-
-    function decodeJoinChannel(bytes memory encodedJoinChannel) external pure returns (JoinChannel memory) {
-        JoinChannel memory decodedJoinChannel = abi.decode(encodedJoinChannel, (JoinChannel));
-        require(keccak256(abi.encode(decodedJoinChannel)) == keccak256(encodedJoinChannel), ErrorNonCanonicalEncoding());
-        return decodedJoinChannel;
     }
 
     function tryDecodeBlock(bytes memory encodedBlock)

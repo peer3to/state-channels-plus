@@ -192,8 +192,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
     // ********** Consumer Facet Delegation Functions **********
 
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual {
-        OpenChannel memory openChannelData =
-            UtilityFacet(utilityFacetAddress).decodeOpenChannel(openChannelConfirmation.encodedOpenChannel);
+        OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));

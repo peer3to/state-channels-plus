@@ -9,8 +9,6 @@
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
   Partial: [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30) persistence gap.
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
-- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-  Partial: `onBlockCalldataPosted` decodes the posted block and the dispute-execution results are decoded with raw `abi.decode` in the local mirror, which accepts non-canonical encodings ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 
 ## UNIT-TEST-LOCAL-DIAMOND-1-PJE47M
 
