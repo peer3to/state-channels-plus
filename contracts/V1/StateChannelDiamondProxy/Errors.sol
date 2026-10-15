@@ -16,7 +16,7 @@ error ErrorBlockCalldataAlreadyPosted(
     bytes32 forkId, uint256 transactionCnt, address participant, bytes32 existingCommitment
 );
 error ErrorBlockCalldataMsgSenderNotBlockAuthor(address expectedAuthor, address actualSender);
-error ErrorNonCanonicalBlock();
+error ErrorNonCanonicalEncoding();
 
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid(bytes32 currentForkId, bytes32 targetForkId);

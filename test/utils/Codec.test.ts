@@ -451,6 +451,42 @@ describe("Codec", function () {
         expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
     });
 
+    it("round-trips DisputeInboundAnchorBehindLatestState fraud proof", function () {
+        const value = codecValues.disputeInboundAnchorBehindLatestStateProof();
+        const type =
+            DisputeFraudProofType.DisputeInboundAnchorBehindLatestState;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
+    it("round-trips DisputeStateProofBelowOnChainAnchor fraud proof", function () {
+        const value = codecValues.booleanProof();
+        const type = DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
+    it("round-trips TimeoutSupersededByFinalState fraud proof", function () {
+        const value = codecValues.timeoutSupersededByFinalStateProof();
+        const type = DisputeFraudProofType.TimeoutSupersededByFinalState;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
+    it("round-trips DisputeConflictsWithFinalState fraud proof", function () {
+        const value = codecValues.disputeConflictsWithFinalStateProof();
+        const type = DisputeFraudProofType.DisputeConflictsWithFinalState;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
+    it("round-trips DisputeInvalidOutboundRun fraud proof", function () {
+        const value = codecValues.disputeInvalidOutboundRunProof();
+        const type = DisputeFraudProofType.DisputeInvalidOutboundRun;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
     it("decodes a primitive EVM return value without object conversion", function () {
         const returnValue = ethers.AbiCoder.defaultAbiCoder().encode(
             ["uint256"],
@@ -640,17 +676,157 @@ describe("Codec", function () {
         );
     });
 
-    it("leaves non-block decoding acceptance unchanged", function () {
-        const balance = codecValues.balance();
-        const balanceEncoded = Codec.encode(balance, Type.Balance);
-        expect(
-            Codec.decode(balanceEncoded + "00".repeat(32), Type.Balance)
-        ).to.deep.equal(balance);
-        const joinChannel = codecValues.joinChannel();
-        const joinEncoded = Codec.encode(joinChannel, Type.JoinChannel);
-        expect(
-            Codec.decode(joinEncoded + "00".repeat(32), Type.JoinChannel)
-        ).to.deep.equal(joinChannel);
+    it("accepts canonical and rejects trailing-word encodings for every Codec type", function () {
+        const cases: [
+            Parameters<typeof Codec.encode>[0],
+            Type | FraudProofType | DisputeFraudProofType
+        ][] = [
+            [codecValues.block(), Type.Block],
+            [codecValues.blockCommitment(), Type.BlockCommitment],
+            [codecValues.joinChannel(), Type.JoinChannel],
+            [codecValues.signedJoinChannel(), Type.SignedJoinChannel],
+            [
+                codecValues.joinChannelConfirmation(),
+                Type.JoinChannelConfirmation
+            ],
+            [codecValues.openChannel(), Type.OpenChannel],
+            [codecValues.blockConfirmation(), Type.BlockConfirmation],
+            [codecValues.transaction(), Type.Transaction],
+            [codecValues.dispute(), Type.Dispute],
+            [codecValues.disputeConfirmation(), Type.DisputeConfirmation],
+            [codecValues.stateSnapshot(), Type.StateSnapshot],
+            [codecValues.snapshotData(), Type.SnapshotData],
+            [codecValues.joinChannelBlock(), Type.JoinChannelBlock],
+            [codecValues.exitChannelBlock(), Type.ExitChannelBlock],
+            [codecValues.exitChannel(), Type.ExitChannel],
+            [codecValues.disputeAuditingData(), Type.DisputeAuditingData],
+            [codecValues.messageBlock(), Type.MessageBlock],
+            [codecValues.balance(), Type.Balance],
+            [codecValues.signedBlock(), Type.SignedBlock],
+            [codecValues.stateProof(), Type.StateProof],
+            [codecValues.syncPayload(), Type.SyncPayload],
+            [
+                codecValues.blockDoubleSignProof(),
+                FraudProofType.BlockDoubleSign
+            ],
+            [
+                codecValues.blockInvalidStateTransitionProof(),
+                FraudProofType.BlockInvalidStateTransition
+            ],
+            [
+                codecValues.invalidTimestampProof(),
+                FraudProofType.InvalidTimestamp
+            ],
+            [codecValues.wrongGenesisProof(), FraudProofType.WrongGenesis],
+            [
+                codecValues.forgedInboundMessageBlockProof(),
+                FraudProofType.ForgedInboundMessageBlock
+            ],
+            [
+                codecValues.disputeNotLatestStateProof(),
+                DisputeFraudProofType.DisputeNotLatestState
+            ],
+            [
+                codecValues.disputeInvalidOutputStateProof(),
+                DisputeFraudProofType.DisputeInvalidOutputState
+            ],
+            [
+                codecValues.disputeInvalidStateProof(),
+                DisputeFraudProofType.DisputeInvalidStateProof
+            ],
+            [
+                codecValues.disputeInvalidBalanceInvariantProof(),
+                DisputeFraudProofType.DisputeInvalidBalanceInvariant
+            ],
+            [
+                codecValues.booleanProof(),
+                DisputeFraudProofType.DisputeOnChainSlashesNotSubset
+            ],
+            [
+                codecValues.timeoutThresholdProof(),
+                DisputeFraudProofType.TimeoutThreshold
+            ],
+            [
+                codecValues.timeoutCalldataPostedProof(),
+                DisputeFraudProofType.TimeoutCalldataPosted
+            ],
+            [
+                codecValues.booleanProof(),
+                DisputeFraudProofType.TimeoutNotLinkedToLatestState
+            ],
+            [
+                codecValues.timeoutParticipantNotNextProof(),
+                DisputeFraudProofType.TimeoutParticipantNotNext
+            ],
+            [
+                codecValues.timeoutTooEarlyProof(),
+                DisputeFraudProofType.TimeoutTooEarly
+            ],
+            [
+                codecValues.disputeInvalidBlockApplyFraudProof(),
+                DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+            ],
+            [
+                codecValues.booleanProof(),
+                DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
+            ],
+            [
+                codecValues.invalidDisputeReasonProof(),
+                DisputeFraudProofType.InvalidDisputeReason
+            ],
+            [
+                codecValues.booleanProof(),
+                DisputeFraudProofType.DisputeStateProofHeaderMismatch
+            ],
+            [
+                codecValues.booleanProof(),
+                DisputeFraudProofType.DisputeInboundHashNotInChain
+            ],
+            [
+                codecValues.disputeInvalidBlockStructureProof(),
+                DisputeFraudProofType.DisputeInvalidBlockStructure
+            ],
+            [
+                codecValues.disputeBlockAuthorNotParticipantProof(),
+                DisputeFraudProofType.DisputeBlockAuthorNotParticipant
+            ],
+            [
+                codecValues.disputeInboundAnchorBehindLatestStateProof(),
+                DisputeFraudProofType.DisputeInboundAnchorBehindLatestState
+            ],
+            [
+                codecValues.booleanProof(),
+                DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor
+            ],
+            [
+                codecValues.timeoutSupersededByFinalStateProof(),
+                DisputeFraudProofType.TimeoutSupersededByFinalState
+            ],
+            [
+                codecValues.disputeConflictsWithFinalStateProof(),
+                DisputeFraudProofType.DisputeConflictsWithFinalState
+            ],
+            [
+                codecValues.disputeInvalidOutboundRunProof(),
+                DisputeFraudProofType.DisputeInvalidOutboundRun
+            ]
+        ];
+        for (const [value, type] of cases) {
+            const encoded = Codec.encode(value, type);
+            const decoded = Reflect.apply(Codec.decode, Codec, [encoded, type]);
+            expect(
+                Codec.encode(decoded, type),
+                `type ${type} must re-encode canonical bytes identically`
+            ).to.equal(encoded);
+            expect(
+                () =>
+                    Reflect.apply(Codec.decode, Codec, [
+                        encoded + "00".repeat(32),
+                        type
+                    ]),
+                `type ${type} must reject a trailing word`
+            ).to.throw("Non-canonical encoding");
+        }
     });
 
     it("Block model wrappers enforce canonical decoding failure policy", function () {
@@ -679,7 +855,7 @@ describe("Codec", function () {
             signature
         };
         expect(() => Block.fromSignedBlock(noncanonicalSignedBlock)).to.throw(
-            "Non-canonical block encoding"
+            "Non-canonical encoding"
         );
         expect(Block.tryFromSignedBlock(noncanonicalSignedBlock)).to.equal(
             null
@@ -693,7 +869,7 @@ describe("Codec", function () {
         };
         expect(() =>
             Block.fromBlockConfirmation(noncanonicalConfirmation)
-        ).to.throw("Non-canonical block encoding");
+        ).to.throw("Non-canonical encoding");
         expect(
             Block.tryFromBlockConfirmation(noncanonicalConfirmation)
         ).to.equal(null);

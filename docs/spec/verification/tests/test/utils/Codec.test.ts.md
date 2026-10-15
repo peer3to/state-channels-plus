@@ -6,17 +6,18 @@ Exercises: [Codec.ts](../../../../implementation/source/src/utils/Codec.ts.md)
 ## Overview
 
 The suite exercises the public codec surface with factory-built domain values. Every
-`Type`, `FraudProofType`, and `DisputeFraudProofType` mapping is encoded and decoded, but canonical
-round-trip enforcement is proved for `Type.Block` only: the compatibility case pins that non-block
-types still accept trailing encodings, which is the retained gap rather than complete coverage. Separate cases
+`Type`, `FraudProofType`, and `DisputeFraudProofType` mapping is encoded and decoded, and canonical
+round-trip enforcement is proved for every type: the per-type round trips prove canonical acceptance,
+and one corpus case proves that the same bytes with a trailing word are rejected for every type.
+Separate cases
 cover max-uint256 canonical bytes, primitive/array/tuple EVM returns, recursive Result conversion,
 corrupt and truncated bytes, contextual encode errors, and unmapped enum values. Cross-module
-Result normalization remains mapped in the dedicated cross-module suite. The canonical boundary is
+Result normalization remains mapped in the dedicated cross-module suite. The block canonical boundary is
 proved differentially: a shared `canonicalBlockCorpus` factory (real factory block with a nonempty
 dynamic body and a nested message, plus trailing-word/byte, offset-gap, dirty-padding, truncated
 and empty members) feeds identical bytes to `Codec.decode` and a Hardhat-deployed `UtilityFacet`,
 comparing accept/reject on both sides with byte-identical re-encoding for accepted bytes. The
-corpus rejection, normalized acceptance, and non-block compatibility cases own
+corpus rejection, normalized acceptance, and every-type trailing rejection cases own
 `UNIT-TEST-CODEC-1-HFAA3B.P54`–`P56`. The corpus rejection declaration, which also asserts canonical
 acceptance on both sides, owns the neutral block-data permutations `REQ-DATA-1-1KNRQS.T1.P10`–`P12`. The `Block` model
 wrappers' failure policy (`from*` throw, `tryFrom*` null, canonical construction succeeds) is proved
@@ -69,6 +70,11 @@ by the wrapper declaration here and owns `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`.
 - `round-trips DisputeInboundHashNotInChain fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P44
 - `round-trips DisputeInvalidBlockStructure fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P45
 - `round-trips DisputeBlockAuthorNotParticipant fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P46
+- `round-trips DisputeInboundAnchorBehindLatestState fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P57
+- `round-trips DisputeStateProofBelowOnChainAnchor fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P58
+- `round-trips TimeoutSupersededByFinalState fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P59
+- `round-trips DisputeConflictsWithFinalState fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P60
+- `round-trips DisputeInvalidOutboundRun fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P61
 - `decodes a primitive EVM return value without object conversion`: UNIT-TEST-CODEC-1-HFAA3B.P47
 - `decodes a dynamic EVM array without object conversion`: UNIT-TEST-CODEC-1-HFAA3B.P48
 - `decodes a named EVM tuple to an object by default`: UNIT-TEST-CODEC-1-HFAA3B.P49
@@ -80,5 +86,5 @@ by the wrapper declaration here and owns `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`.
 - `rejects unmapped encode and decode type values`: UNIT-TEST-CODEC-1-HFAA3B.P53
 - `rejects noncanonical block bytes identically to UtilityFacet`: UNIT-TEST-CODEC-1-HFAA3B.P54, INV-MIRROR-1-VAF778.T1.P11, REQ-DATA-1-1KNRQS.T1.P10, REQ-DATA-1-1KNRQS.T1.P11, REQ-DATA-1-1KNRQS.T1.P12
 - `accepts canonical block bytes across hex casing and byte arrays`: UNIT-TEST-CODEC-1-HFAA3B.P55
-- `leaves non-block decoding acceptance unchanged`: UNIT-TEST-CODEC-1-HFAA3B.P56
+- `accepts canonical and rejects trailing-word encodings for every Codec type`: UNIT-TEST-CODEC-1-HFAA3B.P56, REQ-DATA-1-1KNRQS.T1.P13
 - `Block model wrappers enforce canonical decoding failure policy`: UNIT-TEST-BLOCK-MODEL-1-037DM6.P30

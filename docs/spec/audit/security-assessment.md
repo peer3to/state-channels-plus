@@ -548,17 +548,28 @@ Residual: correctness now depends on the parity itself; it is covered differenti
 contract (the signer-recovery and ECDSA acceptance cases in the verification layer) and must be
 re-checked whenever the OpenZeppelin ECDSA dependency changes.
 
-Block decoding is at parity on the covered paths since 2026-10-12 (partial resolution of
-[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v)). The client decodes `Type.Block` with
-`Codec`'s canonical round-trip rule and the contracts decode through `UtilityFacet.decodeBlock`
-with the identical rule (`ErrorNonCanonicalBlock`); `postBlockCalldata` routes through it, so the
-posted noncanonical bypass is fixed and a trailing zero word is rejected on both sides. Retained by
-engineer decision: direct `abi.decode` Block sites outside `tryDecodeBlock`/`postBlockCalldata` and
-non-block `Codec` trailing acceptance stay open under the finding; the planned complete resolution
-remains identical encoding and decoding in the contracts and TypeScript, so both accept and reject
-the same inputs. The
-ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
-functions and change no answer.
+Block decoding is at parity since 2026-10-12 (partial resolution of
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v)). The client decodes `Type.Block`
+with `Codec`'s canonical round-trip rule and the contracts decode through
+`UtilityFacet.decodeBlock` with the identical rule (`ErrorNonCanonicalEncoding`);
+`postBlockCalldata` routes through it, so the posted noncanonical bypass is fixed and a trailing
+zero word is rejected on both sides. Since 2026-10-14 the client rule is universal:
+`Codec.decode` enforces the canonical round trip for every type it serves. Since 2026-10-15 the
+canonical-encoding scope is narrowed by engineer decision: enforcement is required where bytes
+become an identity, commitment, stored or emitted chain data, posted calldata, or data decoded
+by clients from chain data. Both dispute uploads enforce it by requiring the recorded commitment
+to equal the hash of the submitted dispute bytes, checked after the race checks and before the
+commitment is recorded. Signature-bound open and join inputs are exempt because their exact bytes
+are signature-verified and only their decoded fields are used afterward; the chain writes inbound
+JOIN message data as the canonical encoding of each admitted join. Transient fraud-proof payloads
+are exempt because they are never hashed, committed, or stored and their verdicts use decoded
+fields alone; nested signed blocks remain governed by the block boundary where their bytes are
+identity-bearing. Execution-internal decodes of contract-produced bytes, delegatecall results,
+and `Codec.decodeEvmResult` over trusted local contract results are likewise outside the defect
+scope. [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) is closed on this boundary; a future change that hashes, stores,
+emits, or has clients decode an exempt input must restore a canonical check at that boundary.
+The ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of
+these functions and change no answer.
 
 ## Timeout refutation linkage — 2026-09-27
 
@@ -577,9 +588,9 @@ refutation and slashes its submitter; an honest refutation still kills the dispu
 preflight runs the same predicate, so an honest node never submits an unlinked refutation.
 Fixed (2026-10-12): the posted block's author signature is verified before the replay
 ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of
-the posted block is now rejected at posting by the canonical round-trip rule; noncanonical encodings
-outside the covered decoders remain the residual decoding exposure of
-[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
+the posted block is now rejected at posting by the canonical round-trip rule; the remaining
+decode classes are disposed under the narrowed canonical-encoding boundary that closed
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) on 2026-10-15.
 The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
 refutation reverts with no verdict, and one funded with its cost plus the manager's replay
 requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).

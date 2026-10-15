@@ -10,7 +10,7 @@ reverts with the full selector payload, a codeless route target reverts with the
 address, and a selector registered to a deployed `UtilityFacet` executes through the proxy.
 A shared `_deployUtilityProxy` helper deploys the utility-backed proxy for the constructor and
 calldata-posting cases alike. The posting cases prove the canonical boundary: a trailing-word post
-reverts with `ErrorNonCanonicalBlock` and stores no commitment, while a canonical post stores the
+reverts with `ErrorNonCanonicalEncoding` and stores no commitment, while a canonical post stores the
 signed-block/timestamp commitment, including a retry at a previously rejected key.
 
 ## Tests

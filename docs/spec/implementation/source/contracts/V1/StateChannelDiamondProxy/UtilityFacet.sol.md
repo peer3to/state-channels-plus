@@ -34,7 +34,7 @@ Threshold and shape predicates
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P12` — `verifyOutboundRunAboveAnchor` returns invalid, without a revert, for a linked run whose forged message balance overflows the withdrawal sum, and valid for the same run with the genuine block
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P13` — `verifyOutboundRunAboveAnchor` returns invalid, without a revert, when the upper snapshot's outbound head points to an overflowing block right above the anchor, and returns that block as the part above the anchor
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P14` — `decodeBlock` accepts canonical block bytes with exact fields and re-encodes them byte-identically
-- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15` — `decodeBlock` rejects decodable noncanonical encodings with `ErrorNonCanonicalBlock` and malformed bytes with an ordinary revert
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15` — `decodeBlock` rejects decodable noncanonical encodings with `ErrorNonCanonicalEncoding` and malformed bytes with an ordinary revert
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16` — `tryDecodeBlock` reports canonical bytes true with exact fields and every noncanonical or malformed input false with the default block
 
 ## UNIT-TEST-UTILITY-FACET-2-89EC3Q

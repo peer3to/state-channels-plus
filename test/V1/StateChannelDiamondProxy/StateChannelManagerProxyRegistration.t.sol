@@ -9,7 +9,7 @@ import {
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
-import {ErrorNonCanonicalBlock} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {ErrorNonCanonicalEncoding} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {Block, SignedBlock} from "../../../contracts/V1/types/DataTypes.sol";
 
@@ -85,7 +85,7 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             .getBlockCallDataCommitment(b.transaction.header.channelId, b.transaction.header.forkId, 1, address(this));
         assertFalse(foundBefore, "commitment must be absent before the rejected post");
         assertEq(commitmentBefore, bytes32(0), "commitment must be absent before the rejected post");
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         proxy.postBlockCalldata(noncanonical, block.timestamp);
         (bool foundAfter, bytes32 commitmentAfter) = StateChannelManagerInterface(address(proxy))
             .getBlockCallDataCommitment(b.transaction.header.channelId, b.transaction.header.forkId, 1, address(this));
@@ -99,7 +99,7 @@ contract StateChannelManagerProxyRegistrationTest is Test {
         bytes memory canonical = abi.encode(b);
         SignedBlock memory noncanonical =
             SignedBlock({encodedBlock: abi.encodePacked(canonical, bytes32(uint256(0x1234))), signature: hex""});
-        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalBlock.selector));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
         proxy.postBlockCalldata(noncanonical, block.timestamp);
         SignedBlock memory signedBlock = SignedBlock({encodedBlock: canonical, signature: hex""});
         proxy.postBlockCalldata(signedBlock, block.timestamp);

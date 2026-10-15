@@ -188,6 +188,27 @@ export const codecValues = {
         previousBlock: factory.signedBlock(),
         previousStateSnapshot: snapshot(),
         resultingStateSnapshot: snapshot()
+    }),
+    proofWalkInput: () => ({
+        channelId: factory.hash(),
+        forkId: factory.hash(),
+        stateProof: codecValues.stateProof(),
+        genesisStateSnapshotData: factory.snapshotData(),
+        milestoneSnapshots: [snapshot()]
+    }),
+    disputeInboundAnchorBehindLatestStateProof: () => ({
+        latestStateSnapshot: snapshot()
+    }),
+    timeoutSupersededByFinalStateProof: () => ({
+        finalProof: codecValues.proofWalkInput()
+    }),
+    disputeConflictsWithFinalStateProof: () => ({
+        finalProof: codecValues.proofWalkInput(),
+        milestoneIndex: 1n,
+        blockIndex: 2n
+    }),
+    disputeInvalidOutboundRunProof: () => ({
+        auditingData: auditingData()
     })
 };
 
