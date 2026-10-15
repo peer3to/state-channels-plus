@@ -35,7 +35,12 @@ export const contractSizeExemptions: readonly ContractSizeExemption[] = [
     },
     {
         fullyQualifiedName: "hardhat/console.sol:console",
-        reason: "development console library, compiled only for the local-only LocalDiamond"
+        reason: "development console library, compiled only for the local-only LocalDiamond and the ConsoleImportProbe test helper"
+    },
+    {
+        fullyQualifiedName:
+            "contracts/test/ConsoleImportProbe.sol:ConsoleImportProbe",
+        reason: "contract test helper that reaches the console library through an import"
     },
     {
         fullyQualifiedName:

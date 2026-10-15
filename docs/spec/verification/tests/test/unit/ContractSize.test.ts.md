@@ -5,12 +5,15 @@ Exercises: [contractSize.ts](../../../../implementation/source/src/utils/contrac
 
 ## Overview
 
-Fourteen direct cases scan all compiled production artifacts, exercise both exact EIP boundaries,
+Sixteen direct cases scan all compiled production artifacts, exercise both exact EIP boundaries,
 count constructor data, reject a missing required field, and keep the exemption list of
 non-production artifacts exact. A synthetic two-contract case proves runtime and initcode violations are returned together
 so one oversize contract cannot hide another. The console cases scan the real compiler metadata of
-every production contract for a development console library, report synthetic Hardhat and
-forge-std console sources per contract under every accepted source-name form while ignoring a
+every production contract for a development console library. Against the same real metadata,
+removing the exemption of the test-only `ConsoleImportProbe`, which reaches `hardhat/console.sol`
+through an imported file, reports exactly that contract, and with the exemption the probe is
+skipped although its metadata lists the library. Synthetic source lists report Hardhat and
+forge-std console sources per contract under their library-path and package names, ignore a
 non-console source under a `console` directory and console names nested under another path or
 extended past `.sol`, and accept the same import in an explicitly exempt local-only contract.
 
@@ -18,9 +21,11 @@ extended past `.sol`, and accept the same import in an explicitly exempt local-o
 
 - `keeps every compiled production artifact within both deployment limits`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P1, REQ-CONTRACT-SIZE-1-881Q6E.T1.P1
 - `keeps every compiled production artifact free of development console imports`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P10, REQ-CONTRACT-SIZE-1-881Q6E.T1.P12
+- `reports the console library a compiled contract reaches through an import once its exemption is removed`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P15
+- `skips the exempt compiled contract whose metadata lists the console library`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P16
 - `reports Hardhat and forge-std console libraries reached through an import`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11
-- `reports forge-std console under its library-path and package source names`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11
-- `ignores a console library name nested under another path or extended past .sol`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11
+- `reports forge-std console under its library-path and package source names`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P13
+- `ignores a console library name nested under another path or extended past .sol`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P14
 - `accepts a console import in an explicitly exempt local-only contract`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P12
 - `reports every production violation in one result`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9, REQ-CONTRACT-SIZE-1-881Q6E.T1.P11
 - `accepts 24,576 runtime bytes and rejects 24,577`: UNIT-TEST-CONTRACT-SIZE-1-MX797V.P2, REQ-CONTRACT-SIZE-1-881Q6E.T1.P2

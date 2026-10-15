@@ -16,6 +16,10 @@ import {
 import { expect } from "chai";
 import { ContractFactory } from "ethers";
 
+// Test-only contract that imports a file which imports hardhat/console.sol.
+const CONSOLE_IMPORT_PROBE =
+    "contracts/test/ConsoleImportProbe.sol:ConsoleImportProbe";
+
 function bytes(length: number): string {
     return `0x${"00".repeat(length)}`;
 }
@@ -44,6 +48,34 @@ describe("contract size", function () {
             productionConsoleImports(await compiledContractArtifacts()),
             "production contracts that compile in a console library"
         ).to.deep.equal([]);
+    });
+
+    it("reports the console library a compiled contract reaches through an import once its exemption is removed", async function () {
+        const compiled = await compiledContractArtifacts();
+        const withoutProbeExemption = contractSizeExemptions.filter(
+            ({ fullyQualifiedName }) =>
+                fullyQualifiedName !== CONSOLE_IMPORT_PROBE
+        );
+
+        expect(
+            productionConsoleImports(
+                classifyContractArtifacts(compiled, withoutProbeExemption)
+            )
+        ).to.deep.equal([`${CONSOLE_IMPORT_PROBE} imports hardhat/console.sol`]);
+    });
+
+    it("skips the exempt compiled contract whose metadata lists the console library", async function () {
+        const compiled = await compiledContractArtifacts();
+        const probe = compiled.find(
+            ({ fullyQualifiedName }) =>
+                fullyQualifiedName === CONSOLE_IMPORT_PROBE
+        );
+
+        expect(probe?.exemption, "probe exemption").to.not.equal(undefined);
+        expect(probe?.sourceNames).to.include("hardhat/console.sol");
+        expect(productionConsoleImports(compiled)).to.not.include(
+            `${CONSOLE_IMPORT_PROBE} imports hardhat/console.sol`
+        );
     });
 
     it("reports Hardhat and forge-std console libraries reached through an import", function () {
@@ -95,7 +127,8 @@ describe("contract size", function () {
                     sourceNames: [
                         "contracts/Adapter.sol",
                         "lib/forge-std/src/console.sol",
-                        "forge-std/src/console.sol"
+                        "forge-std/src/console.sol",
+                        "lib/forge-std/src/console2.sol"
                     ]
                 }
             ],
@@ -104,7 +137,8 @@ describe("contract size", function () {
 
         expect(productionConsoleImports(classified)).to.deep.equal([
             "contracts/Adapter.sol:Adapter imports lib/forge-std/src/console.sol",
-            "contracts/Adapter.sol:Adapter imports forge-std/src/console.sol"
+            "contracts/Adapter.sol:Adapter imports forge-std/src/console.sol",
+            "contracts/Adapter.sol:Adapter imports lib/forge-std/src/console2.sol"
         ]);
     });
 

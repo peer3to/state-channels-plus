@@ -23,5 +23,9 @@ Contract-size policy
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P8` — structured violation details
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P9` — aggregate runtime and initcode violations in one result
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P10` — no production artifact compiles in a development console library
-- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11` — Hardhat and forge-std console libraries reached through an import are reported per contract under each accepted source-name form; a non-console source under a `console` directory, or a console name nested under another path or extended past `.sol`, is not
+- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P11` — console libraries reached through an import are reported once per contract and console source; a non-console source under a `console` directory is not reported
 - [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P12` — a console import in an explicitly exempt local-only contract is accepted
+- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P13` — forge-std console is reported under its library-path and package source names
+- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P14` — a console name nested under another path or extended past `.sol` is not reported
+- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P15` — the real compiler metadata of a compiled contract that reaches the console library through an import is reported once its exemption is removed
+- [x] `UNIT-TEST-CONTRACT-SIZE-1-MX797V.P16` — an exempt compiled contract whose real compiler metadata lists the console library is skipped
