@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: browser test infrastructure; executable evidence is in the transport permutation gates
+const { startDhtBootstrapper } = require("../utils/nodeInfra");
 const { relay } = require("@hyperswarm/dht-relay");
 const Stream = require("@hyperswarm/dht-relay/ws");
 const DHT = require("hyperdht");
-const { randomInt } = require("node:crypto");
 const { once } = require("node:events");
 const { WebSocketServer } = require("ws");
 
@@ -20,13 +20,7 @@ const { WebSocketServer } = require("ws");
  */
 async function startLocalHolepunch({ relays = 2 } = {}) {
     const host = "127.0.0.1";
-    // The bootstrapper requires a positive port. Pick an ephemeral-range
-    // preference and let the library handle collisions; never probe a free port.
-    const bootstrapper = DHT.bootstrapper(randomInt(49152, 65536), host, {
-        host,
-        anyPort: true
-    });
-    await bootstrapper.ready();
+    const bootstrapper = await startDhtBootstrapper(host);
     const bootstrap = [{ host, port: bootstrapper.address().port }];
     const nodes = [bootstrapper];
     // A HyperDHT routing table needs a few persistent nodes to store announces.

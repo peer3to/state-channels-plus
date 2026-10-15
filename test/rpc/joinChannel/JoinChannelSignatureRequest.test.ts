@@ -487,7 +487,7 @@ describe("JoinChannel signature requests", function () {
                 String(afterSnapshotMove.signature)
             )
         ).to.equal(h.getPeer(0).address);
-        await h.join.forceInboundJoinWait({
+        const { participant: unreachable } = await h.join.forceInboundJoinWait({
             waitForHonestPeersObserve: false
         });
         const requestCountsBeforePreflight = await Promise.all(
@@ -507,7 +507,13 @@ describe("JoinChannel signature requests", function () {
             joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 joinChannel
             ),
-            /threshold participant unavailable/
+            (error: Error) => {
+                // the error names the threshold member that never connected
+                expect(error.message).to.equal(
+                    `collectJoinChannelConfirmation: threshold participant unavailable: ${unreachable}`
+                );
+                return true;
+            }
         );
         expect(Date.now() - startedAt).to.be.greaterThanOrEqual(
             agreementTime * 2 * 1000 - 250

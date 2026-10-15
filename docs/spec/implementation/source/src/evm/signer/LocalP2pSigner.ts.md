@@ -15,6 +15,7 @@
 - [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
 - [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
 - [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
+- [`REQ-JOINSIG-4-3NBKHK` (Full-channel join)](../../../../../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk)
 
 ## UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW
 

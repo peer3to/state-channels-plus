@@ -28,7 +28,8 @@ typed remote calls to its own or another peer's runtime, error observation, quie
 The public discovery operations are `joinLobby(topic, options?)` and `leaveLobby(topic)`. The separate
 fixed-target operations are `connectToChannel(channelId, options?)` and
 `cancelConnectToChannel(channelId)`. Connect options independently permit opening (`autoOpen`), request
-membership (`shouldJoin`), supply a full balance, and bound only unmatched rendezvous (`timeoutMs`). A
+membership (`shouldJoin`), supply a full balance, choose to stay spectating when the channel is full
+(`shouldSpectateWhenFull`), and bound only unmatched rendezvous (`timeoutMs`). A
 balance is dormant without `shouldJoin`. Omitted and `null` timeout values leave matching unbounded;
 match acceptance permanently removes the timer. Callers never supply a join deadline.
 

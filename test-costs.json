@@ -1819,6 +1819,12 @@
       "peakRssGb": 0.832,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-FraudProofsBlockConfirmation.test.ts|E2E: Block Fraud Proofs canonical block encoding rejects Byzantine relay and calldata posting": {
+      "durationMs": 13055,
+      "avgCores": 0.948,
+      "peakRssGb": 0.948,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-FraudProofsBlockConfirmation.test.ts|E2E: Block Fraud Proofs double sign → BlockDoubleSign": {
       "durationMs": 25500,
       "avgCores": 0.703,
@@ -2083,22 +2089,40 @@
       "peakRssGb": 0.809,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join refused on a moved snapshot at every submission stops retrying at the channel's maximum participant count: after that many retries connect returns false, the joiner aborts, and no further confirmation is collected": {
+      "durationMs": 14965,
+      "avgCores": 0.776,
+      "peakRssGb": 0.864,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join that fails while the snapshot stays put is not retried: the joiner is back to SYNCED and not admitted": {
       "durationMs": 9606,
       "avgCores": 1.026,
       "peakRssGb": 0.817,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose fresh confirmation for its one retry cannot be collected returns false with no second submission, and the joiner stays SYNCED": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join to a channel already full is neither collected nor submitted: connect returns false and the joiner aborts": {
+      "durationMs": 8927,
+      "avgCores": 0.88,
+      "peakRssGb": 0.87,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join to a channel that a pending participant fills is neither collected nor submitted: connect returns false and the joiner aborts": {
+      "durationMs": 13140,
+      "avgCores": 0.836,
+      "peakRssGb": 0.977,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose fresh confirmation for its retry cannot be collected returns false with no second submission, and the joiner stays SYNCED": {
       "durationMs": 17069,
       "avgCores": 0.982,
       "peakRssGb": 1.378,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose snapshot moves again before its one retry lands fails as a join with no retry does: the joiner aborts and is not admitted": {
-      "durationMs": 12432,
-      "avgCores": 0.847,
-      "peakRssGb": 0.877,
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose snapshot moves again before its retry lands is collected again and lands on its third submission: the joiner is admitted with no abort": {
+      "durationMs": 12003,
+      "avgCores": 0.816,
+      "peakRssGb": 0.799,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose snapshot moves to a stored one before it lands is prepared again once against that snapshot and the joiner is admitted": {
@@ -2107,7 +2131,13 @@
       "peakRssGb": 0.851,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join disposed while the fresh confirmation for its one retry is being collected submits nothing more once the collection continues: no JOIN lands for the joiner": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join with shouldSpectateWhenFull to a channel already full is neither collected nor submitted: connect returns false, and the joiner stays SYNCED with no abort and follows the next block": {
+      "durationMs": 7928,
+      "avgCores": 0.978,
+      "peakRssGb": 0.884,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join disposed while the fresh confirmation for its retry is being collected submits nothing more once the collection continues: no JOIN lands for the joiner": {
       "durationMs": 24025,
       "avgCores": 0.603,
       "peakRssGb": 1.062,
@@ -2119,13 +2149,25 @@
       "peakRssGb": 1.304,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose expiry check already read the chain's absent membership when the submission is refused stays one pending join: the check resumes during the held fresh collection and ends nothing, and the one retry lands": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED": {
+      "durationMs": 10282,
+      "avgCores": 0.763,
+      "peakRssGb": 0.976,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join refused twice for threshold sets that two joins landing one after another widened is collected again each time and lands on its third submission: each fresh collection asks the newly landed joiners, and no abort": {
+      "durationMs": 14821,
+      "avgCores": 0.859,
+      "peakRssGb": 1.22,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose expiry check already read the chain's absent membership when the submission is refused stays one pending join: the check resumes during the held fresh collection and ends nothing, and the retry lands": {
       "durationMs": 21901,
       "avgCores": 0.469,
       "peakRssGb": 0.799,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose expiry check runs while the refused submission's retry-eligibility read is in flight stays one pending join: the check ends nothing, and the one retry lands": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose expiry check runs while the refused submission's retry-eligibility read is in flight stays one pending join: the check ends nothing, and the retry lands": {
       "durationMs": 20853,
       "avgCores": 0.498,
       "peakRssGb": 0.785,
@@ -2137,16 +2179,28 @@
       "peakRssGb": 1.05,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose one retry fails again on a failed receipt after a snapshot move is final: it returns false after two submissions and the joiner stays SYNCED": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose receipt fails without a decoded race while the snapshot moved to a stored one is prepared again once and the joiner is admitted": {
+      "durationMs": 15175,
+      "avgCores": 1.039,
+      "peakRssGb": 1.527,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose retry after a snapshot move fails again on a failed receipt with no further move is final: it returns false after two submissions and the joiner stays SYNCED": {
       "durationMs": 10892,
       "avgCores": 1.246,
       "peakRssGb": 1.708,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose receipt fails without a decoded race while the snapshot moved to a stored one is prepared again once and the joiner is admitted": {
-      "durationMs": 15175,
-      "avgCores": 1.039,
-      "peakRssGb": 1.527,
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose retry after a threshold set refusal is refused because a second landed join filled the channel ends on that refusal: connect returns false after two submissions with no further collection, and the joiner aborts": {
+      "durationMs": 10128,
+      "avgCores": 1.156,
+      "peakRssGb": 1.269,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose retry is refused because a second landed join filled the channel is not retried even when the snapshot moves to a stored one before the retry is decided: connect returns false after two submissions with no further collection, and the joiner aborts": {
+      "durationMs": 16761,
+      "avgCores": 1.207,
+      "peakRssGb": 1.388,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join whose snapshot moves to one this joiner does not store is not prepared again: the join fails and the joiner aborts": {
@@ -2167,10 +2221,28 @@
       "peakRssGb": 1.273,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a join with shouldSpectateWhenFull whose retry after a threshold set refusal is refused because a second landed join filled the channel ends on that refusal: connect returns false after two submissions with no further collection, and the joiner is back to SYNCED with no abort": {
+      "durationMs": 11101,
+      "avgCores": 0.979,
+      "peakRssGb": 1.298,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a participant's top-up held at its send while a spectator's join lands is refused for the threshold set that join widened, collected again once with the new pending participant's countersignature, and lands: two submissions, the amount credited once, and the participation kept": {
       "durationMs": 10460,
       "avgCores": 0.837,
       "peakRssGb": 0.794,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a prepared join submitted to a channel that a landed pending join fills makes no full-channel read and is refused for too many participants: joinChannel returns false after one submission, onLeftChannel then onAbort fire once each, and no JOIN lands for the joiner": {
+      "durationMs": 13457,
+      "avgCores": 1.01,
+      "peakRssGb": 1.17,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up refused on a moved snapshot at every submission stops retrying at the channel's maximum participant count: after that many retries it returns false, no further confirmation is collected, and the participation is kept with no abort": {
+      "durationMs": 16429,
+      "avgCores": 1.009,
+      "peakRssGb": 0.995,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up that fails while the snapshot stays put is not retried: it returns false after one submission and keeps the participation": {
@@ -2179,16 +2251,22 @@
       "peakRssGb": 1.285,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose fresh confirmation for its one retry cannot be collected returns false with no second submission, and the participant keeps participating": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose fresh confirmation for its retry cannot be collected returns false with no second submission, and the participant keeps participating": {
       "durationMs": 17013,
       "avgCores": 0.984,
       "peakRssGb": 1.297,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose snapshot moves again before its one retry lands returns false and keeps the participation": {
-      "durationMs": 14957,
-      "avgCores": 1.171,
-      "peakRssGb": 1.376,
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose runtime aborts once the fresh confirmation for its retry is collected submits nothing more: the call returns false and no JOIN lands for the participant": {
+      "durationMs": 8518,
+      "avgCores": 0.79,
+      "peakRssGb": 0.972,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose snapshot moves again before its retry lands is collected again and lands on its third submission: the amount credited once and the participation kept": {
+      "durationMs": 11881,
+      "avgCores": 0.827,
+      "peakRssGb": 0.857,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose snapshot moves to a stored one before it lands is prepared again once against that snapshot and lands": {
@@ -2203,13 +2281,19 @@
       "peakRssGb": 1.276,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard concurrent connect joins on one synced spectator: the second call gets the running join's promise, so one collection and one funded submission land the join and both calls return true": {
+      "durationMs": 9068,
+      "avgCores": 0.804,
+      "peakRssGb": 0.969,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard concurrent topUpBalance calls with one prepared request: the second call reuses the running top-up, so one funded submission credits the amount once and both calls return the same result": {
       "durationMs": 18064,
       "avgCores": 1.029,
       "peakRssGb": 1.042,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard two synced spectators whose first joins race on one table both end pending: the join that lands second is refused for the threshold set the first widened and lands on its one retry, whose fresh collection the first joiner countersigns": {
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard two synced spectators whose first joins race on one table both end pending: the join that lands second is refused for the threshold set the first widened and lands on its retry, whose fresh collection the first joiner countersigns": {
       "durationMs": 21443,
       "avgCores": 1.006,
       "peakRssGb": 1.261,
@@ -2306,9 +2390,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching keeps the committed pair intact when transport upgrade completes during negotiation handoff": {
-      "durationMs": 10188,
-      "avgCores": 0.925,
-      "peakRssGb": 0.635,
+      "durationMs": 7180,
+      "avgCores": 1.19,
+      "peakRssGb": 0.768,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching keeps two caller-supplied lobby topics isolated": {
@@ -2755,6 +2839,12 @@
       "peakRssGb": 0.983,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a lone participant's leave that falls back to its self-removal dispute posts the reduced fork that has no participant: the channel closes and the leaver gets onLeftChannel once": {
+      "durationMs": 16191,
+      "avgCores": 0.498,
+      "peakRssGb": 0.579,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort": {
       "durationMs": 26967,
       "avgCores": 1.022,
@@ -2771,6 +2861,12 @@
       "durationMs": 13130,
       "avgCores": 0.783,
       "peakRssGb": 0.774,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block": {
+      "durationMs": 24641,
+      "avgCores": 0.541,
+      "peakRssGb": 0.812,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path exiting participant does not sign blocks authored after its leave": {
@@ -3914,15 +4010,15 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E10: auditors with different final points E10: omitted data, an inserted hop above the chain anchor lacks the required signatures → the earlier-start auditor kills it on chain from its own snapshots; newer-start auditors accept": {
-      "durationMs": 42690,
-      "avgCores": 0.96,
-      "peakRssGb": 1.053,
+      "durationMs": 36630,
+      "avgCores": 1.174,
+      "peakRssGb": 1.318,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E10: auditors with different final points E10: posted data, the row of an earlier milestone above the chain anchor is the head's snapshot → the earlier-start auditor kills it on chain from the posted data; newer-start auditors accept": {
-      "durationMs": 28822,
-      "avgCores": 0.968,
-      "peakRssGb": 1.327,
+      "durationMs": 37136,
+      "avgCores": 1.287,
+      "peakRssGb": 1.332,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E15: balance judged on the unfinalized latest state E15 control: the same blind pending auditor with the real final head and its correct tail (a good balance invariant), posted data → the tail replays on the head and every auditor accepts the dispute": {
@@ -4139,6 +4235,12 @@
       "durationMs": 25574,
       "avgCores": 0.761,
       "peakRssGb": 0.822,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit block is finalized off-chain and its exit post is refused → its self-removal dispute on a state that already excludes it; the reduced fork pays its exit exactly once at the exit block amount, the balance invariant holds, it is not slashed, and it gets onLeftChannel once": {
+      "durationMs": 29919,
+      "avgCores": 0.825,
+      "peakRssGb": 1.238,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash": {
@@ -4891,6 +4993,12 @@
       "peakRssGb": 0.583,
       "measurementReason": null
     },
+    "hardhat|test/evm/DiscoveryRuntimePort.test.ts|connectToChannel input validation non-boolean shouldSpectateWhenFull rejects before state mutation": {
+      "durationMs": 5404,
+      "avgCores": 0.346,
+      "peakRssGb": 0.377,
+      "measurementReason": null
+    },
     "hardhat|test/evm/DiscoveryRuntimePort.test.ts|connectToChannel input validation non-finite timeout rejects before matching": {
       "durationMs": 7424,
       "avgCores": 0.946,
@@ -5021,6 +5129,12 @@
       "durationMs": 10387,
       "avgCores": 0.868,
       "peakRssGb": 0.788,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/DiscoveryRuntimePort.test.ts|connectToChannel signer contract shouldJoin with shouldSpectateWhenFull on an already-open full target reaches the host: connect returns false and the runtime stays SYNCED with no abort": {
+      "durationMs": 5157,
+      "avgCores": 0.764,
+      "peakRssGb": 0.729,
       "measurementReason": null
     },
     "hardhat|test/evm/DiscoveryRuntimePort.test.ts|connectToChannel signer contract targeted cancellation and leaveLobby do not cross-cancel": {
@@ -12571,16 +12685,16 @@
       "peakRssGb": 0.292,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture binds the bootstrapper elsewhere when the preferred UDP port is taken and the nodes still reach it": {
-      "durationMs": 2135,
-      "avgCores": 0.712,
-      "peakRssGb": 0.187,
-      "measurementReason": null
-    },
     "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture fails on the taken port when the fallback is off": {
       "durationMs": 2286,
       "avgCores": 0.7,
       "peakRssGb": 0.186,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture moves the bootstrapper to a free port when the preferred UDP port is taken and announced topics are still found": {
+      "durationMs": 379,
+      "avgCores": 0.923,
+      "peakRssGb": 0.091,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelWorkerLease.test.ts|distributed worker lease allows shared-host servers with distinct resolved work roots": {
@@ -13627,6 +13741,12 @@
       "peakRssGb": 0.955,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedInboundRun logs recovered into an empty inbound store set its tip to the recovered head": {
+      "durationMs": 10376,
+      "avgCores": 0.746,
+      "peakRssGb": 0.756,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedInboundRun missed inbound log → recovered by query, the run becomes walkable": {
       "durationMs": 14847,
       "avgCores": 0.915,
@@ -14125,6 +14245,36 @@
       "peakRssGb": 0.213,
       "measurementReason": null
     },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation breaking out of getIterator through the proxy finishes the walk": {
+      "durationMs": 1363,
+      "avgCores": 0.499,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation getIterator through the proxy reads each block only when it is requested": {
+      "durationMs": 691,
+      "avgCores": 0.507,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation getIterator through the proxy yields nothing for a fork with no blocks": {
+      "durationMs": 1149,
+      "avgCores": 0.592,
+      "peakRssGb": 0.107,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation mutating a block yielded by getIterator leaves the stored block unchanged": {
+      "durationMs": 1072,
+      "avgCores": 0.55,
+      "peakRssGb": 0.118,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation mutating the second block yielded by getIterator leaves the stored block unchanged": {
+      "durationMs": 803,
+      "avgCores": 1.059,
+      "peakRssGb": 0.142,
+      "measurementReason": null
+    },
     "hardhat|test/storage/BlockStorage.test.ts|BlockStorage READ - getBlockEntry() should get block by coordinates": {
       "durationMs": 2459,
       "avgCores": 0.663,
@@ -14269,6 +14419,18 @@
       "peakRssGb": 0.21,
       "measurementReason": null
     },
+    "hardhat|test/storage/BlockStorage.test.ts|ForkIdToMaxHeightMap READ - getLatestBlockHeight() / getNextBlockHeight() a fork without blocks -> latest -1 (its genesis), next 0": {
+      "durationMs": 868,
+      "avgCores": 0.899,
+      "peakRssGb": 0.124,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|ForkIdToMaxHeightMap READ - getLatestBlockHeight() / getNextBlockHeight() blocks at 0 and 5 -> latest 5, next 6": {
+      "durationMs": 815,
+      "avgCores": 1.006,
+      "peakRssGb": 0.14,
+      "measurementReason": null
+    },
     "hardhat|test/storage/BlockStorage.test.ts|ForkIdToMaxHeightMap REMOVING - Max Height Updates should handle removing the only block in a fork": {
       "durationMs": 2779,
       "avgCores": 1.062,
@@ -14377,18 +14539,6 @@
       "peakRssGb": 0.177,
       "measurementReason": null
     },
-    "hardhat|test/storage/ExitChannelBlockStorage.test.ts|MessageBlockStorage - outbound behavior latest block helpers head above a hole → truncates at the gap instead of throwing": {
-      "durationMs": 2157,
-      "avgCores": 0.844,
-      "peakRssGb": 0.246,
-      "measurementReason": null
-    },
-    "hardhat|test/storage/ExitChannelBlockStorage.test.ts|MessageBlockStorage - outbound behavior latest block helpers returns blocks sorted from newest to oldest when no limit is provided": {
-      "durationMs": 1791,
-      "avgCores": 0.949,
-      "peakRssGb": 0.275,
-      "measurementReason": null
-    },
     "hardhat|test/storage/ExitChannelBlockStorage.test.ts|MessageBlockStorage - outbound behavior latest block helpers returns the most recent block": {
       "durationMs": 1786,
       "avgCores": 0.991,
@@ -14495,6 +14645,96 @@
       "durationMs": 2769,
       "avgCores": 0.986,
       "peakRssGb": 0.399,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a block whose predecessor is not held, stored into an empty store, becomes the tip": {
+      "durationMs": 627,
+      "avgCores": 0.558,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a higher block above an unheld gap moves the tip, and a read from that tip reports the missing block": {
+      "durationMs": 626,
+      "avgCores": 0.591,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a justPersist store of a higher block leaves the tip": {
+      "durationMs": 1168,
+      "avgCores": 0.514,
+      "peakRssGb": 0.114,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a later direct store of a held block keeps its first content and moves the tip": {
+      "durationMs": 925,
+      "avgCores": 0.908,
+      "peakRssGb": 0.124,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run from the zero hash into an empty store moves the tip to its last block": {
+      "durationMs": 539,
+      "avgCores": 0.668,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run from the zero hash while a tip is held is persisted and leaves the tip": {
+      "durationMs": 566,
+      "avgCores": 0.654,
+      "peakRssGb": 0.098,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run that does not extend the tip is persisted and leaves the tip": {
+      "durationMs": 815,
+      "avgCores": 1.018,
+      "peakRssGb": 0.136,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run that extends the tip moves the tip to its last block": {
+      "durationMs": 540,
+      "avgCores": 0.667,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run whose predecessor is held but is not the tip is persisted and leaves the tip": {
+      "durationMs": 639,
+      "avgCores": 0.579,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run with a nonzero predecessor into an empty store is persisted and sets no tip": {
+      "durationMs": 663,
+      "avgCores": 0.573,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking an equal-height block replaces the tip": {
+      "durationMs": 775,
+      "avgCores": 0.929,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind a tip above the snapshot returns the tip": {
+      "durationMs": 572,
+      "avgCores": 0.612,
+      "peakRssGb": 0.089,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind a tip at the snapshot height with a different hash returns the tip": {
+      "durationMs": 606,
+      "avgCores": 0.627,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind a tip below the snapshot returns the snapshot head": {
+      "durationMs": 591,
+      "avgCores": 0.592,
+      "peakRssGb": 0.087,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind an empty store returns the snapshot head at height 0": {
+      "durationMs": 708,
+      "avgCores": 0.523,
+      "peakRssGb": 0.08,
       "measurementReason": null
     },
     "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tolerant range reads a walk that reaches zero before the nonzero lower bound is incomplete": {
@@ -16489,16 +16729,22 @@
       "peakRssGb": 1.088,
       "measurementReason": null
     },
-    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it": {
-      "durationMs": 22127,
-      "avgCores": 0.813,
-      "peakRssGb": 1.379,
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants": {
+      "durationMs": 30434,
+      "avgCores": 0.859,
+      "peakRssGb": 0.99,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog": {
       "durationMs": 33172,
       "avgCores": 0.681,
       "peakRssGb": 1.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the leave completes once on the reduced snapshot that drops it": {
+      "durationMs": 20125,
+      "avgCores": 0.805,
+      "peakRssGb": 1.003,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leaver posts the latest state snapshot once its exit block is final, and that snapshot settles the leave with no dispute": {
@@ -16525,6 +16771,18 @@
       "peakRssGb": 1.671,
       "measurementReason": null
     },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a leaver's exit post of a non-final reduction that leaves no participant, held at its send while the reducer's adoption post closes the channel, is refused with RaceConditionGenesisTimestampNotAvailable, logged as a chain refusal and not fatal, and the leaver leaves once": {
+      "durationMs": 20893,
+      "avgCores": 0.317,
+      "peakRssGb": 0.582,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave": {
+      "durationMs": 18751,
+      "avgCores": 0.587,
+      "peakRssGb": 0.586,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: a reduction that replaces the fork of an exit block the application authored with no leave call by a state that still seats the leaver restarts the exit there as a requested leave: its leave turn comes, self-removal stays set and its exit settles": {
       "durationMs": 21479,
       "avgCores": 0.346,
@@ -16549,6 +16807,12 @@
       "peakRssGb": 0.83,
       "measurementReason": null
     },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: an exit snapshot that lands before the leaver's self-removal dispute is sent makes the chain refuse that upload with ErrorCantParticipateInDispute; the refusal is not fatal and the leave completes once, SYNCED with no abort": {
+      "durationMs": 11481,
+      "avgCores": 0.762,
+      "peakRssGb": 0.789,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: blocks finalized while the exit's snapshot post runs queue one more post after it when that post did not land the exit, and the next finalized block posts again": {
       "durationMs": 25295,
       "avgCores": 0.5,
@@ -16559,6 +16823,18 @@
       "durationMs": 27113,
       "avgCores": 0.621,
       "peakRssGb": 1.749,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a leaver's post closes the channel, the reducer's later adoption post of that fork is refused with RaceConditionGenesisTimestampNotAvailable and not retried, and each leaver leaves once with no abort": {
+      "durationMs": 20820,
+      "avgCores": 0.328,
+      "peakRssGb": 0.586,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a reduced result committed while the leaver's install-time post runs queues a post that the leaver's membership check sends after it, and that post closes the channel while the reducer's adoption and its retry fail; each leaver leaves once with no abort": {
+      "durationMs": 27668,
+      "avgCores": 0.386,
+      "peakRssGb": 0.584,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join block bound grace U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it": {
@@ -16697,6 +16973,12 @@
       "durationMs": 25144,
       "avgCores": 0.399,
       "peakRssGb": 0.953,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes terminal leave settlement U71: a last leaver whose exit leaves no participant and whose posts a JOIN that no block consumes refuses makes one follow-up post per queued trigger, never back-to-back posts": {
+      "durationMs": 14380,
+      "avgCores": 0.518,
+      "peakRssGb": 0.574,
       "measurementReason": null
     },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes terminal leave settlement U71: both founders leave and the last exit closes the channel → both get onLeftChannel on NOT_OPENED": {
@@ -17233,6 +17515,12 @@
       "peakRssGb": 0.847,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute a peer that already disputed audits an invalid dispute -> no state proof is built, and its kill goes out alone and lands": {
+      "durationMs": 17542,
+      "avgCores": 1.208,
+      "peakRssGb": 0.992,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute a slow auditor's kill and dispute land after another auditor's kill and replacement closed the evidence period → the multicall lands its kill, its refused upload is a no-op, no kill is sent alone, and its event pipeline stays alive": {
       "durationMs": 26859,
       "avgCores": 0.449,
@@ -17255,6 +17543,18 @@
       "durationMs": 25756,
       "avgCores": 0.478,
       "peakRssGb": 1.024,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute an auditor audits an invalid dispute -> the state proof it built during the audit serves the kill and dispute: one build, and the multicall lands": {
+      "durationMs": 13937,
+      "avgCores": 1.22,
+      "peakRssGb": 0.994,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute the state proof built during the audit fails -> the kill and dispute builds its own: two builds, and the multicall lands": {
+      "durationMs": 16411,
+      "avgCores": 1.021,
+      "peakRssGb": 0.981,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute the upload of a mined kill-and-dispute multicall is refused with a custom error no dispute handler takes (ErrorDisputerNotMsgSender) → the kill landed once in the multicall, the marker rolled back, dispute() rejects with the refusal, and no kill is sent alone": {
@@ -17335,6 +17635,12 @@
       "peakRssGb": 0.778,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager auditing data inbound run own head above a recoverable mid-gap → the self-removal dispute names that head, recovers the missing block and lands on chain": {
+      "durationMs": 11067,
+      "avgCores": 0.801,
+      "peakRssGb": 0.769,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager auditing data inbound run own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw": {
       "durationMs": 14035,
       "avgCores": 0.875,
@@ -17377,6 +17683,12 @@
       "peakRssGb": 0.764,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a failed latest-state proof build → constructDispute builds its own, and the chain accepts the dispute": {
+      "durationMs": 8634,
+      "avgCores": 1.033,
+      "peakRssGb": 0.757,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes": {
       "durationMs": 35699,
       "avgCores": 0.569,
@@ -17387,6 +17699,18 @@
       "durationMs": 12661,
       "avgCores": 1.03,
       "peakRssGb": 0.799,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a latest-state proof at the latest height → constructDispute reuses it, builds none, and the chain accepts the dispute": {
+      "durationMs": 8317,
+      "avgCores": 0.998,
+      "peakRssGb": 0.758,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a latest-state proof one block behind → constructDispute builds its own, and the chain accepts the dispute": {
+      "durationMs": 8869,
+      "avgCores": 1.001,
+      "peakRssGb": 0.767,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a participant has a stored fraud proof → constructDispute bundles it + marks them slashed": {
@@ -17468,9 +17792,9 @@
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager dispute admission refuses a changed fork before construction": {
-      "durationMs": 35583,
-      "avgCores": 0.742,
-      "peakRssGb": 1.033,
+      "durationMs": 24066,
+      "avgCores": 0.952,
+      "peakRssGb": 1.29,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager dispute admission refuses disposal while waiting for the state mutex": {
@@ -17645,6 +17969,18 @@
       "durationMs": 16473,
       "avgCores": 0.954,
       "peakRssGb": 0.828,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit": {
+      "durationMs": 14178,
+      "avgCores": 0.946,
+      "peakRssGb": 0.784,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer": {
+      "durationMs": 13837,
+      "avgCores": 1.106,
+      "peakRssGb": 0.79,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill with the real estimate lands at the estimate plus the replay requirement": {
@@ -18755,6 +19091,12 @@
       "durationMs": 9647,
       "avgCores": 0.987,
       "peakRssGb": 0.585,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot": {
+      "durationMs": 16670,
+      "avgCores": 0.798,
+      "peakRssGb": 0.747,
       "measurementReason": null
     },
     "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService a committed off-chain addition during refresh is eligible when the chain result misses it": {
@@ -20629,6 +20971,24 @@
       "peakRssGb": 0.801,
       "measurementReason": null
     },
+    "hardhat|test/utils/Codec.test.ts|Codec Block model wrappers enforce canonical decoding failure policy": {
+      "durationMs": 917,
+      "avgCores": 0.905,
+      "peakRssGb": 0.139,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec accepts canonical and rejects trailing-word encodings for every Codec type": {
+      "durationMs": 2638,
+      "avgCores": 0.834,
+      "peakRssGb": 0.15,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec accepts canonical block bytes across hex casing and byte arrays": {
+      "durationMs": 1226,
+      "avgCores": 0.563,
+      "peakRssGb": 0.11,
+      "measurementReason": null
+    },
     "hardhat|test/utils/Codec.test.ts|Codec adds type and bigint-safe value context to encode failures": {
       "durationMs": 3226,
       "avgCores": 0.79,
@@ -20675,6 +21035,12 @@
       "durationMs": 2720,
       "avgCores": 1.026,
       "peakRssGb": 0.401,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec rejects noncanonical block bytes identically to UtilityFacet": {
+      "durationMs": 3541,
+      "avgCores": 1.025,
+      "peakRssGb": 0.246,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec rejects unmapped encode and decode type values": {
@@ -20743,6 +21109,18 @@
       "peakRssGb": 0.21,
       "measurementReason": null
     },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeConflictsWithFinalState fraud proof": {
+      "durationMs": 1159,
+      "avgCores": 0.544,
+      "peakRssGb": 0.106,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInboundAnchorBehindLatestState fraud proof": {
+      "durationMs": 1121,
+      "avgCores": 0.785,
+      "peakRssGb": 0.122,
+      "measurementReason": null
+    },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInboundHashNotInChain fraud proof": {
       "durationMs": 2766,
       "avgCores": 0.991,
@@ -20765,6 +21143,12 @@
       "durationMs": 2079,
       "avgCores": 0.798,
       "peakRssGb": 0.212,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInvalidOutboundRun fraud proof": {
+      "durationMs": 1152,
+      "avgCores": 0.556,
+      "peakRssGb": 0.108,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInvalidOutputState fraud proof": {
@@ -20795,6 +21179,12 @@
       "durationMs": 3831,
       "avgCores": 0.908,
       "peakRssGb": 0.363,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeStateProofBelowOnChainAnchor fraud proof": {
+      "durationMs": 1326,
+      "avgCores": 0.505,
+      "peakRssGb": 0.089,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeStateProofHeaderMismatch fraud proof": {
@@ -20915,6 +21305,12 @@
       "durationMs": 1971,
       "avgCores": 0.847,
       "peakRssGb": 0.222,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips TimeoutSupersededByFinalState fraud proof": {
+      "durationMs": 1107,
+      "avgCores": 0.668,
+      "peakRssGb": 0.12,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips TimeoutThreshold fraud proof": {

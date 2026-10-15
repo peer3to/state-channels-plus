@@ -1,29 +1,18 @@
 const DHT = require("hyperdht");
-const { randomInt } = require("node:crypto");
+const { startDhtBootstrapper } = require("../../../../test/utils/nodeInfra");
 async function createNetwork() {
-    // The installed bootstrapper requires a positive port. Pick an ephemeral-range
-    // preference and let the library handle collisions; never probe a free port.
-    const bootstrap = DHT.bootstrapper(randomInt(49152, 65536), "127.0.0.1", {
-        host: "127.0.0.1",
-        anyPort: true
-    });
-    try {
-        await bootstrap.ready();
-        const address = bootstrap.address();
-        return {
-            node: () =>
-                new DHT({
-                    host: "127.0.0.1",
-                    ephemeral: false,
-                    firewalled: false,
-                    bootstrap: [`127.0.0.1:${address.port}`]
-                }),
-            close: () => bootstrap.destroy({ force: true })
-        };
-    } catch (error) {
-        await bootstrap.destroy({ force: true });
-        throw error;
-    }
+    const bootstrap = await startDhtBootstrapper("127.0.0.1");
+    const address = bootstrap.address();
+    return {
+        node: () =>
+            new DHT({
+                host: "127.0.0.1",
+                ephemeral: false,
+                firewalled: false,
+                bootstrap: [`127.0.0.1:${address.port}`]
+            }),
+        close: () => bootstrap.destroy({ force: true })
+    };
 }
 module.exports = { createNetwork };
 async function withStreams(body) {

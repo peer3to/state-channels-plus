@@ -1113,7 +1113,7 @@ describe("E2E: Spectate Service", function () {
             join.catch(() => undefined);
             await waitForHeldJoins(h, joinerA.index, 1);
             await h.rpcStub.releaseOneMembershipSubmission(joinerA.index);
-            // the refused submission's one retry is the second and last
+            // the refused submission's retry is the second and last
             await waitForHeldJoins(h, joinerA.index, 2);
             await releaseAll();
 

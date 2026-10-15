@@ -15,7 +15,7 @@
 
 Attempt discipline
 
-- Setup: Race concurrent reducers; drop events then recover; fail the provider; supersede with a final dispute; hold the fork adoption post while the successor is disputed or a later reduction becomes final; drop a leaving member to SYNCED during its install
+- Setup: Race concurrent reducers; drop events then recover; fail the provider; supersede with a final dispute; hold the fork adoption post while the successor is disputed, a later reduction becomes final, or a leaver's post of a reduced fork with no participant closes the channel; drop a leaving member to SYNCED during its install
 - Oracle: Convergence classified; unsynchronized windows never reduce; provider failure fatal; supersession stands down; a settled adoption refusal is neither retried nor reported; a member that left during its install sends no reduction
 
 - [ ] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P1` — concurrent convergence
@@ -36,3 +36,4 @@ Attempt discipline
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P20` — the runtime stops while the reduce send is held after the local install, with the teardown parked before the chain provider closes: disposal does not intercept the started send, the reduce goes out once, and its detached submission settles with no rejection and no reported failure
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P21` — an adopt-only post prepared against the successor and sent after a later reduction of the successor became final reverts with `RaceConditionSnapshotUpdateNotLatestFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P22` — an adopt-only post prepared against the successor and sent after the successor's dispute opened reverts with `RaceConditionSnapshotUpdateDisputedFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P23` — an adopt-only post of a reduced fork with no participant, prepared and held at its send while a leaver's post of that fork closes the channel, reverts with `RaceConditionGenesisTimestampNotAvailable`; the refusal is settled: no detached failure and no retry

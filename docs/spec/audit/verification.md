@@ -79,6 +79,13 @@ Decision (daiagi, 2026-10-15, PR #551): per-test overrides keep their values; ea
 and several are deliberately short so the window expires (for example `runKillSentAfterKillPeriod`). This is a
 protocol input, not a wait budget; no oracle changed.
 
+Engineer decision (Luka, 2026-10-15): the shared invalid-dispute staging's kill period
+`DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME` (`preDisputeSetup` in `test/harness/actions/math/MathScenarioActions.ts`)
+goes 8 → 12, the harness default plus two seconds. Its purpose is headroom over the default; after the default became
+10 it sat two seconds below it. In the full gate an honest auditor's audit, own-dispute build and kill estimate took
+about 7–8 s on the farm and the kill was refused with `RaceConditionDisputeKillPeriodExpired` (no starvation; peak
+event-loop delay 381 ms). This is a protocol input, not a wait budget; the kill barriers scale with it.
+
 ## Test timing inputs — 2026-10-14
 
 Engineer decision (Luka, 2026-10-14): `evidenceTime` 8 → 12 in `stageSpamAfterOwnDispute`

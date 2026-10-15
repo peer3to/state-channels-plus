@@ -85,6 +85,8 @@ export class HarnessControlRpc extends MainRpcService {
         this.stub.releaseReductionHolds();
         // a join collection held mid-way continues into the disposed runtime
         this.stub.releaseJoinThresholdRead();
+        this.stub.releaseJoinCollectionResult();
+        this.stub.restoreCollectAndJoinEntries();
         await super.dispose();
     }
 }

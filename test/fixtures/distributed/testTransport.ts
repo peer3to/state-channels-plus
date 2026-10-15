@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: shared distributed test-transport fixture exercised by developer tooling tests
-import { getFreePort } from "../../utils/nodeInfra";
+import { startDhtBootstrapper } from "../../utils/nodeInfra";
 import net from "net";
 
 const {
@@ -16,7 +16,7 @@ export const TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS =
 export type LocalDhtNetworkOptions = {
     /** Bootstrap port to ask for; probed from a free TCP port when omitted. */
     preferredPort?: number;
-    /** Fall back to any free port when the preferred one is taken. */
+    /** Retry on another free port when the requested one is taken. */
     anyPort?: boolean;
 };
 
@@ -29,20 +29,12 @@ export type LocalDhtNetwork = {
 export async function createLocalDhtNetwork(
     options: LocalDhtNetworkOptions = {}
 ): Promise<LocalDhtNetwork> {
-    const port = options.preferredPort ?? (await getFreePort());
-
-    // The probed port is free for TCP at probe time; another process on
-    // the host (a distributed worker, another suite) can hold it as UDP by
-    // the time the bootstrapper binds, so the bootstrapper may fall back to
-    // any free port and the nodes dial the port it actually bound.
-    const bootstrap = DHT.bootstrapper(port, "127.0.0.1", {
-        host: "127.0.0.1",
-        anyPort: options.anyPort ?? true
+    // without anyPort a taken preferred port fails at once
+    const bootstrap = await startDhtBootstrapper("127.0.0.1", {
+        port: options.preferredPort,
+        attempts: options.anyPort === false ? 1 : undefined
     });
-    await bootstrap.ready();
-    const bound = bootstrap.address() as { port: number } | null;
-    if (!bound) throw new Error("Missing DHT bootstrap address");
-    const bootstrapPort = bound.port;
+    const bootstrapPort = bootstrap.address().port;
     return {
         bootstrapPort,
         createNode: () =>

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared dispute assertions exercised by owning mapped test declarations
 import type { ForkId } from "@/types/types";
 import { addressesEqual } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -134,31 +135,30 @@ export class AssertDisputeActions<
         peerIndices: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        await Promise.all(
-            options.peerIndices.map((peerIndex) =>
-                waitFor(
-                    async () =>
-                        (await this.harness
+        // Assert the fork each peer recorded when its wait passed. A peer that
+        // leaves right after the reduction (its exit turn) stops its state
+        // manager, which drops the record; a second read would see null.
+        const completedForkIds = await Promise.all(
+            options.peerIndices.map(async (peerIndex) => {
+                let completedForkId: ForkId | null = null;
+                await waitFor(
+                    async () => {
+                        completedForkId = await this.harness
                             .control(this.harness.getPeer(peerIndex))
                             .query.getCompletedReductionForkId(
                                 options.sourceForkId
                             )
-                            .request()) !== null,
+                            .request();
+                        return completedForkId !== null;
+                    },
                     options.timeoutMs ??
                         this.harness.event.protocolEventTimeoutMs({
                             withFirstBlockGrace: true
                         }),
                     50
-                )
-            )
-        );
-        const completedForkIds = await Promise.all(
-            options.peerIndices.map((peerIndex) =>
-                this.harness
-                    .control(this.harness.getPeer(peerIndex))
-                    .query.getCompletedReductionForkId(options.sourceForkId)
-                    .request()
-            )
+                );
+                return completedForkId;
+            })
         );
         const expectedForkIds =
             options.reducedForkId !== undefined

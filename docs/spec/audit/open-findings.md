@@ -586,6 +586,30 @@ copies (the executor admission latch, the consumer creation and disposal promise
 mechanism covers them. Needs its own plan; no behavior change is intended, so the existing lifecycle
 tests are the regression suite.
 
+<a id="find-join-2-ek5dww"></a>
+
+### FIND-JOIN-2-EK5DWW
+
+**Defect:** _Open (2026-10-15, engineer: deferred)._ Concurrent first joins (and top-ups) to one channel are not coordinated: each joiner collects and submits on its own, so every join that lands first refuses the others' in-flight submissions (`ErrorJoinChannelConfirmationNotThresholdSigned`), and each refused joiner collects again and pays gas for another submission. [`ChannelJoinService.runJoin`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md) and `runTopUp` mitigate it with the recursive retry, capped at the channel's maximum participant count ([`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)), so the joins still land within the retry cap (snapshot-move refusals share it), but with N concurrent joiners the last one can need up to N collections and N funded submissions, most of them refused.
+
+**Proposed direction:** Coordinate concurrent join attempts in `JoinChannelService` (for example, joiners learn of each other's in-flight joins through the countersignature requests and sequence or combine their collections), so fewer joins race on chain and fewer refused submissions burn gas. Deferred by Luka on 2026-10-15; the recursive retry stays the current mitigation.
+
+<a id="find-bqm-2-4b5b7q"></a>
+
+### FIND-BQM-2-4B5B7Q
+
+**Defect:** _Open (2026-10-15, engineer: deferred)._ A confirmation of a block the node already stored can still get its honest sender blacklisted. [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) runs the network-source eligibility gate (`resolveSourceEligibility`; on `ABSENT`, `spectateService.sync` from the sender, then `disconnectAndBlacklistPeerByEvmAddress` when the cached eligibility is still not `ELIGIBLE`) before the stored-block check (`isPastBlock` / `isBlockStored`), and it judges eligibility by current membership, not by the block's own participant set. [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) requires this order ("Apply this gate to stored duplicates too"), so the code conforms and the gap is in the requirement. Scenario: Alice leaves with block N; Bob gets N from Charlie and commits it, so the off-chain eligibility published after N ([`BlockCommitService`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md), `publishOffChainEligibility`) excludes Alice; Alice posts the exit snapshot and Bob observes it, so the on-chain eligibility excludes her too; Alice's own late copy of N then reaches Bob, resolves `ABSENT`, and Bob syncs from Alice and blacklists her, although N is already stored and her signature on it was valid. Luka judges it highly theoretical: posting the snapshot and observing it both take time, so N is normally gossiped from Alice first.
+
+**Proposed direction:** Settle a confirmation of an already-stored block before the eligibility gate (a cheap hash lookup), or judge eligibility against the block's own participant set; either way amend [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) first. Deferred by Luka on 2026-10-15.
+
+<a id="find-runtime-2-4b0d0q"></a>
+
+### FIND-RUNTIME-2-4B0D0Q
+
+**Defect:** _Open (2026-10-15, engineer: deferred — design first)._ Runtime disposal is not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
+
+**Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
+
 <a id="def-1-92ntag"></a>
 
 ### DEF-1-92NTAG
@@ -1754,11 +1778,11 @@ exempt input must restore a canonical check at that boundary.
 and TypeScript acceptance for every input. Engineer decision (2026-10-15): that parity rule is
 narrowed to the identity, commitment, storage, emission, posted-calldata, and
 client-decoded-chain-data boundary recorded in
-[`REQ-DATA-1-1KNRQS`](../specification/protocol-model/data-types.md#req-data-1-1knrqs).
+[`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../specification/protocol-model/data-types.md#req-data-1-1knrqs).
 Signature-bound and transient proof inputs are exempt for the reasons in the finding. On that
 boundary the 2026-10-12 and 2026-10-14 resolutions close this finding; reopen it if an exempt
 input crosses the boundary. The same pass amended the decoding clause of
-[`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) to this
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) to this
 boundary, so no normative statement requires identical acceptance of exempt envelopes.
 
 <a id="find-gasest-2-94yfz6"></a>

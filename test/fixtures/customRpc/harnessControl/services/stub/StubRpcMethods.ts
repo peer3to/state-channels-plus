@@ -1384,8 +1384,33 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public recordCollectAndJoinEntries(): boolean {
+        this.service.recordCollectAndJoinEntries();
+        return true;
+    }
+    public getCollectAndJoinEntered(): number {
+        return this.service.getCollectAndJoinEntered();
+    }
+
     public holdJoinRetryEligibilityRead(): boolean {
         this.service.holdJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public holdJoinCollectionResult(): boolean {
+        this.service.holdJoinCollectionResult();
+        return true;
+    }
+    public getJoinCollectionResultEntered(): number {
+        return this.service.getJoinCollectionResultEntered();
+    }
+    /**
+     * Abort the runtime after this request answers, then release the held
+     * join collection result into the disposed runtime; the teardown waits
+     * for the recorded top-up to settle.
+     */
+    public abortReleasingJoinCollectionResult(): boolean {
+        this.service.abortReleasingJoinCollectionResult();
         return true;
     }
     public getJoinRetryEligibilityReadEntered(): number {
@@ -1393,6 +1418,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
     public releaseJoinRetryEligibilityRead(): boolean {
         this.service.releaseJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public holdJoinRetryDecision(): boolean {
+        this.service.holdJoinRetryDecision();
+        return true;
+    }
+    public getJoinRetryDecisionRefusals(): (string | null)[] {
+        return this.service.getJoinRetryDecisionRefusals();
+    }
+    public releaseJoinRetryDecision(): boolean {
+        this.service.releaseJoinRetryDecision();
         return true;
     }
 
@@ -3424,6 +3461,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Releases the submissions held so far and keeps holding later ones. */
     public releaseOneMembershipSubmission(): number {
         return this.service.releaseOneMembershipSubmission();
+    }
+
+    /**
+     * Abort the runtime after this request answers, then release the held
+     * submissions into the disposed runtime; the teardown waits for their outcome.
+     */
+    public abortReleasingMembershipSubmission(): boolean {
+        this.service.abortReleasingMembershipSubmission();
+        return true;
     }
 
     public holdQueueProbe(): boolean {
