@@ -1,26 +1,7 @@
 const DHT = require("hyperdht");
-const { randomInt } = require("node:crypto");
-// The bootstrapper's DHT id derives from the port it was created with, so it
-// must bind exactly that port: on a fallback port peers reject its id and no
-// announce is stored. Retry on a fresh ephemeral-range port instead.
-async function startBootstrapper(host) {
-    for (let attempt = 1; ; attempt++) {
-        const bootstrap = DHT.bootstrapper(randomInt(49152, 65536), host, {
-            host,
-            anyPort: false
-        });
-        try {
-            await bootstrap.ready();
-            return bootstrap;
-        } catch (error) {
-            // destroy() rethrows the bind error of the failed ready().
-            await bootstrap.destroy({ force: true }).catch(() => {});
-            if (error.code !== "EADDRINUSE" || attempt >= 20) throw error;
-        }
-    }
-}
+const { startDhtBootstrapper } = require("../../../../test/utils/nodeInfra");
 async function createNetwork() {
-    const bootstrap = await startBootstrapper("127.0.0.1");
+    const bootstrap = await startDhtBootstrapper("127.0.0.1");
     const address = bootstrap.address();
     return {
         node: () =>

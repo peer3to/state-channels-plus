@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: shared distributed test-transport fixture exercised by developer tooling tests
-import { getFreePort } from "../../utils/nodeInfra";
+import { startDhtBootstrapper } from "../../utils/nodeInfra";
 import net from "net";
 
 const {
@@ -26,53 +26,26 @@ export type LocalDhtNetwork = {
     close: () => Promise<void>;
 };
 
-const BOOTSTRAP_BIND_ATTEMPTS = 20;
-
-type DhtBootstrapper = {
-    ready(): Promise<void>;
-    destroy(options: { force: boolean }): Promise<void>;
-};
-
 export async function createLocalDhtNetwork(
     options: LocalDhtNetworkOptions = {}
 ): Promise<LocalDhtNetwork> {
-    const anyPort = options.anyPort ?? true;
-    let port = options.preferredPort ?? (await getFreePort());
-    for (let attempt = 1; ; attempt += 1) {
-        // The bootstrapper's DHT id derives from the port it was created
-        // with, so it must bind exactly that port: on a fallback port its
-        // id would not match its address, peers would reject it, and no
-        // announce would be stored. The probed port is free for TCP only;
-        // another process can hold it as UDP, so retry on a fresh port.
-        const bootstrap: DhtBootstrapper = DHT.bootstrapper(port, "127.0.0.1", {
-            host: "127.0.0.1",
-            anyPort: false
-        });
-        try {
-            await bootstrap.ready();
-        } catch (error) {
-            // destroy() rethrows the bind error of the failed ready().
-            await bootstrap.destroy({ force: true }).catch(() => undefined);
-            const inUse =
-                (error as NodeJS.ErrnoException).code === "EADDRINUSE";
-            if (!inUse || !anyPort || attempt >= BOOTSTRAP_BIND_ATTEMPTS)
-                throw error;
-            port = await getFreePort();
-            continue;
-        }
-        const bootstrapPort = port;
-        return {
-            bootstrapPort,
-            createNode: () =>
-                new DHT({
-                    host: "127.0.0.1",
-                    ephemeral: false,
-                    firewalled: false,
-                    bootstrap: [`127.0.0.1:${String(bootstrapPort)}`]
-                }),
-            close: () => bootstrap.destroy({ force: true })
-        };
-    }
+    // without anyPort a taken preferred port fails at once
+    const bootstrap = await startDhtBootstrapper("127.0.0.1", {
+        port: options.preferredPort,
+        attempts: options.anyPort === false ? 1 : undefined
+    });
+    const bootstrapPort = bootstrap.address().port;
+    return {
+        bootstrapPort,
+        createNode: () =>
+            new DHT({
+                host: "127.0.0.1",
+                ephemeral: false,
+                firewalled: false,
+                bootstrap: [`127.0.0.1:${String(bootstrapPort)}`]
+            }),
+        close: () => bootstrap.destroy({ force: true })
+    };
 }
 
 export async function createSocketPair(): Promise<{

@@ -1047,6 +1047,12 @@ describe("discovery runtime port", function () {
         await exitPromise;
         await h.event.waitUntilLeftChannel(leaver.index);
         await h.event.waitUntilDisposed(leaver.index);
+        // the leaver's disposal adopts the outer disposal as in-flight work,
+        // so its failure arrives later, only as an unhandled rejection
+        await TestSession.expectFirstDetachedError({
+            includes: "injected outer disposal failure",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
         await TestSession.settleDetached({
             expectedErrorIncludes: "injected outer disposal failure"
         });
