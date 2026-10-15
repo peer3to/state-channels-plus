@@ -69,12 +69,15 @@ full gate).
 
 ## Test timing inputs — 2026-10-15
 
-Engineer decision (Luka, 2026-10-15, PR #551): raise the harness defaults by 4 s,
-`MIN_TEST_TIME_CONFIG.evidenceTime` 6 → 10 and `INBOUND_GAP_TIME_CONFIG.evidenceTime` 4 → 8 in
-`test/harness/core/testTimeConfig.ts`, so an honest auditor's kill under farm load lands inside the kill period
-([`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)). The values stay magic numbers like every timing
-input; the production value is still undecided. Per-test overrides are unchanged. This is a protocol input, not a
-wait budget; no oracle changed.
+Engineer decision (Luka, 2026-10-15, PR #551): raise the test evidence windows by a few seconds;
+implemented as the harness defaults `MIN_TEST_TIME_CONFIG.evidenceTime` 6 → 10 and
+`INBOUND_GAP_TIME_CONFIG.evidenceTime` 4 → 8 in `test/harness/core/testTimeConfig.ts`, so an honest auditor's kill
+under farm load lands inside the kill period ([`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)). The
+values stay magic numbers like every timing input; the production value is still undecided.
+
+Decision (daiagi, 2026-10-15, PR #551): per-test overrides keep their values; each is sized for its own staged timing,
+and several are deliberately short so the window expires (for example `runKillSentAfterKillPeriod`). This is a
+protocol input, not a wait budget; no oracle changed.
 
 ## Test timing inputs — 2026-10-14
 
