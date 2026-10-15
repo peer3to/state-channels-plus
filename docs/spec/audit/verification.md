@@ -69,12 +69,12 @@ full gate).
 
 ## Test timing inputs — 2026-10-15
 
-Below the honest-kill floor: [`REQ-TIME-6-HGWWY9` (evidenceTime covers an honest kill)](../specification/protocol-model/time.md#req-time-6-hgwwy9) puts
-`evidenceTime` at no less than 10 s on any chain, while the harness defaults `MIN_TEST_TIME_CONFIG.evidenceTime` (6 s)
-and `INBOUND_GAP_TIME_CONFIG.evidenceTime` (4 s) in `test/harness/core/testTimeConfig.ts` are below it. Kill tests that
-use them rely on the disputer or a fast auditor; an honest kill missing the kill period under farm load can show up as a
-flake ([`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)). Not changed here: raising them is an
-engineer decision.
+Kill margin: the harness defaults `MIN_TEST_TIME_CONFIG.evidenceTime` (6 s) and
+`INBOUND_GAP_TIME_CONFIG.evidenceTime` (4 s) in `test/harness/core/testTimeConfig.ts` are below the
+measured honest kill pipeline (about 12 s under load). Kill tests that use them rely on the disputer
+or a fast auditor; an honest kill missing the kill period under farm load can show up as a flake
+([`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)). Not changed here: raising them is
+an engineer decision.
 
 ## Test timing inputs — 2026-10-14
 

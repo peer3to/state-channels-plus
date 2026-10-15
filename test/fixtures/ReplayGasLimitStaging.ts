@@ -93,6 +93,7 @@ export async function killWithScaledEstimate(
     replayGas: bigint;
     slashed: string[];
     spammer: string;
+    blockReadFailures: number;
 }> {
     const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
     const recorded = await h.rpcStub.recordDisputeFraudProofApplies(
@@ -110,7 +111,11 @@ export async function killWithScaledEstimate(
         estimates: await estimates.estimates(),
         replayGas: await h.channelManager.getStateTransitionReplayGas(),
         slashed: await h.query.onChainSlashedParticipants(),
-        spammer: spammer.address
+        spammer: spammer.address,
+        blockReadFailures: await h
+            .control(killer)
+            .stub.getReplayGasBlockReadFailures()
+            .request()
     };
 }
 

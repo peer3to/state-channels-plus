@@ -6,7 +6,6 @@ import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamo
 import { StateChannelManagerInterface } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { config } from "@/utils/config";
-import { minEvidenceTime } from "@/types";
 import type { Address } from "@/types/types";
 import { routedFacetArtifacts } from "@/utils/routedFacets";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -19,9 +18,6 @@ const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 // Mirrors DEFAULT_MAX_CHANNEL_PARTICIPANTS in StateChannelManagerProxy: the
 // deployer picks the value, the chain stores it, and clients read it back.
 export const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
-// Mirrors DEFAULT_EVIDENCE_TIME in StateChannelManagerProxy: the proxy uses it
-// for a zero evidenceTime.
-const DEFAULT_EVIDENCE_TIME = 30;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
 const NONCE_GAP_RETRY_DELAY_MS = 10;
 const NONCE_GAP_MAX_RETRIES = 500;
@@ -187,9 +183,6 @@ export type TimeConfig = {
     agreementTime?: number;
     chainFallbackTime?: number;
     evidenceTime?: number;
-    // the target chain's block time in seconds; when given, deploy refuses an
-    // evidenceTime too short for an honest kill to land
-    blockTime?: number;
 };
 
 export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
@@ -199,21 +192,6 @@ export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
         chainFallbackTime: overrides?.chainFallbackTime ?? 0,
         evidenceTime: overrides?.evidenceTime ?? 0
     };
-}
-
-// throws when a target block time is given and evidenceTime (0 = the
-// proxy's default) is too short for an honest kill to land
-function assertEvidenceTimeCoversKill(overrides?: TimeConfig): void {
-    const blockTime = overrides?.blockTime;
-    if (blockTime === undefined) return;
-    if (!Number.isFinite(blockTime) || blockTime < 0)
-        throw new Error(`blockTime ${blockTime} is not a block time`);
-    const evidenceTime = overrides?.evidenceTime || DEFAULT_EVIDENCE_TIME;
-    const minimumEvidenceTime = minEvidenceTime(blockTime);
-    if (evidenceTime < minimumEvidenceTime)
-        throw new Error(
-            `evidenceTime ${evidenceTime}s is below ${minimumEvidenceTime}s, the least in which an honest kill lands with ${blockTime}s blocks`
-        );
 }
 
 export type DeployFullStackParams = {
@@ -241,10 +219,9 @@ export async function deploy(
     // timeConfig/gas-limit state.
     existingFacetAddresses?: string[]
 ): Promise<{ address: string; contract: StateChannelManagerInterface }> {
-    assertEvidenceTimeCoversKill(timeConfigOverrides);
-    const timeConfig = getTimeConfig(timeConfigOverrides);
     const facetAddresses =
         existingFacetAddresses ?? (await deployFacets(signer));
+    const timeConfig = getTimeConfig(timeConfigOverrides);
     const { address } = await deployArtifact(
         StateChannelManagerProxyArtifact,
         signer,
@@ -284,7 +261,6 @@ export async function deployFullStack(
         maxChannelParticipants,
         facetAddresses
     } = params;
-    assertEvidenceTimeCoversKill(timeConfig);
 
     const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
         args: stateMachineArgs

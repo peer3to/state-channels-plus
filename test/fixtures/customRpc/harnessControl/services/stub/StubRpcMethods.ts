@@ -2593,6 +2593,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.stateProofBuildCount;
     }
 
+    public getReplayGasBlockReadFailures(): number {
+        return this.service.replayGasBlockReadFailures;
+    }
+
     /**
      * Reject the next latest-block read made by the dispute manager's gas
      * limit (`replayGasLimit`); every other read of the shared provider passes.
@@ -2609,6 +2613,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             (...args: Parameters<typeof getBlock>) => {
                 if (!failed && new Error().stack?.includes("replayGasLimit")) {
                     failed = true;
+                    this.service.replayGasBlockReadFailures += 1;
                     return Promise.reject(
                         new Error("stubbed block read failure")
                     );

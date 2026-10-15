@@ -32,6 +32,7 @@ describe("Unit: evidence submission when the dispute window opens", function () 
             await h.rpcStub.holdReductionRace(peer.index);
         }
         const recorder = await h.rpcStub.recordEvidenceComparisons(0);
+        const stateProofBuilds = await h.rpcStub.countStateProofBuilds(0);
         await h.control(h.getPeer(2)).dispute.setForceExit(true).request();
         const initial = await h.tamper.postTamperedDispute(2, () => {}, {
             markMalicious: false
@@ -44,6 +45,8 @@ describe("Unit: evidence submission when the dispute window opens", function () 
         expect(audits[0]).to.include({ outcome: "resolved", answer: true });
         // the own dispute carries the peer's state above the initial genesis claim
         expect(own.input.stateProof.milestones.length).to.be.greaterThan(0);
+        // the proof built during the audit served the comparison and the upload
+        expect(await stateProofBuilds.count()).to.equal(1);
     });
 
     it("U128: the initial dispute already represents the peer's state; a later lower-state dispute is still audited, and the peer submits nothing", async function () {

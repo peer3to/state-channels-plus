@@ -2636,12 +2636,19 @@ describe("Unit: DisputeManager", function () {
         });
 
         it("a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
-            const { applies, estimates, replayGas, slashed, spammer } =
-                await killWithScaledEstimate(
-                    TestSession.getHarness(),
-                    { numerator: 1, denominator: 1 },
-                    { failBlockRead: true }
-                );
+            const {
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                spammer,
+                blockReadFailures
+            } = await killWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 },
+                { failBlockRead: true }
+            );
+            expect(blockReadFailures).to.equal(1);
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(
                 String(BigInt(estimates[0].answer) + replayGas)

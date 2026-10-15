@@ -22,7 +22,7 @@ replacement.
 
 ## Tests
 
-- `U127: the initial dispute names a state below the peer's view -> the first audit finds more evidence and the peer's own dispute lands at once`: REQ-DISPUTE-PIPE-6-6FZB9M.T3.P1, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P41
+- `U127: the initial dispute names a state below the peer's view -> the first audit finds more evidence and the peer's own dispute lands at once`: REQ-DISPUTE-PIPE-6-6FZB9M.T3.P1, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P41, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P25
 - `U128: the initial dispute already represents the peer's state; a later lower-state dispute is still audited, and the peer submits nothing`: REQ-DISPUTE-PIPE-6-6FZB9M.T3.P2, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P42
 - `U129: the initial dispute is invalid -> the auditor's kill and its own dispute go in one multicall, kill first, carrying the killed submitter's slash, and land without another valid dispute`: REQ-DISPUTE-PIPE-6-6FZB9M.T3.P3, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P43
 - `an auditor audits an invalid dispute -> the state proof it built during the audit serves the kill and dispute: one build, and the multicall lands`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P22

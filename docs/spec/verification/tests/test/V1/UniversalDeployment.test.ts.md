@@ -22,8 +22,7 @@ declarations and those views are routed facet selectors, so that one test also d
 halves of the merged binding answering on a real deployment. The consumer-facet half deploys the
 production proxy via `deploy`, parses a proxy error, a direct facet error, and a routed
 `joinChannel` facet error through the returned combined binding, and asserts the constructor's zero-means-default timing sentinels
-(`getAllTimes` → 15/5/30/30, gas limit 3,000,000), a custom dispute-execution gas limit, the `evidenceTime` sizing check against a target block time
-(refused before any transaction below the minimum, deployed at it, unchecked without a block time), and
+(`getAllTimes` → 15/5/30/30, gas limit 3,000,000), a custom dispute-execution gas limit, and
 that `open` against a non-contract consumer facet address reverts. Channel protocol flows
 (open/join/dispute semantics) are out of scope; the suite verifies deployment wiring and mirror
 replication only, so no single Exercises component is named.
@@ -36,11 +35,5 @@ replication only, so no single Exercises component is named.
 - `ignores stale overwrite events and deduplicates on-chain slashes`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P1, UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P2, REQ-MIRROR-2-E9F3TM.T1.P1, UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P6, UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P7
 - `deploys with consumer facet`: none
 - `deploys with a custom dispute execution gas limit`: none
-- `12 s blocks with the default 30 s evidenceTime -> deploy throws before sending a transaction`: REQ-TIME-6-HGWWY9.T1.P1
-- `10 s blocks with the default 30 s evidenceTime, exactly the minimum -> deploys`: REQ-TIME-6-HGWWY9.T1.P2
-- `6 s blocks with a 21 s evidenceTime, one below the minimum -> deploy throws`: REQ-TIME-6-HGWWY9.T1.P3
-- `no block time with a 4 s evidenceTime -> deploys unchecked`: REQ-TIME-6-HGWWY9.T1.P4
-- `deployFullStack with 12 s blocks and the default 30 s evidenceTime -> throws before sending a transaction`: REQ-TIME-6-HGWWY9.T1.P5
-- `a NaN block time -> deploy throws before sending a transaction`: REQ-TIME-6-HGWWY9.T1.P6
 - `parses proxy and facet custom errors through the returned binding`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P7, REQ-CONTRACT-ARCH-1-9W5390.T1.P7
 - `fails with invalid consumer facet`: none

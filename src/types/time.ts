@@ -16,16 +16,6 @@ export function firstBlockGrace(
     return blockHeight === 0 ? timeConfig.evidenceTime : 0;
 }
 
-// seconds an honest peer needs under load from a dispute event to a sent kill
-// (audit, its own dispute, gas estimate)
-const DISPUTE_KILL_PIPELINE_SECONDS: Timestamp = 10;
-
-// least evidenceTime in which an honest kill lands: the kill pipeline plus two
-// blocks of inclusion
-export function minEvidenceTime(averageBlockTime: Timestamp): Timestamp {
-    return DISPUTE_KILL_PIPELINE_SECONDS + 2 * averageBlockTime;
-}
-
 // full window a writer gets before it can be timed out at `blockHeight`
 export function timeoutWaitTime(
     timeConfig: TimeConfig,
