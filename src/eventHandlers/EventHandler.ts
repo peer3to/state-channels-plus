@@ -701,6 +701,17 @@ export class EventHandler {
             `Dispute audit start ${formattedHash}`,
             LoggerUtils.getDisputeDeadlineMetadata(deadlines)
         );
+        // our dispute's proof builds while the audit runs: the kill or the
+        // evidence comparison after the verdict reuses it; a failed build
+        // resolves undefined and the dispute builds its own
+        const latestStateProof = this.storage.disputes.didIDispute(forkId)
+            ? undefined
+            : this.stateManager.agreementManager
+                  .buildStateProof(
+                      forkId,
+                      this.storage.blocks.getLatestBlockHeight(forkId)
+                  )
+                  .catch(() => undefined);
         const isValid =
             await this.stateManager.disputeValidationService.validateDispute(
                 dispute,
@@ -743,7 +754,8 @@ export class EventHandler {
                 await this.stateManager.disputeManager.killDispute(dispute);
             else
                 await this.stateManager.disputeManager.dispute(forkId, {
-                    kill: dispute
+                    kill: dispute,
+                    latestStateProof
                 });
             return;
         }
@@ -761,7 +773,8 @@ export class EventHandler {
         const canConstructMoreEvidence =
             await this.stateManager.disputeManager.shouldAddOwnEvidence(
                 forkId,
-                dispute
+                dispute,
+                latestStateProof
             );
         if (canConstructMoreEvidence) {
             this.logger.info(
@@ -773,7 +786,9 @@ export class EventHandler {
             // through and schedule from the commitment handled here. If this
             // call uploads a fresh commitment, its event can reschedule the
             // reduction with the later window end.
-            await this.stateManager.disputeManager.dispute(forkId);
+            await this.stateManager.disputeManager.dispute(forkId, {
+                latestStateProof
+            });
         }
 
         this.stateManager.reductionManager.schedule(

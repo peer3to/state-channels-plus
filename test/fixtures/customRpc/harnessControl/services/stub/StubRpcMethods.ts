@@ -2559,6 +2559,71 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.suppressedDisputeKillCount;
     }
 
+    /**
+     * Record-only: count this peer's full state-proof builds (finalized-only
+     * reads are not counted). `failFirst` rejects the first counted build.
+     */
+    public stubCountStateProofBuilds(options: { failFirst: boolean }): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("stateProofBuilds"))
+            this.service.stubOriginals.set(
+                "stateProofBuilds",
+                agreementManager.buildStateProof.bind(agreementManager)
+            );
+        const build = this.service.stubOriginals.get(
+            "stateProofBuilds"
+        ) as typeof agreementManager.buildStateProof;
+        this.service.stateProofBuildCount = 0;
+        agreementManager.buildStateProof = async (
+            forkId,
+            blockHeight,
+            buildOptions
+        ) => {
+            if (buildOptions?.finalizedOnly)
+                return build(forkId, blockHeight, buildOptions);
+            this.service.stateProofBuildCount += 1;
+            if (options.failFirst && this.service.stateProofBuildCount === 1)
+                throw new Error("stubbed state proof build failure");
+            return build(forkId, blockHeight, buildOptions);
+        };
+        return true;
+    }
+
+    public getStateProofBuildCount(): number {
+        return this.service.stateProofBuildCount;
+    }
+
+    public getReplayGasBlockReadFailures(): number {
+        return this.service.replayGasBlockReadFailures;
+    }
+
+    /**
+     * Reject the next latest-block read made by the dispute manager's gas
+     * limit (`replayGasLimit`); every other read of the shared provider passes.
+     */
+    public stubFailReplayGasBlockRead(): boolean {
+        const provider =
+            this.service.sm.stateChannelManagerContract.runner?.provider;
+        if (!provider) throw new Error("the manager contract has no provider");
+        const getBlock = provider.getBlock.bind(provider);
+        let failed = false;
+        Reflect.set(
+            provider,
+            "getBlock",
+            (...args: Parameters<typeof getBlock>) => {
+                if (!failed && new Error().stack?.includes("replayGasLimit")) {
+                    failed = true;
+                    this.service.replayGasBlockReadFailures += 1;
+                    return Promise.reject(
+                        new Error("stubbed block read failure")
+                    );
+                }
+                return getBlock(...args);
+            }
+        );
+        return true;
+    }
+
     public restoreDisputeKill(): boolean {
         const original = this.service.stubOriginals.get("disputeKill");
         if (original === undefined) return false;
@@ -2647,8 +2712,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 return originalConstruct(requestedForkId, options);
             }
             state.inside = true;
-            if (options) state.uploadConstructions += 1;
-            return originalConstruct(requestedForkId, options).finally(() => {
+            // only the upload passes expectedSlashes; the evidence comparison does not
+            if (options?.expectedSlashes) state.uploadConstructions += 1;
+            // the audit's proof is dropped -> construction builds its own and parks
+            return originalConstruct(
+                requestedForkId,
+                options && { ...options, latestStateProof: undefined }
+            ).finally(() => {
                 state.inside = false;
             });
         };

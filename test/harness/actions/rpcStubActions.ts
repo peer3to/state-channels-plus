@@ -1319,6 +1319,16 @@ export class RpcStubActions<
         };
     }
 
+    /** Count peer `peerIndex`'s full state-proof builds; `failFirst` fails the first. */
+    async countStateProofBuilds(
+        peerIndex: number,
+        options: { failFirst: boolean } = { failFirst: false }
+    ): Promise<{ count: () => Promise<number> }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubCountStateProofBuilds(options).request();
+        return { count: () => ctl().getStateProofBuildCount().request() };
+    }
+
     private async disputeMutexWaiterCount(peerIndex: number): Promise<number> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))

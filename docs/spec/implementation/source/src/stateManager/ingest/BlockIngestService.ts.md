@@ -10,6 +10,7 @@
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
+- [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-BLOCK-INGEST-1-JV64AS
 
@@ -29,3 +30,13 @@ Origin-aware execution
 - [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P10` — A tail with forged resulting snapshot fails replay; the audit stores the wrapped transition counter at its last-milestone index, stores neither failed block nor snapshot, and a second audit rejects again with one counter
 - [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P11` — A failing tail block also appearing as earlier milestone support still fails actual tail replay at its last-milestone position; the wrapped counter is stored and the failed block is absent
 - [x] `UNIT-TEST-BLOCK-INGEST-1-JV64AS.P12` — An injected internal failure on the second dispute-replay tail block throws without a counter; the failed block is absent while the earlier successful block and its full state remain stored
+
+## UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8
+
+Carried inbound run storage
+
+- Setup: Commit blocks whose carried inbound run is anchored at the store's tip, at an unheld hash, and at a held hash that sits above a gap
+- Oracle: Every carried run is persisted; the store tip moves with the snapshot only when the run's anchor is the store's tip
+
+- [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P1` — a committed block's carried inbound run, anchored at the previous snapshot's inbound hash, moves the store tip with the snapshot when that hash is the store's tip
+- [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P2` — a committed block's carried inbound run whose anchor is not the store's tip, first unheld and then held above a gap, is persisted each time and sets no tip

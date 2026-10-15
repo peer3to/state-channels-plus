@@ -190,10 +190,213 @@ describe("MessageBlockStorage - inbound blocks", () => {
         });
     });
 
+    describe("tip tracking", () => {
+        // a linked chain at heights 0..3, built from the zero hash
+        let chain: MessageBlockStruct[];
+        let chainHashes: Hash[];
+
+        beforeEach(() => {
+            chain = factory.linkedMessageBlocks(4, ethers.ZeroHash);
+            chainHashes = chain.map((block) =>
+                hash(Codec.encode(block, Type.MessageBlock))
+            );
+        });
+
+        it("a higher block above an unheld gap moves the tip, and a read from that tip reports the missing block", () => {
+            storage.store(chain[0]);
+            storage.store(chain[1]);
+
+            // block 2 never arrives, so block 3 sits above a gap
+            storage.store(chain[3]);
+
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[3]);
+            expect(storage.getLatestBlockHeight()).to.equal(3);
+            const run = storage.tryGetMessageBlocksInRange();
+            expect(run.blocks).to.deep.equal([chain[3]]);
+            expect(run.missingBlockHash).to.equal(chainHashes[2]);
+        });
+
+        it("an equal-height block replaces the tip", () => {
+            storage.store(chain[0]);
+            const competingBlock = factory.messageBlock({
+                previousBlockHash: ethers.ZeroHash,
+                blockHeight: 0n,
+                // a different block at the same height
+                timestamp: BigInt(chain[0].timestamp) + 1n
+            });
+
+            const competingHash = storage.store(competingBlock);
+
+            expect(competingHash).to.not.equal(chainHashes[0]);
+            expect(storage.getLatestBlockHash()).to.equal(competingHash);
+        });
+
+        it("a justPersist store of a higher block leaves the tip", () => {
+            storage.store(chain[0]);
+
+            storage.store(chain[1], { justPersist: true });
+
+            expect(storage.getMessageBlock(chainHashes[1])).to.deep.equal(
+                chain[1]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[0]);
+            expect(storage.getLatestBlockHeight()).to.equal(0);
+        });
+
+        it("a verified run that extends the tip moves the tip to its last block", () => {
+            storage.store(chain[0]);
+
+            storage.storeVerifiedRun([chain[1], chain[2]], chainHashes[0]);
+
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[2]);
+            expect(storage.getLatestBlockHeight()).to.equal(2);
+        });
+
+        it("a verified run that does not extend the tip is persisted and leaves the tip", () => {
+            storage.store(chain[0]);
+            storage.store(chain[1]);
+
+            // its predecessor (block 2) is neither the tip nor held
+            storage.storeVerifiedRun([chain[3]], chainHashes[2]);
+
+            expect(storage.getMessageBlock(chainHashes[3])).to.deep.equal(
+                chain[3]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+
+        it("a verified run whose predecessor is held but is not the tip is persisted and leaves the tip", () => {
+            storage.store(chain[0]);
+            // block 1 is held, but the tip stays at block 0
+            storage.store(chain[1], { justPersist: true });
+
+            storage.storeVerifiedRun([chain[2]], chainHashes[1]);
+
+            expect(storage.getMessageBlock(chainHashes[2])).to.deep.equal(
+                chain[2]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[0]);
+            expect(storage.getLatestBlockHeight()).to.equal(0);
+        });
+
+        it("a verified run from the zero hash into an empty store moves the tip to its last block", () => {
+            storage.storeVerifiedRun([chain[0], chain[1]], ethers.ZeroHash);
+
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+
+        it("a verified run with a nonzero predecessor into an empty store is persisted and sets no tip", () => {
+            // its predecessor (block 1) is not held, and no tip is held
+            storage.storeVerifiedRun([chain[2], chain[3]], chainHashes[1]);
+
+            expect(storage.getMessageBlock(chainHashes[2])).to.deep.equal(
+                chain[2]
+            );
+            expect(storage.getMessageBlock(chainHashes[3])).to.deep.equal(
+                chain[3]
+            );
+            expect(storage.getLatestBlockHash()).to.be.undefined;
+            expect(storage.getLatestBlockHeight()).to.be.undefined;
+        });
+
+        it("a block whose predecessor is not held, stored into an empty store, becomes the tip", () => {
+            // blocks 0 and 1 never arrive
+            storage.store(chain[2]);
+
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[2]);
+            expect(storage.getLatestBlockHeight()).to.equal(2);
+            const run = storage.tryGetMessageBlocksInRange();
+            expect(run.blocks).to.deep.equal([chain[2]]);
+            expect(run.missingBlockHash).to.equal(chainHashes[1]);
+        });
+
+        it("a verified run from the zero hash while a tip is held is persisted and leaves the tip", () => {
+            // block 0 is not held, so the tip at block 1 sits above a gap
+            storage.store(chain[1]);
+
+            storage.storeVerifiedRun(
+                [chain[0], chain[1], chain[2]],
+                ethers.ZeroHash
+            );
+
+            expect(storage.getMessageBlock(chainHashes[0])).to.deep.equal(
+                chain[0]
+            );
+            expect(storage.getMessageBlock(chainHashes[2])).to.deep.equal(
+                chain[2]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+
+        it("a later direct store of a held block keeps its first content and moves the tip", () => {
+            storage.store(chain[0]);
+            // held as proof material only, so the tip stays at block 0
+            storage.store(chain[1], { justPersist: true });
+            // a later delivery of the same hash with different content
+            const laterContent = factory.messageBlock({
+                previousBlockHash: chainHashes[0],
+                blockHeight: 1n,
+                timestamp: BigInt(chain[1].timestamp) + 1n
+            });
+
+            const storedHash = storage.store(laterContent, {
+                hash: chainHashes[1]
+            });
+
+            expect(storedHash).to.equal(chainHashes[1]);
+            expect(storage.getMessageBlock(chainHashes[1])).to.deep.equal(
+                chain[1]
+            );
+            expect(storage.getLatestBlockHash()).to.equal(chainHashes[1]);
+            expect(storage.getLatestBlockHeight()).to.equal(1);
+        });
+
+        describe("headNotBehind", () => {
+            it("an empty store returns the snapshot head at height 0", () => {
+                const snapshotHash = factory.hash();
+
+                const head = storage.headNotBehind(snapshotHash, 0);
+
+                expect(head).to.deep.equal({ hash: snapshotHash, height: 0 });
+            });
+
+            it("a tip below the snapshot returns the snapshot head", () => {
+                storage.store(chain[0]);
+                storage.store(chain[1]);
+
+                const head = storage.headNotBehind(chainHashes[2], 2);
+
+                expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+            });
+
+            it("a tip at the snapshot height with a different hash returns the tip", () => {
+                storage.store(chain[0]);
+                storage.store(chain[1]);
+                const snapshotHash = factory.hash();
+
+                const head = storage.headNotBehind(snapshotHash, 1);
+
+                expect(head).to.deep.equal({ hash: chainHashes[1], height: 1 });
+            });
+
+            it("a tip above the snapshot returns the tip", () => {
+                storage.store(chain[0]);
+                storage.store(chain[1]);
+                storage.store(chain[2]);
+
+                const head = storage.headNotBehind(chainHashes[1], 1);
+
+                expect(head).to.deep.equal({ hash: chainHashes[2], height: 2 });
+            });
+        });
+    });
+
     describe("latest block helpers", () => {
         it("returns undefined when storage is empty", () => {
             expect(storage.getLatestMessageBlock()).to.be.undefined;
-            expect(storage.getLatestMessageBlocks()).to.deep.equal([]);
             expect(storage.getLatestBlockHeight()).to.be.undefined;
         });
 
@@ -224,9 +427,6 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(latest).to.deep.equal(highestBlock);
             expect(storage.getLatestBlockHash()).to.equal(highestHash);
             expect(storage.getLatestBlockHeight()).to.equal(5);
-
-            const latestTwo = storage.getLatestMessageBlocks(2);
-            expect(latestTwo).to.deep.equal([highestBlock, middleBlock]);
         });
     });
 });

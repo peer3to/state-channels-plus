@@ -59,6 +59,8 @@ drives, so they stay unassigned.
 - `should update max height when adding block with higher height`: REQ-BLKSTORE-3-S9V2KC.T1.P1, UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P1
 - `should not update max height when adding block with lower height`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4
 - `should handle multiple forks independently`: none
+- `a fork without blocks -> latest -1 (its genesis), next 0`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P5
+- `blocks at 0 and 5 -> latest 5, next 6`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P6
 - `should update max height when removing the highest block`: none
 - `should not update max height when removing non-highest block`: none
 - `should handle removing the only block in a fork`: none
