@@ -40,5 +40,7 @@ replication only, so no single Exercises component is named.
 - `10 s blocks with the default 30 s evidenceTime, exactly the minimum -> deploys`: REQ-TIME-6-HGWWY9.T1.P2
 - `6 s blocks with a 21 s evidenceTime, one below the minimum -> deploy throws`: REQ-TIME-6-HGWWY9.T1.P3
 - `no block time with a 4 s evidenceTime -> deploys unchecked`: REQ-TIME-6-HGWWY9.T1.P4
+- `deployFullStack with 12 s blocks and the default 30 s evidenceTime -> throws before sending a transaction`: REQ-TIME-6-HGWWY9.T1.P5
+- `a NaN block time -> deploy throws before sending a transaction`: REQ-TIME-6-HGWWY9.T1.P6
 - `parses proxy and facet custom errors through the returned binding`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P7, REQ-CONTRACT-ARCH-1-9W5390.T1.P7
 - `fails with invalid consumer facet`: none

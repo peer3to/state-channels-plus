@@ -230,7 +230,7 @@ const SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME = 12;
  */
 export async function stageSpamAfterOwnDispute(
     h: MathPeerTestHarness,
-    options: { holdKill: boolean }
+    options: { holdKill: boolean; countStateProofBuilds?: boolean }
 ) {
     // The spam upload must land inside peer 0's evidence window, after the
     // three peers' full commit handling, one estimate and send, and one 1 s
@@ -266,8 +266,11 @@ export async function stageSpamAfterOwnDispute(
     const kills = await h.rpcStub.recordDisputeFraudProofApplies(killer.index, {
         hold: options.holdKill
     });
+    const stateProofBuilds = options.countStateProofBuilds
+        ? await h.rpcStub.countStateProofBuilds(killer.index)
+        : undefined;
     const { dispute: spam } = await submitSpam();
-    return { forkId, killer, spammer, own, spam, kills };
+    return { forkId, killer, spammer, own, spam, kills, stateProofBuilds };
 }
 
 /**

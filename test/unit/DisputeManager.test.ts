@@ -665,6 +665,15 @@ describe("Unit: DisputeManager", function () {
             expect(r.verified).to.equal(true);
         });
 
+        it("a failed latest-state proof build → constructDispute builds its own, and the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({ count: 2 });
+            const r = await constructDisputeWithLatestStateProof(h, 0, null);
+            expect(r.builds).to.equal(1);
+            expect(r.verified).to.equal(true);
+        });
+
         it("a participant has a stored fraud proof → constructDispute bundles it + marks them slashed", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
@@ -2600,6 +2609,39 @@ describe("Unit: DisputeManager", function () {
                     numerator: 1,
                     denominator: 1
                 });
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit", async function () {
+            const h = TestSession.getHarness();
+            const { applies, estimates, replayGas } =
+                // above both node configs' block gas limits (30M, 1B)
+                await killWithScaledEstimate(h, {
+                    numerator: 100_000,
+                    denominator: 1
+                });
+            const { gasLimit } =
+                (await h.channelManager.runner!.provider!.getBlock("latest"))!;
+            expect(BigInt(estimates[0].answer) + replayGas > gasLimit).to.equal(
+                true
+            );
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(gasLimit));
+        });
+
+        it("a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
+            const { applies, estimates, replayGas, slashed, spammer } =
+                await killWithScaledEstimate(
+                    TestSession.getHarness(),
+                    { numerator: 1, denominator: 1 },
+                    { failBlockRead: true }
+                );
             expect(applies.length).to.equal(1);
             expect(applies[0].gasLimit).to.equal(
                 String(BigInt(estimates[0].answer) + replayGas)

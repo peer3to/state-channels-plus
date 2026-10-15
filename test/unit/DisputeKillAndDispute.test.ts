@@ -9,6 +9,7 @@ import {
     stripDisputeReasons,
     waitUntilAuditsSettled
 } from "@test/fixtures/DisputeAuditStaging";
+import { stageSpamAfterOwnDispute } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     killAndDisputeSpamDispute,
     killSpamDispute,
@@ -127,6 +128,53 @@ describe("Unit: kill then dispute", function () {
         expect(
             await h.channelManager.getWindowCommitments(h.channelId, forkId)
         ).to.include(hash(Codec.encode(replacement, Type.Dispute)));
+    });
+
+    it("an auditor audits an invalid dispute -> the state proof it built during the audit serves the kill and dispute: one build, and the multicall lands", async function () {
+        const h = TestSession.getHarness();
+        const { submissions, stateProofBuilds, waitUntilSettled } =
+            await stageReasonlessInitialDispute(h, {
+                hold: false,
+                countStateProofBuilds: { failFirst: false }
+            });
+        await waitUntilSettled();
+        const [submission] = await submissions.submissions();
+        expect(submission.method).to.equal("multicallBestEffortLast");
+        expect(submission.revert).to.equal(null);
+        expect(await stateProofBuilds!.count()).to.equal(1);
+    });
+
+    it("the state proof built during the audit fails -> the kill and dispute builds its own: two builds, and the multicall lands", async function () {
+        const h = TestSession.getHarness();
+        const { submissions, stateProofBuilds, waitUntilSettled } =
+            await stageReasonlessInitialDispute(h, {
+                hold: false,
+                countStateProofBuilds: { failFirst: true }
+            });
+        await waitUntilSettled();
+        const [submission] = await submissions.submissions();
+        expect(submission.method).to.equal("multicallBestEffortLast");
+        expect(submission.revert).to.equal(null);
+        expect(await stateProofBuilds!.count()).to.equal(2);
+    });
+
+    it("a peer that already disputed audits an invalid dispute -> no state proof is built, and its kill goes out alone and lands", async function () {
+        const h = TestSession.getHarness();
+        const { kills, stateProofBuilds } = await stageSpamAfterOwnDispute(h, {
+            holdKill: false,
+            countStateProofBuilds: true
+        });
+        await waitFor(
+            async () =>
+                (await kills.applies()).some(
+                    (apply) => apply.waited || apply.error !== null
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        const applies = await kills.applies();
+        expect(applies).to.have.length(1);
+        expect(applies[0].error).to.equal(null);
+        expect(await stateProofBuilds!.count()).to.equal(0);
     });
 
     it("U129: the replacement counts the killed submitter's slash -> held before the multicall that slash is not established and an auditor counters it; the multicall lands the kill first and the replacement passes", async function () {

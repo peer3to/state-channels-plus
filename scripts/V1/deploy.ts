@@ -201,6 +201,21 @@ export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
     };
 }
 
+// throws when a target block time is given and evidenceTime (0 = the
+// proxy's default) is too short for an honest kill to land
+function assertEvidenceTimeCoversKill(overrides?: TimeConfig): void {
+    const blockTime = overrides?.blockTime;
+    if (blockTime === undefined) return;
+    if (!Number.isFinite(blockTime) || blockTime < 0)
+        throw new Error(`blockTime ${blockTime} is not a block time`);
+    const evidenceTime = overrides?.evidenceTime || DEFAULT_EVIDENCE_TIME;
+    const minimumEvidenceTime = minEvidenceTime(blockTime);
+    if (evidenceTime < minimumEvidenceTime)
+        throw new Error(
+            `evidenceTime ${evidenceTime}s is below ${minimumEvidenceTime}s, the least in which an honest kill lands with ${blockTime}s blocks`
+        );
+}
+
 export type DeployFullStackParams = {
     stateMachineArtifact: Artifact;
     consumerFacetArtifact: Artifact;
@@ -226,16 +241,8 @@ export async function deploy(
     // timeConfig/gas-limit state.
     existingFacetAddresses?: string[]
 ): Promise<{ address: string; contract: StateChannelManagerInterface }> {
+    assertEvidenceTimeCoversKill(timeConfigOverrides);
     const timeConfig = getTimeConfig(timeConfigOverrides);
-    const blockTime = timeConfigOverrides?.blockTime;
-    if (blockTime !== undefined) {
-        const evidenceTime = timeConfig.evidenceTime || DEFAULT_EVIDENCE_TIME;
-        const minimumEvidenceTime = minEvidenceTime(blockTime);
-        if (evidenceTime < minimumEvidenceTime)
-            throw new Error(
-                `evidenceTime ${evidenceTime}s is below ${minimumEvidenceTime}s, the least in which an honest kill lands with ${blockTime}s blocks`
-            );
-    }
     const facetAddresses =
         existingFacetAddresses ?? (await deployFacets(signer));
     const { address } = await deployArtifact(
@@ -277,6 +284,7 @@ export async function deployFullStack(
         maxChannelParticipants,
         facetAddresses
     } = params;
+    assertEvidenceTimeCoversKill(timeConfig);
 
     const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
         args: stateMachineArgs

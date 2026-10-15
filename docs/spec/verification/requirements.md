@@ -951,7 +951,7 @@ Specification cases tested: 0/15.
 Specification cases tested: 3/3.
 
 [`REQ-TIME-6-HGWWY9` (evidenceTime covers an honest kill)](../specification/protocol-model/time.md#req-time-6-hgwwy9)
-Specification cases tested: 4/4.
+Specification cases tested: 6/7. Untested: T2.P1.
 
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
 Specification cases tested: 7/7.

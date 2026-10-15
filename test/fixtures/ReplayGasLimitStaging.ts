@@ -85,7 +85,8 @@ export async function disputeWithScaledEstimate(
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
-    scale: EstimateScale
+    scale: EstimateScale,
+    options: { failBlockRead?: boolean } = {}
 ): Promise<{
     applies: RecordedFraudProofApply[];
     estimates: RecordedGasEstimate[];
@@ -101,6 +102,8 @@ export async function killWithScaledEstimate(
         methods: ["applyDisputeFraudProofs"],
         ...scale
     });
+    if (options.failBlockRead)
+        await h.control(killer).stub.stubFailReplayGasBlockRead().request();
     await killStoredDisputeOnHost(h, killer.index);
     return {
         applies: await recorded.applies(),

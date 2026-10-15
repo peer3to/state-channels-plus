@@ -4,6 +4,7 @@ import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamo
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 import {
     deploy,
+    deployFullStack,
     deployLocalDiamond,
     deployArtifact
 } from "../../scripts/V1/deploy";
@@ -293,6 +294,37 @@ describe("Universal Deployment", () => {
                 { evidenceTime: 4 }
             );
             expect((await diamondContract.getAllTimes())[3]).to.equal(4n);
+        });
+
+        it("deployFullStack with 12 s blocks and the default 30 s evidenceTime -> throws before sending a transaction", async () => {
+            const nonceBefore = await deployer.getNonce();
+            await expect(
+                deployFullStack(deployer, {
+                    stateMachineArtifact: MathStateMachineArtifact,
+                    consumerFacetArtifact: MathConsumerFacetArtifact,
+                    stateMachineArgs: [
+                        5000000,
+                        DEFAULT_MAX_CHANNEL_PARTICIPANTS
+                    ],
+                    timeConfig: { blockTime: 12 }
+                })
+            ).to.be.rejectedWith("evidenceTime 30s is below 34s");
+            expect(await deployer.getNonce()).to.equal(nonceBefore);
+        });
+
+        it("a NaN block time -> deploy throws before sending a transaction", async () => {
+            const nonceBefore = await deployer.getNonce();
+            await expect(
+                deploy(
+                    mathStateMachineAddress,
+                    consumerFacetAddress,
+                    deployer,
+                    {
+                        blockTime: NaN
+                    }
+                )
+            ).to.be.rejectedWith("blockTime NaN is not a block time");
+            expect(await deployer.getNonce()).to.equal(nonceBefore);
         });
 
         it("parses proxy and facet custom errors through the returned binding", async () => {

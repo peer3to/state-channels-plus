@@ -455,9 +455,14 @@ class DisputeManager {
     /** Whether this node adds its own dispute to the window of `forkId`. */
     public shouldAddOwnEvidence(
         forkId: ForkId,
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        latestStateProof?: Promise<BuiltStateProof | undefined>
     ): Promise<boolean> {
-        return this.disputeBuilder.canAddEvidence(forkId, dispute);
+        return this.disputeBuilder.canAddEvidence(
+            forkId,
+            dispute,
+            latestStateProof
+        );
     }
 
     /** After a kill or a committed reduced result of `forkId`. */

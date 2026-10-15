@@ -120,8 +120,9 @@ export async function readForceJoinBounds(
             countingStartsAt: join?.countingStartsAt ?? null,
             countingFromHeight: join?.countingFromHeight ?? null,
             disputeStarted: join?.isDisputeStarted ?? false,
-            latestBlockHeight:
-                sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1,
+            latestBlockHeight: sm.storage.blocks.getLatestBlockHeight(
+                sm.forkId
+            ),
             timeConfig: { ...sm.timeConfig },
             participantCount: (await sm.diamondStateMachine.getParticipants())
                 .length

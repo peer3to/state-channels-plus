@@ -3,23 +3,27 @@ import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 
 /**
  * Peer `peerIndex` builds its state proof `blocksBehind` blocks below its
- * latest block and constructs its dispute with it. Returns how many proofs
- * construction built itself and whether the chain accepts the dispute.
+ * latest block (null: a build that failed) and constructs its dispute with
+ * it. Returns how many proofs construction built itself and whether the
+ * chain accepts the dispute.
  */
 export async function constructDisputeWithLatestStateProof(
     h: MathPeerTestHarness,
     peerIndex: number,
-    blocksBehind: number
+    blocksBehind: number | null
 ) {
     return h.execOnHost(
         h.getPeer(peerIndex),
         async (sm, args) => {
             const forkId = sm.forkId;
-            const latestStateProof = sm.agreementManager.buildStateProof(
-                forkId,
-                sm.storage.blocks.getLatestBlockHeight(forkId) -
-                    args.blocksBehind
-            );
+            const latestStateProof =
+                args.blocksBehind === null
+                    ? Promise.resolve(undefined)
+                    : sm.agreementManager.buildStateProof(
+                          forkId,
+                          sm.storage.blocks.getLatestBlockHeight(forkId) -
+                              args.blocksBehind
+                      );
             await latestStateProof;
             // record-only: count the builds construction makes itself
             const agreementManager = sm.agreementManager;

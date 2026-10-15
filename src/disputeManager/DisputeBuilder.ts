@@ -103,7 +103,8 @@ export default class DisputeBuilder {
      */
     public canAddEvidence(
         forkId: ForkId,
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        latestStateProof?: Promise<BuiltStateProof | undefined>
     ): Promise<boolean> {
         if (this.storage.disputes.didIDispute(forkId))
             return Promise.resolve(false);
@@ -114,12 +115,14 @@ export default class DisputeBuilder {
                 if (this.evidenceChecks.get(forkId) === check)
                     this.evidenceChecks.delete(forkId);
             };
-            check = this.hasMoreEvidence(forkId, dispute).catch(
-                (error: unknown) => {
-                    forget();
-                    throw error;
-                }
-            );
+            check = this.hasMoreEvidence(
+                forkId,
+                dispute,
+                latestStateProof
+            ).catch((error: unknown) => {
+                forget();
+                throw error;
+            });
             this.evidenceChecks.set(forkId, check);
         }
         return check;
@@ -217,9 +220,12 @@ export default class DisputeBuilder {
 
     private async hasMoreEvidence(
         forkId: ForkId,
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        latestStateProof?: Promise<BuiltStateProof | undefined>
     ): Promise<boolean> {
-        const ourDispute = (await this.constructDispute(forkId)).dispute;
+        const ourDispute = (
+            await this.constructDispute(forkId, { latestStateProof })
+        ).dispute;
 
         this.logger.verbose("Constructed our own dispute for comparison", {
             ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
