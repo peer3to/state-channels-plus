@@ -7,11 +7,20 @@ import {
     NamedContractBytecode
 } from "@/utils/contractSize";
 import { artifacts } from "hardhat";
-import { BuildInfo, CompilerOutputContract } from "hardhat/types";
+import { BuildInfo, CompilerOutputContract, DebugFile } from "hardhat/types";
+import { parseFullyQualifiedName } from "hardhat/utils/contract-names";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+// `<source name>:<contract name>`, as Hardhat names an artifact.
+export type FullyQualifiedName = string;
+// A source unit name as solc records it in compiler metadata.
+export type SourceName = string;
+// Absolute path of a Hardhat build-info file.
+type BuildInfoPath = string;
 
 export type ContractSizeExemption = {
-    fullyQualifiedName: string;
+    fullyQualifiedName: FullyQualifiedName;
     reason: string;
 };
 
@@ -41,11 +50,11 @@ export const contractSizeExemptions: readonly ContractSizeExemption[] = [
 ];
 
 export type CompiledContract = {
-    fullyQualifiedName: string;
+    fullyQualifiedName: FullyQualifiedName;
     artifact: NamedContractBytecode;
     // Every source file the compiler read for this contract, imports
     // included, as recorded in its metadata.
-    sourceNames: readonly string[];
+    sourceNames: readonly SourceName[];
 };
 
 export type ClassifiedArtifact = CompiledContract & {
@@ -145,42 +154,79 @@ export function productionConsoleImports(
 }
 
 // Fully qualified contract name -> the source names in that contract's
-// compiler metadata. The build-info files are parsed once per run.
+// compiler metadata. Artifacts do not change during a run, so the
+// build-info files are parsed once per run.
 let sourceNamesByContractOnce:
-    | Promise<Map<string, readonly string[]>>
+    | Promise<Map<FullyQualifiedName, readonly SourceName[]>>
     | undefined;
 
-function compiledSourceNames(): Promise<Map<string, readonly string[]>> {
+function compiledSourceNames(): Promise<
+    Map<FullyQualifiedName, readonly SourceName[]>
+> {
     sourceNamesByContractOnce ??= readCompiledSourceNames();
     return sourceNamesByContractOnce;
 }
 
+// After an incremental compile an older build-info can still hold a stale
+// copy of a recompiled contract. Read each contract only from the build-info
+// its own artifact's debug file points to, as artifacts.getBuildInfo does,
+// and parse each build-info file once.
 async function readCompiledSourceNames(): Promise<
-    Map<string, readonly string[]>
+    Map<FullyQualifiedName, readonly SourceName[]>
 > {
-    const sourceNamesByContract = new Map<string, readonly string[]>();
-    for (const buildInfoPath of await artifacts.getBuildInfoPaths()) {
+    const contractsByBuildInfo = new Map<
+        BuildInfoPath,
+        FullyQualifiedName[]
+    >();
+    for (const fullyQualifiedName of await artifacts.getAllFullyQualifiedNames()) {
+        const buildInfoPath = await buildInfoPathOf(fullyQualifiedName);
+        const contracts = contractsByBuildInfo.get(buildInfoPath) ?? [];
+        contracts.push(fullyQualifiedName);
+        contractsByBuildInfo.set(buildInfoPath, contracts);
+    }
+
+    const sourceNamesByContract = new Map<
+        FullyQualifiedName,
+        readonly SourceName[]
+    >();
+    for (const [buildInfoPath, contracts] of contractsByBuildInfo) {
         const buildInfo = JSON.parse(
             await readFile(buildInfoPath, "utf8")
         ) as BuildInfo;
-        for (const [sourceName, contracts] of Object.entries(
-            buildInfo.output.contracts
-        )) {
-            for (const [contractName, output] of Object.entries(contracts)) {
-                // Hardhat's CompilerOutputContract does not type the
-                // metadata output that hardhat.config selects by default.
-                const { metadata } = output as CompilerOutputContract & {
-                    metadata: string;
-                };
-                const { sources } = JSON.parse(metadata) as {
-                    sources: Record<string, unknown>;
-                };
-                sourceNamesByContract.set(
-                    `${sourceName}:${contractName}`,
-                    Object.keys(sources)
+        for (const fullyQualifiedName of contracts) {
+            const { sourceName, contractName } =
+                parseFullyQualifiedName(fullyQualifiedName);
+            const output =
+                buildInfo.output.contracts[sourceName]?.[contractName];
+            if (!output) {
+                throw new Error(
+                    `${buildInfoPath} has no output for ${fullyQualifiedName}`
                 );
             }
+            // Hardhat's CompilerOutputContract does not type the
+            // metadata output that hardhat.config selects by default.
+            const { metadata } = output as CompilerOutputContract & {
+                metadata: string;
+            };
+            const { sources } = JSON.parse(metadata) as {
+                sources: Record<SourceName, unknown>;
+            };
+            sourceNamesByContract.set(fullyQualifiedName, Object.keys(sources));
         }
     }
     return sourceNamesByContract;
+}
+
+// The build-info file an artifact was compiled into, read from the artifact's
+// Hardhat debug file the same way artifacts.getBuildInfo resolves it.
+async function buildInfoPathOf(
+    fullyQualifiedName: FullyQualifiedName
+): Promise<BuildInfoPath> {
+    const debugFilePath = artifacts
+        .formArtifactPathFromFullyQualifiedName(fullyQualifiedName)
+        .replace(/\.json$/, ".dbg.json");
+    const { buildInfo } = JSON.parse(
+        await readFile(debugFilePath, "utf8")
+    ) as DebugFile;
+    return path.resolve(path.dirname(debugFilePath), buildInfo);
 }
