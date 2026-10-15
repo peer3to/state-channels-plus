@@ -5,6 +5,7 @@ import {
     recordSnapshotPostWaitResults
 } from "@test/fixtures/BotConnectionFixesStaging";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
@@ -14,6 +15,8 @@ const LEAVER_INDEX = 1;
 const SETTLEMENT_MARGIN_SECONDS = 2;
 /** The leave service's log line for an expected chain refusal of an exit post. */
 const EXIT_POST_REFUSED = "The chain refused the exit snapshot post";
+/** The error of an adopt-only post failed by `failFirstAdoptionPost`. */
+const ADOPTION_POST_FAILURE = "injected adoption post send failure";
 
 /**
  * Two founders leave and never author their exits; no peer runs the
@@ -114,6 +117,30 @@ async function stageTwoLeaverSelfRemovals(h: MathPeerTestHarness) {
     }
 }
 
+/** Waits until the window's kill period has ended. */
+async function waitOutKillPeriod(
+    h: MathPeerTestHarness,
+    forkId: ForkId
+): Promise<void> {
+    const windowCreatedAt = Number(
+        await h.channelManager.getDisputeWindowCreationTimestamp(
+            h.channelId,
+            forkId
+        )
+    );
+    await h.event.waitUntilTimestamp(
+        windowCreatedAt +
+            h.event.evidencePeriodWaitMs(SETTLEMENT_MARGIN_SECONDS) / 1000
+    );
+    const { killPeriodEnd } = await h.channelManager.isKillPeriodExpired(
+        h.channelId,
+        forkId
+    );
+    await h.event.waitUntilTimestamp(
+        Number(killPeriodEnd) + SETTLEMENT_MARGIN_SECONDS
+    );
+}
+
 /**
  * Waits out the window's kill period: founder 0 reduces, and its adopt-only
  * post of the reduced fork is prepared and parked at its send.
@@ -125,23 +152,7 @@ async function reduceWithAdoptionParked(
         adoption: { waitUntilHeld: () => Promise<number> };
     }
 ): Promise<void> {
-    const windowCreatedAt = Number(
-        await h.channelManager.getDisputeWindowCreationTimestamp(
-            h.channelId,
-            staged.forkId
-        )
-    );
-    await h.event.waitUntilTimestamp(
-        windowCreatedAt +
-            h.event.evidencePeriodWaitMs(SETTLEMENT_MARGIN_SECONDS) / 1000
-    );
-    const { killPeriodEnd } = await h.channelManager.isKillPeriodExpired(
-        h.channelId,
-        staged.forkId
-    );
-    await h.event.waitUntilTimestamp(
-        Number(killPeriodEnd) + SETTLEMENT_MARGIN_SECONDS
-    );
+    await waitOutKillPeriod(h, staged.forkId);
     await staged.adoption.waitUntilHeld();
     expect(
         (await h.channelManager.getReducedResult(h.channelId, staged.forkId))
@@ -216,6 +227,108 @@ export async function stageAdoptionClosingBeforeLeavePost(
             ...staged,
             /** Sends the parked exit post; its revert name, or null when it was mined. */
             releaseLeaverPost: leaverSend.release,
+            restore
+        };
+    } catch (error) {
+        await restore();
+        throw error;
+    }
+}
+
+/**
+ * `stageTwoLeaverSelfRemovals`, but founder 1's reduce is held at its send,
+ * so at the end of the kill period it installs the reduced fork, which has no
+ * participant, and never reduces. Its install-time exit post finds no reduced
+ * result on chain and is parked after its no-op result. Founder 0's reduce
+ * then lands, and founder 1's commit check queues a post behind the parked
+ * one. Founder 0's adoption and its one retry both fail at their send with an
+ * error that is not a settled outcome, so founder 0 never closes the channel.
+ * The caller releases founder 1's post with `leaverPosts.releaseResults`,
+ * then founder 0's exit posts with `reducerPosts.releaseStarts`, then founder
+ * 1's held reduce with `leaverAttempts.release`, and calls `restore` in
+ * `finally`.
+ */
+export async function stageCommitCheckQueuedBehindLeaverPost(
+    h: MathPeerTestHarness
+) {
+    const staged = await stageTwoLeaverSelfRemovals(h);
+    const { reducer, leaver } = staged;
+    const reducerAttempts = await h.rpcStub.holdReductionAttempt(
+        reducer.index,
+        "attempt"
+    );
+    // replaces the shared step's attempt hold; `leaverAttempts.release`
+    // restores it
+    const leaverReduce = await h.rpcStub.holdReductionAttempt(
+        leaver.index,
+        "submit"
+    );
+    // the adoption fails at its send instead of parking there
+    await staged.adoption.release();
+    const adoptionFailure = await h.rpcStub.failFirstAdoptionPost(
+        reducer.index,
+        2
+    );
+    const restore = async () => {
+        await reducerAttempts.release();
+        await adoptionFailure.restore();
+        await staged.restore();
+    };
+    const adoptionPosts = async () =>
+        (await adoptionFailure.recorded()).filter(
+            (names) =>
+                names.length === 1 && names[0] === "updateStateSnapshotFork"
+        ).length;
+    try {
+        await staged.leaverPosts.holdResults();
+        await waitOutKillPeriod(h, staged.forkId);
+        await waitFor(
+            async () => (await leaverReduce.entered()) === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            await staged.leaverPosts.resultsWait(1),
+            "premise: the install-time post finds no reduced result"
+        ).to.deep.equal(["no-op"]);
+        await reducerAttempts.release();
+        await waitFor(
+            async () =>
+                (
+                    await h.channelManager.getReducedResult(
+                        h.channelId,
+                        staged.forkId
+                    )
+                ).reducedForkId !== ZeroHash,
+            h.event.protocolEventTimeoutMs()
+        );
+        // the commit check runs while the install-time post is parked
+        await waitFor(
+            () =>
+                h.execOnHost(
+                    leaver,
+                    (sm) => sm.leaveChannelService["isPostQueued"]
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        // the adoption and its retry fail before founder 1's post is released
+        await waitFor(
+            async () => (await adoptionPosts()) === 2,
+            h.event.protocolEventTimeoutMs()
+        );
+        // the failed retry is rethrown as a detached error
+        await TestSession.expectFirstDetachedError({
+            includes: ADOPTION_POST_FAILURE,
+            required: false
+        });
+        return {
+            ...staged,
+            /** Adopt-only posts founder 0 sent, all failed. */
+            adoptionPosts,
+            /** Host errors other than founder 0's failed adoption retry. */
+            unexpectedHostErrors: () =>
+                staged.hostErrors.filter(
+                    (error) => !error.includes(ADOPTION_POST_FAILURE)
+                ),
             restore
         };
     } catch (error) {

@@ -65,7 +65,14 @@ participant. In the first case founder 1's exit post closes the channel; the par
 oracles are its revert name, the recorded `adoptReducedFork-*` retries, the deleted chain snapshot, both
 `onLeftChannel` and `onAbort` counts and the host errors. In the second case founder 1's exit post is parked at its
 send, the adoption closes the channel and the post is then sent; its oracles are the post's revert name, the
-recorded post result, the leave logger's refusal entry, the host errors and its `onLeftChannel` count. The case where the leave awaits its leave turn also checks that the leaver starts no post of the
+recorded post result, the leave logger's refusal entry, the host errors and its `onLeftChannel` count. A third
+two-leaver case holds founder 1's reduce at its send instead, so founder 1 installs the reduced fork at the end of
+the kill period without reducing; its install-time exit post finds no reduced result and is parked after its
+no-op result. Founder 0's reduce then lands while that post is parked, founder 1's commit check queues a post, and
+founder 0's adoption and its one retry fail at their send. Once the parked post is released, its oracles are a
+second founder-1 post recorded as posted, the deleted chain snapshot and closed channel, the two failed adoption
+sends with one scheduled retry, both `onLeftChannel` and `onAbort` counts and no host error other than the failed
+retry. The case where the leave awaits its leave turn also checks that the leaver starts no post of the
 reduced state, which keeps the other founders. While a watchdog expiry is awaited the remaining participants keep authoring, so no idle writer
 is timed out.
 
@@ -91,6 +98,7 @@ is timed out.
 - `U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45
 - `U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a leaver's post closes the channel, the reducer's later adoption post of that fork is refused with RaceConditionGenesisTimestampNotAvailable and not retried, and each leaver leaves once with no abort`: REQ-LIF-10-QR8NQ9.T1.P31, UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P23
 - `U72: a leaver's exit post of a non-final reduction that leaves no participant, held at its send while the reducer's adoption post closes the channel, is refused with RaceConditionGenesisTimestampNotAvailable, logged as a chain refusal and not fatal, and the leaver leaves once`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P47
+- `U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a reduced result committed while the leaver's install-time post runs queues a post that the leaver's membership check sends after it, and that post closes the channel while the reducer's adoption and its retry fail; each leaver leaves once with no abort`: REQ-LIF-10-QR8NQ9.T1.P32, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P48
 - `U73: a latest-state request to a responder past its initial load that has not installed the chain's fork → refused for that fork, requester not blacklisted`: REQ-SYNC-1-T2589H.T2.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42
 - `U73: a latest-state request to a responder whose own fork is behind the chain-derived fork → served from the derived fork, neither side blacklisted`: REQ-SYNC-1-T2589H.T2.P2, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43
 - `RO2: seating a join during its deadline membership read prevents a stale dispute request`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P46, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P72

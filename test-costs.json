@@ -16807,6 +16807,12 @@
       "peakRssGb": 0.586,
       "measurementReason": null
     },
+    "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes exit settled by a posted snapshot U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a reduced result committed while the leaver's install-time post runs queues a post that the leaver's membership check sends after it, and that post closes the channel while the reducer's adoption and its retry fail; each leaver leaves once with no abort": {
+      "durationMs": 27668,
+      "avgCores": 0.386,
+      "peakRssGb": 0.584,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BotConnectionFixes.test.ts|Unit: bot-connection fixes force-join block bound grace U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it": {
       "durationMs": 31294,
       "avgCores": 1.077,

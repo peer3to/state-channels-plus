@@ -45,6 +45,7 @@ import { stageLoneLeaverSelfRemoval } from "@test/fixtures/LoneLeaverStaging";
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
 import {
     stageAdoptionClosingBeforeLeavePost,
+    stageCommitCheckQueuedBehindLeaverPost,
     stageLeavePostClosingBeforeAdoption
 } from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
@@ -944,6 +945,49 @@ describe("Unit: bot-connection fixes", function () {
                     h.event.getEventCallCount(leaver.index, "onLeftChannel")
                 ).to.equal(1);
                 expect(staged.hostErrors).to.deep.equal([]);
+            } finally {
+                await staged.restore();
+            }
+        });
+        it("U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a reduced result committed while the leaver's install-time post runs queues a post that the leaver's membership check sends after it, and that post closes the channel while the reducer's adoption and its retry fail; each leaver leaves once with no abort", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageCommitCheckQueuedBehindLeaverPost(h);
+            const { reducer, leaver } = staged;
+            try {
+                await staged.leaverPosts.releaseResults();
+                expect(await staged.leaverPosts.resultsWait(2)).to.deep.equal([
+                    "no-op",
+                    "posted"
+                ]);
+                expect(
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId
+                ).to.equal(ethers.ZeroHash);
+                expect(
+                    (await h.channelManager.isChannelOpen(h.channelId))[0]
+                ).to.equal(false);
+                // the reducer's own exit post runs after the close: it sends nothing
+                await staged.reducerPosts.releaseStarts();
+                const reducerResults = await staged.reducerPosts.resultsWait(1);
+                expect(reducerResults).to.deep.equal(
+                    reducerResults.map(() => "no-op")
+                );
+                // the leaver's held reduce is sent only after the close
+                await staged.leaverAttempts.release();
+                for (const peer of [reducer, leaver])
+                    await h.event.waitUntilLeftChannel(peer.index);
+                await TestSession.settleDetached();
+                expect(await staged.adoptionPosts()).to.equal(2);
+                expect(await staged.adoptionRetries()).to.equal(1);
+                for (const peer of [reducer, leaver]) {
+                    expect(
+                        h.event.getEventCallCount(peer.index, "onLeftChannel")
+                    ).to.equal(1);
+                    expect(
+                        h.event.getEventCallCount(peer.index, "onAbort")
+                    ).to.equal(0);
+                }
+                expect(staged.unexpectedHostErrors()).to.deep.equal([]);
             } finally {
                 await staged.restore();
             }

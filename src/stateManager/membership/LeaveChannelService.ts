@@ -239,9 +239,7 @@ export default class LeaveChannelService {
     private postSnapshot(): void {
         // the block finalized during a post can be the one that lands the
         // exit, and a leaver commits no later block to post again: it posts
-        // once more after this post, unless this post landed the exit. Only a
-        // committed exit block posts again here: a reduction that left no
-        // participant is posted again only when a later check runs
+        // once more after this post, unless this post landed the exit
         if (this.isPosting) {
             this.isPostQueued = true;
             return;
@@ -295,7 +293,12 @@ export default class LeaveChannelService {
                 );
             if (this.isPostQueued) {
                 this.isPostQueued = false;
-                if (!hasExitLanded) this.postLatestSnapshot();
+                if (!hasExitLanded) {
+                    this.postLatestSnapshot();
+                    // a reduction that left no participant posts from the
+                    // check, not from an exit block
+                    this.requestCheck();
+                }
             }
         }
     }
