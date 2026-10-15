@@ -1762,7 +1762,7 @@ reject exactly the same inputs; deferred to a later PR. Until then the exposure 
 **Defect:** _Open (2026-09-27), engineer decision recorded; revisit gas and estimation as one
 topic._ Fraud-proof replay sends
 ([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)
-`replayGasLimit`, [L452](../../../src/disputeManager/DisputeManager.ts#L452)) declare `gasLimit` =
+`replayGasLimit`) declare `gasLimit` =
 the signer estimate with its 50% headroom ([gas.ts](../implementation/source/src/utils/gas.ts.md))
 plus the manager's replay requirement `getStateTransitionReplayGas`
 ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
@@ -1783,7 +1783,8 @@ fit depends on the consumer's dispute budget.** With poker's 6.5M transition bud
 decision 2026-09-27, review 5 MO1) the requirement is about 7.3M and the declared limit about 24M,
 inside a 30M block; with the earlier 16M budget it was not, and any consumer whose transition budget
 exceeds roughly 9M has fraud proofs that a searching node refuses at submission, so that fraud stays
-unproven on-chain. (4) **Nothing caps the declared limit at the provider's block gas limit.** (5) **No
+unproven on-chain. (4) **Resolved (2026-10-15):** `DisputeManager.replayGasLimit` caps the declared limit at the latest
+block's gas limit; a failed block read leaves it uncapped. (5) **No
 send test** exercises a fraud-proof transaction with this rule against a searching node with a 30M
 block: block fit is shown by arithmetic, and the poker replay fixture only runs `eth_call`. History:
 review 3 (FR1 🔴, TO1) and review 4 (FR1 🔴, TO2) flagged the double count on searching estimators and
@@ -1801,20 +1802,19 @@ an estimator-model switch (`GAS_ESTIMATOR_MODEL`) and a rule that is exact on bo
 declared limit at the block gas limit, and add a fraud-proof send against a searching node with a
 30M block and the consumer's budgets (review 6 TO25), asserting inclusion, the correct verdict and
 the declared limit. Until then the residual above is accepted: cost and block fit, never a wrong
-verdict.
+verdict. (Cap: done 2026-10-15, see item 4.)
 
 <a id="find-dispute-5-mzpttc"></a>
 
 ### FIND-DISPUTE-5-MZPTTC
 
-**Defect:** _Open (2026-10-08)._ Under load, the honest audit-and-kill pipeline takes longer than
+**Defect:** _Open (2026-10-08); mitigated 2026-10-15, budget unconfirmed._ Under load, the honest audit-and-kill pipeline takes longer than
 `evidenceTime`, so an honest kill can miss the kill period and an invalid dispute can survive. **Measurement**
 (poker six-player gate on one shared Hardhat node, 1 s block interval, test time configuration
 `evidenceTime` 10 s and `agreementTime` 3 s): the window opened and all 6 runtimes received
 `DisputeCommitted` with no event lag. (1) **Audit**
 ([Stage 4](../specification/disputes/dispute-processing.md#stage-4--audit-auditor-role);
-[`EventHandler.handleDisputeCommitted`](../implementation/source/src/eventHandlers/EventHandler.ts.md)
-[L341](../../../src/eventHandlers/EventHandler.ts#L341) →
+[`EventHandler.handleDisputeCommitted`](../implementation/source/src/eventHandlers/EventHandler.ts.md) →
 [`DisputeValidationService.validateDispute`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
 [L68](../../../src/stateManager/dispute/DisputeValidationService.ts#L68)) took about 4 s. It is
 CPU-bound in each runtime's local EVM: the
@@ -1842,7 +1842,19 @@ the audit logs the time left in the evidence and kill periods at its start and w
 (Luka, 2026-10-08):** the kill stays atomic with the honest node's own dispute in one multicall; the
 node does not send its kill alone first to gain time.
 
-**Proposed direction:** Investigate, no direction selected: (a) **Audit cost.** Measure what
+**Mitigation (2026-10-15):** the auditor builds its own state proof while the audit runs
+(`EventHandler.handleDisputeCommitted`) and the kill-and-dispute or the evidence comparison reuses it
+at an unchanged height; both multicall estimates start together; the declared gas limit is capped at
+the block gas limit. `time.md` §3 gives non-normative sizing guidance for `evidenceTime`.
+**Residual:** nothing enforces that sizing, the pipeline budget has not been measured after this
+change, inclusion delay is unbounded, and the poker gate (`evidenceTime` 10 seconds on 1 second
+blocks) leaves little margin for poker's costlier audit; the SDK harness defaults were raised by 4
+seconds (Luka, 2026-10-15). **Decision (daiagi, 2026-10-15, PR #551 OO1, revised):** no normative
+`evidenceTime` floor or deploy-time check; this finding stays Open until a measurement after this
+change sizes the budget.
+
+**Proposed direction:** Remaining, no direction selected (sizing guidance for (d) now exists in
+`time.md` §3): (a) **Audit cost.** Measure what
 dominates the 4 s (state-transition replay, proof verification, repeated `setState`/`getState` in
 the local EVM); cache repeated work; run the cheap invalidity checks first so an invalid dispute
 reaches its kill sooner. (b) **Estimation cost.** Estimate the multicall locally on the local

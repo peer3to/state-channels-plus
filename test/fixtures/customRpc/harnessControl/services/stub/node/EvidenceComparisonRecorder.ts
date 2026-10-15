@@ -90,7 +90,11 @@ export class EvidenceComparisonRecorder {
         const loadInboundRun =
             eventSync.loadSynchronizedInboundRun.bind(eventSync);
 
-        disputeManager.shouldAddOwnEvidence = (forkId, dispute) => {
+        disputeManager.shouldAddOwnEvidence = (
+            forkId,
+            dispute,
+            latestStateProof
+        ) => {
             const recorded: RecordedEvidenceAudit = {
                 forkId,
                 outcome: "pending",
@@ -100,7 +104,9 @@ export class EvidenceComparisonRecorder {
             this.audits.push(recorded);
             this.lastAudit = { forkId, dispute };
             return this.auditContext
-                .run(true, () => shouldAddOwnEvidence(forkId, dispute))
+                .run(true, () =>
+                    shouldAddOwnEvidence(forkId, dispute, latestStateProof)
+                )
                 .then(
                     (answer) => {
                         recorded.outcome = "resolved";
@@ -120,7 +126,7 @@ export class EvidenceComparisonRecorder {
             if (!this.auditContext.getStore()) this.disputeBuilds++;
             return build(forkId, inputs, proof);
         };
-        builder["hasMoreEvidence"] = (forkId, dispute) => {
+        builder["hasMoreEvidence"] = (forkId, dispute, latestStateProof) => {
             const recorded: RecordedEvidenceComparison = {
                 forkId,
                 outcome: "pending",
@@ -139,7 +145,7 @@ export class EvidenceComparisonRecorder {
                       )
                     : fault === "unrecoverableInboundRun"
                       ? this.faultContext.run(true, () =>
-                            hasMoreEvidence(forkId, dispute)
+                            hasMoreEvidence(forkId, dispute, latestStateProof)
                         )
                       : fault === "hold"
                         ? this.held().then((release) => {
@@ -147,19 +153,25 @@ export class EvidenceComparisonRecorder {
                                   throw new EvidenceComparisonFaultError(
                                       EVIDENCE_COMPARISON_FAULT_MESSAGE
                                   );
-                              return hasMoreEvidence(forkId, dispute);
+                              return hasMoreEvidence(
+                                  forkId,
+                                  dispute,
+                                  latestStateProof
+                              );
                           })
                         : fault === "holdBuilt"
-                          ? hasMoreEvidence(forkId, dispute).then(
-                                async (answer) => {
-                                    if ((await this.held()) === "fail")
-                                        throw new EvidenceComparisonFaultError(
-                                            EVIDENCE_COMPARISON_FAULT_MESSAGE
-                                        );
-                                    return answer;
-                                }
-                            )
-                          : hasMoreEvidence(forkId, dispute);
+                          ? hasMoreEvidence(
+                                forkId,
+                                dispute,
+                                latestStateProof
+                            ).then(async (answer) => {
+                                if ((await this.held()) === "fail")
+                                    throw new EvidenceComparisonFaultError(
+                                        EVIDENCE_COMPARISON_FAULT_MESSAGE
+                                    );
+                                return answer;
+                            })
+                          : hasMoreEvidence(forkId, dispute, latestStateProof);
             return run.then(
                 (answer) => {
                     recorded.outcome = "resolved";

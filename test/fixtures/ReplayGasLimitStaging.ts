@@ -85,13 +85,15 @@ export async function disputeWithScaledEstimate(
  */
 export async function killWithScaledEstimate(
     h: MathPeerTestHarness,
-    scale: EstimateScale
+    scale: EstimateScale,
+    options: { failBlockRead?: boolean } = {}
 ): Promise<{
     applies: RecordedFraudProofApply[];
     estimates: RecordedGasEstimate[];
     replayGas: bigint;
     slashed: string[];
     spammer: string;
+    blockReadFailures: number;
 }> {
     const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
     const recorded = await h.rpcStub.recordDisputeFraudProofApplies(
@@ -101,13 +103,19 @@ export async function killWithScaledEstimate(
         methods: ["applyDisputeFraudProofs"],
         ...scale
     });
+    if (options.failBlockRead)
+        await h.control(killer).stub.stubFailReplayGasBlockRead().request();
     await killStoredDisputeOnHost(h, killer.index);
     return {
         applies: await recorded.applies(),
         estimates: await estimates.estimates(),
         replayGas: await h.channelManager.getStateTransitionReplayGas(),
         slashed: await h.query.onChainSlashedParticipants(),
-        spammer: spammer.address
+        spammer: spammer.address,
+        blockReadFailures: await h
+            .control(killer)
+            .stub.getReplayGasBlockReadFailures()
+            .request()
     };
 }
 

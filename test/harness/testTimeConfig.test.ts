@@ -14,7 +14,7 @@ describe("test time config", () => {
             p2pTime: 5,
             agreementTime: 3,
             chainFallbackTime: 3,
-            evidenceTime: 6
+            evidenceTime: 10
         });
     });
 
@@ -28,19 +28,19 @@ describe("test time config", () => {
 
     it("includes first-block grace only at height zero", () => {
         const config = resolveTestTimeConfig();
-        expect(participantTimeoutWaitMs(config, 0)).to.equal(18000);
+        expect(participantTimeoutWaitMs(config, 0)).to.equal(22000);
         expect(participantTimeoutWaitMs(config, 1)).to.equal(12000);
-        expect(evidencePeriodWaitMs(config)).to.equal(7000);
-        expect(protocolEventTimeoutMs(config)).to.equal(21000);
+        expect(evidencePeriodWaitMs(config)).to.equal(11000);
+        expect(protocolEventTimeoutMs(config)).to.equal(25000);
         expect(
             protocolEventTimeoutMs(config, {
                 withFirstBlockGrace: true
             })
-        ).to.equal(27000);
+        ).to.equal(35000);
         expect(
             protocolEventTimeoutMs(config, {
                 settlementMarginSeconds: 2
             })
-        ).to.equal(19000);
+        ).to.equal(23000);
     });
 });

@@ -338,9 +338,8 @@ export async function assertPinnedHeight(
     });
     const source = h.getPeer(0),
         requester = h.getPeer(2);
-    const height = await h.execOnHost(
-        source,
-        async (sm) => sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1
+    const height = await h.execOnHost(source, async (sm) =>
+        sm.storage.blocks.getLatestBlockHeight(sm.forkId)
     );
     if (offset <= 0) {
         const provedHeight = await h.execOnHost(

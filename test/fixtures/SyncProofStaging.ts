@@ -150,7 +150,7 @@ export async function constructProof(
             const forkId = sm.forkId;
             const height =
                 args.blockHeight ??
-                sm.storage.blocks.getNextBlockHeight(forkId) - 1;
+                sm.storage.blocks.getLatestBlockHeight(forkId);
             try {
                 const built = await am.buildStateProof(forkId, height);
                 const chain =
@@ -410,9 +410,9 @@ export async function applyPayloads(
                         outcomes.push({
                             accepted,
                             threw,
-                            head:
-                                sm.storage.blocks.getNextBlockHeight(a.forkId) -
-                                1
+                            head: sm.storage.blocks.getLatestBlockHeight(
+                                a.forkId
+                            )
                         });
                         stateWrites.push(writes);
                         replays.push(replayed);
@@ -453,7 +453,7 @@ export async function applyPayloads(
         const persisted = await h.execOnHost(
             requester,
             async (sm, a, { ethers }) => ({
-                head: sm.storage.blocks.getNextBlockHeight(a.forkId) - 1,
+                head: sm.storage.blocks.getLatestBlockHeight(a.forkId),
                 installedStateHash: ethers.keccak256(
                     await sm.diamondStateMachine.getState()
                 ),

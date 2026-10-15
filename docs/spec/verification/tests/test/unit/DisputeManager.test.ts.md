@@ -97,6 +97,9 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head`: none
 - `a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes`: none
 - `a peer behind the head → constructDispute builds a complete dispute over what it has`: none
+- `a latest-state proof at the latest height → constructDispute reuses it, builds none, and the chain accepts the dispute`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P12
+- `a latest-state proof one block behind → constructDispute builds its own, and the chain accepts the dispute`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P13
+- `a failed latest-state proof build → constructDispute builds its own, and the chain accepts the dispute`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P14
 - `a participant has a stored fraud proof → constructDispute bundles it + marks them slashed`: none
 - `latest block final by everyone → postedAuditingData false`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P9
 - `unfinalized inbound join at the head → postedAuditingData true (calldata needed)`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P6
@@ -149,6 +152,8 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `a dispute sends the multicall at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P14
 - `a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P15
 - `a kill with the real estimate lands at the estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P16
+- `a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P18
+- `a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P19
 - `a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P17
 - `the dispute and kill sends share one replay requirement read`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P10
 - `concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement`: UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9.P11
