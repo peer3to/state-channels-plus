@@ -24,6 +24,11 @@ while held, and that the release publishes the opening block.
 One inbound-run case loses a top-up's live inbound log and reverts the local diamond's next inbound
 application once. The recovery rejects with the local EVM revert after its first query.
 
+Two inbound-run cases lose live inbound logs and run the real synchronized load. One loses a
+single top-up's log after the peer already holds the run below it; the load queries the chain and
+the run becomes walkable. The other loses every inbound log from before the channel opens, so the
+peer holds no inbound tip; the load recovers the logs and the store tip becomes the recovered head.
+
 ## Tests
 
 - `drops subscription callbacks while stop is still draining scheduled work`: UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P3
@@ -34,7 +39,8 @@ application once. The recovery rejects with the local EVM revert after its first
 - `authoritative slash recovery rejects exhausted chain log queries`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P9
 - `joins concurrent calldata recovery onto one chain query`: none
 - `run already held → returned with no chain query`: none
-- `missed inbound log → recovered by query, the run becomes walkable`: none
+- `missed inbound log → recovered by query, the run becomes walkable`: REQ-MSGSTORE-1-6ME9D7.T2.P2
+- `logs recovered into an empty inbound store set its tip to the recovered head`: REQ-MSGSTORE-1-6ME9D7.T2.P1
 - `only the inbound log we do not hold is dispatched`: none
 - `the widening span stays inside the watermark and the chain`: none
 - `gap survives recovery → undefined, no throw`: none

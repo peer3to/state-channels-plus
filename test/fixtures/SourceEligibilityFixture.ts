@@ -53,6 +53,50 @@ export async function observeSourceEligibility(
     }
 }
 
+/**
+ * Push the chain's current snapshot into `peerIndex`'s membership and read
+ * `participant`'s cached eligibility. Also returns whether the snapshot itself
+ * lists `participant`, and the stored inbound range above the snapshot as the
+ * push sees it. `reset` clears the eligibility first, so only what the push
+ * observes counts.
+ */
+export async function publishChainSnapshotEligibility(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    participant: string,
+    options: { reset?: boolean } = {}
+) {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm, args) => {
+            const snapshot =
+                await sm.stateChannelManagerContract.getStateSnapshot(
+                    sm.channelId
+                );
+            const pending =
+                sm.storage.inboundMessages.tryGetMessageBlocksInRange({
+                    lowerBlockHash:
+                        snapshot.snapshotData.latestInboundMessageBlockHash
+                });
+            if (args.reset) sm.membershipService.resetEligibility();
+            sm.membershipService.publishOnChainSnapshot(snapshot);
+            return {
+                inSnapshot: snapshot.snapshotData.participants.some(
+                    (listed) =>
+                        String(listed).toLowerCase() ===
+                        args.participant.toLowerCase()
+                ),
+                linkedBlockCount: pending.blocks.length,
+                missingBlockHash: pending.missingBlockHash ?? null,
+                eligibility: sm.membershipService.getCachedSourceEligibility(
+                    args.participant
+                )
+            };
+        },
+        { participant, reset: options.reset ?? false }
+    );
+}
+
 export async function concurrentUnknownEligibility() {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 0);

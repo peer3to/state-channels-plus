@@ -15,6 +15,7 @@
 - [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../specification/security/data-availability.md#req-da-1-nvv85z)
+- [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN
 

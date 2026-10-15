@@ -31,7 +31,8 @@ import {
     missingInboundEligibility,
     eligibilityAppearsDuringRefresh,
     observeSourceEligibility,
-    observeSlashDuringRefresh
+    observeSlashDuringRefresh,
+    publishChainSnapshotEligibility
 } from "@test/fixtures/SourceEligibilityFixture";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -470,6 +471,39 @@ describe("Unit: MembershipService", function () {
         }
     });
 
+    it("a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const lagging = h.getPeer(2);
+        // exactly one inbound log is lost, so the next one still lands and the
+        // store tip moves above the hole
+        const dropped = await h.rpcStub.dropInboundMessageLogs(lagging.index, {
+            dropCount: 1
+        });
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(0).address,
+            observePeerIndices: [0, 1]
+        });
+        await dropped.waitUntilDropped();
+        // a new participant's JOIN lands above the hole
+        const { participant } = await h.join.forceInboundJoinWait();
+
+        const result = await publishChainSnapshotEligibility(
+            h,
+            lagging.index,
+            participant,
+            { reset: true }
+        );
+
+        // premise - the range from the tip down to the snapshot is truncated,
+        // and the snapshot itself does not list the new participant
+        expect(result.missingBlockHash).to.not.equal(null);
+        expect(result.linkedBlockCount).to.equal(1);
+        expect(result.inSnapshot).to.equal(false);
+        expect(result.eligibility).to.equal(SourceEligibility.ELIGIBLE);
+        await dropped.release();
+    });
+
     it("a pushed snapshot preserves unconsumed pending JOINs without a membership read", async () => {
         const h = TestSession.getHarness();
         const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
@@ -483,21 +517,12 @@ describe("Unit: MembershipService", function () {
         const control = h.control(observer);
         await control.stub.observeAdmission().request();
         try {
-            const result = await h.execOnHost(
-                observer,
-                async (sm, args) => {
-                    const snapshot =
-                        await sm.stateChannelManagerContract.getStateSnapshot(
-                            sm.channelId
-                        );
-                    sm.membershipService.publishOnChainSnapshot(snapshot);
-                    return sm.membershipService.getCachedSourceEligibility(
-                        args.source
-                    );
-                },
-                { source: prepared.joiner.address }
+            const result = await publishChainSnapshotEligibility(
+                h,
+                observer.index,
+                prepared.joiner.address
             );
-            expect(result).to.equal(SourceEligibility.ELIGIBLE);
+            expect(result.eligibility).to.equal(SourceEligibility.ELIGIBLE);
             const reads = await control.stub
                 .getAdmissionObservation()
                 .request();

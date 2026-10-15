@@ -34,6 +34,7 @@
 - [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
+- [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE
 

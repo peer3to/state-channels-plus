@@ -17,7 +17,7 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `next-to-write → true; any other peer → false`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P1
 - `no inbound message ever stored → empty`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P2
 - `inbound arrived but not yet consumed → returned; once consumed → empty`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P3
-- `own head above a missing inbound log → the block is produced with no inbound carry`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P4
+- `own head above a missing inbound log → the block is produced with no inbound carry`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P4, REQ-MSGSTORE-1-6ME9D7.T2.P3
 - `two same-peer submissions built for one height → only the winner authors`: INV-BLOCK-PIPE-1-1AB2ME.T1.P9, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P5
 - `a follower behind by the writer's parked block stamps a slot that was never its own → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P10, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P13
 - `a reduction replaces the fork before the candidate takes the mutex → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P11, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P14
