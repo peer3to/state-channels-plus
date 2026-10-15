@@ -1,6 +1,7 @@
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import AgreementManager from "../agreementManager";
 import DisputeBuilder, { type ConstructDisputeResult } from "./DisputeBuilder";
+import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
@@ -106,7 +107,11 @@ class DisputeManager {
      */
     public async dispute(
         forkId: ForkId,
-        options?: { kill?: DisputeStruct; refusedInboundHead?: Hash }
+        options?: {
+            kill?: DisputeStruct;
+            refusedInboundHead?: Hash;
+            latestStateProof?: Promise<BuiltStateProof | undefined>;
+        }
     ): Promise<{ lostEvidenceRace?: CustomEvmError }> {
         let txResponse;
         let rethrow: unknown;
@@ -150,7 +155,8 @@ class DisputeManager {
                 ? this.getStoredDisputeFraudProof(options.kill)
                 : undefined;
             const constructed = await this.constructDispute(forkId, {
-                expectedSlashes: killProof ? [killProof.participant] : []
+                expectedSlashes: killProof ? [killProof.participant] : [],
+                latestStateProof: options?.latestStateProof
             });
             const {
                 dispute,
@@ -556,7 +562,10 @@ class DisputeManager {
      */
     public constructDispute(
         forkId: ForkId,
-        options?: { expectedSlashes?: Address[] }
+        options?: {
+            expectedSlashes?: Address[];
+            latestStateProof?: Promise<BuiltStateProof | undefined>;
+        }
     ): Promise<ConstructDisputeResult> {
         return this.disputeBuilder.constructDispute(forkId, options);
     }
@@ -582,7 +591,8 @@ class DisputeManager {
      * both. A searching estimator already includes the requirement, so there
      * the limit asks for more than needed, which is safe. Callers estimate
      * through getFunction, the contract's own method, so an estimate is never
-     * taken from a replaced or wrapped method property.
+     * taken from a replaced or wrapped method property. The limit is capped
+     * at the block gas limit: a larger one is never included.
      */
     private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
         let replayGas = this.stateTransitionReplayGas;
@@ -596,8 +606,17 @@ class DisputeManager {
                     this.stateTransitionReplayGas = undefined;
             });
         }
-        const [estimated, required] = await Promise.all([estimate, replayGas]);
-        return estimated + required;
+        const [estimated, required, latestBlock] = await Promise.all([
+            estimate,
+            replayGas,
+            // a failed read leaves the limit uncapped instead of failing the send
+            this.stateChannelManagerContract.runner?.provider
+                ?.getBlock("latest")
+                .catch(() => null)
+        ]);
+        const limit = estimated + required;
+        const blockGasLimit = latestBlock?.gasLimit ?? limit;
+        return blockGasLimit < limit ? blockGasLimit : limit;
     }
 
     /**
@@ -608,21 +627,26 @@ class DisputeManager {
      * is estimated best effort, so the earlier calls still land. That
      * estimate can leave the last call too little gas to revert with its
      * reason, so `refusal` keeps the custom error the all-or-nothing estimate
-     * reverted with.
+     * reverted with. Both estimates start together, so a refused upload
+     * costs one round trip, not two.
      */
     private async estimateBestEffortMulticall(
         calls: string[]
     ): Promise<{ gas: bigint; refusal?: CustomEvmError }> {
         const contract = this.stateChannelManagerContract;
+        const allOrNothing = contract
+            .getFunction("multicall")
+            .estimateGas(calls);
+        const bestEffort = contract
+            .getFunction("multicallBestEffortLast")
+            .estimateGas(calls);
+        // goes unused when the all-or-nothing estimate succeeds
+        bestEffort.catch(() => undefined);
         try {
-            return {
-                gas: await contract.getFunction("multicall").estimateGas(calls)
-            };
+            return { gas: await allOrNothing };
         } catch (error) {
             return {
-                gas: await contract
-                    .getFunction("multicallBestEffortLast")
-                    .estimateGas(calls),
+                gas: await bestEffort,
                 refusal: tryDecodeCustomError(error) ?? undefined
             };
         }

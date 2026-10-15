@@ -950,6 +950,9 @@ Specification cases tested: 0/15.
 [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../specification/protocol-model/time.md#req-time-5-s9nqxk)
 Specification cases tested: 3/3.
 
+[`REQ-TIME-6-HGWWY9` (evidenceTime covers an honest kill)](../specification/protocol-model/time.md#req-time-6-hgwwy9)
+Specification cases tested: 4/4.
+
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
 Specification cases tested: 7/7.
 

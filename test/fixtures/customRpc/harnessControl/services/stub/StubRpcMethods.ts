@@ -2648,7 +2648,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             }
             state.inside = true;
             if (options) state.uploadConstructions += 1;
-            return originalConstruct(requestedForkId, options).finally(() => {
+            // the audit's proof is dropped -> construction builds its own and parks
+            return originalConstruct(
+                requestedForkId,
+                options && { ...options, latestStateProof: undefined }
+            ).finally(() => {
                 state.inside = false;
             });
         };

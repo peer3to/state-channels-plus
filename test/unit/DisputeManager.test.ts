@@ -36,6 +36,7 @@ import {
     runKillWithApplyRace,
     runKillWithUnrecognizedApplyFailure
 } from "@test/fixtures/KillDisputeApplyStaging";
+import { constructDisputeWithLatestStateProof } from "@test/fixtures/LatestStateProofStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
 import {
     disputeAndKillSharingHeldRead,
@@ -644,6 +645,24 @@ describe("Unit: DisputeManager", function () {
             expect(r.verified).to.equal(true);
             // behind the peers that kept writing, yet still self-consistent
             expect(r.ownHeight).to.be.lessThan(2);
+        });
+
+        it("a latest-state proof at the latest height → constructDispute reuses it, builds none, and the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({ count: 2 });
+            const r = await constructDisputeWithLatestStateProof(h, 0, 0);
+            expect(r.builds).to.equal(0);
+            expect(r.verified).to.equal(true);
+        });
+
+        it("a latest-state proof one block behind → constructDispute builds its own, and the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({ count: 2 });
+            const r = await constructDisputeWithLatestStateProof(h, 0, 1);
+            expect(r.builds).to.equal(1);
+            expect(r.verified).to.equal(true);
         });
 
         it("a participant has a stored fraud proof → constructDispute bundles it + marks them slashed", async function () {

@@ -46,6 +46,8 @@ Tip and traversal bounds
 - [ ] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P2` — justPersist leaves tip
 - [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P3` — absurd remote-supplied bound clamped
 - [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4` — out-of-order store
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P5` — a fork without blocks: latest height -1, next height 0
+- [x] `UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P6` — latest and next height follow the highest stored block
 
 ## UNIT-TEST-BLOCK-STORAGE-32-DHXM4N
 

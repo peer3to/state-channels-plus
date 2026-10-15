@@ -35,6 +35,8 @@ Dispute construction reuses a built dispute only while its inputs are unchanged 
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9` — `reconstructAuditingData` for a dispute naming a snapshot absent from storage rejects with that snapshot's hash and returns no auditing data
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P10` — a cached dispute that omits its auditing data, with inputs unchanged and the chain no longer allowing the omission: the next construction builds again and posts the data (the local mirror alone never confirms the omission); a cached dispute that posts its data is reused with no chain read
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P11` — the fork's reduced result committed after a cached construction: the fork's built dispute is dropped, so the next construction builds again
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P12` — a state proof built before construction at the latest height is used without building another, and the chain accepts the dispute
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P13` — a state proof built one block below the latest height is not used: construction builds its own, and the chain accepts the dispute
 
 ## UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R
 

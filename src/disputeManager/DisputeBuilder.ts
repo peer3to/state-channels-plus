@@ -135,10 +135,14 @@ export default class DisputeBuilder {
      * This peer's dispute of `forkId` from its active view: the proof
      * through its latest block (persistence-only replay never moves it).
      * `expectedSlashes` are slashes a kill in the same multicall lands first.
+     * `latestStateProof` is used when it still reaches the latest block.
      */
     public async constructDispute(
         forkId: ForkId,
-        options?: { expectedSlashes?: Address[] }
+        options?: {
+            expectedSlashes?: Address[];
+            latestStateProof?: Promise<BuiltStateProof | undefined>;
+        }
     ): Promise<ConstructDisputeResult> {
         const inputs = await this.readInputs(forkId, options?.expectedSlashes);
         const built = this.built.get(forkId);
@@ -147,10 +151,14 @@ export default class DisputeBuilder {
             (await this.isReusable(built.result))
         )
             return built.result;
-        const builtStateProof = await this.agreementManager.buildStateProof(
-            forkId,
-            inputs.latestBlockHeight
-        );
+        const latestStateProof = await options?.latestStateProof;
+        const builtStateProof =
+            latestStateProof?.blockHeight === inputs.latestBlockHeight
+                ? latestStateProof
+                : await this.agreementManager.buildStateProof(
+                      forkId,
+                      inputs.latestBlockHeight
+                  );
         // evidence stored while the proof was built goes in too
         const latest = await this.readInputs(forkId, options?.expectedSlashes);
         // a block that landed meanwhile needs its own proof
@@ -250,7 +258,7 @@ export default class DisputeBuilder {
         expectedSlashes: Address[] = []
     ): Promise<DisputeInputs> {
         const latestBlockHeight =
-            this.storage.blocks.getNextBlockHeight(forkId) - 1;
+            this.storage.blocks.getLatestBlockHeight(forkId);
 
         const [latestStateSnapshot, _onChainSlashes, _participants] =
             await Promise.all([

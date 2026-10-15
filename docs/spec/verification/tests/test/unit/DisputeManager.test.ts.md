@@ -97,6 +97,8 @@ estimate plus the replay gas, the kill mined without error (`6.P11`). A non-time
 - `inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head`: none
 - `a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes`: none
 - `a peer behind the head → constructDispute builds a complete dispute over what it has`: none
+- `a latest-state proof at the latest height → constructDispute reuses it, builds none, and the chain accepts the dispute`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P12
+- `a latest-state proof one block behind → constructDispute builds its own, and the chain accepts the dispute`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P13
 - `a participant has a stored fraud proof → constructDispute bundles it + marks them slashed`: none
 - `latest block final by everyone → postedAuditingData false`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P9
 - `unfinalized inbound join at the head → postedAuditingData true (calldata needed)`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P6

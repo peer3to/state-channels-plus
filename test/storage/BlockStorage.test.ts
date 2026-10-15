@@ -746,6 +746,24 @@ describe("ForkIdToMaxHeightMap", () => {
         });
     });
 
+    describe("READ - getLatestBlockHeight() / getNextBlockHeight()", () => {
+        it("a fork without blocks -> latest -1 (its genesis), next 0", () => {
+            expect(storage.getLatestBlockHeight(forkId)).to.equal(-1);
+            expect(storage.getNextBlockHeight(forkId)).to.equal(0);
+        });
+
+        it("blocks at 0 and 5 -> latest 5, next 6", () => {
+            for (const height of [0, 5])
+                storage.storeBlock(
+                    Block.fromBlockConfirmation(
+                        factory.blockAt(forkId, height).blockConfirmationStruct
+                    )
+                );
+            expect(storage.getLatestBlockHeight(forkId)).to.equal(5);
+            expect(storage.getNextBlockHeight(forkId)).to.equal(6);
+        });
+    });
+
     describe("REMOVING - Max Height Updates", () => {
         it("should update max height when removing the highest block", () => {
             // Add blocks at heights 0, 5, 10

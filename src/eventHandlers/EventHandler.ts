@@ -701,6 +701,17 @@ export class EventHandler {
             `Dispute audit start ${formattedHash}`,
             LoggerUtils.getDisputeDeadlineMetadata(deadlines)
         );
+        // our dispute's proof builds while the audit runs, so a kill sent with
+        // it waits only for the verdict; a failed build resolves undefined and
+        // the dispute builds its own
+        const latestStateProof = this.storage.disputes.didIDispute(forkId)
+            ? undefined
+            : this.stateManager.agreementManager
+                  .buildStateProof(
+                      forkId,
+                      this.storage.blocks.getLatestBlockHeight(forkId)
+                  )
+                  .catch(() => undefined);
         const isValid =
             await this.stateManager.disputeValidationService.validateDispute(
                 dispute,
@@ -743,7 +754,8 @@ export class EventHandler {
                 await this.stateManager.disputeManager.killDispute(dispute);
             else
                 await this.stateManager.disputeManager.dispute(forkId, {
-                    kill: dispute
+                    kill: dispute,
+                    latestStateProof
                 });
             return;
         }
