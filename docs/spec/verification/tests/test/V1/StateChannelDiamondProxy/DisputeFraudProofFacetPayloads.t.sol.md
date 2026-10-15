@@ -5,13 +5,14 @@ Exercises: [DisputeFraudProofFacet.sol](../../../../../implementation/source/con
 
 ## Overview
 
-Six Foundry component tests pin the operands the dispute race-condition reverts carry, so a
-payload that names the right error with the wrong values fails. Four drive the deployed diamond
-(`DiamondHarness`); two drive `TimeoutTooEarlyPayloadHarness`, a test-only contract that inherits
-`DisputeFraudProofFacet` and `UtilityFacet` and exposes the internal `_handleTimeoutTooEarly`
-handler plus a single block-calldata-commitment seed — the production handler body still runs.
-Another deployed-diamond case appends a trailing word to otherwise valid dispute bytes, expects
-the canonicality error, and asserts it created no dispute window.
+Five Foundry component tests pin the operands the dispute race-condition reverts carry, so a
+payload that names the right error with the wrong values fails. Three drive the deployed
+diamond (`DiamondHarness`); two drive `TimeoutTooEarlyPayloadHarness`, a test-only contract that
+inherits `DisputeFraudProofFacet` and `UtilityFacet` and exposes the internal
+`_handleTimeoutTooEarly` handler plus a single block-calldata-commitment seed — the production
+handler body still runs. A sixth case, also on the deployed diamond, appends a trailing word to
+otherwise valid dispute bytes, expects the canonicality error, and asserts it created no
+dispute window.
 
 The first opens a channel, uploads a dispute so the evidence window opens at a known absolute
 timestamp, then warps strictly past the window's evidence period and uploads a second dispute from

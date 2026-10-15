@@ -48,8 +48,10 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
     }
 
     function test_open_inboundJoinMessageDataIsCanonicalJoinEncoding() public {
+        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
+        OpenChannel memory terms = abi.decode(confirmation.encodedOpenChannel, (OpenChannel));
         vm.recordLogs();
-        diamond.open(_deadlineOpenConfirmation());
+        diamond.open(confirmation);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bool foundInboundBlock;
@@ -62,12 +64,16 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
             assertEq(inbound.messages.length, 2, "inbound join count changed");
             for (uint256 j = 0; j < inbound.messages.length; j++) {
                 assertEq(inbound.messages[j].messageType, MESSAGE_TYPE_JOIN, "inbound message is not a join");
-                JoinChannel memory join = abi.decode(inbound.messages[j].data, (JoinChannel));
-                assertEq(join.participant, inbound.messages[j].participant, "join participant changed");
+                JoinChannel memory expected = JoinChannel({
+                    channelId: terms.channelId,
+                    participant: terms.participants[j],
+                    deadlineTimestamp: terms.deadlineTimestamp,
+                    balance: terms.balances[j]
+                });
                 assertEq(
                     keccak256(inbound.messages[j].data),
-                    keccak256(abi.encode(join)),
-                    "inbound join data is not the canonical join encoding"
+                    keccak256(abi.encode(expected)),
+                    "inbound join data does not encode the admitted join"
                 );
             }
         }

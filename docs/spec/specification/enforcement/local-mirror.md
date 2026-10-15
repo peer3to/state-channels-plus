@@ -112,7 +112,10 @@ signature encoding the contracts reject and MUST NOT reject one the contracts ac
 applies to every signature of one scheme (an author signature and a confirmation signature over
 the same bytes are checked the same way). The carve-out does not cover decoding of a signed
 envelope: decoding is not a pure signature check, and the client and the contracts MUST apply one
-encoding rule, accepting and rejecting the same byte strings.
+encoding rule, accepting and rejecting the same byte strings, for every input inside the
+canonical-encoding boundary of [`REQ-DATA-1-1KNRQS`](../protocol-model/data-types.md#req-data-1-1knrqs).
+Outside that boundary, for signature-bound inputs that are used only through their decoded
+fields, the client MAY be stricter than the contracts.
 
 **<a id="req-mirror-1-xcy9cb"></a>`REQ-MIRROR-1-XCY9CB` — Constrained equivalence.** Under the [equivalence constraints](#equivalence-constraints)
 (same logic, same replicated state, controlled context, read-only/pinned evaluation), a local
