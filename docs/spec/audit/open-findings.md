@@ -236,8 +236,8 @@ That classifier accepts the same prefix which [ContractExecutor](../../../src/ev
 uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
 The [local gas grant](../../../src/evm/contractExecutor/ContractExecutor.ts#L43) is finite and funds each whole call;
 its transition replay requirement does not establish a bound on all reduction work, proof checks and state restoration.
-The [local-mirror failure rule](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys) forbids turning local resource failures into verdicts.
-The [sync failure rule](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) separates invalid evidence from internal failures.
+The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
+The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
 **Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
 and no valid reduction was demonstrated to exceed an on-chain block gas limit. Local out-of-gas does not
@@ -2005,7 +2005,7 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 
 <a id="find-log-1-659qd2"></a>
 
-## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit
+### FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit
 
 **Status:** Resolved by the engineer's replacement of distributed flush summaries with local
 outcomes and best-effort gossip.

@@ -121,3 +121,25 @@ test("a reworded link label changes no hash; case text does", () =>
         assert.notEqual(contentHash(file), hash);
         assert.notDeepEqual([...fingerprints(f)], [...before]);
     }));
+
+test("a finding is withdrawn only by its leading status, not by the word in its prose", () => {
+    const { isWithdrawnFinding } = require("../shared/documentation-graph");
+    assert.equal(
+        isWithdrawnFinding({
+            raw: "### FIND-X-1-AAAAA1\n\n**Defect:** _Withdrawn (2026-08-10)._ Not a defect."
+        }),
+        true
+    );
+    assert.equal(
+        isWithdrawnFinding({
+            raw: "### FIND-X-2-AAAAA2\n\n**Current defect:** _Resolved (2026-09-15)._\n\nA set taken from the latest state was withdrawn."
+        }),
+        false
+    );
+    assert.equal(
+        isWithdrawnFinding({
+            raw: "| `DEF-9-AAAAA9` | _Withdrawn (2026-08-10)._ | none |"
+        }),
+        true
+    );
+});
