@@ -124,24 +124,13 @@ export class MessageBlockStorage {
         return this.latestBlockHeight;
     }
 
-    // newest first, and truncated at a gap rather than throwing - "the latest
-    // N blocks" is exactly what a truncated walk returns
-    getLatestMessageBlocks(limit?: number): MessageBlockStruct[] {
-        if (!this.latestBlockHash) return [];
-
-        return this.walkBack({
-            upperBlockHash: this.latestBlockHash,
-            limit
-        }).newestFirst;
-    }
-
     // newest-first walk over [upperBlockHash, lowerBlockHash), stopping at the
     // first hash we do not hold -> no caller walks into a gap by accident
-    private walkBack(options?: GetRangeOptions & { limit?: number }): {
+    private walkBack(options?: GetRangeOptions): {
         newestFirst: MessageBlockStruct[];
         missingBlockHash?: Hash;
     } {
-        const { upperBlockHash, lowerBlockHash, limit } = options ?? {};
+        const { upperBlockHash, lowerBlockHash } = options ?? {};
         const newestFirst: MessageBlockStruct[] = [];
         const startBlockHash = upperBlockHash ?? this.latestBlockHash;
         if (!startBlockHash) return { newestFirst };
@@ -158,7 +147,6 @@ export class MessageBlockStorage {
             if (!messageBlock)
                 return { newestFirst, missingBlockHash: currentHash };
             newestFirst.push(messageBlock);
-            if (limit !== undefined && newestFirst.length >= limit) break;
             currentHash = messageBlock.previousBlockHash as Hash;
         }
         if (

@@ -17,7 +17,7 @@ import { MathPeerTestHarness } from "test-harness";
 type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
 
 /** Kill period for the shared invalid-dispute staging, in seconds. */
-const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 8;
+const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
 
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;

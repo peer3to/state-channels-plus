@@ -27,9 +27,8 @@ export async function assertStateApplicationCache(
             : ethers.Wallet.createRandom().address;
     const historicalHeight =
         mode === "failed-chain-read"
-            ? await h.execOnHost(
-                  h.getPeer(observer.index),
-                  (sm) => sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1
+            ? await h.execOnHost(h.getPeer(observer.index), (sm) =>
+                  sm.storage.blocks.getLatestBlockHeight(sm.forkId)
               )
             : 0;
     await h.transition.insertParticipantOffChain(newcomer, 0n, {

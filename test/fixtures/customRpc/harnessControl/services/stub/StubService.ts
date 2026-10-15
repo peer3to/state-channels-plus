@@ -98,6 +98,7 @@ export type StubKey =
     | "proofWalkHold"
     | "auditingDataBuild"
     | "disputeKillMulticall"
+    | "stateProofBuilds"
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
@@ -456,7 +457,7 @@ export type PausedConstructDisputeStatus = {
     entered: number;
     /**
      * Constructions for the target fork that `dispute()` started, held or
-     * not. It is the only caller that passes construction options, so an
+     * not. It is the only caller that passes `expectedSlashes`, so an
      * evidence comparison is not counted.
      */
     uploadConstructions: number;
@@ -757,6 +758,10 @@ export class StubService extends ANetworkRpcService<
     replayGasReadHold?: DisputeSubmissionHold;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
+    // full state-proof builds counted by stubCountStateProofBuilds
+    stateProofBuildCount = 0;
+    // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
+    replayGasBlockReadFailures = 0;
     /** The state the state-mutex hold installed, while it is held. */
     stateMutexStateHold?: StateMutexStateHold;
     /** State for the dispute-audit hold at the on-chain-slashes query. */

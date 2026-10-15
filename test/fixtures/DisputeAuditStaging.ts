@@ -407,7 +407,7 @@ export const stripDisputeReasons: DisputeTamper = (dispute) => {
  */
 export async function stageReasonlessInitialDispute(
     h: MathPeerTestHarness,
-    options: { hold: boolean }
+    options: { hold: boolean; countStateProofBuilds?: { failFirst: boolean } }
 ) {
     await h.scenario.preDisputeSetup({ peerCount: 4 });
     for (const peer of h.peers)
@@ -418,10 +418,17 @@ export async function stageReasonlessInitialDispute(
         hold: options.hold,
         forward: true
     });
+    const stateProofBuilds = options.countStateProofBuilds
+        ? await h.rpcStub.countStateProofBuilds(
+              0,
+              options.countStateProofBuilds
+          )
+        : undefined;
     await h.tamper.postTamperedDispute(spammer.index, stripDisputeReasons);
     return {
         spammer,
         submissions,
+        stateProofBuilds,
         /** Until a recorded upload was mined or reverted. */
         waitUntilSettled: () =>
             waitFor(

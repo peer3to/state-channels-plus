@@ -86,7 +86,7 @@ export async function tryBuildProofView(
             const am = sm.agreementManager;
             const forkId = args.forkId ?? sm.forkId;
             const height =
-                args.height ?? sm.storage.blocks.getNextBlockHeight(forkId) - 1;
+                args.height ?? sm.storage.blocks.getLatestBlockHeight(forkId);
             const ref = (snapshot: StateSnapshot) => ({
                 hash: String(snapshot.hash),
                 height: Number(snapshot.blockHeight),

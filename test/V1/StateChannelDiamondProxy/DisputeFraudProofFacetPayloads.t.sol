@@ -5,6 +5,7 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {
+    ErrorNonCanonicalEncoding,
     RaceConditionDisputeEvidencePeriodExpired,
     RaceConditionGenesisTimestampNotAvailable,
     RaceConditionUnexpectedBlockCalldataPosted
@@ -103,6 +104,18 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         );
         vm.prank(vm.addr(BOB_PK));
         diamond.uploadDispute(bobConfirmation);
+    }
+
+    function test_uploadDispute_nonCanonicalEncodedDispute_revertsThroughDiamond() public {
+        bytes32 forkId = diamond.getStateSnapshot(EVIDENCE_CHANNEL_ID).forkId;
+        DisputeConfirmation memory confirmation = _disputeConfirmation(EVIDENCE_CHANNEL_ID, forkId, ALICE_PK);
+        confirmation.signedDispute.encodedDispute =
+            bytes.concat(confirmation.signedDispute.encodedDispute, abi.encode(uint256(0)));
+
+        vm.prank(vm.addr(ALICE_PK));
+        vm.expectRevert(abi.encodeWithSelector(ErrorNonCanonicalEncoding.selector));
+        diamond.uploadDispute(confirmation);
+        assertEq(diamond.getWindowCommitments(EVIDENCE_CHANNEL_ID, forkId).length, 0, "window was created");
     }
 
     // ---- _handleTimeoutTooEarly: the genesis branch ----

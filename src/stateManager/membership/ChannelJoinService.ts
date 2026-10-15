@@ -257,7 +257,7 @@ export default class ChannelJoinService {
             Type.JoinChannel
         );
         const join = sm.storage.forceJoin.startJoin(
-            sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1,
+            sm.storage.blocks.getLatestBlockHeight(sm.forkId),
             Number(deadlineTimestamp)
         );
         sm.setStatus(Status.PENDING_PARTICIPANT);

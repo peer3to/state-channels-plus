@@ -1819,6 +1819,12 @@
       "peakRssGb": 0.832,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-FraudProofsBlockConfirmation.test.ts|E2E: Block Fraud Proofs canonical block encoding rejects Byzantine relay and calldata posting": {
+      "durationMs": 13055,
+      "avgCores": 0.948,
+      "peakRssGb": 0.948,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-FraudProofsBlockConfirmation.test.ts|E2E: Block Fraud Proofs double sign → BlockDoubleSign": {
       "durationMs": 25500,
       "avgCores": 0.703,
@@ -13705,6 +13711,12 @@
       "peakRssGb": 0.955,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedInboundRun logs recovered into an empty inbound store set its tip to the recovered head": {
+      "durationMs": 10376,
+      "avgCores": 0.746,
+      "peakRssGb": 0.756,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedInboundRun missed inbound log → recovered by query, the run becomes walkable": {
       "durationMs": 14847,
       "avgCores": 0.915,
@@ -14203,6 +14215,36 @@
       "peakRssGb": 0.213,
       "measurementReason": null
     },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation breaking out of getIterator through the proxy finishes the walk": {
+      "durationMs": 1363,
+      "avgCores": 0.499,
+      "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation getIterator through the proxy reads each block only when it is requested": {
+      "durationMs": 691,
+      "avgCores": 0.507,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation getIterator through the proxy yields nothing for a fork with no blocks": {
+      "durationMs": 1149,
+      "avgCores": 0.592,
+      "peakRssGb": 0.107,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation mutating a block yielded by getIterator leaves the stored block unchanged": {
+      "durationMs": 1072,
+      "avgCores": 0.55,
+      "peakRssGb": 0.118,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|BlockStorage DeepCopyProxy - Reference Isolation mutating the second block yielded by getIterator leaves the stored block unchanged": {
+      "durationMs": 803,
+      "avgCores": 1.059,
+      "peakRssGb": 0.142,
+      "measurementReason": null
+    },
     "hardhat|test/storage/BlockStorage.test.ts|BlockStorage READ - getBlockEntry() should get block by coordinates": {
       "durationMs": 2459,
       "avgCores": 0.663,
@@ -14347,6 +14389,18 @@
       "peakRssGb": 0.21,
       "measurementReason": null
     },
+    "hardhat|test/storage/BlockStorage.test.ts|ForkIdToMaxHeightMap READ - getLatestBlockHeight() / getNextBlockHeight() a fork without blocks -> latest -1 (its genesis), next 0": {
+      "durationMs": 868,
+      "avgCores": 0.899,
+      "peakRssGb": 0.124,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/BlockStorage.test.ts|ForkIdToMaxHeightMap READ - getLatestBlockHeight() / getNextBlockHeight() blocks at 0 and 5 -> latest 5, next 6": {
+      "durationMs": 815,
+      "avgCores": 1.006,
+      "peakRssGb": 0.14,
+      "measurementReason": null
+    },
     "hardhat|test/storage/BlockStorage.test.ts|ForkIdToMaxHeightMap REMOVING - Max Height Updates should handle removing the only block in a fork": {
       "durationMs": 2779,
       "avgCores": 1.062,
@@ -14455,18 +14509,6 @@
       "peakRssGb": 0.177,
       "measurementReason": null
     },
-    "hardhat|test/storage/ExitChannelBlockStorage.test.ts|MessageBlockStorage - outbound behavior latest block helpers head above a hole → truncates at the gap instead of throwing": {
-      "durationMs": 2157,
-      "avgCores": 0.844,
-      "peakRssGb": 0.246,
-      "measurementReason": null
-    },
-    "hardhat|test/storage/ExitChannelBlockStorage.test.ts|MessageBlockStorage - outbound behavior latest block helpers returns blocks sorted from newest to oldest when no limit is provided": {
-      "durationMs": 1791,
-      "avgCores": 0.949,
-      "peakRssGb": 0.275,
-      "measurementReason": null
-    },
     "hardhat|test/storage/ExitChannelBlockStorage.test.ts|MessageBlockStorage - outbound behavior latest block helpers returns the most recent block": {
       "durationMs": 1786,
       "avgCores": 0.991,
@@ -14573,6 +14615,96 @@
       "durationMs": 2769,
       "avgCores": 0.986,
       "peakRssGb": 0.399,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a block whose predecessor is not held, stored into an empty store, becomes the tip": {
+      "durationMs": 627,
+      "avgCores": 0.558,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a higher block above an unheld gap moves the tip, and a read from that tip reports the missing block": {
+      "durationMs": 626,
+      "avgCores": 0.591,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a justPersist store of a higher block leaves the tip": {
+      "durationMs": 1168,
+      "avgCores": 0.514,
+      "peakRssGb": 0.114,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a later direct store of a held block keeps its first content and moves the tip": {
+      "durationMs": 925,
+      "avgCores": 0.908,
+      "peakRssGb": 0.124,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run from the zero hash into an empty store moves the tip to its last block": {
+      "durationMs": 539,
+      "avgCores": 0.668,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run from the zero hash while a tip is held is persisted and leaves the tip": {
+      "durationMs": 566,
+      "avgCores": 0.654,
+      "peakRssGb": 0.098,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run that does not extend the tip is persisted and leaves the tip": {
+      "durationMs": 815,
+      "avgCores": 1.018,
+      "peakRssGb": 0.136,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run that extends the tip moves the tip to its last block": {
+      "durationMs": 540,
+      "avgCores": 0.667,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run whose predecessor is held but is not the tip is persisted and leaves the tip": {
+      "durationMs": 639,
+      "avgCores": 0.579,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking a verified run with a nonzero predecessor into an empty store is persisted and sets no tip": {
+      "durationMs": 663,
+      "avgCores": 0.573,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking an equal-height block replaces the tip": {
+      "durationMs": 775,
+      "avgCores": 0.929,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind a tip above the snapshot returns the tip": {
+      "durationMs": 572,
+      "avgCores": 0.612,
+      "peakRssGb": 0.089,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind a tip at the snapshot height with a different hash returns the tip": {
+      "durationMs": 606,
+      "avgCores": 0.627,
+      "peakRssGb": 0.096,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind a tip below the snapshot returns the snapshot head": {
+      "durationMs": 591,
+      "avgCores": 0.592,
+      "peakRssGb": 0.087,
+      "measurementReason": null
+    },
+    "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tip tracking headNotBehind an empty store returns the snapshot head at height 0": {
+      "durationMs": 708,
+      "avgCores": 0.523,
+      "peakRssGb": 0.08,
       "measurementReason": null
     },
     "hardhat|test/storage/JoinChannelBlockStorage.test.ts|MessageBlockStorage - inbound blocks tolerant range reads a walk that reaches zero before the nonzero lower bound is incomplete": {
@@ -17317,6 +17449,12 @@
       "peakRssGb": 0.847,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute a peer that already disputed audits an invalid dispute -> no state proof is built, and its kill goes out alone and lands": {
+      "durationMs": 17542,
+      "avgCores": 1.208,
+      "peakRssGb": 0.992,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute a slow auditor's kill and dispute land after another auditor's kill and replacement closed the evidence period → the multicall lands its kill, its refused upload is a no-op, no kill is sent alone, and its event pipeline stays alive": {
       "durationMs": 26859,
       "avgCores": 0.449,
@@ -17339,6 +17477,18 @@
       "durationMs": 25756,
       "avgCores": 0.478,
       "peakRssGb": 1.024,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute an auditor audits an invalid dispute -> the state proof it built during the audit serves the kill and dispute: one build, and the multicall lands": {
+      "durationMs": 13937,
+      "avgCores": 1.22,
+      "peakRssGb": 0.994,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute the state proof built during the audit fails -> the kill and dispute builds its own: two builds, and the multicall lands": {
+      "durationMs": 16411,
+      "avgCores": 1.021,
+      "peakRssGb": 0.981,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute the upload of a mined kill-and-dispute multicall is refused with a custom error no dispute handler takes (ErrorDisputerNotMsgSender) → the kill landed once in the multicall, the marker rolled back, dispute() rejects with the refusal, and no kill is sent alone": {
@@ -17419,6 +17569,12 @@
       "peakRssGb": 0.778,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager auditing data inbound run own head above a recoverable mid-gap → the self-removal dispute names that head, recovers the missing block and lands on chain": {
+      "durationMs": 11067,
+      "avgCores": 0.801,
+      "peakRssGb": 0.769,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager auditing data inbound run own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw": {
       "durationMs": 14035,
       "avgCores": 0.875,
@@ -17461,6 +17617,12 @@
       "peakRssGb": 0.764,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a failed latest-state proof build → constructDispute builds its own, and the chain accepts the dispute": {
+      "durationMs": 8634,
+      "avgCores": 1.033,
+      "peakRssGb": 0.757,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes": {
       "durationMs": 35699,
       "avgCores": 0.569,
@@ -17471,6 +17633,18 @@
       "durationMs": 12661,
       "avgCores": 1.03,
       "peakRssGb": 0.799,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a latest-state proof at the latest height → constructDispute reuses it, builds none, and the chain accepts the dispute": {
+      "durationMs": 8317,
+      "avgCores": 0.998,
+      "peakRssGb": 0.758,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a latest-state proof one block behind → constructDispute builds its own, and the chain accepts the dispute": {
+      "durationMs": 8869,
+      "avgCores": 1.001,
+      "peakRssGb": 0.767,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager constructDispute a participant has a stored fraud proof → constructDispute bundles it + marks them slashed": {
@@ -17729,6 +17903,18 @@
       "durationMs": 16473,
       "avgCores": 0.954,
       "peakRssGb": 0.828,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit": {
+      "durationMs": 14178,
+      "avgCores": 0.946,
+      "peakRssGb": 0.784,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer": {
+      "durationMs": 13837,
+      "avgCores": 1.106,
+      "peakRssGb": 0.79,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill with the real estimate lands at the estimate plus the replay requirement": {
@@ -18839,6 +19025,12 @@
       "durationMs": 9647,
       "avgCores": 0.987,
       "peakRssGb": 0.585,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot": {
+      "durationMs": 16670,
+      "avgCores": 0.798,
+      "peakRssGb": 0.747,
       "measurementReason": null
     },
     "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService a committed off-chain addition during refresh is eligible when the chain result misses it": {
@@ -20713,6 +20905,24 @@
       "peakRssGb": 0.801,
       "measurementReason": null
     },
+    "hardhat|test/utils/Codec.test.ts|Codec Block model wrappers enforce canonical decoding failure policy": {
+      "durationMs": 917,
+      "avgCores": 0.905,
+      "peakRssGb": 0.139,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec accepts canonical and rejects trailing-word encodings for every Codec type": {
+      "durationMs": 2638,
+      "avgCores": 0.834,
+      "peakRssGb": 0.15,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec accepts canonical block bytes across hex casing and byte arrays": {
+      "durationMs": 1226,
+      "avgCores": 0.563,
+      "peakRssGb": 0.11,
+      "measurementReason": null
+    },
     "hardhat|test/utils/Codec.test.ts|Codec adds type and bigint-safe value context to encode failures": {
       "durationMs": 3226,
       "avgCores": 0.79,
@@ -20759,6 +20969,12 @@
       "durationMs": 2720,
       "avgCores": 1.026,
       "peakRssGb": 0.401,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec rejects noncanonical block bytes identically to UtilityFacet": {
+      "durationMs": 3541,
+      "avgCores": 1.025,
+      "peakRssGb": 0.246,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec rejects unmapped encode and decode type values": {
@@ -20827,6 +21043,18 @@
       "peakRssGb": 0.21,
       "measurementReason": null
     },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeConflictsWithFinalState fraud proof": {
+      "durationMs": 1159,
+      "avgCores": 0.544,
+      "peakRssGb": 0.106,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInboundAnchorBehindLatestState fraud proof": {
+      "durationMs": 1121,
+      "avgCores": 0.785,
+      "peakRssGb": 0.122,
+      "measurementReason": null
+    },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInboundHashNotInChain fraud proof": {
       "durationMs": 2766,
       "avgCores": 0.991,
@@ -20849,6 +21077,12 @@
       "durationMs": 2079,
       "avgCores": 0.798,
       "peakRssGb": 0.212,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInvalidOutboundRun fraud proof": {
+      "durationMs": 1152,
+      "avgCores": 0.556,
+      "peakRssGb": 0.108,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeInvalidOutputState fraud proof": {
@@ -20879,6 +21113,12 @@
       "durationMs": 3831,
       "avgCores": 0.908,
       "peakRssGb": 0.363,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeStateProofBelowOnChainAnchor fraud proof": {
+      "durationMs": 1326,
+      "avgCores": 0.505,
+      "peakRssGb": 0.089,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips DisputeStateProofHeaderMismatch fraud proof": {
@@ -20999,6 +21239,12 @@
       "durationMs": 1971,
       "avgCores": 0.847,
       "peakRssGb": 0.222,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/Codec.test.ts|Codec round-trips TimeoutSupersededByFinalState fraud proof": {
+      "durationMs": 1107,
+      "avgCores": 0.668,
+      "peakRssGb": 0.12,
       "measurementReason": null
     },
     "hardhat|test/utils/Codec.test.ts|Codec round-trips TimeoutThreshold fraud proof": {

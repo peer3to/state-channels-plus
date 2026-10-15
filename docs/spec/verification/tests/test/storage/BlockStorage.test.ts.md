@@ -14,7 +14,10 @@ the (fork, height) coordinates, with both indexes holding the same object — pl
 different body at taken coordinates with the original left intact, monotone and idempotent
 signature merge, per-fork max-height tracking observed through `getIterator`, the DESC clamp of
 an absurd remote-supplied start height, and reference isolation of stored objects behind the
-facade proxy. The timestamp test pins the current overwrite behavior (the later value wins),
+facade proxy — including blocks yielded by `getIterator`, where a mutated first or second yielded
+block leaves the stored block unchanged, a block deleted after the walk started is no longer yielded
+(the proxy copies each value as it is produced instead of draining the generator), a walk broken
+off early is finished, and an empty fork yields nothing. The timestamp test pins the current overwrite behavior (the later value wins),
 which diverges from the spec's earliest-wins rule, so only the implementation-level
 earlier-then-later permutation is assignable. The atomized per-key-form permutations are
 assigned below; the remaining unassigned permutations (`justPersist` backfill, merge-order
@@ -44,6 +47,11 @@ drives, so they stay unassigned.
 - `should return false when deleting non-existent blocks`: none
 - `altering object inside storage (adding signatures) doesn't affect original object`: none
 - `altering object outside storage doesn't affect object inside storage`: UNIT-TEST-STORAGE-FACADE-2-KRDP9Q.P3
+- `mutating a block yielded by getIterator leaves the stored block unchanged`: REQ-STOR-6-SKP0KM.T1.P4
+- `getIterator through the proxy reads each block only when it is requested`: UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P5
+- `mutating the second block yielded by getIterator leaves the stored block unchanged`: UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P6
+- `breaking out of getIterator through the proxy finishes the walk`: UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P7
+- `getIterator through the proxy yields nothing for a fork with no blocks`: UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P8
 - `should return undefined when storing different blocks with same coordinates`: REQ-BLKSTORE-1-KYHTWT.T1.P1, UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P3
 - `should not store conflicting block in coordinates map`: REQ-BLKSTORE-1-KYHTWT.T1.P3
 - `should return hash when storing block with same hash but different coordinates`: none
@@ -51,6 +59,8 @@ drives, so they stay unassigned.
 - `should update max height when adding block with higher height`: REQ-BLKSTORE-3-S9V2KC.T1.P1, UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P1
 - `should not update max height when adding block with lower height`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P4
 - `should handle multiple forks independently`: none
+- `a fork without blocks -> latest -1 (its genesis), next 0`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P5
+- `blocks at 0 and 5 -> latest 5, next 6`: UNIT-TEST-BLOCK-STORAGE-3-ZPT4BN.P6
 - `should update max height when removing the highest block`: none
 - `should not update max height when removing non-highest block`: none
 - `should handle removing the only block in a fork`: none

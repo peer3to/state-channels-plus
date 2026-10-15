@@ -836,10 +836,12 @@ confirmation that does not decode through `authenticateBlockFailed`;
 merges signatures, so a network copy is decoded once.
 [ValidationService.ts](../implementation/source/src/stateManager/ingest/ValidationService.ts.md) has no decoding logic:
 the contract-decode path that existed for one review round (a local-diamond decode of
-non-canonical bytes, with its memos) is removed. The client and
-contract decoders are not held to one rule; that open exposure is
-[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v), with identical encoding and decoding
-on both sides as the planned resolution.
+non-canonical bytes, with its memos) is removed. The client and contract decoders enforce the
+canonical round-trip rule at the identity, commitment, storage, emission, posted-calldata, and
+client-decoded-chain-data boundary (`UtilityFacet.decodeBlock`/`tryDecodeBlock`,
+`postBlockCalldata`, universal `Codec.decode`, and the dispute-upload commitment comparison).
+Signature-bound inputs and transient proof payloads are exempt under the engineer-narrowed scope;
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v) closed on that boundary on 2026-10-15.
 
 **Upfront replay funding.** [AStateMachine.sol](../implementation/source/contracts/V1/AStateMachine.sol.md)
 refuses with `ErrorInsufficientGasForStateTransition` before the transition runs unless it can grant

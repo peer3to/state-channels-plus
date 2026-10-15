@@ -8,7 +8,7 @@
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-  Partial: Neither decoder rejects every non-canonical encoding (a trailing zero word decodes), and the two are not held to one acceptance rule: [`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v).
+- [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`INV-DATA-1-F8CG0P` (Equal logical values have one canonical encoding and decode identically in…)](../../../../specification/protocol-model/data-types.md#inv-data-1-f8cg0p)
 - [`REQ-DATA-4-HFEAEA` (Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence…)](../../../../specification/protocol-model/data-types.md#req-data-4-hfeaea)
 
@@ -72,6 +72,14 @@ Complete codec public surface
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P51` — recursive nested Result conversion
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P52` — contextual bigint-safe encode error
 - [x] `UNIT-TEST-CODEC-1-HFAA3B.P53` — unmapped encode/decode type rejection
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P54` — differential corpus rejection: noncanonical block bytes throw exactly when the contract decoder rejects them
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P55` — normalized canonical acceptance: canonical block bytes decode across hex casing and byte arrays and re-encode byte-identically
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P56` — canonical acceptance with byte-identical re-encoding and trailing-word rejection for every client codec type
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P57` — DisputeInboundAnchorBehindLatestState proof round trip
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P58` — DisputeStateProofBelowOnChainAnchor proof round trip
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P59` — TimeoutSupersededByFinalState proof round trip
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P60` — DisputeConflictsWithFinalState proof round trip
+- [x] `UNIT-TEST-CODEC-1-HFAA3B.P61` — DisputeInvalidOutboundRun proof round trip
 
 ## UNIT-TEST-CODEC-2-8VTG2N
 

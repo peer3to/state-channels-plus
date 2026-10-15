@@ -51,6 +51,8 @@ export type StateProofEvidence = {
 
 /** A locally built proof with the evidence its walk reads and the final point it proves. */
 export type BuiltStateProof = {
+    /** the latest block the proof reaches; -1 for the fork genesis */
+    blockHeight: BlockHeight;
     stateProof: StateProofStruct;
     /** the construction anchor: the local diamond's same-fork anchor, else the fork genesis */
     startSnapshot: StateSnapshot;
@@ -235,6 +237,7 @@ class AgreementManager {
             )
         });
         return {
+            blockHeight,
             stateProof,
             startSnapshot: start.snapshot,
             evidence,
@@ -255,9 +258,9 @@ class AgreementManager {
      */
     public async buildFinalProof(
         forkId: ForkId,
-        blockHeight: BlockHeight = this.storage.blocks.getNextBlockHeight(
+        blockHeight: BlockHeight = this.storage.blocks.getLatestBlockHeight(
             forkId
-        ) - 1
+        )
     ): Promise<{
         finalProof: ProofWalkInputStruct;
         finalizedSnapshot: StateSnapshot;
@@ -758,7 +761,7 @@ class AgreementManager {
     public getLocalFinalizedSnapshot(
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
-        const latestHeight = this.storage.blocks.getNextBlockHeight(forkId) - 1;
+        const latestHeight = this.storage.blocks.getLatestBlockHeight(forkId);
         const key = `${forkId}:${latestHeight}`;
         let pending = this.localFinalizedInFlight.get(key);
         if (!pending) {

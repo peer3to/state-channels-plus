@@ -13,6 +13,7 @@
 - [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical…)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
 - [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
 
 ## UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB
 
@@ -56,3 +57,7 @@ Upload bookkeeping
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16` — the past-deadline rejection on a populated window reverts `RaceConditionDisputeEvidencePeriodExpired` carrying the window's computed evidence-period end and the strictly later current timestamp as two distinct values
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P18` — anchor hash one block below the inbound head reverts RaceConditionDisputeInboundNotLatest(head, anchor) without mutation, in both upload modes
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P19` — anchor at the inbound head is accepted, in both upload modes
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P20` — a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` on the plain upload, without mutation
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P21` — a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` on the upload with calldata, without mutation
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P22` — an offset-gap encoded dispute reverts with `ErrorNonCanonicalEncoding` on the plain upload, without mutation
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P23` — routed through the deployed diamond, a noncanonical encoded dispute reverts with `ErrorNonCanonicalEncoding` and creates no window

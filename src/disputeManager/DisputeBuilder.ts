@@ -103,7 +103,8 @@ export default class DisputeBuilder {
      */
     public canAddEvidence(
         forkId: ForkId,
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        latestStateProof?: Promise<BuiltStateProof | undefined>
     ): Promise<boolean> {
         if (this.storage.disputes.didIDispute(forkId))
             return Promise.resolve(false);
@@ -114,12 +115,14 @@ export default class DisputeBuilder {
                 if (this.evidenceChecks.get(forkId) === check)
                     this.evidenceChecks.delete(forkId);
             };
-            check = this.hasMoreEvidence(forkId, dispute).catch(
-                (error: unknown) => {
-                    forget();
-                    throw error;
-                }
-            );
+            check = this.hasMoreEvidence(
+                forkId,
+                dispute,
+                latestStateProof
+            ).catch((error: unknown) => {
+                forget();
+                throw error;
+            });
             this.evidenceChecks.set(forkId, check);
         }
         return check;
@@ -135,10 +138,14 @@ export default class DisputeBuilder {
      * This peer's dispute of `forkId` from its active view: the proof
      * through its latest block (persistence-only replay never moves it).
      * `expectedSlashes` are slashes a kill in the same multicall lands first.
+     * `latestStateProof` is used when it still reaches the latest block.
      */
     public async constructDispute(
         forkId: ForkId,
-        options?: { expectedSlashes?: Address[] }
+        options?: {
+            expectedSlashes?: Address[];
+            latestStateProof?: Promise<BuiltStateProof | undefined>;
+        }
     ): Promise<ConstructDisputeResult> {
         const inputs = await this.readInputs(forkId, options?.expectedSlashes);
         const built = this.built.get(forkId);
@@ -147,10 +154,14 @@ export default class DisputeBuilder {
             (await this.isReusable(built.result))
         )
             return built.result;
-        const builtStateProof = await this.agreementManager.buildStateProof(
-            forkId,
-            inputs.latestBlockHeight
-        );
+        const latestStateProof = await options?.latestStateProof;
+        const builtStateProof =
+            latestStateProof?.blockHeight === inputs.latestBlockHeight
+                ? latestStateProof
+                : await this.agreementManager.buildStateProof(
+                      forkId,
+                      inputs.latestBlockHeight
+                  );
         // evidence stored while the proof was built goes in too
         const latest = await this.readInputs(forkId, options?.expectedSlashes);
         // a block that landed meanwhile needs its own proof
@@ -209,9 +220,12 @@ export default class DisputeBuilder {
 
     private async hasMoreEvidence(
         forkId: ForkId,
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        latestStateProof?: Promise<BuiltStateProof | undefined>
     ): Promise<boolean> {
-        const ourDispute = (await this.constructDispute(forkId)).dispute;
+        const ourDispute = (
+            await this.constructDispute(forkId, { latestStateProof })
+        ).dispute;
 
         this.logger.verbose("Constructed our own dispute for comparison", {
             ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
@@ -250,7 +264,7 @@ export default class DisputeBuilder {
         expectedSlashes: Address[] = []
     ): Promise<DisputeInputs> {
         const latestBlockHeight =
-            this.storage.blocks.getNextBlockHeight(forkId) - 1;
+            this.storage.blocks.getLatestBlockHeight(forkId);
 
         const [latestStateSnapshot, _onChainSlashes, _participants] =
             await Promise.all([

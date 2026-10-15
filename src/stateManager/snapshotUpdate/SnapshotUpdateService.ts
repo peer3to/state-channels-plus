@@ -437,7 +437,7 @@ export default class SnapshotUpdateService {
             }
 
             const latestBlockHeight =
-                this.stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+                this.stateManager.storage.blocks.getLatestBlockHeight(forkId);
             // nothing at or above the base: no newer final point to post
             if (
                 latestBlockHeight < 0 ||
