@@ -167,6 +167,19 @@ export async function craftInvalidLinkedBlock(
 ): Promise<BlockConfirmationStruct> {
     const author = h.peers.find((peer) => peer.address !== options.notAuthor);
     if (!author) throw new Error("No other harness peer can author");
+    return craftLinkedBlockBy(h, { ...options, author: author.address });
+}
+
+/**
+ * An authentic block at `height` linked to `previousBlockHash`, authored by
+ * the harness peer `author`, committing no state transition result.
+ */
+export async function craftLinkedBlockBy(
+    h: MathPeerTestHarness,
+    options: { height: number; previousBlockHash: Hash; author: Address }
+): Promise<BlockConfirmationStruct> {
+    const author = h.peers.find((peer) => peer.address === options.author);
+    if (!author) throw new Error(`No harness peer is ${options.author}`);
     const encoded = await buildAndEncodeBlock(author.signer, {
         header: {
             channelId: h.channelId,
@@ -395,12 +408,17 @@ export async function stageFrozenViewBehindDisputeTail(h: MathPeerTestHarness) {
  * Make `dispute` claim the state of its last milestone's second block (its
  * auditing data omitted), with an earlier milestone repeating that run plus
  * an authentic block at the next height by another author than the real
- * one: support the walk checks but never executes, at the height the real
- * tail replays. Returns the forged block and the real block it shadows.
+ * one (`otherAuthor`) or by the real block's own author (`shadowedAuthor`,
+ * a double sign): support the walk checks but never executes, at the height
+ * the real tail replays. Returns the forged block and the real block it
+ * shadows.
  */
 export async function forgeSupportAboveDisputeTail(
     h: MathPeerTestHarness,
-    dispute: DisputeStruct
+    dispute: DisputeStruct,
+    options: { forger: "otherAuthor" | "shadowedAuthor" } = {
+        forger: "otherAuthor"
+    }
 ): Promise<{ forged: Block; shadowed: Block }> {
     const milestones = dispute.input.stateProof.milestones;
     const run = milestones.at(-1)!.blockConfirmations;
@@ -411,11 +429,18 @@ export async function forgeSupportAboveDisputeTail(
     const [, real, shadowed] = run.map((confirmation) =>
         Block.fromBlockConfirmation(confirmation)
     );
-    const forged = await craftInvalidLinkedBlock(h, {
-        height: shadowed.height,
-        previousBlockHash: real.hash,
-        notAuthor: shadowed.author
-    });
+    const forged =
+        options.forger === "shadowedAuthor"
+            ? await craftLinkedBlockBy(h, {
+                  height: shadowed.height,
+                  previousBlockHash: real.hash,
+                  author: shadowed.author
+              })
+            : await craftInvalidLinkedBlock(h, {
+                  height: shadowed.height,
+                  previousBlockHash: real.hash,
+                  notAuthor: shadowed.author
+              });
     replaceStateProof(dispute, [
         ...milestones.slice(0, -1),
         { blockConfirmations: [run[0], run[1], forged] },
@@ -431,7 +456,10 @@ export async function forgeSupportAboveDisputeTail(
  * forged block at the height of Y's last tail block.
  */
 export async function stageForgedSupportBelowHonestTail(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    options: { forger: "otherAuthor" | "shadowedAuthor" } = {
+        forger: "otherAuthor"
+    }
 ) {
     const staged = await stageFrozenViewBehindDisputeTail(h);
     const forgedDispute = Codec.decode(
@@ -440,7 +468,8 @@ export async function stageForgedSupportBelowHonestTail(
     );
     const { forged, shadowed } = await forgeSupportAboveDisputeTail(
         h,
-        forgedDispute
+        forgedDispute,
+        options
     );
     expect(shadowed.height).to.equal(staged.frozenHeight + 2);
     return { ...staged, forgedDispute, forged, shadowed };

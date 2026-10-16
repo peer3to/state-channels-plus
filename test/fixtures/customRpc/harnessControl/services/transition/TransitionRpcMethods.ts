@@ -124,6 +124,16 @@ export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> 
         return true;
     }
 
+    /** Store a state snapshot directly, as if this peer held that state. */
+    public async storeStateSnapshot(encodedSnapshot: string): Promise<boolean> {
+        this.service.sm.storage.stateSnapshots.storeStateSnapshot(
+            StateSnapshot.from(
+                Codec.decode(encodedSnapshot, Type.StateSnapshot)
+            )
+        );
+        return true;
+    }
+
     /**
      * Retain a block as proof evidence only — the way state-proof
      * persistence keeps support it did not prove final.

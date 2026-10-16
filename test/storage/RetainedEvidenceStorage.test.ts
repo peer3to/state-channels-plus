@@ -2,6 +2,7 @@ import * as factory from "../factory";
 import { Block } from "@/models";
 import Storage from "@/storage";
 import type { Address, ForkId } from "@/types/types";
+import { contractRejectedSignature } from "@test/fixtures/AcceptedSignersFixture";
 import { expect } from "chai";
 import { ethers } from "ethers";
 import { describe, it } from "mocha";
@@ -275,6 +276,119 @@ describe("RetainedEvidenceStorage", () => {
         ).to.equal([first.hash, second.hash].sort()[0]);
     });
 
+    it("takes the lowest block hash among blocks at a coordinate with as many eligible signers", async () => {
+        const storage = new Storage();
+        const a = factory.randomWallet();
+        const first = await factory.confirmBlock(
+            await factory.authoredBlockAt(factory.randomWallet(), FORK, 4),
+            [a]
+        );
+        const second = await factory.confirmBlock(
+            await factory.authoredBlockAt(factory.randomWallet(), FORK, 4),
+            [a]
+        );
+        storage.retainedEvidence.storeBlock(first);
+        storage.retainedEvidence.storeBlock(second);
+
+        expect(
+            storage.retainedEvidence.getMostSignedBlock(
+                FORK,
+                4,
+                new Set([a.address] as Address[])
+            )?.hash
+        ).to.equal([first.hash, second.hash].sort()[0]);
+    });
+
+    it("counts a signature the contracts reject as no signer among linked children", async () => {
+        const storage = new Storage();
+        const [a, b] = [factory.randomWallet(), factory.randomWallet()];
+        const parent = await factory.authoredBlockAt(
+            factory.randomWallet(),
+            FORK,
+            3
+        );
+        const rejected = await factory.confirmBlock(
+            await factory.authoredBlockAt(
+                factory.randomWallet(),
+                FORK,
+                4,
+                parent.hash
+            ),
+            [a]
+        );
+        rejected.expandSignatures([
+            await contractRejectedSignature(rejected, b, "high s")
+        ]);
+        const accepted = await factory.confirmBlock(
+            await factory.authoredBlockAt(
+                factory.randomWallet(),
+                FORK,
+                4,
+                parent.hash
+            ),
+            [a, b]
+        );
+        storage.retainedEvidence.storeBlock(rejected);
+        storage.retainedEvidence.storeBlock(accepted);
+
+        expect(
+            storage.retainedEvidence.getLinkedChild(
+                parent,
+                new Set([a.address, b.address] as Address[])
+            )?.hash
+        ).to.equal(accepted.hash);
+    });
+
+    it("counts a signature the contracts reject as no signer at a coordinate", async () => {
+        const storage = new Storage();
+        const [a, b] = [factory.randomWallet(), factory.randomWallet()];
+        const rejected = await factory.confirmBlock(
+            await factory.authoredBlockAt(factory.randomWallet(), FORK, 4),
+            [a]
+        );
+        rejected.expandSignatures([
+            await contractRejectedSignature(rejected, b, "high s")
+        ]);
+        const accepted = await factory.confirmBlock(
+            await factory.authoredBlockAt(factory.randomWallet(), FORK, 4),
+            [a, b]
+        );
+        storage.retainedEvidence.storeBlock(rejected);
+        storage.retainedEvidence.storeBlock(accepted);
+
+        expect(
+            storage.retainedEvidence.getMostSignedBlock(
+                FORK,
+                4,
+                new Set([a.address, b.address] as Address[])
+            )?.hash
+        ).to.equal(accepted.hash);
+    });
+
+    it("counts one eligible key that signs a block twice as one signer", async () => {
+        const storage = new Storage();
+        const [a, b] = [factory.randomWallet(), factory.randomWallet()];
+        // authored and confirmed by a: one signer, two signatures
+        const repeated = await factory.confirmBlock(
+            await factory.authoredBlockAt(a, FORK, 4),
+            [a]
+        );
+        const distinct = await factory.confirmBlock(
+            await factory.authoredBlockAt(factory.randomWallet(), FORK, 4),
+            [a, b]
+        );
+        storage.retainedEvidence.storeBlock(repeated);
+        storage.retainedEvidence.storeBlock(distinct);
+
+        expect(
+            storage.retainedEvidence.getMostSignedBlock(
+                FORK,
+                4,
+                new Set([a.address, b.address] as Address[])
+            )?.hash
+        ).to.equal(distinct.hash);
+    });
+
     it("ignores a child at the next height that links to another block", async () => {
         const storage = new Storage();
         const a = factory.randomWallet();
@@ -336,7 +450,12 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(retained);
 
         expect(
-            storage.retainedEvidence.getOtherBlockByAuthor(incoming)?.hash
+            storage.retainedEvidence.getOtherBlockByAuthor(
+                incoming.forkId,
+                incoming.height,
+                incoming.author,
+                incoming.hash
+            )?.hash
         ).to.equal(retained.hash);
     });
 
@@ -350,7 +469,12 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(incoming);
 
         expect(
-            storage.retainedEvidence.getOtherBlockByAuthor(incoming)
+            storage.retainedEvidence.getOtherBlockByAuthor(
+                incoming.forkId,
+                incoming.height,
+                incoming.author,
+                incoming.hash
+            )
         ).to.equal(undefined);
     });
 
@@ -366,7 +490,12 @@ describe("RetainedEvidenceStorage", () => {
         );
 
         expect(
-            storage.retainedEvidence.getOtherBlockByAuthor(incoming)
+            storage.retainedEvidence.getOtherBlockByAuthor(
+                incoming.forkId,
+                incoming.height,
+                incoming.author,
+                incoming.hash
+            )
         ).to.equal(undefined);
     });
 
@@ -379,7 +508,12 @@ describe("RetainedEvidenceStorage", () => {
         );
 
         expect(
-            storage.retainedEvidence.getOtherBlockByAuthor(incoming)
+            storage.retainedEvidence.getOtherBlockByAuthor(
+                incoming.forkId,
+                incoming.height,
+                incoming.author,
+                incoming.hash
+            )
         ).to.equal(undefined);
     });
 });

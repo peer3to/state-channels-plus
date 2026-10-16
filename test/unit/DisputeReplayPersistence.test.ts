@@ -1,6 +1,10 @@
 import Block from "@/models/Block";
 import { Status } from "@/types";
-import { DisputeFraudProofType } from "@/types/sol-enums";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityFraudProofType
+} from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { BLOCK_REPLAY_FAULT_MESSAGE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
@@ -470,6 +474,41 @@ describe("Unit: DisputeValidationService replay persistence", function () {
             );
             expect(again).to.include({ outcome: "returned", isValid: true });
             expect(again.storedProof).to.equal(undefined);
+        });
+        it("U143: a dispute retaining a block forged by the honest tail block's own author is audited, then the honest dispute → the honest dispute is valid with no dispute counter, a double-sign proof names that author, history holds the real block", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportBelowHonestTail(h, {
+                forger: "shadowedAuthor"
+            });
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+            expect(staged.forged.author).to.equal(staged.shadowed.author);
+
+            await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.forgedDispute
+            );
+            const honest = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.storedProof).to.equal(undefined);
+            expect(
+                await auditor
+                    .getFraudProofType(staged.shadowed.author)
+                    .request()
+            ).to.equal(
+                String(toSolidityFraudProofType(FraudProofType.BlockDoubleSign))
+            );
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.shadowed.hash);
         });
     });
 

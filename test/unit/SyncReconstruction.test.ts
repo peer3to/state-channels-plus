@@ -1,4 +1,5 @@
 import StateSnapshot from "@/models/StateSnapshot";
+import { Codec, Type } from "@/utils";
 import { stageAnchoredSyncPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
     chainSnapshot,
@@ -709,7 +710,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 outcome.retained.map((blocks) =>
                     blocks.map((block) => block.hash)
                 )
-            ).to.deep.equal([[String(forgedSecond.hash)]]);
+            ).to.deep.equal([[forgedSecond.hash]]);
         });
 
         it("U132: a forged branch between two hops whose later hop's ancestry the proof does not hold → accepted, neither forged block enters history, both are retained as evidence", async function () {
@@ -733,10 +734,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 outcome.retained.map((blocks) =>
                     blocks.map((block) => block.hash)
                 )
-            ).to.deep.equal([
-                [String(forgedSecond.hash)],
-                [String(forgedThird.hash)]
-            ]);
+            ).to.deep.equal([[forgedSecond.hash], [forgedThird.hash]]);
         });
 
         it("U133: an earlier milestone reaching above the proven endpoint → the head stays at the endpoint, the blocks above it are retained as evidence only and still rebuild the latest proof", async function () {
@@ -802,7 +800,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 outcome.retained.map((blocks) =>
                     blocks.map((block) => block.hash)
                 )
-            ).to.deep.equal([[String(forgedSecond.hash)]]);
+            ).to.deep.equal([[forgedSecond.hash]]);
         });
 
         it("U136: a proof carrying as support a block already in history with another confirmation → the history block gains that signer, nothing is retained at its height", async function () {
@@ -859,7 +857,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 outcome.retained.map((blocks) =>
                     blocks.map((block) => block.hash)
                 )
-            ).to.deep.equal([[String(authorForgedSecond.hash)]]);
+            ).to.deep.equal([[authorForgedSecond.hash]]);
         });
 
         it("U138: a proof whose tail fails its replay after its final history is persisted → rejected, the final history stays and the head stays at the proven endpoint", async function () {
@@ -959,6 +957,34 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             // proof falls back to an unfinalized run from the anchor block
             expect(outcome.rebuilt!.milestones).to.deep.equal([[a + 1, a + 2]]);
             expect(outcome.rebuilt!.chainValid).to.equal(true);
+        });
+
+        it("U142: a retained block whose state is held and whose signers are complete → no milestone starts at it, the rebuilt proof starts at the history final point below", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const rebuilt = await withHeldFreshRequester(
+                h,
+                async (requester) => {
+                    await applyPayloads(h, requester, staged.forkId, [
+                        staged.overreach
+                    ]);
+                    // persistence never stores a retained block's state;
+                    // holding it here isolates the final-point rule
+                    await h
+                        .control(requester)
+                        .transition.storeStateSnapshot(
+                            Codec.encode(
+                                staged.third.snapshot,
+                                Type.StateSnapshot
+                            ) as string
+                        )
+                        .request();
+                    return constructProof(h, requester.index, a + 3);
+                }
+            );
+            expect(rebuilt.milestones).to.deep.equal([[a + 1, a + 2, a + 3]]);
+            expect(rebuilt.chainValid).to.equal(true);
         });
     });
 });

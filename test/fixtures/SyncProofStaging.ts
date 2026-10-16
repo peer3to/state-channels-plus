@@ -471,15 +471,12 @@ export async function applyPayloads(
                 }
                 // read here: a spectator that met provable fraud aborts and
                 // disposes its runtime, so no later host call reaches it
-                const project = (block: {
-                    hash: unknown;
-                    author: unknown;
-                    confirmationSignerAddresses: Set<unknown>;
-                }) => ({
+                // `Hash` is typed `BytesLike`; the projection holds the hex string
+                const project = (block: Block) => ({
                     hash: String(block.hash),
                     signers: [
-                        String(block.author),
-                        ...[...block.confirmationSignerAddresses].map(String)
+                        block.author,
+                        ...block.confirmationSignerAddresses
                     ].sort()
                 });
                 const storage = sm.storage;

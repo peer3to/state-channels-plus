@@ -113,14 +113,14 @@ describe("E2E: retained proof support stays out of executed history", function (
 
         expect(
             (await query.getBlockByHeight(forkId, endpoint + 1).request())?.hash
-        ).to.not.equal(String(forgedSecond.hash));
+        ).to.not.equal(forgedSecond.hash);
         expect(
             (
                 await query
                     .getRetainedEvidenceAt(forkId, endpoint + 1)
                     .request()
             ).map((block) => block.hash)
-        ).to.deep.equal([String(forgedSecond.hash)]);
+        ).to.deep.equal([forgedSecond.hash]);
         for (const index of [0, 1, 2])
             expect(
                 await query.isBlacklisted(h.getPeer(index).address).request(),
