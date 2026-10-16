@@ -1019,6 +1019,10 @@ describe("E2E: BlockQueueManager", function () {
                 .control(targetPeer)
                 .stub.stubFailDisputedForkChecks(Number.MAX_SAFE_INTEGER)
                 .request();
+            await h
+                .control(targetPeer)
+                .stub.observeAdmission({ source: sourcePeer.address })
+                .request();
             try {
                 // Production gossip is fire-and-forget: the sender's verdict
                 // mapping runs in the receiver's async handler, so a local
@@ -1052,6 +1056,25 @@ describe("E2E: BlockQueueManager", function () {
                 expect(judged, "delivered frame was never judged").to.not.be
                     .undefined;
                 expect(judged!.outcome).to.equal("true");
+                // The frame took the faulted path: the disputed-fork check
+                // failed, and no queue entry was created for it (a fault-free
+                // intake of this block would have queued it).
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getDisputedForkCheckObservation()
+                            .request()
+                    ).failed
+                ).to.be.greaterThan(0);
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).networkEntries
+                ).to.equal(0);
                 expect(
                     await h
                         .control(targetPeer)
@@ -1097,6 +1120,19 @@ describe("E2E: BlockQueueManager", function () {
                         .query.getBlockByHeight(newForkId, 1)
                         .request()
                 ).to.equal(null);
+                const calldataRecords = await h
+                    .control(targetPeer)
+                    .stub.getIngestOutcomeRecords()
+                    .request();
+                expect(
+                    calldataRecords.some(
+                        (record) =>
+                            record.senderAddress === "" &&
+                            record.blockHash === secondBlockHash &&
+                            record.outcome === "true"
+                    ),
+                    "calldata copy was never judged"
+                ).to.equal(true);
             } finally {
                 await h
                     .control(targetPeer)
@@ -1105,6 +1141,10 @@ describe("E2E: BlockQueueManager", function () {
                 await h
                     .control(targetPeer)
                     .stub.restoreIngestOutcomeRecording()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreAdmissionObservation()
                     .request();
                 await race.release();
             }
@@ -1150,6 +1190,16 @@ describe("E2E: BlockQueueManager", function () {
                 const { bogusBlock, blockConfirmation } =
                     await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
                 await h
+                    .control(targetPeer)
+                    .stub.observeAdmission({ source: sourcePeer.address })
+                    .request();
+                const failuresBeforeDelivery = (
+                    await h
+                        .control(targetPeer)
+                        .stub.getKillPeriodReadObservation()
+                        .request()
+                ).failed;
+                await h
                     .control(sourcePeer)
                     .byzantine.sendBlockConfirmation(
                         Codec.encode(
@@ -1183,7 +1233,15 @@ describe("E2E: BlockQueueManager", function () {
                             .stub.getKillPeriodReadObservation()
                             .request()
                     ).failed
-                ).to.be.greaterThan(0);
+                ).to.be.greaterThan(failuresBeforeDelivery);
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).networkEntries
+                ).to.equal(0);
                 expect(
                     await h
                         .control(targetPeer)
@@ -1210,6 +1268,10 @@ describe("E2E: BlockQueueManager", function () {
                 await h
                     .control(targetPeer)
                     .stub.restoreIngestOutcomeRecording()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreAdmissionObservation()
                     .request();
             }
         });
@@ -1253,6 +1315,19 @@ describe("E2E: BlockQueueManager", function () {
                 });
                 await author!.p2pInstance.p2pContractInstance.add(1);
 
+                // Judge only the copy of the block the author just made,
+                // never a late growth copy of an already-stored block.
+                const authored = await h
+                    .control(author!)
+                    .query.getLatestBlockBundle(h.activeForkId!)
+                    .request();
+                expect(authored, "author produced no block").to.not.be.null;
+                const authoredHash = Block.fromBlockConfirmation(
+                    Codec.decode(
+                        authored!.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    )
+                ).hash;
                 let judged: { blockHash: string; outcome: string } | undefined;
                 await waitFor(async () => {
                     const records = await h
@@ -1260,7 +1335,9 @@ describe("E2E: BlockQueueManager", function () {
                         .stub.getIngestOutcomeRecords()
                         .request();
                     judged = records.find(
-                        (record) => record.senderAddress === author!.address
+                        (record) =>
+                            record.senderAddress === author!.address &&
+                            record.blockHash === authoredHash
                     );
                     return judged !== undefined;
                 }, h.event.protocolEventTimeoutMs());

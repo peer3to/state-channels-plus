@@ -67,4 +67,7 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P51` — a dispute-replay entry at an empty height below the next height is not past: validation reaches the dispute strategy's linkage guard
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P52` — a queued entry whose height a compact sync left empty below the next height is dropped at queue expiry: no queued execution, no `sync` call, no queue entry or stored block, no cut source, no fraud proof
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P53` — a dequeued entry handed to `restoreQueuedEntry` after a compact sync left its height empty below the next height is settled as past: processed, not queued again, no new queue timeout
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P54` — an exception inside intake (disputed-fork check, kill-period read, eligibility refresh, intake-gate sync application) is never a rejecting verdict for network or calldata origins: no blacklist, no strike, the copy is not queued; explicit verdicts (inauthentic author, wrong channel, absent after a completed sync) still reject
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P54` — a disputed-fork check failure inside intake is never a rejecting verdict for network or calldata origins; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P55` — a kill-period read failure inside intake is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56` — an eligibility-refresh failure inside intake is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57` — an intake-gate sync application failure is never a rejecting verdict; the copy is not queued
