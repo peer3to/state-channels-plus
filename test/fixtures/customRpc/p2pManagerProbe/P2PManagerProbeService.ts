@@ -3264,20 +3264,19 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const first = this.transport(normalizedAddress);
         const profile = this.registerProfile(first, normalizedAddress);
         let hookCount = 0;
-        let resolveConnection!: () => void;
-        let connection = new Promise<void>((resolve) => {
-            resolveConnection = resolve;
-        });
         const unsubscribeConnection = stateManager.events.on(
             "p2pEventHooks",
             "onConnection",
             () => {
                 hookCount += 1;
-                resolveConnection();
             }
         );
 
         try {
+            let connection = stateManager.events.next(
+                "p2pEventHooks",
+                "onConnection"
+            );
             stateManager.p2pEventHooks.handshakeCompleted?.(normalizedAddress);
             await connection;
             const replacement = this.transport(normalizedAddress);
@@ -3285,9 +3284,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 normalizedAddress,
                 replacement
             );
-            connection = new Promise<void>((resolve) => {
-                resolveConnection = resolve;
-            });
+            connection = stateManager.events.next(
+                "p2pEventHooks",
+                "onConnection"
+            );
             stateManager.p2pEventHooks.handshakeCompleted?.(normalizedAddress);
             await connection;
             this.p2pManager.profileManager.removeTransport(first, true);

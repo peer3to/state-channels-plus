@@ -25,14 +25,6 @@ export type HeldSuccessorAdoption = {
     adoptionRetries: () => Promise<number>;
 };
 
-async function reducedForkOf(
-    h: MathPeerTestHarness,
-    forkId: ForkId
-): Promise<ForkId> {
-    return (await h.channelManager.getReducedResult(h.channelId, forkId))
-        .reducedForkId as ForkId;
-}
-
 /**
  * A reducible disputed fork that only the reducer reduces. Its reduce lands,
  * and its follow-up adopt-only post is prepared against the then latest,
@@ -60,7 +52,7 @@ export async function stageHeldSuccessorAdoption(
     await h.control(reducer).stub.stubHoldReductionTasks().request();
     // after the reduction-task restore, which resets scheduleTask
     const tasks = await h.rpcStub.recordScheduledTasks(reducer.index);
-    const successorForkId = await reducedForkOf(h, sourceForkId);
+    const successorForkId = await h.query.reducedForkOnChain(sourceForkId);
     expect(successorForkId, "the reduce landed").to.not.equal(ZeroHash);
     return {
         sourceForkId,
@@ -170,7 +162,7 @@ export async function finalizeLaterReduction(
     );
     let laterForkId = ZeroHash as ForkId;
     await waitFor(async () => {
-        laterForkId = await reducedForkOf(h, held.successorForkId);
+        laterForkId = await h.query.reducedForkOnChain(held.successorForkId);
         return laterForkId !== ZeroHash;
     }, h.event.protocolEventTimeoutMs());
     // the later reducer prepared its adoption against the landed reduce

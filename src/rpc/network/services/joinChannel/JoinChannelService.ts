@@ -226,38 +226,25 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         const isReady = () => getUnreachable().length === 0;
         if (isReady()) return;
 
-        await new Promise<void>((resolve, reject) => {
-            let settled = false;
-            const unsubscribe = this.p2pManager.stateManager.events.on(
-                "p2pEventHooks",
-                "handshakeCompleted",
-                () => {
-                    if (settled || !isReady()) return;
-                    settled = true;
-                    unsubscribe();
-                    this.p2pManager.stateManager.timeoutManager.cancelTask(
-                        timeout
-                    );
-                    resolve();
-                }
+        const timedOut = new AbortController();
+        const timeout =
+            this.p2pManager.stateManager.timeoutManager.scheduleTask(
+                () => timedOut.abort(),
+                this.p2pManager.stateManager.timeConfig.agreementTime *
+                    2 *
+                    1000,
+                "join threshold participant reachability"
             );
-            const timeout =
-                this.p2pManager.stateManager.timeoutManager.scheduleTask(
-                    () => {
-                        if (settled) return;
-                        settled = true;
-                        unsubscribe();
-                        reject(
-                            new Error(
-                                `collectJoinChannelConfirmation: threshold participant unavailable: ${getUnreachable().join(", ")}`
-                            )
-                        );
-                    },
-                    this.p2pManager.stateManager.timeConfig.agreementTime *
-                        2 *
-                        1000,
-                    "join threshold participant reachability"
-                );
-        });
+        const handshake = await this.p2pManager.stateManager.events.next(
+            "p2pEventHooks",
+            "handshakeCompleted",
+            isReady,
+            timedOut.signal
+        );
+        this.p2pManager.stateManager.timeoutManager.cancelTask(timeout);
+        if (!handshake)
+            throw new Error(
+                `collectJoinChannelConfirmation: threshold participant unavailable: ${getUnreachable().join(", ")}`
+            );
     }
 }

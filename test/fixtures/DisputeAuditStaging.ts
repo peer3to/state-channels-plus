@@ -2007,3 +2007,195 @@ export async function runConcurrentVirtualFinalAudits(
         await Promise.allSettled([realAudit, forgedAudit]);
     }
 }
+
+/**
+ * A 4-peer channel where, after `blocksBefore` blocks and `beforeCalldataBlock`,
+ * the next writer's block is confirmed below threshold and posted as
+ * calldata. The disputer misses that block, the writer's timeout deadline
+ * passes, and a timeout of the writer is planted on the disputer. Every
+ * peer's own timeout check stays suppressed.
+ */
+export async function stageTimeoutOfCalldataPostedBlock(
+    h: MathPeerTestHarness,
+    options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
+) {
+    const timeConfig = { evidenceTime: 8 };
+    await h.lifecycle.timeoutSetup(4, 0, { timeConfig });
+    if (options.blocksBefore > 0) {
+        await h.transition.advanceState({ count: options.blocksBefore });
+    }
+    await options.beforeCalldataBlock?.();
+    const calldataAuthor = await h.query.getNextPeerToWrite();
+    const [auditorIndex, windowOpenerIndex, disputerIndex] = [
+        0, 1, 2, 3
+    ].filter((i) => i !== calldataAuthor.index) as [number, number, number];
+    const honestIndices = [0, 1, 2, 3].filter((i) => i !== disputerIndex);
+    await h
+        .control(h.getPeer(disputerIndex))
+        .stub.stubRejectIngestedConfirmations()
+        .request();
+    await Promise.all(
+        [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
+    );
+    await h.network.blacklistAndDisconnectPeer(disputerIndex);
+    await h.transition.advanceState({
+        count: 1,
+        waitForPeers: honestIndices,
+        waitForFinalization: false
+    });
+    await h.event.waitForPeers("onBlockCalldataPosted", honestIndices, 1, {
+        mode: "atLeast"
+    });
+    const forkId = h.activeForkId!;
+
+    // the timeout clock runs from the block below the posted one, or genesis
+    const previousTimestamp =
+        options.blocksBefore > 0
+            ? (await h
+                  .control(h.getPeer(auditorIndex))
+                  .query.getBlockByHeight(forkId, options.blocksBefore - 1)
+                  .request())!.timestamp
+            : Number(
+                  (await h.channelManager.getStateSnapshot(h.channelId))
+                      .timestamp
+              );
+    await h.event.waitUntilTimestamp(
+        previousTimestamp +
+            timeoutWaitTime(
+                resolveTestTimeConfig(timeConfig),
+                options.blocksBefore
+            ) +
+            1
+    );
+    await h.tamper.plantFreshTimeoutForParticipant(
+        disputerIndex,
+        calldataAuthor.address
+    );
+
+    const posted = await h
+        .control(h.getPeer(auditorIndex))
+        .query.getBlockByHeight(forkId, options.blocksBefore)
+        .request();
+    const postedBlock = Codec.decode(
+        Codec.decode(posted!.encodedSignedBlock, Type.SignedBlock).encodedBlock,
+        Type.Block
+    );
+    return {
+        forkId,
+        calldataAuthor,
+        auditorIndex,
+        windowOpenerIndex,
+        disputerIndex,
+        honestIndices,
+        postedBlock
+    };
+}
+
+/**
+ * {@link stageTimeoutOfCalldataPostedBlock}, then reductions held, a dispute
+ * window opened by another peer, and the disputer's constructed timeout
+ * dispute of the posted block's author (not uploaded, not forced).
+ * `previousBlock` is the block below the posted one, or null at genesis.
+ */
+export async function constructTimeoutOfCalldataPostedBlock(
+    h: MathPeerTestHarness,
+    options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
+) {
+    const staged = await stageTimeoutOfCalldataPostedBlock(h, options);
+    for (const i of [0, 1, 2, 3]) {
+        await h.rpcStub.holdReductionRace(i);
+    }
+    await h
+        .control(h.getPeer(staged.windowOpenerIndex))
+        .dispute.setForceExit(true)
+        .request();
+    await h.tamper.postTamperedDispute(staged.windowOpenerIndex, () => {}, {
+        markMalicious: false
+    });
+    const { dispute } = await h.dispute.fetchConstructedDispute(
+        staged.disputerIndex
+    );
+    await h
+        .control(h.getPeer(staged.disputerIndex))
+        .stub.restoreRejectIngestedConfirmations()
+        .request();
+    expect(Number(dispute.input.timeout.blockHeight)).to.equal(
+        options.blocksBefore
+    );
+    expect(dispute.postedAuditingData).to.equal(false);
+    const previousBlock =
+        options.blocksBefore > 0
+            ? await h
+                  .control(h.getPeer(staged.auditorIndex))
+                  .query.getBlockByHeight(
+                      staged.forkId,
+                      options.blocksBefore - 1
+                  )
+                  .request()
+            : null;
+    return { ...staged, dispute, previousBlock };
+}
+
+/**
+ * {@link constructTimeoutOfCalldataPostedBlock}, forced, audited by the
+ * auditor.
+ */
+export async function auditTimeoutOfCalldataPostedBlock(
+    h: MathPeerTestHarness,
+    options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
+) {
+    const constructed = await constructTimeoutOfCalldataPostedBlock(h, options);
+    constructed.dispute.input.timeout.isForced = true;
+    const run = await h.dispute.auditDispute(
+        constructed.auditorIndex,
+        constructed.dispute
+    );
+    return {
+        run,
+        postedBlock: constructed.postedBlock,
+        disputerAddress: h.getPeer(constructed.disputerIndex).address
+    };
+}
+
+/**
+ * {@link stageTimeoutOfCalldataPostedBlock}, then the disputer uploads its
+ * forced timeout of the posted block's author.
+ */
+export async function postTimeoutOfCalldataPostedBlock(
+    h: MathPeerTestHarness,
+    options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
+) {
+    const staged = await stageTimeoutOfCalldataPostedBlock(h, options);
+    h.contextApi.captureOriginalFork();
+    h.event.resetEventSpies();
+    const { dispute } = await h.tamper.postTamperedDispute(
+        staged.disputerIndex,
+        (tampered) => {
+            tampered.input.timeout.isForced = true;
+        }
+    );
+    expect(Number(dispute.input.timeout.blockHeight)).to.equal(
+        options.blocksBefore
+    );
+    return staged;
+}
+
+/**
+ * Honest peers kill the forced timeout with the posted calldata; only the
+ * disputer is slashed, the author stays.
+ */
+export async function expectTimeoutOfCalldataPostedBlockKilled(
+    h: MathPeerTestHarness,
+    staged: { disputerIndex: number; honestIndices: number[] }
+) {
+    await h.event.waitForPeers("onDisputeKilled", staged.honestIndices, 1, {
+        mode: "atLeast"
+    });
+    await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
+        disputeFraudProofType: DisputeFraudProofType.TimeoutCalldataPosted,
+        peerIndices: staged.honestIndices
+    });
+    await h.assert.dispute.slashedOnChainExactly([
+        h.getPeer(staged.disputerIndex).address
+    ]);
+}

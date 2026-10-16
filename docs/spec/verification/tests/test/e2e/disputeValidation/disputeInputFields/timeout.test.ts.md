@@ -10,7 +10,8 @@ dispute is tampered. Linkage and schedule violations are each killed by the matc
 wrong `timeout.blockHeight` → `TimeoutNotLinkedToLatestState`; wrong `timeout.participant` →
 `TimeoutParticipantNotNext`; a timeout posted before its wait period elapses → `TimeoutTooEarly`
 plus an on-chain slash of the disputer; a forced timeout for a block whose calldata is already
-on-chain → `TimeoutCalldataPosted`, with the honest killers verified absent from the slash set.
+on-chain → `TimeoutCalldataPosted`, with only the disputer slashed. The same refutation kills the
+timeout when the posted block is the fork's first block, and when it carries an inbound top-up.
 A bad-signature real forced-timeout flow posts linked calldata with a corrupted author signature
 and has the writer submit the `TimeoutCalldataPosted` refutation itself: the commitment matches the
 exact posted payload, the committed timeout survives, the forcer stays unslashed and is retained at
@@ -38,4 +39,6 @@ whose deadline is later than that window. Its refusal therefore exercises the ti
 - `forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed`: none
 - `leaver does not dispute a timeout after leaving the channel`: none
 - `dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted`: REQ-ENFFP-1-BREACW.T1.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P19, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P18, REQ-DISPUTE-PIPE-5-RZZB48.T1.P10
+- `an honest first block posted as calldata refutes the forced timeout of its author → TimeoutCalldataPosted kills the dispute`: REQ-DIS-10-SAHJBN.T1.P20
+- `an honest block carrying an inbound top-up posted as calldata refutes the forced timeout of its author → TimeoutCalldataPosted kills the dispute`: REQ-DIS-10-SAHJBN.T1.P27
 - `bad-signature posted calldata cannot refute an honest forced timeout`: REQ-DIS-10-SAHJBN.T1.P25

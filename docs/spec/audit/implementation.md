@@ -929,7 +929,7 @@ check and the call. It deletes the previous transition's outbound messages first
 copy and the gas check, so the caller pays for the deletion outside the transition budget and a
 transition always writes its messages into empty slots.
 [UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
-`getStateTransitionReplayGas` adds the share kept at each of the four enclosing calls.
+`getStateTransitionReplayGas` adds the share kept at each of the five enclosing calls (multicall, facet delegatecall, `FraudProofFacet` delegatecall, `executeStateTransition`, state machine).
 [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends only the replay
 transactions (the fraud-proof multicall and `applyDisputeFraudProofs`) with the signer's estimate
 with its headroom plus the requirement, the requirement read once (engineer decision 2026-09-27).

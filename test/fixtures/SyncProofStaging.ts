@@ -396,14 +396,14 @@ export async function applyPayloads(
                         let threw = "";
                         try {
                             // the prototype method: a held initial sync stays held
-                            accepted = await Object.getPrototypeOf(
+                            ({ synced: accepted } = await Object.getPrototypeOf(
                                 service
                             ).applySyncResponse.call(
                                 service,
                                 a.responder,
                                 request,
                                 encoded
-                            );
+                            ));
                         } catch (error) {
                             threw = String(error);
                         }

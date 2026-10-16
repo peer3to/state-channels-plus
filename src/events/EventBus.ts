@@ -59,6 +59,15 @@ type EmitArgs<
     ? TApplicationEvents[N & keyof TApplicationEvents]
     : unknown[];
 
+/** The argument tuple of one event of one kind. */
+type BusEventArgs<
+    TApplicationEvents extends ApplicationEventMap,
+    K extends BusKind,
+    N extends keyof BusEventMaps<TApplicationEvents>[K]
+> = BusEventMaps<TApplicationEvents>[K][N] extends readonly unknown[]
+    ? BusEventMaps<TApplicationEvents>[K][N]
+    : never;
+
 type AnyListener = (...args: any[]) => void;
 type KindListener = (eventName: string, args: unknown[]) => void;
 /**
@@ -128,11 +137,7 @@ export class EventBus<
     >(
         kind: K,
         eventName: N,
-        listener: (
-            ...args: BusEventMaps<TApplicationEvents>[K][N] extends readonly unknown[]
-                ? BusEventMaps<TApplicationEvents>[K][N]
-                : never
-        ) => void
+        listener: (...args: BusEventArgs<TApplicationEvents, K, N>) => void
     ): () => void {
         const key = getEventKey(kind, eventName);
         let set = this.named.get(key);
@@ -148,6 +153,38 @@ export class EventBus<
         return () => {
             capturedSet.delete(listener as AnyListener);
         };
+    }
+
+    /**
+     * The args of the first `eventName` that passes `filter`, then
+     * unsubscribes. Resolves undefined once `signal` aborts first.
+     */
+    next<
+        K extends BusKind,
+        N extends keyof BusEventMaps<TApplicationEvents>[K] & string
+    >(
+        kind: K,
+        eventName: N,
+        filter: (
+            ...args: BusEventArgs<TApplicationEvents, K, N>
+        ) => boolean = () => true,
+        signal?: AbortSignal
+    ): Promise<BusEventArgs<TApplicationEvents, K, N> | undefined> {
+        return new Promise((resolve) => {
+            if (signal?.aborted) return resolve(undefined);
+            const end = (
+                args: BusEventArgs<TApplicationEvents, K, N> | undefined
+            ) => {
+                unsubscribe();
+                signal?.removeEventListener("abort", onAbort);
+                resolve(args);
+            };
+            const onAbort = () => end(undefined);
+            const unsubscribe = this.on(kind, eventName, (...args) => {
+                if (filter(...args)) end(args);
+            });
+            signal?.addEventListener("abort", onAbort);
+        });
     }
 
     /**

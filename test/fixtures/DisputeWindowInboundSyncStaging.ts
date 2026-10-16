@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncPayload } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -279,14 +280,14 @@ async function stageAndApplyDisputeWindowInboundSync(
         );
     const encodedPayload = Codec.encode(payload, Type.SyncPayload) as string;
     await requesterStub.recordSyncRejections().request();
-    let accepted: boolean;
+    let outcome: SyncOutcome;
     let rejections: string[];
     try {
         if (
             options.reduction === "local" ||
             options.reduction === "chainBeforeSync"
         )
-            accepted = await applyPayload(encodedPayload);
+            outcome = await applyPayload(encodedPayload);
         else {
             await requesterStub
                 .holdSyncWindowPersistence(
@@ -312,13 +313,15 @@ async function stageAndApplyDisputeWindowInboundSync(
                     ).to.equal(true);
                 else
                     expect(
-                        await applyPayload(
-                            response.encodedSyncPayload as string
-                        )
+                        (
+                            await applyPayload(
+                                response.encodedSyncPayload as string
+                            )
+                        ).synced
                     ).to.equal(true);
             } finally {
                 await requesterStub.releaseSyncWindowPersistence().request();
-                accepted = await pending;
+                outcome = await pending;
             }
         }
         rejections = await requesterStub
@@ -346,7 +349,8 @@ async function stageAndApplyDisputeWindowInboundSync(
             storedInboundHashes.push(blockHash);
 
     return {
-        accepted,
+        accepted: outcome.synced,
+        unsettledForkId: outcome.unsettledForkId,
         rejections,
         responderBlacklisted: await requesterControl.query
             .isBlacklisted(responder.address)

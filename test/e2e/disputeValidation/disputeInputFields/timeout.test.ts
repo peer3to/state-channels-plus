@@ -1,6 +1,10 @@
 import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep, tryDecodeCustomError } from "@/utils";
+import {
+    expectTimeoutOfCalldataPostedBlockKilled,
+    postTimeoutOfCalldataPostedBlock
+} from "@test/fixtures/DisputeAuditStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
@@ -295,65 +299,37 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
     it("dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.timeoutSetup(4, 0, {
-            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+        const staged = await postTimeoutOfCalldataPostedBlock(h, {
+            blocksBefore: 2
         });
+        await expectTimeoutOfCalldataPostedBlockKilled(h, staged);
+    });
 
-        // Establish height 1 so the calldata block does not receive first-block grace.
-        await h.transition.advanceState({ count: 2 });
-        const calldataAuthor = await h.query.getNextPeerToWrite();
-
-        // Peer 3 cannot confirm height 2, so the author must post it as calldata.
-        await h
-            .control(h.getPeer(3))
-            .stub.stubRejectIngestedConfirmations()
-            .request();
-        await Promise.all(
-            [0, 1, 2, 3].map((peerIndex) =>
-                h.rpcStub.suppressTimeoutCheck(peerIndex)
-            )
-        );
-        await h.network.blacklistAndDisconnectPeer(3);
-        await h.transition.advanceState({
-            count: 1,
-            waitForPeers: [0, 1, 2],
-            waitForFinalization: false
+    it("an honest first block posted as calldata refutes the forced timeout of its author → TimeoutCalldataPosted kills the dispute", async function () {
+        const h = TestSession.getHarness();
+        const staged = await postTimeoutOfCalldataPostedBlock(h, {
+            blocksBefore: 0
         });
-        await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2, 3], 1, {
-            mode: "atLeast"
-        });
+        // premise: the posted block is the fork's first block
+        expect(
+            Number(staged.postedBlock.transaction.header.transactionCnt)
+        ).to.equal(0);
+        await expectTimeoutOfCalldataPostedBlockKilled(h, staged);
+    });
 
-        // Construct the committed output for the same participant blamed by
-        // the timeout. Mutating the participant afterwards invalidates the
-        // dispute output before TimeoutCalldataPosted is even evaluated.
-        await h.tamper.plantFreshTimeoutForParticipant(
-            3,
-            calldataAuthor.address
-        );
-        await sleep(h.event.evidencePeriodWaitMs());
-
-        h.contextApi.captureOriginalFork();
-        h.event.resetEventSpies();
-        await h.tamper.postTamperedDispute(3, (dispute) => {
-            dispute.input.timeout.isForced = true;
+    it("an honest block carrying an inbound top-up posted as calldata refutes the forced timeout of its author → TimeoutCalldataPosted kills the dispute", async function () {
+        const h = TestSession.getHarness();
+        const staged = await postTimeoutOfCalldataPostedBlock(h, {
+            blocksBefore: 2,
+            beforeCalldataBlock: async () => {
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(0).address
+                });
+            }
         });
-
-        await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
-            mode: "atLeast"
-        });
-        await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
-            disputeFraudProofType: DisputeFraudProofType.TimeoutCalldataPosted,
-            peerIndices: [0, 1, 2]
-        });
-
-        const slashed = (
-            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
-        ).map((address) => address.toLowerCase());
-        for (const peerIndex of [0, 1, 2]) {
-            expect(slashed).not.to.include(
-                h.getPeer(peerIndex).address.toLowerCase()
-            );
-        }
+        // premise: the posted block consumes the inbound top-up
+        expect(staged.postedBlock.messageBlocks.length).to.be.greaterThan(0);
+        await expectTimeoutOfCalldataPostedBlockKilled(h, staged);
     });
 
     it("bad-signature posted calldata cannot refute an honest forced timeout", async function () {

@@ -9,7 +9,6 @@
 - [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
-  Partial: `_validateTimeoutCalldataPostedProof` rebuilds the posted block's snapshot differently from clients, so an honest refutation can fail ([`FIND-TIMEOUT-4-5YNPT3`](../../../../../audit/open-findings.md#find-timeout-4-5ynpt3)).
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
@@ -235,3 +234,8 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P206` — a `TimeoutCalldataPosted` proof whose posted block is signed by the wrong key is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P207` — a `TimeoutCalldataPosted` proof whose posted block carries an unrecoverable author signature is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P208` — a `TimeoutCalldataPosted` proof whose posted block carries no signature is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P209` — a `TimeoutCalldataPosted` proof whose posted block consumes a real on-chain top-up inbound block kills the timeout and slashes the disputer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P210` — a `TimeoutCalldataPosted` proof whose inbound block does not extend the snapshot's inbound head is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211` — a `TimeoutCalldataPosted` proof whose inbound block skips a height is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212` — a `TimeoutCalldataPosted` proof whose inbound message the state machine rejects reverts `ErrorDisputeStateMachineInboundProcessingFailed` with no verdict and no slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213` — a `TimeoutCalldataPosted` proof whose posted block consumes a join of a new participant commits to a snapshot admitting the joiner and kills the timeout

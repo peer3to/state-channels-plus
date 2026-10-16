@@ -52,6 +52,8 @@ const notRoutedByFacet: Record<
             "invoked from within the dispute pipeline; exposing it externally would widen the attack surface"
     },
     FraudProofFacet: {
+        isBlockReplayValid:
+            "replay step shared by the fraud-proof handlers; DisputeFraudProofFacet delegatecalls it",
         runFraudProof:
             "single fraud-proof step driven by applyFraudProofs; not callable on its own"
     },

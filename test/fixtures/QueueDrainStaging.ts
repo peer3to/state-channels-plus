@@ -6,6 +6,7 @@ import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { reduceWindowOnChain } from "@test/fixtures/PinnedSyncStaging";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -431,4 +432,105 @@ export async function assertStoredTipCopyDrainsNextBlock(
         if (next === "gossiped")
             await stub.restoreLiveBlockRetention().request();
     }
+}
+
+/**
+ * Peer 1 opens a valid self-removal dispute (no peer reduces on its own),
+ * gossips peer 0 a junk first block on the window's successor fork, and
+ * answers every sync request with its real payload, which proves that fork
+ * only through the unreduced window. Peer 0's queue-timeout probe of peer 1
+ * waits for the chain's reduction; once peer 1 has answered, `during` runs
+ * inside the kill period, then the kill period ends and peer 1 reduces the
+ * window. Returns the
+ * window's kill period ends before and after `during`, peer 1's answered
+ * request count, and whether peer 0 blacklisted it.
+ */
+export async function probeJunkSourceAcrossUnreducedWindow(
+    f: QueueIntakeFixture,
+    during: () => Promise<void> = async () => {}
+) {
+    const h = f.h;
+    const forkId = h.activeForkId!;
+    const encodedJunkBlock = await stageUnreducedWindowPayload(h, 1);
+    const supplier = h.control(h.getPeer(1));
+    await h
+        .control(h.getPeer(0))
+        .transition.ingestBlockConfirmation(encodedJunkBlock, {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: h.getPeer(1).address
+        })
+        .request();
+    const killPeriod = () => h.query.killPeriod(forkId);
+    await waitFor(
+        async () =>
+            (await supplier.stub.getSpectateRequestCount().request()) === 1,
+        h.event.protocolEventTimeoutMs()
+    );
+    const killPeriodEndBefore = (await killPeriod()).killPeriodEnd;
+    await during();
+    const killPeriodEndAfter = (await killPeriod()).killPeriodEnd;
+    await waitFor(
+        async () => (await killPeriod()).isExpired,
+        h.event.protocolEventTimeoutMs() * 2
+    );
+    const reducedBeforeRelease = await h.query.reducedForkOnChain(forkId);
+    // peer 1 reduces: `during` may have stopped peer 0
+    await reduceWindowOnChain(h, 1, forkId);
+    return {
+        killPeriodEndBefore,
+        killPeriodEndAfter,
+        reducedBeforeRelease,
+        supplierRequests: () =>
+            supplier.stub.getSpectateRequestCount().request(),
+        supplierBlacklisted: () =>
+            h
+                .control(h.getPeer(0))
+                .query.isBlacklisted(h.getPeer(1).address)
+                .request()
+    };
+}
+
+/**
+ * Peer 1 opens a valid self-removal dispute that neither participant
+ * reduces on its own (peer 0 still applies the chain's events, the
+ * reduction among them). Peer `serverIndex` answers every sync request with peer 1's
+ * real payload, which proves the window's successor fork only through the
+ * unreduced window, and counts the requests. Returns a junk first block on
+ * that successor fork, signed by peer 1.
+ */
+export async function stageUnreducedWindowPayload(
+    h: MathPeerTestHarness,
+    serverIndex: number
+) {
+    const forkId = h.activeForkId!;
+    const server = h.getPeer(serverIndex);
+    await h.rpcStub.holdReductionRace(1);
+    await h.control(h.getPeer(0)).stub.stubHoldReductionTasks().request();
+    await h.control(h.getPeer(1)).dispute.setForceExit(true).request();
+    await h.tamper.postTamperedDispute(1, () => {}, { markMalicious: false });
+    await h.assert.dispute.committedWait({
+        expectedCount: 1,
+        peersIndices: [0, 1]
+    });
+    const served = await h
+        .control(h.getPeer(1))
+        .spectate.generateSyncPayload(h.channelId, forkId, 0)
+        .request();
+    await h
+        .control(server)
+        .stub.stubSpectatePayload(served!.encodedSyncPayload)
+        .request();
+    await h.control(server).stub.stubCountSpectateRequests().request();
+    const successorForkId = Codec.decode(
+        served!.encodedSyncPayload,
+        Type.SyncPayload
+    ).disputeWindows[0].reducedForkId;
+    return await factory.buildAndEncodeBlock(h.getPeer(1).signer, {
+        header: {
+            channelId: h.channelId,
+            forkId: successorForkId,
+            transactionCnt: 0,
+            participant: h.getPeer(1).address
+        }
+    });
 }
