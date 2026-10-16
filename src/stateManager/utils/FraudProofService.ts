@@ -228,13 +228,17 @@ export default class FraudProofService {
         });
     }
 
-    /** The predecessor `block` names, its snapshot and state, from storage by hash. */
+    /**
+     * The predecessor `block` names, its snapshot and state, from storage by
+     * hash: history, else a retained proof block (a start block a sync
+     * replays from before it becomes history). The hash binds the block.
+     */
     private getStoredPredecessor(block: Block): BlockPredecessor | undefined {
         if (block.height === 0)
             return this.storage.getPredecessor(block.forkId);
-        const previousBlock = this.storage.blocks.getBlock(
-            block.previousBlockHash
-        );
+        const previousBlock =
+            this.storage.blocks.getBlock(block.previousBlockHash) ??
+            this.storage.retainedEvidence.getBlock(block.previousBlockHash);
         return (
             previousBlock &&
             this.storage.getPredecessor(block.forkId, previousBlock)

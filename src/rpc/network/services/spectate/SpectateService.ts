@@ -553,7 +553,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
             // 4) Persist the verified material; existing data is kept
-            const { shouldAbort } = await this.persistSyncPayload(
+            const { shouldAbort, installed } = await this.persistSyncPayload(
                 {
                     ...syncPayload,
                     disputeWindows: linkedDisputeWindows,
@@ -588,10 +588,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
             // a start block the persistence retained (nothing corroborated it
             // yet) is not in history: the first tail block is judged from it
-            // and its execution makes it history
+            // and its execution makes it history. Only after this sync
+            // installed the base: replaying from it otherwise would move the
+            // VM back below the point this peer already holds
             const predecessorBlock =
                 base.fromIndex > 0 ? lastRun[base.fromIndex - 1] : undefined;
             const deferredStart =
+                installed &&
                 predecessorBlock &&
                 !stateManager.storage.blocks.hasBlock(predecessorBlock.hash)
                     ? predecessorBlock
@@ -1055,12 +1058,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     public async persistSyncPayload(
         syncPayload: SyncPayload,
         verified: VerifiedSync
-    ): Promise<{ shouldAbort: boolean }> {
+    ): Promise<{ shouldAbort: boolean; installed: boolean }> {
         const stateManager = this.p2pManager.stateManager;
         const { walk, evidence, base } = verified;
         return await stateManager.withMutex(
             async () => {
-                if (stateManager.isDisposed) return { shouldAbort: true };
+                if (stateManager.isDisposed)
+                    return { shouldAbort: true, installed: false };
                 this.logger.debug(`Persisting sync payload`, syncPayload);
                 const storage = stateManager.storage;
                 const forkId = base.snapshot.forkID;
@@ -1072,7 +1076,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         walk,
                         { replayFromIndex: base.fromIndex, advanceView: true }
                     );
-                if (!persistProof) return { shouldAbort: true };
+                if (!persistProof)
+                    return { shouldAbort: true, installed: false };
                 const persistHistory = () => {
                     if (stateManager.isDisposed || !persistProof())
                         return false;
@@ -1127,12 +1132,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     stateManager.forkId === forkId &&
                     localLatestHeight >= baseHeight;
                 if (holdsBase) {
-                    if (!persistHistory()) return { shouldAbort: true };
+                    if (!persistHistory())
+                        return { shouldAbort: true, installed: false };
                     this.logger.info(
                         "Sync keeps the local state: it already holds the installed point or a later one",
                         { forkId, baseHeight, localLatestHeight }
                     );
-                    return { shouldAbort: false };
+                    return { shouldAbort: false, installed: false };
                 }
                 // a conflict found after the VM write restores the VM
                 const installed =
@@ -1143,7 +1149,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         persistHistory
                     );
                 this.logger.debug(`Finished persisting sync payload`);
-                return { shouldAbort: !installed };
+                return { shouldAbort: !installed, installed };
             },
             { taskName: "persistSyncPayload" }
         );

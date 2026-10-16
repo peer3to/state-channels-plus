@@ -1091,17 +1091,23 @@ class AgreementManager {
         maxHeight?: BlockHeight
     ): Promise<MilestoneProofStruct | undefined> {
         const first = this.getHistoryBlock(forkId, height);
-        // without its resulting state the first block proves no hop: hash order
-        const rankSigners =
+        // the first block's threshold set, computed once: it ranks the
+        // continuations and every run's milestone reuses it. Without its
+        // resulting state the first block proves no hop: hash order
+        const firstThreshold =
             first &&
             this.storage.stateSnapshots.getStateSnapshotByHash(
                 first.stateSnapshotHash
             )
-                ? await this.getMilestoneThresholdSigners(
-                      previousThresholdSnapshot,
-                      first
-                  )
-                : new Set<Address>();
+                ? {
+                      block: first,
+                      signers: await this.getMilestoneThresholdSigners(
+                          previousThresholdSnapshot,
+                          first
+                      )
+                  }
+                : undefined;
+        const rankSigners = firstThreshold?.signers ?? new Set<Address>();
         let path: RunPath | undefined = {
             rankSigners,
             choices: [],
@@ -1111,7 +1117,8 @@ class AgreementManager {
             const milestone = await this.tryBuildMilestone(
                 this.storedBlocksUp(forkId, height, path),
                 previousThresholdSnapshot,
-                maxHeight
+                maxHeight,
+                firstThreshold
             );
             if (milestone) return milestone;
             path = this.nextRunPath(path);
@@ -1258,7 +1265,9 @@ class AgreementManager {
     private async tryBuildMilestone(
         blockIterator: Generator<Block, void, unknown>,
         previousThresholdSnapshot: StateSnapshot,
-        maxHeight?: BlockHeight
+        maxHeight?: BlockHeight,
+        // a threshold set the caller already computed for this block
+        known?: { block: Block; signers: Set<Address> }
     ): Promise<MilestoneProofStruct | undefined> {
         const collectedBlocks: Block[] = [];
         const collectedSigners = new Set<Address>();
@@ -1313,10 +1322,13 @@ class AgreementManager {
                 )
             ) {
                 thresholdBlock = currentBlock;
-                thresholdSigners = await this.getMilestoneThresholdSigners(
-                    previousThresholdSnapshot,
-                    thresholdBlock
-                );
+                thresholdSigners =
+                    known?.block.hash === thresholdBlock.hash
+                        ? known.signers
+                        : await this.getMilestoneThresholdSigners(
+                              previousThresholdSnapshot,
+                              thresholdBlock
+                          );
             }
 
             for (const signer of currentBlock.allSignerAddresses) {
