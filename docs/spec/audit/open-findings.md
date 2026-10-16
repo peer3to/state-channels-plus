@@ -237,6 +237,9 @@ That classifier accepts the same prefix which [ContractExecutor](../../../src/ev
 uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
 The [local gas grant](../../../src/evm/contractExecutor/ContractExecutor.ts#L43) is finite and funds each whole call;
 its transition replay requirement does not establish a bound on all reduction work, proof checks and state restoration.
+A local failure on a window the chain has not reduced is no verdict since
+[`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa); the verdict on a reduced window
+and the gas bound stay open.
 The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
@@ -1603,37 +1606,68 @@ All-skipped walk success alone is not evidence of a valid newer adoption.
 
 ### FIND-SYNC-2-VV16K8
 
-**Defect:** A spectating sync cuts an honest responder when a dispute lands on the tip fork
-mid-sync. `generateSyncPayload` stops its walk at a fork `isForkDisputed` reports undisputed
-(src/rpc/network/services/spectate/SpectateService.ts:684-688). The requester later re-reads the
-dispute window for the payload's final fork in step 2.8.1 (:384-393) and rejects with "latest fork
-is disputed" when one now exists; `rejectSync` (:1160-1166) disconnects and blacklists the
-responder. A dispute committed between the two reads is a chain change the responder did not cause,
-yet the [failure outcomes](../specification/peer-communication/synchronization.md#failure-outcomes)
-table treats every verification failure as Byzantine evidence against the responder. Same class as
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp); it also bears on the agreementTime assumption the
-owner retained under [`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n). Code-traced, not executed.
+**Defect:** _Resolved (2026-10-16)._ A spectating sync cut an honest responder when a dispute
+landed on the tip fork mid-sync: `generateSyncPayload` stopped its walk at a fork the chain then
+reported undisputed, the requester re-read the final fork's window in step 2.8.1 of
+`applySyncResponse` and rejected with "latest fork is disputed", and `rejectSync` blacklisted the
+responder for a chain change it did not cause.
 
-**Proposed direction:** Classify a dispute window that appears on the final fork after the payload
-was served as a retryable race: fail the sync without penalizing the responder and re-request.
+**Fix:** step 2.8.1 reads the final fork's window from the chain. A window the chain has not reduced
+fails the sync with no verdict, and the sync waits for the reduction and asks the same peer again;
+served, it would fail step 2.2 the same way, so omitting it gains a responder nothing. A reduced
+window missing from the payload stays a verification failure ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+That verdict does not separate omission from staleness: an honest payload served before the dispute
+and verified after the reduction is still blacklisted, the stale-response case left open in
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
+Regressions: [`REQ-SYNC-4-AWHFPA.T1.P3`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p3),
+[`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4), [`REQ-SYNC-4-AWHFPA.T1.P17`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p17).
 
 <a id="find-sync-3-hpyce2"></a>
 
 ### FIND-SYNC-3-HPYCE2
 
-**Defect:** A responder whose tip fork has an open kill period serves a payload every honest
-requester rejects. `generateSyncPayload` walks and locally reduces every disputed fork without
-checking kill-period expiry (src/rpc/network/services/spectate/SpectateService.ts:610-690). Step 2.2
-of `applySyncResponse` (:255-266) requires each served window to be expired in the requester's local
-diamond, and otherwise rejects with "kill period not expired" and blacklists the responder through
-`rejectSync` (:1160-1166). This is not a timing race: it holds for the whole kill period. The
-local-diamond read also reports `windowExists = false` when the requester has not yet processed the
-dispute event, which is a local condition. Same class as
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp). Code-traced, not executed.
+**Defect:** _Resolved (2026-10-16)._ For the whole kill period of a dispute, every honest requester
+cut an honest responder: `generateSyncPayload` walks every disputed fork without a kill-period
+check, and step 2.2 of `applySyncResponse` rejected an unexpired window with "kill period not
+expired" and blacklisted the responder through `rejectSync`. Reproduced end to end with a
+participant's source probe inside an open kill period.
 
-**Proposed direction:** Align the responder's walk with the requester's expiry check: never serve a
-window whose kill period is open, and never blacklist a responder for an unexpired or locally
-unknown window.
+**Fix:** step 2.2 splits the two cases. A window the chain has not reduced that the requester
+cannot recompute locally fails the sync with no verdict and no close. A served window the requester's own chain view does not hold stays a
+verification failure, now "dispute window not on chain": the requester fetches the served windows
+from its chain view into its local diamond before the check, so only a lagging provider can make an
+honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
+tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
+blacklist the requester instead
+([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+`SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
+peer again, so the initial load does not abort and a queue probe still judges a junk supplier that
+answers through the unreduced window; the runtime's stop ends the wait. Regressions:
+[`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
+[`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
+[`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
+[`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5),
+[`REQ-SYNC-4-AWHFPA.T1.P7`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p7),
+[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8), [`REQ-SYNC-4-AWHFPA.T1.P10`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p10), [`REQ-SYNC-4-AWHFPA.T1.P11`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p11), [`REQ-SYNC-4-AWHFPA.T1.P12`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p12), [`REQ-SYNC-4-AWHFPA.T1.P13`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p13), [`REQ-SYNC-4-AWHFPA.T1.P14`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p14), [`REQ-SYNC-4-AWHFPA.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p18), [`REQ-SYNC-4-AWHFPA.T1.P19`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p19), [`REQ-SYNC-4-AWHFPA.T1.P20`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p20), [`REQ-SYNC-4-AWHFPA.T1.P21`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p21), [`REQ-SYNC-4-AWHFPA.T1.P22`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p22).
+
+<a id="find-sync-6-89ratm"></a>
+
+### FIND-SYNC-6-89RATM
+
+**Defect:** _Resolved (2026-10-16)._ A fresh joiner blacklisted an honest responder and aborted when
+it synced across a dispute window whose kill period was over but which the chain had not reduced
+yet. The local diamond seeds the channel's inbound head only from the live `ChannelOpened` and
+`InboundMessagesProcessed` logs, so a runtime that subscribed later holds a zero inbound head. Its
+local recomputation of the served window then derived a zero inbound head, the served inbound list
+failed `ErrorDisputeInboundMessageBlocksInvalid`, and `applySyncResponse` rejected the payload as
+"served reduction reverts". The chain's own reduction usually lands within seconds of the kill
+period's end, which hid it; the PR's earlier retry at that moment reproduced it in most runs.
+Seeding the local channel balance from the chain was not chosen: the late-subscriber seed family
+was rejected before ([`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf)).
+
+**Fix:** a local recomputation that reverts on a window the chain has not reduced is no verdict; the
+sync waits for the chain's reduction, after which the recomputation returns the chain's result and
+nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)). Regressions: [`REQ-SYNC-4-AWHFPA.T1.P9`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p9), [`REQ-SYNC-4-AWHFPA.T1.P15`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p15), [`REQ-SYNC-4-AWHFPA.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p16).
 
 <a id="find-sync-4-kgp4kf"></a>
 
@@ -1672,7 +1706,9 @@ run from the anchor it read from its own provider (`applySyncResponse`). A reque
 lags the server's (for example one block behind just after a snapshot post) holds an older anchor
 head; no served block links to it, so the run does not verify, the requester calls `rejectSync`
 ("latest-fork outbound blocks invalid") and blacklists an honest peer. A retry succeeds once its
-provider catches up. The code assumes the requester's anchor is not behind the server's; nothing
+provider catches up. The same lag hits served dispute windows: a requester whose provider has not
+yet seen the responder's dispute commit cannot fetch the served window into its local diamond, so
+step 2.2 rejects with "dispute window not on chain" and blacklists the honest responder. The code assumes the requester's anchor is not behind the server's; nothing
 enforces it and no test covers a lagging requester. Related:
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe),
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
@@ -1684,7 +1720,8 @@ the requester sends its anchor in `SyncRequest` and the server cuts there; the s
 from the fork genesis; or the requester re-reads its chain anchor once and rechecks before it
 rejects the peer. Confirm with a unit case where the requester's `getStateSnapshot` returns the
 previous anchor while the server's local diamond holds the newer one: the sync is accepted or
-retried, not rejected.
+retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
+commit, and the sync is retried or accepted, not rejected.
 
 <a id="find-sync-6-pw76jh"></a>
 
@@ -1711,6 +1748,15 @@ fresh-spectator sync over an expired unreduced window: accepted with no verdict,
 reduced reduction grant, the facet-frame exhaustion of
 [`INV-SYNC-3-A7A2ED.T1.P36`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p36) instead of the inbound
 revert.
+
+**Update on the merged base (2026-10-16).** The base's unsettled-window flow removes the verdict:
+a local reduction revert on a window the chain has not reduced now returns
+`{ synced: false, unsettledForkId }` with no rejection and no blacklist, and `runSync` waits for
+the chain's reduction and asks again. The blacklist harm above therefore no longer occurs on the
+merged tree; what remains is that a fresh spectator cannot complete the reduction locally and
+waits for an on-chain reduction (by design in that flow, assuming some honest participant reduces
+the window). The finding stays open for the local-compute gap itself; the deferral below is now
+about that residual, not about an active blacklist.
 
 **Engineer disposition (Luka, 2026-10-16): defer the fix to a follow-up PR.** The defect predates
 PR #558 and is unchanged by it; the planned initial-load case

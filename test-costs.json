@@ -5683,12 +5683,6 @@
       "peakRssGb": 0.296,
       "measurementReason": null
     },
-    "hardhat|test/evm/InvalidStateTransitionError.test.ts|isLocalReductionResourceFailure a refusal to run under-funded is a resource failure": {
-      "durationMs": 474,
-      "avgCores": 0.738,
-      "peakRssGb": 0.141,
-      "measurementReason": null
-    },
     "hardhat|test/evm/P2pRuntimeClientRoot.test.ts|P2pRuntimeClientRoot cleans owned inline executor endpoints after domain disposal fails": {
       "durationMs": 33002,
       "avgCores": 0.182,
@@ -19867,6 +19861,12 @@
       "peakRssGb": 1.036,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage established participant sync whose reduction runs out of gas → sync throws, responder not blacklisted, sync after on-chain reduction accepted": {
+      "durationMs": 13619,
+      "avgCores": 0.66,
+      "peakRssGb": 1.143,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage first dispute window not on the on-chain fork → rejected, dispute window not linked": {
       "durationMs": 26935,
       "avgCores": 0.946,
@@ -19921,10 +19921,40 @@
       "peakRssGb": 1.197,
       "measurementReason": null
     },
-    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged": {
-      "durationMs": 22966,
-      "avgCores": 0.915,
-      "peakRssGb": 1.037,
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a fabricated inbound successor → rejected as reduction inbound head mismatch, no window inbound block stored, inbound head unchanged": {
+      "durationMs": 14189,
+      "avgCores": 0.573,
+      "peakRssGb": 1.109,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a large made-up inbound successor → rejected as reduction inbound head mismatch, responder blacklisted, nothing persisted": {
+      "durationMs": 11877,
+      "avgCores": 0.688,
+      "peakRssGb": 1.136,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a padded made-up dispute → rejected as reduction disputes not committed, responder blacklisted, nothing persisted": {
+      "durationMs": 12684,
+      "avgCores": 0.635,
+      "peakRssGb": 1.145,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a padded served state → rejected as reduction state hash mismatch, responder blacklisted, nothing persisted": {
+      "durationMs": 13782,
+      "avgCores": 0.578,
+      "peakRssGb": 1.126,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a padded state and rewritten snapshot hash → rejected as reduction snapshot mismatch, responder blacklisted, nothing persisted": {
+      "durationMs": 11836,
+      "avgCores": 0.668,
+      "peakRssGb": 1.145,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with padded snapshot balance data → rejected as reduction snapshot mismatch, responder blacklisted, nothing persisted": {
+      "durationMs": 12772,
+      "avgCores": 0.666,
+      "peakRssGb": 1.28,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync → accepted, its inbound blocks stored": {

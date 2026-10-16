@@ -36,6 +36,12 @@ export type BusEventMaps = {
 
 export type BusKind = keyof BusEventMaps;
 
+/** The argument tuple of one event of one kind. */
+type BusEventArgs<
+    K extends BusKind,
+    N extends keyof BusEventMaps[K]
+> = BusEventMaps[K][N] extends readonly unknown[] ? BusEventMaps[K][N] : never;
+
 type AnyListener = (...args: any[]) => void;
 type KindListener = (eventName: string, args: unknown[]) => void;
 /**
@@ -100,11 +106,7 @@ export class EventBus {
     on<K extends BusKind, N extends keyof BusEventMaps[K] & string>(
         kind: K,
         eventName: N,
-        listener: (
-            ...args: BusEventMaps[K][N] extends readonly unknown[]
-                ? BusEventMaps[K][N]
-                : never
-        ) => void
+        listener: (...args: BusEventArgs<K, N>) => void
     ): () => void {
         const key = getEventKey(kind, eventName);
         let set = this.named.get(key);
@@ -120,6 +122,31 @@ export class EventBus {
         return () => {
             capturedSet.delete(listener as AnyListener);
         };
+    }
+
+    /**
+     * The args of the first `eventName` that passes `filter`, then
+     * unsubscribes. Resolves undefined once `signal` aborts first.
+     */
+    next<K extends BusKind, N extends keyof BusEventMaps[K] & string>(
+        kind: K,
+        eventName: N,
+        filter: (...args: BusEventArgs<K, N>) => boolean = () => true,
+        signal?: AbortSignal
+    ): Promise<BusEventArgs<K, N> | undefined> {
+        return new Promise((resolve) => {
+            if (signal?.aborted) return resolve(undefined);
+            const end = (args: BusEventArgs<K, N> | undefined) => {
+                unsubscribe();
+                signal?.removeEventListener("abort", onAbort);
+                resolve(args);
+            };
+            const onAbort = () => end(undefined);
+            const unsubscribe = this.on(kind, eventName, (...args) => {
+                if (filter(...args)) end(args);
+            });
+            signal?.addEventListener("abort", onAbort);
+        });
     }
 
     /**

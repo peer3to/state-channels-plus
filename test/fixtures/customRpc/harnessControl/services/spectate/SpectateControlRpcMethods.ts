@@ -85,11 +85,12 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         blockHeight: number,
         encodedSyncPayload: string
     ): Promise<boolean> {
-        return this.service.spectate.applySyncResponse(
+        const { synced } = await this.service.spectate.applySyncResponse(
             String(responderAddress),
             this.service.buildSyncRequest(forkId, blockHeight),
             encodedSyncPayload
         );
+        return synced;
     }
 
     /**

@@ -14,6 +14,7 @@ import { DisputeWindowVerification, SyncPayload } from "@/types";
 import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
+import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import {
     isLocalEvmExecutionFailure,
@@ -48,11 +49,23 @@ export interface SyncRequest {
     blockHeight?: number;
 }
 
+/**
+ * An applied sync payload's result. `unsettledForkId`: the chain has not
+ * reduced this fork's dispute window yet -> the sync failed with no verdict
+ * and is provable once the chain has.
+ */
+export interface SyncOutcome {
+    synced: boolean;
+    unsettledForkId?: ForkId;
+}
+
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
         { request: SyncRequest; result: Promise<boolean> }
     > = new Map();
+    // aborted by `dispose`: every wait for a window's chain reduction ends
+    private readonly disposal = new AbortController();
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -120,11 +133,45 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
     }
 
+    /** End every pending wait for a window's chain reduction. */
+    public dispose(): void {
+        this.disposal.abort();
+    }
+
     private async runSync(
         normalizedPeerAddress: string,
         syncRequest: SyncRequest,
         timeoutMs: number
     ): Promise<boolean> {
+        let outcome = await this.requestAndApply(
+            normalizedPeerAddress,
+            syncRequest,
+            timeoutMs
+        );
+        // a window the chain has not reduced -> wait for its reduction, then
+        // ask the same peer again. a pass names only a window the chain had
+        // not reduced, which the next pass finds reduced
+        while (outcome.unsettledForkId !== undefined) {
+            const reduced = await this.waitForChainReduction(
+                normalizedPeerAddress,
+                syncRequest.channelId,
+                outcome.unsettledForkId
+            );
+            if (!reduced) break;
+            outcome = await this.requestAndApply(
+                normalizedPeerAddress,
+                syncRequest,
+                timeoutMs
+            );
+        }
+        return outcome.synced;
+    }
+
+    private async requestAndApply(
+        normalizedPeerAddress: string,
+        syncRequest: SyncRequest,
+        timeoutMs: number
+    ): Promise<SyncOutcome> {
         let response: { encodedSyncPayload: Bytes };
         try {
             response = await this.remoteRpc.spectateService
@@ -141,7 +188,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 normalizedPeerAddress,
                 DisconnectPolicy.allowRetry()
             );
-            return false;
+            return { synced: false };
         }
         try {
             return await this.applySyncResponse(
@@ -161,20 +208,77 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     /**
+     * Resolves true once the chain has recorded the reduction of `forkId`'s
+     * dispute window, false when the runtime stops first. A failed chain
+     * read rejects.
+     */
+    private async waitForChainReduction(
+        peerAddress: string,
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        if (this.disposal.signal.aborted) return false;
+        const stateManager = this.p2pManager.stateManager;
+        this.logger.debug(
+            "spectateSync - waiting for the chain to reduce a dispute window",
+            { peerAddress, forkId }
+        );
+        // ended by the wait's own exit or by `dispose`
+        const ended = new AbortController();
+        const endOnDispose = () => ended.abort();
+        this.disposal.signal.addEventListener("abort", endOnDispose);
+        const reducedEvent = stateManager.events
+            .next(
+                "eventHandler",
+                "onDisputeReducedResultCommitted",
+                (reducedChannelId, reducedWindowForkId) =>
+                    channelKey(reducedChannelId) === channelKey(channelId) &&
+                    reducedWindowForkId === forkId,
+                ended.signal
+            )
+            .then((args) => args !== undefined);
+        // a reduction mined between the window read and the subscription
+        // fired an event this listener never saw
+        const reducedBeforeSubscribe = stateManager.stateChannelManagerContract
+            .getReducedResult(channelId, forkId)
+            .then(({ reducedForkId }) =>
+                reducedForkId !== ZeroHash ? true : reducedEvent
+            );
+        try {
+            const reduced = await Promise.race([
+                reducedEvent,
+                reducedBeforeSubscribe
+            ]);
+            this.logger.debug("spectateSync - dispute window wait ended", {
+                peerAddress,
+                forkId,
+                reduced
+            });
+            return reduced;
+        } finally {
+            this.disposal.signal.removeEventListener("abort", endOnDispose);
+            ended.abort();
+        }
+    }
+
+    /**
      * Validate and apply a sync payload returned by `onSpectateRequest`. Was the
      * body of the old `onSpectateResponse` endpoint; the request now lives in
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
-     * Validation failures reject the peer and return false. The caller owns
-     * the lifecycle consequence of a failed sync. A disposed runtime applies
-     * nothing and returns false with no verdict on the peer.
+     * Validation failures reject the peer and return not synced. The caller
+     * owns the lifecycle consequence of a failed sync. A disposed runtime
+     * returns not synced with no verdict on the peer; so does a served window
+     * the chain has not reduced that this peer cannot reduce locally, or
+     * (latest mode) an unreduced window on the final fork, naming the fork in
+     * `unsettledForkId`.
      */
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
-    ): Promise<boolean> {
-        if (this.p2pManager.stateManager.isDisposed) return false;
+    ): Promise<SyncOutcome> {
+        if (this.p2pManager.stateManager.isDisposed) return { synced: false };
         const channelId = syncRequest.channelId;
 
         // A malicious/broken peer can return bytes that aren't a valid
@@ -310,17 +414,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         peerAddress,
                         "dispute window not linked"
                     );
-                // 2.2) verify that they're expired - if they're not expired abort
-                const { windowExists, isExpired } =
-                    await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
-                        channelId,
-                        dw.forkId
-                    );
-                if (!windowExists || !isExpired)
+                // 2.2) the window must exist on chain; whether the chain has
+                // reduced it decides what a failing local reduction means.
+                // Use this request's chain response; a competing persist may be older.
+                const onChainDw = onChainDisputeWindows.find(
+                    (window) => window.forkId === dw.forkId
+                );
+                if (!onChainDw || onChainDw.evidence.creationTimestamp == 0n)
                     return this.rejectSync(
                         peerAddress,
-                        "kill period not expired"
+                        "dispute window not on chain"
                     );
+                const isReducedOnChain =
+                    onChainDw.reducedResult.forkId !== ZeroHash;
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal = finalizedByFork.get(dw.forkId);
@@ -378,11 +484,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         // committed ones, the snapshot must be the one the
                         // chain's reduction of those disputes names, and the
                         // inbound list must end where that reduction ends.
-                        const onChainWindow = onChainDisputeWindows.find(
-                            (window) => window.forkId === dw.forkId
-                        );
                         const committedHashes = new Set(
-                            onChainWindow?.evidence.disputeCommitments ?? []
+                            onChainDw.evidence.disputeCommitments
                         );
                         // The chain commitment is keccak256(abi.encode(dispute));
                         // the served encoded dispute is those exact bytes (the
@@ -396,7 +499,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                                 )
                         );
                         if (
-                            !onChainWindow ||
                             servedHashes.length !== committedHashes.size ||
                             new Set(servedHashes).size !==
                                 servedHashes.length ||
@@ -512,13 +614,26 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         // exhausted its gas) proves only that this node
                         // could not run the reduction; it is an internal
                         // failure, never evidence against the responder.
-                        // A completed local revert is a verdict on the
-                        // served reduction and rejects it.
                         if (
                             !isLocalEvmExecutionFailure(e) ||
                             isLocalReductionResourceFailure(e)
                         )
                             throw e;
+                        this.logger.debug(
+                            "applySyncResponse - served reduction reverts",
+                            { peerAddress, error: errorMessage(e) }
+                        );
+                        // the local mirror could not recompute an unreduced
+                        // window (open kill period, or state it lacks: a fresh
+                        // mirror has no inbound head) -> no verdict, the chain's
+                        // reduction judges the claim. on a reduced window the
+                        // call only checks the claimed fork against the chain's
+                        // result, so a revert is the responder's
+                        if (!isReducedOnChain)
+                            return {
+                                synced: false,
+                                unsettledForkId: dw.forkId
+                            };
                         return this.rejectSync(
                             peerAddress,
                             "served reduction reverts"
@@ -536,11 +651,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 // Another sync can overwrite that local result before a re-read.
                 if (isReducedAndFinal) {
                     // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
-                    // Use this request's chain response; a competing persist may be older.
-                    const _dw = onChainDisputeWindows.find(
-                        (window) => window.forkId === dw.forkId
-                    )!;
-                    if (_dw.reducedResult.forkId != dw.reducedForkId)
+                    if (onChainDw.reducedResult.forkId != dw.reducedForkId)
                         return this.rejectSync(
                             peerAddress,
                             "reduced fork mismatch"
@@ -610,12 +721,32 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2.8.2) (requested) prove the pinned fork or a successor whose verified lineage contains it.
             if (!syncRequest.forkId) {
                 // 2.8.1) (spectating)
-                const _timestamp =
-                    await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                const [latestWindow] =
+                    await stateManager.stateChannelManagerContract.getDisputeWindows(
                         channelId,
-                        currentForkId
+                        [currentForkId]
                     );
-                if (Number(_timestamp) != 0)
+                const windowExists =
+                    latestWindow !== undefined &&
+                    latestWindow.evidence.creationTimestamp != 0n;
+                // a window the chain has not reduced can have opened after the
+                // payload was served; served, it would be judged no better than
+                // by 2.2, so omitting it gains a responder nothing -> no
+                // verdict, the sync waits for the reduction. a
+                // reduced window stays a verification failure, which also cuts
+                // an honest payload older than the reduction (stale-response
+                // policy, OQ-SPEC-SYNC-STALE-1)
+                if (
+                    windowExists &&
+                    latestWindow.reducedResult.forkId === ZeroHash
+                ) {
+                    this.logger.debug(
+                        "applySyncResponse - latest fork disputed, window not reduced yet, no verdict",
+                        { peerAddress, forkId: currentForkId }
+                    );
+                    return { synced: false, unsettledForkId: currentForkId };
+                }
+                if (windowExists)
                     return this.rejectSync(
                         peerAddress,
                         "latest fork is disputed"
@@ -730,7 +861,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 }
             );
             if (shouldAbort) {
-                if (stateManager.isDisposed) return false;
+                if (stateManager.isDisposed) return { synced: false };
                 return this.rejectSync(
                     peerAddress,
                     "payload persistence aborted"
@@ -783,7 +914,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             this.logger.debug(
                 "Spectator successfully synced to latest proven state"
             );
-            return true;
+            return { synced: true };
         }
     }
 
@@ -1297,7 +1428,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
     }
 
-    private rejectSync(peerAddress: string, reason: string): false {
+    private rejectSync(peerAddress: string, reason: string): SyncOutcome {
         this.logger.debug("applySyncResponse - rejecting sync", {
             peerAddress,
             reason
@@ -1306,7 +1437,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             peerAddress,
             `sync payload rejected: ${reason}`
         );
-        return false;
+        return { synced: false };
     }
 }
 

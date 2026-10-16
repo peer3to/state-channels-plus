@@ -48,6 +48,16 @@ export class StateQueryActions<
             .request();
     }
 
+    /** The fork the chain records as `forkId`'s window reduction, or the zero hash. */
+    public async reducedForkOnChain(forkId: ForkId): Promise<ForkId> {
+        return (
+            await this.harness.channelManager.getReducedResult(
+                this.harness.channelId,
+                forkId
+            )
+        ).reducedForkId as ForkId;
+    }
+
     /** On-chain kill-period state for `forkId`, as seen by `peerIndex`. */
     public async killPeriod(forkId: ForkId, peerIndex: number = 0) {
         return await this.harness

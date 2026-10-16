@@ -347,12 +347,8 @@ describe("Unit: ReductionExecutor", function () {
                 h.event.protocolEventTimeoutMs()
             );
             const recorded = await adoption.restore();
-            const reducedForkId = (
-                await h.channelManager.getReducedResult(
-                    h.channelId,
-                    sourceForkId
-                )
-            ).reducedForkId as ForkId;
+            const reducedForkId =
+                await h.query.reducedForkOnChain(sourceForkId);
 
             // the reduce is its own transaction, never bundled with the adoption
             expect(recorded).to.deep.include(["reduceAndFinalize"]);
@@ -392,12 +388,8 @@ describe("Unit: ReductionExecutor", function () {
                     async () => (await chainForkId()) !== sourceForkId,
                     h.event.protocolEventTimeoutMs()
                 );
-                const reducedForkId = (
-                    await h.channelManager.getReducedResult(
-                        h.channelId,
-                        sourceForkId
-                    )
-                ).reducedForkId as ForkId;
+                const reducedForkId =
+                    await h.query.reducedForkOnChain(sourceForkId);
 
                 expect(await chainForkId()).to.equal(reducedForkId);
                 // the first reduce is mined and fails; its resend is mined
@@ -450,12 +442,7 @@ describe("Unit: ReductionExecutor", function () {
                     expectedErrorIncludes: "injected adoption post send failure"
                 });
                 expect(
-                    (
-                        await h.channelManager.getReducedResult(
-                            h.channelId,
-                            sourceForkId
-                        )
-                    ).reducedForkId
+                    await h.query.reducedForkOnChain(sourceForkId)
                 ).to.not.equal(ZeroHash);
                 expect(
                     (await h.channelManager.getStateSnapshot(h.channelId))

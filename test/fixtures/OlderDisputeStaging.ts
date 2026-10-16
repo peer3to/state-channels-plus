@@ -146,9 +146,7 @@ export async function readWindowReduction(
     forkId: ForkId
 ) {
     await waitFor(
-        async () =>
-            (await h.channelManager.getReducedResult(h.channelId, forkId))
-                .reducedForkId !== ZeroHash,
+        async () => (await h.query.reducedForkOnChain(forkId)) !== ZeroHash,
         h.event.protocolEventTimeoutMs()
     );
     return await h.execOnHost(

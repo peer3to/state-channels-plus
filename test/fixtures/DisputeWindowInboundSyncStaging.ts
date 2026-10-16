@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncPayload } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -346,7 +347,7 @@ async function stageAndApplyDisputeWindowInboundSync(
         );
     const encodedPayload = Codec.encode(payload, Type.SyncPayload) as string;
     await requesterStub.recordSyncRejections().request();
-    let accepted: boolean;
+    let outcome: SyncOutcome;
     let rejections: string[];
     let reductionThrew = "";
     try {
@@ -360,6 +361,8 @@ async function stageAndApplyDisputeWindowInboundSync(
                 // the chain bound; a small value here models a chain whose
                 // bound cannot fund this window's reduction), so the real
                 // reduction exhausts inside the facet frame. The funded
+                // retry below restores the original grant and runs the
+                // real reduction to completion.
                 await requesterStub.stubReductionGrant("400000").request();
                 try {
                     await applyPayload(encodedPayload);
@@ -374,7 +377,7 @@ async function stageAndApplyDisputeWindowInboundSync(
                     .stubReductionGrant(options.reductionGrant)
                     .request();
             try {
-                accepted = await applyPayload(encodedPayload);
+                outcome = await applyPayload(encodedPayload);
             } finally {
                 if (options.reductionGrant)
                     await requesterStub.restoreReductionGrant().request();
@@ -404,13 +407,15 @@ async function stageAndApplyDisputeWindowInboundSync(
                     ).to.equal(true);
                 else
                     expect(
-                        await applyPayload(
-                            response.encodedSyncPayload as string
-                        )
+                        (
+                            await applyPayload(
+                                response.encodedSyncPayload as string
+                            )
+                        ).synced
                     ).to.equal(true);
             } finally {
                 await requesterStub.releaseSyncWindowPersistence().request();
-                accepted = await pending;
+                outcome = await pending;
             }
         }
         rejections = await requesterStub
@@ -438,8 +443,9 @@ async function stageAndApplyDisputeWindowInboundSync(
             storedInboundHashes.push(blockHash);
 
     return {
-        accepted,
+        accepted: outcome.synced,
         reductionThrew,
+        unsettledForkId: outcome.unsettledForkId,
         rejections,
         responderBlacklisted: await requesterControl.query
             .isBlacklisted(responder.address)

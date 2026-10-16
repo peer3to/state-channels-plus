@@ -12,6 +12,7 @@ import {
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
+    probeJunkSourceAcrossUnreducedWindow,
     scheduleForkRecoveryAroundStop,
     stopWithHeldForkRecovery,
     stopWithRejectedAndPendingProbes
@@ -20,11 +21,14 @@ import {
     QueueIntakeFixture,
     receiveWithExplicitStrategy
 } from "@test/fixtures/QueueIntakeFixture";
-import { assertOutsiderProofDoesNotAdmitCopy } from "@test/fixtures/QueueNetworkRetentionFixture";
+import {
+    assertOutsiderProofDoesNotAdmitCopy,
+    stageAbsentGossipAcrossUnreducedWindow
+} from "@test/fixtures/QueueNetworkRetentionFixture";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { id } from "ethers";
+import { id, ZeroHash } from "ethers";
 
 // a copy committed on chain carries onChainTimestamp, so the queue judges it
 // with the calldata strategy: the participant strategy plus the chain-only
@@ -305,6 +309,87 @@ describe("Unit: BlockQueueManager", () => {
             MathTestSession.getHarness(),
             "ingested"
         );
+    });
+
+    it("a junk supplier answering a source probe through a window the chain has not reduced is asked again once the chain reduces it, then excluded", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const probe = await probeJunkSourceAcrossUnreducedWindow(f);
+        // premise: the probe waited while the window was unreduced
+        expect(probe.reducedBeforeRelease).to.equal(ZeroHash);
+        await waitFor(probe.supplierBlacklisted);
+        expect(await probe.supplierRequests()).to.equal(2);
+    });
+
+    it("evidence posted into the window while a source probe waits extends the kill period and changes nothing: the supplier is asked again after the reduction, then excluded", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const probe = await probeJunkSourceAcrossUnreducedWindow(
+            f,
+            async () => {
+                await f.h.tamper.postTamperedDispute(0, () => {}, {
+                    markMalicious: false
+                });
+                await f.h.assert.dispute.committedWait({
+                    expectedCount: 2,
+                    peersIndices: [0, 1]
+                });
+            }
+        );
+        // premise: the later evidence moved the kill period's end
+        expect(probe.killPeriodEndAfter).to.be.greaterThan(
+            probe.killPeriodEndBefore
+        );
+        expect(probe.reducedBeforeRelease).to.equal(ZeroHash);
+        await waitFor(probe.supplierBlacklisted);
+        expect(await probe.supplierRequests()).to.equal(2);
+    });
+
+    it("stopping the runtime while a source probe waits for the chain's reduction ends the wait: stop resolves and the supplier is not asked again", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        let stopped = false;
+        const probe = await probeJunkSourceAcrossUnreducedWindow(
+            f,
+            async () => {
+                // well after the first answer the probe is waiting; stop
+                // drains the queue's probes, so it resolves only once the
+                // waiting probe has ended
+                await waitFor(
+                    async () =>
+                        (await f.h.query.killPeriod(f.h.activeForkId!))
+                            .isExpired,
+                    f.h.event.protocolEventTimeoutMs() * 2
+                );
+                stopped = await f.h.execOnHost(f.h.getPeer(0), async (sm) => {
+                    await sm.stop();
+                    return sm.isDisposed;
+                });
+            }
+        );
+        expect(stopped).to.equal(true);
+        expect(await probe.supplierRequests()).to.equal(1);
+    });
+
+    it("an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted", async () => {
+        const { whileUnreduced, afterReduction } =
+            await stageAbsentGossipAcrossUnreducedWindow();
+        // premise: the kill period ended with the window unreduced
+        expect(whileUnreduced).to.deep.equal({
+            reducedForkId: ZeroHash,
+            completedIntakes: 0,
+            completedSyncs: 0,
+            outsiderRequests: 1,
+            outsiderBlacklisted: false,
+            eligibility: SourceEligibility.ABSENT
+        });
+        expect(afterReduction).to.deep.equal({
+            completedIntakes: 1,
+            completedSyncs: 1,
+            outsiderRequests: 2,
+            outsiderBlacklisted: true,
+            eligibility: SourceEligibility.ABSENT
+        });
     });
 
     it("sync succeeds but the sender is still absent: blacklisted with no queue entry", async () => {

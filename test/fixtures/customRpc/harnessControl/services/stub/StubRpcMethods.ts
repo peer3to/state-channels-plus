@@ -377,11 +377,14 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
      * in flight toward its responder after the response arrived. With
      * `responderAddress`, only the responses of that responder are held.
      * With `fail`, a held application fails at release without applying.
-     * Each held application's result is recorded.
+     * With `holdAfterApply`, the application runs first and its result is
+     * held before the sync acts on it. Each held application's result is
+     * recorded.
      */
     public stubHoldSpectateSyncApplication(
         responderAddress?: Address,
-        fail = false
+        fail = false,
+        holdAfterApply = false
     ): boolean {
         this.restoreHoldSpectateSyncApplication();
         const spectate = this.p2pManager.localRpc.spectateService;
@@ -400,10 +403,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 const apply = () => original.apply(spectate, parameters);
                 if (responderAddress && parameters[0] !== responderAddress)
                     return apply();
+                const applied = holdAfterApply ? await apply() : undefined;
                 gate.entered += 1;
                 await gate.gate;
-                const result = fail ? false : await apply();
-                results.push(result);
+                const result =
+                    applied ?? (fail ? { synced: false } : await apply());
+                results.push(result.synced);
                 return result;
             }
         );
@@ -3349,11 +3354,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const original = this.service.stubOriginals.get(
             "spectateSync"
         ) as typeof spectate.sync;
-        spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
+        spectate.sync = (...args: Parameters<typeof spectate.sync>) => {
             this.service.recordSpectateSyncCall(String(args[0]));
             if (forward) return original(...args);
             return Promise.resolve(true);
-        }) as typeof spectate.sync;
+        };
         return true;
     }
 
@@ -3523,7 +3528,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public stubFailChainReads(
         method:
             | "getBlockCallDataCommitment"
-            | "getDisputeWindowCreationTimestamp",
+            | "getDisputeWindowCreationTimestamp"
+            | "getReducedResult",
         times: number
     ): boolean {
         this.service.stubFailChainReads(method, times);
