@@ -1030,6 +1030,8 @@ class AgreementManager {
         const collectedBlocks: Block[] = [];
         const collectedSigners = new Set<Address>();
         let thresholdBlock: Block | undefined;
+        // a collected block is stored history, not only retained evidence
+        let hasHistoryBlock = false;
         let thresholdSigners = new Set<Address>(
             previousThresholdSnapshot.snapshotData.participants
         );
@@ -1062,6 +1064,8 @@ class AgreementManager {
             }
 
             collectedBlocks.push(currentBlock);
+            if (this.storage.blocks.getBlock(currentBlock.hash))
+                hasHistoryBlock = true;
 
             // only a block whose resulting snapshot is held can be a final point
             if (
@@ -1082,10 +1086,12 @@ class AgreementManager {
                 collectedSigners.add(signer);
             }
 
-            // complete signers prove nothing without a final point: a run of
-            // blocks whose snapshots are not held (retained support) is no milestone
+            // retained evidence alone is never a final point: complete signers
+            // on a run of support blocks continue the search below it. A history
+            // block without its snapshot still ends the search, so the missing
+            // snapshot is reported by the caller
             if (
-                thresholdBlock &&
+                (thresholdBlock || hasHistoryBlock) &&
                 difference(thresholdSigners, collectedSigners).size === 0
             ) {
                 const filteredBlocks = this.filterBlocksForMilestoneThreshold(
