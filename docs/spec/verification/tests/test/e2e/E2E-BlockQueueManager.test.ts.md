@@ -63,6 +63,7 @@ and hold no queued entry for it.
 - `ingest rejects a block confirmation with a forged author signature`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P17
 - `ingest refuses author signature encodings the contracts reject, then commits the canonically signed block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P40, INV-MIRROR-1-VAF778.T1.P10
 - `ingest drops a wrong-channel block and cuts the transport when the sender is known`: REQ-BLOCK-PIPE-2-PCXNT6.T1.P10
+- `a block confirmation whose block bytes do not decode still cuts its sender`: REQ-GOSSIP-2-9PMMNH.T1.P4, UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P3
 - `ingest cuts both an eligible relayer and the author of an outsider-authored block`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P18
 - `future block whose source proves its lineage at queue timeout is applied and the source kept`: REQ-BLOCK-PIPE-4-CF52J6.T1.P7, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P8
 - `future block at a height its source holds a different block at queue timeout is dropped and the source excluded`: REQ-BLOCK-PIPE-4-CF52J6.T1.P8, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P10

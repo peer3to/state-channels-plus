@@ -19,5 +19,5 @@ Attribution and penalty mapping
 
 - [ ] `UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P1` — payload fidelity + attribution
 - [ ] `UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P2` — acceptable-knowledge no penalty
-- [ ] `UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P3` — attributable violation punishes
+- [x] `UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P3` — attributable violation punishes
 - [x] `UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P4` — local failure logged, session kept, sender unpunished

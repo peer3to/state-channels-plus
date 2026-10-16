@@ -288,6 +288,87 @@ describe("E2E: BlockQueueManager", function () {
                 .request()
         ).to.be.null;
     });
+
+    it("a block confirmation whose block bytes do not decode still cuts its sender", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        await h.assert.sync.peersInSyncWait();
+
+        const observer = h.getPeer(0);
+        const sender = h.getPeer(1);
+
+        // A real confirmation, but the signed block's bytes are truncated:
+        // decoding them inside intake fails, which must remain the explicit
+        // authentication verdict against the sender — not a swallowed
+        // local fault.
+        const bundle = await h
+            .control(sender)
+            .query.getLatestBlockBundle(h.activeForkId!)
+            .request();
+        expect(bundle, "expected a stored block").to.not.be.null;
+        const confirmation = Codec.decode(
+            bundle!.encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const encodedBlock = confirmation.signedBlock.encodedBlock as string;
+        confirmation.signedBlock.encodedBlock = encodedBlock.slice(
+            0,
+            encodedBlock.length - 64
+        );
+
+        await h.control(observer).stub.recordIngestOutcomes().request();
+        try {
+            await h
+                .control(sender)
+                .byzantine.sendBlockConfirmation(
+                    Codec.encode(
+                        confirmation,
+                        Type.BlockConfirmation
+                    ) as string,
+                    observer.address
+                )
+                .request();
+
+            // The frame was judged inside intake (not dropped at the
+            // router): its record is the undecodable judgment, and it
+            // resolved to the rejecting verdict.
+            let judged: { outcome: string } | undefined;
+            await waitFor(async () => {
+                const records = await h
+                    .control(observer)
+                    .stub.getIngestOutcomeRecords()
+                    .request();
+                judged = records.find(
+                    (record) =>
+                        record.senderAddress === sender.address &&
+                        record.blockHash === ""
+                );
+                return judged !== undefined;
+            }, h.event.protocolEventTimeoutMs());
+            expect(judged, "delivered frame was never judged").to.not.be
+                .undefined;
+            expect(judged!.outcome).to.equal("false");
+            await waitFor(
+                async () =>
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(sender.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await h
+                    .control(observer)
+                    .query.isConnectedTo(sender.address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await h
+                .control(observer)
+                .stub.restoreIngestOutcomeRecording()
+                .request();
+        }
+    });
     it("ingest cuts both an eligible relayer and the author of an outsider-authored block", async function () {
         const h = TestSession.getHarness();
         // short windows so the two spectators converge on the victim inside the
