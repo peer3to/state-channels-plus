@@ -1095,8 +1095,12 @@ describe("E2E: BlockQueueManager", function () {
                 // entry counts are the fault oracle.
 
                 // The same local fault on the calldata origin: no sender
-                // exists to punish, the copy is dropped, nothing is stored.
-                // The synchronous ingest must itself hit the faulted check.
+                // exists to punish, the copy is dropped, nothing is queued.
+                // A fresh bogus-fork block always reaches the disputed-fork
+                // check (a real block could settle as past once a sync has
+                // stored it). The synchronous ingest must hit the fault.
+                const { bogusBlock: calldataBlock, blockConfirmation } =
+                    await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
                 const failuresBeforeCalldata = (
                     await h
                         .control(targetPeer)
@@ -1106,17 +1110,13 @@ describe("E2E: BlockQueueManager", function () {
                 const calldataResult = await h
                     .control(targetPeer)
                     .transition.ingestBlockConfirmation(
-                        secondBlock!.encodedBlockConfirmation,
+                        Codec.encode(
+                            blockConfirmation,
+                            Type.BlockConfirmation
+                        ) as string,
                         {
                             origin: BlockOrigin.CALLDATA,
-                            onChainTimestamp: Number(
-                                Block.fromBlockConfirmation(
-                                    Codec.decode(
-                                        secondBlock!.encodedBlockConfirmation,
-                                        Type.BlockConfirmation
-                                    )
-                                ).timestamp
-                            )
+                            onChainTimestamp: Number(calldataBlock.timestamp)
                         }
                     )
                     .request();
@@ -1145,7 +1145,7 @@ describe("E2E: BlockQueueManager", function () {
                     calldataRecords.some(
                         (record) =>
                             record.senderAddress === "" &&
-                            record.blockHash === secondBlockHash &&
+                            record.blockHash === calldataBlock.hash &&
                             record.outcome === "true"
                     ),
                     "calldata copy was never judged"
