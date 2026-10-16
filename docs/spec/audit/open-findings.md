@@ -623,6 +623,19 @@ its own. The swallow remains a recorded divergence from
 refresh-is-fatal rule, recorded on the
 [`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
 
+**Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
+mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
+(a mid-merge throw would leave only valid merged signatures), and the disputed fork's queue clear,
+which the success path performs identically; the post-queue scheduling calls return a dummy handle
+after disposal instead of throwing. (2) No liveness loss for the non-network callers (all ignore
+the return value, as they did with `false`): calldata is stored before ingest is attempted, the
+participant-timeout check ingests recovered calldata itself on each re-armed check, and later
+validation reads the stored calldata — a fault-dropped validation is delayed, not lost. (3) Log
+cost is one error line per swallowed network fault (two on the sync-application loop), bounded by
+the accepted frame rate until the general rate limit lands; no state grows. The one attacker-shaped
+cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
+until rate limiting; a crafted payload that throws there is not demonstrated.
+
 <a id="def-1-92ntag"></a>
 
 ### DEF-1-92NTAG
