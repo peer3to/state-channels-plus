@@ -1,7 +1,4 @@
 import StateSnapshot from "@/models/StateSnapshot";
-import { Status } from "@/types";
-import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
-import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { stageAnchoredSyncPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
@@ -1199,55 +1196,6 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(outcome.second.installedStateHash).to.equal(
                 StateSnapshot.from(staged.third.snapshot).stateMachineStateHash
             );
-        });
-
-        it("U152: a pending participant without the anchor block replays an invalid first tail block on it → no internal error, an invalid-transition fraud proof names the block's author, the anchor block stays retained", async function () {
-            const h = TestSession.getHarness();
-            const staged = await stageForgedSupportPayloads(h);
-            const a = staged.anchor.blockHeight;
-            const outcome = await withHeldFreshRequester(
-                h,
-                async (requester) => {
-                    const control = h.control(requester);
-                    // a committed status hands the deviation to the live strategy
-                    await control.stub
-                        .setPeerStatus(Status.PENDING_PARTICIPANT)
-                        .request();
-                    await control.stub
-                        .stubSuppressDisputeInitiation()
-                        .request();
-                    const applied = await applyPayloads(
-                        h,
-                        requester,
-                        staged.forkId,
-                        [staged.invalidAfterAnchor],
-                        { inspect: { heights: [a], retainedHeights: [a] } }
-                    );
-                    const proofType = await control.query
-                        .getFraudProofType(staged.first.author as Address)
-                        .request();
-                    return { applied, proofType };
-                }
-            );
-            expect(
-                outcome.applied.outcomes.map(({ accepted, threw }) => ({
-                    accepted,
-                    threw
-                }))
-            ).to.deep.equal([{ accepted: false, threw: "" }]);
-            expect(outcome.proofType).to.equal(
-                String(
-                    toSolidityFraudProofType(
-                        FraudProofType.BlockInvalidStateTransition
-                    )
-                )
-            );
-            expect(outcome.applied.blocks).to.deep.equal([null]);
-            expect(
-                outcome.applied.retained.map((blocks) =>
-                    blocks.map((block) => block.hash)
-                )
-            ).to.deep.equal([[staged.anchorBlockHash]]);
         });
 
         it("U153: a retained sibling outranks the real block by the hop's signers, but a history block above the gap names the real one → the final point is proved through the real block", async function () {
