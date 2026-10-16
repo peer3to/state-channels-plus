@@ -75,11 +75,20 @@ export class RetainedEvidenceStorage {
         );
     }
 
-    /** A retained block at `block`'s coordinate by the same author with another identity: a double sign. */
-    getOtherBlockByAuthor(block: Block): Block | undefined {
-        return this.getBlocks(block.forkId, block.height).find(
+    /**
+     * A retained block at the coordinate by `author` with another identity
+     * than `blockHash`: a double sign. Takes scalars, so a lookup copies no
+     * block.
+     */
+    getOtherBlockByAuthor(
+        forkId: ForkId,
+        height: BlockHeight,
+        author: Address,
+        blockHash: Hash
+    ): Block | undefined {
+        return this.getBlocks(forkId, height).find(
             (retained) =>
-                retained.author === block.author && retained.hash !== block.hash
+                retained.author === author && retained.hash !== blockHash
         );
     }
 

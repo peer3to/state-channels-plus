@@ -437,7 +437,12 @@ export default class ValidationService {
         // it conflicts only as another block by the same author (double sign)
         const maybePreExistingBlock =
             this.storage.blocks.getBlock(block.forkId, block.height) ??
-            this.storage.retainedEvidence.getOtherBlockByAuthor(block);
+            this.storage.retainedEvidence.getOtherBlockByAuthor(
+                block.forkId,
+                block.height,
+                block.author,
+                block.hash
+            );
 
         // an identical stored block (dispute replay re-judges it) is no conflict
         if (

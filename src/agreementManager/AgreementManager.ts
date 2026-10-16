@@ -1104,13 +1104,17 @@ class AgreementManager {
             }
 
             collectedBlocks.push(currentBlock);
-            if (this.storage.blocks.hasBlock(currentBlock.hash))
-                hasHistoryBlock = true;
+            const isHistoryBlock = this.storage.blocks.hasBlock(
+                currentBlock.hash
+            );
+            if (isHistoryBlock) hasHistoryBlock = true;
 
-            // only a block whose resulting snapshot is held can be a final point
+            // only a history block whose resulting snapshot is held can be a
+            // final point: retained support never is
             if (
                 (!thresholdBlock ||
                     currentBlock.height < thresholdBlock.height) &&
+                isHistoryBlock &&
                 this.storage.stateSnapshots.getStateSnapshotByHash(
                     currentBlock.stateSnapshotHash
                 )
