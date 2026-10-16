@@ -975,19 +975,14 @@ class AgreementManager {
     ): Generator<Block, void, unknown> {
         let above: Block | undefined;
         for (let current = height; current >= 0; current--) {
-            const retained =
-                current === height
-                    ? this.storage.retainedEvidence.getMostSignedBlock(
-                          forkId,
-                          current
-                      )
-                    : above?.height === current + 1
-                      ? this.storage.retainedEvidence.getBlock(
-                            above.previousBlockHash
-                        )
-                      : undefined;
+            const retained = this.storage.retainedEvidence;
             const block =
-                this.storage.blocks.getBlock(forkId, current) ?? retained;
+                this.storage.blocks.getBlock(forkId, current) ??
+                (current === height
+                    ? retained.getMostSignedBlock(forkId, current)
+                    : above?.height === current + 1
+                      ? retained.getBlock(above.previousBlockHash)
+                      : undefined);
             above = block;
             if (block) yield block;
         }

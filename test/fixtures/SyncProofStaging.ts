@@ -5,6 +5,7 @@ import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { buildAndEncodeBlock, hash as randomHash } from "@test/factory";
 import { LOCAL_WALK } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
+import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
@@ -111,15 +112,7 @@ export async function storedBlocks(
             const bundle = await query
                 .getBlockByHeight(forkId, height)
                 .request();
-            return (
-                bundle && {
-                    hash: bundle.hash,
-                    signers: [
-                        bundle.author,
-                        ...bundle.confirmationSignerAddresses
-                    ].sort()
-                }
-            );
+            return bundle && projectBlock(bundle);
         })
     );
 }
@@ -135,16 +128,17 @@ export async function retainedBlocks(
     return await Promise.all(
         heights.map(async (height) =>
             (await query.getRetainedEvidenceAt(forkId, height).request())
-                .map((bundle) => ({
-                    hash: bundle.hash,
-                    signers: [
-                        bundle.author,
-                        ...bundle.confirmationSignerAddresses
-                    ].sort()
-                }))
+                .map(projectBlock)
                 .sort((a, b) => a.hash.localeCompare(b.hash))
         )
     );
+}
+
+function projectBlock(bundle: BlockBundle): StoredBlockProjection {
+    return {
+        hash: bundle.hash,
+        signers: [bundle.author, ...bundle.confirmationSignerAddresses].sort()
+    };
 }
 
 /** `peerIndex` posts its latest final snapshot; the chain then holds it at `expectedHeight`. */
