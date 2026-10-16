@@ -6,6 +6,7 @@
 
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
+  Partial: `invalidStateTransitionDetected` stores a block counter without first confirming that the chain accepts its verdict ([`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](../../../../../audit/open-findings.md#find-counter-preflight-1-dqmg1t)).
 - [`REQ-DACK-3-J4Z33Y` (Knowledge-gated consequences)](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)
 - [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)

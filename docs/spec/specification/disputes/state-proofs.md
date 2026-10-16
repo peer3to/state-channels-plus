@@ -112,16 +112,22 @@ Audit evidence persistence alone must not advance the peer's active view or caus
 **<a id="req-sp-11-535j0r"></a>`REQ-SP-11-535J0R`.** Persisting a verified proof, in synchronization or
 in dispute audit, splits its checked blocks outside the replayed tail into final history and
 support. Final history is the start block, each threshold hop's first block, and their hash
-ancestors inside the proof; at one height only one identity is final history. Every other checked
-block is support. Support is retained as evidence only: it keeps its signatures for later proof
+ancestors inside the proof. Every other checked block is support. Support is retained as evidence only: it keeps its signatures for later proof
 reconstruction, but it never occupies executed history, never moves the installed view, and never
 grounds a history conflict, a persistence abort or an invalid-transition accusation. A support
 block by the same author as a later block at its height still exposes that author's double sign.
 A walk-valid proof holding two signed blocks at one height is accepted; the block that is not
 final history is kept as evidence only. The installed head never rises above the proven endpoint
 before the tail replay, and a failed tail replay does not undo the persisted final history.
-Reconstruction reads final history first; where history lacks a height it takes the retained
-block that links by hash, and among several the one with the most signatures. For example, a proof
+Reconstruction reads final history first, with the confirmations a retained copy of the same block
+holds. Where history lacks a height it takes the retained block that links by hash; among several
+it takes the one signed by the most distinct participants of the latest state held below that
+height, counting only signatures the contracts accept, and a tie takes the lowest block hash.
+Signatures by outsiders, or several signatures by one key, add nothing to that choice. A run of
+retained blocks alone never makes a final point, even when its signers are complete; a stored
+history block whose state is missing is still a fatal construction error. This requirement does not
+choose between two threshold-final identities at one height; that needs every required signer to
+sign both. For example, a proof
 whose earlier milestone holds an honest run 60–70 and a forged 71′ by another author, and whose
 later milestone starts at the real final 71, stores 60–71 as history and 71′ as evidence only.
 
@@ -578,7 +584,7 @@ double sign.
 
 <a id="req-sp-11-535j0r.t1.p3"></a>`REQ-SP-11-535J0R.T1.P3` — Sync of a proof whose earlier milestone reaches above the proven endpoint installs the head at the endpoint; the blocks above it are retained as evidence only and still rebuild the latest proof.
 
-<a id="req-sp-11-535j0r.t1.p4"></a>`REQ-SP-11-535J0R.T1.P4` — A sync proof with forged support, then an honest proof from another responder holding the real block at that height: both are accepted, history holds the real block and the honest responder is not blacklisted.
+<a id="req-sp-11-535j0r.t1.p4"></a>`REQ-SP-11-535J0R.T1.P4` — A sync proof with forged support by another author than the real block's, then an honest proof from another responder holding the real block at that height: both are accepted, history holds the real block and the honest responder is not blacklisted.
 
 <a id="req-sp-11-535j0r.t1.p5"></a>`REQ-SP-11-535J0R.T1.P5` — An auditor audits a dispute retaining a forged block above its tail, then the honest dispute whose tail replays the real block there: the honest dispute is valid with no counter and history holds the real block.
 
@@ -591,6 +597,24 @@ double sign.
 <a id="req-sp-11-535j0r.t1.p9"></a>`REQ-SP-11-535J0R.T1.P9` — In one dispute window a lagging auditor audits a dispute retaining a forged block above its tail, then the honest disputes replaying the real block there: it submits no counter against an honest dispute and only the forger is slashed.
 
 <a id="req-sp-11-535j0r.t1.p10"></a>`REQ-SP-11-535J0R.T1.P10` — A spectator synced from a proof with forged support above its proven endpoint stops its head at the endpoint, never holds the forged block as history, and catches up with the channel without blacklisting a responder.
+
+<a id="req-sp-11-535j0r.t1.p11"></a>`REQ-SP-11-535J0R.T1.P11` — A sync proof whose tail fails its replay after its final history is persisted is rejected; the final history stays and the head stays at the proven endpoint.
+
+<a id="req-sp-11-535j0r.t1.p12"></a>`REQ-SP-11-535J0R.T1.P12` — Among retained blocks linked to one parent, reconstruction chooses the one signed by the most distinct eligible participants; many signatures by outsiders do not win.
+
+<a id="req-sp-11-535j0r.t1.p13"></a>`REQ-SP-11-535J0R.T1.P13` — A retained tie between blocks with as many eligible signers takes the lowest block hash.
+
+<a id="req-sp-11-535j0r.t1.p14"></a>`REQ-SP-11-535J0R.T1.P14` — Support that equals a block already in history adds its confirmations to that history block and is not retained separately.
+
+<a id="req-sp-11-535j0r.t1.p15"></a>`REQ-SP-11-535J0R.T1.P15` — Blocks retained with a confirmation and later replayed into history without it still lend that confirmation to reconstruction, which proves the earlier block final.
+
+<a id="req-sp-11-535j0r.t1.p16"></a>`REQ-SP-11-535J0R.T1.P16` — Retained support with complete signers directly above the start block builds no final point; reconstruction runs from the start block and verifies.
+
+<a id="req-sp-11-535j0r.t1.p17"></a>`REQ-SP-11-535J0R.T1.P17` — Retained support above a history block whose state is missing does not hide the gap: construction throws.
+
+<a id="req-sp-11-535j0r.t1.p18"></a>`REQ-SP-11-535J0R.T1.P18` — Forged support by the real block's own author, then an honest proof whose tail replays the real block: the replay stops on the double sign and neither block becomes history.
+
+<a id="req-sp-11-535j0r.t1.p19"></a>`REQ-SP-11-535J0R.T1.P19` — Where history holds a block at the arrival's height, a retained same-author block there is not consulted; the history conflict decides.
 
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 

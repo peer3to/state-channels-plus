@@ -73,3 +73,5 @@ drives, so they stay unassigned.
 - `mergeFrom preserves a defined timestamp when the incoming copy has none`: UNIT-TEST-BLOCK-COPY-MERGE-32-8JDDQR.P1
 - `mergeFrom accepts a zero timestamp from the incoming copy`: UNIT-TEST-BLOCK-COPY-MERGE-32-8JDDQR.P2
 - `duplicate storage insertion keeps time when the incoming copy has none`: UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P5
+- `reports a stored block by its hash`: UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P6
+- `reports no block for a hash it does not store`: UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P7

@@ -6,6 +6,7 @@
 
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)
+  Partial: `allege` stores a wrapped block counter after only `isBlockChallengeEligible`, without first confirming that the chain accepts its verdict ([`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](../../../../../audit/open-findings.md#find-counter-preflight-1-dqmg1t)).
 
 ## UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6
 

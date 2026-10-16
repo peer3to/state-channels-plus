@@ -23,6 +23,7 @@
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
 - [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-11-535j0r)
+  Partial: `applySyncResponse` rejects and blacklists the responder when the tail replay stops on a double sign by the replayed block's own author, though the offense is the author's ([`FIND-SYNC-DOUBLE-SIGN-RESPONDER-1-X40BQY`](../../../../../../../audit/open-findings.md#find-sync-double-sign-responder-1-x40bqy)).
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT
@@ -139,6 +140,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — A forged branch between two hops whose ancestry the proof does not hold: accepted, neither forged block enters history, both are retained as evidence
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — An earlier milestone reaching above the proven endpoint: the head stays at the endpoint, the blocks above it are retained as evidence and rebuild the latest proof
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — A payload with forged support from one responder, then an honest payload from another holding the real block there: both accepted, no persistence abort, the honest responder not blacklisted
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — A proof whose tail fails replay after its final history is persisted: rejected, the history stays, the head stays at the endpoint
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — Forged support by the real block's own author, then an honest tail replaying the real block: the second sync stops, neither block becomes history
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

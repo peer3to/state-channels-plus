@@ -58,6 +58,7 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — retained proof evidence by the same author at the arrival's height reaches doubleSignDetected with a double-sign proof
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — retained proof evidence by another author at the arrival's height is no conflict; the real block validates
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — the arrival itself retained as proof evidence is no double sign of its own author
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39` — a history block by another author decides the conflict before retained evidence by the arrival's author is consulted
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 

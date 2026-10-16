@@ -23,6 +23,8 @@ Index consistency and conflict refusal
 - [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P3` — conflicting body refused
 - [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P4` — equal body merges signatures
 - [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P5` — delete via coordinate key removes both
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P6` — `hasBlock` reports a stored hash
+- [x] `UNIT-TEST-BLOCK-STORAGE-1-FY94TH.P7` — `hasBlock` reports no block for an unknown hash
 
 ## UNIT-TEST-BLOCK-STORAGE-2-K77ECA
 

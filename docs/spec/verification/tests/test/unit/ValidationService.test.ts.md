@@ -69,6 +69,7 @@ and only its supplier is punished
 - `the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author`: none
 - `retained proof evidence by the same author at the block's height → doubleSignDetected → DISPUTE + DoubleSign proof`: REQ-SP-11-535J0R.T1.P7, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36
 - `retained proof evidence by another author at the block's height → no conflict, the real block validates → SUCCESS`: REQ-SP-11-535J0R.T1.P8, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37
+- `a history block by another author and retained proof evidence by the same author at the block's height → the history conflict decides: invalidStateTransitionDetected, no double sign`: REQ-SP-11-535J0R.T1.P19, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39
 - `the block itself retained as proof evidence → no double sign of its own author → SUCCESS`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38
 - `conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18
 - `first block with a timestamp before genesis → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P26

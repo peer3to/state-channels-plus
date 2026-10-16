@@ -1183,3 +1183,25 @@ the fix and green after. Mirror:
 [LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md).
 Another instance of
 [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).
+
+## Retained proof support kept out of executed history — 2026-10-16
+
+**A verified proof's support no longer stands in executed history.** `AgreementManager`
+`stageVerifiedProof` stores in the block history only the start block, each hop's first block and
+their hash ancestors in the proof; every other checked block goes to the new
+`RetainedEvidenceStorage`, or adds its confirmations to the same block already in history. The view
+only moves for history, so the head stays at the proven endpoint. Construction reads history (with
+any retained copy's confirmations) first, then the linked retained block signed by the most distinct
+participants of the latest held state (lowest hash on a tie); a run of retained blocks alone is never
+a final point, while a history block with a missing state still throws.
+`ValidationService.checkConflictingBlock` consults retained evidence only where history lacks the
+height, and only for a block by the same author. Requirement
+[`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../specification/disputes/state-proofs.md#req-sp-11-535j0r); resolves
+[`FIND-PROOF-PERSISTENCE-1-HYC9DS`](open-findings.md#find-proof-persistence-1-hyc9ds). Residual
+risks: [`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](open-findings.md#find-counter-preflight-1-dqmg1t),
+[`FIND-SYNC-DOUBLE-SIGN-RESPONDER-1-X40BQY`](open-findings.md#find-sync-double-sign-responder-1-x40bqy),
+two threshold-final identities at one height (unspecified), and retained evidence that is never
+pruned. Mirrors:
+[AgreementManager.ts.md](../implementation/source/src/agreementManager/AgreementManager.ts.md),
+[RetainedEvidenceStorage.ts.md](../implementation/source/src/storage/RetainedEvidenceStorage.ts.md),
+[ValidationService.ts.md](../implementation/source/src/stateManager/ingest/ValidationService.ts.md).

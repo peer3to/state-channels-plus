@@ -307,32 +307,82 @@ The behavior is specified as
 - A counter preflight before an auditor stores a counter is out of scope: it changes the contract
   surface. Tracked as [`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](open-findings.md#find-counter-preflight-1-dqmg1t).
 - Reconstruction picks history first, then the evidence block with the most signatures.
+- Decided (Ljuba, 2026-10-16): the reconstruction choice counts distinct signers who belong to the
+  participant set (the participants of the latest state held below that height, contract-accepted
+  signatures only), not raw signatures; this refines the decision above. Ties keep a deterministic
+  rule: the lowest block hash. A history block read for construction also carries the
+  confirmations its retained copy holds.
+- Decided (Ljuba, 2026-10-16): a same-author double sign found through retained evidence during
+  sync is the author's offense, never the honest responder's; the responder must not be
+  blacklisted for it, and it is punished the way other double signatures are. This sync behavior
+  predates the fix (support then sat in history and reached the same hook), so it is recorded
+  separately as
+  [`FIND-SYNC-DOUBLE-SIGN-RESPONDER-1-X40BQY`](open-findings.md#find-sync-double-sign-responder-1-x40bqy)
+  instead of widening this change.
+- Decided (Ljuba, 2026-10-16): retained evidence is pruned through the same anchor seam the block
+  history uses. No such seam exists in `src/` (block history is never pruned there), so none is
+  invented; see the known limit below.
+- Decided (Ljuba, 2026-10-16): the entry stays Resolved, as the register marks a finding resolved by
+  its fixing change, with every regression named.
 - The invariant is a new requirement,
   [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../specification/disputes/state-proofs.md#req-sp-11-535j0r), not an
   amendment of [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb).
 
-**Regressions:**
-[`REQ-SP-11-535J0R.T1.P1`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p1)–[`REQ-SP-11-535J0R.T1.P4`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p4)
-sync (forged block at a later hop's height, forged branch between hops, support above the proven
-endpoint, poisoned then honest responder),
-[`REQ-SP-11-535J0R.T1.P5`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p5) and
-[`REQ-SP-11-535J0R.T1.P6`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p6)
-audit in both persistence orders,
-[`REQ-SP-11-535J0R.T1.P7`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p7) and
-[`REQ-SP-11-535J0R.T1.P8`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p8)
-live validation against retained evidence,
-[`REQ-SP-11-535J0R.T1.P9`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p9)
-(E2E: lagging auditor in one dispute window, no counter against an honest dispute, only the forger
-slashed) and
-[`REQ-SP-11-535J0R.T1.P10`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p10)
-(E2E: spectator head bound and catch-up without blacklisting). Controls for identical overlapping
-blocks with complementary signatures, virtual finality, membership-change reconstruction, genuine
-invalid transitions and existing finalized conflicts are unchanged. Engineer review pending; the
-pool run of these regressions is pending.
+**Regressions** (all mapped to
+[`REQ-SP-11-535J0R.T1`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1)):
+
+- Sync, `SyncReconstruction.test.ts`: U131 forged block at a later hop's height, U132 forged branch
+  between hops, U133 support above the proven endpoint, U134 poisoned then honest responder,
+  U136 support equal to a history block merges its confirmations, U137 forged support by the real
+  author stops the replay on the double sign, U138 failed tail replay keeps final history,
+  U139 support alone never makes a final point, U140 a missing history state still throws, U141
+  retained confirmations still count after the block enters history.
+- Audit, `DisputeReplayPersistence.test.ts`: U135 in both persistence orders.
+- Live validation, `ValidationService.test.ts`: the four "retained proof evidence" / "history
+  block … retained proof evidence" cases and the self-copy control.
+- Store, `RetainedEvidenceStorage.test.ts`: lookup, value semantics, the eligible-signer choice
+  (outsider signatures count for nothing, lowest-hash tie) and the double-sign lookup.
+- E2E, `E2E-RetainedProofSupport.test.ts`: E50 lagging auditor in one dispute window (no counter
+  against an honest dispute, only the forger slashed), E51 spectator head bound and catch-up
+  without blacklisting.
+
+Controls for identical overlapping blocks with complementary signatures, virtual finality,
+membership-change reconstruction, genuine invalid transitions and existing finalized conflicts are
+unchanged. Engineer review pending.
+
+**Known limit (pruning).** Retained evidence is never pruned, and one coordinate can hold any number
+of identities. Block history has no pruning seam in `src/` either, so retained evidence follows it.
+Volume is bounded by the number of accepted syncs and audits.
 
 **Residual limit.** Two threshold-final identities at one height in one proof would need every
 participant of the union to sign both; the classification then keeps the latest final point's
 ancestry and retains the other as evidence. This case is not specified further.
+
+<a id="find-sync-double-sign-responder-1-x40bqy"></a>
+
+### FIND-SYNC-DOUBLE-SIGN-RESPONDER-1-X40BQY
+
+**Current defect:** **Open; medium.** A sync tail replay that stops on a double sign by the replayed
+block's own author rejects and blacklists the responder that served the honest block.
+
+**Confirmed by code inspection.** When a responder's tail holds a real block whose author also
+signed another block at that height (now retained evidence, before this fix stored history),
+`ValidationService.checkConflictingBlock` reaches `doubleSignDetected`. The spectating strategy
+aborts and a pending participant's live strategy returns `DISPUTE`; either way
+`SpectateService.applySyncResponse` then calls `rejectSync("block confirmation rejected")`, which
+disconnects and blacklists the responder. The offense is the author's; the responder relayed an
+honest block. Regression of the current behavior: U137 (`SyncReconstruction.test.ts`), which
+asserts the stop but not the blacklist.
+
+**Disposition (Ljuba, 2026-10-16).** The double sign is the author's offense, never the honest
+responder's: do not blacklist the responder for it, and punish it the way other double signatures
+are punished (detected in `SignerRecoveryCache`, punished by `P2PManager`). Out of scope of the
+proof-persistence fix, because the behavior predates it.
+
+**Follow-up obligations.** Separate an author-attributed verdict from a responder fault in the sync
+replay; route the author's double sign to the existing double-signature punishment; prove with a
+sync regression that the author is punished and the responder stays connected, for a spectator and
+for a pending participant.
 
 <a id="find-counter-preflight-1-dqmg1t"></a>
 

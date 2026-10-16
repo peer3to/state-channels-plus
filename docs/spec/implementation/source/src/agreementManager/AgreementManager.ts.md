@@ -92,6 +92,10 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `stageVerifiedProof` with two signed blocks at one height, the real one a later hop's first block: history keeps the hop block, the other is retained as evidence only, no conflict
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67` — `stageVerifiedProof` with a forged branch that is no hash ancestor of a final point: nothing of it enters history, it is retained as evidence
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68` — Support above the proven endpoint does not move the view; `buildStateProof` above the history head rebuilds through the linked retained evidence and the chain verifies it
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P69` — `stageVerifiedProof` with support equal to a stored history block merges its confirmations into history and retains nothing
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P70` — A history block read for construction carries the confirmations of its retained copy, so an earlier block proves final
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71` — `tryBuildMilestone` over retained blocks with complete signers directly above the start builds no milestone; the proof runs from the start block
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P72` — `tryBuildMilestone` over retained blocks on top of a history block whose snapshot is missing ends there and construction throws
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 
