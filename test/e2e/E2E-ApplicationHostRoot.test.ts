@@ -20,17 +20,17 @@ describe("E2E: ApplicationHostRoot", function () {
         const [first, second] = fixture.harness.peers;
 
         expect(
-            await fixture.host(first).probe.echo("first").request()
+            await first.p2pInstance.host.probe.echo("first").request()
         ).to.deep.equal({ value: "first", signerAddress: first.address });
         expect(
-            await fixture.host(second).probe.echo("second").request()
+            await second.p2pInstance.host.probe.echo("second").request()
         ).to.deep.equal({ value: "second", signerAddress: second.address });
         // Each client reached only its own runtime.
         expect(
-            await fixture.host(first).probe.getEchoes().request()
+            await first.p2pInstance.host.probe.getEchoes().request()
         ).to.deep.equal(["first"]);
         expect(
-            await fixture.host(second).probe.getEchoes().request()
+            await second.p2pInstance.host.probe.getEchoes().request()
         ).to.deep.equal(["second"]);
     });
 
@@ -52,7 +52,7 @@ describe("E2E: ApplicationHostRoot", function () {
         });
         await fixture.expectDisconnected(receiver, caller);
         expect(
-            await fixture.host(receiver).probe.getEchoes().request()
+            await receiver.p2pInstance.host.probe.getEchoes().request()
         ).to.deep.equal([]);
     });
 });

@@ -1,8 +1,12 @@
 // @spec-test-coverage-ignore: restorable timing controls exercised by mapped lobby and negotiation tests
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Logger } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     EvidenceComparisonFault,
     HeldEvidenceComparisonRelease,
@@ -97,10 +101,11 @@ export type ConstructDisputeHold = {
  * behavior selected here.
  */
 export class RpcStubActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 

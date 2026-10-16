@@ -2,6 +2,7 @@
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
@@ -504,7 +505,7 @@ export async function stageRefusedKillAndDispute(
  */
 export type SlowAuditorPastEvidencePeriod = {
     forkId: ForkId;
-    slow: TestPeer<HarnessControlRpc, MathStateMachine>;
+    slow: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>, MathStateMachine>;
     /** Lone kills the slow auditor sent. */
     slowKills: { applies: () => Promise<RecordedFraudProofApply[]> };
     slowSubmissions: DisputeSubmissionRecording;

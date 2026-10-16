@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import MirrorRpcMethods from "./MirrorRpcMethods";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import type RpcContractExecutor from "@/evm/contractExecutor/RpcContractExecutor";
 import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import type P2PManager from "@/P2PManager";
@@ -150,7 +150,7 @@ export function localExecutorConnection(sm: { diamondStateMachine: unknown }) {
  */
 export class MirrorService extends ANetworkRpcService<
     MirrorRpcMethods,
-    P2PManager<HarnessControlRpc>
+    P2PManager<HarnessControlRpcShape>
 > {
     private readonly observed = new Map<ObservableRead, ObservedRead>();
     // the held calls' arguments and the restore of each suspended update
@@ -159,7 +159,7 @@ export class MirrorService extends ANetworkRpcService<
         { calls: unknown[][]; restore: () => void }
     >();
 
-    constructor(p2pManager: P2PManager<HarnessControlRpc>) {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
             p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({

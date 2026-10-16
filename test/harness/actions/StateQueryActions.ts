@@ -1,8 +1,12 @@
 // @spec-test-coverage-ignore: shared harness peer-state query actions exercised by the mapped test declarations that call them
 import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId, Hash } from "@/types/types";
 import { Codec, Logger, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -18,10 +22,11 @@ import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeT
  * NO MUTATIONS - read-only operations only
  */
 export class StateQueryActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 
@@ -74,7 +79,7 @@ export class StateQueryActions<
     }
 
     public async getLocalStateSnapshot(
-        peer: TestPeer<TCustomRpc>
+        peer: TestPeer<THost>
     ): Promise<StateSnapshot> {
         const { encodedSnapshot } = await this.harness
             .control(peer)
@@ -87,7 +92,7 @@ export class StateQueryActions<
     /**
      * Get the next peer that should write a block
      */
-    async getNextPeerToWrite(): Promise<TestPeer<TCustomRpc>> {
+    async getNextPeerToWrite(): Promise<TestPeer<THost>> {
         try {
             const forkId = this.harness.activeForkId;
             if (!forkId) {

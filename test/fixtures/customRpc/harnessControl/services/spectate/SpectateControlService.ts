@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
 import SpectateControlRpcMethods from "./SpectateControlRpcMethods";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
@@ -15,14 +15,14 @@ import { Codec, Type } from "@/utils";
  * pieces tests drive directly (generate/persist sync payload, just-persist a
  * block). Accessors/state live here, not on the routable RpcMethods class.
  *
- * Typing `p2pManager` as `P2PManager<HarnessControlRpc>` gives fully-typed
+ * Typing `p2pManager` as `P2PManager<HarnessControlRpcShape>` gives fully-typed
  * access to `localRpc` (the SDK's own services included) with no casts.
  */
 export class SpectateControlService extends ANetworkRpcService<
     SpectateControlRpcMethods,
-    P2PManager<HarnessControlRpc>
+    P2PManager<HarnessControlRpcShape>
 > {
-    constructor(p2pManager: P2PManager<HarnessControlRpc>) {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
             p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({

@@ -7,11 +7,15 @@ import {
 } from "../core/testTimeConfig";
 import { EventSpies } from "../core/types";
 import Clock from "@/Clock";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 
@@ -27,10 +31,11 @@ const SPY_FORWARD_WINDOW_MS = 500;
  * - Assert event calls
  */
 export class EventActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 

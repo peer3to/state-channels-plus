@@ -285,15 +285,16 @@ lifetime relative to fork finalization is undefined.
 
 ## OQ-37-0Y7YWS — Harness-control surface exposure
 
-The test harness registers `HarnessControlRpc` as an ordinary custom-RPC root: **11 services, 207
+The test harness registers `HarnessControlRpc` (or an application custom RPC extended by the
+`withHarnessControl` mixin) as an ordinary custom-RPC root: **11 services, 207
 public endpoints, zero guards** (`ANetworkRpcService.guards` defaults to `[]` and no harness service
 overrides it). Because service resolution is structural over any transport, any peer connected to
 a harness-built peer can invoke them — including `scenario.exec`, which rebuilds a supplied source
 string with `new Function` and runs it against the live `StateManager` (arbitrary code execution in
 the host realm), `handshake.signMessage` (a signing oracle), and `signer` (imports other peers'
 private keys). The root also ships: `tsc` emits `dist/test/fixtures/customRpc/harnessControl/`,
-`package.json` `files` includes `dist`, and `exports["./test-harness"]` re-exports it, so it is the
-default root for any downstream consumer building peers with the harness.
+`package.json` `files` includes `dist`, and `exports["./test-harness"]` re-exports it and the
+mixin, so it is the default root for any downstream consumer building peers with the harness.
 
 Today the blast radius is bounded only by production `p2pSetup` registering the bare
 `MainRpcService`. Decide: restrict harness services to the trusted loopback transport and exclude

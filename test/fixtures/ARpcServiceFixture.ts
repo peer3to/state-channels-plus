@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: shared runtime setup for ANetworkRpcService component tests
-import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { ARpcDispatchProbe } from "@test/fixtures/customRpc/aRpcServiceProbe/ARpcServiceProbeService";
 import type { LoopbackGuardProbeResult } from "@test/fixtures/customRpc/loopbackGuardProbe/LoopbackGuardProbeService";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
@@ -10,7 +10,7 @@ import path from "node:path";
 
 export class ARpcServiceFixture {
     private readonly harness = new PeerTestHarness<
-        PingPongRpc,
+        P2pRuntimeHostRoot<PingPongRpc>,
         MathStateMachine
     >({
         deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
@@ -47,9 +47,7 @@ export class ARpcServiceFixture {
         } = {}
     ): Promise<ARpcDispatchProbe> {
         const peer = this.harness.getPeer(0);
-        const control = this.harness.control(
-            peer
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        const control = peer.p2pInstance.hostRpc;
         return control.aRpcServiceProbe
             .probeDispatch(method, {
                 requestId: options.request
@@ -69,9 +67,7 @@ export class ARpcServiceFixture {
 
     public probeRealLoopbackGuardBypass(): Promise<LoopbackGuardProbeResult> {
         const peer = this.harness.getPeer(0);
-        const control = this.harness.control(
-            peer
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        const control = peer.p2pInstance.hostRpc;
         return control.loopbackGuardProbe.probe().request();
     }
 }

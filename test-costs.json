@@ -4016,9 +4016,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E32: malformed material below the trusted anchor E32: the same skipped malformed prefix with a latest state that breaks the balance invariant, audited by a pending auditor without a final block at the forged head → the balance counter still kills the dispute, then DisputeConflictsWithFinalState kills the colluders' real-head disputes": {
-      "durationMs": 43589,
-      "avgCores": 0.825,
-      "peakRssGb": 1.244,
+      "durationMs": 38021,
+      "avgCores": 1.196,
+      "peakRssGb": 1.613,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-MilestoneProofStart.test.ts|E2E: dispute validation / milestone proof start E36: malformed retained input through the full audit path E36: omitted data, an unrecoverable confirmation signature on the unfinalized block after the anchor → DisputeInvalidStateProof kills the dispute and slashes its submitter": {
@@ -4220,9 +4220,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash": {
-      "durationMs": 51363,
-      "avgCores": 0.585,
-      "peakRssGb": 1.249,
+      "durationMs": 42888,
+      "avgCores": 1.383,
+      "peakRssGb": 1.575,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post refused for an unconsumed inbound join → its watchdog self-removal dispute; the others contribute newer state into the existing window and remain participants": {

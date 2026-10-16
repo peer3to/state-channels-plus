@@ -2,7 +2,7 @@
 import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
 import StateSnapshot from "@/models/StateSnapshot";
@@ -501,14 +501,14 @@ export type DoubleSignatureLogEntry = {
  * here rather than failing silently at runtime. Originals are held per service
  * instance so they survive across RPC method invocations.
  *
- * `p2pManager` is typed as `P2PManager<HarnessControlRpc>`, so `localRpc` (the
+ * `p2pManager` is typed as `P2PManager<HarnessControlRpcShape>`, so `localRpc` (the
  * SDK's own services included) is fully typed. Prefer targeting real members
  * directly; private internals use explicit local structural host types at the
  * stub site.
  */
 export class StubService extends ANetworkRpcService<
     StubRpcMethods,
-    P2PManager<HarnessControlRpc>
+    P2PManager<HarnessControlRpcShape>
 > {
     private nextSignatureHold?: HeldRpcReply;
     private restoreNextSignature?: () => void;
@@ -924,7 +924,7 @@ export class StubService extends ANetworkRpcService<
         this.restoreSlashRecovery = undefined;
     }
 
-    constructor(p2pManager: P2PManager<HarnessControlRpc>) {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
             p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({

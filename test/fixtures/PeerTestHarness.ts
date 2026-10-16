@@ -1,7 +1,10 @@
 // @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
 
 import testConfig from "../peer3.test.config";
-import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
@@ -22,7 +25,10 @@ import { EvmStateMachine } from "@/evm";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import P2pEventHooks from "@/P2pEventHooks";
-import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type {
+    ApplicationOf,
+    P2pRuntimeHostRoot
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
@@ -99,18 +105,19 @@ const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
  * Main test harness for E2E peer-to-peer testing
  */
 export class PeerTestHarness<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>,
     TStateMachine extends AStateMachineContract = AStateMachineContract
 > {
-    public peers: TestPeer<TCustomRpc, TStateMachine>[] = [];
+    public peers: TestPeer<THost, TStateMachine>[] = [];
     public channelManager!: StateChannelManagerInterface;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
-    public options!: HarnessOptions;
+    public options!: HarnessOptions<THost>;
     private harnessConfig!: Partial<Config>;
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
-    public syncCoordinator!: SyncCoordinator<TCustomRpc>;
+    public syncCoordinator!: SyncCoordinator<THost>;
 
     // Chain access. The harness owns its provider built from a node URL — either
     // one passed in (PROVIDER_URL, e.g. a parallel-runner slot) or one it starts
@@ -135,22 +142,22 @@ export class PeerTestHarness<
     public disconnectionBarrier: EventBarrier;
 
     // action instances
-    public lifecycle!: LifecycleActions<TCustomRpc>;
-    public join!: JoinActions<TCustomRpc>;
-    public transition!: TransitionActions<TCustomRpc, TStateMachine>;
-    public network!: NetworkController<TCustomRpc>;
-    public assert!: AssertActions<TCustomRpc>;
-    public byzantine!: ByzantineActions<TCustomRpc>;
-    public event!: EventActions<TCustomRpc>;
-    public query!: StateQueryActions<TCustomRpc>;
-    public dispute!: DisputeOrchestrator<TCustomRpc>;
-    public tamper!: DisputeTamperingActions<TCustomRpc>;
-    public rpc!: RPCActions<TCustomRpc>;
-    public rpcStub!: RpcStubActions<TCustomRpc>;
-    public mirror!: MirrorActions<TCustomRpc>;
-    public contextApi!: ContextActions<TCustomRpc>;
-    public scenario!: ScenarioActions<TCustomRpc>;
-    public readonly debug: HarnessDebug<TCustomRpc>;
+    public lifecycle!: LifecycleActions<THost>;
+    public join!: JoinActions<THost>;
+    public transition!: TransitionActions<THost, TStateMachine>;
+    public network!: NetworkController<THost>;
+    public assert!: AssertActions<THost>;
+    public byzantine!: ByzantineActions<THost>;
+    public event!: EventActions<THost>;
+    public query!: StateQueryActions<THost>;
+    public dispute!: DisputeOrchestrator<THost>;
+    public tamper!: DisputeTamperingActions<THost>;
+    public rpc!: RPCActions<THost>;
+    public rpcStub!: RpcStubActions<THost>;
+    public mirror!: MirrorActions<THost>;
+    public contextApi!: ContextActions<THost>;
+    public scenario!: ScenarioActions<THost>;
+    public readonly debug: HarnessDebug<THost>;
 
     /**
      * Per-peer fork-id cache. The live fork id lives host-side behind the
@@ -186,16 +193,17 @@ export class PeerTestHarness<
     /**
      * Typed handle to a peer's host-side harness-control RPC services
      * (`query` / `network` / `byzantine` / `stub`). Every peer's custom RPC
-     * extends {@link HarnessControlRpc}, so these services are always present at
-     * runtime; the cast keeps call sites typed without forcing the harness's
-     * `TCustomRpc` generic to name them. Usage:
+     * carries them (`withHarnessControl`), so these services are always
+     * present at runtime; `THost` is constrained to a root over
+     * {@link HarnessControlRpcShape}, but the proxy type does not expand over a
+     * generic host, so the cast keeps call sites typed. Usage:
      * `harness.control(peer).query.getForkId().request()`.
      */
     public control(
-        peer: TestPeer<TCustomRpc>
-    ): RemoteRpcProxyType<HarnessControlRpc> {
+        peer: TestPeer<THost>
+    ): RemoteRpcProxyType<HarnessControlRpcShape> {
         return peer.p2pInstance
-            .hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpc>;
+            .hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpcShape>;
     }
 
     /** Harness peers have independent top-level roots, so each starts its own gossip. */
@@ -217,7 +225,7 @@ export class PeerTestHarness<
      * in sync after the query.
      */
     public async peerForkIds(
-        peers: TestPeer<TCustomRpc, TStateMachine>[] = this.peers
+        peers: TestPeer<THost, TStateMachine>[] = this.peers
     ): Promise<ForkId[]> {
         return Promise.all(
             peers.map(async (peer) => {
@@ -269,7 +277,10 @@ export class PeerTestHarness<
         this.debug = new HarnessDebug(this);
     }
 
-    async setup(numPeers: number, options?: HarnessOptions): Promise<void> {
+    async setup(
+        numPeers: number,
+        options?: HarnessOptions<THost>
+    ): Promise<void> {
         const setupStart = Date.now();
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
@@ -320,7 +331,7 @@ export class PeerTestHarness<
             throw new Error(
                 "agreementTime must be greater than 1 second for reliable test execution"
             );
-        this.syncCoordinator = new SyncCoordinator<TCustomRpc>(
+        this.syncCoordinator = new SyncCoordinator<THost>(
             this.logger,
             this.eventCountsBarrier,
             (peer) => this.control(peer),
@@ -839,10 +850,7 @@ export class PeerTestHarness<
         };
         const p2pInstance = await RootCreationControl.observe(() =>
             executorCallGasLimit === undefined
-                ? EvmStateMachine.p2pSetup<
-                      TStateMachine,
-                      P2pRuntimeHostRoot<TCustomRpc>
-                  >(
+                ? EvmStateMachine.p2pSetup<TStateMachine, THost>(
                       this.channelManager,
                       contractInstanceMock,
                       this.sharedStateMachineDeployer,
@@ -850,10 +858,7 @@ export class PeerTestHarness<
                   )
                 : // p2pSetup's own construction, with the production executor
                   // factory given this peer's call gas
-                  setupP2pRuntime<
-                      TStateMachine,
-                      P2pRuntimeHostRoot<TCustomRpc>
-                  >(
+                  setupP2pRuntime<TStateMachine, THost>(
                       this.channelManager,
                       contractInstanceMock,
                       this.sharedStateMachineDeployer,
@@ -874,7 +879,7 @@ export class PeerTestHarness<
                   )
         );
 
-        const peer: TestPeer<TCustomRpc, TStateMachine> = {
+        const peer: TestPeer<THost, TStateMachine> = {
             index,
             signer,
             address,
@@ -916,8 +921,9 @@ export class PeerTestHarness<
     /**
      * The custom RPC manifest a peer is built with. Defaults to the
      * {@link HarnessControlRpc} manifest so every peer exposes the harness
-     * control surface; a test-supplied manifest (whose class extends
-     * {@link HarnessControlRpc}) takes precedence.
+     * control surface; a test-supplied manifest (whose class applies
+     * `withHarnessControl`, directly or by extending {@link HarnessControlRpc})
+     * takes precedence.
      */
     private resolveHarnessRpcManifest(): CustomRpcManifest {
         // Resolve the sibling RPC with the same extension this module runs as:
@@ -940,7 +946,7 @@ export class PeerTestHarness<
      * mirrored event that drives its spy and signals the event-count barrier.
      */
     private registerPeerEventListeners(
-        peer: TestPeer<TCustomRpc, TStateMachine>,
+        peer: TestPeer<THost, TStateMachine>,
         hooks: P2pEventHooks
     ): void {
         for (const [name, fn] of Object.entries(hooks)) {
@@ -1066,7 +1072,7 @@ export class PeerTestHarness<
         return proxies;
     }
 
-    getPeer(index: number): TestPeer<TCustomRpc, TStateMachine> {
+    getPeer(index: number): TestPeer<THost, TStateMachine> {
         const peer = this.peers[index];
         if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;
@@ -1076,9 +1082,7 @@ export class PeerTestHarness<
         return this.peers.map((p) => p.address);
     }
 
-    getFilteredPeers(
-        peerIndices?: number[]
-    ): TestPeer<TCustomRpc, TStateMachine>[] {
+    getFilteredPeers(peerIndices?: number[]): TestPeer<THost, TStateMachine>[] {
         return peerIndices
             ? peerIndices.map((i) => this.getPeer(i))
             : this.peers;
@@ -1086,7 +1090,7 @@ export class PeerTestHarness<
 
     getHonestPeers(
         excludePeerIndices?: number[]
-    ): TestPeer<TCustomRpc, TStateMachine>[] {
+    ): TestPeer<THost, TStateMachine>[] {
         const excludeSet = new Set<number>([
             ...(excludePeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? []),
@@ -1097,7 +1101,7 @@ export class PeerTestHarness<
 
     async peerWithHighestBlock(
         forkId: ForkId
-    ): Promise<TestPeer<TCustomRpc, TStateMachine>> {
+    ): Promise<TestPeer<THost, TStateMachine>> {
         const unavailable = new Set([
             ...(this.context.maliciousPeerIndices ?? []),
             ...(this.context.afkPeerIndices ?? []),
@@ -1119,7 +1123,7 @@ export class PeerTestHarness<
             )
         );
 
-        let best: TestPeer<TCustomRpc, TStateMachine> | undefined;
+        let best: TestPeer<THost, TStateMachine> | undefined;
         let bestHeight = Number.NEGATIVE_INFINITY;
         this.peers.forEach((peer, i) => {
             const h = heights[i];
@@ -1137,7 +1141,7 @@ export class PeerTestHarness<
     }
 
     /** Every responsive honest harness peer except leavers, removed and aborted peers. */
-    getActiveHonestPeers(): TestPeer<TCustomRpc, TStateMachine>[] {
+    getActiveHonestPeers(): TestPeer<THost, TStateMachine>[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? []),
@@ -1155,7 +1159,7 @@ export class PeerTestHarness<
 
     getFilteredOrHonestPeers(
         peerIndices?: number[]
-    ): TestPeer<TCustomRpc, TStateMachine>[] {
+    ): TestPeer<THost, TStateMachine>[] {
         if (peerIndices) {
             return this.getFilteredPeers(peerIndices);
         }
@@ -1190,9 +1194,9 @@ export class PeerTestHarness<
         T,
         A extends Record<string, unknown> = Record<string, never>
     >(
-        peer: TestPeer<TCustomRpc, TStateMachine>,
+        peer: TestPeer<THost, TStateMachine>,
         fn: (
-            sm: StateManager<TCustomRpc>,
+            sm: StateManager<ApplicationOf<THost>>,
             args: A,
             modules: HostExecModules
         ) => T | Promise<T>,
@@ -1270,7 +1274,7 @@ export class PeerTestHarness<
     }
 
     async ensurePeerSignersRegistered(
-        peer: TestPeer<TCustomRpc, TStateMachine>
+        peer: TestPeer<THost, TStateMachine>
     ): Promise<void> {
         if (this.peerSignersRegistered.has(peer.index)) return;
         const secrets = this.peers

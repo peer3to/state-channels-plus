@@ -1,19 +1,17 @@
 // @spec-test-coverage-ignore: shared real-peer staging for E2E-ApplicationHostRoot
-import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import type { RawRequestOutcome } from "@test/fixtures/customRpc/harnessControl/services/byzantine/ByzantineService";
 import type { ProbeHostRoot } from "@test/fixtures/hostRoot/ProbeHostRoot";
 import {
     probeHostRootManifest,
     probeRpcManifest
 } from "@test/fixtures/hostRoot/ProbeHostRootManifest";
-import type { ProbeRpc } from "@test/fixtures/hostRoot/ProbeRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 
-type Peer = TestPeer<ProbeRpc, MathStateMachine>;
+type Peer = TestPeer<ProbeHostRoot, MathStateMachine>;
 
 /** How a pending request settles when its transport closes (P2PManager.closeConnection). */
 export const PEER_DISCONNECTED_ERROR =
@@ -21,7 +19,10 @@ export const PEER_DISCONNECTED_ERROR =
 
 /** Connected peers that all run the probe application's two roots. */
 export class ApplicationHostRootE2EFixture {
-    public readonly harness = new PeerTestHarness<ProbeRpc, MathStateMachine>({
+    public readonly harness = new PeerTestHarness<
+        ProbeHostRoot,
+        MathStateMachine
+    >({
         deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
     });
 
@@ -40,11 +41,6 @@ export class ApplicationHostRootE2EFixture {
 
     public async cleanup(): Promise<void> {
         await this.harness.cleanup();
-    }
-
-    /** The peer's host connection, typed by the root its manifest named. */
-    public host(peer: Peer): RuntimeConnection<ProbeHostRoot> {
-        return peer.p2pInstance.host as RuntimeConnection<ProbeHostRoot>;
     }
 
     /** How `from`'s network request to `to`'s `probe.echo` settled. */

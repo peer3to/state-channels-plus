@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status, TimeConfig } from "@/types";
 import { ForkId, Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
@@ -14,7 +15,10 @@ import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { MathPeerTestHarness } from "test-harness";
 
-type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
+type MathTestPeer = TestPeer<
+    P2pRuntimeHostRoot<HarnessControlRpc>,
+    MathStateMachine
+>;
 
 /** Kill period for the shared invalid-dispute staging, in seconds. */
 const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
@@ -442,7 +446,7 @@ export class MathScenarioActions extends ScenarioActions {
         forkId: ForkId;
         spammer: MathTestPeer;
         killer: MathTestPeer;
-        spectator: TestPeer<HarnessControlRpc> | undefined;
+        spectator: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>> | undefined;
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;

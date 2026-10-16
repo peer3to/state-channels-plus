@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import type { Address } from "@/types/types";
 import { addressesEqual } from "@/utils";
@@ -9,7 +10,10 @@ import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 
-type MathPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
+type MathPeer = TestPeer<
+    P2pRuntimeHostRoot<HarnessControlRpc>,
+    MathStateMachine
+>;
 
 /**
  * Three participants and a joiner whose JOIN is pending on chain. Peer 0 has

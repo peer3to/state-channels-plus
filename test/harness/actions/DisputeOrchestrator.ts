@@ -1,11 +1,15 @@
 // @spec-test-coverage-ignore: shared dispute staging and resolution helper exercised by owning mapped test declarations
 import type { FinalDisputeResolution } from "./DisputeTamperingActions";
 import { CreateAndResolveDisputeResult } from "../core/types";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { FraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { Codec, Logger, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeValidationRun } from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type {
@@ -35,10 +39,11 @@ export type DisputeResolutionExpectation = {
  * DisputeOrchestrator - High-level dispute resolution workflows
  */
 export class DisputeOrchestrator<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc>,
+        protected harness: PeerTestHarness<THost>,
         protected logger: Logger
     ) {}
 
@@ -245,7 +250,7 @@ export class DisputeOrchestrator<
             syntheticOnChainParticipants?: number;
             expectedDisputesCommittedPerPeer?: number;
         }
-    ): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
+    ): Promise<CreateAndResolveDisputeResult<THost>> {
         try {
             return await this.resolveDisputeWait({
                 forkId: submitted.forkId,
@@ -292,7 +297,7 @@ export class DisputeOrchestrator<
         assertMaliciousRemoved?: boolean;
         syntheticOnChainParticipants?: number;
         expectedResolution?: DisputeResolutionExpectation;
-    }): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
+    }): Promise<CreateAndResolveDisputeResult<THost>> {
         if (!options.forkId) {
             throw new Error(
                 "resolveDisputeWait requires the forkId captured before the dispute"

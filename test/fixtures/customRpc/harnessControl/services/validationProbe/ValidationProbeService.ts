@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: host-side validation probes
 import { recordValidationBoundary } from "./RecordingValidationStrategy";
 import ValidationProbeRpcMethods from "./ValidationProbeRpcMethods";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
@@ -218,7 +218,7 @@ type RecordedValidationRun = {
 };
 export class ValidationProbeService extends ANetworkRpcService<
     ValidationProbeRpcMethods,
-    P2PManager<HarnessControlRpc>
+    P2PManager<HarnessControlRpcShape>
 > {
     /**
      * Serializes runBlockValidation/runBlockIngest's record-only
@@ -230,7 +230,7 @@ export class ValidationProbeService extends ANetworkRpcService<
     /** Releases of the watermark holds taken through holdEventWatermark; the index is the hold's id. */
     private readonly watermarkReleases: (() => void)[] = [];
 
-    constructor(p2pManager: P2PManager<HarnessControlRpc>) {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
             p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
