@@ -1045,51 +1045,15 @@ describe("E2E: BlockQueueManager", function () {
             );
 
             const sourcePeer = h.getPeer(reducingHonestPeers[0]);
-            const nextWriterAddress = await h
-                .control(sourcePeer)
-                .query.getNextToWrite()
-                .request();
-            const writerPeer = h.peers.find(
-                (p) => p.address === nextWriterAddress
-            );
-            expect(writerPeer, "no writer peer found").to.not.be.undefined;
-            expect(writerPeer!.index).not.to.equal(targetPeerIndex);
 
-            await writerPeer!.p2pInstance.p2pContractInstance.add(1);
-            await waitFor(async () => {
-                const block = await h
-                    .control(sourcePeer)
-                    .query.getBlockByHeight(newForkId, 0)
-                    .request();
-                return Boolean(block?.encodedBlockConfirmation);
-            }, h.event.protocolEventTimeoutMs());
-
-            // A second block, so the delivered copy is never one the target
-            // already stored through ordinary gossip (a stored copy settles
-            // as past before the disputed-fork check runs).
-            const secondWriterAddress = await h
-                .control(sourcePeer)
-                .query.getNextToWrite()
-                .request();
-            const secondWriterPeer = h.peers.find(
-                (p) => p.address === secondWriterAddress
-            );
-            expect(secondWriterPeer, "no second writer peer found").to.not.be
-                .undefined;
-            expect(secondWriterPeer!.index).not.to.equal(targetPeerIndex);
-            await secondWriterPeer!.p2pInstance.p2pContractInstance.add(1);
-            await waitFor(async () => {
-                const block = await h
-                    .control(sourcePeer)
-                    .query.getBlockByHeight(newForkId, 1)
-                    .request();
-                return Boolean(block?.encodedBlockConfirmation);
-            }, h.event.protocolEventTimeoutMs());
-            const secondBlock = await h
-                .control(sourcePeer)
-                .query.getBlockByHeight(newForkId, 1)
-                .request();
-            expect(secondBlock).not.to.equal(null);
+            // A fresh bogus-fork block, so the delivered copy always
+            // reaches the disputed-fork check: a real reduced-fork block
+            // could already be stored on the target through ordinary
+            // gossip or sync, and a stored copy settles as past before
+            // the check runs (the recovery test above covers real
+            // reduced-fork ingest).
+            const { bogusBlock, blockConfirmation: networkConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
 
             // The target's disputed-fork check fails on its own local
             // diamond while it ingests the wrong-fork block: a local
@@ -1105,10 +1069,6 @@ describe("E2E: BlockQueueManager", function () {
                 .control(targetPeer)
                 .stub.observeAdmission({ source: sourcePeer.address })
                 .request();
-            // Hold the target's next sync install: an honest sync that
-            // stored this block first would settle the delivered copy as
-            // past, and it would never reach the faulted check.
-            await h.control(targetPeer).stub.holdSyncInstall().request();
             try {
                 // Production gossip is fire-and-forget: the sender's verdict
                 // mapping runs in the receiver's async handler, so a local
@@ -1116,16 +1076,14 @@ describe("E2E: BlockQueueManager", function () {
                 await h
                     .control(sourcePeer)
                     .byzantine.sendBlockConfirmation(
-                        secondBlock!.encodedBlockConfirmation,
+                        Codec.encode(
+                            networkConfirmation,
+                            Type.BlockConfirmation
+                        ) as string,
                         targetPeer.address
                     )
                     .request();
-                const secondBlockHash = Block.fromBlockConfirmation(
-                    Codec.decode(
-                        secondBlock!.encodedBlockConfirmation,
-                        Type.BlockConfirmation
-                    )
-                ).hash;
+                const secondBlockHash = bogusBlock.hash;
                 let judged: { outcome: string } | undefined;
                 await waitFor(async () => {
                     const records = await h
@@ -1248,7 +1206,6 @@ describe("E2E: BlockQueueManager", function () {
                     .control(targetPeer)
                     .stub.restoreDisputedForkCheckFailures()
                     .request();
-                await h.control(targetPeer).stub.releaseSyncInstall().request();
                 await race.release();
             }
         });
