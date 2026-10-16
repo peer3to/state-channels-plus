@@ -875,6 +875,9 @@ Specification cases tested: 8/8.
 [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
 Specification cases tested: 18/18.
 
+[`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
+Specification cases tested: 0/6.
+
 [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
 Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
 

@@ -3,6 +3,24 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Authoring rollback after a refused inbound message — 2026-10-16
+
+Observed 2026-10-16 on a live poker table: a player's `playTransaction` applied its action to the local VM, then the
+pending inbound JOIN in the same transition was refused by the state machine, and the call threw without restoring
+the VM. The local turn moved with no block stored, so every later action of that player failed as not its turn. The
+[BlockProductionService report](../implementation/source/src/stateManager/block/BlockProductionService.ts.md) now
+restores the VM on every exit that does not commit the block, through the one restore owner in
+[SnapshotAssemblyService](../implementation/source/src/stateManager/block/SnapshotAssemblyService.ts.md) that block
+ingest already used. Evidence:
+[`UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md#unit-test-block-production-1-5ed0eb), which fails without the restore. Luka
+decided that inbound consumption must succeed:
+[`REQ-SM-12-J6QD9B`](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b) requires a state machine to
+process every chain-accepted inbound message, and the only allowed failure, running out of gas with a retry on fewer
+inbound blocks, is deferred in
+[`FIND-INBOUND-GAS-1-2BZ8DE`](open-findings.md#find-inbound-gas-1-2bz8de). The poker state machine's refusal of that
+JOIN is fixed in poker-contracts. The full SDK gate passed on 2026-10-16
+(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3848/3848).
+
 ## PR #553 review corrections — 2026-10-15
 
 A leave that ends in a non-final self-removal reduction that leaves no participant has two posters of the reduced

@@ -475,6 +475,74 @@ describe("Unit: BlockProductionService", function () {
         it.skip("pending inbound blocks do not form a chain → throws", function () {});
     });
 
+    describe("playTransaction → rollback", function () {
+        it("the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+
+            const writer = await h.query.getNextPeerToWrite();
+            const control = h.control(writer);
+            const acceptInbound = await h.rpcStub.refuseInboundMessages(
+                writer.index
+            );
+            // a real top-up lands on chain -> the writer's next block must
+            // carry it, and its state machine refuses the message
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            expect(
+                await control.query
+                    .getPendingInboundMessageBlockCount(forkId)
+                    .request()
+            ).to.be.greaterThan(0);
+
+            const nextToWriteBefore = await control.query
+                .getNextToWrite()
+                .request();
+            const vmStateBefore = await control.query
+                .getLiveStateMachineStateHash()
+                .request();
+            const heightBefore = await control.query
+                .getNextBlockHeight(forkId)
+                .request();
+
+            let message = "no throw";
+            try {
+                await h
+                    .getPeer(writer.index)
+                    .p2pInstance.p2pContractInstance.add(1);
+            } catch (e) {
+                message = e instanceof Error ? e.message : String(e);
+            }
+
+            expect(message).to.contain("Failed to process inbound message");
+            expect(await control.query.getNextToWrite().request()).to.equal(
+                nextToWriteBefore
+            );
+            expect(
+                await control.query.getLiveStateMachineStateHash().request()
+            ).to.equal(vmStateBefore);
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(heightBefore);
+
+            await acceptInbound();
+            await h
+                .getPeer(writer.index)
+                .p2pInstance.p2pContractInstance.add(1);
+
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(heightBefore + 1);
+            expect(
+                await control.query
+                    .getPendingInboundMessageBlockCount(forkId)
+                    .request()
+            ).to.equal(0);
+        });
+    });
+
     describe("playTransaction → timestamp adjustment", function () {
         it("authored promptly → timestamp is the local clock, one second ahead", async function () {
             const h = TestSession.getHarness();

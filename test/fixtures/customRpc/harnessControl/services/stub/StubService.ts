@@ -111,6 +111,7 @@ export type StubKey =
     | "undecodableUnfinalizedBlock"
     | "invalidBlockStructurePredicate"
     | "pendingInboundInclusion"
+    | "inboundMessageRefusal"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
     | "heldSpectateCreateRpcMethods"

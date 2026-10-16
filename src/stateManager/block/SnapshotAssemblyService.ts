@@ -1,5 +1,5 @@
 import type StateManager from "../StateManager";
-import { BlockCoordinates, StateSnapshot } from "@/models";
+import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 
 import { Address, Bytes, Hash, Timestamp } from "@/types/types";
 import { Codec, Type, difference, hash, Logger } from "@/utils";
@@ -117,6 +117,47 @@ export default class SnapshotAssemblyService {
                 "createStateSnapshot for block - previousStateSnapshot undefined"
             );
         return previousStateSnapshot;
+    }
+
+    /**
+     * Rolls the state machine back to the state captured before an assembly.
+     * The assembly advances the VM; every caller exit that does not commit the
+     * block (failed validation, failed authoring, thrown error) restores it.
+     */
+    public async restoreState(
+        encodedState: Bytes,
+        reason: string,
+        block?: Block
+    ): Promise<void> {
+        try {
+            await this.stateManager.diamondStateMachine.setState(encodedState);
+            this.logger.debug(
+                "restored local state after a block that was not committed",
+                {
+                    reason,
+                    block: block
+                        ? LoggerUtils.getBlockMetadata(
+                              block,
+                              this.stateManager.storage
+                          )
+                        : undefined
+                }
+            );
+        } catch (error) {
+            this.logger.error(
+                "failed to restore local state after a block that was not committed",
+                {
+                    reason,
+                    block: block
+                        ? LoggerUtils.getBlockMetadata(
+                              block,
+                              this.stateManager.storage
+                          )
+                        : undefined,
+                    error
+                }
+            );
+        }
     }
 
     //Applies a transaction to the state machine and returns the encoded state with a success callback

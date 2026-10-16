@@ -3,7 +3,7 @@ import Clock from "@/Clock";
 
 import { Block, StateSnapshot } from "@/models";
 import { firstBlockGrace } from "@/types";
-import { Hash, Timestamp } from "@/types/types";
+import { Bytes, Hash, Timestamp } from "@/types/types";
 import { Codec, Type, hash, Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
@@ -36,6 +36,8 @@ export default class BlockProductionService {
         const sm = this.stateManager;
         await sm.mutex.lock({ taskName: "playTransaction" });
         const message = await this.logPlayTransaction(tx);
+        // set while the VM is advanced past storage; finally restores it
+        let stateBeforeAssembly: Bytes | undefined;
         try {
             if (!sm.validationService.isChannelOpen(sm.forkId)) {
                 throw new Error("Channel not open");
@@ -70,6 +72,7 @@ export default class BlockProductionService {
                 );
             }
 
+            stateBeforeAssembly = await sm.diamondStateMachine.getState();
             const assembled =
                 await sm.snapshotAssemblyService.assembleFromTransaction(
                     coordinates,
@@ -117,7 +120,10 @@ export default class BlockProductionService {
                 successCallback,
                 participantChanges,
                 {
-                    outboundMessageBlock
+                    outboundMessageBlock,
+                    onBlockCommitted: () => {
+                        stateBeforeAssembly = undefined;
+                    }
                 }
             );
 
@@ -130,6 +136,12 @@ export default class BlockProductionService {
             );
             return block.blockConfirmationStruct;
         } finally {
+            if (stateBeforeAssembly !== undefined) {
+                await sm.snapshotAssemblyService.restoreState(
+                    stateBeforeAssembly,
+                    "playTransaction aborted before commit"
+                );
+            }
             sm.mutex.unlock();
         }
     }

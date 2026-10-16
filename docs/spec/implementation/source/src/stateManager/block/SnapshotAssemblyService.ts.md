@@ -5,6 +5,8 @@
 ## Requirements
 
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
+- [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../../../../../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
+  Missing: `assembleFromTransaction` throws on any inbound failure and does not tell an out-of-gas failure apart from a refusal; tracked by [`FIND-INBOUND-GAS-1-2BZ8DE`](../../../../../audit/open-findings.md#find-inbound-gas-1-2bz8de).
 
 ## UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7
 

@@ -1910,9 +1910,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Handshake Completion should update existing profile transport on WebRTC upgrade": {
-      "durationMs": 7051,
-      "avgCores": 1.385,
-      "peakRssGb": 0.771,
+      "durationMs": 6404,
+      "avgCores": 1.22,
+      "peakRssGb": 0.754,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-InitHandshake.test.ts|E2E: Init Handshake Time Validation should blacklist peer answering with an undecodable (junk) signature": {
@@ -16547,6 +16547,12 @@
       "durationMs": 7787,
       "avgCores": 0.736,
       "peakRssGb": 0.737,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → rollback the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable": {
+      "durationMs": 9397,
+      "avgCores": 0.862,
+      "peakRssGb": 0.769,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → timestamp adjustment authored after the window closed → timestamp clamped back below the local clock": {

@@ -261,6 +261,35 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
+     * Make this peer's state machine refuse every inbound message: its
+     * `processInboundMessage` answers false, as a state machine that rejects
+     * the message would.
+     */
+    public stubRefuseInboundMessages(): boolean {
+        const stateMachine = this.service.sm.diamondStateMachine;
+        if (!this.service.stubOriginals.has("inboundMessageRefusal")) {
+            this.service.stubOriginals.set(
+                "inboundMessageRefusal",
+                stateMachine.processInboundMessage
+            );
+        }
+        stateMachine.processInboundMessage = async () => false;
+        return true;
+    }
+
+    public restoreInboundMessageProcessing(): boolean {
+        const original = this.service.stubOriginals.get(
+            "inboundMessageRefusal"
+        );
+        if (original === undefined) return false;
+        const stateMachine = this.service.sm.diamondStateMachine;
+        stateMachine.processInboundMessage =
+            original as typeof stateMachine.processInboundMessage;
+        this.service.stubOriginals.delete("inboundMessageRefusal");
+        return true;
+    }
+
+    /**
      * Suppress this peer's `disconnectAndBlacklistPeerByEvmAddress` for a single
      * allowed address (the peer won't disconnect/blacklist `allowedAddress`).
      * Used to keep a fake-dispute requester connected while others react.

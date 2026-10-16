@@ -587,6 +587,26 @@ export class RpcStubActions<
             .request();
     }
 
+    /**
+     * Make this peer's state machine refuse every inbound message. Returns an
+     * async teardown that restores the real processing.
+     */
+    async refuseInboundMessages(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRefuseInboundMessages()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreInboundMessageProcessing()
+                .request();
+        };
+    }
+
     async failNextFinalDisputePreparation(
         peerIndex: number
     ): Promise<() => Promise<void>> {
