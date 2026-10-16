@@ -610,12 +610,15 @@ tests are the regression suite.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
-**Update (2026-10-16, PR #556, engineer decision C):** Part (2) — blaming the sender — is fixed:
-the ingest catch now logs the local failure and returns the accepting verdict, so no local failure
-blacklists, suspends or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). What
-remains open and deferred with the disposal design above is the other half: whether a local failure
-inside intake should _surface_ as fatal instead of being swallowed (logged, copy dropped, session
-kept). Until that design lands, the swallow is a tracked divergence from
+**Update (2026-10-16, PR #556):** Part (2) — blaming the sender — is fixed: the ingest catch now
+logs the local failure and returns the accepting verdict, so no local failure blacklists, suspends
+or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision (Luka,
+2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
+(logged, copy dropped, session kept) rather than surfaced as fatal, because an unaccounted honest
+failure must never blacklist an honest node; the general rate limit (planned) is the spam bound,
+and invalid inputs keep their explicit blacklisting verdicts. The ingest half of the
+surface-vs-tolerate question is therefore closed; the disposal design above remains deferred on
+its own. The swallow remains a recorded divergence from
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
 refresh-is-fatal rule, recorded on the
 [`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
