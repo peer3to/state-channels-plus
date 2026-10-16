@@ -162,9 +162,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return false. The caller owns
-     * the lifecycle consequence of a failed sync. A disposed runtime, or a
-     * served window whose kill period is still open, applies nothing and
-     * returns false with no verdict on the peer.
+     * the lifecycle consequence of a failed sync. A disposed runtime, a
+     * served window still in its kill period, or (latest mode) a final-fork
+     * window still in its kill period returns false with no verdict on the
+     * peer.
      */
     public async applySyncResponse(
         peerAddress: string,
@@ -470,7 +471,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                 // a window still in its kill period can have opened after the
                 // payload was served; served, it would fail 2.2 the same way
-                // -> no verdict. an expired window was there to be walked.
+                // -> no verdict. an expired window stays a verification failure,
+                // which also cuts an honest payload older than the kill period
+                // (stale-response policy, OQ-SPEC-SYNC-STALE-1)
                 if (windowExists && !isExpired) {
                     this.logger.debug(
                         "applySyncResponse - latest fork disputed in its kill period, no verdict",

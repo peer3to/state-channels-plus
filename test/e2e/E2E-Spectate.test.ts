@@ -1661,15 +1661,14 @@ describe("E2E: Spectate Service", function () {
     describe("Sync inside an open kill period", function () {
         it("a participant's source probe while the tip fork's kill period is open does not blacklist its honest responder", async function () {
             const h = TestSession.getHarness();
-            // a long evidence window keeps the kill period open through the probe
-            await h.lifecycle.start(4, 0, { timeConfig: { evidenceTime: 30 } });
+            await h.lifecycle.start(4, 0);
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
             const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
                 .index;
             const [requesterIndex, responderIndex] = [0, 1, 2, 3].filter(
                 (peerIndex) => peerIndex !== maliciousPeerIndex
-            ) as [number, number];
+            );
             const requester = h.getPeer(requesterIndex);
             const responder = h.getPeer(responderIndex);
             const forkId = h.activeForkId!;
@@ -1687,10 +1686,21 @@ describe("E2E: Spectate Service", function () {
                 .control(requester)
                 .query.getLatestBlockHeight(forkId)
                 .request();
-            await h
-                .control(requester)
-                .spectate.sync(responder.address, forkId, Number(height))
-                .request();
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            let synced: boolean;
+            let rejections: string[];
+            try {
+                synced = await h
+                    .control(requester)
+                    .spectate.sync(responder.address, forkId, Number(height))
+                    .request();
+                rejections = await stub
+                    .restoreRecordedSyncRejections()
+                    .request();
+            } finally {
+                await stub.restoreRecordedSyncRejections().request();
+            }
 
             // premise: the probe ran while the kill period was open
             const { isExpired } = await h.channelManager.isKillPeriodExpired(
@@ -1698,12 +1708,28 @@ describe("E2E: Spectate Service", function () {
                 forkId
             );
             expect(isExpired).to.equal(false);
+            // the responder served (a refusal or a timeout would not reach
+            // applySyncResponse) and the requester judged nobody
+            expect(synced).to.equal(false);
+            expect(rejections).to.deep.equal([]);
             expect(
                 await h
                     .control(requester)
                     .query.isBlacklisted(responder.address)
                     .request()
             ).to.equal(false);
+            expect(
+                await h
+                    .control(responder)
+                    .query.isBlacklisted(requester.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isConnectedTo(responder.address)
+                    .request()
+            ).to.equal(true);
         });
     });
 

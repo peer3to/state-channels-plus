@@ -769,59 +769,20 @@ export async function assertConcurrentPinnedRequests(
 export async function applyDisputedSyncPayload(
     h: MathPeerTestHarness,
     mutate: (payload: SyncPayload, sourceForkId: ForkId) => void
-): Promise<{ accepted: boolean; rejections: string[] }> {
+) {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
     expect(
         StateSnapshot.from(await h.channelManager.getStateSnapshot(h.channelId))
             .forkID
     ).to.equal(sourceForkId);
-    const observer = h.getPeer(2);
-    const source = h.getPeer(0);
-    const stub = h.control(observer).stub;
-    await stub.recordSyncRejections().request();
-    try {
-        const response = await h.execOnHost(
-            observer,
-            async (sm, args) =>
-                sm.p2pManager.remoteRpc.spectateService
-                    .onSpectateRequest({
-                        channelId: sm.channelId,
-                        forkId: args.forkId
-                    })
-                    .request(args.source),
-            { source: source.address, forkId: sourceForkId }
-        );
-        const payload = Codec.decode(
-            response.encodedSyncPayload,
-            Type.SyncPayload
-        );
-        expect(payload.disputeWindows.length).to.equal(1);
-        expect(payload.disputeWindows[0].forkId).to.equal(sourceForkId);
-        mutate(payload, sourceForkId);
-        const accepted = await h.execOnHost(
-            observer,
-            async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId, forkId: args.forkId },
-                    args.encodedSyncPayload
-                ),
-            {
-                source: source.address,
-                forkId: sourceForkId,
-                encodedSyncPayload: Codec.encode(
-                    payload,
-                    Type.SyncPayload
-                ) as string
-            }
-        );
-        return {
-            accepted,
-            rejections: await stub.restoreRecordedSyncRejections().request()
-        };
-    } finally {
-        await stub.restoreRecordedSyncRejections().request();
-    }
+    return applySyncPayload(h, {
+        forkId: sourceForkId,
+        mutate: (payload) => {
+            expect(payload.disputeWindows.length).to.equal(1);
+            expect(payload.disputeWindows[0].forkId).to.equal(sourceForkId);
+            mutate(payload, sourceForkId);
+        }
+    });
 }
 
 /**
@@ -839,7 +800,7 @@ export async function applySyncPayloadServedBeforeAdoption(
 }> {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
     let successorForkId: ForkId | undefined;
-    return applyLatestSyncPayload(h, {
+    return applySyncPayload(h, {
         mutate: (served) => {
             expect(
                 served.disputeWindows.map((window) => window.forkId)
@@ -944,25 +905,29 @@ export async function assertTimeoutCheckWaitsForSyncInstall(
     }
 }
 
-/** Peer 1 opens a valid self-removal dispute on the latest fork; returns once peers 0 and 2 committed it. */
-export async function openSelfRemovalDispute(h: MathPeerTestHarness) {
+/** Peer 1 opens a valid self-removal dispute on the latest fork; returns once `committedBy` (default peers 0 and 2) committed it. */
+export async function openSelfRemovalDispute(
+    h: MathPeerTestHarness,
+    committedBy = [0, 2]
+) {
     await h.control(h.getPeer(1)).dispute.setForceExit(true).request();
     await h.tamper.postTamperedDispute(1, () => {}, { markMalicious: false });
     await h.assert.dispute.committedWait({
         expectedCount: 1,
-        peersIndices: [0, 2]
+        peersIndices: committedBy
     });
 }
 
 /**
- * Peer 0 serves peer 2 a latest-state payload, optionally altered by
- * `mutate`; `afterServe` runs, then peer 2 applies the payload. Returns the
- * served payload, the verdict, the recorded rejections and whether peer 2
- * blacklisted peer 0.
+ * Peer 0 serves peer 2 a payload (latest state, or pinned to `forkId`),
+ * optionally altered by `mutate`; `afterServe` runs, then peer 2 applies the
+ * payload. Returns the served payload, the verdict, the recorded rejections
+ * and whether peer 2 blacklisted peer 0.
  */
-export async function applyLatestSyncPayload(
+export async function applySyncPayload(
     h: MathPeerTestHarness,
     options: {
+        forkId?: ForkId;
         mutate?: (payload: SyncPayload) => void;
         afterServe?: () => Promise<void>;
     }
@@ -973,9 +938,12 @@ export async function applyLatestSyncPayload(
         observer,
         async (sm, args) =>
             sm.p2pManager.remoteRpc.spectateService
-                .onSpectateRequest({ channelId: sm.channelId })
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
                 .request(args.source),
-        { source: source.address }
+        { source: source.address, forkId: options.forkId }
     );
     const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
     options.mutate?.(payload);
@@ -989,11 +957,12 @@ export async function applyLatestSyncPayload(
             async (sm, args) =>
                 sm.p2pManager.localRpc.spectateService.applySyncResponse(
                     args.source,
-                    { channelId: sm.channelId },
+                    { channelId: sm.channelId, forkId: args.forkId },
                     args.encodedSyncPayload
                 ),
             {
                 source: source.address,
+                forkId: options.forkId,
                 encodedSyncPayload: Codec.encode(
                     payload,
                     Type.SyncPayload

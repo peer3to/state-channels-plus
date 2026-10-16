@@ -1555,8 +1555,11 @@ responder for a chain change it did not cause.
 
 **Fix:** step 2.8.1 reads the final fork's kill period from the chain. A window still in its kill
 period fails the sync with no verdict; served, it would fail step 2.2 the same way, so omitting it
-gains a responder nothing. An expired window was there to be walked and stays a verification
-failure ([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+gains a responder nothing. An expired window missing from the payload stays a verification failure
+([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+That verdict does not separate omission from staleness: an honest payload served before the dispute
+and verified after its kill period is still blacklisted, the stale-response case left open in
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
 Regressions: [`REQ-SYNC-4-AWHFPA.T1.P3`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p3),
 [`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4).
 
@@ -1582,6 +1585,7 @@ A fresh spectator whose one initial load lands in a kill period still aborts its
 false verdict is removed. Regressions:
 [`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
 [`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
+[`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
 [`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5).
 
 <a id="find-sync-4-kgp4kf"></a>
@@ -1621,7 +1625,9 @@ run from the anchor it read from its own provider (`applySyncResponse`). A reque
 lags the server's (for example one block behind just after a snapshot post) holds an older anchor
 head; no served block links to it, so the run does not verify, the requester calls `rejectSync`
 ("latest-fork outbound blocks invalid") and blacklists an honest peer. A retry succeeds once its
-provider catches up. The code assumes the requester's anchor is not behind the server's; nothing
+provider catches up. The same lag hits served dispute windows: a requester whose provider has not
+yet seen the responder's dispute commit cannot fetch the served window into its local diamond, so
+step 2.2 rejects with "dispute window not on chain" and blacklists the honest responder. The code assumes the requester's anchor is not behind the server's; nothing
 enforces it and no test covers a lagging requester. Related:
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe),
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
@@ -1633,7 +1639,8 @@ the requester sends its anchor in `SyncRequest` and the server cuts there; the s
 from the fork genesis; or the requester re-reads its chain anchor once and rechecks before it
 rejects the peer. Confirm with a unit case where the requester's `getStateSnapshot` returns the
 previous anchor while the server's local diamond holds the newer one: the sync is accepted or
-retried, not rejected.
+retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
+commit, and the sync is retried or accepted, not rejected.
 
 <a id="find-stipend-1-9ysnwb"></a>
 

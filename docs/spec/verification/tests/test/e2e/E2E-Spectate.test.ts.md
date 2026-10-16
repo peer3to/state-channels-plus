@@ -52,10 +52,11 @@ returns true, the install entry is never called, the VM state equals the first s
 three more live blocks the observer has executed them with no fraud proof, dispute or blacklisted
 participant.
 
-The open-kill-period case commits an honest invalid-transition dispute under a long evidence window,
-then has one honest participant probe another with the pinned sync a queued block's source probe
-sends. The chain still reports the kill period open afterwards, and the requester has not
-blacklisted the responder.
+The open-kill-period case commits an honest invalid-transition dispute, then has one honest
+participant probe another with the pinned sync a queued block's source probe sends. The chain still
+reports the kill period open afterwards. The sync returns false with no recorded rejection, so the
+responder served (a refusal or a timeout never reaches verification); neither peer has blacklisted
+the other and the requester still holds its transport to the responder.
 
 ## Tests
 

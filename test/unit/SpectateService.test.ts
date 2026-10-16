@@ -16,7 +16,7 @@ import {
 } from "@test/fixtures/HistoricSyncStaging";
 import {
     applyDisputedSyncPayload,
-    applyLatestSyncPayload,
+    applySyncPayload,
     applySyncPayloadServedBeforeAdoption,
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
@@ -726,7 +726,7 @@ describe("Unit: SpectateService", function () {
             const forkId = h.activeForkId!;
             await openSelfRemovalDispute(h);
             const { payload, accepted, rejections, responderBlacklisted } =
-                await applyLatestSyncPayload(h, {});
+                await applySyncPayload(h, {});
             // premise: the payload carries the open window
             expect(
                 payload.disputeWindows.map((window) => window.forkId)
@@ -739,12 +739,51 @@ describe("Unit: SpectateService", function () {
             expect(responderBlacklisted).to.equal(false);
         });
 
+        it("served window in its kill period the requester has not applied → not accepted, no verdict, responder not blacklisted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            // peer 2 never applies DisputeCommitted -> only the sync's own
+            // chain fetch can give its local diamond the window
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                2,
+                { passFirst: false }
+            );
+            try {
+                await openSelfRemovalDispute(h, [0]);
+                const { payload, accepted, rejections, responderBlacklisted } =
+                    await applySyncPayload(h, {
+                        afterServe: async () => {
+                            // premise: the requester's local diamond lacks the window
+                            expect(
+                                await h
+                                    .control(h.getPeer(2))
+                                    .query.getDisputeWindowCommitments(forkId)
+                                    .request()
+                            ).to.deep.equal([]);
+                        }
+                    });
+                // premise: the payload carries the open window
+                expect(
+                    payload.disputeWindows.map((window) => window.forkId)
+                ).to.deep.equal([forkId]);
+                expect(
+                    (await h.query.killPeriod(forkId, 2)).isExpired
+                ).to.equal(false);
+                expect(accepted).to.equal(false);
+                expect(rejections).to.deep.equal([]);
+                expect(responderBlacklisted).to.equal(false);
+            } finally {
+                await restoreEvents(false);
+            }
+        });
+
         it("served window the chain does not hold → rejected, dispute window not on chain", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
             const { accepted, rejections, responderBlacklisted } =
-                await applyLatestSyncPayload(h, {
+                await applySyncPayload(h, {
                     // a window for the undisputed on-chain fork
                     mutate: (payload) => {
                         payload.disputeWindows.push({
@@ -775,7 +814,7 @@ describe("Unit: SpectateService", function () {
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
             const { payload, accepted, rejections, responderBlacklisted } =
-                await applyLatestSyncPayload(h, {
+                await applySyncPayload(h, {
                     afterServe: () => openSelfRemovalDispute(h)
                 });
             // premise: the latest fork was undisputed when the payload was
@@ -789,7 +828,7 @@ describe("Unit: SpectateService", function () {
             expect(responderBlacklisted).to.equal(false);
         });
 
-        it("latest fork's expired window missing from the payload → rejected, latest fork is disputed", async function () {
+        it("payload older than the latest fork's kill period, its expired window missing → rejected, latest fork is disputed", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -798,7 +837,7 @@ describe("Unit: SpectateService", function () {
                 await h.rpcStub.holdReductionRace(peer.index);
             }
             const { accepted, rejections, responderBlacklisted } =
-                await applyLatestSyncPayload(h, {
+                await applySyncPayload(h, {
                     afterServe: async () => {
                         await openSelfRemovalDispute(h);
                         await waitFor(
