@@ -1034,5 +1034,92 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 staged.second.author
             );
         });
+
+        it("U146: a forged block at the anchor height in its own milestone below a later hop with a tail → accepted, the forged block never becomes history and is retained as evidence", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.forgedStartBelowHop],
+                { inspect: { heights: [a], retainedHeights: [a] } }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a + 2 }
+            ]);
+            expect(outcome.blocks).to.deep.equal([null]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[staged.forgedStart.hash]]);
+        });
+
+        it("U147: a forged block at the anchor height beside the real anchor run whose tail links to the real anchor block → accepted, the real anchor block becomes history once its first tail block executes, the forged one stays evidence", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const anchorBlock = await servedBlock(h, staged.forkId, a);
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.forgedStartBesideReal],
+                { inspect: { heights: [a], retainedHeights: [a] } }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a + 2 }
+            ]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(outcome.blocks.map((block) => block?.hash)).to.deep.equal([
+                anchorBlock.hash
+            ]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[staged.forgedStart.hash]]);
+        });
+
+        it("U148: a proof that is only a forged block at the anchor height, with no hop and no tail → accepted and stored as history, the documented limit where nothing can corroborate the block", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.forgedStartOnly],
+                { inspect: { heights: [a], retainedHeights: [a] } }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a }
+            ]);
+            expect(outcome.blocks.map((block) => block?.hash)).to.deep.equal([
+                staged.forgedStart.hash
+            ]);
+            expect(outcome.retained).to.deep.equal([[]]);
+        });
+
+        it("U149: a retained sibling sorted first ends the tail before the requested height → the tail search tries the next sibling and the rebuilt proof reaches the height and verifies", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.tailSibling],
+                { reconstruct: true, reconstructHeight: a + 2 }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a }
+            ]);
+            expect(outcome.rebuilt).to.deep.include({
+                chainValid: true,
+                latestProofHeight: a + 2
+            });
+            expect(outcome.rebuilt!.milestones).to.deep.equal([
+                [a, a + 1, a + 2]
+            ]);
+        });
     });
 });

@@ -992,7 +992,14 @@ export async function stageConflictingOverlapPayload(h: MathPeerTestHarness) {
  * - `retainedVotes`: [a, a+1 author-only, a+2 with the third participant's
  *   confirmation] and [a] with the anchor's state: both blocks retained,
  *   and `thinTail`: [a, a+1 author-only, a+2 author-only] with the anchor's
- *   state, whose tail replays both into history without that confirmation.
+ *   state, whose tail replays both into history without that confirmation;
+ * - `forgedStartOnly`: [F′] with the anchor's state, F′ an authentic block at
+ *   the anchor height committing the anchor snapshot but not the real anchor
+ *   block; `forgedStartBelowHop`: [F′] and [a+1, a+2] with a+1's state;
+ *   `forgedStartBesideReal`: [F′] and [a, a+1, a+2] with the anchor's state;
+ * - `tailSibling`: [a, a+1, a+2], [a, a+1″] and [a] with the anchor's state,
+ *   a+1″ linked to a by another author than a+1, confirmed by every other
+ *   participant and ground below a+1's hash.
  */
 export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
     const staged = await stageAnchoredHistory(h, { blocksAfter: 4 });
@@ -1047,6 +1054,32 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
             peer.address !== first.author && peer.address !== second.author
     )!;
     const anchorState = await servedState(h, anchor.toStruct());
+    const forgedStart = await craftProofBlock(h, {
+        authorIndex: forger.index,
+        forkId,
+        height: a,
+        stateSnapshotHash: anchor.hash,
+        previousBlockHash: randomHash()
+    });
+    const siblingAuthor = peerIndexOf(second.author);
+    const craftSibling = () =>
+        craftProofBlock(h, {
+            authorIndex: siblingAuthor,
+            forkId,
+            height: a + 1,
+            stateSnapshotHash: randomHash(),
+            previousBlockHash: anchorBlock.hash
+        });
+    let sibling = await craftSibling();
+    while (String(sibling.block.hash) > first.hash)
+        sibling = await craftSibling();
+    sibling.confirmation.signatures = await Promise.all(
+        h.peers
+            .filter((peer) => peer.index !== siblingAuthor)
+            .map((peer) =>
+                peer.signer.signMessage(getBytes(sibling.block.hash))
+            )
+    );
     const firstState = await servedState(h, first.snapshot);
     const secondState = await servedState(h, second.snapshot);
     return {
@@ -1139,6 +1172,49 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
                 ]
             ],
             [anchor.toStruct()],
+            anchorState
+        ),
+        forgedStart: forgedStart.block,
+        forgedStartOnly: servingProof(
+            payload,
+            [[forgedStart.confirmation]],
+            [anchor.toStruct()],
+            anchorState
+        ),
+        forgedStartBelowHop: servingProof(
+            payload,
+            [
+                [forgedStart.confirmation],
+                [first.confirmation, second.confirmation]
+            ],
+            [anchor.toStruct(), first.snapshot],
+            firstState
+        ),
+        forgedStartBesideReal: servingProof(
+            payload,
+            [
+                [forgedStart.confirmation],
+                [
+                    anchorBlock.confirmation,
+                    first.confirmation,
+                    second.confirmation
+                ]
+            ],
+            [anchor.toStruct(), anchor.toStruct()],
+            anchorState
+        ),
+        tailSibling: servingProof(
+            payload,
+            [
+                [
+                    anchorBlock.confirmation,
+                    first.confirmation,
+                    second.confirmation
+                ],
+                [anchorBlock.confirmation, sibling.confirmation],
+                [anchorBlock.confirmation]
+            ],
+            [anchor.toStruct(), anchor.toStruct(), anchor.toStruct()],
             anchorState
         ),
         authorForgedSecond: authorForgedSecond.block,
