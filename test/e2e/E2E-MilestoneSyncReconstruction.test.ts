@@ -1330,10 +1330,9 @@ describe("E2E: Milestone sync and reconstruction", function () {
         const { sourceForkId, successor, honest, releaseAdoption } =
             await stageReducedWithoutAdoption(h, [0, 2, 3]);
         expect(successor).to.not.equal(sourceForkId);
-        expect(
-            (await h.channelManager.getReducedResult(h.channelId, sourceForkId))
-                .reducedForkId
-        ).to.equal(successor);
+        expect(await h.query.reducedForkOnChain(sourceForkId)).to.equal(
+            successor
+        );
         expect((await chainSnapshot(h)).forkID).to.equal(sourceForkId);
 
         await h.transition.advanceState({

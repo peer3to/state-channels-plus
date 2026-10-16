@@ -74,12 +74,7 @@ export async function assertSyncedLeaverSkipsSubmission(
             await h.control(target).stub.getTryReduceOutcome().request()
         ).to.deep.equal({
             settled: true,
-            result: (
-                await h.channelManager.getReducedResult(
-                    h.channelId,
-                    sourceForkId
-                )
-            ).reducedForkId,
+            result: await h.query.reducedForkOnChain(sourceForkId),
             rejected: null
         });
         await h.control(target).stub.recordChainMembershipReads().request();

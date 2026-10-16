@@ -52,6 +52,22 @@ returns true, the install entry is never called, the VM state equals the first s
 three more live blocks the observer has executed them with no fraud proof, dispute or blacklisted
 participant.
 
+The unreduced-window cases share one staging: every participant holds its own reduction and counts
+sync requests, peer 1 opens a valid self-removal dispute, and a fresh joiner connects inside the
+kill period or after it; once its first answer is applied (held after apply, then released, so
+the wait has started) and the kill period ended, the joiner is still OPENED and the chain has not reduced the window. After one participant reduces it, the
+joiner reaches SYNCED with exactly one responder answering twice, no abort and no blacklist. Cutting
+the joiner at its responder during the wait makes the initial load abort once with no internal
+error; stopping the joiner sends no further request, aborts nothing and settles its pending sync
+(a later sync to the same responder returns false instead of joining it); a status moved to SYNCED
+during the wait stays SYNCED with no abort; a failing local milestone walk on the repeated request
+reaches the top-level error handling once and never runs the connection hook for that responder.
+
+The participant probe case commits an honest invalid-transition dispute and has one honest
+participant probe another with the pinned sync a queued block's source probe sends, while the kill
+period is open. The sync returns true only after the chain reduced the window, the responder
+answered twice, neither peer blacklisted the other and the transport stayed open.
+
 ## Tests
 
 - `overlapping newcomer gossip waits for its membership proof without blacklisting`: none
@@ -85,5 +101,12 @@ participant.
 - `serves the latest sync payload for minimum height 0 while ahead`: REQ-SYNC-1-T2589H.T1.P3, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2
 - `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17
 - `serves a newer sync payload across a leave above the minimum height`: REQ-SYNC-1-T2589H.T1.P5
+- `a joiner whose initial load lands in an open kill period waits for the chain's reduction, then syncs without aborting or blacklisting a responder`: REQ-SYNC-4-AWHFPA.T1.P7
+- `a fresh joiner whose served window the chain has not reduced waits for the chain's reduction, then syncs without aborting or blacklisting its responder`: REQ-SYNC-4-AWHFPA.T1.P9
+- `a joiner's responder cutting it during the wait fails the repeated request: the initial load aborts once, with no internal error`: REQ-SYNC-4-AWHFPA.T1.P13
+- `stopping a joiner during the wait ends it: stop resolves, no further request, no abort`: REQ-SYNC-4-AWHFPA.T1.P12
+- `a joiner the chain moves out of OPENED during the wait settles engaged: the late repeated sync aborts nothing`: REQ-SYNC-4-AWHFPA.T1.P14
+- `a joiner's repeated request that throws after the wait reports one top-level error and never runs the connection hook for its responder`: REQ-AUTH-5-BQG9AG.T2.P4
+- `a participant's source probe while the tip fork's kill period is open waits for the chain's reduction, then proves the target without blacklisting its honest responder`: REQ-SYNC-4-AWHFPA.T1.P5
 - `suppressed dispute event on the responder → the on-chain window is recovered and its successor is proved`: none
 - `a spectator sees posted junk calldata → no forced timeout check and it stays synced`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P19
