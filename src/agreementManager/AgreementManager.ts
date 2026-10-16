@@ -419,8 +419,12 @@ class AgreementManager {
      * change point where a hop changes the set. The last milestone's blocks
      * from `replayFromIndex` (the walk's tail by default), by block identity
      * also where the proof repeats one earlier, are left to their own replay.
-     * When a verified block conflicts with a stored one nothing is stored
-     * (false). Signatures merge into stored blocks; nothing is overwritten.
+     * Only final history enters the block history (and with `advanceView`
+     * the view): the start block, each hop's first block and their hash
+     * ancestors in the proof. Every other checked block is support, retained
+     * as evidence only. When a final history block conflicts with a stored
+     * one nothing is stored (false). Signatures merge into stored blocks;
+     * nothing is overwritten.
      */
     public persistVerifiedProof(
         stateProof: StateProofStruct,
@@ -451,6 +455,10 @@ class AgreementManager {
         const lastIndex = stateProof.milestones.length - 1;
         const tail = new Set<Hash>();
         const kept: Block[] = [];
+        // every checked block, the tail included, by hash: the ancestry of the final points
+        const checked = new Map<Hash, Block>();
+        // the start block and each hop's first block
+        const finalPoints: Block[] = [];
         const hops: { block: Block; snapshot: StateSnapshot }[] = [];
         stateProof.milestones.forEach((milestone, i) => {
             const blocks = milestone.blockConfirmations.map((confirmation) =>
@@ -466,34 +474,52 @@ class AgreementManager {
                 : 0;
             blocks.forEach((block, j) => {
                 if (j < fromIndex) return;
+                checked.set(block!.hash, block!);
                 if (i === lastIndex && j >= replayFromIndex)
                     tail.add(block!.hash);
                 else kept.push(block!);
             });
+            if (holdsStart) finalPoints.push(blocks[fromIndex]!);
             const isUnfinalizedGenesisRun =
                 i === lastIndex && walk.replayBlockIndex === 0;
-            if (!holdsStart && !isUnfinalizedGenesisRun)
+            if (!holdsStart && !isUnfinalizedGenesisRun) {
+                finalPoints.push(first!);
                 hops.push({
                     block: first!,
                     snapshot: StateSnapshot.from(evidence.milestoneSnapshots[i])
                 });
+            }
         });
+        const finalHistory = this.selectFinalHistory(finalPoints, checked);
         const verified = kept.filter((block) => !tail.has(block.hash));
+        const history = verified.filter((block) =>
+            finalHistory.has(block.hash)
+        );
+        const support = verified.filter(
+            (block) => !finalHistory.has(block.hash)
+        );
         const blocks = this.storage.blocks;
+        // only final history can conflict: support is no executed history
         const conflicts = () =>
-            verified.some((block) => {
+            history.some((block) => {
                 const stored = blocks.getBlock(block.forkId, block.height);
                 return stored && !stored.equals(block);
             });
         if (conflicts()) return undefined;
         return () => {
             if (conflicts()) return false;
-            for (const block of verified)
+            for (const block of history)
                 blocks.storeBlock(block, {
                     hash: block.hash,
                     coordinates: block.coordinates,
                     justPersist: !options?.advanceView
                 });
+            for (const block of support) {
+                // a copy of a stored history block only adds its signatures
+                if (blocks.getBlock(block.hash))
+                    blocks.storeBlock(block, { justPersist: true });
+                else this.storage.retainedEvidence.storeBlock(block);
+            }
             if (start) this.storage.stateSnapshots.storeStateSnapshot(start);
             // each proven hop: its snapshot, and a change point where the set changes
             let participants = new Set(
@@ -719,6 +745,43 @@ class AgreementManager {
         };
     }
 
+    /**
+     * The hashes of the final history among `checked`: each final point and
+     * its hash ancestors, the latest final point first. One identity per
+     * height: an ancestor at a height another final history block already
+     * holds stays support.
+     */
+    private selectFinalHistory(
+        finalPoints: Block[],
+        checked: Map<Hash, Block>
+    ): Set<Hash> {
+        // the final history identity at each height of the proof's fork
+        const byHeight = new Map<BlockHeight, Hash>();
+        for (const point of [...finalPoints].reverse()) {
+            let block: Block | undefined = point;
+            while (block && !byHeight.has(block.height)) {
+                byHeight.set(block.height, block.hash);
+                block = checked.get(block.previousBlockHash);
+            }
+        }
+        return new Set(byHeight.values());
+    }
+
+    /**
+     * The block at `height` for a proof: the stored history block, else
+     * the retained evidence block that links to `previous` (the block below).
+     */
+    private getProofBlockAbove(
+        forkId: ForkId,
+        height: BlockHeight,
+        previous?: Block
+    ): Block | undefined {
+        return (
+            this.storage.blocks.getBlock(forkId, height) ??
+            (previous && this.storage.retainedEvidence.getLinkedChild(previous))
+        );
+    }
+
     /** The local diamond's anchor of `forkId`, else the fork genesis; one read per operation. */
     private async getConstructionStart(forkId: ForkId): Promise<ProofStart> {
         const anchor = await this.readAnchor(this.localDiamondContract, forkId);
@@ -882,29 +945,50 @@ class AgreementManager {
         return milestones;
     }
 
-    /** A contiguous stored run, including audit evidence above the active view. */
+    /**
+     * A contiguous stored run, including audit evidence above the active view:
+     * history first, else retained evidence that links to the block below.
+     */
     private *storedBlocksUp(
         forkId: ForkId,
         height: BlockHeight
     ): Generator<Block, void, unknown> {
+        let previous: Block | undefined;
         for (let current = height; ; current++) {
-            const block = this.storage.blocks.getBlock(forkId, current);
+            const block = this.getProofBlockAbove(forkId, current, previous);
             if (!block) return;
-            yield block;
+            yield (previous = block);
         }
     }
 
     /**
      * Stored blocks from `height` down to 0. Unlike the view's iterator it
      * also starts above the view: a block an audit verified is stored without
-     * moving the view, and it can be the final point a proof proves.
+     * moving the view, and it can be the final point a proof proves. Where
+     * history lacks a height, retained evidence fills it: at `height` the
+     * block carrying the most signatures, below it the block the block above
+     * links to.
      */
     private *storedBlocksDown(
         forkId: ForkId,
         height: BlockHeight
     ): Generator<Block, void, unknown> {
+        let above: Block | undefined;
         for (let current = height; current >= 0; current--) {
-            const block = this.storage.blocks.getBlock(forkId, current);
+            const retained =
+                current === height
+                    ? this.storage.retainedEvidence.getMostSignedBlock(
+                          forkId,
+                          current
+                      )
+                    : above?.height === current + 1
+                      ? this.storage.retainedEvidence.getBlock(
+                            above.previousBlockHash
+                        )
+                      : undefined;
+            const block =
+                this.storage.blocks.getBlock(forkId, current) ?? retained;
+            above = block;
             if (block) yield block;
         }
     }
@@ -918,7 +1002,7 @@ class AgreementManager {
     ): Block[] {
         const run: Block[] = [];
         for (let height = from; height <= to; height++) {
-            const block = this.storage.blocks.getBlock(forkId, height);
+            const block = this.getProofBlockAbove(forkId, height, previous);
             const error = !block
                 ? `missing the required block at height ${height}`
                 : previous && block.previousBlockHash !== previous.hash

@@ -10,6 +10,7 @@ import { FraudProofStorage } from "./FraudProofStorage";
 import { MessageBlockStorage } from "./MessageBlockStorage";
 import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
 import { type BlockPredecessor, QueueStorage } from "./QueueStorage";
+import { RetainedEvidenceStorage } from "./RetainedEvidenceStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
 
@@ -21,6 +22,8 @@ import { deepCopyProxy, getChecksumAddress } from "@/utils";
 
 export class Storage {
     public readonly blocks: BlockStorage;
+    // verified proof support that is not final history
+    public readonly retainedEvidence: RetainedEvidenceStorage;
     public readonly inboundMessages: MessageBlockStorage;
     public readonly outboundMessages: MessageBlockStorage;
     public readonly stateSnapshots: StateSnapshotStorage;
@@ -41,6 +44,7 @@ export class Storage {
     // retention bound follows the chain instead of restating it.
     constructor(maxChannelParticipants?: number) {
         this.blocks = deepCopyProxy(new BlockStorage());
+        this.retainedEvidence = deepCopyProxy(new RetainedEvidenceStorage());
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());

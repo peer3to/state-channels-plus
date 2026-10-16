@@ -433,11 +433,11 @@ export default class ValidationService {
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
         const block = entry.block;
-        // conflicting block ?
-        const maybePreExistingBlock = this.storage.blocks.getBlock(
-            block.forkId,
-            block.height
-        );
+        // conflicting block ? Retained proof support is no executed history:
+        // it conflicts only as another block by the same author (double sign)
+        const maybePreExistingBlock =
+            this.storage.blocks.getBlock(block.forkId, block.height) ??
+            this.storage.retainedEvidence.getOtherBlockByAuthor(block);
 
         // an identical stored block (dispute replay re-judges it) is no conflict
         if (
