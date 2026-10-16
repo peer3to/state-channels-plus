@@ -54,9 +54,10 @@ participant.
 
 The open-kill-period case commits an honest invalid-transition dispute, then has one honest
 participant probe another with the pinned sync a queued block's source probe sends. The chain still
-reports the kill period open afterwards. The sync returns false with no recorded rejection, so the
-responder served (a refusal or a timeout never reaches verification); neither peer has blacklisted
-the other and the requester still holds its transport to the responder.
+reports the kill period open afterwards. The sync returns not synced with `retryAfter` equal to the
+chain's `killPeriodEnd`, which only the open-window verification path sets (a refusal or a timeout
+fails with none), and records no rejection; neither peer has blacklisted the other and the
+requester still holds its transport to the responder.
 
 The open-kill-period joiner case creates a spectator, opens a valid self-removal dispute, then
 connects it: the spectator reaches synced only once the chain's kill period has ended, never aborts,

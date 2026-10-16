@@ -1,5 +1,6 @@
 import Clock from "@/Clock";
 import { Block } from "@/models";
+import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
@@ -1728,13 +1729,24 @@ describe("E2E: Spectate Service", function () {
                 .request();
             const stub = h.control(requester).stub;
             await stub.recordSyncRejections().request();
-            let synced: boolean;
+            let outcome: SyncOutcome;
             let rejections: string[];
             try {
-                synced = await h
-                    .control(requester)
-                    .spectate.sync(responder.address, forkId, Number(height))
-                    .request();
+                outcome = await h.execOnHost(
+                    requester,
+                    async (sm, args) =>
+                        sm.p2pManager.localRpc.spectateService.sync(
+                            args.responder,
+                            sm.channelId,
+                            args.forkId,
+                            args.height
+                        ),
+                    {
+                        responder: responder.address,
+                        forkId,
+                        height: Number(height)
+                    }
+                );
                 rejections = await stub
                     .restoreRecordedSyncRejections()
                     .request();
@@ -1743,14 +1755,16 @@ describe("E2E: Spectate Service", function () {
             }
 
             // premise: the probe ran while the kill period was open
-            const { isExpired } = await h.channelManager.isKillPeriodExpired(
-                h.channelId,
-                forkId
-            );
+            const { isExpired, killPeriodEnd } =
+                await h.channelManager.isKillPeriodExpired(h.channelId, forkId);
             expect(isExpired).to.equal(false);
-            // the responder served (a refusal or a timeout would not reach
-            // applySyncResponse) and the requester judged nobody
-            expect(synced).to.equal(false);
+            // only applySyncResponse's open-window path sets retryAfter: a
+            // refusal or a timeout fails with none -> the responder served
+            // and the requester judged nobody
+            expect(outcome).to.deep.equal({
+                synced: false,
+                retryAfter: Number(killPeriodEnd)
+            });
             expect(rejections).to.deep.equal([]);
             expect(
                 await h
