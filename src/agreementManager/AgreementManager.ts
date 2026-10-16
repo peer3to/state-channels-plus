@@ -516,7 +516,7 @@ class AgreementManager {
                 });
             for (const block of support) {
                 // a copy of a stored history block only adds its signatures
-                if (blocks.getBlock(block.hash))
+                if (blocks.hasBlock(block.hash))
                     blocks.storeBlock(block, { justPersist: true });
                 else this.storage.retainedEvidence.storeBlock(block);
             }
@@ -776,10 +776,51 @@ class AgreementManager {
         height: BlockHeight,
         previous?: Block
     ): Block | undefined {
-        return (
-            this.storage.blocks.getBlock(forkId, height) ??
-            (previous && this.storage.retainedEvidence.getLinkedChild(previous))
+        const history = this.getHistoryBlock(forkId, height);
+        if (history || !previous) return history;
+        const retained = this.storage.retainedEvidence;
+        if (retained.getBlocks(forkId, height).length === 0) return undefined;
+        return retained.getLinkedChild(
+            previous,
+            this.getEligibleSigners(forkId, height)
         );
+    }
+
+    /**
+     * The stored history block at the coordinate (a copy), with the
+     * confirmations a retained copy of the same block holds: a block that
+     * entered history after it was retained keeps those virtual votes.
+     */
+    private getHistoryBlock(
+        forkId: ForkId,
+        height: BlockHeight
+    ): Block | undefined {
+        const block = this.storage.blocks.getBlock(forkId, height);
+        const retained =
+            block && this.storage.retainedEvidence.getBlock(block.hash);
+        if (retained) block!.expandSignatures(retained.confirmationSignatures);
+        return block;
+    }
+
+    /**
+     * Who may vote for a retained block at `height`: the participants of the
+     * latest state held below it (the fork genesis at the bottom).
+     */
+    private getEligibleSigners(
+        forkId: ForkId,
+        height: BlockHeight
+    ): Set<Address> {
+        for (let below = height - 1; below >= -1; below--) {
+            const snapshot = this.storage.getStateSnapshot({
+                forkId,
+                height: below
+            });
+            if (snapshot)
+                return new Set(
+                    this.storage.getParticipantsUnionFromSnapshots(snapshot)
+                );
+        }
+        return new Set();
     }
 
     /** The local diamond's anchor of `forkId`, else the fork genesis; one read per operation. */
@@ -966,8 +1007,8 @@ class AgreementManager {
      * also starts above the view: a block an audit verified is stored without
      * moving the view, and it can be the final point a proof proves. Where
      * history lacks a height, retained evidence fills it: at `height` the
-     * block carrying the most signatures, below it the block the block above
-     * links to.
+     * block signed by the most eligible participants, below it the block the
+     * block above links to.
      */
     private *storedBlocksDown(
         forkId: ForkId,
@@ -977,9 +1018,13 @@ class AgreementManager {
         for (let current = height; current >= 0; current--) {
             const retained = this.storage.retainedEvidence;
             const block =
-                this.storage.blocks.getBlock(forkId, current) ??
+                this.getHistoryBlock(forkId, current) ??
                 (current === height
-                    ? retained.getMostSignedBlock(forkId, current)
+                    ? retained.getMostSignedBlock(
+                          forkId,
+                          current,
+                          this.getEligibleSigners(forkId, current)
+                      )
                     : above?.height === current + 1
                       ? retained.getBlock(above.previousBlockHash)
                       : undefined);
@@ -1059,7 +1104,7 @@ class AgreementManager {
             }
 
             collectedBlocks.push(currentBlock);
-            if (this.storage.blocks.getBlock(currentBlock.hash))
+            if (this.storage.blocks.hasBlock(currentBlock.hash))
                 hasHistoryBlock = true;
 
             // only a block whose resulting snapshot is held can be a final point

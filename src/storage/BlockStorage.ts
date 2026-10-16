@@ -101,6 +101,11 @@ export class BlockStorage {
         return this.coordinatesToBlockMap.get(coordinateKey);
     }
 
+    /** Whether a block with `blockHash` is stored; reads no block. */
+    hasBlock(blockHash: Hash): boolean {
+        return this.hashToBlockMap.has(blockHash);
+    }
+
     // ====================================
     // UPDATE - Signature insertion
     // ====================================
