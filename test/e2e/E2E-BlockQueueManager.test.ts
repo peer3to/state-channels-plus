@@ -1012,13 +1012,14 @@ describe("E2E: BlockQueueManager", function () {
 
             // The target's disputed-fork check fails on its own local
             // diamond while it ingests the wrong-fork block: a local
-            // fault, not evidence against the sender. The ingest probe
-            // records how this exact frame was judged.
-            await h.control(targetPeer).stub.recordIngestOutcomes().request();
+            // fault, not evidence against the sender. The fault is
+            // installed before the ingest probe, so every recorded
+            // judgment of this block took the faulted path.
             await h
                 .control(targetPeer)
                 .stub.stubFailDisputedForkChecks(Number.MAX_SAFE_INTEGER)
                 .request();
+            await h.control(targetPeer).stub.recordIngestOutcomes().request();
             await h
                 .control(targetPeer)
                 .stub.observeAdmission({ source: sourcePeer.address })
@@ -1059,14 +1060,16 @@ describe("E2E: BlockQueueManager", function () {
                 // The frame took the faulted path: the disputed-fork check
                 // failed, and no queue entry was created for it (a fault-free
                 // intake of this block would have queued it).
-                expect(
-                    (
-                        await h
-                            .control(targetPeer)
-                            .stub.getDisputedForkCheckObservation()
-                            .request()
-                    ).failed
-                ).to.be.greaterThan(0);
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(targetPeer)
+                                .stub.getDisputedForkCheckObservation()
+                                .request()
+                        ).failed > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
                 expect(
                     (
                         await h
@@ -1096,6 +1099,13 @@ describe("E2E: BlockQueueManager", function () {
 
                 // The same local fault on the calldata origin: no sender
                 // exists to punish, the copy is dropped, nothing is stored.
+                // The synchronous ingest must itself hit the faulted check.
+                const failuresBeforeCalldata = (
+                    await h
+                        .control(targetPeer)
+                        .stub.getDisputedForkCheckObservation()
+                        .request()
+                ).failed;
                 const calldataResult = await h
                     .control(targetPeer)
                     .transition.ingestBlockConfirmation(
@@ -1114,6 +1124,14 @@ describe("E2E: BlockQueueManager", function () {
                     )
                     .request();
                 expect(calldataResult).to.equal(true);
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getDisputedForkCheckObservation()
+                            .request()
+                    ).failed
+                ).to.be.greaterThan(failuresBeforeCalldata);
                 expect(
                     await h
                         .control(targetPeer)
@@ -1136,7 +1154,7 @@ describe("E2E: BlockQueueManager", function () {
             } finally {
                 await h
                     .control(targetPeer)
-                    .stub.restoreDisputedForkCheckFailures()
+                    .stub.restoreAdmissionObservation()
                     .request();
                 await h
                     .control(targetPeer)
@@ -1144,7 +1162,7 @@ describe("E2E: BlockQueueManager", function () {
                     .request();
                 await h
                     .control(targetPeer)
-                    .stub.restoreAdmissionObservation()
+                    .stub.restoreDisputedForkCheckFailures()
                     .request();
                 await race.release();
             }
@@ -1263,15 +1281,15 @@ describe("E2E: BlockQueueManager", function () {
             } finally {
                 await h
                     .control(targetPeer)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(targetPeer)
                     .stub.restoreKillPeriodReadFailures()
                     .request();
                 await h
                     .control(targetPeer)
                     .stub.restoreIngestOutcomeRecording()
-                    .request();
-                await h
-                    .control(targetPeer)
-                    .stub.restoreAdmissionObservation()
                     .request();
             }
         });
