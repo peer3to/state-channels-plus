@@ -125,6 +125,11 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
     private connectedScmContract!: StateChannelManagerInterface;
     private timeConfig!: TimeConfig;
     private disputeExecutionGasLimit!: number;
+    // The most gas one reduction transaction can carry on this chain —
+    // the block gas limit, lowered by the configured per-transaction cap
+    // when the chain has one. Granted to reduction-path local calls so a
+    // reduction that can land on chain is always computable locally.
+    private reductionGasLimit?: bigint;
     // The deployed contract's participant maximum. The queue's retention bound
     // is sized from it, so the chain stays authoritative for both.
     private maxChannelParticipants!: number;
@@ -228,6 +233,14 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 connectedScmContract.getStateTransitionReplayGas()
             ]);
         this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
+        const latestBlock = await signer.provider!.getBlock("latest");
+        if (latestBlock) {
+            const txCap = this.payload.config.CHAIN_TX_GAS_CAP;
+            this.reductionGasLimit =
+                txCap > 0 && BigInt(txCap) < latestBlock.gasLimit
+                    ? BigInt(txCap)
+                    : latestBlock.gasLimit;
+        }
         this.maxChannelParticipants = Number(
             await connectedScmContract.getMaxChannelParticipants()
         );
@@ -334,7 +347,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 stateMachineContract.interface,
                 signer,
                 timeConfig,
-                disputeExecutionGasLimit
+                disputeExecutionGasLimit,
+                this.reductionGasLimit
             );
 
         const storage = new Storage(this.maxChannelParticipants);

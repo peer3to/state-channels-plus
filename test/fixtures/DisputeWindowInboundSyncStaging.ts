@@ -26,6 +26,70 @@ function inboundMessageBlockHash(block: MessageBlockStruct): Hash {
     return hash(Codec.encode(block, Type.MessageBlock));
 }
 
+/** Pad the window's served latest state with junk bytes, so it no longer
+ * hashes to the snapshot's committed state hash. */
+export function padServedReductionState(payload: SyncPayload): void {
+    const window = payload.disputeWindows[0];
+    window.latestEncodedStateMachineState = `${window.latestEncodedStateMachineState}${"ff".repeat(50_000)}`;
+}
+
+/** Pad the served state and rewrite the snapshot's state hash to match it,
+ * so only the chain anchoring of the snapshot itself can catch it. */
+export function padServedStateWithRewrittenHash(payload: SyncPayload): void {
+    padServedReductionState(payload);
+    const window = payload.disputeWindows[0];
+    window.latestStateSnapshot.snapshotData.stateMachineStateHash = hash(
+        window.latestEncodedStateMachineState
+    );
+}
+
+/** Append a large fabricated successor that links correctly from the last
+ * served inbound block, so only the chain reduction's head can catch it. */
+export function appendLargeForgedInboundSuccessor(payload: SyncPayload): void {
+    const inbound =
+        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce;
+    const tip = inbound.at(-1)!;
+    inbound.push({
+        ...tip,
+        previousBlockHash: inboundMessageBlockHash(tip),
+        blockHeight: BigInt(tip.blockHeight) + 1n,
+        messages: tip.messages.map((message, index) =>
+            index === 0
+                ? { ...message, data: `0x${"ff".repeat(200_000)}` }
+                : message
+        )
+    });
+}
+
+/** Pad one served dispute with a huge slash list, so its hash is no longer
+ * among the window's on-chain commitments. */
+export function padServedDispute(payload: SyncPayload): void {
+    const confirmation = payload.disputeWindows[0].disputeConfirmations[0];
+    const dispute = Codec.decode(
+        confirmation.signedDispute.encodedDispute,
+        Type.Dispute
+    );
+    dispute.input.onChainSlashes = Array.from(
+        { length: 2_000 },
+        (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`
+    );
+    confirmation.signedDispute.encodedDispute = Codec.encode(
+        dispute,
+        Type.Dispute
+    );
+}
+
+/** Pad the served snapshot's total-deposits data, so the snapshot no
+ * longer hashes to what the chain's reduction names. */
+export function padServedSnapshotBalanceData(payload: SyncPayload): void {
+    const snapshotData =
+        payload.disputeWindows[0].latestStateSnapshot.snapshotData;
+    snapshotData.totalDeposits = {
+        ...snapshotData.totalDeposits,
+        data: `0x${"ff".repeat(500_000)}`
+    };
+}
+
 /**
  * Append a fabricated successor of the window's last applied inbound block:
  * it links to that block and repeats its messages one height above it.
@@ -144,6 +208,9 @@ async function stageAndApplyDisputeWindowInboundSync(
             | "concurrentLocalSync";
         requesterInboundHold: "chainEvent" | "storageWrite" | "droppedLog";
         mutate: (payload: SyncPayload) => void;
+        reductionOutOfGasFirstAttempt?: boolean;
+        /** Run the (single) apply under this reduction grant, restored after. */
+        reductionGrant?: string;
     }
 ) {
     let inboundHold: {
@@ -282,13 +349,44 @@ async function stageAndApplyDisputeWindowInboundSync(
     await requesterStub.recordSyncRejections().request();
     let outcome: SyncOutcome;
     let rejections: string[];
+    let reductionThrew = "";
     try {
         if (
             options.reduction === "local" ||
             options.reduction === "chainBeforeSync"
-        )
-            outcome = await applyPayload(encodedPayload);
-        else {
+        ) {
+            if (options.reductionOutOfGasFirstAttempt) {
+                // Give the requester a real reduction grant below the
+                // staged reduction's cost (production sets this field from
+                // the chain bound; a small value here models a chain whose
+                // bound cannot fund this window's reduction), so the real
+                // reduction exhausts inside the facet frame. The funded
+                // retry below restores the original grant and runs the
+                // real reduction to completion.
+                await requesterStub.stubReductionGrant("400000").request();
+                try {
+                    await applyPayload(encodedPayload);
+                } catch (e) {
+                    reductionThrew = e instanceof Error ? e.message : String(e);
+                } finally {
+                    await requesterStub.restoreReductionGrant().request();
+                }
+            }
+            if (options.reductionGrant)
+                await requesterStub
+                    .stubReductionGrant(options.reductionGrant)
+                    .request();
+            try {
+                outcome = await applyPayload(encodedPayload);
+            } finally {
+                if (options.reductionGrant)
+                    await requesterStub.restoreReductionGrant().request();
+            }
+        } else {
+            if (options.reductionGrant)
+                await requesterStub
+                    .stubReductionGrant(options.reductionGrant)
+                    .request();
             await requesterStub
                 .holdSyncWindowPersistence(
                     options.reduction === "chainAfterFinalityRead"
@@ -322,6 +420,8 @@ async function stageAndApplyDisputeWindowInboundSync(
             } finally {
                 await requesterStub.releaseSyncWindowPersistence().request();
                 outcome = await pending;
+                if (options.reductionGrant)
+                    await requesterStub.restoreReductionGrant().request();
             }
         }
         rejections = await requesterStub
@@ -350,6 +450,7 @@ async function stageAndApplyDisputeWindowInboundSync(
 
     return {
         accepted: outcome.synced,
+        reductionThrew,
         unsettledForkId: outcome.unsettledForkId,
         rejections,
         responderBlacklisted: await requesterControl.query
@@ -398,6 +499,7 @@ export async function applyDisputeWindowInboundSyncPayload(
             | "chainAfterFinalityRead"
             | "concurrentLocalSync";
         mutate: (payload: SyncPayload) => void;
+        reductionGrant?: string;
     }
 ) {
     const { releaseHolds, ...result } =
@@ -408,6 +510,181 @@ export async function applyDisputeWindowInboundSyncPayload(
     await releaseHolds(false);
     await settleRequesterMissingInboundRunErrors();
     return result;
+}
+
+/**
+ * The same local-reduction sync, but the first attempt runs with a real
+ * reduction grant below the staged reduction's cost, so its facet frame
+ * exhausts; the genuine payload is then applied again with the original
+ * grant. `reductionThrew` captures the first attempt's error; `accepted`
+ * and the remaining fields describe the funded retry.
+ */
+export async function applyDisputeWindowSyncWithReductionOutOfGas(
+    h: MathPeerTestHarness
+) {
+    const { releaseHolds, ...result } =
+        await stageAndApplyDisputeWindowInboundSync(h, {
+            reduction: "local",
+            requesterInboundHold: "storageWrite",
+            mutate: () => {},
+            reductionOutOfGasFirstAttempt: true
+        });
+    await releaseHolds(false);
+    await settleRequesterMissingInboundRunErrors();
+    return result;
+}
+
+/**
+ * An established participant (peer 2) syncs a reducible window from peer 0
+ * through the full `sync()` path with a real reduction grant below the
+ * reduction's cost, so the sync throws the facet frame's exhaustion. The
+ * window then settles on chain, and the same sync succeeds with no local
+ * reduction. Fields describe both attempts and the end state.
+ */
+export async function assertSyncReductionOutOfGasRecovery(
+    h: MathPeerTestHarness
+) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+        disputingPeerIndices: [0, 3],
+        beforeDispute: async () => {
+            // a top-up of an existing participant keeps the block turns intact
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(RESPONDER_INDEX).address
+            });
+        }
+    });
+    const responder = h.getPeer(RESPONDER_INDEX);
+    const requester = h.getPeer(REQUESTER_INDEX);
+    const requesterControl = h.control(requester);
+    const syncWithResponder = () =>
+        h.execOnHost(
+            requester,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
+            { source: responder.address, forkId: sourceForkId }
+        );
+    await requesterControl.stub.stubReductionGrant("400000").request();
+    let syncThrew = "";
+    try {
+        await syncWithResponder();
+    } catch (e) {
+        syncThrew = e instanceof Error ? e.message : String(e);
+    } finally {
+        await requesterControl.stub.restoreReductionGrant().request();
+    }
+    const responderBlacklisted = await requesterControl.query
+        .isBlacklisted(responder.address)
+        .request();
+    // the window settles on chain; the same sync then needs no local reduction
+    expect(
+        await h.scenario.finalizeReductionOnChainOnly(
+            RESPONDER_INDEX,
+            sourceForkId
+        )
+    ).to.equal(true);
+    const accepted = await syncWithResponder();
+    return {
+        syncThrew,
+        responderBlacklisted,
+        accepted,
+        sourceForkId,
+        requesterForkId: await requesterControl.query.getForkId().request(),
+        localReducedForkId: await requesterControl.query
+            .getLocalDisputeWindowReducedForkId(sourceForkId)
+            .request()
+    };
+}
+
+/**
+ * An honest race on an open window: peer 0's dispute is committed and peer 0
+ * serves peer 2 a sync payload for it; only then does peer 3's dispute
+ * commit, so the served dispute set no longer matches the chain's
+ * commitments when peer 2 applies the payload. The mismatch is the chain
+ * moving under an honest responder, not fabrication.
+ */
+export async function assertServedCommitmentRaceIsUnsettled(
+    h: MathPeerTestHarness
+) {
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 30 }
+    });
+    const sourceForkId = h.activeForkId!;
+    for (const peer of h.peers)
+        await h.control(peer).stub.stubHoldReductionTasks().request();
+    const responder = h.getPeer(RESPONDER_INDEX);
+    const requester = h.getPeer(REQUESTER_INDEX);
+    const requesterControl = h.control(requester);
+    await h
+        .control(h.getPeer(3))
+        .stub.stubSuppressDisputeInitiation()
+        .request();
+    await h.byzantine.submitInvalidStateTransitionBlock(1);
+    await h.assert.dispute.initiatedAndCommitedWait({
+        peersIndices: [0],
+        expectedCount: 1
+    });
+    const response = await h.execOnHost(
+        requester,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        { source: responder.address, forkId: sourceForkId }
+    );
+    // peer 3's dispute commits only now, after the payload was served
+    await h.control(h.getPeer(3)).stub.restoreDisputeInitiation().request();
+    await waitFor(
+        async () =>
+            (
+                await requesterControl.query
+                    .getDisputeWindowCommitments(sourceForkId)
+                    .request()
+            ).length === 2,
+        h.event.protocolEventTimeoutMs()
+    );
+    await requesterControl.stub.recordSyncRejections().request();
+    let outcome: SyncOutcome;
+    let rejections: string[];
+    try {
+        outcome = await h.execOnHost(
+            requester,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: responder.address,
+                forkId: sourceForkId,
+                encodedSyncPayload: response.encodedSyncPayload as string
+            }
+        );
+    } finally {
+        rejections = await requesterControl.stub
+            .restoreRecordedSyncRejections()
+            .request();
+    }
+    return {
+        accepted: outcome.synced,
+        unsettledForkId: outcome.unsettledForkId,
+        sourceForkId,
+        rejections,
+        responderBlacklisted: await requesterControl.query
+            .isBlacklisted(responder.address)
+            .request(),
+        localReducedForkId: await requesterControl.query
+            .getLocalDisputeWindowReducedForkId(sourceForkId)
+            .request()
+    };
 }
 
 /**

@@ -5,14 +5,30 @@ export class ContractExecutorRpcMethods extends AInternalRpcMethods<ContractExec
     public deploy(encodedData: string) {
         return this.service.admit((executor) => executor.deploy(encodedData));
     }
-    public executeCall(encodedData: string, contractAddress: string) {
+    public executeCall(
+        encodedData: string,
+        contractAddress: string,
+        callGasLimit?: string
+    ) {
         return this.service.admit((executor) =>
-            executor.executeCall(encodedData, contractAddress)
+            executor.executeCall(
+                encodedData,
+                contractAddress,
+                callGasLimit !== undefined ? BigInt(callGasLimit) : undefined
+            )
         );
     }
-    public simulateCall(encodedData: string, contractAddress: string) {
+    public simulateCall(
+        encodedData: string,
+        contractAddress: string,
+        callGasLimit?: string
+    ) {
         return this.service.admit((executor) =>
-            executor.simulateCall(encodedData, contractAddress)
+            executor.simulateCall(
+                encodedData,
+                contractAddress,
+                callGasLimit !== undefined ? BigInt(callGasLimit) : undefined
+            )
         );
     }
 }

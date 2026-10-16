@@ -59,3 +59,6 @@ The settled-adoption cases stage a reducible disputed fork that only peer 0 redu
 - `a held adoption of the successor refused because a later reduction is final → settled, not retried`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P21
 - `a held adoption of the successor refused because the successor is disputed → settled, not retried`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P22
 - `committed dispute missing locally → recovers via event replay, then reduces`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2
+- `chain transaction gas cap below the block gas limit → the host grants the cap to local reductions`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24
+- `chain transaction gas cap above the block gas limit → the host grants the block gas limit`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P25
+- `submission within the bound → the reduction transaction lands with a gas limit no greater than the block gas limit`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P26

@@ -35,6 +35,7 @@ Local EVM call gas
 - [x] `UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P3` — twice the replay gas above the floor and the budget: the limit is twice the replay gas
 - [x] `UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P4` — an executor without `callGasLimit` refuses a transition whose requirement exceeds the floor, and the machine state is unchanged
 - [x] `UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P5` — an executor built with `localEvmCallGasLimit(budget, requirement)` runs that transition
+- [x] `UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P6` — a per-call gas limit override runs a transition whose requirement exceeds the executor's own grant, without changing the grant for other calls
 
 ## UNIT-TEST-CONTRACT-EXECUTOR-3-2FRV62
 

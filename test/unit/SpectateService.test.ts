@@ -6,6 +6,14 @@ import { Codec, Type } from "@/utils";
 import {
     appendForgedInboundSuccessor,
     applyDisputeWindowInboundSyncPayload,
+    applyDisputeWindowSyncWithReductionOutOfGas,
+    assertServedCommitmentRaceIsUnsettled,
+    assertSyncReductionOutOfGasRecovery,
+    appendLargeForgedInboundSuccessor,
+    padServedDispute,
+    padServedReductionState,
+    padServedSnapshotBalanceData,
+    padServedStateWithRewrittenHash,
     redirectDisputesToChannelWithoutWindow,
     redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
@@ -1266,9 +1274,7 @@ describe("Unit: SpectateService", function () {
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });
 
-        // the same forged payload once the chain reduced the window is the
-        // "reduction lands on chain ... fabricated inbound successor" cases
-        it("window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → local reduction reverts, no verdict naming the window, no window inbound block stored, inbound head unchanged", async function () {
+        it("window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → no verdict naming the window, no window inbound block stored, inbound head unchanged", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
                 { reduction: "local", mutate: appendForgedInboundSuccessor }
@@ -1283,6 +1289,143 @@ describe("Unit: SpectateService", function () {
             expect(r.storedInboundHashes).to.deep.equal([]);
             expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
             expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+        });
+
+        it("window reduced locally during sync whose reduction runs out of gas locally → sync throws, responder not blacklisted, funded retry accepted", async function () {
+            const r = await applyDisputeWindowSyncWithReductionOutOfGas(
+                TestSession.getHarness()
+            );
+            expect(r.reductionThrew).to.include(
+                "ErrorDisputeExecutionOutOfGas"
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.accepted).to.equal(true);
+            expect(r.localReducedForkId).to.equal(r.reducedForkId);
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
+            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
+        });
+        it("established participant sync whose reduction runs out of gas → sync throws, responder not blacklisted, sync after on-chain reduction accepted", async function () {
+            const r = await assertSyncReductionOutOfGasRecovery(
+                TestSession.getHarness()
+            );
+            expect(r.syncThrew).to.include("ErrorDisputeExecutionOutOfGas");
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.accepted).to.equal(true);
+            expect(r.localReducedForkId).to.not.equal(ethers.ZeroHash);
+            expect(r.requesterForkId).to.equal(r.localReducedForkId);
+        });
+
+        it("window reduced on chain after the finality read, served a padded state during sync → accepted, responder not blacklisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainAfterFinalityRead",
+                    mutate: padServedStateWithRewrittenHash,
+                    reductionGrant: "50000"
+                }
+            );
+            expect(r.accepted).to.equal(true);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(r.reducedForkId);
+        });
+
+        it("served disputes overtaken by a later honest commitment → no verdict naming the window, responder not blacklisted, nothing persisted", async function () {
+            const r = await assertServedCommitmentRaceIsUnsettled(
+                TestSession.getHarness()
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+        });
+
+        it("window the chain has not reduced, reduced locally during sync with a padded served state → no verdict naming the window, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { reduction: "local", mutate: padServedReductionState }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window the chain has not reduced, reduced locally during sync with a padded state and rewritten snapshot hash → no verdict naming the window, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: padServedStateWithRewrittenHash,
+                    reductionGrant: "400000"
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window the chain has not reduced, reduced locally during sync with a large made-up inbound successor → no verdict naming the window, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: appendLargeForgedInboundSuccessor,
+                    reductionGrant: "400000"
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window the chain has not reduced, reduced locally during sync with a padded made-up dispute → no verdict naming the window, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: padServedDispute,
+                    reductionGrant: "400000"
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window the chain has not reduced, reduced locally during sync with padded snapshot balance data → no verdict naming the window, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: padServedSnapshotBalanceData,
+                    reductionGrant: "400000"
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
         });
 
         it("unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {

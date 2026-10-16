@@ -58,12 +58,14 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         contractExecutor: AContractExecutor,
         stateMachineAddress: Address,
         contractInterface: ethers.Interface,
-        localDiamondContract: LocalDiamondContract
+        localDiamondContract: LocalDiamondContract,
+        reductionCallGasLimit?: bigint
     ) {
         super(localDiamondContract);
         this.contractExecutor = contractExecutor;
         this.stateMachineAddress = stateMachineAddress;
         this.contractInterface = contractInterface;
+        this.reductionCallGasLimit = reductionCallGasLimit;
     }
 
     private getEncodedCalldata(
@@ -411,7 +413,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     expectedReducedForkId
                 ])
             ),
-            diamondAddress
+            diamondAddress,
+            this.reductionCallGasLimit
         );
         // only a reduction this call commits emits the event; an early return does not
         const committedTopic = contract.interface.getEvent(
@@ -455,7 +458,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         contractInterface: ethers.Interface,
         signer: Signer,
         timeConfig: TimeConfig,
-        disputeExecutionGasLimit: number
+        disputeExecutionGasLimit: number,
+        reductionCallGasLimit?: bigint
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
@@ -488,7 +492,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 contractExecutor,
                 localStateMachineAddress,
                 contractInterface,
-                proxiedLocalDiamond
+                proxiedLocalDiamond,
+                reductionCallGasLimit
             ),
             deploymentResult: diamondResult
         };

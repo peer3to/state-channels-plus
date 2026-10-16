@@ -45,3 +45,6 @@ Gas-capped dispute computation
 - [x] `UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P3` — a facet failure with revert data inside the budget is re-thrown with that data unchanged
 - [x] `UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P4` — an out-of-gas inside a nested state-machine call, where the facet keeps the 1/64 of the forwarded gas it did not pass on, reverts `ErrorDisputeExecutionOutOfGas`
 - [x] `UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P5` — an empty revert inside the budget stays an empty revert and is not relabeled `ErrorDisputeExecutionOutOfGas`
+- [x] `UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P6` — the declared `reduceAndFinalize` entry forwards all remaining gas through the same accounting: a reduction whose facet frame exhausts it reverts `ErrorDisputeExecutionOutOfGas` instead of the proxy's reasonless delegatecall failure
+- [x] `UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P7` — the declared `reduceOutputToSnapshotData` entry forwards all remaining gas through the same accounting: a candidate computation whose facet frame exhausts it reverts `ErrorDisputeExecutionOutOfGas`
+- [x] `UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P8` — on the declared `reduceAndFinalize` entry (all-remaining-gas branch), a facet revert with no data and gas to spare stays an empty revert and is not relabeled `ErrorDisputeExecutionOutOfGas`

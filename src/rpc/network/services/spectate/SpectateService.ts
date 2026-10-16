@@ -16,7 +16,10 @@ import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
-import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
+import {
+    isLocalEvmExecutionFailure,
+    isLocalReductionResourceFailure
+} from "@/utils/evmErrorHandler";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ZeroHash } from "ethers";
@@ -456,19 +459,163 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             peerAddress,
                             "dispute window mismatch"
                         );
-                    try {
-                        const committedReduction =
-                            await diamondStateMachine.reduceAndFinalizeLocally(
-                                disputes,
-                                dw.latestStateSnapshot,
-                                dw.latestEncodedStateMachineState,
-                                dw.inboundMessageBlocksAppliedInReduce,
-                                dw.reducedForkId
+                    // A window already reduced in the local diamond (landed
+                    // on chain after the finality read, or reduced by a
+                    // concurrent sync) makes the facet return early without
+                    // checking its inputs; only a reduction this sync will
+                    // actually execute gets the anchored checks below.
+                    const [localWindow] =
+                        await diamondStateMachine.localDiamondContract.getDisputeWindows(
+                            channelId,
+                            [dw.forkId]
+                        );
+                    const alreadyReducedLocally =
+                        localWindow !== undefined &&
+                        localWindow.reducedResult.forkId !== ZeroHash &&
+                        localWindow.reducedResult.forkId === dw.reducedForkId;
+                    // An anchored mismatch is a verdict only once the chain
+                    // has reduced the window (REQ-SYNC-4): before that, the
+                    // commitments and the chain reduction's output can still
+                    // move under an honest responder, so it is no verdict.
+                    const anchoredMismatch = (reason: string): SyncOutcome =>
+                        isReducedOnChain
+                            ? this.rejectSync(peerAddress, reason)
+                            : { synced: false, unsettledForkId: dw.forkId };
+                    if (!alreadyReducedLocally) {
+                        // The served bytes are committed by hashes the facet
+                        // checks only after the calldata is in EVM memory; anchor
+                        // them to the chain here so padded bytes reject as
+                        // evidence instead of exhausting the local grant
+                        // blamelessly. The disputes must be the window's
+                        // committed ones, the snapshot must be the one the
+                        // chain's reduction of those disputes names, and the
+                        // inbound list must end where that reduction ends.
+                        const committedHashes = new Set(
+                            onChainDw.evidence.disputeCommitments
+                        );
+                        // The chain commitment is keccak256(abi.encode(dispute));
+                        // the served encoded dispute is those exact bytes (the
+                        // same bytes dispute storage keys confirmations by), so
+                        // hash them as served rather than re-encoding a decode.
+                        const servedHashes = dw.disputeConfirmations.map(
+                            (disputeConfirmation) =>
+                                hash(
+                                    disputeConfirmation.signedDispute
+                                        .encodedDispute
+                                )
+                        );
+                        if (
+                            servedHashes.length !== committedHashes.size ||
+                            new Set(servedHashes).size !==
+                                servedHashes.length ||
+                            servedHashes.some(
+                                (served) => !committedHashes.has(served)
+                            )
+                        )
+                            return anchoredMismatch(
+                                "reduction disputes not committed"
                             );
+                        const reducedOutput =
+                            await stateManager.stateChannelManagerContract.reduce.staticCall(
+                                disputes
+                            );
+                        const snapshotStruct = StateSnapshot.from(
+                            dw.latestStateSnapshot
+                        ).toStruct();
+                        const snapshotAnchored =
+                            reducedOutput.latestBlock.transaction.header
+                                .forkId !== ZeroHash
+                                ? hash(
+                                      Codec.encode(
+                                          snapshotStruct,
+                                          Type.StateSnapshot
+                                      )
+                                  ) ===
+                                  reducedOutput.latestBlock.stateSnapshotHash
+                                : hash(
+                                      Codec.encode(
+                                          snapshotStruct.snapshotData,
+                                          Type.SnapshotData
+                                      )
+                                  ) === dw.forkId;
+                        if (!snapshotAnchored)
+                            return anchoredMismatch(
+                                "reduction snapshot mismatch"
+                            );
+                        // What passes is genuine: a state matching its
+                        // anchored snapshot commitment and an inbound list
+                        // ending at the chain reduction's head — its
+                        // exhaustion below is a local resource failure.
+                        if (
+                            hash(dw.latestEncodedStateMachineState) !==
+                            dw.latestStateSnapshot.snapshotData
+                                .stateMachineStateHash
+                        )
+                            return anchoredMismatch(
+                                "reduction state hash mismatch"
+                            );
+                        if (
+                            stateManager.validationService.findBrokenInboundMessageChainBlock(
+                                StateSnapshot.from(dw.latestStateSnapshot),
+                                dw.inboundMessageBlocksAppliedInReduce
+                            )
+                        )
+                            return anchoredMismatch(
+                                "reduction inbound chain invalid"
+                            );
+                        let inboundHead =
+                            dw.latestStateSnapshot.snapshotData
+                                .latestInboundMessageBlockHash;
+                        for (const block of dw.inboundMessageBlocksAppliedInReduce)
+                            inboundHead = hash(
+                                Codec.encode(block, Type.MessageBlock)
+                            );
+                        const inboundHeight =
+                            dw.inboundMessageBlocksAppliedInReduce.length > 0
+                                ? dw.inboundMessageBlocksAppliedInReduce.at(-1)!
+                                      .blockHeight
+                                : dw.latestStateSnapshot.snapshotData
+                                      .latestInboundMessageBlockHeight;
+                        if (
+                            inboundHead !==
+                                reducedOutput.latestInboundMessageBlockHash ||
+                            BigInt(inboundHeight) !==
+                                BigInt(
+                                    reducedOutput.latestInboundMessageBlockHeight
+                                )
+                        )
+                            return anchoredMismatch(
+                                "reduction inbound head mismatch"
+                            );
+                    }
+                    try {
+                        // A window already reduced in the local diamond to
+                        // the served fork (checked above) needs no facet
+                        // call: it would only compare the claimed fork,
+                        // which the check already did, and calling it on
+                        // unverified served bytes would let padding exhaust
+                        // the grant blamelessly.
+                        const committedReduction = alreadyReducedLocally
+                            ? false
+                            : await diamondStateMachine.reduceAndFinalizeLocally(
+                                  disputes,
+                                  dw.latestStateSnapshot,
+                                  dw.latestEncodedStateMachineState,
+                                  dw.inboundMessageBlocksAppliedInReduce,
+                                  dw.reducedForkId
+                              );
                         if (committedReduction)
                             reducedByThisSync.add(dw.forkId);
                     } catch (e) {
-                        if (!isLocalEvmExecutionFailure(e)) throw e;
+                        // A local resource failure (the reduction's frame
+                        // exhausted its gas) proves only that this node
+                        // could not run the reduction; it is an internal
+                        // failure, never evidence against the responder.
+                        if (
+                            !isLocalEvmExecutionFailure(e) ||
+                            isLocalReductionResourceFailure(e)
+                        )
+                            throw e;
                         this.logger.debug(
                             "applySyncResponse - served reduction reverts",
                             { peerAddress, error: errorMessage(e) }

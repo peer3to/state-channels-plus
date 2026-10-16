@@ -57,6 +57,7 @@ reduction executor's attempt discipline, and P22 of the dispute-pipeline reducti
 ## Tests
 
 - `direct completion returns false and removes the operation when the fork changes inside its mutex wait`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P11
+- `a reducer computes its candidate under the reduction grant, and with that grant lowered the computation throws and installs nothing`: UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P14, UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P7
 - `a leaving signer that becomes SYNCED during installation skips reduction submission`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P13
 - `a live fork switch after a held dispute read reschedules no old-fork work`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P10
 - `a live fork switch after an unavailable candidate reschedules no old-fork work`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P11

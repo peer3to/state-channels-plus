@@ -73,6 +73,8 @@ export default class ReductionComputationService {
             );
         // our inbound view cannot back the chain's reduced head yet
         if (!reduceData) return undefined;
+        const reductionCallGasLimit =
+            this.stateManager.diamondStateMachine.reductionCallGasLimit;
         const [
             reducedSnapshotData,
             reducedEncodedStateMachineState,
@@ -83,7 +85,8 @@ export default class ReductionComputationService {
                 reducedOutput,
                 reduceData.latestStateSnapshot,
                 reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks
+                reduceData.inboundMessageBlocks,
+                { gasLimit: reductionCallGasLimit }
             );
         const reducedForkId = ethers.keccak256(
             Codec.encode(reducedSnapshotData, Type.SnapshotData)

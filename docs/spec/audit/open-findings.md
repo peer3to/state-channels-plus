@@ -227,7 +227,8 @@ mapped to the refused and fatal exit-post cases, which passed in the recorded fu
 can blacklist its responder; end-to-end reduction gas sufficiency is not established by that
 classification.
 
-**Disposition:** Open; high. Luka explicitly deferred all remediation and related coverage outside
+**Disposition:** _Resolved (2026-10-16)._ Attribution fixed and gas sufficiency established at the
+supported bound (below). Luka explicitly deferred all remediation and related coverage outside
 PR #520 on 2026-10-07.
 
 **Confirmed by code inspection.** [SpectateService’s reduction catch](../../../src/rpc/network/services/spectate/SpectateService.ts#L363-L368)
@@ -242,26 +243,81 @@ and the gas bound stay open.
 The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
-**Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
-and no valid reduction was demonstrated to exceed an on-chain block gas limit. Local out-of-gas does not
-prove on-chain impossibility: the chain transaction can receive a different gas grant. Conversely, increasing
-the local grant or rethrowing the exception is not proof of successful on-chain replay. Existing
-[local EVM gas tests](../verification/tests/test/evm/InvalidStateTransitionError.test.ts.md) concern transition/call-frame
-failures, not a complete reduction admission-to-settlement guarantee.
+**Attribution fix (2026-10-16).** `applySyncResponse`'s reduction catch now rethrows local resource
+failures — the reduction call frame's out-of-gas and the facet frame's exhaustion, classified by
+`isLocalReductionResourceFailure` in `evmErrorHandler.ts` — as internal failures with no responder
+verdict; only a completed local revert still rejects as "served reduction reverts". A facet-frame
+exhaustion is named at the source: `LocalDiamond` declares its own `reduceAndFinalize` entry that
+forwards all remaining gas through its gas-accounted delegation, so an exhausted facet frame reverts
+`ErrorDisputeExecutionOutOfGas` instead of surfacing as the proxy's reasonless delegatecall failure
+(which would otherwise read as a verdict). Before the call, cheap anchored checks end the sync on
+padded served bytes — the served disputes must be the window's committed ones, the snapshot must
+be the one the chain's reduction of those disputes names, and the inbound list must end where that
+reduction ends — so only hash-committed genuine inputs can consume the grant. On a window the chain
+has not reduced these mismatches are no verdict ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)): the sync ends
+unsettled and the requester waits for the chain's reduction; only once the chain has reduced the
+window do they reject as evidence. Covered by
+[`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34) (a real reduced reduction grant exhausts the
+facet frame inside the sync: throw, no rejection, no blacklist, funded retry succeeds),
+[`INV-SYNC-3-A7A2ED.T1.P35`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p35) (the same through an established
+participant's full `sync()`, recovering after the window settles on chain), the
+[`UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-3-0z8r93) classifier cases on real local
+`reduceAndFinalize` calls (funded revert, call-frame and facet-frame exhaustion, capped computation,
+reasonless revert), and padded-state sync cases that end unsettled with no rejection and no
+blacklist on windows the chain has not reduced. This removes the honest-responder blacklist.
+
+**Gas bound — engineer decisions (Luka, 2026-10-16).** First decision: the local EVM call floor
+(0xffffff, ≈16.7M) as the supported sync bound. Review then established that SDK reducers compute
+their on-chain candidate under the same local grant
+(`ReductionComputationService` → local `reduceOutputToSnapshotData`), so a window beyond the floor
+could never be computed by any SDK peer and would never settle at all. **Decision (a), Luka,
+2026-10-16:** reduction-path local calls — a sync's `reduceAndFinalizeLocally` and a reducer's
+`reduceOutputToSnapshotData` candidate computation — are granted the most gas one reduction
+transaction can carry on the chain: the block gas limit, lowered by the configured per-transaction
+cap (`CHAIN_TX_GAS_CAP`) when the chain has one, read at runtime start; the reduction submission's
+own gas is the signer's estimate with its headroom clamped at the same bound. Local feasibility
+then equals on-chain feasibility (one bound: what a single transaction can carry). The strongest
+rejected alternative, computing the candidate by chain `eth_call`, moves the bound to the RPC
+provider's call cap and adds provider load on every reduction; an admission cap on the inbound
+interval is a protocol change; accepting the floor as a stall leaves such windows unsettleable.
+Consequences: the supported worst case must fit in one transaction, not just a block; a responder
+can make a requester spend up to that bound of local computation per sync round, but only on
+chain-committed genuine inputs (the pre-checks above); windows beyond it are a documented
+residual risk in the synchronization specification's Security considerations.
+
+**Measurement.** The permanent proof is
+[`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3):
+on-chain `reduceAndFinalize` on the Math machine at the dispute/participant caps (32 committed
+disputes, each with a state proof carrying a latest signed block, slash candidates, a timeout and a
+self-removal across the set, non-zero balances) and 100 inbound top-up blocks — a chosen scenario
+size, since the inbound interval has no protocol cap — commits the expected reduced fork in
+6,874,669 gas, 41% of the local floor and far under any block limit. Context from a throwaway probe
+(since deleted): a real staged SDK reduction measured ≈529k execution gas (3 disputes, 1 inbound
+block) growing ≈20.6k per inbound block/message, so the floor alone already covered roughly 650
+inbound messages; the transaction-bound grant removes that cliff entirely.
+
+**Evidence limit.** Local exhaustion is reproduced genuinely at both levels: on a real executor over
+real `reduceAndFinalize` calls (call frame and facet frame), and through the live sync catch with a
+real reduced reduction grant. Exhaustion _at_ the full transaction bound is not reproduced — by
+decision (a) that boundary is the chain's own per-transaction limit, where on-chain settlement is
+equally impossible and out of scope for the local mirror.
 
 **Engineer disposition (Luka, 2026-10-07).** Address this later, not in PR #520. A valid reduction must be
 able to replay successfully on-chain; the follow-up must investigate the complete gas/liveness boundary,
 not merely change the blacklist catch. This is a scope deferral, not a claim that the risk is fixed or safe.
 No production behavior or gas configuration is changed for this finding in this PR.
 
-**Follow-up obligations.** Establish supported reduction/input bounds and measure the real reduction path
-against local execution grants and chain block/transaction limits. Reproduce local exhaustion with valid
-served evidence; verify failure without blaming an honest responder and recovery with sufficient gas.
-Demonstrate successful submission and settlement on-chain for the supported worst-case reduction, including
-proof verification and state restoration. If supported inputs cannot fit, have the engineer decide the
-protocol/admission remedy. Keep genuine invalid-evidence and executor/transport failure oracles distinct.
-The [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
-remains subject to this finding; the gas/liveness evidence is outstanding.
+**Follow-up obligations (discharged 2026-10-16).** The supported bound is a gas limit (the most one
+transaction can carry), measured at the dispute and participant caps with a chosen inbound interval —
+the interval itself has no protocol cap; the real reduction path measured against local and on-chain
+limits; local exhaustion reproduced with served evidence at the executor and sync levels; failure
+without blaming an honest responder and recovery with sufficient gas verified, including through the
+full `sync()` entry after on-chain settlement; successful on-chain submission and settlement
+demonstrated for the supported worst case, including proof folding and state restoration
+([`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3)).
+Where supported inputs could not fit the old local floor, the engineer chose the transaction-bound
+reduction grant over a chain-call candidate, an admission cap, or an accepted stall. Genuine
+invalid-evidence and executor/transport failure oracles remain distinct.
 
 ## Retained proof evidence and installed history
 
@@ -1669,6 +1725,49 @@ rejects the peer. Confirm with a unit case where the requester's `getStateSnapsh
 previous anchor while the server's local diamond holds the newer one: the sync is accepted or
 retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
 commit, and the sync is retried or accepted, not rejected.
+
+<a id="find-sync-6-pw76jh"></a>
+
+### FIND-SYNC-6-PW76JH
+
+**Defect:** _Open (2026-10-16), found executing PR #558's initial-load coverage._ A fresh
+spectator's first sync of an expired, unreduced dispute window cannot complete its local
+reduction: the spectator's local diamond has never mirrored the chain's inbound head
+(`channelBalances.latestInboundMessageBlockHash` is zero in its local diamond), so the facet's
+`reduce` derives a zero inbound head, the reduction reverts
+`ErrorDisputeInboundMessageBlocksInvalid`, and `applySyncResponse` rejects the payload and
+blacklists the honest responder. Participants' mirrors hold the head from chain-event processing;
+the spectator's fetch-and-persist path never installs it. Reproduced twice in the harness, with
+and without a top-up in the window's interval: the spectator's sync rejects with "served reduction
+reverts" and blacklists the responder. Related:
+[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed),
+[`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww) (same local-condition-as-verdict class
+for provider lag).
+
+**Proposed direction:** Install the chain's inbound head into the spectator's local diamond
+before its local reduction (from the fetched on-chain snapshot or dispute data), or derive the
+reduction's inbound head from chain data instead of the local mirror. Confirm with a
+fresh-spectator sync over an expired unreduced window: accepted with no verdict, and, at a
+reduced reduction grant, the facet-frame exhaustion of
+[`INV-SYNC-3-A7A2ED.T1.P36`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p36) instead of the inbound
+revert.
+
+**Update on the merged base (2026-10-16).** The base's unsettled-window flow removes the verdict:
+a local reduction revert on a window the chain has not reduced now returns
+`{ synced: false, unsettledForkId }` with no rejection and no blacklist, and `runSync` waits for
+the chain's reduction and asks again. The blacklist harm above therefore no longer occurs on the
+merged tree; what remains is that a fresh spectator cannot complete the reduction locally and
+waits for an on-chain reduction (by design in that flow, assuming some honest participant reduces
+the window). The finding stays open for the local-compute gap itself; the deferral below is now
+about that residual, not about an active blacklist.
+
+**Engineer disposition (Luka, 2026-10-16): defer the fix to a follow-up PR.** The defect predates
+PR #558 and is unchanged by it; the planned initial-load case
+([`INV-SYNC-3-A7A2ED.T1.P36`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p36)) stays an explicitly accepted
+unresolved gap for that PR under governance §7, on the same basis as the 2026-10-07 deferral of
+[`FIND-SYNC-REDUCTION-GAS-1-AJE985`](open-findings.md#find-sync-reduction-gas-1-aje985). Installing a chain-derived inbound head
+into a fresh spectator's mirror is trust-boundary work that gets its own change and review; this
+acceptance is not a claim that the risk is fixed or safe.
 
 <a id="find-stipend-1-9ysnwb"></a>
 

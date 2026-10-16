@@ -53,7 +53,8 @@ class LocalContractExecutorSigner implements Signer {
         try {
             const result = await this.contractExecutor.simulateCall(
                 tx.data as Bytes,
-                this.getTxContractAddress(tx)
+                this.getTxContractAddress(tx),
+                tx.gasLimit != null ? BigInt(tx.gasLimit) : undefined
             );
             return result.returnValue;
         } catch (error) {

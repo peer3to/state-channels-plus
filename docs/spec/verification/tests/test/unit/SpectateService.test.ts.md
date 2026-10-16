@@ -95,7 +95,16 @@ blacklist.
 - `single dispute window starting at the on-chain fork → accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P38
 - `chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P93
 - `window reduced locally during sync → accepted, its inbound blocks stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P94
-- `window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → local reduction reverts, no verdict naming the window, no window inbound block stored, inbound head unchanged`: REQ-SYNC-4-AWHFPA.T1.P15, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97
+- `window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → no verdict naming the window, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97
+- `window reduced locally during sync whose reduction runs out of gas locally → sync throws, responder not blacklisted, funded retry accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110, INV-SYNC-3-A7A2ED.T1.P34
+- `established participant sync whose reduction runs out of gas → sync throws, responder not blacklisted, sync after on-chain reduction accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111, INV-SYNC-3-A7A2ED.T1.P35
+- `window the chain has not reduced, reduced locally during sync with a padded served state → no verdict naming the window, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112
+- `window the chain has not reduced, reduced locally during sync with a padded state and rewritten snapshot hash → no verdict naming the window, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
+- `window the chain has not reduced, reduced locally during sync with a large made-up inbound successor → no verdict naming the window, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115
+- `window the chain has not reduced, reduced locally during sync with a padded made-up dispute → no verdict naming the window, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116
+- `window the chain has not reduced, reduced locally during sync with padded snapshot balance data → no verdict naming the window, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117
+- `window reduced on chain after the finality read, served a padded state during sync → accepted, responder not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118
+- `served disputes overtaken by a later honest commitment → no verdict naming the window, responder not blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P119
 - `unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P98, INV-SYNC-1-XCQZ28.T1.P15
 - `unreduced window whose disputes name the window's fork under another channel, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P99, INV-SYNC-1-XCQZ28.T1.P16
 - `reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P95

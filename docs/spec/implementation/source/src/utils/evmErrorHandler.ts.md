@@ -66,3 +66,16 @@ Invalid state transition rule
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P2` — the machine's refusal to run under-funded (`ErrorInsufficientGasForStateTransition`) is not an invalid state transition
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P3` — an out-of-gas of the call's own frame (input copy before the stipend check) is not an invalid state transition
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P4` — a failed executor connection (no revert marker) is not an invalid state transition
+
+## UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93
+
+Local reduction resource failure rule
+
+- Setup: Run real local `reduceAndFinalize` calls on a `ContractExecutor` (funded; with a starved call grant; with a grant that covers the local diamond's own decoding of a large served state but not the facet frame's), a dispute computation under a capped dispute-execution budget too small for it, and one with an undecodable state and gas to spare, and classify each error with `isLocalReductionResourceFailure`
+- Oracle: Exactly the call-frame out-of-gas and the two `ErrorDisputeExecutionOutOfGas` exhaustions (facet frame, capped computation) are resource failures; a completed in-EVM reduction revert and a reasonless revert with gas to spare are not
+
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P1` — a reduction that reverts inside the local EVM is not a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P2` — a reduction whose call frame runs out of gas is a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P4` — a dispute computation that exhausts its capped dispute-execution budget (`ErrorDisputeExecutionOutOfGas`) is a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P5` — a reduction whose facet frame exhausts the forwarded gas (`ErrorDisputeExecutionOutOfGas` from the diamond's gas-accounted delegation) is a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P6` — a reduction-path computation that reverts without a reason and with gas to spare is not a resource failure

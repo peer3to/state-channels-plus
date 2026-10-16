@@ -505,6 +505,7 @@ export class StubService extends ANetworkRpcService<
     private restoreNextSignature?: () => void;
     private syncReductionHold?: HeldRpcReply;
     private restoreSyncReduction?: () => void;
+    private reductionGrantRestore?: () => void;
     private restoreFinalityReads?: () => void;
     private restoreSyncRejections?: () => void;
     /** Reasons passed to the real sync rejection handler. */
@@ -1999,6 +2000,26 @@ export class StubService extends ANetworkRpcService<
         this.restoreSyncRejections?.();
         this.restoreSyncRejections = undefined;
         return [...this.syncRejectionReasons];
+    }
+
+    /**
+     * Lower this peer's reduction-path gas grant (the field production sets
+     * from the chain bound) to `grant` (a decimal string), so its next
+     * reduction genuinely exhausts; `restoreReductionGrant` puts the
+     * previous grant back.
+     */
+    public stubReductionGrant(grant: string): void {
+        const machine = this.sm.diamondStateMachine;
+        const original = machine.reductionCallGasLimit;
+        this.reductionGrantRestore = () => {
+            machine.reductionCallGasLimit = original;
+        };
+        machine.reductionCallGasLimit = BigInt(grant);
+    }
+
+    public restoreReductionGrant(): void {
+        this.reductionGrantRestore?.();
+        this.reductionGrantRestore = undefined;
     }
 
     public recordSyncFinalityReads(): void {

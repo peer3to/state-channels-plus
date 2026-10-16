@@ -26,6 +26,15 @@ runtime's unlimited-contract-size EVM option for the inline cases). The revertin
 `ErrorInsufficientGasForStateTransition` instead of returning an invalid result, and the sum stays 0.
 The corrupted executor request throws an error without the revert marker, and the sum stays 0.
 
+Five tests classify real local reduction errors with `isLocalReductionResourceFailure`:
+a funded `reduceAndFinalize` call with no disputes reverts inside the EVM (`ErrorNoDisputesProvided`) and is not a
+resource failure; the same call under a starved executor grant runs out of gas in its own frame and is one;
+the same call with a 2 MB served state under a grant that covers the diamond's own decoding but not the
+facet frame's exhausts the facet frame (`ErrorDisputeExecutionOutOfGas`) and is one; a dispute
+computation under a capped dispute-execution budget too small for it
+(`ErrorDisputeExecutionOutOfGas`) is one; and a computation with an undecodable state and gas to
+spare reverts without a reason and is not one.
+
 ## Tests
 
 - `a transition that reverts inside the EVM is an invalid state transition`: UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P1
@@ -35,3 +44,9 @@ The corrupted executor request throws an error without the revert marker, and th
 - `stateTransition returns an invalid transition for a transition that reverts`: UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P1, REQ-ENFSM-1-DKJCY2.T1.P16
 - `stateTransition throws a refusal to run under-funded instead of returning an invalid transition`: UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P2
 - `stateTransition throws a failed executor connection instead of returning an invalid transition`: UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P3, REQ-ENFSM-1-DKJCY2.T1.P15
+- `a reduction that reverts inside the EVM is not a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P1
+- `a reduction whose call frame runs out of gas is a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P2
+- `a reduction that exhausts its facet frame is a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P5, UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P6
+- `a reduction whose facet reverts without a reason and gas to spare is not a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P6, UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P8
+- `a dispute computation that exhausts its capped budget is a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P4
+- `a reduction that reverts without a reason and gas to spare is not a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P6

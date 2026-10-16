@@ -104,7 +104,8 @@ export default class ContractExecutor extends AContractExecutor {
 
     async executeCall(
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "executeCall",
@@ -112,7 +113,12 @@ export default class ContractExecutor extends AContractExecutor {
         });
 
         try {
-            return await this.executeCallOn(this.evm, data, contractAddress);
+            return await this.executeCallOn(
+                this.evm,
+                data,
+                contractAddress,
+                gasLimit
+            );
         } finally {
             this.release();
         }
@@ -120,7 +126,8 @@ export default class ContractExecutor extends AContractExecutor {
 
     async simulateCall(
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "simulateCall",
@@ -134,7 +141,12 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             await evm.journal.checkpoint();
             try {
-                return await this.executeCallOn(evm, data, contractAddress);
+                return await this.executeCallOn(
+                    evm,
+                    data,
+                    contractAddress,
+                    gasLimit
+                );
             } finally {
                 await evm.journal.revert();
             }
@@ -164,10 +176,12 @@ export default class ContractExecutor extends AContractExecutor {
     private executeCallOn(
         evm: EVM,
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult> {
         return this.runCall(evm, data, {
-            to: toEthereumJsEvmAddress(contractAddress)
+            to: toEthereumJsEvmAddress(contractAddress),
+            ...(gasLimit !== undefined ? { gasLimit } : {})
         });
     }
 

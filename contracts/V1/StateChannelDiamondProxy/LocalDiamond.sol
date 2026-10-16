@@ -325,7 +325,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
-        outputSnapshotData = abi.decode(_delegateDisputeExecution(data), (SnapshotData));
+        outputSnapshotData = abi.decode(_delegateDisputeExecution(data, _getGasLimit()), (SnapshotData));
     }
 
     function computeDisputeOutputState(
@@ -339,7 +339,42 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
-        outputState = abi.decode(_delegateDisputeExecution(data), (DisputeOutputState));
+        outputState = abi.decode(_delegateDisputeExecution(data, _getGasLimit()), (DisputeOutputState));
+    }
+
+    /// Declared here (dispatching before the fallback) so the reduction runs
+    /// through the gas-accounted delegation: it forwards all remaining gas
+    /// rather than the dispute-execution cap, and an exhausted facet frame is
+    /// named `ErrorDisputeExecutionOutOfGas` instead of surfacing as the
+    /// proxy's reasonless delegatecall failure.
+    function reduceAndFinalize(
+        Dispute[] calldata,
+        StateSnapshot calldata,
+        bytes calldata,
+        MessageBlock[] calldata,
+        bytes32
+    ) external {
+        // The arguments are already validated by this dispatch; forward the
+        // call's own calldata instead of encoding it a second time.
+        _delegateDisputeExecution(msg.data, type(uint256).max);
+    }
+
+    /// Same treatment for the reducer's candidate computation: declared so
+    /// its facet frame's exhaustion is named like the reduction's.
+    function reduceOutputToSnapshotData(
+        bytes32 forkId,
+        ReduceOutput memory reducedOutput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) public returns (SnapshotData memory outputSnapshotData, bytes memory, MessageBlock memory) {
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.reduceOutputToSnapshotData,
+            (forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, inboundMessageBlocks)
+        );
+
+        bytes memory result = _delegateDisputeExecution(data, type(uint256).max);
+        return abi.decode(result, (SnapshotData, bytes, MessageBlock));
     }
 
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -382,18 +417,17 @@ contract LocalDiamond is StateChannelManagerProxy {
             DisputeVerificationFacet.isDisputeOutputCorrect,
             (dispute, latestStateSnapshot, latestFinalizedStateStateMachineState, inboundMessageBlocks)
         );
-        return abi.decode(_delegateDisputeExecution(data), (bool));
+        return abi.decode(_delegateDisputeExecution(data, _getGasLimit()), (bool));
     }
 
     /**
-     * Runs `data` on the dispute verification facet within the dispute
-     * execution gas limit and returns its result. A frame that used up the
+     * Runs `data` on the dispute verification facet forwarding at most
+     * `gasLimit` gas and returns its result. A frame that used up the
      * forwarded budget (all but the 1/64 a nested call leaves it) without
      * return data reverts with
      * ErrorDisputeExecutionOutOfGas; any other failure is re-thrown as is.
      */
-    function _delegateDisputeExecution(bytes memory data) internal returns (bytes memory returnData) {
-        uint256 gasLimit = _getGasLimit();
+    function _delegateDisputeExecution(bytes memory data, uint256 gasLimit) internal returns (bytes memory returnData) {
         address target = disputeVerificationFacetAddress;
         bool success;
         uint256 gasBefore;

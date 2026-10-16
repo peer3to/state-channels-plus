@@ -4699,10 +4699,22 @@
       "peakRssGb": 0.505,
       "measurementReason": null
     },
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas LocalContractExecutorSigner forwards a call's gasLimit to the executor": {
+      "durationMs": 469,
+      "avgCores": 0.746,
+      "peakRssGb": 0.142,
+      "measurementReason": null
+    },
     "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas": {
       "durationMs": 13649,
       "avgCores": 0.951,
       "peakRssGb": 0.797,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a per-call gas limit override runs a call above the executor's own grant": {
+      "durationMs": 481,
+      "avgCores": 0.748,
+      "peakRssGb": 0.142,
       "measurementReason": null
     },
     "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime": {
@@ -4751,6 +4763,18 @@
       "durationMs": 2995,
       "avgCores": 0.952,
       "peakRssGb": 0.281,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas the runtime grants reduction calls the chain block gas limit on a dedicated executor thread": {
+      "durationMs": 3931,
+      "avgCores": 0.659,
+      "peakRssGb": 0.881,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas the runtime grants reduction calls the chain block gas limit on an inline executor": {
+      "durationMs": 3947,
+      "avgCores": 0.54,
+      "peakRssGb": 0.598,
       "measurementReason": null
     },
     "hardhat|test/evm/ContractExecutorRuntime.test.ts|ContractExecutorRuntime installs no probe or controller during ordinary SDK construction": {
@@ -5663,6 +5687,24 @@
       "durationMs": 3313,
       "avgCores": 0.89,
       "peakRssGb": 0.315,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/InvalidStateTransitionError.test.ts|isLocalReductionResourceFailure a dispute computation that exhausts its capped budget is a resource failure": {
+      "durationMs": 1126,
+      "avgCores": 0.826,
+      "peakRssGb": 0.34,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/InvalidStateTransitionError.test.ts|isLocalReductionResourceFailure a reduction that reverts inside the EVM is not a resource failure": {
+      "durationMs": 1414,
+      "avgCores": 0.382,
+      "peakRssGb": 0.192,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/InvalidStateTransitionError.test.ts|isLocalReductionResourceFailure a reduction whose call frame runs out of gas is a resource failure": {
+      "durationMs": 1150,
+      "avgCores": 0.765,
+      "peakRssGb": 0.296,
       "measurementReason": null
     },
     "hardhat|test/evm/P2pRuntimeClientRoot.test.ts|P2pRuntimeClientRoot cleans owned inline executor endpoints after domain disposal fails": {
@@ -18439,6 +18481,12 @@
       "peakRssGb": 1.023,
       "measurementReason": null
     },
+    "hardhat|test/unit/DisputeValidationService.test.ts|Unit: DisputeValidationService timeout checks timeout.blockHeight = an honest first block whose calldata is on-chain -> false + TimeoutCalldataPosted": {
+      "durationMs": 37392,
+      "avgCores": 0.7,
+      "peakRssGb": 0.956,
+      "measurementReason": null
+    },
     "hardhat|test/unit/DisputeValidationService.test.ts|Unit: DisputeValidationService timeout checks timeout.participantSignatureOnPreviousBlock: 0x / timed-out signer / other signer -> TimeoutTooEarly, none, TimeoutTooEarly": {
       "durationMs": 42002,
       "avgCores": 0.551,
@@ -19705,6 +19753,24 @@
       "peakRssGb": 0.818,
       "measurementReason": null
     },
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor submission gas bound chain transaction gas cap above the block gas limit → the host grants the block gas limit": {
+      "durationMs": 5569,
+      "avgCores": 0.415,
+      "peakRssGb": 0.668,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor submission gas bound chain transaction gas cap below the block gas limit → the host grants the cap to local reductions": {
+      "durationMs": 5628,
+      "avgCores": 0.396,
+      "peakRssGb": 0.695,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/ReductionExecutor.test.ts|Unit: ReductionExecutor submission gas bound submission within the bound → the reduction transaction lands with a gas limit no greater than the block gas limit": {
+      "durationMs": 13450,
+      "avgCores": 0.528,
+      "peakRssGb": 1.241,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SnapshotAssemblyService.test.ts|Unit: SnapshotAssemblyService assembleFromTransaction a leave → participantChanges.left names the leaver and an outbound block is built": {
       "durationMs": 11260,
       "avgCores": 0.977,
@@ -19843,6 +19909,12 @@
       "peakRssGb": 1.036,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage established participant sync whose reduction runs out of gas → sync throws, responder not blacklisted, sync after on-chain reduction accepted": {
+      "durationMs": 13619,
+      "avgCores": 0.66,
+      "peakRssGb": 1.143,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage first dispute window not on the on-chain fork → rejected, dispute window not linked": {
       "durationMs": 26935,
       "avgCores": 0.946,
@@ -19865,6 +19937,12 @@
       "durationMs": 26369,
       "avgCores": 0.976,
       "peakRssGb": 0.997,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage served disputes overtaken by a later honest commitment → no verdict naming the window, responder not blacklisted, nothing persisted": {
+      "durationMs": 6676,
+      "avgCores": 1.068,
+      "peakRssGb": 1.237,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage single dispute window starting at the on-chain fork → accepted": {
@@ -19891,16 +19969,124 @@
       "peakRssGb": 1.028,
       "measurementReason": null
     },
-    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged": {
-      "durationMs": 22966,
-      "avgCores": 0.915,
-      "peakRssGb": 1.037,
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync whose reduction runs out of gas locally → sync throws, responder not blacklisted, funded retry accepted": {
+      "durationMs": 12917,
+      "avgCores": 0.585,
+      "peakRssGb": 1.197,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync → accepted, its inbound blocks stored": {
       "durationMs": 21779,
       "avgCores": 1.023,
       "peakRssGb": 1.025,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced on chain after the finality read, served a padded state during sync → accepted, responder not blacklisted": {
+      "durationMs": 15688,
+      "avgCores": 0.477,
+      "peakRssGb": 1.27,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → no verdict naming the window, no window inbound block stored, inbound head unchanged": {
+      "durationMs": 14351,
+      "avgCores": 0.559,
+      "peakRssGb": 1.129,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a large made-up inbound successor → no verdict naming the window, nothing persisted": {
+      "durationMs": 11599,
+      "avgCores": 0.715,
+      "peakRssGb": 1.174,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a padded made-up dispute → no verdict naming the window, nothing persisted": {
+      "durationMs": 10780,
+      "avgCores": 0.735,
+      "peakRssGb": 1.135,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a padded served state → no verdict naming the window, nothing persisted": {
+      "durationMs": 13356,
+      "avgCores": 0.574,
+      "peakRssGb": 1.11,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a padded state and rewritten snapshot hash → no verdict naming the window, nothing persisted": {
+      "durationMs": 13854,
+      "avgCores": 0.576,
+      "peakRssGb": 1.123,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with padded snapshot balance data → no verdict naming the window, nothing persisted": {
+      "durationMs": 13116,
+      "avgCores": 0.593,
+      "peakRssGb": 1.124,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced dispute opens on the latest fork after the payload was served → not accepted, no verdict naming the window, responder not blacklisted": {
+      "durationMs": 13719,
+      "avgCores": 0.827,
+      "peakRssGb": 0.791,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced dispute opens on the latest fork after the payload was served, its kill period over but the chain has not reduced it → not accepted, no verdict naming the window, responder not blacklisted": {
+      "durationMs": 26061,
+      "avgCores": 0.493,
+      "peakRssGb": 0.796,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced payload older than the latest fork's reduction, its reduced window missing → rejected, latest fork is disputed": {
+      "durationMs": 28582,
+      "avgCores": 0.462,
+      "peakRssGb": 0.797,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced served window in its kill period the requester has not applied → not accepted, no verdict naming the window, responder not blacklisted": {
+      "durationMs": 14761,
+      "avgCores": 0.696,
+      "peakRssGb": 0.795,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced served window still in its kill period → not accepted, no verdict naming the window, responder not blacklisted": {
+      "durationMs": 14021,
+      "avgCores": 0.802,
+      "peakRssGb": 0.789,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced served window the chain does not hold → rejected, dispute window not on chain": {
+      "durationMs": 10752,
+      "avgCores": 0.823,
+      "peakRssGb": 0.785,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced: chain judgement and wait reductions of another window and of another channel while the sync waits → ignored: the responder is asked again only after the chain reduces the served window": {
+      "durationMs": 27022,
+      "avgCores": 0.511,
+      "peakRssGb": 0.796,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced: chain judgement and wait the chain reduces the served window between the finality read and the window fetch, the payload claiming another successor → local reduction reverts on the reduced window, rejected, served reduction reverts": {
+      "durationMs": 21866,
+      "avgCores": 0.779,
+      "peakRssGb": 0.995,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced: chain judgement and wait the chain reduces the window after the sync read it but before the sync waits → the wait ends on its chain read, the same peer is asked again and the sync succeeds": {
+      "durationMs": 28074,
+      "avgCores": 0.463,
+      "peakRssGb": 0.794,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced: chain judgement and wait the service is disposed after the sync applied its answer but before it waits → the sync returns false without waiting, the responder is asked once and not blacklisted": {
+      "durationMs": 17262,
+      "avgCores": 0.624,
+      "peakRssGb": 0.793,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window not yet reduced: chain judgement and wait the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, stop resolves": {
+      "durationMs": 12829,
+      "avgCores": 0.827,
+      "peakRssGb": 0.793,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload all dispute events suppressed → recovers and proves the successor fork": {

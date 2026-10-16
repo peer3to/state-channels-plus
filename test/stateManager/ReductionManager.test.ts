@@ -16,7 +16,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import type { SubmittedFinalDispute } from "@test/harness/actions/DisputeOrchestrator";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { id } from "ethers";
+import { id, ZeroHash } from "ethers";
 
 describe("ReductionManager", function () {
     it("direct completion returns false and removes the operation when the fork changes inside its mutex wait", async function () {
@@ -24,6 +24,73 @@ describe("ReductionManager", function () {
     });
     it("a leaving signer that becomes SYNCED during installation skips reduction submission", async function () {
         await assertSyncedLeaverSkipsSubmission(TestSession.getHarness());
+    });
+
+    it("a reducer computes its candidate under the reduction grant, and with that grant lowered the computation throws and installs nothing", async function () {
+        const h = TestSession.getHarness();
+        const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+            disputingPeerIndices: [0, 3],
+            beforeDispute: async () => {
+                for (let i = 0; i < 10; i++)
+                    await h.join.forceInboundJoinWait({
+                        participant: h.getPeer(0).address
+                    });
+            }
+        });
+        const target = h.getPeer(0);
+        const computeCandidate = () =>
+            h.execOnHost(
+                target,
+                async (sm, args) => {
+                    const commitments =
+                        await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    const disputes = await sm.agreementManager.getForkDisputes(
+                        commitments!
+                    );
+                    const computation =
+                        await sm.reductionManager.computeReductionLocally(
+                            args.forkId,
+                            disputes
+                        );
+                    return computation?.reducedForkId;
+                },
+                { forkId: sourceForkId }
+            );
+        await h.control(target).stub.stubReductionGrant("250000").request();
+        let computeError = "";
+        try {
+            await computeCandidate();
+        } catch (e) {
+            computeError = e instanceof Error ? e.message : String(e);
+        } finally {
+            await h.control(target).stub.restoreReductionGrant().request();
+        }
+        expect(computeError).to.include("ErrorDisputeExecutionOutOfGas");
+        expect(
+            await h
+                .control(target)
+                .query.getLocalDisputeWindowReducedForkId(sourceForkId)
+                .request()
+        ).to.equal(ZeroHash);
+        const reducedForkId = await computeCandidate();
+        expect(reducedForkId).to.not.equal(undefined);
+        // the manager's own attempt then lands the reduction on chain
+        await h.execOnHost(
+            target,
+            async (sm, args) => {
+                await sm.reductionManager.tryReduce(args.forkId);
+            },
+            { forkId: sourceForkId }
+        );
+        await waitFor(
+            async () =>
+                (await h.control(target).query.getForkId().request()) ===
+                reducedForkId,
+            h.event.protocolEventTimeoutMs()
+        );
     });
 
     it("a live fork switch after a held dispute read reschedules no old-fork work", async function () {

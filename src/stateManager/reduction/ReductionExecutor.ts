@@ -259,6 +259,36 @@ export default class ReductionExecutor {
         if (submissionStatus === "superseded") return;
         if (this.isStale(forkId)) return;
 
+        if (submissionStatus === "submit") {
+            const cap =
+                this.stateManager.diamondStateMachine.reductionCallGasLimit;
+            if (cap !== undefined) {
+                const estimate = await this.estimateSubmissionGas(submission);
+                if (estimate > cap) {
+                    // The candidate computation fits the bound, but the
+                    // transaction carrying it (intrinsic gas, calldata, the
+                    // fold and the commitment checks on top of the candidate)
+                    // cannot land: install nothing and retry on the chain
+                    // fallback cadence.
+                    this.logger.warn(
+                        "Reduction deferred: submission cannot land within the transaction gas bound",
+                        {
+                            forkId,
+                            estimate: estimate.toString(),
+                            cap: cap.toString()
+                        }
+                    );
+                    this.stateManager.reductionManager.schedule(
+                        forkId,
+                        Clock.getTimeInSeconds() +
+                            this.stateManager.timeConfig.chainFallbackTime,
+                        true
+                    );
+                    return;
+                }
+            }
+        }
+
         await this.complete(forkId, candidate, submission, submissionStatus);
     }
 
@@ -423,6 +453,24 @@ export default class ReductionExecutor {
         }
     }
 
+    /**
+     * The submission transaction's raw gas estimate, read from the provider
+     * directly: the managed signer's own estimate already carries its
+     * headroom, which would inflate the cannot-land comparison.
+     */
+    private async estimateSubmissionGas(submission: {
+        calldata: string[];
+    }): Promise<bigint> {
+        const contract = this.stateManager.stateChannelManagerContract;
+        return contract.runner!.provider!.estimateGas({
+            to: await contract.getAddress(),
+            from: await this.stateManager.signer.getAddress(),
+            data: contract.interface.encodeFunctionData("multicall", [
+                submission.calldata
+            ])
+        });
+    }
+
     private submitDetached(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
@@ -441,11 +489,27 @@ export default class ReductionExecutor {
         // Gas comes from the signer's estimate: the dispute execution limit
         // bounds one dispute computation, not the reduce transaction, whose
         // calldata and on-chain checks grow with the disputes it carries.
-        // The disposal check in `complete` runs before the send starts; a
-        // disposal during the send does not stop the broadcast, only the
-        // adoption after it.
-        const transaction = this.stateManager.stateChannelManagerContract
-            .multicall(submission.calldata)
+        // The estimate's headroom is clamped at the most gas one reduction
+        // transaction can carry on this chain, so the submission asks only
+        // for gas that can actually land. The disposal check in `complete`
+        // runs before the send starts; a disposal during the send does not
+        // stop the broadcast, only the adoption after it.
+        const contract = this.stateManager.stateChannelManagerContract;
+        const send = async (): Promise<TransactionResponse> => {
+            const cap =
+                this.stateManager.diamondStateMachine.reductionCallGasLimit;
+            if (cap === undefined)
+                return contract.multicall(submission.calldata);
+            // The managed signer's estimate already carries its headroom,
+            // so the clamp takes it as-is: one headroom, not two.
+            const estimate = await contract.multicall.estimateGas(
+                submission.calldata
+            );
+            return contract.multicall(submission.calldata, {
+                gasLimit: estimate < cap ? estimate : cap
+            });
+        };
+        const transaction = send()
             .then(async (tx) => {
                 txResponse = tx;
                 await tx.wait();

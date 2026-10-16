@@ -19,19 +19,29 @@ export default class RpcContractExecutor extends AContractExecutor {
 
     async executeCall(
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult> {
         return this.contractExecutorRemoteRoot.rpc.executor
-            .executeCall(ethers.hexlify(data), contractAddress.toString())
+            .executeCall(
+                ethers.hexlify(data),
+                contractAddress.toString(),
+                gasLimit?.toString()
+            )
             .request({ timeoutMs: null });
     }
 
     async simulateCall(
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult> {
         return this.contractExecutorRemoteRoot.rpc.executor
-            .simulateCall(ethers.hexlify(data), contractAddress.toString())
+            .simulateCall(
+                ethers.hexlify(data),
+                contractAddress.toString(),
+                gasLimit?.toString()
+            )
             .request({ timeoutMs: null });
     }
 

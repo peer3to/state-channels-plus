@@ -75,13 +75,15 @@ Pre-deployment request dispatch
 
 Local EVM call-gas wiring
 
-- Setup: Start a host against a manager whose replay gas exceeds 0xffffff, inline and with a dedicated executor; then with a failing `getStateTransitionReplayGas`
-- Oracle: The executor in each placement runs every call with `localEvmCallGasLimit(getGasLimit(), getStateTransitionReplayGas())`; a failed read fails startup and builds no executor
+- Setup: Start a host against a manager whose replay gas exceeds 0xffffff, inline and with a dedicated executor; then with a failing `getStateTransitionReplayGas`; read the machine's reduction grant and drive a reduction call with and without it
+- Oracle: The executor in each placement runs every call with `localEvmCallGasLimit(getGasLimit(), getStateTransitionReplayGas())`; a failed read fails startup and builds no executor; the machine's reduction grant equals the chain's latest-block gas bound (lowered by the configured per-transaction cap) in each placement
 
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1` — inline executor gets the host-computed call-gas limit
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2` — dedicated-worker executor gets the same limit after the decimal-string round trip
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3` — a failed `getGasLimit` or `getStateTransitionReplayGas` read fails host startup (inline executor): readiness rejects with the read's error, no executor is requested, and every runtime root the start created is closed
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4` — the same failed read with a dedicated executor thread: readiness rejects, no executor thread is requested, and every runtime root the start created is closed
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P5` — the machine's reduction grant equals the chain's latest-block gas bound (lowered by the configured per-transaction cap) on an inline executor, and a reduction call funded by a 1,000-gas override dies in dispatch while the same call at the reduction grant runs to the facet's revert
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P6` — the same reduction grant and override round trip on a dedicated executor thread
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX
 
