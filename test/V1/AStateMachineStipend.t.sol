@@ -6,7 +6,10 @@ import {GasHungryMathStateMachine} from "./harness/GasHungryMathStateMachine.sol
 import {StateChannelManagerInterface} from "../../contracts/V1/StateChannelManagerInterface.sol";
 import {MathStateMachine, MathState} from "../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {ErrorInsufficientGasForStateTransition} from "../../contracts/V1/AStateMachine.sol";
-import {ErrorStateTransitionFrameOutOfGas} from "../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    ErrorDisputeStateMachineInboundProcessingFailed,
+    ErrorStateTransitionFrameOutOfGas
+} from "../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../contracts/V1/types/DataTypes.sol";
 import "../../contracts/V1/types/ProofTypes.sol";
 import {BlockInvalidStateTransitionProof} from "../../contracts/V1/types/FraudProofTypes.sol";
@@ -41,6 +44,8 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     uint256 internal constant GUARDED_BUDGET = 16_000_000;
     uint256 internal constant GUARDED_FUNDED_GAS = GUARDED_BUDGET * 3;
     uint256 internal constant GUARDED_UNDERFUNDED_GAS = GUARDED_BUDGET * 2 / 3;
+    // A budget whose 1/63 exceeds the slack an estimate carries after the replay.
+    uint256 internal constant LARGE_BUDGET = 32_000_000;
     // The deterministic sweeps step this far either side of the requirement, in this increment.
     uint256 internal constant SWEEP_HALF_WIDTH = 32_000;
     uint256 internal constant SWEEP_STEP = 1_000;
@@ -543,9 +548,18 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         internal
         returns (Dispute memory dispute, bytes memory call)
     {
+        return _stageTimeoutRefutationConsuming(participants, transitionData, new MessageBlock[](0));
+    }
+
+    /// `_stageTimeoutRefutation` with a posted block that consumes `messageBlocks`.
+    function _stageTimeoutRefutationConsuming(
+        address[] memory participants,
+        bytes memory transitionData,
+        MessageBlock[] memory messageBlocks
+    ) internal returns (Dispute memory dispute, bytes memory call) {
         DisputeFraudProof[] memory proofs;
         (dispute, proofs) = _stageTimeoutCalldataPosted(
-            diamond, CHANNEL_ID, TIMED_OUT_PK, DISPUTER_PK, _encodedState(participants), transitionData
+            diamond, CHANNEL_ID, TIMED_OUT_PK, DISPUTER_PK, _encodedState(participants), transitionData, messageBlocks
         );
         call = abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs));
     }
@@ -768,10 +782,110 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
             DISPUTER_PK,
             stateProof,
             PostedBlockBase(latestSnapshot, _encodedState(participants), keccak256(nonCanonical)),
-            abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ())
+            abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()),
+            new MessageBlock[](0)
         );
 
         (bool ok,) = _submitRefutation(abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs)), GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertTimeoutKilled(dispute, participants);
+    }
+
+    // ---- a posted block that consumes inbound message blocks ---------------------------------
+    //
+    // The replay applies the posted block's inbound message blocks after its transition, as
+    // clients build the block. The inbound block is the one the chain appended for a real top-up
+    // or join after the channel opened; the faulty variants alter only that block.
+
+    uint256 internal constant JOINER_PK = 3;
+
+    function _thresholdSigners() internal pure returns (uint256[] memory pks) {
+        pks = new uint256[](2);
+        pks[0] = TIMED_OUT_PK;
+        pks[1] = DISPUTER_PK;
+    }
+
+    /// The chain's inbound block for a top-up by the posted block's author, linked to the
+    /// genesis snapshot's inbound head.
+    function _topUpInbound() internal returns (MessageBlock[] memory messageBlocks) {
+        messageBlocks = new MessageBlock[](1);
+        messageBlocks[0] = _joinOnChain(diamond, CHANNEL_ID, TIMED_OUT_PK, _thresholdSigners(), 5, true);
+        assertEq(
+            messageBlocks[0].previousBlockHash,
+            diamond.getStateSnapshot(CHANNEL_ID).snapshotData.latestInboundMessageBlockHash,
+            "the top-up extends the snapshot's inbound head"
+        );
+    }
+
+    function test_applyDisputeFraudProofs_timeoutRefutationConsumingATopUpKillsTimeoutDispute() public {
+        address[] memory participants = _deployGuarded();
+        MessageBlock[] memory messageBlocks = _topUpInbound();
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutationConsuming(participants, abi.encodeCall(MathStateMachine.add, (1)), messageBlocks);
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertTimeoutKilled(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseInboundBlockMissesTheInboundHead() public {
+        address[] memory participants = _deployGuarded();
+        MessageBlock[] memory messageBlocks = _topUpInbound();
+        messageBlocks[0].previousBlockHash = keccak256("another inbound head");
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutationConsuming(participants, abi.encodeCall(MathStateMachine.add, (1)), messageBlocks);
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseInboundBlockSkipsAHeight() public {
+        address[] memory participants = _deployGuarded();
+        MessageBlock[] memory messageBlocks = _topUpInbound();
+        messageBlocks[0].blockHeight += 1;
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutationConsuming(participants, abi.encodeCall(MathStateMachine.add, (1)), messageBlocks);
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    // The same no-verdict revert as the invalid-transition fraud proof on such a block.
+    function test_applyDisputeFraudProofs_timeoutRefutationWithAnInboundMessageTheMachineRejectsReverts() public {
+        address[] memory participants = _deployGuarded();
+        MessageBlock[] memory messageBlocks = _topUpInbound();
+        messageBlocks[0].messages[0].messageType = keccak256("UNSUPPORTED_MESSAGE");
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutationConsuming(participants, abi.encodeCall(MathStateMachine.add, (1)), messageBlocks);
+
+        (bool ok, bytes memory result) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertFalse(ok);
+        assertEq(bytes4(result), ErrorDisputeStateMachineInboundProcessingFailed.selector);
+        _assertNoVerdict(dispute, participants);
+    }
+
+    // The replay reads the participants after the inbound messages, so a join consumed by the
+    // posted block is in the snapshot it commits to.
+    function test_applyDisputeFraudProofs_timeoutRefutationAdmittingAJoinerKillsTimeoutDispute() public {
+        address[] memory participants = _deployGuarded();
+        StateSnapshot memory genesis = diamond.getStateSnapshot(CHANNEL_ID);
+        MessageBlock[] memory messageBlocks = new MessageBlock[](1);
+        messageBlocks[0] = _joinOnChain(diamond, CHANNEL_ID, JOINER_PK, _thresholdSigners(), 0, false);
+
+        Block memory postedBlock;
+        postedBlock.transaction = _transaction(participants[0], abi.encodeCall(MathStateMachine.add, (1)));
+        postedBlock.messageBlocks = messageBlocks;
+        (StateSnapshot memory replayed,) =
+            _fundedReplay(diamond, CHANNEL_ID, PostedBlockBase(genesis, _encodedState(participants), 0), postedBlock);
+        assertEq(replayed.snapshotData.participants.length, 3, "the replayed snapshot admits the joiner");
+        assertEq(replayed.snapshotData.participants[2], vm.addr(JOINER_PK));
+
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutationConsuming(participants, abi.encodeCall(MathStateMachine.add, (1)), messageBlocks);
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
         assertTrue(ok);
         _assertTimeoutKilled(dispute, participants);
     }
@@ -795,6 +909,32 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         assertFalse(costOnly, "the cost alone leaves the replay under its stipend");
         assertTrue(_isReplayRefusal(refusal));
         _assertNoVerdict(dispute, participants);
+
+        (bool withReplayGas,) = _submitRefutation(call, cost + diamond.getStateTransitionReplayGas());
+        assertTrue(withReplayGas);
+        _assertTimeoutKilled(dispute, participants);
+    }
+
+    // `dispute` sends a kill as the first call of a multicall, one frame above the direct send,
+    // and the replay itself is delegatecalled into FraudProofFacet. A frame the replay gas does
+    // not count costs about 1/63 of the budget; the estimate's own slack (the work after the
+    // replay) covers that only for budgets below ~21M, so a cheap transition on a large budget
+    // leaves only the replay gas to fund that deepest path.
+    function test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayInsideMulticall() public {
+        diamond = deployDiamondWith(new GasHungryMathStateMachine(LARGE_BUDGET, MAX_CHANNEL_PARTICIPANTS));
+        address[] memory participants = _open();
+        (Dispute memory dispute, bytes memory refutation) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(MathStateMachine.add, (1)));
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = refutation;
+        bytes memory call = abi.encodeCall(diamond.multicall, (calls));
+
+        uint256 snapshot = vm.snapshotState();
+        uint256 before = gasleft();
+        (bool funded,) = _submitRefutation(call, LARGE_BUDGET * 3);
+        uint256 cost = before - gasleft();
+        assertTrue(funded);
+        vm.revertToState(snapshot);
 
         (bool withReplayGas,) = _submitRefutation(call, cost + diamond.getStateTransitionReplayGas());
         assertTrue(withReplayGas);

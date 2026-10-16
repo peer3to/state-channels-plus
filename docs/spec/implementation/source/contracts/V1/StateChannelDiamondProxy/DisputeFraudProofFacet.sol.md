@@ -234,3 +234,8 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P206` — a `TimeoutCalldataPosted` proof whose posted block is signed by the wrong key is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P207` — a `TimeoutCalldataPosted` proof whose posted block carries an unrecoverable author signature is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P208` — a `TimeoutCalldataPosted` proof whose posted block carries no signature is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P209` — a `TimeoutCalldataPosted` proof whose posted block consumes a real on-chain top-up inbound block kills the timeout and slashes the disputer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P210` — a `TimeoutCalldataPosted` proof whose inbound block does not extend the snapshot's inbound head is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211` — a `TimeoutCalldataPosted` proof whose inbound block skips a height is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212` — a `TimeoutCalldataPosted` proof whose inbound message the state machine rejects reverts `ErrorDisputeStateMachineInboundProcessingFailed` with no verdict and no slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213` — a `TimeoutCalldataPosted` proof whose posted block consumes a join of a new participant commits to a snapshot admitting the joiner and kills the timeout

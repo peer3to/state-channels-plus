@@ -3,6 +3,8 @@ pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "./DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
+import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {TimeoutCalldataPosted} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
@@ -30,16 +32,17 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
 
     /// Stage the dispute and the posted block for `transitionData`, authored by `timedOutPk`
     /// on the genesis state `encodedGenesisState` of `channelId` (an open channel whose
-    /// snapshot is still its genesis). The block's snapshot hash is the one a fully funded
-    /// replay of the transition gives, so the block is honest whenever that transition
-    /// succeeds.
+    /// snapshot is still its genesis), consuming `messageBlocks`. The block's snapshot hash is
+    /// the one a fully funded replay of the transition and those inbound messages gives, so the
+    /// block is honest whenever that replay succeeds.
     function _stageTimeoutCalldataPosted(
         StateChannelManagerInterface diamond,
         bytes32 channelId,
         uint256 timedOutPk,
         uint256 disputerPk,
         bytes memory encodedGenesisState,
-        bytes memory transitionData
+        bytes memory transitionData,
+        MessageBlock[] memory messageBlocks
     ) internal returns (Dispute memory dispute, DisputeFraudProof[] memory proofs) {
         StateSnapshot memory genesis = diamond.getStateSnapshot(channelId);
         assertEq(genesis.blockHeight, 0, "the channel snapshot is its genesis");
@@ -48,13 +51,16 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
             keccak256(encodedGenesisState),
             "the staged state is the channel's genesis state"
         );
-        return _stageTimeoutCalldataPostedOn(
+        StateProof memory noBlocks;
+        return _stageTimeoutCalldataPostedAfter(
             diamond,
             channelId,
             timedOutPk,
             disputerPk,
+            noBlocks,
             PostedBlockBase(genesis, encodedGenesisState, keccak256(abi.encode(genesis))),
-            transitionData
+            transitionData,
+            messageBlocks
         );
     }
 
@@ -71,12 +77,14 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         bytes memory transitionData
     ) internal returns (Dispute memory dispute, DisputeFraudProof[] memory proofs) {
         StateProof memory noBlocks;
-        return
-            _stageTimeoutCalldataPostedAfter(diamond, channelId, timedOutPk, disputerPk, noBlocks, base, transitionData);
+        return _stageTimeoutCalldataPostedAfter(
+            diamond, channelId, timedOutPk, disputerPk, noBlocks, base, transitionData, new MessageBlock[](0)
+        );
     }
 
-    /// `_stageTimeoutCalldataPostedOn` with a dispute whose state proof is `stateProof`. The
-    /// blamed height, and the posted block's height, is the next one after its latest block.
+    /// `_stageTimeoutCalldataPostedOn` with a dispute whose state proof is `stateProof` and a
+    /// posted block consuming `messageBlocks`. The blamed height, and the posted block's height,
+    /// is the next one after its latest block.
     function _stageTimeoutCalldataPostedAfter(
         StateChannelManagerInterface diamond,
         bytes32 channelId,
@@ -84,7 +92,8 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         uint256 disputerPk,
         StateProof memory stateProof,
         PostedBlockBase memory base,
-        bytes memory transitionData
+        bytes memory transitionData,
+        MessageBlock[] memory messageBlocks
     ) internal returns (Dispute memory dispute, DisputeFraudProof[] memory proofs) {
         Block memory postedBlock;
         postedBlock.transaction.header.channelId = channelId;
@@ -94,7 +103,8 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         postedBlock.transaction.header.timestamp = block.timestamp;
         postedBlock.transaction.body.data = transitionData;
         postedBlock.previousBlockHash = base.previousBlockHash;
-        (StateSnapshot memory replayedSnapshot,) = _fundedReplay(diamond, channelId, base, postedBlock.transaction);
+        postedBlock.messageBlocks = messageBlocks;
+        (StateSnapshot memory replayedSnapshot,) = _fundedReplay(diamond, channelId, base, postedBlock);
         postedBlock.stateSnapshotHash = keccak256(abi.encode(replayedSnapshot));
 
         dispute = _uploadTimeoutDispute(
@@ -171,31 +181,82 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         return hasBlock ? latestBlock.transaction.header.transactionCnt + 1 : 0;
     }
 
-    /// The snapshot the proof recomputes after a fully funded replay of `transaction` on
-    /// `base`'s state, and that state. The replay runs as the diamond itself (its `onlySelf`
-    /// entry point), and every change it makes is rolled back.
+    /// The snapshot the proof recomputes after a fully funded replay of `_block`'s transaction
+    /// and then its inbound message blocks on `base`'s state, and that state. Each message block
+    /// becomes the inbound head at the next height; a message the machine rejects is skipped. The replay
+    /// runs as the diamond itself (its `onlySelf` entry point), and every change it makes is
+    /// rolled back.
     function _fundedReplay(
         StateChannelManagerInterface diamond,
         bytes32 channelId,
         PostedBlockBase memory base,
-        Transaction memory transaction
+        Block memory _block
     ) internal returns (StateSnapshot memory next, bytes memory encodedModifiedState) {
+        // Deep copy: a memory struct assignment would alias the base snapshot.
+        next = abi.decode(abi.encode(base.latestStateSnapshot), (StateSnapshot));
         uint256 snapshot = vm.snapshotState();
         vm.prank(address(diamond));
         Message[] memory outboundMessages;
         (, encodedModifiedState, outboundMessages) =
-            diamond.executeStateTransition(channelId, base.encodedLatestState, transaction);
+            diamond.executeStateTransition(channelId, base.encodedLatestState, _block.transaction);
         assertEq(outboundMessages.length, 0, "the staged transition emits no outbound messages");
         stateMachine.setState(encodedModifiedState);
-        address[] memory participants = stateMachine.getParticipants();
+        for (uint256 i = 0; i < _block.messageBlocks.length; i++) {
+            Message[] memory messages = _block.messageBlocks[i].messages;
+            for (uint256 j = 0; j < messages.length; j++) {
+                stateMachine.processInboundMessage(messages[j]);
+                next.snapshotData.totalDeposits =
+                    stateMachine.addBalance(next.snapshotData.totalDeposits, messages[j].balance);
+            }
+            next.snapshotData.latestInboundMessageBlockHash = keccak256(abi.encode(_block.messageBlocks[i]));
+            next.snapshotData.latestInboundMessageBlockHeight += 1;
+        }
+        encodedModifiedState = stateMachine.getState();
+        next.snapshotData.participants = stateMachine.getParticipants();
         vm.revertToState(snapshot);
 
-        // Deep copy: a memory struct assignment would alias the base snapshot.
-        next = abi.decode(abi.encode(base.latestStateSnapshot), (StateSnapshot));
         next.snapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
-        next.snapshotData.participants = participants;
         // clients number a block's snapshot by the block's own height
-        next.blockHeight = transaction.header.transactionCnt;
-        next.timestamp = transaction.header.timestamp;
+        next.blockHeight = _block.transaction.header.transactionCnt;
+        next.timestamp = _block.transaction.header.timestamp;
+    }
+
+    /// `joinerPk` joins `channelId` with `amount` (a top-up when `isTopUp`), threshold-signed by
+    /// `signerPks`; returns the inbound block the chain appended for it.
+    function _joinOnChain(
+        StateChannelManagerInterface diamond,
+        bytes32 channelId,
+        uint256 joinerPk,
+        uint256[] memory signerPks,
+        uint256 amount,
+        bool isTopUp
+    ) internal returns (MessageBlock memory inbound) {
+        bytes memory encodedJoin = abi.encode(
+            JoinChannel({
+                channelId: channelId,
+                participant: vm.addr(joinerPk),
+                deadlineTimestamp: block.timestamp + 1 days,
+                balance: Balance({amount: amount, data: ""})
+            })
+        );
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoin, signature: _sign(joinerPk, encodedJoin)});
+        confirmation.signatures = new bytes[](signerPks.length);
+        for (uint256 i = 0; i < signerPks.length; i++) {
+            confirmation.signatures[i] = _sign(signerPks[i], encodedJoin);
+        }
+        StateSnapshot memory current = diamond.getStateSnapshot(channelId);
+        vm.recordLogs();
+        vm.prank(vm.addr(joinerPk));
+        if (isTopUp) diamond.topUpBalance(confirmation, keccak256(abi.encode(current)), current.forkId);
+        else diamond.joinChannel(confirmation, keccak256(abi.encode(current)), current.forkId);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == StateChannelManagerEvents.InboundMessagesProcessed.selector) {
+                return abi.decode(logs[i].data, (MessageBlock));
+            }
+        }
+        revert("the join appended no inbound block");
     }
 }

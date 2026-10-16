@@ -132,6 +132,12 @@ run, while the 32-run guarded fuzzes still pass. The sweeps assign no test IDs o
 - `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseStateMissesTheSnapshot`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P35, REQ-DIS-10-SAHJBN.T1.P18
 - `test_applyDisputeFraudProofs_rejectsTimeoutRefutationBlockBuiltOnAnotherBlock`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P36, REQ-DIS-10-SAHJBN.T1.P19
 - `test_applyDisputeFraudProofs_timeoutRefutationLinksToLatestBlockSignedBytes`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P37
+- `test_applyDisputeFraudProofs_timeoutRefutationConsumingATopUpKillsTimeoutDispute`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P209
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseInboundBlockMissesTheInboundHead`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P210, REQ-DIS-10-SAHJBN.T1.P14
+- `test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseInboundBlockSkipsAHeight`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211
+- `test_applyDisputeFraudProofs_timeoutRefutationWithAnInboundMessageTheMachineRejectsReverts`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212
+- `test_applyDisputeFraudProofs_timeoutRefutationAdmittingAJoinerKillsTimeoutDispute`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213
+- `test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayInsideMulticall`: none
 - `test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayOnTopOfItsCost`: REQ-ENFSM-1-DKJCY2.T1.P20
 - `testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata`: REQ-ENFSM-1-DKJCY2.T1.P21
 - `testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata`: REQ-ENFSM-1-DKJCY2.T1.P22
