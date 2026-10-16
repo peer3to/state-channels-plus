@@ -48,7 +48,7 @@ message is reported and stored. One fuzzes the input size (up to 128 KiB) and th
 (the requirement ±300,000) directly on the machine: whenever the call succeeds, the transition saw
 at least its budget minus 20,000 gas at entry.
 
-Eighteen tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
+Nineteen tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
 staging (`test/V1/harness/TimeoutCalldataPostedStaging.sol`) uploads a timeout dispute by
 participant 1 against participant 0 for height 0 of the genesis fork, then has participant 0 post a
 signed block for that height in time, through the diamond's public entry points. The block's
@@ -63,22 +63,22 @@ attached gas assert that an honest `guardedAdd` refutation either kills the disp
 verdict, and that a `burn` refutation never kills it and slashes the submitter exactly when the call
 succeeds.
 
-Three of the eighteen fault only the posted block's author signature: one signed by the wrong key, one carrying unrecoverable 65 zero bytes, and one with an empty signature. Each funded refutation succeeds as a call, leaves the timeout dispute committed, keeps the disputer standing, and slashes the submitter.
+Three of the nineteen fault only the posted block's author signature: one signed by the wrong key, one carrying unrecoverable 65 zero bytes, and one with an empty signature. Each funded refutation succeeds as a call, leaves the timeout dispute committed, keeps the disputer standing, and slashes the submitter.
 
-Three of the eighteen post a block that is honest for its own base but not linked to the dispute's latest
+Three of the nineteen post a block that is honest for its own base but not linked to the dispute's latest
 state (`_stageTimeoutCalldataPostedOn`): a snapshot whose state hash names a forged genesis state
 (participant 0 holds a balance it never had), with that forged state and a `previousBlockHash`
 matching the forged snapshot; the real genesis snapshot with the forged state; and the real genesis
 snapshot and state with a `previousBlockHash` of another block. Each funded refutation succeeds as a
 call, leaves the timeout dispute committed, keeps the disputer standing and slashes the submitter.
 
-One of the eighteen gives the dispute a state proof with one signed block by participant 1
+One of the nineteen gives the dispute a state proof with one signed block by participant 1
 (`_stageTimeoutCalldataPostedAfter`), signed as that block's canonical encoding plus one trailing
 zero word; it asserts that the bytes decode to the same block and hash differently. The dispute
 blames participant 0 for height 1, and the posted block builds on the genesis state through a
 snapshot that the proved block commits to, with a `previousBlockHash` of `keccak256` of the signed
 bytes. The funded refutation kills the timeout dispute and slashes the disputer.
-Five of the eighteen post a block that carries inbound message blocks. The staging's `_joinOnChain`
+Five of the nineteen post a block that carries inbound message blocks. The staging's `_joinOnChain`
 runs a real `topUpBalance` or `joinChannel` and reads the inbound block from the event log, and
 `_fundedReplay` applies the posted block's inbound blocks as clients do. A consumed top-up and a
 join by a new address (the replayed snapshot has three participants, the joiner last) each kill the
@@ -86,7 +86,7 @@ timeout dispute. An inbound block with a mis-linked `previousBlockHash` or a ski
 failed refutation that slashes the submitter, and an inbound message the machine rejects reverts with
 `ErrorDisputeStateMachineInboundProcessingFailed` and no verdict.
 
-One test sends the funded refutation inside the upload multicall, five frames below the call that
+One of the nineteen sends the funded refutation inside the upload multicall, five frames below the call that
 attaches the gas, on a 32M-budget machine: below about 21M the estimate's own slack hides a missing
 frame. It kills the dispute only with `getStateTransitionReplayGas` counting all five frames.
 The oracles are the revert data, `getSum`, `isParticipantSlashedOnChain`, and whether the dispute is
