@@ -3535,6 +3535,72 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public stubFailDisputedForkChecks(times: number): boolean {
+        this.service.stubFailDisputedForkChecks(times);
+        return true;
+    }
+
+    public getDisputedForkCheckObservation(): {
+        failed: number;
+        passed: number;
+    } {
+        return this.service.getDisputedForkCheckObservation();
+    }
+
+    public restoreDisputedForkCheckFailures(): boolean {
+        this.service.restoreDisputedForkCheckFailures();
+        return true;
+    }
+
+    public stubFailKillPeriodReads(times: number): boolean {
+        this.service.stubFailKillPeriodReads(times);
+        return true;
+    }
+
+    public getKillPeriodReadObservation(): {
+        failed: number;
+        passed: number;
+    } {
+        return this.service.getKillPeriodReadObservation();
+    }
+
+    public restoreKillPeriodReadFailures(): boolean {
+        this.service.restoreKillPeriodReadFailures();
+        return true;
+    }
+
+    public recordIngestOutcomes(): boolean {
+        this.service.recordIngestOutcomes();
+        return true;
+    }
+
+    public getIngestOutcomeRecords(): {
+        senderAddress: string;
+        blockHash: string;
+        outcome: string;
+    }[] {
+        return this.service.getIngestOutcomeRecords();
+    }
+
+    public restoreIngestOutcomeRecording(): boolean {
+        this.service.restoreIngestOutcomeRecording();
+        return true;
+    }
+
+    public stubThrowSyncApplication(): boolean {
+        this.service.stubThrowSyncApplication();
+        return true;
+    }
+
+    public getSyncApplicationObservation(): { thrown: number } {
+        return this.service.getSyncApplicationObservation();
+    }
+
+    public restoreSyncApplicationStub(): boolean {
+        this.service.restoreSyncApplicationStub();
+        return true;
+    }
+
     public holdInitHandshakes(): boolean {
         this.service.holdInitHandshakes();
         return true;

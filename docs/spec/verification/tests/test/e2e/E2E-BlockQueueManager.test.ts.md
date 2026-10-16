@@ -63,6 +63,7 @@ and hold no queued entry for it.
 - `ingest rejects a block confirmation with a forged author signature`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P17
 - `ingest refuses author signature encodings the contracts reject, then commits the canonically signed block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P40, INV-MIRROR-1-VAF778.T1.P10
 - `ingest drops a wrong-channel block and cuts the transport when the sender is known`: REQ-BLOCK-PIPE-2-PCXNT6.T1.P10
+- `a block confirmation whose block bytes do not decode still cuts its sender`: REQ-GOSSIP-2-9PMMNH.T1.P4, UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P3
 - `ingest cuts both an eligible relayer and the author of an outsider-authored block`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P18
 - `future block whose source proves its lineage at queue timeout is applied and the source kept`: REQ-BLOCK-PIPE-4-CF52J6.T1.P7, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P8
 - `future block at a height its source holds a different block at queue timeout is dropped and the source excluded`: REQ-BLOCK-PIPE-4-CF52J6.T1.P8, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P10
@@ -71,6 +72,10 @@ and hold no queued entry for it.
 - `queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P6
 - `a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P7
 - `recovers the first reduced-fork block by reducing locally at ingest`: REQ-BLOCK-PIPE-9-QA66GT.T1.P5
+- `a local disputed-fork check failure during ingest does not blacklist the honest sender`: REQ-GOSSIP-2-9PMMNH.T2.P1, UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P4, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P54
+- `a kill-period chain read failure while scheduling fork recovery does not blacklist the honest sender`: REQ-GOSSIP-2-9PMMNH.T2.P2, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P55
+- `a local failure during the sender's eligibility refresh does not blacklist the honest sender`: REQ-GOSSIP-2-9PMMNH.T2.P3, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56
+- `an absent sender whose intake-gate sync fails on our side gets no verdict`: REQ-GOSSIP-2-9PMMNH.T2.P4, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57
 - `queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier`: REQ-BLOCK-PIPE-4-CF52J6.T1.P3, REQ-BLOCK-PIPE-4-CF52J6.T1.P6
 - `a queue timeout accepts a proved successor fork without excluding the supplier or author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P13, REQ-SYNC-1-T2589H.T1.P8
 - `unknown-fork timeout asks both the supplier and the author to sync`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9

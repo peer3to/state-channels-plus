@@ -613,6 +613,32 @@ tests are the regression suite.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
+**Update (2026-10-16, PR #556):** Part (2) — blaming the sender — is fixed: the ingest catch now
+logs the local failure and returns the accepting verdict, so no local failure blacklists, suspends
+or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision
+(2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
+(logged, copy dropped, session kept) rather than surfaced as fatal, because an unaccounted honest
+failure must never blacklist an honest node; the general rate limit (planned) is the spam bound,
+and invalid inputs keep their explicit blacklisting verdicts. The ingest half of the
+surface-vs-tolerate question is therefore closed; the disposal design above remains deferred on
+its own. The swallow remains a recorded divergence from
+[`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
+refresh-is-fatal rule, recorded on the
+[`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
+
+**Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
+mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
+(a mid-merge throw would leave only valid merged signatures), and the disputed fork's queue clear,
+which the success path performs identically; the post-queue scheduling calls return a dummy handle
+after disposal instead of throwing. (2) No liveness loss for the non-network callers (all ignore
+the return value, as they did with `false`): calldata is stored before ingest is attempted, the
+participant-timeout check ingests recovered calldata itself on each re-armed check, and later
+validation reads the stored calldata — a fault-dropped validation is delayed, not lost. (3) Log
+cost is one error line per swallowed network fault (two on the sync-application loop), bounded by
+the accepted frame rate until the general rate limit lands; no state grows. The one attacker-shaped
+cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
+until rate limiting; a crafted payload that throws there is not demonstrated.
+
 <a id="def-1-92ntag"></a>
 
 ### DEF-1-92NTAG
@@ -729,9 +755,9 @@ guard-rejection send failure, including one attempt, one disconnect, and no unha
 
 ### DEF-9-724SXP
 
-**Defect:** Block ingest wraps everything in try/catch → `false` → disconnect+blacklist the sender,
-so a _local_ chain-provider failure (kill-period read in `maybeScheduleForkRecovery`) blacklists an
-honest gossiper for our own infrastructure fault
+**Defect:** _Resolved (2026-10-16) for block ingest._ Block ingest wrapped everything in try/catch →
+`false` → disconnect+blacklist the sender, so a _local_ chain-provider failure (kill-period read in
+`maybeScheduleForkRecovery`) blacklisted an honest gossiper for our own infrastructure fault
 ([peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)). _Scope
 note (2026-09-02):_ the lobby accepted-lease exclusion approved under
 [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
@@ -742,11 +768,17 @@ a measured universal execution bound. _Scope note (2026-09-16):_ one instance cl
 opening receipt that fails on this node's own chain provider no longer blacklists the counterparty;
 it closes with reconnect allowed and no strike. _Scope note (2026-09-18):_ a sync request that fails
 and a dispute acknowledgement that never arrives now take a counted close rather than a verdict, so
-a local outage during those requests costs the peer one retry, not its identity. Block ingest is
-unchanged, so the finding stays open.
+a local outage during those requests costs the peer one retry, not its identity.
 
-**Proposed direction:** Partition input faults from local faults; never penalize a peer for a local
-error.
+**Resolution:** `BlockQueueManager.ingestBlockConfirmation` now logs an ingest exception and
+returns the accepting verdict instead of the rejecting one, so a local fault drops the copy and
+keeps the sender's session; only its explicit verdicts reject the sender (failed authentication
+through the validation strategy, a wrong-channel network copy, and a sender still absent after an
+eligibility sync that itself completed — a sync that fails on this node's own infrastructure ends
+intake without that verdict). Rethrowing was rejected: on the fire-and-forget gossip path it would
+make the RPC layer drop the sender's session for our own failure. Regression:
+`a local disputed-fork check failure during ingest does not blacklist the honest sender`
+([`REQ-GOSSIP-2-9PMMNH.T2.P1`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh.t2.p1)).
 
 <a id="def-10-199c7f"></a>
 
