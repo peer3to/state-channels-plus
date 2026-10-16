@@ -13,6 +13,7 @@
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
+- [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../../../../../specification/disputes/state-proofs.md#req-sp-11-535j0r)
 
 ## UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV
 
@@ -54,6 +55,9 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P32` — With older history pruned but a different block retained at height 2 below next height 3, a conflicting unlinked arrival still reaches conflictingButNotLinkedBlockDetected and returns DISCONNECT without a dispute
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P33` — With older history pruned, an unlinked arrival at the actual next height reaches blockIsNotLinkedAndIsNotFirstBlock and returns DISCONNECT without a dispute
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — retained proof evidence by the same author at the arrival's height reaches doubleSignDetected with a double-sign proof
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — retained proof evidence by another author at the arrival's height is no conflict; the real block validates
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — the arrival itself retained as proof evidence is no double sign of its own author
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 

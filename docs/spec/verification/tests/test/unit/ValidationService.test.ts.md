@@ -67,6 +67,9 @@ and only its supplier is punished
 - `linked conflict at a taken height by a different author → invalidStateTransitionDetected → DISPUTE`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15
 - `conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16
 - `the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author`: none
+- `retained proof evidence by the same author at the block's height → doubleSignDetected → DISPUTE + DoubleSign proof`: REQ-SP-11-535J0R.T1.P7, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36
+- `retained proof evidence by another author at the block's height → no conflict, the real block validates → SUCCESS`: REQ-SP-11-535J0R.T1.P8, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37
+- `the block itself retained as proof evidence → no double sign of its own author → SUCCESS`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38
 - `conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18
 - `first block with a timestamp before genesis → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P26
 - `non-first block, bad timestamp, previous block not on-chain → DISPUTE + InvalidTimestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19

@@ -12,7 +12,7 @@
 - [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-  Contradicts: `persistVerifiedProof` can retain unexecuted proof support that contaminates installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+- [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../../../../specification/disputes/state-proofs.md#req-sp-11-535j0r)
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
@@ -89,6 +89,9 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63` — Exact construction at an exit height retains the departing and remaining union signatures through a later linked block, verifies on chain at exactly that height without moving the view, and returns no proof after the sole required later confirmation is removed
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `stageVerifiedProof` with two signed blocks at one height, the real one a later hop's first block: history keeps the hop block, the other is retained as evidence only, no conflict
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67` — `stageVerifiedProof` with a forged branch that is no hash ancestor of a final point: nothing of it enters history, it is retained as evidence
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68` — Support above the proven endpoint does not move the view; `buildStateProof` above the history head rebuilds through the linked retained evidence and the chain verifies it
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

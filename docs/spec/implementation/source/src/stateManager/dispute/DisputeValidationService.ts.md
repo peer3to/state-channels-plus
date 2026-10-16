@@ -10,7 +10,7 @@
 - [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-  Contradicts: audit replay can run over history contaminated by retained, unexecuted proof support and produce an unsupported accusation ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+- [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../../../../../specification/disputes/state-proofs.md#req-sp-11-535j0r)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09
@@ -152,6 +152,8 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P132` — Participants already holding the real final block audit a conflicting forged-balance head: final conflict kills the forged dispute, its submitter is slashed, and the channel resolves
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P133` — The local outbound-run verdict calls an honest posted run invalid while the chain anchor stays where the audit read it: the chain refuses the counter, the audit throws naming the refusal, stores no counter and does not judge the run again.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134` — A dispute whose last block, signed only by its disputer, commits a forged latest state with its outbound head at an overflowing block: the replay stores `DisputeInvalidBlockInStateProofApplyFraudProof`, the outbound run is never judged, and the audit returns false without throwing.
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135` — A dispute retaining a forged block above its replayed tail is audited, then the honest dispute replaying the real block there: the forged block is retained as evidence only and the honest dispute is valid with no counter
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136` — The honest dispute is audited first, then the dispute retaining the forged block: the forged block is retained as evidence only, history keeps the real block, and a second audit of the honest dispute stays valid with no counter
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 

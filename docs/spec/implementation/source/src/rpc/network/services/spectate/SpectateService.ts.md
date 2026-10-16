@@ -22,7 +22,7 @@
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-  Contradicts: retained, unexecuted proof support can contaminate installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+- [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-11-535j0r)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT
@@ -106,12 +106,12 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P78` — A synced unfinalized tail persists both replayed blocks, their snapshots and full states and advances the active head through the tail
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P79` — A wholly pre-anchor milestone with forged participant snapshot is skipped without storing its block/snapshot/change point; retained proof syncs and reconstructs from the anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P80` — A forged participant-change prefix inside an anchor-containing run is clipped; its block/snapshot/change point is absent while retained suffix syncs and reconstructs from the anchor
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P81` — A later support block retains the signature needed for virtual finality, gap history is absent, and reconstruction ending at that support block uses the two-block run and verifies
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P82` — Verified support evidence outside replay is stored as a block with its signatures but does not cause its resulting snapshot or full state to be stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P81` — A later support block is retained as evidence with the signature needed for virtual finality and stays out of history, gap history is absent, and reconstruction ending at that support block uses the two-block run and verifies
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P82` — Verified support evidence outside replay is retained as evidence with its signatures but does not cause its resulting snapshot or full state to be stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P83` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies and reconstruction ending at the merged block proves it final as a one-block milestone
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P84` — A threshold hop above the anchor syncs without contiguous gap history; those gap heights remain absent and reconstruction verifies from the anchor
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P85` — After compact sync, two later final blocks advance the spectator reconstruction to the new head while stored original support evidence remains unchanged
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86` — After compact sync and progress, a new chain anchor becomes the reconstruction start; rebuilt proof needs no earlier evidence although previously stored support blocks remain
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P85` — After compact sync, two later final blocks advance the spectator reconstruction to the new head while the stored history and retained original support evidence remain unchanged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86` — After compact sync and progress, a new chain anchor becomes the reconstruction start; rebuilt proof needs no earlier evidence although previously retained support blocks remain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P87` — After installing a newer finalized proof, an older valid payload is rejected as below local finality, blacklists the responder and leaves the active head unchanged
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P88` — An overlapping occurrence with different authenticated contents at the same height/author is rejected as invalid milestones, blacklists its responder and stores none of the inspected proof blocks
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P89` — When requester latest height equals the served finalized replay base, sync reuses its state without unsafeSetLatestState, reaches the tip and matches responder state without blacklist
@@ -135,6 +135,10 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107` — A requester that already holds the base, with a stored block at the base height that conflicts with the served history: the conflict is found when the proof is staged, no install runs, the sync aborts with the local state kept and the responder is blacklisted.
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108` — A spectator that installed a later point from one source, without the state at an earlier point, applies another source's payload based at that earlier point: `persistSyncPayload` keeps the local state (`unsafeSetLatestState` not called), the VM state equals the source's at the same height, and the next live blocks execute with no fraud proof or cut source
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109` — The P108 case for a pending participant: it stays pending through the sync, disputes nothing, and the next live block seats it
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — A proof whose earlier milestone holds a forged block at the height of a later hop: accepted, the tail replays on the real hop block in history, the forged block is retained as evidence only
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — A forged branch between two hops whose ancestry the proof does not hold: accepted, neither forged block enters history, both are retained as evidence
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — An earlier milestone reaching above the proven endpoint: the head stays at the endpoint, the blocks above it are retained as evidence and rebuild the latest proof
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — A payload with forged support from one responder, then an honest payload from another holding the real block there: both accepted, no persistence abort, the honest responder not blacklisted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

@@ -266,101 +266,97 @@ remains subject to this finding; the gas/liveness evidence is outstanding.
 
 ### FIND-PROOF-PERSISTENCE-1-HYC9DS
 
-**Current defect:** Unexecuted retained support can contaminate installed history and produce
-unsupported replay accusations.
+**Current defect:** **Resolved (2026-10-16); high.** Unexecuted retained support could contaminate
+installed history and produce unsupported replay accusations.
 
-**Disposition:** Open; high. Deferred by Luka to a follow-up PR; details and missing regressions
-below.
+**Mechanism (before the fix).** A milestone's supporting blocks are checked for decoding,
+channel/fork, linkage, height and the author's signature, but never executed; only each run's first
+block is proven final and only the last milestone's tail is replayed. Milestone runs have no
+cross-milestone identity check, so one walk-valid proof could hold an honest run 60–70 plus an
+author-signed 71′ and a later milestone starting at the real final 71. `AgreementManager`
+persistence put every checked block into the coordinate block store, first identity wins. An
+auditor could then accuse a later honest dispute's real block of an invalid transition against the
+stored, never-executed 71′ and lose its counter on chain; a syncing peer could move its head above
+the proven endpoint and abort and blacklist the next honest responder.
 
-**Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
-implementation and regression tests to a follow-up PR.** Luka requested that PR #519's SR1
-finding and its TO1/TO2 coverage gaps remain recorded here. This deferral does not resolve the
-finding, select a remedy, approve the remaining risk, or establish that the slash was executed.
+**Fix.** [AgreementManager](../implementation/source/src/agreementManager/AgreementManager.ts.md)
+`stageVerifiedProof` now splits a verified proof's checked blocks outside the replayed tail into
+final history (the start block, each hop's first block and their hash ancestors in the proof) and
+support. Only final history enters the block store (and, in sync, the view); support goes to the new
+[RetainedEvidenceStorage](../implementation/source/src/storage/RetainedEvidenceStorage.ts.md), which
+never occupies history or moves the view. Proof construction reads history first, then retained
+blocks that link by hash. [ValidationService](../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
+`checkConflictingBlock` consults retained evidence only for a same-author block (double sign).
+The behavior is specified as
+[`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../specification/disputes/state-proofs.md#req-sp-11-535j0r).
 
-**Scope decision: all SR1 work is outside PR #519.** This includes the proposed replay-conflict
-guard, block-counter preflight, installed-head bound, evidence storage, proof rejection rules,
-and every related unit/E2E regression. Atomic sync persistence is resolved separately under
-[`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy). Suggestions described as independent
-corrections are also deferred. The acceptance-rule decision belongs to the follow-up PR; it is
-not a pending question for this PR. See the [renewed SR1 review](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192952809).
+**Decided (Ljuba, 2026-10-16):**
 
-Sources: [SR1](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192733246),
-[audit coverage TO1](https://github.com/peer3to/state-channels-plus/pull/519#issuecomment-6011676218),
-and [sync coverage TO2](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192733261).
-Static inspection of commit `fd35d7b983af52874c751bdd39079a67ea0b4ebd` supports the storage and
-counter path below. The complete adversarial audit, slash and responder-blacklist workflows
-have not been executed for this finding.
+- Storage shape: classify proof blocks; final history goes to the block store, all other support
+  to a separate retained-evidence store (option A). Rejected: a provenance flag inside the block
+  store (wide semantic change for every reader) and dropping non-final support (breaks the
+  reconstruction of [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)).
+- Final history is the start, each hop's first block, and their hash ancestors inside the proof.
+- A proof with two signed blocks at one height is accepted in both sync and audit; the second block
+  is kept as evidence only. Rejected: a sync-only rejection rule (an extra reject path while audit
+  must accept what the chain accepts).
+- The head never moves above the proven endpoint.
+- No rollback after a failed sync tail replay: only threshold-proven history is persisted before
+  the replay, so it stays true whatever the responder did.
+- Retained evidence still feeds same-author double-sign detection.
+- A counter preflight before an auditor stores a counter is out of scope: it changes the contract
+  surface. Tracked as [`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](open-findings.md#find-counter-preflight-1-dqmg1t).
+- Reconstruction picks history first, then the evidence block with the most signatures.
+- The invariant is a new requirement,
+  [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../specification/disputes/state-proofs.md#req-sp-11-535j0r), not an
+  amendment of [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb).
 
-**Mechanism.** A milestone's supporting blocks are checked for decoding, channel/fork, linkage,
-height and signatures; they are not executed by that walk. Only its first point is proven final,
-and only the last milestone's tail is replayed. Milestone first heights are ordered, but the
-runs do not have a cross-milestone identity check. An earlier anchored run can contain honest
-blocks 60–70 plus author-signed 71′, while a later milestone begins at the real final block 71.
-Both identities can therefore occur in a proof accepted by the current walk.
+**Regressions:**
+[`REQ-SP-11-535J0R.T1.P1`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p1)–[`REQ-SP-11-535J0R.T1.P4`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p4)
+sync (forged block at a later hop's height, forged branch between hops, support above the proven
+endpoint, poisoned then honest responder),
+[`REQ-SP-11-535J0R.T1.P5`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p5) and
+[`REQ-SP-11-535J0R.T1.P6`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p6)
+audit in both persistence orders,
+[`REQ-SP-11-535J0R.T1.P7`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p7) and
+[`REQ-SP-11-535J0R.T1.P8`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p8)
+live validation against retained evidence,
+[`REQ-SP-11-535J0R.T1.P9`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p9)
+(E2E: lagging auditor in one dispute window, no counter against an honest dispute, only the forger
+slashed) and
+[`REQ-SP-11-535J0R.T1.P10`](../specification/disputes/state-proofs.md#req-sp-11-535j0r.t1.p10)
+(E2E: spectator head bound and catch-up without blacklisting). Controls for identical overlapping
+blocks with complementary signatures, virtual finality, membership-change reconstruction, genuine
+invalid transitions and existing finalized conflicts are unchanged. Engineer review pending; the
+pool run of these regressions is pending.
 
-[AgreementManager persistence](../../../src/agreementManager/AgreementManager.ts#L422) puts
-retained support into the coordinate block store. It compares candidates with existing storage,
-not with each other. Tail exclusion is by hash, so it covers identical repeated blocks only.
-[BlockStorage](../../../src/storage/BlockStorage.ts#L59) keeps the first different block at a
-coordinate and refuses the second. This can preserve 71′ while losing the real final 71.
+**Residual limit.** Two threshold-final identities at one height in one proof would need every
+participant of the union to sign both; the classification then keeps the latest final point's
+ancestry and retains the other as evidence. This case is not specified further.
 
-**Audit path.** Auditor A's view ends at v. Dispute X carries an earlier retained run with
-v+1′, signed by participant E rather than submitter D, and a later final point at or below v.
-X must otherwise satisfy admission and auditing checks, for example by contributing to an
-existing window. After X persists, honest Y replays the real v+1 by a different author W.
-[Conflict validation](../../../src/stateManager/ingest/ValidationService.ts#L449) can treat the
-stored, unexecuted v+1′ as proof that W's linked block is an invalid transition.
-[DisputeValidationStrategy](../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L95)
-then stores a wrapped block counter without preflighting its validity on chain.
-[The apply handler](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L33-L34)
-can slash the eligible sender when that counter fails. Reproduce all prerequisites and the
-actual chain verdict before claiming a demonstrated slash.
+<a id="find-counter-preflight-1-dqmg1t"></a>
 
-**Sync path.** [Sync persistence precedes tail replay](../../../src/rpc/network/services/spectate/SpectateService.ts#L556).
-Retained support may advance the installed view, including when an earlier run extends beyond
-the last run. A later rejection does not roll back prior persistence. A subsequent honest
-response can collide with the stored support, producing `payload persistence aborted` and
-blacklisting its responder. The pending-participant path also reaches live conflict handling.
+### FIND-COUNTER-PREFLIGHT-1-DQMG1T
 
-**Owning requirements and implementation.** This affects
-[`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb),
-[AgreementManager](../implementation/source/src/agreementManager/AgreementManager.ts.md),
-[dispute validation](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md),
-and [spectating](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md).
-Retaining reconstruction evidence must not by itself establish executed history or an invalid
-transition. The current reports and passing suite do not certify that separation.
+**Current defect:** **Open; medium.** An auditor stores and submits a block counter without first
+confirming that the chain accepts its verdict.
 
-**Follow-up direction, not an accepted design.** Keep retained evidence separate from executed
-history, preserve signatures needed for reconstruction, bound the installed head by the proven
-endpoint, and verify block counters before an auditor can submit them. Decide whether a
-contract-valid proof with different signed identities at one height is rejected by sync or
-accepted with separate evidence storage; the current plan does not select that extra rejection
-rule. Sync now detects proof conflicts before any write and stores its history in the same synchronous
-step as its install ([`FIND-STATE-1-0K7XMY`](open-findings.md#find-state-1-0k7xmy)); a later tail-replay failure
-still keeps that history, so all-or-nothing persistence across replay stays a proposal. Evaluate it
-against incremental replay and existing evidence retention before choosing the implementation. No contract validity change or rollback policy is selected here.
+**Confirmed by code inspection.** `DisputeValidationStrategy.allege` checks only
+`isBlockChallengeEligible` before it stores a wrapped block counter. When the inner proof fails on
+chain, `applyDisputeFraudProofs` slashes the eligible submitter. The source of the false
+invalid-transition counter in
+[`FIND-PROOF-PERSISTENCE-1-HYC9DS`](open-findings.md#find-proof-persistence-1-hyc9ds) is removed,
+but any other local defect that yields an unsupported counter would still cost the honest auditor
+its stake. The live pipeline has the same shape.
 
-**Required follow-up regressions (not implemented or credited):**
+**Disposition (Ljuba, 2026-10-16).** Out of scope of the proof-persistence fix: a preflight changes
+the contract surface. The inner checks (`isBlockReplayValid`, `runFraudProof`) are excluded from
+proxy routing, so a preflight needs either new routing plus an interface declaration (the
+three-edit rule, within the EIP-170 budget) or the local diamond. No mechanism is selected.
 
-- Through `validateDispute`, audit X then honest Y at the chain tier with a view ending at v.
-  Require Y to remain valid, no unsupported counter for Y, and no unexecuted conflicting block
-  occupying Y's executed-history coordinate. Include both audit persistence orders where relevant.
-- In one real dispute window with a lagging auditor, require no false kill against Y and no
-  auditor slash. Verify actual submitted counters and chain outcomes.
-- Supply one walk-valid proof containing different, validly signed blocks at one height.
-  Apply the chosen acceptance rule without first-wins history poisoning; if rejecting, write neither.
-- Sync an earlier support run extending beyond the last run; the installed head must equal the
-  proven endpoint. Retained evidence must still allow required reconstruction.
-- Apply a poisoned sync response, then an honest response from a different responder. The
-  honest response must succeed without blacklisting that responder because of poisoned storage.
-- Keep controls for identical overlapping blocks with complementary signatures, virtual finality,
-  membership-change reconstruction, genuine invalid transitions and existing finalized conflicts.
-
-[U63](../../../test/unit/DisputeReplayPersistence.test.ts#L323) repeats an identical failing tail;
-[U123](../../../test/unit/SyncReconstruction.test.ts#L573) tampers bytes under the same author's
-signature; [FR1](../../../test/unit/DisputeAuditTiers.test.ts#L47) tests conflicting final points.
-These do not cover the distinct authenticated, unexecuted-support cases above. Closing this
-finding requires the source fix, exact unit/E2E evidence, and updated specification and mappings.
+**Follow-up obligations.** Choose the mechanism; preflight every block counter (dispute audit and
+live pipeline) before it is stored; show that a counter the chain would reject is never submitted
+and that a valid counter is still submitted.
 
 ## Atomic state updates across the VM and storage
 

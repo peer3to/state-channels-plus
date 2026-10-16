@@ -4,7 +4,7 @@ Test file: [test/unit/DisputeReplayPersistence.test.ts](../../../../../../test/u
 
 ## Overview
 
-Replays dispute evidence with explicit predecessor state. Checks persisted results while live membership, force-join scheduling and view remain unchanged, including overlapping stored support.
+Replays dispute evidence with explicit predecessor state. Checks persisted results while live membership, force-join scheduling and view remain unchanged, including overlapping stored support, and forged support retained as evidence only in either audit order.
 
 ## Tests
 
@@ -19,3 +19,5 @@ Replays dispute evidence with explicit predecessor state. Checks persisted resul
 - `U91: sync replay fails internally at the second tail block after the first replayed -> the sync throws, the responder is not blacklisted, the failed block is not stored`: REQ-SP-9-RNXP56.T2.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P41
 - `U87: the replayed tail consumes the pending auditor's JOIN and seats it -> the replay is persisted, the auditor stays PENDING_PARTICIPANT with its view and force-join state unchanged, and signs nothing`: REQ-SP-10-JMVHTB.T2.P6, UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P8
 - `U87: the dispute's blocks leave the pending auditor's JOIN unconsumed -> the audit persists them, the auditor stays PENDING_PARTICIPANT with its view and force-join state unchanged`: REQ-SP-10-JMVHTB.T2.P7, UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P9
+- `U135: a dispute retaining a forged block above its tail is audited, then the honest dispute whose tail replays the real block there → the honest dispute is valid with no counter, history holds the real block, the forged one stays evidence`: REQ-SP-11-535J0R.T1.P5, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135
+- `U135: the honest dispute is audited first, then the dispute retaining a forged block at its tail height → the forged block is retained as evidence only, history keeps the real block, a second audit of the honest dispute stays valid with no counter`: REQ-SP-11-535J0R.T1.P6, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136

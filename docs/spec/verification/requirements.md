@@ -908,6 +908,9 @@ Specification cases tested: 79/79.
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
 Specification cases tested: 45/45.
 
+[`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../specification/disputes/state-proofs.md#req-sp-11-535j0r)
+Specification cases tested: 10/10.
+
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 Specification cases tested: 2/3. Untested: T1.P1.
 

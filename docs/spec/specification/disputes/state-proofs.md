@@ -109,6 +109,22 @@ If a later point is final, the older anchor's full state and a separate proof en
 not required. For example, finality at 70 does not require retaining a separate state at 50.
 Audit evidence persistence alone must not advance the peer's active view or cause it to sign.
 
+**<a id="req-sp-11-535j0r"></a>`REQ-SP-11-535J0R`.** Persisting a verified proof, in synchronization or
+in dispute audit, splits its checked blocks outside the replayed tail into final history and
+support. Final history is the start block, each threshold hop's first block, and their hash
+ancestors inside the proof; at one height only one identity is final history. Every other checked
+block is support. Support is retained as evidence only: it keeps its signatures for later proof
+reconstruction, but it never occupies executed history, never moves the installed view, and never
+grounds a history conflict, a persistence abort or an invalid-transition accusation. A support
+block by the same author as a later block at its height still exposes that author's double sign.
+A walk-valid proof holding two signed blocks at one height is accepted; the block that is not
+final history is kept as evidence only. The installed head never rises above the proven endpoint
+before the tail replay, and a failed tail replay does not undo the persisted final history.
+Reconstruction reads final history first; where history lacks a height it takes the retained
+block that links by hash, and among several the one with the most signatures. For example, a proof
+whose earlier milestone holds an honest run 60–70 and a forged 71′ by another author, and whose
+later milestone starts at the real final 71, stores 60–71 as history and 71′ as evidence only.
+
 ## Assumptions and constraints
 
 The guarantees require collision-resistant commitments, authentic domain-separated signatures,
@@ -124,6 +140,14 @@ misrepresent finality and endanger channel funds. Skipped history must not becom
 or be persisted as verified history. A successful walk with no retained blocks is not sufficient
 to admit a below-anchor dispute. Block-specific challenges retain their own boundary rules;
 extra threshold evidence does not remove challenge eligibility above those boundaries.
+
+The walk checks only the author's signature on a block above a run's first block, so anyone with a
+key can append support that links by hash to a real block. Treating that support as executed
+history would let one walk-valid proof poison the coordinate of a later real block: an honest
+auditor would accuse the real block of an invalid transition and lose its counter on chain, and a
+synced peer would abort and blacklist the next honest responder. Retaining support as evidence only
+removes that ground. Residual risk: an auditor still stores a block counter without first
+confirming that the chain accepts its verdict.
 
 The per-step invalidity counter avoids re-walking earlier milestones, but binding supplied data
 still costs more as the proof grows. Its total cost is not constant. The safety argument for
@@ -528,6 +552,45 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-10-jmvhtb.t2.p6"></a>`REQ-SP-10-JMVHTB.T2.P6` — A pending auditor replays a tail whose resulting participant set seats it; replayed head is stored without its confirmation, but local status, active height and force-join fields stay unchanged.
 
 <a id="req-sp-10-jmvhtb.t2.p7"></a>`REQ-SP-10-JMVHTB.T2.P7` — A pending auditor replays a tail that leaves its join unconsumed; latest full state becomes available while pending status, active height and force-join fields stay unchanged.
+
+#### <a id="req-sp-11-535j0r.t1"></a>`REQ-SP-11-535J0R.T1`
+
+**Requirements / invariants:**
+
+[`REQ-SP-11-535J0R`](state-proofs.md#req-sp-11-535j0r)
+
+**Setup and stimulus:**
+
+Persist walk-valid proofs whose support holds forged authentic blocks, overlaps a later hop or
+reaches above the proven endpoint, through synchronization, dispute audit and live validation.
+
+**Expected result:**
+
+Final history holds only the start, the hop first blocks and their ancestors; support is retained as
+evidence only and causes no conflict, abort, accusation or view movement, except a same-author
+double sign.
+
+**Required permutations:**
+
+<a id="req-sp-11-535j0r.t1.p1"></a>`REQ-SP-11-535J0R.T1.P1` — Sync of a proof whose earlier milestone holds a forged block at the height of a later hop is accepted; history holds the real hop block and the forged block is retained as evidence only.
+
+<a id="req-sp-11-535j0r.t1.p2"></a>`REQ-SP-11-535J0R.T1.P2` — Sync of a proof with a forged branch between two hops, the later hop's ancestry not in the proof, is accepted; neither forged block enters history and both are retained as evidence.
+
+<a id="req-sp-11-535j0r.t1.p3"></a>`REQ-SP-11-535J0R.T1.P3` — Sync of a proof whose earlier milestone reaches above the proven endpoint installs the head at the endpoint; the blocks above it are retained as evidence only and still rebuild the latest proof.
+
+<a id="req-sp-11-535j0r.t1.p4"></a>`REQ-SP-11-535J0R.T1.P4` — A sync proof with forged support, then an honest proof from another responder holding the real block at that height: both are accepted, history holds the real block and the honest responder is not blacklisted.
+
+<a id="req-sp-11-535j0r.t1.p5"></a>`REQ-SP-11-535J0R.T1.P5` — An auditor audits a dispute retaining a forged block above its tail, then the honest dispute whose tail replays the real block there: the honest dispute is valid with no counter and history holds the real block.
+
+<a id="req-sp-11-535j0r.t1.p6"></a>`REQ-SP-11-535J0R.T1.P6` — An auditor audits the honest dispute first, then the dispute retaining a forged block at its tail height: the forged block is retained as evidence only, history keeps the real block, and the honest dispute stays valid with no counter.
+
+<a id="req-sp-11-535j0r.t1.p7"></a>`REQ-SP-11-535J0R.T1.P7` — A retained evidence block by the same author as an incoming block at its height is detected as a double sign.
+
+<a id="req-sp-11-535j0r.t1.p8"></a>`REQ-SP-11-535J0R.T1.P8` — A retained evidence block by another author at an incoming block's height causes no conflict; the incoming block validates.
+
+<a id="req-sp-11-535j0r.t1.p9"></a>`REQ-SP-11-535J0R.T1.P9` — In one dispute window a lagging auditor audits a dispute retaining a forged block above its tail, then the honest disputes replaying the real block there: it submits no counter against an honest dispute and only the forger is slashed.
+
+<a id="req-sp-11-535j0r.t1.p10"></a>`REQ-SP-11-535J0R.T1.P10` — A spectator synced from a proof with forged support above its proven endpoint stops its head at the endpoint, never holds the forged block as history, and catches up with the channel without blacklisting a responder.
 
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 
@@ -1055,17 +1118,17 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-10-jmvhtb.t5.p10"></a>`REQ-SP-10-JMVHTB.T5.P10` — A forged participant-change prefix inside an anchor-containing run is clipped; its block/snapshot/change point is absent while retained suffix syncs and reconstructs from the anchor.
 
-<a id="req-sp-10-jmvhtb.t5.p11"></a>`REQ-SP-10-JMVHTB.T5.P11` — A later support block retains the signature needed for virtual finality, gap history is absent, and reconstruction ending at that support block uses the two-block run and verifies.
+<a id="req-sp-10-jmvhtb.t5.p11"></a>`REQ-SP-10-JMVHTB.T5.P11` — A later support block is retained as evidence with the signature needed for virtual finality and stays out of history, gap history is absent, and reconstruction ending at that support block uses the two-block run and verifies.
 
-<a id="req-sp-10-jmvhtb.t5.p12"></a>`REQ-SP-10-JMVHTB.T5.P12` — Verified support evidence outside replay is stored as a block with its signatures but does not cause its resulting snapshot or full state to be stored.
+<a id="req-sp-10-jmvhtb.t5.p12"></a>`REQ-SP-10-JMVHTB.T5.P12` — Verified support evidence outside replay is retained as evidence with its signatures but does not cause its resulting snapshot or full state to be stored.
 
 <a id="req-sp-10-jmvhtb.t5.p13"></a>`REQ-SP-10-JMVHTB.T5.P13` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies and reconstruction ending at the merged block proves it final as a one-block milestone.
 
 <a id="req-sp-10-jmvhtb.t5.p14"></a>`REQ-SP-10-JMVHTB.T5.P14` — A threshold hop above the anchor syncs without contiguous gap history; those gap heights remain absent and reconstruction verifies from the anchor.
 
-<a id="req-sp-10-jmvhtb.t5.p15"></a>`REQ-SP-10-JMVHTB.T5.P15` — After compact sync, two later final blocks advance the spectator reconstruction to the new head while stored original support evidence remains unchanged.
+<a id="req-sp-10-jmvhtb.t5.p15"></a>`REQ-SP-10-JMVHTB.T5.P15` — After compact sync, two later final blocks advance the spectator reconstruction to the new head while the stored history and retained original support evidence remain unchanged.
 
-<a id="req-sp-10-jmvhtb.t5.p16"></a>`REQ-SP-10-JMVHTB.T5.P16` — After compact sync and progress, a new chain anchor becomes the reconstruction start; rebuilt proof needs no earlier evidence although previously stored support blocks remain.
+<a id="req-sp-10-jmvhtb.t5.p16"></a>`REQ-SP-10-JMVHTB.T5.P16` — After compact sync and progress, a new chain anchor becomes the reconstruction start; rebuilt proof needs no earlier evidence although previously retained support blocks remain.
 
 <a id="req-sp-10-jmvhtb.t5.p17"></a>`REQ-SP-10-JMVHTB.T5.P17` — When requester latest height equals the served finalized replay base, sync reuses its state without unsafeSetLatestState, reaches the tip and matches responder state without blacklist.
 

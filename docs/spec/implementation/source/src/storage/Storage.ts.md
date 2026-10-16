@@ -14,6 +14,7 @@
 - [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](../../../../specification/storage/durability.md#req-stor-2-tarp8s)
 - [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../../../../specification/storage/durability.md#req-stor-4-mf6ft6)
 - [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../../../../specification/storage/durability.md#req-stor-5-t6eqsa)
+- [`REQ-SP-11-535J0R` (Persisting a verified proof, in synchronization or in dispute audit, splits its…)](../../../../specification/disputes/state-proofs.md#req-sp-11-535j0r)
 
 ## UNIT-TEST-STORAGE-FACADE-1-TF3MZ1
 
