@@ -2322,7 +2322,8 @@ export class StubService extends ANetworkRpcService<
     public stubFailChainReads(
         method:
             | "getBlockCallDataCommitment"
-            | "getDisputeWindowCreationTimestamp",
+            | "getDisputeWindowCreationTimestamp"
+            | "getReducedResult",
         times: number
     ): void {
         const contract =

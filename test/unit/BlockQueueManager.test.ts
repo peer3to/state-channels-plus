@@ -21,7 +21,10 @@ import {
     QueueIntakeFixture,
     receiveWithExplicitStrategy
 } from "@test/fixtures/QueueIntakeFixture";
-import { assertOutsiderProofDoesNotAdmitCopy } from "@test/fixtures/QueueNetworkRetentionFixture";
+import {
+    assertOutsiderProofDoesNotAdmitCopy,
+    stageAbsentGossipAcrossUnreducedWindow
+} from "@test/fixtures/QueueNetworkRetentionFixture";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -366,6 +369,27 @@ describe("Unit: BlockQueueManager", () => {
         );
         expect(stopped).to.equal(true);
         expect(await probe.supplierRequests()).to.equal(1);
+    });
+
+    it("an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted", async () => {
+        const { whileUnreduced, afterReduction } =
+            await stageAbsentGossipAcrossUnreducedWindow();
+        // premise: the kill period ended with the window unreduced
+        expect(whileUnreduced).to.deep.equal({
+            reducedForkId: ZeroHash,
+            completedIntakes: 0,
+            completedSyncs: 0,
+            outsiderRequests: 1,
+            outsiderBlacklisted: false,
+            eligibility: SourceEligibility.ABSENT
+        });
+        expect(afterReduction).to.deep.equal({
+            completedIntakes: 1,
+            completedSyncs: 1,
+            outsiderRequests: 2,
+            outsiderBlacklisted: true,
+            eligibility: SourceEligibility.ABSENT
+        });
     });
 
     it("sync succeeds but the sender is still absent: blacklisted with no queue entry", async () => {

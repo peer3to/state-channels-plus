@@ -70,6 +70,13 @@ on chain, peer 0 asks it again and blacklists it. Evidence posted by peer 0 duri
 kill period's end and changes nothing. Stopping peer 0 during the wait resolves `stop` and peer 1 is
 never asked again.
 
+One intake case gives the same window to a sender absent from the membership
+(`test/fixtures/QueueNetworkRetentionFixture.ts`): a synced spectator gossips peer 0 a block on the
+successor fork and answers peer 0's sync with peer 1's real payload. After the kill period, with the
+window still unreduced, the intake has not completed, the spectator answered once and is not
+blacklisted; after peer 1 reduces the window the spectator answers again, the intake completes and
+the still-absent spectator is blacklisted.
+
 ## Tests
 
 - `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
@@ -81,6 +88,7 @@ never asked again.
 - `a junk supplier answering a source probe through a window the chain has not reduced is asked again once the chain reduces it, then excluded`: REQ-SYNC-4-AWHFPA.T1.P8
 - `evidence posted into the window while a source probe waits extends the kill period and changes nothing: the supplier is asked again after the reduction, then excluded`: REQ-SYNC-4-AWHFPA.T1.P10
 - `stopping the runtime while a source probe waits for the chain's reduction ends the wait: stop resolves and the supplier is not asked again`: REQ-SYNC-4-AWHFPA.T1.P11
+- `an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted`: REQ-SYNC-4-AWHFPA.T1.P19
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
 - `a drain that dequeues a stored copy still drains the queued next block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47
 - `an oversized verified eligibility cache does not expand the N-source allowance`: REQ-QSTORE-2-VYWJAQ.T1.P39, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P14

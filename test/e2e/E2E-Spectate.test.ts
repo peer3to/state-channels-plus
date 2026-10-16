@@ -1782,6 +1782,22 @@ describe("E2E: Spectate Service", function () {
                 (await staged.requestCounts()).reduce((a, b) => a + b, 0)
             ).to.equal(1);
             expect(staged.aborts()).to.equal(0);
+            // the initial load's sync settled: a new sync to the same
+            // responder does not join it, and the stopped runtime syncs nothing
+            expect(
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    (sm, { responder }) =>
+                        sm.p2pManager.localRpc.spectateService.sync(
+                            responder,
+                            sm.channelId,
+                            undefined,
+                            undefined,
+                            1000
+                        ),
+                    { responder: staged.responder.address }
+                )
+            ).to.equal(false);
             // the stopped runtime's connect resolves false
             await TestSession.settleDetached({
                 expectedErrorIncludes: "connectToChannel failed"

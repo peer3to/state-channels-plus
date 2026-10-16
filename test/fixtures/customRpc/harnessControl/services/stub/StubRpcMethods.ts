@@ -3344,11 +3344,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const original = this.service.stubOriginals.get(
             "spectateSync"
         ) as typeof spectate.sync;
-        spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
+        spectate.sync = (...args: Parameters<typeof spectate.sync>) => {
             this.service.recordSpectateSyncCall(String(args[0]));
             if (forward) return original(...args);
-            return Promise.resolve({ synced: true });
-        }) as typeof spectate.sync;
+            return Promise.resolve(true);
+        };
         return true;
     }
 
@@ -3518,7 +3518,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public stubFailChainReads(
         method:
             | "getBlockCallDataCommitment"
-            | "getDisputeWindowCreationTimestamp",
+            | "getDisputeWindowCreationTimestamp"
+            | "getReducedResult",
         times: number
     ): boolean {
         this.service.stubFailChainReads(method, times);

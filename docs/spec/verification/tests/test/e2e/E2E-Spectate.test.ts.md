@@ -54,11 +54,12 @@ participant.
 
 The unreduced-window cases share one staging: every participant holds its own reduction and counts
 sync requests, peer 1 opens a valid self-removal dispute, and a fresh joiner connects inside the
-kill period or after it; once its first request was answered and the kill period ended, the joiner
-is still OPENED and the chain has not reduced the window. After one participant reduces it, the
+kill period or after it; once its first answer is applied (held after apply, then released, so
+the wait has started) and the kill period ended, the joiner is still OPENED and the chain has not reduced the window. After one participant reduces it, the
 joiner reaches SYNCED with exactly one responder answering twice, no abort and no blacklist. Cutting
 the joiner at its responder during the wait makes the initial load abort once with no internal
-error; stopping the joiner sends no further request and aborts nothing; a status moved to SYNCED
+error; stopping the joiner sends no further request, aborts nothing and settles its pending sync
+(a later sync to the same responder returns false instead of joining it); a status moved to SYNCED
 during the wait stays SYNCED with no abort; a failing local milestone walk on the repeated request
 reaches the top-level error handling once and never runs the connection hook for that responder.
 

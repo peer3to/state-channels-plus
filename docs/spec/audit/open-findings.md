@@ -1583,7 +1583,7 @@ from its chain view into its local diamond before the check, so only a lagging p
 honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
 tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
 blacklist the requester instead
-([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa) (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
 `SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
 peer again, so the initial load does not abort and a queue probe still judges a junk supplier that
 answers through the unreduced window; the runtime's stop ends the wait. Regressions:
@@ -1592,7 +1592,7 @@ answers through the unreduced window; the runtime's stop ends the wait. Regressi
 [`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
 [`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5),
 [`REQ-SYNC-4-AWHFPA.T1.P7`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p7),
-[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8), [`REQ-SYNC-4-AWHFPA.T1.P10`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p10), [`REQ-SYNC-4-AWHFPA.T1.P11`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p11), [`REQ-SYNC-4-AWHFPA.T1.P12`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p12), [`REQ-SYNC-4-AWHFPA.T1.P13`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p13), [`REQ-SYNC-4-AWHFPA.T1.P14`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p14), [`REQ-SYNC-4-AWHFPA.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p18).
+[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8), [`REQ-SYNC-4-AWHFPA.T1.P10`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p10), [`REQ-SYNC-4-AWHFPA.T1.P11`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p11), [`REQ-SYNC-4-AWHFPA.T1.P12`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p12), [`REQ-SYNC-4-AWHFPA.T1.P13`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p13), [`REQ-SYNC-4-AWHFPA.T1.P14`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p14), [`REQ-SYNC-4-AWHFPA.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p18), [`REQ-SYNC-4-AWHFPA.T1.P19`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p19), [`REQ-SYNC-4-AWHFPA.T1.P20`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p20), [`REQ-SYNC-4-AWHFPA.T1.P21`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p21).
 
 <a id="find-sync-6-89ratm"></a>
 

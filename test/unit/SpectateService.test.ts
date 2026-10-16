@@ -956,7 +956,16 @@ describe("Unit: SpectateService", function () {
             await requester.stub
                 .stubHoldSpectateSyncApplication(responder.address, false, true)
                 .request();
-            await requester.spectate.startSync(responder.address).request();
+            const syncing = h.execOnHost(
+                h.getPeer(2),
+                (sm, { source }) =>
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        source,
+                        sm.channelId
+                    ),
+                { source: responder.address },
+                { timeoutMs: h.event.hostExecTimeoutMs() }
+            );
             await waitFor(
                 async () =>
                     (await requester.stub
@@ -979,16 +988,142 @@ describe("Unit: SpectateService", function () {
                 { mode: "atLeast" }
             );
             await requester.stub.restoreHoldSpectateSyncApplication().request();
+            expect(await syncing).to.equal(true);
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(2);
+            const reducedForkId = await h.query.reducedForkOnChain(forkId);
+            await waitFor(
+                async () =>
+                    (await requester.query.getForkId().request()) ===
+                    reducedForkId
+            );
+            expect(
+                await requester.query.isBlacklisted(responder.address).request()
+            ).to.equal(false);
+        });
+
+        it("the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, stop resolves", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const requester = h.control(h.getPeer(2));
+            const responder = h.getPeer(0);
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
+            await openSelfRemovalDispute(h);
+            // the requester's next reduced-result read is the wait's own
+            await requester.stub
+                .stubFailChainReads("getReducedResult", 1)
+                .request();
+            try {
+                await expect(
+                    h.execOnHost(
+                        h.getPeer(2),
+                        (sm, { source }) =>
+                            sm.p2pManager.localRpc.spectateService.sync(
+                                source,
+                                sm.channelId
+                            ),
+                        { source: responder.address }
+                    )
+                ).to.be.rejectedWith(
+                    "stubbed chain read failure: getReducedResult"
+                );
+                expect(
+                    await requester.stub.getChainReadObservation().request()
+                ).to.deep.equal({ failed: 1, passed: 0 });
+            } finally {
+                await requester.stub.restoreChainReadFailures().request();
+            }
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(1);
+            expect(
+                await requester.query.isBlacklisted(responder.address).request()
+            ).to.equal(false);
+            expect(
+                await h.execOnHost(h.getPeer(2), async (sm) => {
+                    await sm.stop();
+                    return sm.isDisposed;
+                })
+            ).to.equal(true);
+        });
+
+        it("reductions of another window and of another channel while the sync waits → ignored: the responder is asked again only after the chain reduces the served window", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const requester = h.control(h.getPeer(2));
+            const responder = h.getPeer(0);
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
+            await openSelfRemovalDispute(h);
+            const syncing = h.execOnHost(
+                h.getPeer(2),
+                (sm, { source }) =>
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        source,
+                        sm.channelId
+                    ),
+                { source: responder.address },
+                { timeoutMs: h.event.hostExecTimeoutMs() }
+            );
+            // well after the first answer the sync is waiting
             await waitFor(
                 async () =>
                     (await h
                         .control(responder)
                         .stub.getSpectateRequestCount()
-                        .request()) === 2
+                        .request()) === 1
+            );
+            await waitFor(
+                async () => (await h.query.killPeriod(forkId, 2)).isExpired,
+                h.event.protocolEventTimeoutMs() * 2
+            );
+            // the requester's bus reports the reduction of another fork's
+            // window, then of this fork's window in another channel
+            await h.execOnHost(
+                h.getPeer(2),
+                (sm, { forkId, otherId }) => {
+                    for (const [channelId, reducedForkId] of [
+                        [sm.channelId, otherId],
+                        [otherId, forkId]
+                    ])
+                        sm.events.emit(
+                            "eventHandler",
+                            "onDisputeReducedResultCommitted",
+                            [channelId, reducedForkId]
+                        );
+                },
+                { forkId, otherId: ethers.id("another window") }
+            );
+            expect(await h.query.reducedForkOnChain(forkId)).to.equal(
+                ethers.ZeroHash
             );
             expect(
-                await requester.query.isBlacklisted(responder.address).request()
-            ).to.equal(false);
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(1);
+            await reduceWindowOnChain(h, 0, forkId);
+            expect(await syncing).to.equal(true);
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(2);
         });
     });
 

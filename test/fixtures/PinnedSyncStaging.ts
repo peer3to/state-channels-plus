@@ -992,9 +992,10 @@ export async function applySyncPayload(
  * Peers 0-3 hold their own reductions and count incoming sync requests;
  * peer 1 opens a valid self-removal dispute; a fresh joiner connects inside
  * the kill period, or after it when `connectAfterKillPeriod`. Returns once
- * the joiner's first request was answered and the kill period has ended with
- * the window still unreduced on chain: the joiner's state then, its
- * responder, and handles to reduce the window and read the outcome.
+ * the joiner applied its first answer and waits for the reduction, and the
+ * kill period has ended with the window still unreduced on chain: the
+ * joiner's state then, its responder, and handles to reduce the window and
+ * read the outcome.
  */
 export async function stageJoinerWaitingOnUnreducedWindow(
     h: MathPeerTestHarness,
@@ -1018,11 +1019,21 @@ export async function stageJoinerWaitingOnUnreducedWindow(
                 h.control(peer).stub.getSpectateRequestCount().request()
             )
         );
+    // the joiner's first answer is applied and its outcome held; releasing
+    // it starts the wait
+    const joinerStub = h.control(joiner).stub;
+    await joinerStub
+        .stubHoldSpectateSyncApplication(undefined, false, true)
+        .request();
     await h.join.connectSpectator(joiner);
     await waitFor(
-        async () => (await requestCounts()).some((count) => count > 0),
+        async () =>
+            (await joinerStub
+                .getHeldSpectateSyncApplicationCount()
+                .request()) === 1,
         h.event.protocolEventTimeoutMs()
     );
+    await joinerStub.restoreHoldSpectateSyncApplication().request();
     await waitFor(killPeriodExpired, h.event.protocolEventTimeoutMs() * 2);
     const responder =
         participants[(await requestCounts()).findIndex((count) => count > 0)];
