@@ -1024,6 +1024,10 @@ describe("E2E: BlockQueueManager", function () {
                 .control(targetPeer)
                 .stub.observeAdmission({ source: sourcePeer.address })
                 .request();
+            // Hold the target's next sync install: an honest sync that
+            // stored this block first would settle the delivered copy as
+            // past, and it would never reach the faulted check.
+            await h.control(targetPeer).stub.holdSyncInstall().request();
             try {
                 // Production gossip is fire-and-forget: the sender's verdict
                 // mapping runs in the receiver's async handler, so a local
@@ -1163,6 +1167,7 @@ describe("E2E: BlockQueueManager", function () {
                     .control(targetPeer)
                     .stub.restoreDisputedForkCheckFailures()
                     .request();
+                await h.control(targetPeer).stub.releaseSyncInstall().request();
                 await race.release();
             }
         });
