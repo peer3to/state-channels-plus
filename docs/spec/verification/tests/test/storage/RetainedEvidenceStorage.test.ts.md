@@ -26,6 +26,10 @@ with each negative case on its own.
 - `chooses the linked child signed by the most eligible participants`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P7
 - `counts no signatures by signers outside the eligible set`: REQ-SP-11-535J0R.T1.P12, UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P16
 - `takes the lowest block hash among linked children with as many eligible signers`: REQ-SP-11-535J0R.T1.P13, UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P17
+- `takes the lowest block hash among blocks at a coordinate with as many eligible signers`: REQ-SP-11-535J0R.T1.P24, UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P20
+- `counts a signature the contracts reject as no signer among linked children`: REQ-SP-11-535J0R.T1.P22, UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P21
+- `counts a signature the contracts reject as no signer at a coordinate`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P22
+- `counts one eligible key that signs a block twice as one signer`: REQ-SP-11-535J0R.T1.P23, UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P23
 - `ignores a child at the next height that links to another block`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P8
 - `returns no linked child when nothing links above the block`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P9
 - `finds another block by the same author at the coordinate as a double sign`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P10

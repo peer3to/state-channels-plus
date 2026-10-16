@@ -41,3 +41,4 @@ Runtime verification of this timing adjustment is pending.
 - `U139: support directly above the anchor block whose own signers are complete → no milestone is built from support alone, the rebuilt proof runs from the anchor block and verifies`: REQ-SP-11-535J0R.T1.P16, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71
 - `U140: retained support above a history block whose snapshot is missing → construction still throws the missing snapshot`: REQ-SP-11-535J0R.T1.P17, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P72
 - `U141: blocks retained with a confirmation, then replayed into history without it → the rebuilt proof still counts the retained confirmation and proves the earlier block final`: REQ-SP-11-535J0R.T1.P15, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P70
+- `U142: a retained block whose state is held and whose signers are complete → no milestone starts at it, the rebuilt proof starts at the history final point below`: REQ-SP-11-535J0R.T1.P20, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P73

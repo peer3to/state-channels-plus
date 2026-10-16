@@ -154,6 +154,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134` — A dispute whose last block, signed only by its disputer, commits a forged latest state with its outbound head at an overflowing block: the replay stores `DisputeInvalidBlockInStateProofApplyFraudProof`, the outbound run is never judged, and the audit returns false without throwing.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135` — A dispute retaining a forged block above its replayed tail is audited, then the honest dispute replaying the real block there: the forged block is retained as evidence only and the honest dispute is valid with no counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136` — The honest dispute is audited first, then the dispute retaining the forged block: the forged block is retained as evidence only, history keeps the real block, and a second audit of the honest dispute stays valid with no counter
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137` — A dispute retaining a block forged by the honest tail block's own author, then the honest dispute: a double-sign proof against that author is stored, the honest dispute stays valid with no dispute counter
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 

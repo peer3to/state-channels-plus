@@ -96,6 +96,7 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P70` — A history block read for construction carries the confirmations of its retained copy, so an earlier block proves final
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71` — `tryBuildMilestone` over retained blocks with complete signers directly above the start builds no milestone; the proof runs from the start block
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P72` — `tryBuildMilestone` over retained blocks on top of a history block whose snapshot is missing ends there and construction throws
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P73` — `tryBuildMilestone` never takes a retained block as the final point, even when its snapshot is held and its signers are complete
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

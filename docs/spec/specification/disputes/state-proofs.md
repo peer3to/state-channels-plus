@@ -123,8 +123,9 @@ Reconstruction reads final history first, with the confirmations a retained copy
 holds. Where history lacks a height it takes the retained block that links by hash; among several
 it takes the one signed by the most distinct participants of the latest state held below that
 height, counting only signatures the contracts accept, and a tie takes the lowest block hash.
-Signatures by outsiders, or several signatures by one key, add nothing to that choice. A run of
-retained blocks alone never makes a final point, even when its signers are complete; a stored
+Signatures by outsiders, signatures the contracts reject, or several signatures by one key add
+nothing to that choice. A retained block is never a final point, even when its state is held and its
+signers are complete; a stored
 history block whose state is missing is still a fatal construction error. This requirement does not
 choose between two threshold-final identities at one height; that needs every required signer to
 sign both. For example, a proof
@@ -600,9 +601,9 @@ double sign.
 
 <a id="req-sp-11-535j0r.t1.p11"></a>`REQ-SP-11-535J0R.T1.P11` — A sync proof whose tail fails its replay after its final history is persisted is rejected; the final history stays and the head stays at the proven endpoint.
 
-<a id="req-sp-11-535j0r.t1.p12"></a>`REQ-SP-11-535J0R.T1.P12` — Among retained blocks linked to one parent, reconstruction chooses the one signed by the most distinct eligible participants; many signatures by outsiders do not win.
+<a id="req-sp-11-535j0r.t1.p12"></a>`REQ-SP-11-535J0R.T1.P12` — Given the eligible participants, the retained block chosen among those linked to one parent is the one signed by the most distinct of them; many signatures by outsiders do not win.
 
-<a id="req-sp-11-535j0r.t1.p13"></a>`REQ-SP-11-535J0R.T1.P13` — A retained tie between blocks with as many eligible signers takes the lowest block hash.
+<a id="req-sp-11-535j0r.t1.p13"></a>`REQ-SP-11-535J0R.T1.P13` — Given the eligible participants, a tie between retained blocks linked to one parent with as many eligible signers takes the lowest block hash.
 
 <a id="req-sp-11-535j0r.t1.p14"></a>`REQ-SP-11-535J0R.T1.P14` — Support that equals a block already in history adds its confirmations to that history block and is not retained separately.
 
@@ -615,6 +616,16 @@ double sign.
 <a id="req-sp-11-535j0r.t1.p18"></a>`REQ-SP-11-535J0R.T1.P18` — Forged support by the real block's own author, then an honest proof whose tail replays the real block: the replay stops on the double sign and neither block becomes history.
 
 <a id="req-sp-11-535j0r.t1.p19"></a>`REQ-SP-11-535J0R.T1.P19` — Where history holds a block at the arrival's height, a retained same-author block there is not consulted; the history conflict decides.
+
+<a id="req-sp-11-535j0r.t1.p20"></a>`REQ-SP-11-535J0R.T1.P20` — A retained block whose state is held and whose signers are complete is not a final point; reconstruction starts at the history final point below it.
+
+<a id="req-sp-11-535j0r.t1.p21"></a>`REQ-SP-11-535J0R.T1.P21` — A dispute retaining a block forged by an honest tail block's own author, then the honest dispute: the honest dispute stays valid with no dispute counter, a double-sign proof names that author, and history holds the real block.
+
+<a id="req-sp-11-535j0r.t1.p22"></a>`REQ-SP-11-535J0R.T1.P22` — A signature the contracts reject counts as no signer in the retained choice, without failing it.
+
+<a id="req-sp-11-535j0r.t1.p23"></a>`REQ-SP-11-535J0R.T1.P23` — One eligible key that signs a retained block twice counts as one signer in the retained choice.
+
+<a id="req-sp-11-535j0r.t1.p24"></a>`REQ-SP-11-535J0R.T1.P24` — Given the eligible participants, a tie between retained blocks at one height takes the lowest block hash.
 
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 
