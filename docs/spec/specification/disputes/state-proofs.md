@@ -114,8 +114,8 @@ in dispute audit, splits its checked blocks outside the replayed tail into final
 support. Final history is the start block, each threshold hop's first block, and their hash
 ancestors inside the proof. The start block counts only when something corroborates which block it
 is: the peer already holds it, a hop's ancestry in the proof reaches it, or the first tail block
-on it has executed (that block is judged from the retained start block, which becomes history once
-it executed). A proof that ends at its start with no hop and no tail stores its one start block,
+on it has executed (when this sync installed the start, that block is judged from the retained
+start block, which becomes history once it executed; an invalid one is still proven against it). A proof that ends at its start with no hop and no tail stores its one start block,
 because nothing can corroborate it. Every other checked block is support. Support is retained as evidence only: it keeps its signatures for later proof
 reconstruction, but it never occupies executed history, never moves the installed view, and never
 grounds a history conflict, a persistence abort or an invalid-transition accusation. A support
@@ -649,6 +649,10 @@ double sign.
 <a id="req-sp-11-535j0r.t1.p30"></a>`REQ-SP-11-535J0R.T1.P30` — A proof that is only a block at the anchor height, with no hop and no tail, stores that block as history.
 
 <a id="req-sp-11-535j0r.t1.p31"></a>`REQ-SP-11-535J0R.T1.P31` — A retained sibling tried first ends the tail before the requested height: the tail search tries the next sibling and the rebuilt proof reaches the height.
+
+<a id="req-sp-11-535j0r.t1.p32"></a>`REQ-SP-11-535J0R.T1.P32` — A spectator without the anchor block replays an invalid first tail block on it: the sync is rejected without an internal error, the spectator aborts, and the anchor block stays retained, never history.
+
+<a id="req-sp-11-535j0r.t1.p33"></a>`REQ-SP-11-535J0R.T1.P33` — An invalid block whose predecessor is held only as retained evidence still yields its invalid-transition proof, built from that retained block.
 
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 
