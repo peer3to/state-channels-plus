@@ -143,6 +143,7 @@ async function stageAndApplyDisputeWindowInboundSync(
             | "concurrentLocalSync";
         requesterInboundHold: "chainEvent" | "storageWrite" | "droppedLog";
         mutate: (payload: SyncPayload) => void;
+        reductionOutOfGasFirstAttempt?: boolean;
     }
 ) {
     let inboundHold: {
@@ -281,13 +282,31 @@ async function stageAndApplyDisputeWindowInboundSync(
     await requesterStub.recordSyncRejections().request();
     let accepted: boolean;
     let rejections: string[];
+    let reductionThrew = "";
     try {
         if (
             options.reduction === "local" ||
             options.reduction === "chainBeforeSync"
-        )
+        ) {
+            if (options.reductionOutOfGasFirstAttempt) {
+                // Genuine exhaustion through the real path: the responder
+                // serves a bloated latest state, and copying/decoding its
+                // megabytes into the reduction call exhausts the requester's
+                // local grant (memory expansion alone exceeds it) before any
+                // verdict on the reduction's inputs. The funded retry below
+                // applies the genuine payload.
+                const bloated = structuredClone(payload);
+                bloated.disputeWindows[0].latestEncodedStateMachineState = `0x${"ff".repeat(3_000_000)}`;
+                try {
+                    await applyPayload(
+                        Codec.encode(bloated, Type.SyncPayload) as string
+                    );
+                } catch (e) {
+                    reductionThrew = e instanceof Error ? e.message : String(e);
+                }
+            }
             accepted = await applyPayload(encodedPayload);
-        else {
+        } else {
             await requesterStub
                 .holdSyncWindowPersistence(
                     options.reduction === "chainAfterFinalityRead"
@@ -347,6 +366,7 @@ async function stageAndApplyDisputeWindowInboundSync(
 
     return {
         accepted,
+        reductionThrew,
         rejections,
         responderBlacklisted: await requesterControl.query
             .isBlacklisted(responder.address)
@@ -400,6 +420,28 @@ export async function applyDisputeWindowInboundSyncPayload(
         await stageAndApplyDisputeWindowInboundSync(h, {
             ...options,
             requesterInboundHold: "storageWrite"
+        });
+    await releaseHolds(false);
+    await settleRequesterMissingInboundRunErrors();
+    return result;
+}
+
+/**
+ * The same local-reduction sync, but the first attempt serves a bloated
+ * latest state whose reduction call genuinely exhausts the requester's
+ * local grant, and the genuine payload is then applied again funded.
+ * `reductionThrew` captures the first attempt's error; `accepted` and
+ * the remaining fields describe the funded retry.
+ */
+export async function applyDisputeWindowSyncWithReductionOutOfGas(
+    h: MathPeerTestHarness
+) {
+    const { releaseHolds, ...result } =
+        await stageAndApplyDisputeWindowInboundSync(h, {
+            reduction: "local",
+            requesterInboundHold: "storageWrite",
+            mutate: () => {},
+            reductionOutOfGasFirstAttempt: true
         });
     await releaseHolds(false);
     await settleRequesterMissingInboundRunErrors();

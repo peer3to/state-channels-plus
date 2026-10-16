@@ -85,6 +85,22 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         window.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
     }
 
+    /// Wires the state machine the reduction applies inbound messages on.
+    function seedStateMachine(AStateMachine sm) external {
+        stateMachineImplementation = sm;
+    }
+
+    /// Stores the chain's latest inbound block and points the channel at it,
+    /// as the chain's inbound appends leave it.
+    function seedLatestInboundBlock(bytes32 channelId, bytes32 head, MessageBlock memory block) external {
+        inboundMessageBlockMap[channelId][head] = block;
+        channelBalances[channelId].latestInboundMessageBlockHash = head;
+    }
+
+    function reducedForkId(bytes32 channelId, bytes32 forkId) external view returns (bytes32) {
+        return disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId;
+    }
+
     function observeWindow(bytes32 channelId, bytes32 forkId)
         external
         view
@@ -1853,6 +1869,100 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             )
         );
         harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
+    // Supported worst case for the sync reduction bound: one dispute per
+    // eligible disputer at the participant cap (32) and 100 inbound top-up
+    // blocks in the reduction interval. The whole on-chain reduction must
+    // commit within the local EVM call floor (0xffffff), so a reduction the
+    // chain can settle at this scale also runs in a syncing node's local
+    // reduction (whose grant is at least that floor).
+    function test_reduceAndFinalize_capScaledWorstCase_commitsWithinLocalFloor() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        harness.seedStateMachine(stateMachine);
+
+        uint256 participantCount = 32;
+        address[] memory participants = new address[](participantCount);
+        uint256[] memory balances = new uint256[](participantCount);
+        for (uint256 i = 0; i < participantCount; i++) {
+            participants[i] = address(uint160(0x1000 + i));
+        }
+        bytes memory encodedState =
+            abi.encode(MathState({number: 0, participants: participants, balances: balances, currentTurnIndex: 0}));
+
+        // the inbound interval the reduction must apply: 100 top-up blocks
+        uint256 inboundCount = 100;
+        bytes32 inboundStart = keccak256("cap-inbound-start");
+        MessageBlock[] memory inboundBlocks = new MessageBlock[](inboundCount);
+        bytes32 runningHash = inboundStart;
+        for (uint256 i = 0; i < inboundCount; i++) {
+            Message[] memory messages = new Message[](1);
+            Balance memory one = Balance({amount: 1, data: ""});
+            messages[0] = Message({
+                messageType: MESSAGE_TYPE_JOIN,
+                participant: participants[0],
+                balance: one,
+                data: abi.encode(
+                    JoinChannel({
+                        channelId: CHANNEL_ID, participant: participants[0], deadlineTimestamp: 0, balance: one
+                    })
+                )
+            });
+            inboundBlocks[i] = MessageBlock({
+                previousBlockHash: runningHash,
+                blockHeight: i + 1,
+                messages: messages,
+                totalBalance: Balance({amount: i + 1, data: ""}),
+                timestamp: 1000
+            });
+            runningHash = keccak256(abi.encode(inboundBlocks[i]));
+        }
+        bytes32 inboundHead = runningHash;
+
+        SnapshotData memory snapshotData = SnapshotData({
+            originForkId: bytes32(0),
+            stateMachineStateHash: keccak256(encodedState),
+            participants: participants,
+            latestInboundMessageBlockHash: inboundStart,
+            latestInboundMessageBlockHeight: 0,
+            latestOutboundMessageBlockHash: bytes32(0),
+            latestOutboundMessageBlockHeight: 0,
+            totalDeposits: Balance({amount: 0, data: ""}),
+            totalWithdrawals: Balance({amount: 0, data: ""})
+        });
+        // the genesis-branch fork is the hash of the snapshot data itself
+        snapshotData.originForkId = keccak256(abi.encode(snapshotData));
+        bytes32 forkId = keccak256(abi.encode(snapshotData));
+        StateSnapshot memory snapshot =
+            StateSnapshot({snapshotData: snapshotData, forkId: forkId, blockHeight: 0, timestamp: 1000});
+
+        Dispute[] memory disputes = new Dispute[](participantCount);
+        for (uint256 i = 0; i < participantCount; i++) {
+            disputes[i].input.channelId = CHANNEL_ID;
+            disputes[i].input.forkId = forkId;
+            disputes[i].input.latestInboundMessageBlockHash = inboundHead;
+            disputes[i].input.lastInboundMessageBlockHeight = inboundCount;
+            disputes[i].input.disputer = participants[i];
+        }
+
+        vm.warp(1000);
+        for (uint256 i = 0; i < participantCount; i++) {
+            harness.seedDispute(disputes[i], 1000);
+        }
+        harness.seedLatestInboundBlock(CHANNEL_ID, inboundHead, inboundBlocks[inboundCount - 1]);
+
+        ReduceOutput memory reducedOutput = harness.reduce(disputes);
+        (SnapshotData memory outputData,,) =
+            harness.reduceOutputToSnapshotData(forkId, reducedOutput, snapshot, encodedState, inboundBlocks);
+        bytes32 expectedReducedForkId = keccak256(abi.encode(outputData));
+
+        vm.warp(2000);
+        uint256 gasBefore = gasleft();
+        harness.reduceAndFinalize(disputes, snapshot, encodedState, inboundBlocks, expectedReducedForkId);
+        uint256 gasUsed = gasBefore - gasleft();
+
+        assertEq(harness.reducedForkId(CHANNEL_ID, forkId), expectedReducedForkId);
+        assertLt(gasUsed, 0xffffff);
     }
 
     function test_challengeDisputeReduction_extraSubmittedDisputeRevertsCarryingBothCommitmentSets() public {

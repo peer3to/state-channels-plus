@@ -11,7 +11,6 @@
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
   Contradicts: a dispute committed after `generateSyncPayload` walked its tip fork makes a latest-mode request fail step 2.8.1 and blacklist the honest responder ([`FIND-SYNC-2-VV16K8`](../../../../../../../audit/open-findings.md#find-sync-2-vv16k8)).
-  Contradicts: a local reduction out-of-gas in `sync` is classified as invalid served evidence and blacklists the responder; reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
   Contradicts: `generateSyncPayload` cuts the latest-fork outbound run at the responder's own anchor while `applySyncResponse` verifies it from the requester's chain read, so a requester whose provider lags rejects and blacklists an honest responder ([`FIND-SYNC-5-7W9TWW`](../../../../../../../audit/open-findings.md#find-sync-5-7w9tww)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
@@ -134,6 +133,7 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107` — A requester that already holds the base, with a stored block at the base height that conflicts with the served history: the conflict is found when the proof is staged, no install runs, the sync aborts with the local state kept and the responder is blacklisted.
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108` — A spectator that installed a later point from one source, without the state at an earlier point, applies another source's payload based at that earlier point: `persistSyncPayload` keeps the local state (`unsafeSetLatestState` not called), the VM state equals the source's at the same height, and the next live blocks execute with no fraud proof or cut source
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109` — The P108 case for a pending participant: it stays pending through the sync, disputes nothing, and the next live block seats it
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — a window the requester reduces locally during the sync whose reduction call runs out of gas locally: the sync throws, the responder is neither rejected nor blacklisted, and a funded retry of the same payload is accepted, reduces the window and stores the served inbound blocks
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

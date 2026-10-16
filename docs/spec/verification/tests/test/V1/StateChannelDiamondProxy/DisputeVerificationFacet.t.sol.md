@@ -123,6 +123,7 @@ bytes. A state the state machine cannot decode reverts with empty data, which st
 - `test_reduceOutputToSnapshotData_latestBlockNotLinkedToSnapshot_revertsCarryingBothSnapshotHashes`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P20
 - `test_killDispute_disputeNotInWindowCommitments_revertsCarryingCommitment`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P21
 - `test_reduceAndFinalize_uncommittedDisputeRevertsCarryingBothCommitmentSets`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P23
+- `test_reduceAndFinalize_capScaledWorstCase_commitsWithinLocalFloor`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29
 - `test_challengeDisputeReduction_extraSubmittedDisputeRevertsCarryingBothCommitmentSets`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P24
 - `test_handleDisputeOnChainSlashesNotSubset_listedSlashesAreSubsetRevertsCarryingBothSlashSets`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P23
 - `test_computeDisputeOutputState_unsupportedInboundMessageRevertsCarryingSeedStateHash`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P25

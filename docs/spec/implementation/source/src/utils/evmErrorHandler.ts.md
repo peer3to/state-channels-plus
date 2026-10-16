@@ -66,3 +66,15 @@ Invalid state transition rule
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P2` — the machine's refusal to run under-funded (`ErrorInsufficientGasForStateTransition`) is not an invalid state transition
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P3` — an out-of-gas of the call's own frame (input copy before the stipend check) is not an invalid state transition
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P4` — a failed executor connection (no revert marker) is not an invalid state transition
+
+## UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93
+
+Local reduction resource failure rule
+
+- Setup: Run a real local `reduceAndFinalize` call on a `ContractExecutor` (funded, and with a starved call grant), a nested replay the machine refuses as under-funded, and a dispute computation under a capped dispute-execution budget too small for it, and classify each error with `isLocalReductionResourceFailure`
+- Oracle: Exactly the frame out-of-gas, the under-funded refusal and the capped-budget exhaustion are resource failures; a completed in-EVM reduction revert is not
+
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P1` — a reduction that reverts inside the local EVM is not a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P2` — a reduction whose call frame runs out of gas is a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P3` — a refusal to run under-funded (`ErrorInsufficientGasForStateTransition`) is a resource failure
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P4` — a dispute computation that exhausts its capped dispute-execution budget (`ErrorDisputeExecutionOutOfGas`) is a resource failure

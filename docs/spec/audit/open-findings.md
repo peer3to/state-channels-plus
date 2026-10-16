@@ -48,9 +48,9 @@ specification, implementation mirror, and verification plan as those owners are 
 
 ## Sync reduction gas and failure attribution
 
-| ID                                                                              | Current defect                                                                                                                                                                              | Disposition                                                                                              |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| <a id="find-sync-reduction-gas-1-aje985"></a>`FIND-SYNC-REDUCTION-GAS-1-AJE985` | A local sync reduction out-of-gas is classified as invalid served evidence and can blacklist its responder; end-to-end reduction gas sufficiency is not established by that classification. | Open; high. Luka explicitly deferred all remediation and related coverage outside PR #520 on 2026-10-07. |
+| ID                                                                              | Current defect                                                                                                                                                                              | Disposition                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="find-sync-reduction-gas-1-aje985"></a>`FIND-SYNC-REDUCTION-GAS-1-AJE985` | A local sync reduction out-of-gas is classified as invalid served evidence and can blacklist its responder; end-to-end reduction gas sufficiency is not established by that classification. | _Resolved (2026-10-16)._ Attribution fixed and gas sufficiency established at the supported bound (below). Luka explicitly deferred all remediation and related coverage outside PR #520 on 2026-10-07. |
 
 **Confirmed by code inspection.** [SpectateService’s reduction catch](../../../src/rpc/network/services/spectate/SpectateService.ts#L363-L368)
 calls `rejectSync` for errors recognized by [isLocalEvmExecutionFailure](../../../src/utils/evmErrorHandler.ts#L90).
@@ -61,26 +61,56 @@ its transition replay requirement does not establish a bound on all reduction wo
 The [local-mirror failure rule](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys) forbids turning local resource failures into verdicts.
 The [sync failure rule](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) separates invalid evidence from internal failures.
 
-**Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
-and no valid reduction was demonstrated to exceed an on-chain block gas limit. Local out-of-gas does not
-prove on-chain impossibility: the chain transaction can receive a different gas grant. Conversely, increasing
-the local grant or rethrowing the exception is not proof of successful on-chain replay. Existing
-[local EVM gas tests](../verification/tests/test/evm/InvalidStateTransitionError.test.ts.md) concern transition/call-frame
-failures, not a complete reduction admission-to-settlement guarantee.
+**Attribution fix (2026-10-16).** `applySyncResponse`'s reduction catch now rethrows local resource
+failures — the reduction frame's out-of-gas and an under-funded nested replay refusal, classified by
+`isLocalReductionResourceFailure` in `evmErrorHandler.ts` — as internal failures with no responder
+verdict; only a completed local revert still rejects as "served reduction reverts". Covered by
+[`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34) (starved first attempt throws, responder neither rejected nor blacklisted,
+funded retry of the same payload succeeds) and the [`UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-3-0z8r93) classifier
+cases on real local `reduceAndFinalize` calls, including a dispute computation exhausting its capped
+dispute-execution budget. This removes the honest-responder blacklist.
+
+**Gas measurement and bound (2026-10-16).** A throwaway probe (since deleted) measured the real staged
+reduction (3 disputes, 4 participants, 480-byte Math state): on-chain `reduceAndFinalize` execution gas
+(receipt minus intrinsic and calldata) was ≈529k with 1 inbound block / 1 message and ≈715k with 10
+inbound blocks / 10 messages — ≈20.6k per additional inbound block with one message; `reduce` folded to
+the 32-dispute cap (one dispute per eligible disputer; participants capped at channel open by
+`maxChannelParticipants`, default 32) estimated ≈1.89M. **Engineer decision (A, 2026-10-16):** the
+local EVM call floor (0xffffff, ≈16.7M) is the supported sync bound; no grant raise and no admission
+cap. The permanent proof is
+[`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3):
+on-chain `reduceAndFinalize` at the supported worst case (32 committed disputes at the participant cap
+and 100 inbound top-up blocks in the interval) commits the expected reduced fork in 5,180,929 gas —
+31% of the local floor, so a reduction the chain settles at this scale also runs in a syncing node's
+local reduction, whose grant is at least that floor. The residual beyond the bound is an inbound
+interval of roughly 650+ messages: such a window settles by an on-chain reduction first (permissionless
+and canonical), after which sync takes the chain-final path and needs no local reduction; a local
+overflow there throws blamelessly under the attribution fix above. This closes the follow-up obligations:
+supported bounds established, local exhaustion reproduced with served evidence
+([`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34)), failure without blaming an honest responder and recovery with
+sufficient gas verified, and successful on-chain submission and settlement demonstrated at the supported
+worst case.
+
+**Evidence limit (superseded at resolution).** The original assessment reproduced no valid served
+reduction exhausting its local grant and demonstrated none exceeding an on-chain block gas limit; the
+resolution above supplies both the exhaustion reproduction (a served bloated state genuinely exhausts
+the requester's local grant in the sync path) and the on-chain worst-case settlement within the bound.
+Beyond the bound, local out-of-gas still does not prove on-chain impossibility — it routes the window
+to the chain-first path described above.
 
 **Engineer disposition (Luka, 2026-10-07).** Address this later, not in PR #520. A valid reduction must be
 able to replay successfully on-chain; the follow-up must investigate the complete gas/liveness boundary,
 not merely change the blacklist catch. This is a scope deferral, not a claim that the risk is fixed or safe.
 No production behavior or gas configuration is changed for this finding in this PR.
 
-**Follow-up obligations.** Establish supported reduction/input bounds and measure the real reduction path
-against local execution grants and chain block/transaction limits. Reproduce local exhaustion with valid
-served evidence; verify failure without blaming an honest responder and recovery with sufficient gas.
-Demonstrate successful submission and settlement on-chain for the supported worst-case reduction, including
-proof verification and state restoration. If supported inputs cannot fit, have the engineer decide the
-protocol/admission remedy. Keep genuine invalid-evidence and executor/transport failure oracles distinct.
-The [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
-remains subject to this finding; the gas/liveness evidence is outstanding.
+**Follow-up obligations (discharged 2026-10-16).** Supported bounds established at the protocol caps;
+the real reduction path measured against the local grant and on-chain limits; local exhaustion
+reproduced with served evidence; failure without blaming an honest responder and recovery with
+sufficient gas verified; successful on-chain submission and settlement demonstrated for the supported
+worst case, including the reduction's proof checks and state restoration
+([`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3)).
+Where supported inputs could not fit locally, the engineer chose the local-floor bound over a grant
+raise or admission cap. Genuine invalid-evidence and executor/transport failure oracles remain distinct.
 
 ## Retained proof evidence and installed history
 

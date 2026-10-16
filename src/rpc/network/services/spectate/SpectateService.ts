@@ -15,7 +15,10 @@ import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
-import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
+import {
+    isLocalEvmExecutionFailure,
+    isLocalReductionResourceFailure
+} from "@/utils/evmErrorHandler";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
@@ -361,7 +364,17 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         if (committedReduction)
                             reducedByThisSync.add(dw.forkId);
                     } catch (e) {
-                        if (!isLocalEvmExecutionFailure(e)) throw e;
+                        // A local resource failure (out of gas, or a nested
+                        // replay refused as under-funded) proves only that
+                        // this node could not run the reduction; it is an
+                        // internal failure, never evidence against the
+                        // responder. A completed local revert is a verdict
+                        // on the served reduction and rejects it.
+                        if (
+                            !isLocalEvmExecutionFailure(e) ||
+                            isLocalReductionResourceFailure(e)
+                        )
+                            throw e;
                         return this.rejectSync(
                             peerAddress,
                             "served reduction reverts"

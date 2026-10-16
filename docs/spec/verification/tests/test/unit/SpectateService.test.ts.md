@@ -60,6 +60,7 @@ Two install cases stage a reducible disputed fork and sync an observer onto the 
 - `chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P93
 - `window reduced locally during sync → accepted, its inbound blocks stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P94
 - `window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97
+- `window reduced locally during sync whose reduction runs out of gas locally → sync throws, responder not blacklisted, funded retry accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110, INV-SYNC-3-A7A2ED.T1.P34
 - `unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P98, INV-SYNC-1-XCQZ28.T1.P15
 - `unreduced window whose disputes name the window's fork under another channel, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P99, INV-SYNC-1-XCQZ28.T1.P16
 - `reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P95

@@ -6,6 +6,7 @@ import { Codec, Type } from "@/utils";
 import {
     appendForgedInboundSuccessor,
     applyDisputeWindowInboundSyncPayload,
+    applyDisputeWindowSyncWithReductionOutOfGas,
     redirectDisputesToChannelWithoutWindow,
     redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
@@ -818,6 +819,19 @@ describe("Unit: SpectateService", function () {
             expect(r.storedInboundHashes).to.deep.equal([]);
             expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
             expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+        });
+
+        it("window reduced locally during sync whose reduction runs out of gas locally → sync throws, responder not blacklisted, funded retry accepted", async function () {
+            const r = await applyDisputeWindowSyncWithReductionOutOfGas(
+                TestSession.getHarness()
+            );
+            expect(r.reductionThrew).to.include("out of gas");
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.accepted).to.equal(true);
+            expect(r.localReducedForkId).to.equal(r.reducedForkId);
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
+            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });
 
         it("unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {

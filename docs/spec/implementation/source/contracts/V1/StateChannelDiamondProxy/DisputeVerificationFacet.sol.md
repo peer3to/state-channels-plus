@@ -57,6 +57,7 @@ Reduction algebra
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P26` — a refused inbound message in a later block reverts naming a non-zero block index and a different non-zero message index, so the two indices cannot be swapped or confused, alongside its participant, message type and the seed state hash
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P27` — `challengeDisputeReduction` by an eligible participant after the reduce-challenge period ended reverts naming the computed period end and the strictly later call timestamp
 - [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P28` — a child fork whose reduction sees the parent fork's already applied slash as a candidate plus a timeout removes the timed-out participant: the slashed signer is no participant of the child fork, so the slash is not applied and does not suppress the timeout
+- [x] `UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29` — `reduceAndFinalize` at the supported worst case (32 committed disputes, one per eligible disputer at the participant cap, and 100 inbound top-up blocks in the interval) commits the expected reduced fork within the local EVM call floor (0xffffff)
 
 ## UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6
 
