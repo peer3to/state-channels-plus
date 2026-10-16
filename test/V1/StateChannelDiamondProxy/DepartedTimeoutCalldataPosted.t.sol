@@ -58,7 +58,7 @@ contract DepartedTimeoutCalldataPostedTest is TimeoutCalldataPostedStaging {
         bytes memory departureState = _encodedState(departureParticipants);
         // Deep copy: a memory struct assignment would alias the genesis snapshot.
         StateSnapshot memory departureSnapshot = abi.decode(abi.encode(genesis), (StateSnapshot));
-        departureSnapshot.blockHeight = 1;
+        departureSnapshot.blockHeight = 0;
         departureSnapshot.timestamp = departureTimestamp;
         departureSnapshot.snapshotData.participants = departureParticipants;
         departureSnapshot.snapshotData.stateMachineStateHash = keccak256(departureState);
@@ -87,8 +87,9 @@ contract DepartedTimeoutCalldataPostedTest is TimeoutCalldataPostedStaging {
         returns (Dispute memory dispute, DisputeFraudProof[] memory proofs)
     {
         (StateProof memory stateProof, PostedBlockBase memory base) = _departure(departureTimestamp);
-        (dispute, proofs) =
-            _stageTimeoutCalldataPostedAfter(diamond, CHANNEL_ID, BOB_PK, ALICE_PK, stateProof, base, transitionData);
+        (dispute, proofs) = _stageTimeoutCalldataPostedAfter(
+            diamond, CHANNEL_ID, BOB_PK, ALICE_PK, stateProof, base, transitionData, new MessageBlock[](0)
+        );
         assertEq(dispute.input.disputer, vm.addr(ALICE_PK));
         assertEq(dispute.input.timeout.participant, vm.addr(BOB_PK));
         assertEq(dispute.input.timeout.blockHeight, 1, "the timeout names the height after her departure");

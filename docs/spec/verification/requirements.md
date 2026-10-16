@@ -360,7 +360,7 @@ Specification cases tested: 4/16. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22.
 
 [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)
-Specification cases tested: 11/26. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P20.
+Specification cases tested: 14/27. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P15, T1.P16.
 
 [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2)
 Specification cases tested: 6/6.

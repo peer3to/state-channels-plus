@@ -11,7 +11,7 @@ import "./UtilityFacetInterface.sol";
 /// `StateChannelManagerProxy`'s selector routing and therefore read the proxy's
 /// storage - hence the `StateChannelCommon` base.
 contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
-    uint256 internal constant REPLAY_CALL_DEPTH = 4;
+    uint256 internal constant REPLAY_CALL_DEPTH = 5;
 
     /// EIP-191 - the digest every signature over `encodedData` is actually made
     /// over. Single owner: `verifyThresholdSigned`, `retrieveSignerAddress` and
@@ -298,9 +298,10 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     }
 
     /// Gas a fraud-proof transaction needs when its replay path starts so that every replayed
-    /// transition is granted its full budget; the work before the replay comes on top. The replay sits REPLAY_CALL_DEPTH calls
-    /// below the transaction (multicall, facet delegatecall, executeStateTransition, the state
-    /// machine), and EIP-150 keeps 1/64 of the gas at each of them.
+    /// transition is granted its full budget; the work before the replay comes on top. The deepest
+    /// replay sits REPLAY_CALL_DEPTH calls below the transaction (multicall, facet delegatecall,
+    /// FraudProofFacet delegatecall, executeStateTransition, the state machine), and EIP-150 keeps
+    /// 1/64 of the gas at each of them.
     function getStateTransitionReplayGas() public view returns (uint256 required) {
         required = stateMachineImplementation.getStateTransitionGasRequirement();
         for (uint256 i = 0; i < REPLAY_CALL_DEPTH; i++) {

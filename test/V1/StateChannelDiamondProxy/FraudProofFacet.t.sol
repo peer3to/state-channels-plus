@@ -284,7 +284,7 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         honestBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
         honestBlock.previousBlockHash = base.previousBlockHash;
         (StateSnapshot memory next, bytes memory nextState) =
-            _fundedReplay(diamond, HONEST_CHANNEL_ID, base, honestBlock.transaction);
+            _fundedReplay(diamond, HONEST_CHANNEL_ID, base, honestBlock);
         assertTrue(keccak256(nextState) != keccak256(base.encodedLatestState), "staged transition applied");
         assertEq(
             next.snapshotData.originForkId,

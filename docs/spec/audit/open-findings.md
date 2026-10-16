@@ -1412,23 +1412,26 @@ construction, and a dispute window opened before the moved deadline.
 
 ### FIND-TIMEOUT-4-5YNPT3
 
-**Defect:** _Open (2026-10-02); static evidence, not reproduced._ The `TimeoutCalldataPosted` replay
-in `_validateTimeoutCalldataPostedProof`
-([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md),
-[L693-L712](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L698-L717))
-rebuilds the posted block's snapshot differently from clients: it numbers it
-`latestStateSnapshot.blockHeight + 1`, so a first block posted on the genesis snapshot gets height 1
-where clients use 0, and it never applies the block's inbound `messageBlocks`, so the inbound head
-and `totalDeposits` stay at the previous values. An honest posted block in either case fails the
-hash compare, so its author cannot refute the timeout dispute. The invalid-transition replay had the
-same drift and now rebuilds client snapshots
-([`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)).
+**Defect:** _Resolved (2026-10-16)._ The `TimeoutCalldataPosted` replay in
+`_validateTimeoutCalldataPostedProof`
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md))
+kept its own copy of the snapshot rebuild, and that copy drifted from clients: it numbered a first
+block's snapshot `latestStateSnapshot.blockHeight + 1` where clients use 0, and it never applied the
+block's inbound `messageBlocks`, so the inbound head, `totalDeposits`, state hash and participants
+stayed at the previous values. An honest posted block in either case failed the hash compare, so
+any participant could time out an honest author whose block it had withheld acks for, and the
+author could not refute it. The auditor's local-mirror preflight dropped the refutation silently.
+The invalid-transition replay had been fixed for the same drift
+([`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)); the Forge staging that
+recomputed the expected snapshot copied the contract's rule, so its tests confirmed the drift.
 
-**Proposed direction:** Rebuild the snapshot as clients and the invalid-transition replay do: height
-0 for a first block, and apply inbound message blocks. Prefer one shared replay helper over two
-copies. Prove it first with a timeout refutation of an honest client-built first block, and of a
-block carrying inbound messages. Owed regression:
-[`REQ-DIS-10-SAHJBN.T1.P20`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p20).
+**Fix:** one replay. `FraudProofFacet.isBlockReplayValid` rebuilds the snapshot as clients do and
+is used by `_handleBlockInvalidStateTransition` and, by delegatecall, by the timeout refutation.
+Regressions run client-built blocks:
+[`REQ-DIS-10-SAHJBN.T1.P20`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p20) (first
+block) and
+[`REQ-DIS-10-SAHJBN.T1.P27`](../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p27)
+(inbound message blocks).
 
 <a id="find-tostore-1-3bq7ee"></a>
 
@@ -1649,7 +1652,7 @@ full `gasLimit` ([L189-L193](../../../contracts/V1/AStateMachine.sol#L189-L193))
 transition can catch an inner out-of-gas and still succeed or fail with its own error;
 `getStateTransitionGasRequirement` publishes the gas the machine frame needs.
 [UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
-`getStateTransitionReplayGas` adds the 1/64 kept at each of four enclosing calls;
+`getStateTransitionReplayGas` adds the 1/64 kept at each of five enclosing calls (multicall, facet delegatecall, `FraudProofFacet` delegatecall, `executeStateTransition`, state machine);
 [StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 routes it, re-raises the refusal and rejects empty-returndata machine frames;
 [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends the
