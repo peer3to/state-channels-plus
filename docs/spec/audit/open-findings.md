@@ -236,6 +236,9 @@ That classifier accepts the same prefix which [ContractExecutor](../../../src/ev
 uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
 The [local gas grant](../../../src/evm/contractExecutor/ContractExecutor.ts#L43) is finite and funds each whole call;
 its transition replay requirement does not establish a bound on all reduction work, proof checks and state restoration.
+A local failure on a window the chain has not reduced is no verdict since
+[`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa); the verdict on a reduced window
+and the gas bound stay open.
 The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
@@ -1553,15 +1556,15 @@ reported undisputed, the requester re-read the final fork's window in step 2.8.1
 `applySyncResponse` and rejected with "latest fork is disputed", and `rejectSync` blacklisted the
 responder for a chain change it did not cause.
 
-**Fix:** step 2.8.1 reads the final fork's kill period from the chain. A window still in its kill
-period fails the sync with no verdict; served, it would fail step 2.2 the same way, so omitting it
-gains a responder nothing. An expired window missing from the payload stays a verification failure
-([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+**Fix:** step 2.8.1 reads the final fork's window from the chain. A window the chain has not reduced
+fails the sync with no verdict, and the sync waits for the reduction and asks the same peer again;
+served, it would fail step 2.2 the same way, so omitting it gains a responder nothing. A reduced
+window missing from the payload stays a verification failure ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
 That verdict does not separate omission from staleness: an honest payload served before the dispute
-and verified after its kill period is still blacklisted, the stale-response case left open in
+and verified after the reduction is still blacklisted, the stale-response case left open in
 [`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
 Regressions: [`REQ-SYNC-4-AWHFPA.T1.P3`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p3),
-[`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4).
+[`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4), [`REQ-SYNC-4-AWHFPA.T1.P17`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p17).
 
 <a id="find-sync-3-hpyce2"></a>
 
@@ -1573,23 +1576,42 @@ check, and step 2.2 of `applySyncResponse` rejected an unexpired window with "ki
 expired" and blacklisted the responder through `rejectSync`. Reproduced end to end with a
 participant's source probe inside an open kill period.
 
-**Fix:** step 2.2 splits the two cases. A window still in its kill period fails the sync with no
-verdict and no close. A served window the requester's own chain view does not hold stays a
+**Fix:** step 2.2 splits the two cases. A window the chain has not reduced that the requester
+cannot recompute locally fails the sync with no verdict and no close. A served window the requester's own chain view does not hold stays a
 verification failure, now "dispute window not on chain": the requester fetches the served windows
 from its chain view into its local diamond before the check, so only a lagging provider can make an
 honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
 tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
 blacklist the requester instead
-([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
-A no-verdict sync reports the kill period's end: the initial-load owner retries once after it
-instead of aborting, and a queue probe probes the same source again after it, so a junk supplier
-that answers through the open window is still judged. Regressions:
+([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa) (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+`SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
+peer again, so the initial load does not abort and a queue probe still judges a junk supplier that
+answers through the unreduced window; the runtime's stop ends the wait. Regressions:
 [`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
 [`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
 [`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
 [`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5),
 [`REQ-SYNC-4-AWHFPA.T1.P7`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p7),
-[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8).
+[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8), [`REQ-SYNC-4-AWHFPA.T1.P10`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p10), [`REQ-SYNC-4-AWHFPA.T1.P11`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p11), [`REQ-SYNC-4-AWHFPA.T1.P12`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p12), [`REQ-SYNC-4-AWHFPA.T1.P13`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p13), [`REQ-SYNC-4-AWHFPA.T1.P14`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p14), [`REQ-SYNC-4-AWHFPA.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p18).
+
+<a id="find-sync-6-89ratm"></a>
+
+### FIND-SYNC-6-89RATM
+
+**Defect:** _Resolved (2026-10-16)._ A fresh joiner blacklisted an honest responder and aborted when
+it synced across a dispute window whose kill period was over but which the chain had not reduced
+yet. The local diamond seeds the channel's inbound head only from the live `ChannelOpened` and
+`InboundMessagesProcessed` logs, so a runtime that subscribed later holds a zero inbound head. Its
+local recomputation of the served window then derived a zero inbound head, the served inbound list
+failed `ErrorDisputeInboundMessageBlocksInvalid`, and `applySyncResponse` rejected the payload as
+"served reduction reverts". The chain's own reduction usually lands within seconds of the kill
+period's end, which hid it; the PR's earlier retry at that moment reproduced it in most runs.
+Seeding the local channel balance from the chain was not chosen: the late-subscriber seed family
+was rejected before ([`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf)).
+
+**Fix:** a local recomputation that reverts on a window the chain has not reduced is no verdict; the
+sync waits for the chain's reduction, after which the recomputation returns the chain's result and
+nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)). Regressions: [`REQ-SYNC-4-AWHFPA.T1.P9`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p9), [`REQ-SYNC-4-AWHFPA.T1.P15`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p15), [`REQ-SYNC-4-AWHFPA.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p16).
 
 <a id="find-sync-4-kgp4kf"></a>
 

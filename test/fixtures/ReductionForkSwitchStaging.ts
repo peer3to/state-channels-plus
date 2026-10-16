@@ -333,9 +333,11 @@ export async function syncTargetToUnpostedReduction(
             await h.execOnHost(
                 target,
                 async (sm, args) =>
-                    sm.p2pManager.localRpc.spectateService
-                        .sync(args.address, sm.channelId, args.forkId)
-                        .then(({ synced }) => synced),
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.address,
+                        sm.channelId,
+                        args.forkId
+                    ),
                 { address: responder.address, forkId: reducedForkId }
             )
         ).to.equal(true);

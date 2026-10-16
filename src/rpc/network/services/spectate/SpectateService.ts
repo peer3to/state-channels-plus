@@ -3,7 +3,6 @@ import type {
     ProofTierWalk,
     StateProofEvidence
 } from "@/agreementManager/AgreementManager";
-import Clock from "@/Clock";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
@@ -13,19 +12,14 @@ import type { ReductionComputation } from "@/stateManager/reduction/ReductionCom
 import NetworkTransport from "@/transport/NetworkTransport";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
 import type { ChecksumAddress } from "@/types/types";
-import {
-    Address,
-    Bytes,
-    ChannelId,
-    Hash,
-    ForkId,
-    Timestamp
-} from "@/types/types";
+import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
+import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ZeroHash } from "ethers";
 
 /** The state a sync installs and where its last-run replay starts. */
 type SyncReplayBase = {
@@ -53,28 +47,26 @@ export interface SyncRequest {
 }
 
 /**
- * A sync's result. `retryAfter`: chain time (seconds) a kill period still
- * open on the served proof ends -> the sync failed with no verdict and is
- * provable after it.
+ * An applied sync payload's result. `unsettledForkId`: the chain has not
+ * reduced this fork's dispute window yet -> the sync failed with no verdict
+ * and is provable once the chain has.
  */
 export interface SyncOutcome {
     synced: boolean;
-    retryAfter?: Timestamp;
+    unsettledForkId?: ForkId;
 }
 
 const SYNCED: SyncOutcome = { synced: true };
 const NOT_SYNCED: SyncOutcome = { synced: false };
 
-/** Milliseconds until one second past `retryAfter` on the runtime clock. */
-export function retryAfterDelayMs(retryAfter: Timestamp): number {
-    return Math.max(0, retryAfter + 1 - Clock.getTimeInSeconds()) * 1000;
-}
-
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        { request: SyncRequest; result: Promise<SyncOutcome> }
+        { request: SyncRequest; result: Promise<boolean> }
     > = new Map();
+    // settlers of the waits for a window's chain reduction; `dispose`
+    // settles them false
+    private readonly reductionWaits = new Set<(reduced: boolean) => void>();
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -98,7 +90,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         forkId?: ForkId,
         blockHeight?: number,
         timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime * 1000
-    ): Promise<SyncOutcome> {
+    ): Promise<boolean> {
         const syncRequest: SyncRequest = {
             channelId,
             forkId,
@@ -121,8 +113,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     (request.blockHeight !== undefined &&
                         blockHeight !== undefined &&
                         request.blockHeight >= blockHeight));
-            const outcome = await inFlight.result;
-            if (!outcome.synced || coversRequest) return outcome;
+            const synced = await inFlight.result;
+            if (!synced || coversRequest) return synced;
             inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
@@ -142,7 +134,41 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
     }
 
+    /** Settle every pending wait for a window's chain reduction false. */
+    public dispose(): void {
+        for (const settle of this.reductionWaits) settle(false);
+    }
+
     private async runSync(
+        normalizedPeerAddress: string,
+        syncRequest: SyncRequest,
+        timeoutMs: number
+    ): Promise<boolean> {
+        let outcome = await this.requestAndApply(
+            normalizedPeerAddress,
+            syncRequest,
+            timeoutMs
+        );
+        // a window the chain has not reduced -> wait for its reduction, then
+        // ask the same peer again. a pass names only a window the chain had
+        // not reduced, which the next pass finds reduced
+        while (
+            outcome.unsettledForkId !== undefined &&
+            (await this.waitForChainReduction(
+                normalizedPeerAddress,
+                syncRequest.channelId,
+                outcome.unsettledForkId
+            ))
+        )
+            outcome = await this.requestAndApply(
+                normalizedPeerAddress,
+                syncRequest,
+                timeoutMs
+            );
+        return outcome.synced;
+    }
+
+    private async requestAndApply(
         normalizedPeerAddress: string,
         syncRequest: SyncRequest,
         timeoutMs: number
@@ -183,15 +209,71 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     /**
+     * Resolves true once the chain has recorded the reduction of `forkId`'s
+     * dispute window, false when the runtime stops first. A failed chain
+     * read rejects.
+     */
+    private waitForChainReduction(
+        peerAddress: string,
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        const stateManager = this.p2pManager.stateManager;
+        this.logger.debug(
+            "spectateSync - waiting for the chain to reduce a dispute window",
+            { peerAddress, forkId }
+        );
+        return new Promise<boolean>((resolve, reject) => {
+            const settle = (reduced: boolean) => {
+                if (!this.reductionWaits.delete(settle)) return;
+                unsubscribe();
+                this.logger.debug("spectateSync - dispute window wait ended", {
+                    peerAddress,
+                    forkId,
+                    reduced
+                });
+                resolve(reduced);
+            };
+            const unsubscribe = stateManager.events.on(
+                "eventHandler",
+                "onDisputeReducedResultCommitted",
+                (reducedChannelId, reducedWindowForkId) => {
+                    if (
+                        channelKey(reducedChannelId) ===
+                            channelKey(channelId) &&
+                        reducedWindowForkId === forkId
+                    )
+                        settle(true);
+                }
+            );
+            this.reductionWaits.add(settle);
+            if (stateManager.isDisposed) return settle(false);
+            // a reduction mined between the window read and the subscription
+            // fired an event this listener never saw
+            stateManager.stateChannelManagerContract
+                .getReducedResult(channelId, forkId)
+                .then(({ reducedForkId }) => {
+                    if (String(reducedForkId) !== ZeroHash) settle(true);
+                })
+                .catch((error) => {
+                    if (!this.reductionWaits.delete(settle)) return;
+                    unsubscribe();
+                    reject(error);
+                });
+        });
+    }
+
+    /**
      * Validate and apply a sync payload returned by `onSpectateRequest`. Was the
      * body of the old `onSpectateResponse` endpoint; the request now lives in
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return not synced. The caller
      * owns the lifecycle consequence of a failed sync. A disposed runtime
-     * returns not synced with no verdict on the peer; a served window, or
-     * (latest mode) a final-fork window, still in its kill period does too
-     * and carries `retryAfter`, the kill period's end.
+     * returns not synced with no verdict on the peer; so does a served window
+     * the chain has not reduced that this peer cannot reduce locally, or
+     * (latest mode) an unreduced window on the final fork, naming the fork in
+     * `unsettledForkId`.
      */
     public async applySyncResponse(
         peerAddress: string,
@@ -332,26 +414,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         peerAddress,
                         "dispute window not linked"
                     );
-                // 2.2) verify that they're expired - if they're not expired abort
-                const { windowExists, isExpired, killPeriodEnd } =
-                    await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
-                        channelId,
-                        dw.forkId
-                    );
-                if (!windowExists)
+                // 2.2) the window must exist on chain; whether the chain has
+                // reduced it decides what a failing local reduction means.
+                // Use this request's chain response; a competing persist may be older.
+                const onChainDw = onChainDisputeWindows.find(
+                    (window) => window.forkId === dw.forkId
+                );
+                if (!onChainDw || onChainDw.evidence.creationTimestamp == 0n)
                     return this.rejectSync(
                         peerAddress,
                         "dispute window not on chain"
                     );
-                // an open kill period is chain timing the responder does not
-                // control -> no verdict, the window is provable once it expires
-                if (!isExpired) {
-                    this.logger.debug(
-                        "applySyncResponse - kill period not expired, no verdict",
-                        { peerAddress, forkId: dw.forkId }
-                    );
-                    return { synced: false, retryAfter: Number(killPeriodEnd) };
-                }
+                const isReducedOnChain =
+                    onChainDw.reducedResult.forkId !== ZeroHash;
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal = finalizedByFork.get(dw.forkId);
@@ -403,6 +478,17 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             "applySyncResponse - served reduction reverts",
                             { peerAddress, error: errorMessage(e) }
                         );
+                        // the local mirror could not recompute an unreduced
+                        // window (open kill period, or state it lacks: a fresh
+                        // mirror has no inbound head) -> no verdict, the chain's
+                        // reduction judges the claim. on a reduced window the
+                        // call only checks the claimed fork against the chain's
+                        // result, so a revert is the responder's
+                        if (!isReducedOnChain)
+                            return {
+                                synced: false,
+                                unsettledForkId: dw.forkId
+                            };
                         return this.rejectSync(
                             peerAddress,
                             "served reduction reverts"
@@ -420,11 +506,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 // Another sync can overwrite that local result before a re-read.
                 if (isReducedAndFinal) {
                     // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
-                    // Use this request's chain response; a competing persist may be older.
-                    const _dw = onChainDisputeWindows.find(
-                        (window) => window.forkId === dw.forkId
-                    )!;
-                    if (_dw.reducedResult.forkId != dw.reducedForkId)
+                    if (onChainDw.reducedResult.forkId != dw.reducedForkId)
                         return this.rejectSync(
                             peerAddress,
                             "reduced fork mismatch"
@@ -494,22 +576,30 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2.8.2) (requested) prove the pinned fork or a successor whose verified lineage contains it.
             if (!syncRequest.forkId) {
                 // 2.8.1) (spectating)
-                const { windowExists, isExpired, killPeriodEnd } =
-                    await stateManager.stateChannelManagerContract.isKillPeriodExpired(
+                const [latestWindow] =
+                    await stateManager.stateChannelManagerContract.getDisputeWindows(
                         channelId,
-                        currentForkId
+                        [currentForkId]
                     );
-                // a window still in its kill period can have opened after the
-                // payload was served; served, it would fail 2.2 the same way
-                // -> no verdict. an expired window stays a verification failure,
-                // which also cuts an honest payload older than the kill period
-                // (stale-response policy, OQ-SPEC-SYNC-STALE-1)
-                if (windowExists && !isExpired) {
+                const windowExists =
+                    latestWindow !== undefined &&
+                    latestWindow.evidence.creationTimestamp != 0n;
+                // a window the chain has not reduced can have opened after the
+                // payload was served; served, it would be judged no better than
+                // by 2.2, so omitting it gains a responder nothing -> no
+                // verdict, the sync waits for the reduction. a
+                // reduced window stays a verification failure, which also cuts
+                // an honest payload older than the reduction (stale-response
+                // policy, OQ-SPEC-SYNC-STALE-1)
+                if (
+                    windowExists &&
+                    latestWindow.reducedResult.forkId === ZeroHash
+                ) {
                     this.logger.debug(
-                        "applySyncResponse - latest fork disputed in its kill period, no verdict",
+                        "applySyncResponse - latest fork disputed, window not reduced yet, no verdict",
                         { peerAddress, forkId: currentForkId }
                     );
-                    return { synced: false, retryAfter: Number(killPeriodEnd) };
+                    return { synced: false, unsettledForkId: currentForkId };
                 }
                 if (windowExists)
                     return this.rejectSync(

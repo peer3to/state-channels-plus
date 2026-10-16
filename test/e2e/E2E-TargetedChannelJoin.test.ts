@@ -893,9 +893,10 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(2),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService
-                    .sync(args.offender, sm.channelId)
-                    .then(({ synced }) => synced);
+                await sm.p2pManager.localRpc.spectateService.sync(
+                    args.offender,
+                    sm.channelId
+                );
             },
             { offender: ethers.Wallet.createRandom().address }
         );
@@ -920,9 +921,10 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(0),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService
-                    .sync(args.offender, sm.channelId)
-                    .then(({ synced }) => synced);
+                await sm.p2pManager.localRpc.spectateService.sync(
+                    args.offender,
+                    sm.channelId
+                );
             },
             { offender: ethers.Wallet.createRandom().address }
         );

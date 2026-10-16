@@ -2,7 +2,6 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import Clock from "@/Clock";
 import { Block } from "@/models";
-import { retryAfterDelayMs } from "@/rpc/network/services/spectate/SpectateService";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
     BlockOrigin,
@@ -525,9 +524,9 @@ export default class BlockQueueManager {
             }
             // Unknown fork (not disputed, no local genesis for it): ask the
             // suppliers to prove it once; a sync rejected for invalid evidence
-            // punishes them (one failing with no verdict, e.g. an open kill
-            // period, punishes nobody), and so does a proven lineage that does
-            // not carry the block. This is
+            // punishes them (one that meets a dispute window the chain has not
+            // reduced waits for that reduction first), and so does a proven
+            // lineage that does not carry the block. This is
             // separate expiry recovery after source admission at ingress.
             this.logger.verbose(
                 "queueTimeout - unknown fork, requesting sync from suppliers",
@@ -721,8 +720,8 @@ export default class BlockQueueManager {
     /**
      * Ask every attributed source and the author to prove the block's
      * lineage, once each. A probe rejected for invalid evidence excludes the
-     * peer inside `sync`; one failing with no verdict (open kill period)
-     * excludes nobody. A
+     * peer inside `sync`; one that meets a dispute window the chain has not
+     * reduced waits inside `sync` for that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
      * peer supplied junk: it is excluded here. Probes are owned work that
      * `dispose` waits for.
@@ -739,27 +738,16 @@ export default class BlockQueueManager {
     ): Promise<void> {
         const block = entry.block;
         // Sync waits for an in-flight request and proves this target before
-        // returning success; an invalid proof excludes the peer, a sync
-        // failing with no verdict (open kill period) excludes nobody.
-        const { synced, retryAfter } =
+        // returning success; an invalid proof excludes the peer, an unreduced
+        // dispute window is waited out first.
+        const synced =
             await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,
                 block.channelId,
                 block.forkId,
                 block.height
             );
-        if (this.stateManager.isDisposed) return;
-        // an open kill period gave no verdict -> probe again once it ends, so
-        // a junk supplier is still excluded
-        if (retryAfter !== undefined) {
-            this.timeoutManager.scheduleTask(
-                () => this.track(() => this.probeSource(peer, entry)),
-                retryAfterDelayMs(retryAfter),
-                "BlockQueueManager - source probe after kill period"
-            );
-            return;
-        }
-        if (!synced) return;
+        if (!synced || this.stateManager.isDisposed) return;
         if (!this.isBlockUnbackedByLineage(block)) return;
         this.logger.verbose(
             "queueTimeout - source proved a lineage that does not carry the block, excluding",

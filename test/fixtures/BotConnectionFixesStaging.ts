@@ -719,9 +719,10 @@ async function requestLatestFrom(
                 refusal =
                     error instanceof Error ? error.message : String(error);
             }
-            const synced = await sm.p2pManager.localRpc.spectateService
-                .sync(source, sm.channelId)
-                .then(({ synced }) => synced);
+            const synced = await sm.p2pManager.localRpc.spectateService.sync(
+                source,
+                sm.channelId
+            );
             return { refusal, synced };
         },
         { source: responderAddress },
@@ -852,9 +853,10 @@ export async function latestSyncFromResponderBehindDerivedFork(
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId)
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId
+                ),
             { source: source.address }
         );
         return {

@@ -462,9 +462,11 @@ describe("Unit: DisputeValidationService replay persistence", function () {
                 await h.execOnHost(
                     lagging,
                     async (sm, args) =>
-                        await sm.p2pManager.localRpc.spectateService
-                            .sync(args.responder, sm.channelId, args.forkId)
-                            .then(({ synced }) => synced),
+                        await sm.p2pManager.localRpc.spectateService.sync(
+                            args.responder,
+                            sm.channelId,
+                            args.forkId
+                        ),
                     { responder: responder.address, forkId: staged.forkId }
                 );
             } catch (error) {

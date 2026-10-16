@@ -192,7 +192,7 @@ Specification cases tested: 2/6. Untested: T1.P1, T1.P3, T1.P4, T1.P5.
 Specification cases tested: 7/9. Untested: T1.P1, T1.P3.
 
 [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)
-Specification cases tested: 16/18. Untested: T1.P6, T1.P11.
+Specification cases tested: 17/19. Untested: T1.P6, T1.P11.
 
 [`REQ-AUTH-6-E7SSH3` (Initiator verification and bidirectional clock compatibility)](../specification/peer-communication/handshake.md#req-auth-6-e7ssh3)
 Specification cases tested: 4/12. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
@@ -938,8 +938,8 @@ Specification cases tested: 1/3. Untested: T1.P1, T1.P3.
 [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 Specification cases tested: 0/3.
 
-[`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
-Specification cases tested: 8/8.
+[`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+Specification cases tested: 18/18.
 
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.

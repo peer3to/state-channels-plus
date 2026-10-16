@@ -13,14 +13,6 @@ async function chainForkOf(h: MathPeerTestHarness): Promise<ForkId> {
         .forkId as ForkId;
 }
 
-async function reducedResultOf(
-    h: MathPeerTestHarness,
-    forkId: ForkId
-): Promise<ForkId> {
-    return (await h.channelManager.getReducedResult(h.channelId, forkId))
-        .reducedForkId as ForkId;
-}
-
 async function localForkOf(h: MathPeerTestHarness): Promise<ForkId> {
     return await h.control(h.getPeer(0)).query.getForkId().request();
 }
@@ -64,7 +56,7 @@ async function reduceOntoDisputedFork(
     }
     const forkId = reducedForkId;
     await waitFor(
-        async () => (await reducedResultOf(h, fromForkId)) === forkId,
+        async () => (await h.query.reducedForkOnChain(fromForkId)) === forkId,
         h.event.protocolEventTimeoutMs()
     );
     return forkId;
@@ -92,7 +84,7 @@ export async function assertReduceLandsAloneThenLatestForkAdopted(): Promise<voi
     // the harness's chain read can trail the peers' view of the reduce under load
     let forkG = ZeroHash as ForkId;
     await waitFor(async () => {
-        forkG = await reducedResultOf(h, forkF);
+        forkG = await h.query.reducedForkOnChain(forkF);
         return forkG !== ZeroHash;
     }, h.event.protocolEventTimeoutMs());
     expect(forkG).to.not.equal(forkF);

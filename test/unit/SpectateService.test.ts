@@ -26,7 +26,8 @@ import {
     assertPinnedHeight,
     assertQueuedSuccessorBlockSurvivesSyncInstall,
     assertSyncWindowReadRace,
-    openSelfRemovalDispute
+    openSelfRemovalDispute,
+    reduceWindowOnChain
 } from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -142,9 +143,12 @@ describe("Unit: SpectateService", function () {
             const accepted = await h.execOnHost(
                 observer,
                 async (sm, args) =>
-                    sm.p2pManager.localRpc.spectateService
-                        .sync(args.source, sm.channelId, args.forkId, 0)
-                        .then(({ synced }) => synced),
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.source,
+                        sm.channelId,
+                        args.forkId,
+                        0
+                    ),
                 { source: source.address, forkId: sourceForkId }
             );
             expect(accepted).to.equal(true);
@@ -170,9 +174,12 @@ describe("Unit: SpectateService", function () {
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, args.forkId, 0)
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId,
+                    0
+                ),
             { source: source.address, forkId: ethers.id("unknown-pinned-fork") }
         );
         expect(accepted).to.equal(false);
@@ -717,8 +724,8 @@ describe("Unit: SpectateService", function () {
         });
     });
 
-    describe("dispute window kill period", function () {
-        it("served window still in its kill period → not accepted, no verdict, responder not blacklisted", async function () {
+    describe("dispute window not yet reduced", function () {
+        it("served window still in its kill period → not accepted, no verdict naming the window, responder not blacklisted", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -726,7 +733,7 @@ describe("Unit: SpectateService", function () {
             const {
                 payload,
                 accepted,
-                retryAfter,
+                unsettledForkId,
                 rejections,
                 responderBlacklisted
             } = await applySyncPayload(h, {});
@@ -738,15 +745,13 @@ describe("Unit: SpectateService", function () {
                 false
             );
             expect(accepted).to.equal(false);
-            // no verdict carries the kill period's end to retry after
-            expect(retryAfter).to.equal(
-                (await h.query.killPeriod(forkId, 2)).killPeriodEnd
-            );
+            // no verdict names the window the chain has not reduced
+            expect(unsettledForkId).to.equal(forkId);
             expect(rejections).to.deep.equal([]);
             expect(responderBlacklisted).to.equal(false);
         });
 
-        it("served window in its kill period the requester has not applied → not accepted, no verdict, responder not blacklisted", async function () {
+        it("served window in its kill period the requester has not applied → not accepted, no verdict naming the window, responder not blacklisted", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -761,7 +766,7 @@ describe("Unit: SpectateService", function () {
                 const {
                     payload,
                     accepted,
-                    retryAfter,
+                    unsettledForkId,
                     rejections,
                     responderBlacklisted
                 } = await applySyncPayload(h, {
@@ -783,10 +788,8 @@ describe("Unit: SpectateService", function () {
                     (await h.query.killPeriod(forkId, 2)).isExpired
                 ).to.equal(false);
                 expect(accepted).to.equal(false);
-                // no verdict carries the kill period's end to retry after
-                expect(retryAfter).to.equal(
-                    (await h.query.killPeriod(forkId, 2)).killPeriodEnd
-                );
+                // no verdict names the window the chain has not reduced
+                expect(unsettledForkId).to.equal(forkId);
                 expect(rejections).to.deep.equal([]);
                 expect(responderBlacklisted).to.equal(false);
             } finally {
@@ -798,42 +801,43 @@ describe("Unit: SpectateService", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
-            const { accepted, retryAfter, rejections, responderBlacklisted } =
-                await applySyncPayload(h, {
-                    // a window for the undisputed on-chain fork
-                    mutate: (payload) => {
-                        payload.disputeWindows.push({
-                            disputeConfirmations: [],
-                            forkId,
-                            latestStateSnapshot:
-                                payload.latestForkGenesisSnapshot,
-                            latestEncodedStateMachineState:
-                                payload.latestForkGenesisEncodedState,
-                            inboundMessageBlocksAppliedInReduce: [],
-                            reducedForkId: ethers.hexlify(
-                                ethers.randomBytes(32)
-                            )
-                        });
-                    }
-                });
+            const {
+                accepted,
+                unsettledForkId,
+                rejections,
+                responderBlacklisted
+            } = await applySyncPayload(h, {
+                // a window for the undisputed on-chain fork
+                mutate: (payload) => {
+                    payload.disputeWindows.push({
+                        disputeConfirmations: [],
+                        forkId,
+                        latestStateSnapshot: payload.latestForkGenesisSnapshot,
+                        latestEncodedStateMachineState:
+                            payload.latestForkGenesisEncodedState,
+                        inboundMessageBlocksAppliedInReduce: [],
+                        reducedForkId: ethers.hexlify(ethers.randomBytes(32))
+                    });
+                }
+            });
             // premise: the chain holds no window for the served fork
             expect((await h.query.killPeriod(forkId, 2)).windowExists).to.equal(
                 false
             );
             expect(accepted).to.equal(false);
-            expect(retryAfter).to.equal(undefined);
+            expect(unsettledForkId).to.equal(undefined);
             expect(rejections).to.deep.equal(["dispute window not on chain"]);
             expect(responderBlacklisted).to.equal(true);
         });
 
-        it("dispute opens on the latest fork after the payload was served → not accepted, no verdict, responder not blacklisted", async function () {
+        it("dispute opens on the latest fork after the payload was served → not accepted, no verdict naming the window, responder not blacklisted", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
             const {
                 payload,
                 accepted,
-                retryAfter,
+                unsettledForkId,
                 rejections,
                 responderBlacklisted
             } = await applySyncPayload(h, {
@@ -846,37 +850,145 @@ describe("Unit: SpectateService", function () {
             expect(killPeriod.windowExists).to.equal(true);
             expect(killPeriod.isExpired).to.equal(false);
             expect(accepted).to.equal(false);
-            // no verdict carries the kill period's end to retry after
-            expect(retryAfter).to.equal(
-                (await h.query.killPeriod(forkId, 2)).killPeriodEnd
-            );
+            // no verdict names the window the chain has not reduced
+            expect(unsettledForkId).to.equal(forkId);
             expect(rejections).to.deep.equal([]);
             expect(responderBlacklisted).to.equal(false);
         });
 
-        it("payload older than the latest fork's kill period, its expired window missing → rejected, latest fork is disputed", async function () {
+        it("payload older than the latest fork's reduction, its reduced window missing → rejected, latest fork is disputed", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
-            // the expired window stays unreduced, so the chain keeps the latest fork
+            // the chain reduces the window but no peer adopts the successor
             for (const peer of h.peers) {
                 await h.rpcStub.holdReductionRace(peer.index);
             }
-            const { accepted, retryAfter, rejections, responderBlacklisted } =
-                await applySyncPayload(h, {
-                    afterServe: async () => {
-                        await openSelfRemovalDispute(h);
-                        await waitFor(
-                            async () =>
-                                (await h.query.killPeriod(forkId, 2)).isExpired,
-                            h.event.protocolEventTimeoutMs()
-                        );
-                    }
-                });
+            const {
+                accepted,
+                unsettledForkId,
+                rejections,
+                responderBlacklisted
+            } = await applySyncPayload(h, {
+                afterServe: async () => {
+                    await openSelfRemovalDispute(h);
+                    await waitFor(
+                        async () =>
+                            (await h.query.killPeriod(forkId, 2)).isExpired,
+                        h.event.protocolEventTimeoutMs()
+                    );
+                    await reduceWindowOnChain(h, 0, forkId);
+                }
+            });
             expect(accepted).to.equal(false);
-            expect(retryAfter).to.equal(undefined);
+            expect(unsettledForkId).to.equal(undefined);
             expect(rejections).to.deep.equal(["latest fork is disputed"]);
             expect(responderBlacklisted).to.equal(true);
+        });
+
+        it("dispute opens on the latest fork after the payload was served, its kill period over but the chain has not reduced it → not accepted, no verdict naming the window, responder not blacklisted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            // the window stays unreduced on chain after its kill period
+            for (const peer of h.peers) {
+                await h.rpcStub.holdReductionRace(peer.index);
+            }
+            const {
+                accepted,
+                unsettledForkId,
+                rejections,
+                responderBlacklisted
+            } = await applySyncPayload(h, {
+                afterServe: async () => {
+                    await openSelfRemovalDispute(h);
+                    await waitFor(
+                        async () =>
+                            (await h.query.killPeriod(forkId, 2)).isExpired,
+                        h.event.protocolEventTimeoutMs()
+                    );
+                }
+            });
+            // premise: still unreduced on chain after the apply
+            expect(await h.query.reducedForkOnChain(forkId)).to.equal(
+                ethers.ZeroHash
+            );
+            expect(accepted).to.equal(false);
+            expect(unsettledForkId).to.equal(forkId);
+            expect(rejections).to.deep.equal([]);
+            expect(responderBlacklisted).to.equal(false);
+        });
+    });
+
+    describe("dispute window not yet reduced: chain judgement and wait", function () {
+        // reduceAndFinalize makes a window final at once: the chain holds a
+        // reduced, non-final window only between the sync's finality read and
+        // its window fetch
+        it("the chain reduces the served window between the finality read and the window fetch, the payload claiming another successor → local reduction reverts on the reduced window, rejected, served reduction reverts", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainAfterFinalityRead",
+                    mutate: (payload) => {
+                        payload.disputeWindows[0].reducedForkId =
+                            ethers.hexlify(ethers.randomBytes(32));
+                    }
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.unsettledForkId).to.equal(undefined);
+            expect(r.rejections).to.deep.equal(["served reduction reverts"]);
+            expect(r.responderBlacklisted).to.equal(true);
+        });
+
+        it("the chain reduces the window after the sync read it but before the sync waits → the wait ends on its chain read, the same peer is asked again and the sync succeeds", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const requester = h.control(h.getPeer(2));
+            const responder = h.getPeer(0);
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
+            await openSelfRemovalDispute(h);
+            // the applied outcome is held before the sync acts on it
+            await requester.stub
+                .stubHoldSpectateSyncApplication(responder.address, false, true)
+                .request();
+            await requester.spectate.startSync(responder.address).request();
+            await waitFor(
+                async () =>
+                    (await requester.stub
+                        .getHeldSpectateSyncApplicationCount()
+                        .request()) === 1
+            );
+            // the reduction event lands while nothing listens for it
+            await waitFor(
+                async () => (await h.query.killPeriod(forkId, 2)).isExpired,
+                h.event.protocolEventTimeoutMs() * 2
+            );
+            await reduceWindowOnChain(h, 0, forkId);
+            // premise: the requester handled the reduction event before
+            // the sync starts to wait, so only the wait's own chain read can
+            // see it
+            await h.event.waitForPeers(
+                "onDisputeReducedResultCommitted",
+                [2],
+                1,
+                { mode: "atLeast" }
+            );
+            await requester.stub.restoreHoldSpectateSyncApplication().request();
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(responder)
+                        .stub.getSpectateRequestCount()
+                        .request()) === 2
+            );
+            expect(
+                await requester.query.isBlacklisted(responder.address).request()
+            ).to.equal(false);
         });
     });
 
@@ -968,13 +1080,17 @@ describe("Unit: SpectateService", function () {
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });
 
-        it("window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged", async function () {
+        // the same forged payload once the chain reduced the window is the
+        // "reduction lands on chain ... fabricated inbound successor" cases
+        it("window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → local reduction reverts, no verdict naming the window, no window inbound block stored, inbound head unchanged", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
                 { reduction: "local", mutate: appendForgedInboundSuccessor }
             );
             expect(r.accepted).to.equal(false);
-            expect(r.rejections).to.deep.equal(["served reduction reverts"]);
+            expect(r.unsettledForkId).to.equal(r.sourceForkId);
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.responderBlacklisted).to.equal(false);
             expect(r.appliedInboundHashes.length).to.equal(
                 r.servedInboundHashes.length + 1
             );

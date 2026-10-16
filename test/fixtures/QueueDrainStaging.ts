@@ -2,11 +2,11 @@
 import * as factory from "../factory";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { QueueIntakeFixture } from "./QueueIntakeFixture";
-import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { reduceWindowOnChain } from "@test/fixtures/PinnedSyncStaging";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -35,7 +35,7 @@ export async function stopWithRejectedAndPendingProbes() {
                 bothEntered = resolve;
             });
             spectate.sync = (...parameters) =>
-                new Promise<SyncOutcome>((resolve, reject) => {
+                new Promise<boolean>((resolve, reject) => {
                     probes.push({
                         release: () =>
                             resolve(sync.apply(spectate, parameters)),
@@ -435,32 +435,40 @@ export async function assertStoredTipCopyDrainsNextBlock(
 }
 
 /**
- * Peer 1 opens a valid self-removal dispute (reductions held, so the chain
- * keeps the fork), gossips peer 0 a junk first block on the window's
- * successor fork, and answers every sync request with its real payload,
- * which proves that fork only through the still-open window. Peer 0's queue
- * timeout probes peer 1 inside the kill period and again after it ends.
- * Returns every probe sync outcome toward peer 1, in order, and whether
- * peer 0 then blacklisted it.
+ * Peer 1 opens a valid self-removal dispute (no peer reduces on its own),
+ * gossips peer 0 a junk first block on the window's successor fork, and
+ * answers every sync request with its real payload, which proves that fork
+ * only through the unreduced window. Peer 0's queue-timeout probe of peer 1
+ * waits for the chain's reduction; once peer 1 has answered, `during` runs
+ * inside the kill period, then the kill period ends and peer 1 reduces the
+ * window. Returns the
+ * window's kill period ends before and after `during`, peer 1's answered
+ * request count, and whether peer 0 blacklisted it.
  */
-export async function probeJunkSourceAcrossKillPeriod(f: QueueIntakeFixture) {
+export async function probeJunkSourceAcrossUnreducedWindow(
+    f: QueueIntakeFixture,
+    during: () => Promise<void> = async () => {}
+) {
     const h = f.h;
     const forkId = h.activeForkId!;
-    for (const peer of h.peers) await h.rpcStub.holdReductionRace(peer.index);
+    // neither peer reduces on its own; peer 0, the prober, still applies the
+    // chain's events, the reduction among them
+    await h.rpcStub.holdReductionRace(1);
+    await h.control(h.getPeer(0)).stub.stubHoldReductionTasks().request();
     await h.control(h.getPeer(1)).dispute.setForceExit(true).request();
     await h.tamper.postTamperedDispute(1, () => {}, { markMalicious: false });
     await h.assert.dispute.committedWait({
         expectedCount: 1,
         peersIndices: [0, 1]
     });
-    const served = await h
-        .control(h.getPeer(1))
-        .spectate.generateSyncPayload(h.channelId, forkId, 0)
+    const supplier = h.control(h.getPeer(1));
+    const served = await supplier.spectate
+        .generateSyncPayload(h.channelId, forkId, 0)
         .request();
-    await h
-        .control(h.getPeer(1))
-        .stub.stubSpectatePayload(served!.encodedSyncPayload)
+    await supplier.stub
+        .stubSpectatePayload(served!.encodedSyncPayload)
         .request();
+    await supplier.stub.stubCountSpectateRequests().request();
     const successorForkId = Codec.decode(
         served!.encodedSyncPayload,
         Type.SyncPayload
@@ -476,50 +484,39 @@ export async function probeJunkSourceAcrossKillPeriod(f: QueueIntakeFixture) {
             }
         }
     );
-    const outcomes = await h.execOnHost(
-        h.getPeer(0),
-        async (sm, args, { ethers }) => {
-            const spectate = sm.p2pManager.localRpc.spectateService;
-            const sync = spectate.sync;
-            const seen: SyncOutcome[] = [];
-            spectate.sync = async (...parameters) => {
-                const outcome = await sync.apply(spectate, parameters);
-                if (String(parameters[0]) === args.source) seen.push(outcome);
-                return outcome;
-            };
-            try {
-                const block = ethers.AbiCoder.defaultAbiCoder().decode(
-                    [args.blockType],
-                    args.encodedBlockConfirmation
-                )[0];
-                await sm.blockQueueManager.ingestBlockConfirmation(block, {
-                    origin: args.origin,
-                    senderAddress: args.source
-                });
-                const deadline = Date.now() + args.budgetMs;
-                while (seen.length < 2 && Date.now() < deadline)
-                    await new Promise((resolve) => setTimeout(resolve, 200));
-                return seen;
-            } finally {
-                spectate.sync = sync;
-            }
-        },
-        {
-            blockType: BlockConfirmationEthersType,
-            encodedBlockConfirmation: encodedJunkBlock,
-            origin: BlockOrigin.NETWORK as const,
-            source: h.getPeer(1).address,
-            // inside the host call's own deadline, so a missing re-probe
-            // returns one outcome instead of timing the call out
-            budgetMs: h.event.hostExecTimeoutMs() - 5000
-        },
-        { timeoutMs: h.event.hostExecTimeoutMs() }
+    await h
+        .control(h.getPeer(0))
+        .transition.ingestBlockConfirmation(encodedJunkBlock, {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: h.getPeer(1).address
+        })
+        .request();
+    const killPeriod = () => h.query.killPeriod(forkId);
+    await waitFor(
+        async () =>
+            (await supplier.stub.getSpectateRequestCount().request()) === 1,
+        h.event.protocolEventTimeoutMs()
     );
+    const killPeriodEndBefore = (await killPeriod()).killPeriodEnd;
+    await during();
+    const killPeriodEndAfter = (await killPeriod()).killPeriodEnd;
+    await waitFor(
+        async () => (await killPeriod()).isExpired,
+        h.event.protocolEventTimeoutMs() * 2
+    );
+    const reducedBeforeRelease = await h.query.reducedForkOnChain(forkId);
+    // peer 1 reduces: `during` may have stopped peer 0
+    await reduceWindowOnChain(h, 1, forkId);
     return {
-        outcomes,
-        sourceBlacklisted: await h
-            .control(h.getPeer(0))
-            .query.isBlacklisted(h.getPeer(1).address)
-            .request()
+        killPeriodEndBefore,
+        killPeriodEndAfter,
+        reducedBeforeRelease,
+        supplierRequests: () =>
+            supplier.stub.getSpectateRequestCount().request(),
+        supplierBlacklisted: () =>
+            h
+                .control(h.getPeer(0))
+                .query.isBlacklisted(h.getPeer(1).address)
+                .request()
     };
 }

@@ -1,6 +1,4 @@
-import Clock from "@/Clock";
 import { Block } from "@/models";
-import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
@@ -16,7 +14,7 @@ import {
 } from "@test/fixtures/OffChainPromotionFixture";
 import {
     expectSyncPayloadAboveRequestedHeightWhileAhead,
-    openSelfRemovalDispute
+    stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
 import {
     assertSpectatorSilence,
@@ -1665,42 +1663,197 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
-    describe("Sync inside an open kill period", function () {
-        it("a joiner whose initial load lands in an open kill period syncs once it ends, without aborting or blacklisting a responder", async function () {
+    describe("Sync across a dispute window the chain has not reduced", function () {
+        it("a joiner whose initial load lands in an open kill period waits for the chain's reduction, then syncs without aborting or blacklisting a responder", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0);
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
-            const forkId = h.activeForkId!;
-            // the slow part of a spawn runs before the dispute
-            const joiner = await h.join.createSpectatorPeer();
-            await openSelfRemovalDispute(h);
-            const { killPeriodEnd } =
-                await h.channelManager.isKillPeriodExpired(h.channelId, forkId);
-
-            await h.join.connectSpectator(joiner);
-            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED, {
-                timeoutMs:
-                    (Number(killPeriodEnd) - Clock.getTimeInSeconds()) * 1000 +
-                    h.event.protocolEventTimeoutMs()
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: false
             });
-
-            // premise: the joiner could not sync before the kill period ended
-            expect(Clock.getTimeInSeconds()).to.be.at.least(
-                Number(killPeriodEnd)
+            // premise: the wait outlived the kill period, the window unreduced
+            expect(staged.whileUnreduced).to.deep.equal({
+                status: Status.OPENED,
+                reducedForkId: ethers.ZeroHash,
+                aborts: 0
+            });
+            await staged.reduce();
+            await h.event.waitUntilPeerStatus(
+                staged.joiner.index,
+                Status.SYNCED
             );
-            expect(joiner.eventSpies.onAbort?.callCount ?? 0).to.equal(0);
-            for (const peer of h.peers.slice(0, 4)) {
-                expect(
-                    await h
-                        .control(joiner)
-                        .query.isBlacklisted(peer.address)
-                        .request()
-                ).to.equal(false);
+            // one responder answered twice: before and after the reduction
+            expect(
+                (await staged.requestCounts()).filter((count) => count > 0)
+            ).to.deep.equal([2]);
+            expect(staged.aborts()).to.equal(0);
+            expect(await staged.blacklistedByJoiner()).to.deep.equal([
+                false,
+                false,
+                false,
+                false
+            ]);
+        });
+
+        it("a fresh joiner whose served window the chain has not reduced waits for the chain's reduction, then syncs without aborting or blacklisting its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            // premise: the kill period was over and the chain had not reduced
+            // the window, so only a local reduction could have proved it
+            expect(staged.whileUnreduced).to.deep.equal({
+                status: Status.OPENED,
+                reducedForkId: ethers.ZeroHash,
+                aborts: 0
+            });
+            await staged.reduce();
+            await h.event.waitUntilPeerStatus(
+                staged.joiner.index,
+                Status.SYNCED
+            );
+            expect(
+                (await staged.requestCounts()).filter((count) => count > 0)
+            ).to.deep.equal([2]);
+            expect(staged.aborts()).to.equal(0);
+            expect(await staged.blacklistedByJoiner()).to.deep.equal([
+                false,
+                false,
+                false,
+                false
+            ]);
+        });
+
+        it("a joiner's responder cutting it during the wait fails the repeated request: the initial load aborts once, with no internal error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            const hostErrors: Error[] = [];
+            const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
+                hostErrors.push(error)
+            );
+            try {
+                await h
+                    .control(staged.responder)
+                    .network.blacklistAndDisconnectPeerByAddress(
+                        staged.joiner.address
+                    )
+                    .request();
+                await staged.reduce();
+                await waitFor(async () => staged.aborts() > 0);
+                expect(staged.aborts()).to.equal(1);
+                // only the harness's report that the connect resolved false:
+                // no internal failure reached the top level
+                expect(hostErrors.map((error) => error.message)).to.deep.equal([
+                    `connectToChannel failed for ${h.channelId}`
+                ]);
+            } finally {
+                unsubscribe();
             }
         });
 
-        it("a participant's source probe while the tip fork's kill period is open does not blacklist its honest responder", async function () {
+        it("stopping a joiner during the wait ends it: stop resolves, no further request, no abort", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            expect(
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    async (sm) => {
+                        await sm.stop();
+                        return sm.isDisposed;
+                    }
+                )
+            ).to.equal(true);
+            await staged.reduce();
+            expect(
+                (await staged.requestCounts()).reduce((a, b) => a + b, 0)
+            ).to.equal(1);
+            expect(staged.aborts()).to.equal(0);
+            // the stopped runtime's connect resolves false
+            await TestSession.settleDetached({
+                expectedErrorIncludes: "connectToChannel failed"
+            });
+        });
+
+        it("a joiner the chain moves out of OPENED during the wait settles engaged: the late repeated sync aborts nothing", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            await h
+                .control(staged.joiner)
+                .stub.setPeerStatus(Status.SYNCED)
+                .request();
+            await staged.reduce();
+            await waitFor(async () =>
+                (await staged.requestCounts()).some((count) => count === 2)
+            );
+            expect(
+                await h.control(staged.joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            expect(staged.aborts()).to.equal(0);
+        });
+
+        it("a joiner's repeated request that throws after the wait reports one top-level error and never runs the connection hook for its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            const hostErrors: Error[] = [];
+            const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
+                hostErrors.push(error)
+            );
+            try {
+                // the first pass stopped before the milestone walk; the
+                // repeated one reaches it and the local executor fails
+                await h.mirror.observe(staged.joiner.index, "verifyMilestones");
+                await h.mirror.failNextLocalRead(
+                    staged.joiner.index,
+                    "verifyMilestones",
+                    "transport"
+                );
+                await staged.reduce();
+                await waitFor(async () => hostErrors.length > 0);
+                expect(hostErrors).to.have.length(1);
+                // the connection hook never ran for the responder whose
+                // sync threw
+                expect(
+                    (staged.joiner.eventSpies.onConnection?.getCalls() ?? [])
+                        .map((call) => String(call.args[0]))
+                        .includes(staged.responder.address)
+                ).to.equal(false);
+                // stopping the runtime settles its pending connect false
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    async (sm) => {
+                        await sm.stop();
+                    }
+                );
+            } finally {
+                unsubscribe();
+            }
+        });
+
+        it("a participant's source probe while the tip fork's kill period is open waits for the chain's reduction, then proves the target without blacklisting its honest responder", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0);
             await h.transition.advanceState({ count: 2 });
@@ -1713,6 +1866,10 @@ describe("E2E: Spectate Service", function () {
             const requester = h.getPeer(requesterIndex);
             const responder = h.getPeer(responderIndex);
             const forkId = h.activeForkId!;
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
 
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
@@ -1720,6 +1877,10 @@ describe("E2E: Spectate Service", function () {
             await h.assert.dispute.committedWait({
                 peersIndices: [requesterIndex, responderIndex]
             });
+            // premise: the probe starts while the kill period is open
+            expect((await h.query.killPeriod(forkId)).isExpired).to.equal(
+                false
+            );
 
             // the probe BlockQueueManager.probeSource sends a queued block's
             // source: the requester's own fork and height
@@ -1729,24 +1890,13 @@ describe("E2E: Spectate Service", function () {
                 .request();
             const stub = h.control(requester).stub;
             await stub.recordSyncRejections().request();
-            let outcome: SyncOutcome;
+            let synced: boolean;
             let rejections: string[];
             try {
-                outcome = await h.execOnHost(
-                    requester,
-                    async (sm, args) =>
-                        sm.p2pManager.localRpc.spectateService.sync(
-                            args.responder,
-                            sm.channelId,
-                            args.forkId,
-                            args.height
-                        ),
-                    {
-                        responder: responder.address,
-                        forkId,
-                        height: Number(height)
-                    }
-                );
+                synced = await h
+                    .control(requester)
+                    .spectate.sync(responder.address, forkId, Number(height))
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
                 rejections = await stub
                     .restoreRecordedSyncRejections()
                     .request();
@@ -1754,17 +1904,18 @@ describe("E2E: Spectate Service", function () {
                 await stub.restoreRecordedSyncRejections().request();
             }
 
-            // premise: the probe ran while the kill period was open
-            const { isExpired, killPeriodEnd } =
-                await h.channelManager.isKillPeriodExpired(h.channelId, forkId);
-            expect(isExpired).to.equal(false);
-            // only applySyncResponse's open-window path sets retryAfter: a
-            // refusal or a timeout fails with none -> the responder served
-            // and the requester judged nobody
-            expect(outcome).to.deep.equal({
-                synced: false,
-                retryAfter: Number(killPeriodEnd)
-            });
+            // the sync returned only after the chain reduced the window, and
+            // asked the responder again
+            expect(synced).to.equal(true);
+            expect(await h.query.reducedForkOnChain(forkId)).to.not.equal(
+                ethers.ZeroHash
+            );
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(2);
             expect(rejections).to.deep.equal([]);
             expect(
                 await h
@@ -1784,44 +1935,6 @@ describe("E2E: Spectate Service", function () {
                     .query.isConnectedTo(responder.address)
                     .request()
             ).to.equal(true);
-        });
-    });
-
-    describe("Sync across an expired window the chain has not reduced", function () {
-        it("a fresh joiner reduces the served window against the chain's inbound head and syncs, without aborting or blacklisting its responder", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0);
-            await h.transition.advanceState({ count: 2 });
-            await h.assert.sync.peersInSyncWait();
-            const forkId = h.activeForkId!;
-            const joiner = await h.join.createSpectatorPeer();
-            // the window stays unreduced on chain after its kill period
-            for (const peer of h.peers.slice(0, 4))
-                await h.rpcStub.holdReductionRace(peer.index);
-            await openSelfRemovalDispute(h);
-            await waitFor(
-                async () => (await h.query.killPeriod(forkId)).isExpired,
-                h.event.protocolEventTimeoutMs() * 2
-            );
-
-            await h.join.connectSpectator(joiner);
-            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
-
-            // premise: the joiner's sync reduced the window itself
-            const [window] = await h.channelManager.getDisputeWindows(
-                h.channelId,
-                [forkId]
-            );
-            expect(window.reducedResult.forkId).to.equal(ethers.ZeroHash);
-            expect(joiner.eventSpies.onAbort?.callCount ?? 0).to.equal(0);
-            for (const peer of h.peers.slice(0, 4)) {
-                expect(
-                    await h
-                        .control(joiner)
-                        .query.isBlacklisted(peer.address)
-                        .request()
-                ).to.equal(false);
-            }
         });
     });
 

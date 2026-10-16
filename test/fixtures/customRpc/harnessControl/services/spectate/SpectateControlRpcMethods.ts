@@ -18,19 +18,13 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         super(transport, service);
     }
 
-    /** Whether the sync proved the target. */
-    public async sync(
-        peerAddress: Address,
-        forkId: ForkId,
-        blockHeight: number
-    ): Promise<boolean> {
-        const { synced } = await this.service.spectate.sync(
+    public sync(peerAddress: Address, forkId: ForkId, blockHeight: number) {
+        return this.service.spectate.sync(
             peerAddress,
             this.service.sm.channelId,
             forkId,
             blockHeight
         );
-        return synced;
     }
 
     /** Generate a sync payload, returned encoded (or null if not provable). */

@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: pinned sync staging exercised by explicit component and E2E declarations
 import StateSnapshot from "@/models/StateSnapshot";
-import type { SyncPayload } from "@/types";
+import { type SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
@@ -39,9 +39,11 @@ export async function assertComputedSuccessorSync(
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, args.forkId)
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
             {
                 source: source.address,
                 forkId: requestSuccessor ? successor : sourceForkId
@@ -145,9 +147,11 @@ export async function assertFailedSyncInstallPersistsNothing(
                 const stateBefore = String(await machine.getState());
                 let threw = "";
                 try {
-                    await sm.p2pManager.localRpc.spectateService
-                        .sync(args.source, sm.channelId, args.forkId)
-                        .then(({ synced }) => synced);
+                    await sm.p2pManager.localRpc.spectateService.sync(
+                        args.source,
+                        sm.channelId,
+                        args.forkId
+                    );
                 } catch (error) {
                     threw = String(error);
                 } finally {
@@ -241,9 +245,11 @@ export async function assertQueuedSuccessorBlockSurvivesSyncInstall(
         const sync = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, args.forkId)
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
             { source: source.address, forkId: sourceForkId }
         );
         await waitFor(
@@ -360,9 +366,12 @@ export async function assertPinnedHeight(
     const accepted = await h.execOnHost(
         requester,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService
-                .sync(args.source, sm.channelId, sm.forkId, args.height)
-                .then(({ synced }) => synced),
+            sm.p2pManager.localRpc.spectateService.sync(
+                args.source,
+                sm.channelId,
+                sm.forkId,
+                args.height
+            ),
         { source: source.address, height: height + offset }
     );
     expect(accepted).to.equal(offset <= 0);
@@ -444,9 +453,11 @@ export async function assertSyncWindowReadRace(
     const sync = h.execOnHost(
         observer,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService
-                .sync(args.source, sm.channelId, args.forkId)
-                .then(({ synced }) => synced),
+            sm.p2pManager.localRpc.spectateService.sync(
+                args.source,
+                sm.channelId,
+                args.forkId
+            ),
         { source: source.address, forkId: sourceForkId }
     );
     try {
@@ -553,9 +564,11 @@ export async function assertConcurrentSyncWindowOverwrite(
     const first = h.execOnHost(
         observer,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService
-                .sync(args.source, sm.channelId, args.forkId)
-                .then(({ synced }) => synced),
+            sm.p2pManager.localRpc.spectateService.sync(
+                args.source,
+                sm.channelId,
+                args.forkId
+            ),
         { source: sources[0].address, forkId: sourceForkId }
     );
     let second: Promise<boolean> | undefined;
@@ -567,9 +580,11 @@ export async function assertConcurrentSyncWindowOverwrite(
         second = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, args.forkId)
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
             { source: sources[1].address, forkId: sourceForkId }
         );
         await waitFor(
@@ -697,12 +712,18 @@ export async function assertConcurrentPinnedRequests(
         observer,
         (sm, args) =>
             Promise.all([
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, sm.forkId, args.first)
-                    .then(({ synced }) => synced),
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, sm.forkId, args.second)
-                    .then(({ synced }) => synced)
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    sm.forkId,
+                    args.first
+                ),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    sm.forkId,
+                    args.second
+                )
             ]),
         {
             source: source.address,
@@ -843,9 +864,11 @@ export async function assertTimeoutCheckWaitsForSyncInstall(
         const sync = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService
-                    .sync(args.source, sm.channelId, args.forkId)
-                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
             { source: source.address, forkId: sourceForkId }
         );
         await waitFor(
@@ -902,7 +925,7 @@ export async function openSelfRemovalDispute(
 /**
  * Peer 0 serves peer 2 a payload (latest state, or pinned to `forkId`),
  * optionally altered by `mutate`; `afterServe` runs, then peer 2 applies the
- * payload. Returns the served payload, the verdict and its `retryAfter`, the
+ * payload. Returns the served payload, the verdict and its `unsettledForkId`, the
  * recorded rejections and whether peer 2 blacklisted peer 0.
  */
 export async function applySyncPayload(
@@ -933,7 +956,7 @@ export async function applySyncPayload(
     const stub = h.control(observer).stub;
     await stub.recordSyncRejections().request();
     try {
-        const { synced: accepted, retryAfter } = await h.execOnHost(
+        const { synced: accepted, unsettledForkId } = await h.execOnHost(
             observer,
             async (sm, args) =>
                 sm.p2pManager.localRpc.spectateService.applySyncResponse(
@@ -953,7 +976,7 @@ export async function applySyncPayload(
         return {
             payload,
             accepted,
-            retryAfter,
+            unsettledForkId,
             rejections: await stub.restoreRecordedSyncRejections().request(),
             responderBlacklisted: await h
                 .control(observer)
@@ -963,4 +986,89 @@ export async function applySyncPayload(
     } finally {
         await stub.restoreRecordedSyncRejections().request();
     }
+}
+
+/**
+ * Peers 0-3 hold their own reductions and count incoming sync requests;
+ * peer 1 opens a valid self-removal dispute; a fresh joiner connects inside
+ * the kill period, or after it when `connectAfterKillPeriod`. Returns once
+ * the joiner's first request was answered and the kill period has ended with
+ * the window still unreduced on chain: the joiner's state then, its
+ * responder, and handles to reduce the window and read the outcome.
+ */
+export async function stageJoinerWaitingOnUnreducedWindow(
+    h: MathPeerTestHarness,
+    options: { connectAfterKillPeriod: boolean }
+) {
+    const forkId = h.activeForkId!;
+    const participants = h.peers.slice(0, 4);
+    const joiner = await h.join.createSpectatorPeer();
+    for (const peer of participants) {
+        await h.rpcStub.holdReductionRace(peer.index);
+        await h.control(peer).stub.stubCountSpectateRequests().request();
+    }
+    await openSelfRemovalDispute(h);
+    const killPeriodExpired = async () =>
+        (await h.query.killPeriod(forkId)).isExpired;
+    if (options.connectAfterKillPeriod)
+        await waitFor(killPeriodExpired, h.event.protocolEventTimeoutMs() * 2);
+    const requestCounts = () =>
+        Promise.all(
+            participants.map((peer) =>
+                h.control(peer).stub.getSpectateRequestCount().request()
+            )
+        );
+    await h.join.connectSpectator(joiner);
+    await waitFor(
+        async () => (await requestCounts()).some((count) => count > 0),
+        h.event.protocolEventTimeoutMs()
+    );
+    await waitFor(killPeriodExpired, h.event.protocolEventTimeoutMs() * 2);
+    const responder =
+        participants[(await requestCounts()).findIndex((count) => count > 0)];
+    return {
+        joiner,
+        responder,
+        whileUnreduced: {
+            status: await h.control(joiner).query.getStatus().request(),
+            reducedForkId: await h.query.reducedForkOnChain(forkId),
+            aborts: joiner.eventSpies.onAbort?.callCount ?? 0
+        },
+        reduce: () => reduceWindowOnChain(h, 0, forkId),
+        requestCounts,
+        aborts: () => joiner.eventSpies.onAbort?.callCount ?? 0,
+        blacklistedByJoiner: () =>
+            Promise.all(
+                participants.map((peer) =>
+                    h
+                        .control(joiner)
+                        .query.isBlacklisted(peer.address)
+                        .request()
+                )
+            )
+    };
+}
+
+/**
+ * Peer `reducerIndex` reduces `forkId`'s window on chain, retried until the
+ * chain records it: the peer's clock can trail the chain's kill-period end.
+ */
+export async function reduceWindowOnChain(
+    h: MathPeerTestHarness,
+    reducerIndex: number,
+    forkId: ForkId
+) {
+    await waitFor(
+        async () => {
+            if ((await h.query.reducedForkOnChain(forkId)) !== ZeroHash)
+                return true;
+            await h
+                .control(h.getPeer(reducerIndex))
+                .stub.startTryReduce(forkId)
+                .request();
+            return false;
+        },
+        h.event.protocolEventTimeoutMs(),
+        1000
+    );
 }

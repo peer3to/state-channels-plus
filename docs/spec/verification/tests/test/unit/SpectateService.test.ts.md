@@ -22,18 +22,23 @@ One `applySyncResponse` case stubs the requester's local diamond so the unfinali
 
 Two install cases stage a reducible disputed fork and sync an observer onto the successor. In the first, a read inside the install throws after the VM write: the sync throws, the VM keeps its state, the successor genesis is not stored and the fork stays. In the second, the install is held at its entry while a successor block authored after the payload was served waits in the observer's queue; its held queue timeout runs inside that window, sees an unknown fork (not a known stale one) and probes its source, and after the install the block is stored on the successor without a blacklist.
 
-The kill-period cases have peer 0 serve peer 2 a real latest-state payload around a valid
+The unreduced-window cases have peer 0 serve peer 2 a real latest-state payload around a valid
 self-removal dispute by peer 1. A payload carrying the window in its kill period, the same payload
 applied by a peer 2 whose `DisputeCommitted` events are held (its local diamond gets the window only
-from the sync's own chain fetch), and one served before the dispute and applied after it commits,
-return false with no recorded rejection and no blacklist. A payload with a fabricated window for the
-undisputed on-chain fork is rejected as `dispute window not on chain`, and one older than the kill
-period (served before the dispute, applied after it expired, reductions held) is rejected as
+from the sync's own chain fetch), one served before the dispute and applied after it commits, and
+one applied after the kill period with every reduction held, return not synced naming the window,
+with no recorded rejection and no blacklist. A payload with a fabricated window for the undisputed
+on-chain fork is rejected as `dispute window not on chain`, and one older than the chain's
+reduction (served before the dispute, applied after `reduceWindowOnChain`) is rejected as
 `latest fork is disputed`; both blacklist peer 0. The last case blacklists an honest payload under
 the current stale-response policy.
 
-Every no-verdict kill-period case also asserts the outcome's `retryAfter` equals the chain's
-`killPeriodEnd`; the rejection cases carry none.
+Two cases pin the chain as the judge and the wait's race closure. A reduction landed between the
+finality read and the window fetch makes the local recomputation of a payload claiming another
+successor revert on a reduced window: rejected as `served reduction reverts`. With the applied
+outcome held before the sync acts on it (`stubHoldSpectateSyncApplication` with `holdAfterApply`),
+the window is reduced while nothing listens; after release the responder answers a second request,
+so the wait ended on its own chain read.
 
 ## Tests
 
@@ -65,11 +70,14 @@ Every no-verdict kill-period case also asserts the outcome's `retryAfter` equals
 - `milestone snapshot at the requester's own finalized point altered → accepted from that point, the altered snapshot is not stored`: none
 - `every milestone below the on-chain anchor with a forged newer snapshot → rejected, milestones invalid`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P33
 - `outbound block above the on-chain anchor forged → rejected, latest-fork outbound blocks invalid`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P31
-- `served window still in its kill period → not accepted, no verdict, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P1
-- `served window in its kill period the requester has not applied → not accepted, no verdict, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P6
+- `served window still in its kill period → not accepted, no verdict naming the window, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P1
+- `served window in its kill period the requester has not applied → not accepted, no verdict naming the window, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P6
 - `served window the chain does not hold → rejected, dispute window not on chain`: REQ-SYNC-4-AWHFPA.T1.P2
-- `dispute opens on the latest fork after the payload was served → not accepted, no verdict, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P3
-- `payload older than the latest fork's kill period, its expired window missing → rejected, latest fork is disputed`: REQ-SYNC-4-AWHFPA.T1.P4
+- `dispute opens on the latest fork after the payload was served → not accepted, no verdict naming the window, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P3
+- `payload older than the latest fork's reduction, its reduced window missing → rejected, latest fork is disputed`: REQ-SYNC-4-AWHFPA.T1.P4
+- `dispute opens on the latest fork after the payload was served, its kill period over but the chain has not reduced it → not accepted, no verdict naming the window, responder not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P17
+- `the chain reduces the served window between the finality read and the window fetch, the payload claiming another successor → local reduction reverts on the reduced window, rejected, served reduction reverts`: REQ-SYNC-4-AWHFPA.T1.P16
+- `the chain reduces the window after the sync read it but before the sync waits → the wait ends on its chain read, the same peer is asked again and the sync succeeds`: REQ-SYNC-4-AWHFPA.T1.P18
 - `first dispute window not on the on-chain fork → rejected, dispute window not linked`: INV-SYNC-1-XCQZ28.T1.P7, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P36
 - `second dispute window not continuing from the first reduced fork → rejected, dispute window not linked`: INV-SYNC-1-XCQZ28.T1.P8, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P37
 - `payload served before the chain adopted its window's reduced fork → prefix skipped, accepted, responder not blacklisted`: INV-SYNC-1-XCQZ28.T1.P9, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P39
@@ -77,7 +85,7 @@ Every no-verdict kill-period case also asserts the outcome's `retryAfter` equals
 - `single dispute window starting at the on-chain fork → accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P38
 - `chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P93
 - `window reduced locally during sync → accepted, its inbound blocks stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P94
-- `window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97
+- `window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → local reduction reverts, no verdict naming the window, no window inbound block stored, inbound head unchanged`: REQ-SYNC-4-AWHFPA.T1.P15, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97
 - `unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P98, INV-SYNC-1-XCQZ28.T1.P15
 - `unreduced window whose disputes name the window's fork under another channel, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P99, INV-SYNC-1-XCQZ28.T1.P16
 - `reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P95

@@ -18,7 +18,7 @@
 - [`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../../../specification/protocol-model/identity.md#req-id-5-gw1zey)
 - [`REQ-TRUST-5-NDVRW8` (The design targets many SMALL channels, not large ones)](../../../specification/security/trust-model.md#req-trust-5-ndvrw8)
 - [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
-- [`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+- [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
 
 ## UNIT-TEST-P2P-MANAGER-1-9DNSRZ
 
