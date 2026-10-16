@@ -1682,6 +1682,32 @@ rejects the peer. Confirm with a unit case where the requester's `getStateSnapsh
 previous anchor while the server's local diamond holds the newer one: the sync is accepted or
 retried, not rejected.
 
+<a id="find-sync-6-pw76jh"></a>
+
+### FIND-SYNC-6-PW76JH
+
+**Defect:** _Open (2026-10-16), found executing PR #558's initial-load coverage._ A fresh
+spectator's first sync of an expired, unreduced dispute window cannot complete its local
+reduction: the spectator's local diamond has never mirrored the chain's inbound head
+(`channelBalances.latestInboundMessageBlockHash` is zero in its local diamond), so the facet's
+`reduce` derives a zero inbound head, the reduction reverts
+`ErrorDisputeInboundMessageBlocksInvalid`, and `applySyncResponse` rejects the payload and
+blacklists the honest responder. Participants' mirrors hold the head from chain-event processing;
+the spectator's fetch-and-persist path never installs it. Reproduced twice in the harness, with
+and without a top-up in the window's interval: the spectator's sync rejects with "served reduction
+reverts" and blacklists the responder. Related:
+[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed),
+[`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww) (same local-condition-as-verdict class
+for provider lag).
+
+**Proposed direction:** Install the chain's inbound head into the spectator's local diamond
+before its local reduction (from the fetched on-chain snapshot or dispute data), or derive the
+reduction's inbound head from chain data instead of the local mirror. Confirm with a
+fresh-spectator sync over an expired unreduced window: accepted with no verdict, and, at a
+reduced reduction grant, the facet-frame exhaustion of
+[`INV-SYNC-3-A7A2ED.T1.P36`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p36) instead of the inbound
+revert.
+
 <a id="find-stipend-1-9ysnwb"></a>
 
 ### FIND-STIPEND-1-9YSNWB
