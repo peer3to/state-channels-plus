@@ -71,6 +71,18 @@ export enum ProofTier {
     Chain = "chain"
 }
 
+/**
+ * Which retained continuations a linked run takes: at the n-th point with
+ * several, `choices[n]` (default the first); `branches[n]` records how many
+ * there were, so the next untried run can be derived.
+ */
+type RunPath = {
+    /** the signers continuations are ranked by: the hop's threshold set */
+    rankSigners: ReadonlySet<Address>;
+    choices: number[];
+    branches: number[];
+};
+
 type VerifiedProofOptions = {
     replayFromIndex?: number;
     /** sync installs final history; a dispute replay only persists */
@@ -768,22 +780,47 @@ class AgreementManager {
     }
 
     /**
-     * The block at `height` for a proof: the stored history block, else
-     * the retained evidence block that links to `previous` (the block below).
+     * The retained blocks that may continue a run above `previous`: those
+     * linking to it, the one a history block above the gap names by hash
+     * first (a hash link cannot be forged), then by `rankSigners`.
      */
-    private getProofBlockAbove(
-        forkId: ForkId,
-        height: BlockHeight,
-        previous?: Block
-    ): Block | undefined {
-        const history = this.getHistoryBlock(forkId, height);
-        if (history || !previous) return history;
-        const retained = this.storage.retainedEvidence;
-        if (retained.getBlocks(forkId, height).length === 0) return undefined;
-        return retained.getLinkedChild(
+    private getRetainedContinuations(
+        previous: Block,
+        rankSigners: ReadonlySet<Address>
+    ): Block[] {
+        const ranked = this.storage.retainedEvidence.rankLinkedChildren(
             previous,
-            this.getEligibleSigners(forkId, height)
+            rankSigners
         );
+        const above = this.storage.blocks.getBlock(
+            previous.forkId,
+            previous.height + 2
+        );
+        const named =
+            above &&
+            ranked.find((block) => block.hash === above.previousBlockHash);
+        return named
+            ? [named, ...ranked.filter((block) => block !== named)]
+            : ranked;
+    }
+
+    /** The next untried run after one that went through `path`; undefined when every run was tried. */
+    private nextRunPath(path: RunPath): RunPath | undefined {
+        for (let index = path.branches.length - 1; index >= 0; index--) {
+            const choice = path.choices[index] ?? 0;
+            if (choice + 1 < path.branches[index])
+                return {
+                    rankSigners: path.rankSigners,
+                    choices: [
+                        ...path.branches
+                            .slice(0, index)
+                            .map((_count, at) => path.choices[at] ?? 0),
+                        choice + 1
+                    ],
+                    branches: []
+                };
+        }
+        return undefined;
     }
 
     /**
@@ -800,27 +837,6 @@ class AgreementManager {
             block && this.storage.retainedEvidence.getBlock(block.hash);
         if (retained) block!.expandSignatures(retained.confirmationSignatures);
         return block;
-    }
-
-    /**
-     * Who may vote for a retained block at `height`: the participants of the
-     * latest state held below it (the fork genesis at the bottom).
-     */
-    private getEligibleSigners(
-        forkId: ForkId,
-        height: BlockHeight
-    ): Set<Address> {
-        for (let below = height - 1; below >= -1; below--) {
-            const snapshot = this.storage.getStateSnapshot({
-                forkId,
-                height: below
-            });
-            if (snapshot)
-                return new Set(
-                    this.storage.getParticipantsUnionFromSnapshots(snapshot)
-                );
-        }
-        return new Set();
     }
 
     /** The local diamond's anchor of `forkId`, else the fork genesis; one read per operation. */
@@ -959,8 +975,9 @@ class AgreementManager {
                     `Cannot build a state proof for fork ${forkId}: missing the participant-change block at height ${changeHeight}`
                 );
             }
-            const milestone = await this.tryBuildMilestone(
-                this.storedBlocksUp(forkId, changeHeight),
+            const milestone = await this.tryBuildMilestoneUp(
+                forkId,
+                changeHeight,
                 previousThresholdSnapshot,
                 exactFinalPoint ? undefined : blockHeight
             );
@@ -974,29 +991,117 @@ class AgreementManager {
             milestones.length > 0
         )
             return milestones;
-        const latest = await this.tryBuildMilestone(
-            exactFinalPoint
-                ? this.storedBlocksUp(forkId, blockHeight)
-                : this.storedBlocksDown(forkId, blockHeight),
-            previousThresholdSnapshot,
-            exactFinalPoint ? undefined : blockHeight
-        );
+        const latest = exactFinalPoint
+            ? await this.tryBuildMilestoneUp(
+                  forkId,
+                  blockHeight,
+                  previousThresholdSnapshot
+              )
+            : await this.tryBuildMilestoneDown(
+                  forkId,
+                  blockHeight,
+                  previousThresholdSnapshot
+              );
         if (latest) push(latest);
 
         return milestones;
     }
 
     /**
-     * A contiguous stored run, including audit evidence above the active view:
-     * history first, else retained evidence that links to the block below.
+     * `tryBuildMilestone` over the linked runs up from the history block at
+     * `height`, ranking retained continuations by the hop's threshold set and
+     * trying the next run while none proves a final point.
+     */
+    private async tryBuildMilestoneUp(
+        forkId: ForkId,
+        height: BlockHeight,
+        previousThresholdSnapshot: StateSnapshot,
+        maxHeight?: BlockHeight
+    ): Promise<MilestoneProofStruct | undefined> {
+        const first = this.getHistoryBlock(forkId, height);
+        // without its resulting state the first block proves no hop: hash order
+        const rankSigners =
+            first &&
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                first.stateSnapshotHash
+            )
+                ? await this.getMilestoneThresholdSigners(
+                      previousThresholdSnapshot,
+                      first
+                  )
+                : new Set<Address>();
+        let path: RunPath | undefined = {
+            rankSigners,
+            choices: [],
+            branches: []
+        };
+        while (path) {
+            const milestone = await this.tryBuildMilestone(
+                this.storedBlocksUp(forkId, height, path),
+                previousThresholdSnapshot,
+                maxHeight
+            );
+            if (milestone) return milestone;
+            path = this.nextRunPath(path);
+        }
+        return undefined;
+    }
+
+    /**
+     * `tryBuildMilestone` down from `height`. Where history lacks `height`,
+     * each retained block there is tried as the top in block-hash order: the
+     * final point below is not known yet, so there is no threshold set to
+     * rank by.
+     */
+    private async tryBuildMilestoneDown(
+        forkId: ForkId,
+        height: BlockHeight,
+        previousThresholdSnapshot: StateSnapshot
+    ): Promise<MilestoneProofStruct | undefined> {
+        const history = this.getHistoryBlock(forkId, height);
+        const tops: (Block | undefined)[] = history
+            ? [history]
+            : this.storage.retainedEvidence.rankBlocksAt(
+                  forkId,
+                  height,
+                  new Set<Address>()
+              );
+        if (tops.length === 0) tops.push(undefined);
+        for (const top of tops) {
+            const milestone = await this.tryBuildMilestone(
+                this.storedBlocksDown(forkId, height, top),
+                previousThresholdSnapshot,
+                height
+            );
+            if (milestone) return milestone;
+        }
+        return undefined;
+    }
+
+    /**
+     * A contiguous stored run from `height` up, including audit evidence
+     * above the active view: history first, else a retained continuation of
+     * the block below, chosen by `path`. Starts at history, or at a retained
+     * continuation of `previous` when given.
      */
     private *storedBlocksUp(
         forkId: ForkId,
-        height: BlockHeight
+        height: BlockHeight,
+        path: RunPath,
+        previous?: Block
     ): Generator<Block, void, unknown> {
-        let previous: Block | undefined;
         for (let current = height; ; current++) {
-            const block = this.getProofBlockAbove(forkId, current, previous);
+            let block = this.getHistoryBlock(forkId, current);
+            if (!block && previous) {
+                const candidates = this.getRetainedContinuations(
+                    previous,
+                    path.rankSigners
+                );
+                if (candidates.length > 1) {
+                    block = candidates[path.choices[path.branches.length] ?? 0];
+                    path.branches.push(candidates.length);
+                } else block = candidates[0];
+            }
             if (!block) return;
             yield (previous = block);
         }
@@ -1007,54 +1112,70 @@ class AgreementManager {
      * also starts above the view: a block an audit verified is stored without
      * moving the view, and it can be the final point a proof proves. Where
      * history lacks a height, retained evidence fills it: at `height` the
-     * block signed by the most eligible participants, below it the block the
-     * block above links to.
+     * given `top`, below it the block the block above links to.
      */
     private *storedBlocksDown(
         forkId: ForkId,
-        height: BlockHeight
+        height: BlockHeight,
+        top?: Block
     ): Generator<Block, void, unknown> {
         let above: Block | undefined;
         for (let current = height; current >= 0; current--) {
-            const retained = this.storage.retainedEvidence;
             const block =
-                this.getHistoryBlock(forkId, current) ??
-                (current === height
-                    ? retained.getMostSignedBlock(
-                          forkId,
-                          current,
-                          this.getEligibleSigners(forkId, current)
-                      )
-                    : above?.height === current + 1
-                      ? retained.getBlock(above.previousBlockHash)
-                      : undefined);
+                current === height
+                    ? top
+                    : (this.getHistoryBlock(forkId, current) ??
+                      (above?.height === current + 1
+                          ? this.storage.retainedEvidence.getBlock(
+                                above.previousBlockHash
+                            )
+                          : undefined));
             above = block;
             if (block) yield block;
         }
     }
 
-    /** Stored blocks `from`..`to` as one linked run; a missing or unlinked block throws. */
+    /**
+     * Stored blocks `from`..`to` as one linked run, trying each retained
+     * continuation (hash links first, then block-hash order: a tail has no
+     * threshold set) until one run reaches `to`; when none does, the first
+     * missing or unlinked block throws.
+     */
     private collectLinkedRun(
         forkId: ForkId,
         from: BlockHeight,
         to: BlockHeight,
         previous?: Block
     ): Block[] {
-        const run: Block[] = [];
-        for (let height = from; height <= to; height++) {
-            const block = this.getProofBlockAbove(forkId, height, previous);
-            const error = !block
-                ? `missing the required block at height ${height}`
-                : previous && block.previousBlockHash !== previous.hash
-                  ? `the block at height ${height} does not link to its predecessor`
-                  : undefined;
-            if (error)
-                throw new Error(
-                    `Cannot build a state proof for fork ${forkId}: ${error}`
-                );
-            run.push((previous = block!));
+        let path: RunPath | undefined = {
+            rankSigners: new Set<Address>(),
+            choices: [],
+            branches: []
+        };
+        let firstError: string | undefined;
+        while (path) {
+            const run: Block[] = [];
+            let last = previous;
+            let error: string | undefined;
+            const blocks = this.storedBlocksUp(forkId, from, path, previous);
+            for (let height = from; height <= to && !error; height++) {
+                const next = blocks.next();
+                const block = next.done ? undefined : next.value;
+                error = !block
+                    ? `missing the required block at height ${height}`
+                    : last && block.previousBlockHash !== last.hash
+                      ? `the block at height ${height} does not link to its predecessor`
+                      : undefined;
+                if (!error) run.push((last = block!));
+            }
+            blocks.return();
+            if (!error) return run;
+            firstError ??= error;
+            path = this.nextRunPath(path);
         }
-        return run;
+        throw new Error(
+            `Cannot build a state proof for fork ${forkId}: ${firstError}`
+        );
     }
 
     /**

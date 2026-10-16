@@ -47,31 +47,30 @@ export class RetainedEvidenceStorage {
     }
 
     /**
-     * The retained block at the coordinate signed by the most distinct
-     * `eligibleSigners`; a tie takes the lowest block hash.
+     * The retained blocks at the coordinate, most distinct `rankSigners`
+     * first; a tie takes the lowest block hash first.
      */
-    getMostSignedBlock(
+    rankBlocksAt(
         forkId: ForkId,
         height: BlockHeight,
-        eligibleSigners: ReadonlySet<Address>
-    ): Block | undefined {
-        return this.mostSigned(this.getBlocks(forkId, height), eligibleSigners);
+        rankSigners: ReadonlySet<Address>
+    ): Block[] {
+        return this.rank(this.getBlocks(forkId, height), rankSigners);
     }
 
     /**
-     * The retained block that links to `previous` at the next height; with
-     * several, the one signed by the most distinct `eligibleSigners`, a tie
-     * taking the lowest block hash.
+     * The retained blocks that link to `previous` at the next height, most
+     * distinct `rankSigners` first; a tie takes the lowest block hash first.
      */
-    getLinkedChild(
+    rankLinkedChildren(
         previous: Block,
-        eligibleSigners: ReadonlySet<Address>
-    ): Block | undefined {
-        return this.mostSigned(
+        rankSigners: ReadonlySet<Address>
+    ): Block[] {
+        return this.rank(
             this.getBlocks(previous.forkId, previous.height + 1).filter(
                 (block) => block.previousBlockHash === previous.hash
             ),
-            eligibleSigners
+            rankSigners
         );
     }
 
@@ -93,27 +92,26 @@ export class RetainedEvidenceStorage {
     }
 
     /**
-     * Ranks by distinct contract-accepted signers in `eligibleSigners`, so
-     * signatures by outsiders or repeated signatures by one key add nothing.
+     * Orders by distinct contract-accepted signers in `rankSigners`, so
+     * signatures by outsiders or repeated signatures by one key add nothing;
+     * the lowest block hash first on a tie.
      */
-    private mostSigned(
-        blocks: Block[],
-        eligibleSigners: ReadonlySet<Address>
-    ): Block | undefined {
-        let chosen: Block | undefined;
-        let chosenCount = -1;
-        for (const block of blocks) {
+    private rank(blocks: Block[], rankSigners: ReadonlySet<Address>): Block[] {
+        const counted = blocks.map((block) => {
             let count = 0;
             for (const signer of block.acceptedSignerAddresses)
-                if (eligibleSigners.has(signer)) count++;
-            if (
-                count > chosenCount ||
-                (count === chosenCount && block.hash < chosen!.hash)
-            ) {
-                chosen = block;
-                chosenCount = count;
-            }
-        }
-        return chosen;
+                if (rankSigners.has(signer)) count++;
+            return { block, count, hash: String(block.hash) };
+        });
+        counted.sort((a, b) =>
+            b.count !== a.count
+                ? b.count - a.count
+                : a.hash < b.hash
+                  ? -1
+                  : a.hash > b.hash
+                    ? 1
+                    : 0
+        );
+        return counted.map(({ block }) => block);
     }
 }
