@@ -266,14 +266,17 @@ their on-chain candidate under the same local grant
 (`ReductionComputationService` → local `reduceOutputToSnapshotData`), so a window beyond the floor
 could never be computed by any SDK peer and would never settle at all. **Decision (a), Luka,
 2026-10-16:** reduction-path local calls — a sync's `reduceAndFinalizeLocally` and a reducer's
-`reduceOutputToSnapshotData` candidate computation — are granted the chain block gas limit, making
-local feasibility equal on-chain feasibility (one bound: the block gas limit). The strongest
+`reduceOutputToSnapshotData` candidate computation — are granted the most gas one reduction
+transaction can carry on the chain: the block gas limit, lowered by the configured per-transaction
+cap (`CHAIN_TX_GAS_CAP`) when the chain has one, read at runtime start; the reduction submission's
+own gas is the signer's estimate with its headroom clamped at the same bound. Local feasibility
+then equals on-chain feasibility (one bound: what a single transaction can carry). The strongest
 rejected alternative, computing the candidate by chain `eth_call`, moves the bound to the RPC
 provider's call cap and adds provider load on every reduction; an admission cap on the inbound
 interval is a protocol change; accepting the floor as a stall leaves such windows unsettleable.
-Consequences: the supported worst case must fit a chain block, not just the local floor; a responder
-can make a requester spend up to one block of local computation per sync round, but only on
-hash-committed genuine inputs (the pre-checks above); windows beyond block gas are a documented
+Consequences: the supported worst case must fit in one transaction, not just a block; a responder
+can make a requester spend up to that bound of local computation per sync round, but only on
+chain-committed genuine inputs (the pre-checks above); windows beyond it are a documented
 residual risk in the synchronization specification's Security considerations.
 
 **Measurement.** The permanent proof is
@@ -285,29 +288,30 @@ size, since the inbound interval has no protocol cap — commits the expected re
 6,874,669 gas, 41% of the local floor and far under any block limit. Context from a throwaway probe
 (since deleted): a real staged SDK reduction measured ≈529k execution gas (3 disputes, 1 inbound
 block) growing ≈20.6k per inbound block/message, so the floor alone already covered roughly 650
-inbound messages; the block-gas grant removes that cliff entirely.
+inbound messages; the transaction-bound grant removes that cliff entirely.
 
 **Evidence limit.** Local exhaustion is reproduced genuinely at both levels: on a real executor over
 real `reduceAndFinalize` calls (call frame and facet frame), and through the live sync catch with a
-real reduced reduction grant. Exhaustion _at_ the full block-gas grant is not reproduced — by
-decision (a) that boundary is the chain's own block limit, where on-chain settlement is equally
-impossible and out of scope for the local mirror.
+real reduced reduction grant. Exhaustion _at_ the full transaction bound is not reproduced — by
+decision (a) that boundary is the chain's own per-transaction limit, where on-chain settlement is
+equally impossible and out of scope for the local mirror.
 
 **Engineer disposition (Luka, 2026-10-07).** Address this later, not in PR #520. A valid reduction must be
 able to replay successfully on-chain; the follow-up must investigate the complete gas/liveness boundary,
 not merely change the blacklist catch. This is a scope deferral, not a claim that the risk is fixed or safe.
 No production behavior or gas configuration is changed for this finding in this PR.
 
-**Follow-up obligations (discharged 2026-10-16).** Supported bounds established at the protocol caps;
-the real reduction path measured against local and on-chain limits; local exhaustion reproduced with
-served evidence at the executor and sync levels; failure without blaming an honest responder and
-recovery with sufficient gas verified, including through the full `sync()` entry after on-chain
-settlement; successful on-chain submission and settlement demonstrated for the supported worst case,
-including proof folding and state restoration
+**Follow-up obligations (discharged 2026-10-16).** The supported bound is a gas limit (the most one
+transaction can carry), measured at the dispute and participant caps with a chosen inbound interval —
+the interval itself has no protocol cap; the real reduction path measured against local and on-chain
+limits; local exhaustion reproduced with served evidence at the executor and sync levels; failure
+without blaming an honest responder and recovery with sufficient gas verified, including through the
+full `sync()` entry after on-chain settlement; successful on-chain submission and settlement
+demonstrated for the supported worst case, including proof folding and state restoration
 ([`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3)).
-Where supported inputs could not fit the old local floor, the engineer chose the block-gas reduction
-grant over a chain-call candidate, an admission cap, or an accepted stall. Genuine invalid-evidence
-and executor/transport failure oracles remain distinct.
+Where supported inputs could not fit the old local floor, the engineer chose the transaction-bound
+reduction grant over a chain-call candidate, an admission cap, or an accepted stall. Genuine
+invalid-evidence and executor/transport failure oracles remain distinct.
 
 ## Retained proof evidence and installed history
 
@@ -1707,6 +1711,14 @@ fresh-spectator sync over an expired unreduced window: accepted with no verdict,
 reduced reduction grant, the facet-frame exhaustion of
 [`INV-SYNC-3-A7A2ED.T1.P36`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p36) instead of the inbound
 revert.
+
+**Engineer disposition (Luka, 2026-10-16): defer the fix to a follow-up PR.** The defect predates
+PR #558 and is unchanged by it; the planned initial-load case
+([`INV-SYNC-3-A7A2ED.T1.P36`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p36)) stays an explicitly accepted
+unresolved gap for that PR under governance §7, on the same basis as the 2026-10-07 deferral of
+[`FIND-SYNC-REDUCTION-GAS-1-AJE985`](open-findings.md#find-sync-reduction-gas-1-aje985). Installing a chain-derived inbound head
+into a fresh spectator's mirror is trust-boundary work that gets its own change and review; this
+acceptance is not a claim that the risk is fixed or safe.
 
 <a id="find-stipend-1-9ysnwb"></a>
 

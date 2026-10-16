@@ -43,6 +43,11 @@ export type Config = {
     // already recorded. A receipt still pending then shows up on a later
     // read. No read may hang on the chain.
     GAS_USAGE_SETTLE_MS: number;
+    // Most gas a single transaction may carry on the target chain, when the
+    // chain caps it below the block gas limit (e.g. EIP-7825's 2^24). The
+    // reduction-path local grant and the reduction submission are bounded
+    // by the lower of this and the block gas limit. 0 = no separate cap.
+    CHAIN_TX_GAS_CAP: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -79,6 +84,7 @@ const DEFAULT_CONFIG: Config = {
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,
     GAS_USAGE_SETTLE_MS: 2_000,
+    CHAIN_TX_GAS_CAP: 0,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

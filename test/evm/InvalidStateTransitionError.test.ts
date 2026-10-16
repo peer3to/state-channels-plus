@@ -7,6 +7,7 @@ import {
     encodeMathState
 } from "../fixtures/LocalEvmCallGas.fixture";
 import { ContractExecutor, EvmStateMachine } from "@/evm";
+import { Codec, Type } from "@/utils";
 import {
     isInvalidStateTransitionError,
     isLocalEvmExecutionFailure,
@@ -331,6 +332,70 @@ describe("isLocalReductionResourceFailure", function () {
             "ErrorDisputeExecutionOutOfGas"
         );
         expect(isLocalReductionResourceFailure(error)).to.equal(true);
+    });
+
+    it("a reduction whose facet reverts without a reason and gas to spare is not a resource failure", async function () {
+        const executor = new ContractExecutor(
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
+        );
+        const machine = await standaloneDiamondMachine(executor, 3_000_000);
+        // a seeded window with one committed dispute, whose snapshot
+        // commits to a state the machine cannot decode: the facet reverts
+        // with no data, well within the forwarded gas
+        const garbageState = "0x1234";
+        const snapshotData = {
+            ...emptySnapshot.snapshotData,
+            stateMachineStateHash: ethers.keccak256(garbageState)
+        };
+        const forkId = ethers.keccak256(
+            Codec.encode(snapshotData, Type.SnapshotData)
+        );
+        const channelId = ethers.id("reasonless-reduction-channel");
+        const dispute = {
+            input: { ...zeroDisputeInput, channelId, forkId },
+            postedAuditingData: false,
+            outputSnapshotDataHash: ethers.ZeroHash
+        };
+        const snapshot = {
+            snapshotData,
+            forkId,
+            blockHeight: 0n,
+            timestamp: 0n
+        };
+        await machine.localDiamondContract.persistDisputeWindow(channelId, {
+            forkId,
+            evidence: {
+                creationTimestamp: 1n,
+                lastEvidenceSubmissionTimestamp: 1n,
+                disputeCommitments: [
+                    ethers.keccak256(Codec.encode(dispute, Type.Dispute))
+                ],
+                hasPosted: [ethers.ZeroAddress]
+            },
+            reducedResult: {
+                forkId: ethers.ZeroHash,
+                timestamp: 0n,
+                reducer: ethers.ZeroAddress
+            }
+        });
+        const error = await machine
+            .reduceAndFinalizeLocally(
+                [dispute],
+                snapshot,
+                garbageState,
+                [],
+                ethers.ZeroHash
+            )
+            .then(
+                () => undefined,
+                (e: unknown) => e
+            );
+        expect((error as Error).message).to.match(/: revert$/);
+        expect(isLocalEvmExecutionFailure(error)).to.equal(true);
+        expect(isLocalReductionResourceFailure(error)).to.equal(false);
     });
 
     it("a dispute computation that exhausts its capped budget is a resource failure", async function () {

@@ -19,9 +19,10 @@ abstract class ADiamondStateMachine {
     localDiamondContract: LocalDiamondContract;
 
     /**
-     * Gas granted to reduction-path local calls (the chain block gas
-     * limit), so a reduction the chain can settle is always computable
-     * locally. Undefined means the executor's default grant applies.
+     * Gas granted to reduction-path local calls (the most gas one
+     * reduction transaction can carry on the chain), so a reduction that
+     * can land on chain is always computable locally. Undefined means the
+     * executor's default grant applies.
      */
     public reductionCallGasLimit?: bigint;
 

@@ -28,3 +28,4 @@ Single completion
 - [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P11` — direct completion returns false and removes the operation when the fork changes inside its mutex wait
 - [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P12` — disposed reduction manager refuses a new attempt without retaining a completion
 - [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P13` — disposed reduction manager refuses direct genesis completion without retaining it
+- [x] `UNIT-TEST-REDUCTION-MANAGER-1-V1Y4BM.P14` — with the reduction grant lowered below the candidate's cost, the candidate computation throws the facet frame's exhaustion and installs nothing; with the production reduction grant it computes, and the manager's own attempt lands the reduction on chain

@@ -11,29 +11,6 @@ import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/Dat
 import { expect } from "chai";
 import { ethers, ZeroHash } from "ethers";
 
-/**
- * Set a peer's reduction-path gas grant (the field production sets from the
- * chain's block gas limit) host-side; returns the previous grant as a
- * decimal string, or undefined for the executor default.
- */
-async function setRequesterReductionGrant(
-    h: MathPeerTestHarness,
-    peerIndex: number,
-    grant: string | undefined
-): Promise<string | undefined> {
-    return h.execOnHost(
-        h.getPeer(peerIndex),
-        async (sm, args) => {
-            const machine = sm.diamondStateMachine;
-            const original = machine.reductionCallGasLimit;
-            machine.reductionCallGasLimit =
-                args.grant !== null ? BigInt(args.grant) : undefined;
-            return original !== undefined ? original.toString() : undefined;
-        },
-        { grant: grant ?? null }
-    );
-}
-
 const RESPONDER_INDEX = 0;
 const REQUESTER_INDEX = 2;
 // The dispute-window inbound sync staging keeps the top-up out of peer 2's
@@ -53,6 +30,63 @@ function inboundMessageBlockHash(block: MessageBlockStruct): Hash {
 export function padServedReductionState(payload: SyncPayload): void {
     const window = payload.disputeWindows[0];
     window.latestEncodedStateMachineState = `${window.latestEncodedStateMachineState}${"ff".repeat(50_000)}`;
+}
+
+/** Pad the served state and rewrite the snapshot's state hash to match it,
+ * so only the chain anchoring of the snapshot itself can catch it. */
+export function padServedStateWithRewrittenHash(payload: SyncPayload): void {
+    padServedReductionState(payload);
+    const window = payload.disputeWindows[0];
+    window.latestStateSnapshot.snapshotData.stateMachineStateHash = hash(
+        window.latestEncodedStateMachineState
+    );
+}
+
+/** Append a large fabricated successor that links correctly from the last
+ * served inbound block, so only the chain reduction's head can catch it. */
+export function appendLargeForgedInboundSuccessor(payload: SyncPayload): void {
+    const inbound =
+        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce;
+    const tip = inbound.at(-1)!;
+    inbound.push({
+        ...tip,
+        previousBlockHash: inboundMessageBlockHash(tip),
+        blockHeight: BigInt(tip.blockHeight) + 1n,
+        messages: tip.messages.map((message, index) =>
+            index === 0
+                ? { ...message, data: `0x${"ff".repeat(200_000)}` }
+                : message
+        )
+    });
+}
+
+/** Pad one served dispute with a huge slash list, so its hash is no longer
+ * among the window's on-chain commitments. */
+export function padServedDispute(payload: SyncPayload): void {
+    const confirmation = payload.disputeWindows[0].disputeConfirmations[0];
+    const dispute = Codec.decode(
+        confirmation.signedDispute.encodedDispute,
+        Type.Dispute
+    );
+    dispute.input.onChainSlashes = Array.from(
+        { length: 2_000 },
+        (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`
+    );
+    confirmation.signedDispute.encodedDispute = Codec.encode(
+        dispute,
+        Type.Dispute
+    );
+}
+
+/** Pad the served snapshot's total-deposits data, so the snapshot no
+ * longer hashes to what the chain's reduction names. */
+export function padServedSnapshotBalanceData(payload: SyncPayload): void {
+    const snapshotData =
+        payload.disputeWindows[0].latestStateSnapshot.snapshotData;
+    snapshotData.totalDeposits = {
+        ...snapshotData.totalDeposits,
+        data: `0x${"ff".repeat(500_000)}`
+    };
 }
 
 /**
@@ -174,6 +208,8 @@ async function stageAndApplyDisputeWindowInboundSync(
         requesterInboundHold: "chainEvent" | "storageWrite" | "droppedLog";
         mutate: (payload: SyncPayload) => void;
         reductionOutOfGasFirstAttempt?: boolean;
+        /** Run the (single) apply under this reduction grant, restored after. */
+        reductionGrant?: string;
     }
 ) {
     let inboundHold: {
@@ -321,29 +357,28 @@ async function stageAndApplyDisputeWindowInboundSync(
             if (options.reductionOutOfGasFirstAttempt) {
                 // Give the requester a real reduction grant below the
                 // staged reduction's cost (production sets this field from
-                // the chain's block gas limit; a small value here models a
-                // chain whose block gas cannot fund this window's
-                // reduction), so the real reduction exhausts inside the
-                // facet frame. The funded retry below restores the original
-                // grant and runs the real reduction to completion.
-                const originalGrant = await setRequesterReductionGrant(
-                    h,
-                    REQUESTER_INDEX,
-                    "400000"
-                );
+                // the chain bound; a small value here models a chain whose
+                // bound cannot fund this window's reduction), so the real
+                // reduction exhausts inside the facet frame. The funded
+                await requesterStub.stubReductionGrant("400000").request();
                 try {
                     await applyPayload(encodedPayload);
                 } catch (e) {
                     reductionThrew = e instanceof Error ? e.message : String(e);
                 } finally {
-                    await setRequesterReductionGrant(
-                        h,
-                        REQUESTER_INDEX,
-                        originalGrant
-                    );
+                    await requesterStub.restoreReductionGrant().request();
                 }
             }
-            accepted = await applyPayload(encodedPayload);
+            if (options.reductionGrant)
+                await requesterStub
+                    .stubReductionGrant(options.reductionGrant)
+                    .request();
+            try {
+                accepted = await applyPayload(encodedPayload);
+            } finally {
+                if (options.reductionGrant)
+                    await requesterStub.restoreReductionGrant().request();
+            }
         } else {
             await requesterStub
                 .holdSyncWindowPersistence(
@@ -452,6 +487,7 @@ export async function applyDisputeWindowInboundSyncPayload(
             | "chainAfterFinalityRead"
             | "concurrentLocalSync";
         mutate: (payload: SyncPayload) => void;
+        reductionGrant?: string;
     }
 ) {
     const { releaseHolds, ...result } =
@@ -519,18 +555,14 @@ export async function assertSyncReductionOutOfGasRecovery(
                 ),
             { source: responder.address, forkId: sourceForkId }
         );
-    const originalGrant = await setRequesterReductionGrant(
-        h,
-        REQUESTER_INDEX,
-        "400000"
-    );
+    await requesterControl.stub.stubReductionGrant("400000").request();
     let syncThrew = "";
     try {
         await syncWithResponder();
     } catch (e) {
         syncThrew = e instanceof Error ? e.message : String(e);
     } finally {
-        await setRequesterReductionGrant(h, REQUESTER_INDEX, originalGrant);
+        await requesterControl.stub.restoreReductionGrant().request();
     }
     const responderBlacklisted = await requesterControl.query
         .isBlacklisted(responder.address)

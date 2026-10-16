@@ -359,6 +359,24 @@ contract LocalDiamond is StateChannelManagerProxy {
         _delegateDisputeExecution(msg.data, type(uint256).max);
     }
 
+    /// Same treatment for the reducer's candidate computation: declared so
+    /// its facet frame's exhaustion is named like the reduction's.
+    function reduceOutputToSnapshotData(
+        bytes32 forkId,
+        ReduceOutput memory reducedOutput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory encodedStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) public returns (SnapshotData memory outputSnapshotData, bytes memory, MessageBlock memory) {
+        bytes memory data = abi.encodeCall(
+            DisputeVerificationFacet.reduceOutputToSnapshotData,
+            (forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, inboundMessageBlocks)
+        );
+
+        bytes memory result = _delegateDisputeExecution(data, type(uint256).max);
+        return abi.decode(result, (SnapshotData, bytes, MessageBlock));
+    }
+
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
         view

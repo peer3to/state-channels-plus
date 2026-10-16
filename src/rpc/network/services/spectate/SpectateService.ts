@@ -21,6 +21,7 @@ import {
 } from "@/utils/evmErrorHandler";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ZeroHash } from "ethers";
 
 /** The state a sync installs and where its last-run replay starts. */
 type SyncReplayBase = {
@@ -354,43 +355,147 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             peerAddress,
                             "dispute window mismatch"
                         );
-                    // The served bytes are committed by hashes the facet
-                    // checks only after the calldata is in EVM memory; check
-                    // them cheaply here so padded bytes reject as evidence
-                    // instead of exhausting the local grant blamelessly.
-                    // What passes is genuine: a state matching its snapshot
-                    // commitment, a chain-linked inbound list, and a
-                    // participant list within the channel maximum — its
-                    // exhaustion below is a local resource failure.
-                    if (
-                        hash(dw.latestEncodedStateMachineState) !==
-                        dw.latestStateSnapshot.snapshotData
-                            .stateMachineStateHash
-                    )
-                        return this.rejectSync(
-                            peerAddress,
-                            "reduction state hash mismatch"
+                    // A window already reduced in the local diamond (landed
+                    // on chain after the finality read, or reduced by a
+                    // concurrent sync) makes the facet return early without
+                    // checking its inputs; only a reduction this sync will
+                    // actually execute gets the anchored checks below.
+                    const [localWindow] =
+                        await diamondStateMachine.localDiamondContract.getDisputeWindows(
+                            channelId,
+                            [dw.forkId]
                         );
-                    if (
-                        stateManager.validationService.findBrokenInboundMessageChainBlock(
-                            StateSnapshot.from(dw.latestStateSnapshot),
-                            dw.inboundMessageBlocksAppliedInReduce
+                    const alreadyReducedLocally =
+                        localWindow !== undefined &&
+                        localWindow.reducedResult.forkId !== ZeroHash &&
+                        localWindow.reducedResult.forkId === dw.reducedForkId;
+                    if (!alreadyReducedLocally) {
+                        // The served bytes are committed by hashes the facet
+                        // checks only after the calldata is in EVM memory; anchor
+                        // them to the chain here so padded bytes reject as
+                        // evidence instead of exhausting the local grant
+                        // blamelessly. The disputes must be the window's
+                        // committed ones, the snapshot must be the one the
+                        // chain's reduction of those disputes names, and the
+                        // inbound list must end where that reduction ends.
+                        const onChainWindow = onChainDisputeWindows.find(
+                            (window) => window.forkId === dw.forkId
+                        );
+                        const committedHashes = new Set(
+                            onChainWindow?.evidence.disputeCommitments ?? []
+                        );
+                        // The chain commitment is keccak256(abi.encode(dispute));
+                        // the served encoded dispute is those exact bytes (the
+                        // same bytes dispute storage keys confirmations by), so
+                        // hash them as served rather than re-encoding a decode.
+                        const servedHashes = dw.disputeConfirmations.map(
+                            (disputeConfirmation) =>
+                                hash(
+                                    disputeConfirmation.signedDispute
+                                        .encodedDispute
+                                )
+                        );
+                        if (
+                            !onChainWindow ||
+                            servedHashes.length !== committedHashes.size ||
+                            new Set(servedHashes).size !==
+                                servedHashes.length ||
+                            servedHashes.some(
+                                (served) => !committedHashes.has(served)
+                            )
                         )
-                    )
-                        return this.rejectSync(
-                            peerAddress,
-                            "reduction inbound chain invalid"
-                        );
-                    maxChannelParticipants ??=
-                        await stateManager.stateChannelManagerContract.getMaxChannelParticipants();
-                    if (
-                        dw.latestStateSnapshot.snapshotData.participants
-                            .length > Number(maxChannelParticipants)
-                    )
-                        return this.rejectSync(
-                            peerAddress,
-                            "reduction participants exceed channel maximum"
-                        );
+                            return this.rejectSync(
+                                peerAddress,
+                                "reduction disputes not committed"
+                            );
+                        const reducedOutput =
+                            await stateManager.stateChannelManagerContract.reduce.staticCall(
+                                disputes
+                            );
+                        const snapshotStruct = StateSnapshot.from(
+                            dw.latestStateSnapshot
+                        ).toStruct();
+                        const snapshotAnchored =
+                            reducedOutput.latestBlock.transaction.header
+                                .forkId !== ZeroHash
+                                ? hash(
+                                      Codec.encode(
+                                          snapshotStruct,
+                                          Type.StateSnapshot
+                                      )
+                                  ) ===
+                                  reducedOutput.latestBlock.stateSnapshotHash
+                                : hash(
+                                      Codec.encode(
+                                          snapshotStruct.snapshotData,
+                                          Type.SnapshotData
+                                      )
+                                  ) === dw.forkId;
+                        if (!snapshotAnchored)
+                            return this.rejectSync(
+                                peerAddress,
+                                "reduction snapshot mismatch"
+                            );
+                        // What passes is genuine: a state matching its anchored
+                        // snapshot commitment, an inbound list ending at the
+                        // chain reduction's head, and a participant list within
+                        // the channel maximum — its exhaustion below is a local
+                        // resource failure.
+                        if (
+                            hash(dw.latestEncodedStateMachineState) !==
+                            dw.latestStateSnapshot.snapshotData
+                                .stateMachineStateHash
+                        )
+                            return this.rejectSync(
+                                peerAddress,
+                                "reduction state hash mismatch"
+                            );
+                        if (
+                            stateManager.validationService.findBrokenInboundMessageChainBlock(
+                                StateSnapshot.from(dw.latestStateSnapshot),
+                                dw.inboundMessageBlocksAppliedInReduce
+                            )
+                        )
+                            return this.rejectSync(
+                                peerAddress,
+                                "reduction inbound chain invalid"
+                            );
+                        let inboundHead =
+                            dw.latestStateSnapshot.snapshotData
+                                .latestInboundMessageBlockHash;
+                        for (const block of dw.inboundMessageBlocksAppliedInReduce)
+                            inboundHead = hash(
+                                Codec.encode(block, Type.MessageBlock)
+                            );
+                        const inboundHeight =
+                            dw.inboundMessageBlocksAppliedInReduce.length > 0
+                                ? dw.inboundMessageBlocksAppliedInReduce.at(-1)!
+                                      .blockHeight
+                                : dw.latestStateSnapshot.snapshotData
+                                      .latestInboundMessageBlockHeight;
+                        if (
+                            inboundHead !==
+                                reducedOutput.latestInboundMessageBlockHash ||
+                            BigInt(inboundHeight) !==
+                                BigInt(
+                                    reducedOutput.latestInboundMessageBlockHeight
+                                )
+                        )
+                            return this.rejectSync(
+                                peerAddress,
+                                "reduction inbound head mismatch"
+                            );
+                        maxChannelParticipants ??=
+                            await stateManager.stateChannelManagerContract.getMaxChannelParticipants();
+                        if (
+                            dw.latestStateSnapshot.snapshotData.participants
+                                .length > Number(maxChannelParticipants)
+                        )
+                            return this.rejectSync(
+                                peerAddress,
+                                "reduction participants exceed channel maximum"
+                            );
+                    }
                     try {
                         const committedReduction =
                             await diamondStateMachine.reduceAndFinalizeLocally(

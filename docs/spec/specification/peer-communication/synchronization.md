@@ -273,7 +273,7 @@ Dispute standing is a third, chain-defined predicate.
 - Proof generation is expensive for the responder; resource bounding falls under [`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y) and
   the open rate-limiting question ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)).
 - One in-flight sync per peer pair; retries are new rounds.
-- Reduction-path local calls — a sync's local reduction and a reducer's candidate computation — are granted the chain block gas limit, so a reduction the chain can settle is always computable locally (engineer decision, Luka, 2026-10-16; the strongest rejected alternative, computing the candidate by chain `eth_call`, moves the bound to the RPC provider's call cap and adds RPC load on every reduction). A served reduction that exhausts even that grant fails as an internal failure, never as evidence against the responder; the pre-reduction checks (state-hash commitment, inbound-chain linkage, participant maximum) reject padded served bytes as evidence before the expensive call, so only hash-committed genuine inputs can consume the grant.
+- Reduction-path local calls — a sync's local reduction and a reducer's candidate computation — are granted the most gas one reduction transaction can carry on the chain (the block gas limit, lowered by the configured per-transaction cap when the chain has one), so a reduction that can land on chain is always computable locally (engineer decision, Luka, 2026-10-16; the strongest rejected alternative, computing the candidate by chain `eth_call`, moves the bound to the RPC provider's call cap and adds RPC load on every reduction). A served reduction that exhausts even that grant fails as an internal failure, never as evidence against the responder; the pre-reduction checks (chain-committed disputes, chain-anchored snapshot and inbound head, participant maximum) reject padded served bytes as evidence before the expensive call, so only chain-committed genuine inputs can consume the grant.
 - Any authenticated peer may request sync; there is no participant-vs-observer access control by
   design (open channels), with restriction as a possible future guard.
 
@@ -291,12 +291,13 @@ a counted close rather than an invalid-proof verdict. The softer stale-response 
 surface pending rate limiting. Disclosure of the supplied final state and proof history to an
 authenticated peer is accepted under the open-observer model.
 
-Residual risk, reduction size: a window whose reduction exceeds the chain block gas limit can never
-settle — not on-chain, and not locally, since reduction-path local calls share that bound. Below it,
-a responder can make a requester spend up to one block's worth of local computation per sync round,
-but only on hash-committed genuine inputs: padded state bytes, unlinked inbound blocks and
-over-maximum participant lists are rejected as evidence before the expensive call, and a served
-reduction is limited to one unreduced window per sync.
+Residual risk, reduction size: a window whose reduction exceeds what one transaction can carry on
+the chain can never settle — not on-chain, and not locally, since reduction-path local calls share
+that bound. Below it, a responder can make a requester spend up to that bound of local computation
+per sync round, but only on chain-committed genuine inputs: disputes the window never committed, a
+snapshot the chain's reduction does not name, an inbound list that does not end at the chain
+reduction's head, and over-maximum participant lists are rejected as evidence before the expensive
+call, and a served reduction is limited to one unreduced window per sync.
 
 ## Verification and test plan
 

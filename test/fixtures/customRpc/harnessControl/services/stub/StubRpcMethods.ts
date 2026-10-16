@@ -1464,6 +1464,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreRecordedSyncRejections();
     }
 
+    public stubReductionGrant(grant: string): boolean {
+        this.service.stubReductionGrant(grant);
+        return true;
+    }
+
+    public restoreReductionGrant(): boolean {
+        this.service.restoreReductionGrant();
+        return true;
+    }
+
     public recordSyncFinalityReads(): boolean {
         this.service.recordSyncFinalityReads();
         return true;

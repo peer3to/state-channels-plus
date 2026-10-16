@@ -47,5 +47,6 @@ spare reverts without a reason and is not one.
 - `a reduction that reverts inside the EVM is not a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P1
 - `a reduction whose call frame runs out of gas is a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P2
 - `a reduction that exhausts its facet frame is a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P5, UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P6
+- `a reduction whose facet reverts without a reason and gas to spare is not a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P6, UNIT-TEST-LOCAL-DIAMOND-3-H2MQE5.P8
 - `a dispute computation that exhausts its capped budget is a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P4
 - `a reduction that reverts without a reason and gas to spare is not a resource failure`: UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93.P6

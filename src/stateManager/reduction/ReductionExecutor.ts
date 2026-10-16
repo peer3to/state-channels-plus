@@ -15,6 +15,7 @@ import {
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
+import { withGasHeadroom } from "@/utils/gas";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -441,11 +442,26 @@ export default class ReductionExecutor {
         // Gas comes from the signer's estimate: the dispute execution limit
         // bounds one dispute computation, not the reduce transaction, whose
         // calldata and on-chain checks grow with the disputes it carries.
-        // The disposal check in `complete` runs before the send starts; a
-        // disposal during the send does not stop the broadcast, only the
-        // adoption after it.
-        const transaction = this.stateManager.stateChannelManagerContract
-            .multicall(submission.calldata)
+        // The estimate's headroom is clamped at the most gas one reduction
+        // transaction can carry on this chain, so the submission asks only
+        // for gas that can actually land. The disposal check in `complete`
+        // runs before the send starts; a disposal during the send does not
+        // stop the broadcast, only the adoption after it.
+        const contract = this.stateManager.stateChannelManagerContract;
+        const send = async (): Promise<TransactionResponse> => {
+            const cap =
+                this.stateManager.diamondStateMachine.reductionCallGasLimit;
+            if (cap === undefined)
+                return contract.multicall(submission.calldata);
+            const estimate = await contract.multicall.estimateGas(
+                submission.calldata
+            );
+            const withHeadroom = withGasHeadroom(estimate);
+            return contract.multicall(submission.calldata, {
+                gasLimit: withHeadroom < cap ? withHeadroom : cap
+            });
+        };
+        const transaction = send()
             .then(async (tx) => {
                 txResponse = tx;
                 await tx.wait();

@@ -48,4 +48,7 @@ and that every started root was closed.
 - `an inline executor runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1
 - `a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2
 - `a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3
+- `LocalContractExecutorSigner forwards a call's gasLimit to the executor`: UNIT-TEST-LOCAL-CONTRACT-EXECUTOR-SIGNER-1-TN89Z5.P1
+- `the runtime grants reduction calls the chain block gas limit on an inline executor`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P5
+- `the runtime grants reduction calls the chain block gas limit on a dedicated executor thread`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P6
 - `a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4
