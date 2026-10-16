@@ -391,6 +391,61 @@ export async function stageFrozenViewBehindDisputeTail(h: MathPeerTestHarness) {
     };
 }
 
+/**
+ * Make `dispute` claim the state of its last milestone's second block (its
+ * auditing data omitted), with an earlier milestone repeating that run plus
+ * an authentic block at the next height by another author than the real
+ * one: support the walk checks but never executes, at the height the real
+ * tail replays. Returns the forged block and the real block it shadows.
+ */
+export async function forgeSupportAboveDisputeTail(
+    h: MathPeerTestHarness,
+    dispute: DisputeStruct
+): Promise<{ forged: Block; shadowed: Block }> {
+    const milestones = dispute.input.stateProof.milestones;
+    const run = milestones.at(-1)!.blockConfirmations;
+    expect(
+        run.length,
+        "the last milestone is a final block and a two-block tail"
+    ).to.equal(3);
+    const [, real, shadowed] = run.map((confirmation) =>
+        Block.fromBlockConfirmation(confirmation)
+    );
+    const forged = await craftInvalidLinkedBlock(h, {
+        height: shadowed.height,
+        previousBlockHash: real.hash,
+        notAuthor: shadowed.author
+    });
+    replaceStateProof(dispute, [
+        ...milestones.slice(0, -1),
+        { blockConfirmations: [run[0], run[1], forged] },
+        { blockConfirmations: [run[0], run[1]] }
+    ]);
+    return { forged: Block.fromBlockConfirmation(forged), shadowed };
+}
+
+/**
+ * {@link stageFrozenViewBehindDisputeTail} plus a copy of its honest
+ * dispute Y forged by {@link forgeSupportAboveDisputeTail}: dispute X ends
+ * one block above the frozen view and retains, as unexecuted support, a
+ * forged block at the height of Y's last tail block.
+ */
+export async function stageForgedSupportBelowHonestTail(
+    h: MathPeerTestHarness
+) {
+    const staged = await stageFrozenViewBehindDisputeTail(h);
+    const forgedDispute = Codec.decode(
+        Codec.encode(staged.dispute, Type.Dispute),
+        Type.Dispute
+    );
+    const { forged, shadowed } = await forgeSupportAboveDisputeTail(
+        h,
+        forgedDispute
+    );
+    expect(shadowed.height).to.equal(staged.frozenHeight + 2);
+    return { ...staged, forgedDispute, forged, shadowed };
+}
+
 /** A dispute with no reason (no timeout, slash or self-removal) is invalid. */
 export const stripDisputeReasons: DisputeTamper = (dispute) => {
     dispute.input.timeout.participant = ZeroAddress;

@@ -191,6 +191,34 @@ export function blockAt(forkId: ForkId, height: BlockHeight): Block {
     });
 }
 
+/** An authentic block by `author` at the fork and height, linked to `previousBlockHash` (default: random). */
+export async function authoredBlockAt(
+    author: ethers.Signer,
+    forkId: ForkId,
+    height: BlockHeight,
+    previousBlockHash: ethers.BytesLike = hash()
+): Promise<Block> {
+    const { blockStruct } = block({
+        header: transactionHeader({
+            forkId,
+            transactionCnt: height,
+            participant: await author.getAddress()
+        }),
+        previousBlockHash
+    });
+    return Block.fromBlockStruct(blockStruct, author);
+}
+
+/** `target` with a confirmation signature by each of `signers`. */
+export async function confirmBlock(
+    target: Block,
+    signers: ethers.Signer[]
+): Promise<Block> {
+    for (const signer of signers)
+        target.expandSignatures([await target.sign(signer)]);
+    return target;
+}
+
 /** Copy of `blockStruct` with `transaction.header` shallow-merged with `header`. */
 export function blockStructWithTransactionHeader(
     bs: BlockStruct,

@@ -10,6 +10,7 @@ import {
     constructProof,
     craftProofBlock,
     postSnapshotAt,
+    retainedBlocks,
     servedBlock,
     servedProjections,
     servedRunPayload,
@@ -18,6 +19,7 @@ import {
     snapshotWithout,
     stageAnchoredHistory,
     stageConflictingOverlapPayload,
+    stageForgedSupportPayloads,
     stageMergedSignaturePayload,
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
@@ -486,7 +488,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
     });
 
     describe("retained evidence", function () {
-        it("U82: a milestone whose threshold needs a signature on its later linked block → the support block keeps that signature, the gap block is never stored, the proof rebuilt through the support block proves that hop with it and verifies", async function () {
+        it("U82: a milestone whose threshold needs a signature on its later linked block → the support block is retained as evidence with that signature, outside the history, the gap block is never stored, the proof rebuilt through the support block proves that hop with it and verifies", async function () {
             const h = TestSession.getHarness();
             const { forkId, latestHeight, payload, first, support, gapHeight } =
                 await stageSeparatedEvidencePayload(h);
@@ -494,7 +496,8 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             // completes the first block's threshold
             const outcome = await applyOnFreshRequester(h, forkId, [payload], {
                 inspect: {
-                    heights: [first.height, support.height, gapHeight]
+                    heights: [first.height, support.height, gapHeight],
+                    retainedHeights: [support.height, gapHeight]
                 },
                 reconstruct: true,
                 reconstructHeight: support.height
@@ -504,11 +507,9 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             ]);
             expect(outcome.rejections).to.deep.equal([]);
             expect(outcome.blacklisted).to.equal(false);
-            expect(outcome.blocks).to.deep.equal([
-                first.block,
-                support.block,
-                null
-            ]);
+            // the support block is no ancestor of a proven final block
+            expect(outcome.blocks).to.deep.equal([first.block, null, null]);
+            expect(outcome.retained).to.deep.equal([[support.block], []]);
             expect(outcome.rebuilt).to.deep.include({
                 chainValid: true,
                 latestProofHeight: support.height
@@ -518,13 +519,13 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             ]);
         });
 
-        it("U82: verified support blocks are stored at once without their own replay → neither their resulting snapshot nor their state is stored", async function () {
+        it("U82: verified support blocks are retained at once without their own replay → neither their resulting snapshot nor their state is stored", async function () {
             const h = TestSession.getHarness();
             const { forkId, payload, support } =
                 await stageSeparatedEvidencePayload(h);
             const outcome = await applyOnFreshRequester(h, forkId, [payload], {
                 inspect: {
-                    heights: [support.height],
+                    retainedHeights: [support.height],
                     snapshotHashes: [String(support.snapshot.hash)],
                     stateHashes: [
                         String(support.snapshot.stateMachineStateHash)
@@ -535,7 +536,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 accepted: true,
                 threw: ""
             });
-            expect(outcome.blocks).to.deep.equal([support.block]);
+            expect(outcome.retained).to.deep.equal([[support.block]]);
             expect(outcome.snapshotsStored).to.deep.equal([false]);
             expect(outcome.statesStored).to.deep.equal([false]);
         });
@@ -616,7 +617,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             });
         });
 
-        it("U85: a synced spectator follows two more final blocks → its rebuilt proof reaches the new head and verifies, the synced evidence is still stored", async function () {
+        it("U85: a synced spectator follows two more final blocks → its rebuilt proof reaches the new head and verifies, the synced history and evidence are still held", async function () {
             const h = TestSession.getHarness();
             const { forkId, latestHeight, payload, first, support } =
                 await stageSeparatedEvidencePayload(h);
@@ -636,14 +637,14 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(rebuilt.chainValid).to.equal(true);
             expect(rebuilt.latestProofHeight).to.equal(latestHeight + 2);
             expect(
-                await storedBlocks(h, spectator, forkId, [
-                    first.height,
-                    support.height
-                ])
-            ).to.deep.equal([first.block, support.block]);
+                await storedBlocks(h, spectator, forkId, [first.height])
+            ).to.deep.equal([first.block]);
+            expect(
+                await retainedBlocks(h, spectator, forkId, [support.height])
+            ).to.deep.equal([[support.block]]);
         });
 
-        it("U85: the chain adopts a newer anchor after the sync and local progress → the rebuilt proof starts at it and needs none of the older evidence, which stays stored", async function () {
+        it("U85: the chain adopts a newer anchor after the sync and local progress → the rebuilt proof starts at it and needs none of the older evidence, which stays held", async function () {
             const h = TestSession.getHarness();
             const { forkId, latestHeight, payload, first, support } =
                 await stageSeparatedEvidencePayload(h);
@@ -671,11 +672,135 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                     .every((height) => height >= later.blockHeight)
             ).to.equal(true);
             expect(
-                await storedBlocks(h, spectator, forkId, [
-                    first.height,
-                    support.height
-                ])
-            ).to.deep.equal([first.block, support.block]);
+                await storedBlocks(h, spectator, forkId, [first.height])
+            ).to.deep.equal([first.block]);
+            expect(
+                await retainedBlocks(h, spectator, forkId, [support.height])
+            ).to.deep.equal([[support.block]]);
+        });
+    });
+
+    // Only final history (the start, each hop's first block and their hash
+    // ancestors in the proof) enters the block history; every other checked
+    // block is retained as evidence only.
+    describe("support kept out of history", function () {
+        it("U131: an earlier milestone holds a forged block at the height of a later hop → accepted, history holds the real hop block, the forged block is retained as evidence only", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, second, forgedSecond } = staged;
+            const height = staged.anchor.blockHeight + 2;
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.forgedBeforeHop],
+                { inspect: { heights: [height], retainedHeights: [height] } }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: height + 1 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(outcome.blocks.map((block) => block?.hash)).to.deep.equal([
+                second.hash
+            ]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[String(forgedSecond.hash)]]);
+        });
+
+        it("U132: a forged branch between two hops whose later hop's ancestry the proof does not hold → accepted, neither forged block enters history, both are retained as evidence", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, forgedSecond, forgedThird } = staged;
+            const a = staged.anchor.blockHeight;
+            const heights = [a + 2, a + 3];
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.forgedBranch],
+                { inspect: { heights, retainedHeights: heights } }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a + 4 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blocks).to.deep.equal([null, null]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([
+                [String(forgedSecond.hash)],
+                [String(forgedThird.hash)]
+            ]);
+        });
+
+        it("U133: an earlier milestone reaching above the proven endpoint → the head stays at the endpoint, the blocks above it are retained as evidence only and still rebuild the latest proof", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, second, third } = staged;
+            const endpoint = staged.anchor.blockHeight + 1;
+            const above = [endpoint + 1, endpoint + 2];
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.overreach],
+                {
+                    inspect: { heights: above, retainedHeights: above },
+                    reconstruct: true,
+                    reconstructHeight: endpoint + 2
+                }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: endpoint }
+            ]);
+            expect(outcome.head).to.equal(endpoint);
+            expect(outcome.blocks).to.deep.equal([null, null]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[second.hash], [third.hash]]);
+            expect(outcome.rebuilt).to.deep.include({
+                chainValid: true,
+                latestProofHeight: endpoint + 2
+            });
+        });
+
+        it("U134: a poisoned proof with forged support is applied, then an honest proof from another responder holding the real block there → both accepted, the honest responder is not blacklisted, history holds the real block", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, second, forgedSecond } = staged;
+            const endpoint = staged.anchor.blockHeight + 1;
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.poisoned, staged.honest],
+                {
+                    responderIndex: 0,
+                    payloadResponderIndices: [1, 0],
+                    inspect: {
+                        heights: [endpoint + 1],
+                        retainedHeights: [endpoint + 1]
+                    }
+                }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: endpoint },
+                { accepted: true, threw: "", head: endpoint + 2 }
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(outcome.blocks.map((block) => block?.hash)).to.deep.equal([
+                second.hash
+            ]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[String(forgedSecond.hash)]]);
         });
     });
 });

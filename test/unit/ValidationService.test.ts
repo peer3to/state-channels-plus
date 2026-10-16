@@ -823,6 +823,112 @@ describe("Unit: ValidationService", function () {
             );
         });
 
+        it("retained proof evidence by the same author at the block's height → doubleSignDetected → DISPUTE + DoubleSign proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            const real = Block.fromBlockConfirmation(
+                Codec.decode(
+                    authored.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                )
+            );
+            // the leader's other block at that height, kept only as evidence
+            const retained = await factory.buildAndEncodeBlock(leader.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: startHeight,
+                    participant: leader.address as Address
+                },
+                previousBlockHash: real.previousBlockHash
+            });
+            await h
+                .control(observer)
+                .transition.retainEvidenceBlock(retained)
+                .request();
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+
+            expect(r.firedHooks).to.include("doubleSignDetected");
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.fraudProofType).to.equal(
+                solProofType(FraudProofType.BlockDoubleSign)
+            );
+        });
+
+        it("retained proof evidence by another author at the block's height → no conflict, the real block validates → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            const real = Block.fromBlockConfirmation(
+                Codec.decode(
+                    authored.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                )
+            );
+            // unexecuted support by another participant, linked to the same
+            // predecessor: no executed history at that height
+            const other = h.peers.find(
+                (peer) => peer.address !== leader.address
+            )!;
+            const retained = await factory.buildAndEncodeBlock(other.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: startHeight,
+                    participant: other.address as Address
+                },
+                previousBlockHash: real.previousBlockHash
+            });
+            await h
+                .control(observer)
+                .transition.retainEvidenceBlock(retained)
+                .request();
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.firedHooks).to.deep.equal([]);
+            expect(r.fraudProofType).to.be.null;
+        });
+
+        it("the block itself retained as proof evidence → no double sign of its own author → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+            await h
+                .control(observer)
+                .transition.retainEvidenceBlock(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.firedHooks).to.deep.equal([]);
+            expect(r.fraudProofType).to.be.null;
+        });
+
         it("conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);

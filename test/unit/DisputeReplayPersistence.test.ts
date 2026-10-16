@@ -8,6 +8,7 @@ import {
     activeView,
     holdsState,
     snapshotAt,
+    stageForgedSupportBelowHonestTail,
     stageFrozenViewBehindDisputeTail,
     stageLaggingParticipantBehindTail,
     stagePendingAuditorBehindJoin
@@ -380,6 +381,95 @@ describe("Unit: DisputeValidationService replay persistence", function () {
                     .request(),
                 "the failed block is not stored"
             ).to.be.null;
+        });
+    });
+
+    // Support a proof walk checks but does not prove final is retained as
+    // evidence only: it never stands in executed history for a later replay.
+    describe("retained support", function () {
+        it("U135: a dispute retaining a forged block above its tail is audited, then the honest dispute whose tail replays the real block there → the honest dispute is valid with no counter, history holds the real block, the forged one stays evidence", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportBelowHonestTail(h);
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+
+            await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.forgedDispute
+            );
+            expect(
+                await auditor
+                    .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                    .request(),
+                "the forged support is not executed history"
+            ).to.be.null;
+            expect(
+                (
+                    await auditor
+                        .getRetainedEvidenceAt(
+                            staged.forkId,
+                            staged.shadowed.height
+                        )
+                        .request()
+                ).map((block) => block.hash)
+            ).to.deep.equal([staged.forged.hash]);
+
+            const honest = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.storedProof).to.equal(undefined);
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.shadowed.hash);
+        });
+
+        it("U135: the honest dispute is audited first, then the dispute retaining a forged block at its tail height → the forged block is retained as evidence only, history keeps the real block, a second audit of the honest dispute stays valid with no counter", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportBelowHonestTail(h);
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+            const first = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+            expect(first).to.include({ outcome: "returned", isValid: true });
+
+            await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.forgedDispute
+            );
+
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.shadowed.hash);
+            expect(
+                (
+                    await auditor
+                        .getRetainedEvidenceAt(
+                            staged.forkId,
+                            staged.shadowed.height
+                        )
+                        .request()
+                ).map((block) => block.hash)
+            ).to.deep.equal([staged.forged.hash]);
+            const again = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+            expect(again).to.include({ outcome: "returned", isValid: true });
+            expect(again.storedProof).to.equal(undefined);
         });
     });
 

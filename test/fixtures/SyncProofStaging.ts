@@ -29,6 +29,8 @@ export type StoredBlockProjection = { hash: string; signers: string[] };
 export type SyncInspection = {
     /** heights whose stored block is projected (null when not stored) */
     heights?: number[];
+    /** heights whose retained evidence blocks are projected */
+    retainedHeights?: number[];
     snapshotHashes?: string[];
     stateHashes?: string[];
 };
@@ -45,6 +47,8 @@ export type TierWalkFault =
 export type ApplyOptions = {
     /** the responder the requester applies the payloads from (default peer 0) */
     responderIndex?: number;
+    /** per payload, the responder it is applied from (default `responderIndex`) */
+    payloadResponderIndices?: number[];
     /** Record the requester's trusted-start walks and its `verifyMilestones` walks. */
     observeWalks?: boolean;
     /** The tier's next walk fails at its connection (implies `observeWalks`). */
@@ -117,6 +121,29 @@ export async function storedBlocks(
                 }
             );
         })
+    );
+}
+
+/** The peer's retained proof evidence at `heights`: per height its blocks, sorted by hash. */
+export async function retainedBlocks(
+    h: MathPeerTestHarness,
+    peer: Peer,
+    forkId: string,
+    heights: number[]
+): Promise<StoredBlockProjection[][]> {
+    const query = h.control(peer).query;
+    return await Promise.all(
+        heights.map(async (height) =>
+            (await query.getRetainedEvidenceAt(forkId, height).request())
+                .map((bundle) => ({
+                    hash: bundle.hash,
+                    signers: [
+                        bundle.author,
+                        ...bundle.confirmationSignerAddresses
+                    ].sort()
+                }))
+                .sort((a, b) => a.hash.localeCompare(b.hash))
+        )
     );
 }
 
@@ -315,6 +342,7 @@ export async function applyPayloads(
     const responder = h.getPeer(options.responderIndex ?? 0);
     const {
         heights = [],
+        retainedHeights = [],
         snapshotHashes = [],
         stateHashes = []
     } = options.inspect ?? {};
@@ -380,13 +408,17 @@ export async function applyPayloads(
                     return replay.apply(ingest, args);
                 };
                 try {
-                    for (const payload of a.encodedPayloads) {
+                    for (const [
+                        index,
+                        payload
+                    ] of a.encodedPayloads.entries()) {
+                        const responder = a.payloadResponders[index];
                         let encoded = payload;
                         if (encoded === null) {
                             const response =
                                 await sm.p2pManager.remoteRpc.spectateService
                                     .onSpectateRequest(request)
-                                    .request(a.responder);
+                                    .request(responder);
                             encoded = String(response.encodedSyncPayload);
                             servedEncoded = encoded;
                         }
@@ -400,7 +432,7 @@ export async function applyPayloads(
                                 service
                             ).applySyncResponse.call(
                                 service,
-                                a.responder,
+                                responder,
                                 request,
                                 encoded
                             );
@@ -439,7 +471,13 @@ export async function applyPayloads(
                 };
             },
             {
-                responder: responder.address,
+                payloadResponders: payloads.map(
+                    (_payload, index) =>
+                        h.getPeer(
+                            options.payloadResponderIndices?.[index] ??
+                                responder.index
+                        ).address
+                ),
                 forkId,
                 readLocalFinality: !!options.readLocalFinality,
                 encodedPayloads: payloads.map((payload) =>
@@ -492,6 +530,12 @@ export async function applyPayloads(
                 .getParticipantChangeHeights(forkId)
                 .request(),
             blocks: await storedBlocks(h, requester, forkId, heights),
+            retained: await retainedBlocks(
+                h,
+                requester,
+                forkId,
+                retainedHeights
+            ),
             walks: walks && {
                 trustedStart: await walks.trustedStart.observation(),
                 storage: await walks.storage.observation()
@@ -870,6 +914,106 @@ export async function stageConflictingOverlapPayload(h: MathPeerTestHarness) {
         conflicting.confirmation;
     payload.milestoneSnapshots[1] = other.toStruct();
     return staged;
+}
+
+/**
+ * `stageAnchoredHistory` with four final blocks a+1..a+4 above the anchor a,
+ * an authentic block a+2′ by another author than a+2, linked to a+1 and
+ * committing no real state, and an authentic a+3′ linked to a+2′. Returns
+ * the served blocks and payloads built from them:
+ * - `poisoned`: [a+1, a+2′] and [a+1] with a+1's state: a+2′ is support
+ *   above the proven endpoint a+1;
+ * - `honest`: [a+2, a+3] with a+2's state: a+3 is the replay tail;
+ * - `forgedBeforeHop`: [a+1, a+2′] and [a+2, a+3] with a+2's state: two
+ *   signed blocks at a+2, the real one a later hop;
+ * - `forgedBranch`: [a+1, a+2′, a+3′] and [a+4] with a+4's state: a forged
+ *   branch between two hops, the later hop's ancestry not in the proof;
+ * - `overreach`: [a+1, a+2, a+3] and [a+1] with a+1's state: genuine
+ *   support above the proven endpoint.
+ */
+export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
+    const staged = await stageAnchoredHistory(h, { blocksAfter: 4 });
+    const { forkId, anchor, payload } = staged;
+    const a = anchor.blockHeight;
+    const [first, second, third, fourth] = [
+        await servedBlock(h, forkId, a + 1),
+        await servedBlock(h, forkId, a + 2),
+        await servedBlock(h, forkId, a + 3),
+        await servedBlock(h, forkId, a + 4)
+    ];
+    const forger = h.peers.find((peer) => peer.address !== second.author)!;
+    const forgedSecond = await craftProofBlock(h, {
+        authorIndex: forger.index,
+        forkId,
+        height: a + 2,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: first.hash
+    });
+    const forgedThird = await craftProofBlock(h, {
+        authorIndex: forger.index,
+        forkId,
+        height: a + 3,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: String(forgedSecond.block.hash)
+    });
+    expect(forgedSecond.block.author).to.not.equal(second.author);
+    const firstState = await servedState(h, first.snapshot);
+    const secondState = await servedState(h, second.snapshot);
+    return {
+        ...staged,
+        first,
+        second,
+        third,
+        fourth,
+        forgedSecond: forgedSecond.block,
+        forgedThird: forgedThird.block,
+        poisoned: servingProof(
+            payload,
+            [
+                [first.confirmation, forgedSecond.confirmation],
+                [first.confirmation]
+            ],
+            [first.snapshot, first.snapshot],
+            firstState
+        ),
+        honest: servingProof(
+            payload,
+            [[second.confirmation, third.confirmation]],
+            [second.snapshot],
+            secondState
+        ),
+        forgedBeforeHop: servingProof(
+            payload,
+            [
+                [first.confirmation, forgedSecond.confirmation],
+                [second.confirmation, third.confirmation]
+            ],
+            [first.snapshot, second.snapshot],
+            secondState
+        ),
+        forgedBranch: servingProof(
+            payload,
+            [
+                [
+                    first.confirmation,
+                    forgedSecond.confirmation,
+                    forgedThird.confirmation
+                ],
+                [fourth.confirmation]
+            ],
+            [first.snapshot, fourth.snapshot],
+            await servedState(h, fourth.snapshot)
+        ),
+        overreach: servingProof(
+            payload,
+            [
+                [first.confirmation, second.confirmation, third.confirmation],
+                [first.confirmation]
+            ],
+            [first.snapshot, first.snapshot],
+            firstState
+        )
+    };
 }
 
 /**

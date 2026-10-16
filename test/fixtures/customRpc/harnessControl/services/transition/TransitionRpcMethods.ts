@@ -123,6 +123,21 @@ export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> 
         );
         return true;
     }
+
+    /**
+     * Retain a block as proof evidence only — the way state-proof
+     * persistence keeps support it did not prove final.
+     */
+    public async retainEvidenceBlock(
+        encodedBlockConfirmation: string
+    ): Promise<boolean> {
+        this.service.sm.storage.retainedEvidence.storeBlock(
+            Block.fromBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+            )
+        );
+        return true;
+    }
 }
 
 export default TransitionRpcMethods;

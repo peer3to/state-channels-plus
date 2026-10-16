@@ -327,6 +327,16 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return block ? this.service.toBlockBundle(block) : null;
     }
 
+    /** The retained proof evidence blocks at the coordinate (support that is not history). */
+    public getRetainedEvidenceAt(
+        forkId: ForkId,
+        height: BlockHeight
+    ): BlockBundle[] {
+        return this.service.storage.retainedEvidence
+            .getBlocks(forkId, height)
+            .map((block) => this.service.toBlockBundle(block));
+    }
+
     /** Latest block of `forkId` as a full serializable projection, or null. */
     public getLatestBlockBundle(forkId: ForkId): BlockBundle | null {
         const block = this.service.storage.blocks.getLatestBlock(forkId);
