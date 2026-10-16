@@ -198,15 +198,15 @@ export async function authoredBlockAt(
     height: BlockHeight,
     previousBlockHash: ethers.BytesLike = hash()
 ): Promise<Block> {
-    const { blockStruct } = block({
-        header: transactionHeader({
-            forkId,
-            transactionCnt: height,
-            participant: await author.getAddress()
-        }),
-        previousBlockHash
-    });
-    return Block.fromBlockStruct(blockStruct, author);
+    return Block.fromBlockConfirmation(
+        Codec.decode(
+            await buildAndEncodeBlock(author, {
+                header: { forkId, transactionCnt: height },
+                previousBlockHash
+            }),
+            Type.BlockConfirmation
+        )
+    );
 }
 
 /** `target` with a confirmation signature by each of `signers`. */

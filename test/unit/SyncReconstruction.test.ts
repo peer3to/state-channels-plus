@@ -7,6 +7,7 @@ import {
 import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyOnFreshRequester,
+    applyPayloads,
     constructProof,
     craftProofBlock,
     postSnapshotAt,
@@ -24,6 +25,7 @@ import {
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
     storedBlocks,
+    withHeldFreshRequester,
     syncSpectatorFromAllRunningPeers
 } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -801,6 +803,158 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                     blocks.map((block) => block.hash)
                 )
             ).to.deep.equal([[String(forgedSecond.hash)]]);
+        });
+
+        it("U136: a proof carrying as support a block already in history with another confirmation → the history block gains that signer, nothing is retained at its height", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, third, thirdConfirmer } = staged;
+            const height = staged.anchor.blockHeight + 3;
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.authorOnlyTail, staged.supportOfStored],
+                { inspect: { heights: [height], retainedHeights: [height] } }
+            );
+            expect(
+                outcome.outcomes.map((applied) => applied.accepted)
+            ).to.deep.equal([true, true]);
+            expect(outcome.blocks).to.deep.equal([
+                {
+                    hash: third.hash,
+                    signers: [third.author, thirdConfirmer].sort()
+                }
+            ]);
+            expect(outcome.retained).to.deep.equal([[]]);
+        });
+
+        it("U137: forged support signed by the real block's own author, then an honest proof whose tail replays the real block → the replay stops on the double sign, neither block becomes history, the forged one stays evidence", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, authorForgedSecond } = staged;
+            const endpoint = staged.anchor.blockHeight + 1;
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.poisonedByAuthor, staged.honestTail],
+                {
+                    responderIndex: 0,
+                    payloadResponderIndices: [1, 0],
+                    inspect: {
+                        heights: [endpoint + 1],
+                        retainedHeights: [endpoint + 1]
+                    }
+                }
+            );
+            expect(outcome.outcomes[0]).to.deep.equal({
+                accepted: true,
+                threw: "",
+                head: endpoint
+            });
+            expect(outcome.outcomes[1].accepted).to.equal(false);
+            expect(outcome.blocks).to.deep.equal([null]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[String(authorForgedSecond.hash)]]);
+        });
+
+        it("U138: a proof whose tail fails its replay after its final history is persisted → rejected, the final history stays and the head stays at the proven endpoint", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const { forkId, second } = staged;
+            const endpoint = staged.anchor.blockHeight + 2;
+            const outcome = await applyOnFreshRequester(
+                h,
+                forkId,
+                [staged.failingTail],
+                { inspect: { heights: [endpoint, endpoint + 1] } }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: endpoint }
+            ]);
+            expect(
+                outcome.blocks.map((block) => block?.hash ?? null)
+            ).to.deep.equal([second.hash, null]);
+        });
+
+        it("U139: support directly above the anchor block whose own signers are complete → no milestone is built from support alone, the rebuilt proof runs from the anchor block and verifies", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.anchorOverreach],
+                { reconstruct: true, reconstructHeight: a + 2 }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a }
+            ]);
+            expect(outcome.rebuilt).to.deep.include({
+                chainValid: true,
+                latestProofHeight: a + 2
+            });
+            expect(outcome.rebuilt!.milestones).to.deep.equal([
+                [a, a + 1, a + 2]
+            ]);
+        });
+
+        it("U140: retained support above a history block whose snapshot is missing → construction still throws the missing snapshot", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const endpoint = staged.anchor.blockHeight + 1;
+            const outcome = await withHeldFreshRequester(
+                h,
+                async (requester) => {
+                    const applied = await applyPayloads(
+                        h,
+                        requester,
+                        staged.forkId,
+                        [staged.overreach]
+                    );
+                    await h
+                        .control(requester)
+                        .stub.deleteStoredSnapshot(
+                            StateSnapshot.from(staged.first.snapshot).hash
+                        )
+                        .request();
+                    const thrown = await constructProof(
+                        h,
+                        requester.index,
+                        endpoint + 2
+                    ).then(
+                        () => "",
+                        (error: unknown) => String(error)
+                    );
+                    return { applied, thrown };
+                }
+            );
+            expect(outcome.applied.outcomes[0].accepted).to.equal(true);
+            expect(outcome.thrown).to.contain(
+                "Milestone built but corresponding snapshot not found"
+            );
+        });
+
+        it("U141: blocks retained with a confirmation, then replayed into history without it → the rebuilt proof still counts the retained confirmation and proves the earlier block final", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.retainedVotes, staged.thinTail],
+                { reconstruct: true, reconstructHeight: a + 2 }
+            );
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a },
+                { accepted: true, threw: "", head: a + 2 }
+            ]);
+            // without the retained confirmation a+1 is not final and the
+            // proof falls back to an unfinalized run from the anchor block
+            expect(outcome.rebuilt!.milestones).to.deep.equal([[a + 1, a + 2]]);
+            expect(outcome.rebuilt!.chainValid).to.equal(true);
         });
     });
 });

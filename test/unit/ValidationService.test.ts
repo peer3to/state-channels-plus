@@ -905,6 +905,53 @@ describe("Unit: ValidationService", function () {
             expect(r.fraudProofType).to.be.null;
         });
 
+        it("a history block by another author and retained proof evidence by the same author at the block's height → the history conflict decides: invalidStateTransitionDetected, no double sign", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            const real = Block.fromBlockConfirmation(
+                Codec.decode(
+                    authored.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                )
+            );
+            const other = h.peers.find(
+                (peer) => peer.address !== leader.address
+            )!;
+            const header = {
+                channelId: h.channelId,
+                forkId,
+                transactionCnt: startHeight
+            };
+            const history = await factory.buildAndEncodeBlock(other.signer, {
+                header: { ...header, participant: other.address as Address },
+                previousBlockHash: real.previousBlockHash
+            });
+            const retained = await factory.buildAndEncodeBlock(leader.signer, {
+                header: { ...header, participant: leader.address as Address },
+                previousBlockHash: real.previousBlockHash
+            });
+            await h.control(observer).transition.storeBlock(history).request();
+            await h
+                .control(observer)
+                .transition.retainEvidenceBlock(retained)
+                .request();
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+
+            expect(r.firedHooks).to.include("invalidStateTransitionDetected");
+            expect(r.firedHooks).to.not.include("doubleSignDetected");
+            expect(r.fraudProofType).to.equal(
+                solProofType(FraudProofType.BlockInvalidStateTransition)
+            );
+        });
+
         it("the block itself retained as proof evidence → no double sign of its own author → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);

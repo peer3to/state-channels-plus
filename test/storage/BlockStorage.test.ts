@@ -210,6 +210,20 @@ describe("BlockStorage", () => {
         });
     });
 
+    describe("READ - hasBlock()", () => {
+        it("reports a stored block by its hash", () => {
+            storage.storeBlock(mockBlock);
+
+            expect(storage.hasBlock(mockBlockHash)).to.equal(true);
+        });
+
+        it("reports no block for a hash it does not store", () => {
+            storage.storeBlock(mockBlock);
+
+            expect(storage.hasBlock(factory.hash())).to.equal(false);
+        });
+    });
+
     describe("UPDATE - insertSignature()", () => {
         beforeEach(() => {
             storage.storeBlock(mockBlock, {

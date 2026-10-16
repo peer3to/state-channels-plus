@@ -923,7 +923,22 @@ export async function stageConflictingOverlapPayload(h: MathPeerTestHarness) {
  * - `forgedBranch`: [a+1, a+2′, a+3′] and [a+4] with a+4's state: a forged
  *   branch between two hops, the later hop's ancestry not in the proof;
  * - `overreach`: [a+1, a+2, a+3] and [a+1] with a+1's state: genuine
- *   support above the proven endpoint.
+ *   support above the proven endpoint;
+ * - `anchorOverreach`: [a, a+1, a+2] and [a] with the anchor's state:
+ *   genuine support directly above the anchor block;
+ * - `poisonedByAuthor`: as `poisoned`, its forged a+2″ authored by a+2's
+ *   own author, and `honestTail`: [a+1, a+2, a+3] with a+1's state, whose
+ *   tail replays the real a+2;
+ * - `failingTail`: [a+2, a+3‴] with a+2's state, a+3‴ by a+3's author
+ *   committing no real state: its replay fails;
+ * - `authorOnlyTail`: [a+2, a+3] with a+2's state, a+3 carrying only its
+ *   author's signature, and `supportOfStored`: [a+2, a+3 with one other
+ *   confirmation] and [a+2] with a+2's state: a+3 is support that is
+ *   already history after `authorOnlyTail`;
+ * - `retainedVotes`: [a, a+1 author-only, a+2 with the third participant's
+ *   confirmation] and [a] with the anchor's state: both blocks retained,
+ *   and `thinTail`: [a, a+1 author-only, a+2 author-only] with the anchor's
+ *   state, whose tail replays both into history without that confirmation.
  */
 export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
     const staged = await stageAnchoredHistory(h, { blocksAfter: 4 });
@@ -951,6 +966,33 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
         previousBlockHash: String(forgedSecond.block.hash)
     });
     expect(forgedSecond.block.author).to.not.equal(second.author);
+    const peerIndexOf = (address: string) =>
+        h.peers.find((peer) => peer.address === address)!.index;
+    const authorForgedSecond = await craftProofBlock(h, {
+        authorIndex: peerIndexOf(second.author),
+        forkId,
+        height: a + 2,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: first.hash
+    });
+    const failingThird = await craftProofBlock(h, {
+        authorIndex: peerIndexOf(third.author),
+        forkId,
+        height: a + 3,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: second.hash
+    });
+    const anchorBlock = await servedBlock(h, forkId, a);
+    const thirdConfirmer = h.peers.find(
+        (peer) =>
+            peer.address !== third.author &&
+            third.signers.includes(peer.address)
+    )!;
+    const voter = h.peers.find(
+        (peer) =>
+            peer.address !== first.author && peer.address !== second.author
+    )!;
+    const anchorState = await servedState(h, anchor.toStruct());
     const firstState = await servedState(h, first.snapshot);
     const secondState = await servedState(h, second.snapshot);
     return {
@@ -1006,6 +1048,85 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
             ],
             [first.snapshot, first.snapshot],
             firstState
+        ),
+        anchorOverreach: servingProof(
+            payload,
+            [
+                [
+                    anchorBlock.confirmation,
+                    first.confirmation,
+                    second.confirmation
+                ],
+                [anchorBlock.confirmation]
+            ],
+            [anchor.toStruct(), anchor.toStruct()],
+            anchorState
+        ),
+        retainedVotes: servingProof(
+            payload,
+            [
+                [
+                    anchorBlock.confirmation,
+                    keepSignatures(first.confirmation, []),
+                    keepSignatures(second.confirmation, [voter.address])
+                ],
+                [anchorBlock.confirmation]
+            ],
+            [anchor.toStruct(), anchor.toStruct()],
+            anchorState
+        ),
+        thinTail: servingProof(
+            payload,
+            [
+                [
+                    anchorBlock.confirmation,
+                    keepSignatures(first.confirmation, []),
+                    keepSignatures(second.confirmation, [])
+                ]
+            ],
+            [anchor.toStruct()],
+            anchorState
+        ),
+        authorForgedSecond: authorForgedSecond.block,
+        poisonedByAuthor: servingProof(
+            payload,
+            [
+                [first.confirmation, authorForgedSecond.confirmation],
+                [first.confirmation]
+            ],
+            [first.snapshot, first.snapshot],
+            firstState
+        ),
+        honestTail: servingProof(
+            payload,
+            [[first.confirmation, second.confirmation, third.confirmation]],
+            [first.snapshot],
+            firstState
+        ),
+        failingTail: servingProof(
+            payload,
+            [[second.confirmation, failingThird.confirmation]],
+            [second.snapshot],
+            secondState
+        ),
+        thirdConfirmer: thirdConfirmer.address,
+        authorOnlyTail: servingProof(
+            payload,
+            [[second.confirmation, keepSignatures(third.confirmation, [])]],
+            [second.snapshot],
+            secondState
+        ),
+        supportOfStored: servingProof(
+            payload,
+            [
+                [
+                    second.confirmation,
+                    keepSignatures(third.confirmation, [thirdConfirmer.address])
+                ],
+                [second.confirmation]
+            ],
+            [second.snapshot, second.snapshot],
+            secondState
         )
     };
 }
