@@ -1082,7 +1082,12 @@ class AgreementManager {
                 collectedSigners.add(signer);
             }
 
-            if (difference(thresholdSigners, collectedSigners).size === 0) {
+            // complete signers prove nothing without a final point: a run of
+            // blocks whose snapshots are not held (retained support) is no milestone
+            if (
+                thresholdBlock &&
+                difference(thresholdSigners, collectedSigners).size === 0
+            ) {
                 const filteredBlocks = this.filterBlocksForMilestoneThreshold(
                     collectedBlocks.sort((a, b) => a.height - b.height),
                     thresholdSigners
