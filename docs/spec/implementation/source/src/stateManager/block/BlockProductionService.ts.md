@@ -33,3 +33,4 @@ Local block authoring
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P13` — another writer's block takes the candidate height first: dropped, no block by the submitter
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P14` — a reduction replaces the fork while the candidate waits for the mutex: dropped, no block on either fork
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15` — the state machine refuses a pending inbound message: the candidate throws, the VM state and next writer are restored, nothing is stored, and the same writer authors once the inbound is processable
+- [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16` — the runtime starts stopping while the candidate's assembly fails: no local state is restored, no restore error is logged, the candidate throws its own error, and the mutex is released

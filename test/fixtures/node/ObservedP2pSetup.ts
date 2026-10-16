@@ -7,7 +7,7 @@ import {
     type P2pSetupOptions
 } from "@/evm/p2pRuntime/setupP2pRuntime";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import type MainRpcService from "@/rpc/network/MainRpcService";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type {
     AStateMachine,
     StateChannelManagerInterface
@@ -18,12 +18,12 @@ import type { LocalStateMachineDeployer } from "scripts/V1/deploy";
 /** Test-owned entry selection and observation; calls the production setup unchanged. */
 export async function setupObservedP2pRuntime<
     T extends AStateMachine,
-    TCustomRpc extends MainRpcService = MainRpcService
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
 >(
     scm: StateChannelManagerInterface,
     contract: T,
     deploy: LocalStateMachineDeployer,
-    options: P2pSetupOptions | undefined,
+    options: P2pSetupOptions<THost> | undefined,
     controls: P2pSetupDependencies & {
         workerUrl?: string | URL;
         workerData?: unknown;
@@ -34,7 +34,7 @@ export async function setupObservedP2pRuntime<
     return RootCreationControl.observe(
         () =>
             RootWorkerControl.run("sdk", controls, () =>
-                setupP2pRuntime<T, TCustomRpc>(scm, contract, deploy, options, {
+                setupP2pRuntime<T, THost>(scm, contract, deploy, options, {
                     hostContext: controls.hostContext
                 })
             ),

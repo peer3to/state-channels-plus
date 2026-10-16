@@ -2,6 +2,8 @@
 import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
 import { StateSnapshot } from "@/models";
 import type { CustomRpcManifest } from "@/rpc";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import { TimeConfig } from "@/types";
 import { ForkId } from "@/types/types";
 import { EventBarrier, Logger } from "@/utils";
@@ -144,6 +146,8 @@ export type HarnessOptions = {
     peerSetupConcurrency?: number;
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;
+    /** The host root subclass every peer runs; the SDK's own by default. */
+    hostRootManifest?: HostRootManifest;
     customPrecompiles?: EvmCustomPrecompileManifest[];
     /**
      * Gas granted to every local EVM call of the listed peers (peer index ->
@@ -175,7 +179,7 @@ export type TestPeer<
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<TContract, TCustomRpc>;
+    p2pInstance: P2pInstance<TContract, P2pRuntimeHostRoot<TCustomRpc>>;
     contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;

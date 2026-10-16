@@ -10,7 +10,7 @@ import {
 } from "./p2pRuntime/setupP2pRuntime";
 import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import MainRpcService from "@/rpc/network/MainRpcService";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
 import { Address, Bytes } from "@/types/types";
@@ -505,16 +505,16 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      */
     public static async p2pSetup<
         T extends AStateMachineContract,
-        TCustomRpc extends MainRpcService = MainRpcService
+        THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
     >(
         deployedStateChannelContractInstance: StateChannelManagerInterface,
         stateMachineContractInstance: T,
         deployStateMachine: LocalStateMachineDeployer,
-        options?: P2pSetupOptions
-    ): Promise<P2pInstance<T, TCustomRpc>> {
+        options?: P2pSetupOptions<THost>
+    ): Promise<P2pInstance<T, THost>> {
         // The construction lives in setupP2pRuntime; this public entry passes
         // the production dependencies (platform host and worker).
-        return setupP2pRuntime<T, TCustomRpc>(
+        return setupP2pRuntime<T, THost>(
             deployedStateChannelContractInstance,
             stateMachineContractInstance,
             deployStateMachine,

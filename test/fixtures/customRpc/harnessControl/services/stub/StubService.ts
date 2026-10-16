@@ -378,6 +378,14 @@ export type DisputeSubmissionHold = {
     held: number;
 };
 
+/** What a local state restore did once the runtime had started stopping. */
+export type StopDuringAssemblyRecord = {
+    /** Local state writes made after the stop started. */
+    restoreAttempts: number;
+    /** Error logs of the snapshot assembly after the stop started. */
+    restoreErrors: string[];
+};
+
 /** A state-mutex hold that keeps an earlier state on the shared state machine. */
 export type StateMutexStateHold = {
     /** Next writer of the state the hold installed. */
@@ -510,6 +518,8 @@ export class StubService extends ANetworkRpcService<
     private restoreSyncRejections?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
+    /** Record of `stubRefuseInboundAndStartStop`, once installed. */
+    public stopDuringAssembly?: StopDuringAssemblyRecord;
     /** Number of finality predicates in each recorded provider call. */
     private finalityReadWidths: number[] = [];
     /**
@@ -2370,14 +2380,6 @@ export class StubService extends ANetworkRpcService<
 
     public getHeldHandshakeCount(): number {
         return this.heldHandshakeTransports.length;
-    }
-
-    /** Held transports whose remote peer already acknowledged this peer. */
-    public getAckedHeldHandshakeCount(): number {
-        const service = this.p2pManager.localRpc.initHandshakeService;
-        return this.heldHandshakeTransports.filter((transport) =>
-            service.didReceiveAck(transport)
-        ).length;
     }
 
     public releaseInitHandshakes(): void {

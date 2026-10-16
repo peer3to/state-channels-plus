@@ -1129,6 +1129,18 @@
       "peakRssGb": 0.431,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ApplicationHostRoot.test.ts|E2E: ApplicationHostRoot a peer's client calls its host root service": {
+      "durationMs": 9719,
+      "avgCores": 0.595,
+      "peakRssGb": 0.562,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-ApplicationHostRoot.test.ts|E2E: ApplicationHostRoot a peer's network call to the service finds no network service and has no effect": {
+      "durationMs": 7377,
+      "avgCores": 0.923,
+      "peakRssGb": 0.552,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager a delivered pending join event admits the first network copy without another read": {
       "durationMs": 12744,
       "avgCores": 1.03,
@@ -2471,42 +2483,6 @@
       "durationMs": 11878,
       "avgCores": 0.977,
       "peakRssGb": 0.778,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-LocalOnlyGuard.test.ts|E2E: LocalOnlyGuard blacklists and disconnects a remote notification sender without executing it": {
-      "durationMs": 14932,
-      "avgCores": 0.834,
-      "peakRssGb": 0.597,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-LocalOnlyGuard.test.ts|E2E: LocalOnlyGuard completes an overlapping local call while the remote call is barred": {
-      "durationMs": 10407,
-      "avgCores": 0.994,
-      "peakRssGb": 0.589,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-LocalOnlyGuard.test.ts|E2E: LocalOnlyGuard keeps a recorded blacklist through reconnect attempts while an unrelated peer stays connected": {
-      "durationMs": 14646,
-      "avgCores": 0.781,
-      "peakRssGb": 0.792,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-LocalOnlyGuard.test.ts|E2E: LocalOnlyGuard rejects a call over a transport still negotiating its handshake and never replays it": {
-      "durationMs": 12407,
-      "avgCores": 0.768,
-      "peakRssGb": 0.596,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-LocalOnlyGuard.test.ts|E2E: LocalOnlyGuard runs a local call and blacklists and disconnects a remote requester with no response": {
-      "durationMs": 10438,
-      "avgCores": 0.724,
-      "peakRssGb": 0.584,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-LocalOnlyGuard.test.ts|E2E: LocalOnlyGuard still sends an earlier guard's rejection response to a remote requester and keeps it connected": {
-      "durationMs": 11257,
-      "avgCores": 0.833,
-      "peakRssGb": 0.603,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-MaliciousUpdateSnapshot.test.ts|E2E: Malicious updateSnapshot colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant": {
@@ -7285,6 +7261,78 @@
       "peakRssGb": 0.578,
       "measurementReason": null
     },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a host root loaded by manifest serves its own internal service in a worker": {
+      "durationMs": 12255,
+      "avgCores": 0.279,
+      "peakRssGb": 0.293,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a host root loaded by manifest serves its own internal service inline": {
+      "durationMs": 13798,
+      "avgCores": 0.242,
+      "peakRssGb": 0.212,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a manifest whose export is not a class rejects setup in a worker": {
+      "durationMs": 15041,
+      "avgCores": 0.131,
+      "peakRssGb": 0.21,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a manifest whose export is not a class rejects setup inline": {
+      "durationMs": 15595,
+      "avgCores": 0.167,
+      "peakRssGb": 0.2,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot an application event emitted in the runtime reaches the client listener with its args in a worker": {
+      "durationMs": 14481,
+      "avgCores": 0.308,
+      "peakRssGb": 0.304,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot an application event emitted in the runtime reaches the client listener with its args inline": {
+      "durationMs": 10877,
+      "avgCores": 0.196,
+      "peakRssGb": 0.216,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot drains a running service call at disposal and rejects a later one in a worker": {
+      "durationMs": 16094,
+      "avgCores": 0.185,
+      "peakRssGb": 0.301,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot rejects a service call before the runtime is built": {
+      "durationMs": 15548,
+      "avgCores": 0.197,
+      "peakRssGb": 0.201,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot rejects with the service error's name, message and code in a worker": {
+      "durationMs": 17120,
+      "avgCores": 0.204,
+      "peakRssGb": 0.306,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot rejects with the service error's name, message and code inline": {
+      "durationMs": 16142,
+      "avgCores": 0.167,
+      "peakRssGb": 0.217,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot without a manifest the default host root starts in a worker": {
+      "durationMs": 15123,
+      "avgCores": 0.177,
+      "peakRssGb": 0.288,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot without a manifest the default host root starts inline": {
+      "durationMs": 14576,
+      "avgCores": 0.163,
+      "peakRssGb": 0.211,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/InternalRpcRouter.test.ts|InternalRpcRouter clones a mutable argument at send time": {
       "durationMs": 13853,
       "avgCores": 0.383,
@@ -8549,66 +8597,6 @@
       "durationMs": 7922,
       "avgCores": 1.019,
       "peakRssGb": 0.59,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard blacklists and disconnects an authenticated remote notification without executing it": {
-      "durationMs": 8120,
-      "avgCores": 0.948,
-      "peakRssGb": 0.601,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard blacklists and disconnects an authenticated remote request without a failure response": {
-      "durationMs": 9625,
-      "avgCores": 1.049,
-      "peakRssGb": 0.588,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard closes a transport with neither a profile nor a proven address without recording a verdict": {
-      "durationMs": 12770,
-      "avgCores": 0.937,
-      "peakRssGb": 0.609,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard keeps an earlier failing guard's rejection response unchanged": {
-      "durationMs": 7632,
-      "avgCores": 0.974,
-      "peakRssGb": 0.6,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard lets a trusted loopback call run its endpoint once without punishment": {
-      "durationMs": 11765,
-      "avgCores": 0.838,
-      "peakRssGb": 0.606,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard marks only the request it rejected as suppressed": {
-      "durationMs": 10564,
-      "avgCores": 0.841,
-      "peakRssGb": 0.591,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard records an address verdict for a proven address that has no profile": {
-      "durationMs": 10268,
-      "avgCores": 0.762,
-      "peakRssGb": 0.584,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard rejects a negotiating transport with a registered profile at once and never replays it": {
-      "durationMs": 13634,
-      "avgCores": 0.874,
-      "peakRssGb": 0.597,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard rejects overlapping calls and a call on the retired transport without executing or deferring": {
-      "durationMs": 11310,
-      "avgCores": 0.93,
-      "peakRssGb": 0.598,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/guards/LocalOnlyGuard.test.ts|LocalOnlyGuard suppresses the response when an earlier guard passes and the local-only guard rejects": {
-      "durationMs": 11108,
-      "avgCores": 0.961,
-      "peakRssGb": 0.598,
       "measurementReason": null
     },
     "hardhat|test/rpc/guards/WaitForSyncStatusGuard.test.ts|WaitForSyncStatusGuard a live block received during the initial sync is retained, starts no second sync, and is applied after SYNCED without a resend": {
@@ -16553,6 +16541,12 @@
       "durationMs": 9397,
       "avgCores": 0.862,
       "peakRssGb": 0.769,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → rollback while stopping an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex": {
+      "durationMs": 9453,
+      "avgCores": 0.872,
+      "peakRssGb": 0.757,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → timestamp adjustment authored after the window closed → timestamp clamped back below the local clock": {

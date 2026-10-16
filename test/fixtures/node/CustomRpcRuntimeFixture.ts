@@ -5,6 +5,7 @@ import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../../scripts/V1/deploy";
 import { deployFullStack } from "../../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
@@ -59,7 +60,7 @@ const PING_PONG_MANIFEST = path.resolve(
     "../customRpc/PingPongRpcManifest.ts"
 );
 
-type PingPeer = P2pInstance<MathStateMachine, PingPongRpc>;
+type PingPeer = P2pInstance<MathStateMachine, P2pRuntimeHostRoot<PingPongRpc>>;
 
 function walletAt(
     index: number,
@@ -158,7 +159,7 @@ export async function assertCustomRpcRuntimeFlow(
 
             const instance = await EvmStateMachine.p2pSetup<
                 MathStateMachine,
-                PingPongRpc
+                P2pRuntimeHostRoot<PingPongRpc>
             >(scm, stateMachineTemplate, deployLocalStateMachine, {
                 signerSecret: runtimeWallet.privateKey,
                 customRpcManifest: { module: PING_PONG_MANIFEST },

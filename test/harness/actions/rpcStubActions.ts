@@ -26,7 +26,8 @@ import type {
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
-    SnapshotPostHoldPoint
+    SnapshotPostHoldPoint,
+    StopDuringAssemblyRecord
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -605,6 +606,26 @@ export class RpcStubActions<
                 .stub.restoreInboundMessageProcessing()
                 .request();
         };
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message and start
+     * the runtime's stop while it refuses. Returns a reader of what local
+     * state restores did once the stop had started.
+     */
+    async refuseInboundAndStartStop(
+        peerIndex: number
+    ): Promise<() => Promise<StopDuringAssemblyRecord | null>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRefuseInboundAndStartStop()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.getStopDuringAssembly()
+                .request();
     }
 
     async failNextFinalDisputePreparation(

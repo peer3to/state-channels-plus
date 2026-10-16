@@ -1314,7 +1314,12 @@ describe("E2E: join snapshot guard", function () {
             // joiner stores: a snapshot race would now be retried
             await moveChainSnapshot(h);
         } finally {
-            await stub.releaseJoinRetryDecision().request();
+            // the released decision aborts the join and disposes the runtime,
+            // so the release reply may not arrive
+            await stub
+                .releaseJoinRetryDecision()
+                .request()
+                .catch(() => undefined);
         }
 
         expect(await race.join).to.equal(false);
@@ -1425,7 +1430,12 @@ describe("E2E: join snapshot guard", function () {
                 await stub.getJoinRetryDecisionRefusals().request()
             ).to.deep.equal(["ErrorTooManyParticipants"]);
         } finally {
-            await stub.releaseJoinRetryDecision().request();
+            // the released decision aborts the join and disposes the runtime,
+            // so the release reply may not arrive
+            await stub
+                .releaseJoinRetryDecision()
+                .request()
+                .catch(() => undefined);
         }
 
         // the abort disposes the runtime, so the call may also reject

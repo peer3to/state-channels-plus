@@ -15,6 +15,7 @@ import { SpectateControlService } from "./services/spectate/SpectateControlServi
 import { StubService } from "./services/stub/StubService";
 import { TransitionService } from "./services/transition/TransitionService";
 import { ValidationProbeService } from "./services/validationProbe/ValidationProbeService";
+import type { ApplicationEventMap } from "@/events/EventBus";
 import type P2PManager from "@/P2PManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
 
@@ -38,9 +39,12 @@ import MainRpcService from "@/rpc/network/MainRpcService";
  * - no guards — the harness must be able to query a peer before any handshake.
  *
  * A test's own custom RPC composes by extending this class, so every peer keeps
- * the full harness-control surface.
+ * the full harness-control surface; `TEvents` names the application events it
+ * emits.
  */
-export class HarnessControlRpc extends MainRpcService {
+export class HarnessControlRpc<
+    TEvents extends ApplicationEventMap = Record<never, never>
+> extends MainRpcService<TEvents> {
     query: QueryService;
     network: NetworkService;
     byzantine: ByzantineService;

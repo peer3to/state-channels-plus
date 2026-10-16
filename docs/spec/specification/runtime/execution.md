@@ -36,8 +36,10 @@ Every combination of runtime-host and executor placement MUST satisfy it.
 **<a id="req-runtime-1-rsm6mz"></a>`REQ-RUNTIME-1-RSM6MZ` — Transfer-safe boundary.** Every cross-context value MUST have an explicit canonical
 encoding that preserves large integers, binary data, optional branches, errors, and correlation identity.
 Errors keep their name, message, code, revert data, and originating participant. Application extensions
-(service roots, precompiles) cross as declarative references resolved in the receiving context, never as
-live objects. A value with no supported encoding, such as an injected signer object or an unsupported
+(the network service root, the runtime host root, precompiles) cross as declarative manifests resolved
+in the receiving context, never as live objects; the host root manifest names the class that becomes the
+runtime host root, as the network service manifest names the network service root
+([`REQ-RPC-9-8FFE6S` (Application host root)](../peer-communication/rpc.md#req-rpc-9-8ffe6s)). A value with no supported encoding, such as an injected signer object or an unsupported
 transaction field, MUST be rejected at the producer before it crosses.
 
 **<a id="req-runtime-2-kbxktg"></a>`REQ-RUNTIME-2-KBXKTG` — Ownership and ordering.** Mutable resources have one context owner; requests affecting the

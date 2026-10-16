@@ -8,12 +8,29 @@ import {
     LobbyMatchingService,
     OpenChannelNegotiationService
 } from "./services";
+import type { ApplicationEventMap, EventBus } from "@/events/EventBus";
 import type P2PManager from "@/P2PManager";
 import { DebugProxy } from "@/utils";
 
 import { config } from "@/utils/config";
 
-class MainRpcService {
+/** Type-only key of the application event map a network root declares. */
+declare const applicationEventsType: unique symbol;
+
+/** The application event map a network root class declares (empty for none). */
+export type ApplicationEventsOf<TRpc extends MainRpcService> =
+    TRpc[typeof applicationEventsType];
+
+/**
+ * The network service root. An application extends it with its network
+ * services and declares the `application` events its runtime code emits as
+ * `TEvents`; the client's events are typed by the same declaration.
+ */
+class MainRpcService<
+    TEvents extends ApplicationEventMap = Record<never, never>
+> {
+    /** Type-only: carries `TEvents` to the client; never set at runtime. */
+    declare readonly [applicationEventsType]: TEvents;
     p2pManager: P2PManager;
     // rpcProxy = RpcProxy.createProxy(this);
 
@@ -60,6 +77,16 @@ class MainRpcService {
         this.initHandshakeService.dispose();
         await this.openChannelNegotiationService.dispose();
         await this.lobbyMatchingService.dispose();
+    }
+
+    /**
+     * The runtime's one event bus, typed by this application's event map:
+     * `applicationEvents.emit("application", name, args)` is checked
+     * against `TEvents`.
+     */
+    protected get applicationEvents(): EventBus<TEvents> {
+        // The runtime bus carries whatever this root's application declares.
+        return this.p2pManager.stateManager.events as EventBus<TEvents>;
     }
 }
 export default MainRpcService;

@@ -356,6 +356,7 @@ function main() {
         ? JSON.parse(fs.readFileSync(removedSupportPath, "utf8"))
         : {};
 
+    const retiredTests = [];
     for (const testPath of change.removedTests) {
         const content = git(graph.roots.repo, [
             "show",
@@ -380,15 +381,27 @@ function main() {
         } catch {
             continue;
         }
-        for (const id of report.match(
-            new RegExp(
-                `${IMPLEMENTATION_TEST_PATTERN}(?:\\.P\\d+)?|${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
-                "g"
-            )
-        ) || []) {
+        const reportIds =
+            report.match(
+                new RegExp(
+                    `${IMPLEMENTATION_TEST_PATTERN}(?:\\.P\\d+)?|${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
+                    "g"
+                )
+            ) || [];
+        for (const id of reportIds) {
             if (!graph.nodes.has(id)) continue;
             addReason(directReasons, id, testPath);
             accountedFiles.add(testPath);
+        }
+        // Deleting obsolete IDs with their tests is the documented way to
+        // retire coverage: a removed test whose every planned ID was deleted
+        // too is accounted for, and listed for the reviewer.
+        if (
+            reportIds.length > 0 &&
+            reportIds.every((id) => !graph.nodes.has(id))
+        ) {
+            accountedFiles.add(testPath);
+            retiredTests.push({ testPath, ids: [...new Set(reportIds)] });
         }
     }
 
@@ -578,6 +591,14 @@ function main() {
         process.stdout.write(
             `- Mapped tests to rerun/review: ${requirement.tests.length}\n\n`
         );
+    }
+    if (retiredTests.length) {
+        process.stdout.write(
+            "## Removed tests whose planned IDs were deleted\n"
+        );
+        for (const { testPath, ids } of retiredTests)
+            process.stdout.write(`- ${testPath}: ${ids.join(", ")}\n`);
+        process.stdout.write("\n");
     }
     if (deletedSourceIssues.length) {
         process.stdout.write(

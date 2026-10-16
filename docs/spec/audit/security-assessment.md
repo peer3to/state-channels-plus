@@ -668,29 +668,18 @@ change.
 
 ## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
 
-[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) now specifies host-only admission, implemented by the public SDK [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md). Loopback
-self-delivery stays the only guard bypass; every remote call that reaches the guard is refused before
-execution, never deferred or replayed, and handed to the canonical disconnect owner with the blacklist
-policy. Punishment follows the proven identity: a registered profile with a proven address is
-blacklisted with a recorded verdict and all its live transports close; a registered profile still
-negotiating, with no proven address, is marked excluded in memory and gets no recorded verdict; a proven
-address without a profile gets a recorded verdict; a transport with neither only closes, with no verdict
-or ban. The disconnect owner marks nothing for it, not even the transport
-handle, because the profile registry blacklists a transport only through a profile attached to it. Residual risk: an unidentified sender can reconnect under a fresh
-transport key and probe again; each probe still reaches no endpoint. The guard suppresses the
-guard-failure response only for requests it rejected, so an earlier guard's declared rejection is
-unchanged and a remote probe learns only that its session closed. A benign misconfigured remote caller
-sees a disconnect, not a diagnostic.
+The host-only guard this entry introduced was removed; the
+[Application host root](#application-host-root--2026-10-16) entry assesses the structure that replaces it.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) now gives custom RPC constructors and executor precompile factories an exact local owner
 reference. The reference stays in its realm and is never serialized, so one inline runtime's extension
 cannot create children under, or dispose, another runtime in the same realm; the multi-peer isolation
 case exercises this. Consumers can create parentless workers; each gets its own hidden parent that is
 never exposed, shared, or reused, and failure or disposal of one leaves the others usable. The main
-entry now exports the generic root bases and creation functions but no concrete SDK root, so a consumer
-of that entry cannot construct or look up an SDK host or executor to gain a parent. The published
-`./test-harness` subpath is the exception: for tests it exports `P2pRuntimeHostRoot` and
-`RootCreationControl`, whose observation hook sees every root created while it is active. A consumer
+entry exports the generic root bases and creation functions, and since the application host root also
+`P2pRuntimeHostRoot` for applications to extend; it exports no executor root and no lookup of a live
+SDK host. The published `./test-harness` subpath additionally exports `RootCreationControl`, whose
+observation hook sees every root created while it is active. A consumer
 that imports it runs in the same process as the SDK, so the residual risk is local only: that code
 could reach an SDK host it could already affect in-process, but no remote peer gains anything.
 
@@ -704,6 +693,28 @@ neither result reaches the caller or the host, so a caller never sees a result p
 declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
+
+## Application host root — 2026-10-16
+
+[`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s) replaces host-only admission. Local authority is served by internal services of
+the application's host root extension, which the network dispatcher cannot name: it resolves services
+only on the network service root, so a peer's request for an internal service takes the existing
+unknown-service consequence and never reaches it. The defense is structural rather than a guard, so it no
+longer depends on loopback being the only guard bypass or on the sender's proven identity. Residual risks:
+an application that also exposes the same operation as a network service reopens it to peers, and the
+SDK does not detect that; the extension runs with the full authority of the runtime host, so its module
+is trusted code like the custom RPC module. The manifest crosses the runtime port as a module reference;
+it carries no live object. The main entry now exports `P2pRuntimeHostRoot` so applications can extend
+it; a consumer that constructs one directly gains only a root it owns, never a reference to a running
+SDK host.
+
+A host root extension loaded from a bundle separate from the SDK worker carries its own copy of the SDK
+classes. The worker bootstrap applies the configuration only to the entry's copy, so an isolated root
+now applies its own peer's configuration to its own copy before it builds its logger; with one shared
+copy this reapplies the same values. The other worker-level state the bootstrap sets (thread name, error funnel, Node globals) is
+process-global, and the root's own copy owns its logger, detached-work registry and clock consistently.
+Applications emit their declared events through a typed accessor on the network root, so they need no
+cast that could hide a wrong event shape.
 
 ## Multiple RPC endpoints — chain observation
 

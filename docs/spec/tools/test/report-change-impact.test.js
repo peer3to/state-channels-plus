@@ -586,3 +586,46 @@ test("a removal exclusion cannot hide a deleted test file", () =>
         );
         assert.equal(f.check().status, 1);
     }));
+
+test("accounts a removed test whose planned IDs were deleted with it and lists it", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/specification/runtime.md",
+            `# Runtime\n\n| ID | Statement |\n| --- | --- |\n| ${requirement} | Preserves behavior |\n\n| Plan item | Expected result | Required permutations |\n| --- | --- | --- |\n| ${requirement}.T1 | Preserves behavior | ${requirement}.T1.P1 |\n`
+        );
+        f.write("test/old.test.ts", 'it("preserves behavior", () => {});\n');
+        f.write(
+            "docs/spec/verification/tests/test/old.test.ts.md",
+            `# old.test.ts\n\nTest file: [test](../../../../../test/old.test.ts)\n\n## Tests\n\n- \`preserves behavior\`: ${requirement}.T1.P1\n`
+        );
+        f.commit();
+        f.remove("test/old.test.ts");
+        f.remove("docs/spec/verification/tests/test/old.test.ts.md");
+        f.write(
+            "docs/spec/specification/runtime.md",
+            `# Runtime\n\nNothing is planned here any more.\n`
+        );
+        const result = f.check();
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        assert.match(
+            result.stdout,
+            new RegExp(
+                `## Removed tests whose planned IDs were deleted\\n- test/old.test.ts: ${requirement}.T1.P1`
+            )
+        );
+    }));
+
+test("still blocks a removed test whose report names no planned ID", () =>
+    fixture((f) => {
+        f.write("test/old.test.ts", 'it("behavior", () => {});\n');
+        f.write(
+            "docs/spec/verification/tests/test/old.test.ts.md",
+            `# old.test.ts\n\nTest file: [test](../../../../../test/old.test.ts)\n\n## Tests\n\n- \`behavior\`: none\n`
+        );
+        f.commit();
+        f.remove("test/old.test.ts");
+        f.remove("docs/spec/verification/tests/test/old.test.ts.md");
+        const result = f.check();
+        assert.equal(result.status, 1, result.stderr + result.stdout);
+        assert.match(result.stdout, /Unmapped changed files/);
+    }));

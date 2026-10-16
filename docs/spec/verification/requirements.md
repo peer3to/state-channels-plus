@@ -771,10 +771,13 @@ Specification cases tested: 3/11. Untested: T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T
 Specification cases tested: 11/11.
 
 [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
-Specification cases tested: 25/25.
+Specification cases tested: 12/12.
 
 [`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../specification/peer-communication/rpc.md#req-rpc-8-44xecf)
 Specification cases tested: 0/3.
+
+[`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
+Specification cases tested: 14/14.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.

@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 - [`REQ-RPC-3-ZM9WR5` (Service authorization)](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)
 

@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`REQ-SDK-ARCH-3-WHTDWX` (Event fidelity)](../../../../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 

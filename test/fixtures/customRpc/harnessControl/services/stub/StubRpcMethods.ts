@@ -34,7 +34,8 @@ import type {
     StubService,
     SignatureBlockMatch,
     SnapshotPostHoldPoint,
-    StateMutexStateHold
+    StateMutexStateHold,
+    StopDuringAssemblyRecord
 } from "./StubService";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -275,6 +276,48 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         stateMachine.processInboundMessage = async () => false;
         return true;
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message and start
+     * the runtime's real stop while it refuses, as a shutdown that overtakes
+     * an assembly in flight. Record-only from then on: local state writes and
+     * the snapshot assembly's error logs still run unchanged. No restore: the
+     * runtime is stopping and dies with the peer.
+     */
+    public stubRefuseInboundAndStartStop(): boolean {
+        const sm = this.service.sm;
+        const stateMachine = sm.diamondStateMachine;
+        const record: StopDuringAssemblyRecord = {
+            restoreAttempts: 0,
+            restoreErrors: []
+        };
+        this.service.stopDuringAssembly = record;
+        const setState = stateMachine.setState.bind(stateMachine);
+        stateMachine.setState = async (serializedState) => {
+            if (sm.isDisposed) record.restoreAttempts += 1;
+            return setState(serializedState);
+        };
+        const logger = sm.snapshotAssemblyService["logger"];
+        const logError = logger.error.bind(logger);
+        logger.error = (message, meta) => {
+            if (sm.isDisposed) record.restoreErrors.push(String(message));
+            return logError(message, meta);
+        };
+        stateMachine.processInboundMessage = async () => {
+            // The root's disposal awaits this same stop and surfaces its
+            // failure there.
+            sm.stop().catch(() => undefined);
+            return false;
+        };
+        return true;
+    }
+
+    public getStopDuringAssembly(): StopDuringAssemblyRecord | null {
+        const record = this.service.stopDuringAssembly;
+        return record
+            ? { ...record, restoreErrors: [...record.restoreErrors] }
+            : null;
     }
 
     public restoreInboundMessageProcessing(): boolean {
@@ -3565,10 +3608,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getHeldHandshakeCount(): number {
         return this.service.getHeldHandshakeCount();
-    }
-
-    public getAckedHeldHandshakeCount(): number {
-        return this.service.getAckedHeldHandshakeCount();
     }
 
     public releaseInitHandshakes(): boolean {

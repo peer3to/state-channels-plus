@@ -14,7 +14,7 @@ restores the VM on every exit that does not commit the block, through the one re
 ingest already used. Evidence:
 [`UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md#unit-test-block-production-1-5ed0eb), which fails without the restore. Luka
 decided that inbound consumption must succeed:
-[`REQ-SM-12-J6QD9B`](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b) requires a state machine to
+[`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b) requires a state machine to
 process every chain-accepted inbound message, and the only allowed failure, running out of gas with a retry on fewer
 inbound blocks, is deferred in
 [`FIND-INBOUND-GAS-1-2BZ8DE`](open-findings.md#find-inbound-gas-1-2bz8de). The poker state machine's refusal of that
@@ -984,7 +984,7 @@ late opening-hook failure cannot clear its replacement.
 
 ## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
 
-Conformance: [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md) implements the host-only part of [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) with an always-failing check, a normal-return
+Conformance: `LocalOnlyGuard` (removed 2026-10-16 by the application host root) implemented the host-only part of [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) with an always-failing check, a normal-return
 failure handler that delegates to `P2PManager.disconnectConnection` with `DisconnectPolicy.BLACKLIST`,
 and a `WeakSet`-scoped override of `AGuard.suppressesFailureResponse`; it is exported from the guard
 barrel and the public entry. For [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59), the host passes `{ owner: this }` through `StateManager` and
@@ -993,7 +993,7 @@ precompile factories, `createRoot` supports parentless workers with a per-creati
 `ContractExecutorService` owns admission and drain with all three endpoints delegating to it and
 `ContractExecutorRoot` running the drain as its disposal preparation. Node `.ts` worker preloads now
 resolve from the SDK package. File reports, the guards and internal-RPC inventories, and the runtime
-view record these; new component families are [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8),
+view record these; new component families are the local-only guard family (removed 2026-10-16),
 [`UNIT-TEST-EVM-FACTORY-1-002C8D`](../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb), and
 [`UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-34-517jax); the root-creation family replaced its parentless-rejection
 permutation with six parentless-worker permutations. No contradiction is demonstrated. The executor
@@ -1015,7 +1015,7 @@ the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source
 The earlier record said an unidentified transport's "handle is barred". That was wrong:
 `ProfileManager.blacklistPeer(transport)` does nothing when the transport has no profile, so a transport
 with neither a profile nor a proven address is only closed and nothing is barred, which is what
-[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) states. The [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md) and
+[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) states. The `LocalOnlyGuard` (since removed) and
 [P2PManager](../implementation/source/src/P2PManager.ts.md) reports now say so, matching the corrected comment in
 `P2PManager.disconnectConnection`. Parentless workers now also document that a worker thread that exits
 unexpectedly leaves its hidden parent live until the handle is disposed, which then releases it

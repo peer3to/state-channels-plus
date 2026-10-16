@@ -22,6 +22,7 @@ import { EvmStateMachine } from "@/evm";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import P2pEventHooks from "@/P2pEventHooks";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
@@ -307,6 +308,7 @@ export class PeerTestHarness<
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
             customRpcManifest: options?.customRpcManifest,
+            hostRootManifest: options?.hostRootManifest,
             executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
             rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
             rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
@@ -816,6 +818,7 @@ export class PeerTestHarness<
             peerLogger: peerLogger,
             customPrecompiles: this.options.customPrecompiles!,
             customRpcManifest: this.resolveHarnessRpcManifest(),
+            hostRootManifest: this.options.hostRootManifest,
             signerSecret,
             config: {
                 ...this.harnessConfig,
@@ -836,7 +839,10 @@ export class PeerTestHarness<
         };
         const p2pInstance = await RootCreationControl.observe(() =>
             executorCallGasLimit === undefined
-                ? EvmStateMachine.p2pSetup<TStateMachine, TCustomRpc>(
+                ? EvmStateMachine.p2pSetup<
+                      TStateMachine,
+                      P2pRuntimeHostRoot<TCustomRpc>
+                  >(
                       this.channelManager,
                       contractInstanceMock,
                       this.sharedStateMachineDeployer,
@@ -844,7 +850,10 @@ export class PeerTestHarness<
                   )
                 : // p2pSetup's own construction, with the production executor
                   // factory given this peer's call gas
-                  setupP2pRuntime<TStateMachine, TCustomRpc>(
+                  setupP2pRuntime<
+                      TStateMachine,
+                      P2pRuntimeHostRoot<TCustomRpc>
+                  >(
                       this.channelManager,
                       contractInstanceMock,
                       this.sharedStateMachineDeployer,

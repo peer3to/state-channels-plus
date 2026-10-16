@@ -11,7 +11,7 @@ import P2PManager from "@/P2PManager";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
-import { HandshakeCompletedGuard, LocalOnlyGuard } from "@/rpc/network/guards";
+import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import { NetworkTransport } from "@/transport";
 import {
@@ -65,7 +65,6 @@ export {
     ANetworkRpcService,
     MainRpcService,
     HandshakeCompletedGuard,
-    LocalOnlyGuard,
     NetworkTransport,
     getChecksumAddress
 };
@@ -83,6 +82,7 @@ export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 export {
     EventBus,
     attachContractEvents,
+    type ApplicationEventMap,
     type BusEventMaps,
     type BusKind,
     type ContractEventTarget
@@ -129,6 +129,14 @@ export {
     type RuntimeConnection
 } from "@/rpc/internal/AInternalRpcRoot";
 export { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
+// Applications extend the runtime host root with internal services and
+// declared events, loaded by a host root manifest.
+export {
+    P2pRuntimeHostRoot,
+    type ApplicationOf,
+    type HostEventsOf
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+export type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 export { AInternalRpcMethods } from "@/rpc/internal/AInternalRpcMethods";
 export {
     createRoot,
