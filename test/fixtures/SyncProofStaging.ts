@@ -23,6 +23,17 @@ type SnapshotStruct = SyncPayload["milestoneSnapshots"][number];
 type ConfirmationStruct =
     SyncPayload["stateProof"]["milestones"][number]["blockConfirmations"][number];
 
+/** Requesters whose runtime an apply saw disposed (a spectator abort). */
+const disposedRequesters = new WeakSet<Peer>();
+
+/** Whether `requester`'s runtime is gone, so no host call reaches it. */
+function isRequesterGone(requester: Peer): boolean {
+    return (
+        disposedRequesters.has(requester) ||
+        runtimeIsClosed(requester.p2pInstance)
+    );
+}
+
 /** A stored block: its hash and every signer (author included), sorted. */
 export type StoredBlockProjection = { hash: string; signers: string[] };
 
@@ -236,7 +247,9 @@ export async function withHeldFreshRequester<T>(
         );
         return await run(requester);
     } finally {
-        await stub.restoreHoldSpectateSyncApplication().request();
+        // a spectator that aborted on provable fraud disposed its runtime
+        if (!isRequesterGone(requester))
+            await stub.restoreHoldSpectateSyncApplication().request();
     }
 }
 
@@ -456,15 +469,42 @@ export async function applyPayloads(
                     application.unsafeSetLatestState = install;
                     ingest.onBlockConfirmationStruct = replay;
                 }
+                // read here: a spectator that met provable fraud aborts and
+                // disposes its runtime, so no later host call reaches it
+                const project = (block: {
+                    hash: unknown;
+                    author: unknown;
+                    confirmationSignerAddresses: Set<unknown>;
+                }) => ({
+                    hash: String(block.hash),
+                    signers: [
+                        String(block.author),
+                        ...[...block.confirmationSignerAddresses].map(String)
+                    ].sort()
+                });
+                const storage = sm.storage;
                 return {
                     outcomes,
                     stateWrites,
                     replays,
                     localFinalizedHeights,
-                    servedEncoded
+                    servedEncoded,
+                    disposed: sm.isDisposed,
+                    blocks: a.heights.map((height) => {
+                        const block = storage.blocks.getBlock(a.forkId, height);
+                        return block ? project(block) : null;
+                    }),
+                    retained: a.retainedHeights.map((height) =>
+                        storage.retainedEvidence
+                            .getBlocks(a.forkId, height)
+                            .map(project)
+                            .sort((x, y) => x.hash.localeCompare(y.hash))
+                    )
                 };
             },
             {
+                heights,
+                retainedHeights,
                 payloadResponders: payloads.map(
                     (_payload, index) =>
                         h.getPeer(
@@ -482,6 +522,34 @@ export async function applyPayloads(
             },
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
+        const inspected = {
+            outcomes: applied.outcomes,
+            stateWrites: applied.stateWrites,
+            replays: applied.replays,
+            localFinalizedHeights: applied.localFinalizedHeights,
+            served:
+                applied.servedEncoded === null
+                    ? null
+                    : Codec.decode(applied.servedEncoded, Type.SyncPayload),
+            disposed: applied.disposed,
+            blocks: applied.blocks as (StoredBlockProjection | null)[],
+            retained: applied.retained as StoredBlockProjection[][]
+        };
+        // an aborted spectator's runtime is gone: only what the apply read
+        if (applied.disposed) disposedRequesters.add(requester);
+        if (applied.disposed)
+            return {
+                ...inspected,
+                rejections: null,
+                blacklisted: null,
+                head: applied.outcomes.at(-1)?.head ?? null,
+                installedStateHash: null,
+                snapshotsStored: [],
+                statesStored: [],
+                changeHeights: null,
+                walks: undefined,
+                rebuilt: undefined
+            };
         const persisted = await h.execOnHost(
             requester,
             async (sm, a, { ethers }) => ({
@@ -505,14 +573,7 @@ export async function applyPayloads(
             { forkId, snapshotHashes, stateHashes }
         );
         return {
-            outcomes: applied.outcomes,
-            stateWrites: applied.stateWrites,
-            replays: applied.replays,
-            localFinalizedHeights: applied.localFinalizedHeights,
-            served:
-                applied.servedEncoded === null
-                    ? null
-                    : Codec.decode(applied.servedEncoded, Type.SyncPayload),
+            ...inspected,
             rejections: await control.stub
                 .restoreRecordedSyncRejections()
                 .request(),
@@ -523,13 +584,6 @@ export async function applyPayloads(
             changeHeights: await control.query
                 .getParticipantChangeHeights(forkId)
                 .request(),
-            blocks: await storedBlocks(h, requester, forkId, heights),
-            retained: await retainedBlocks(
-                h,
-                requester,
-                forkId,
-                retainedHeights
-            ),
             walks: walks && {
                 trustedStart: await walks.trustedStart.observation(),
                 storage: await walks.storage.observation()
@@ -543,9 +597,12 @@ export async function applyPayloads(
                 : undefined
         };
     } finally {
-        await walks?.trustedStart.restore();
-        await walks?.storage.restore();
-        await control.stub.restoreRecordedSyncRejections().request();
+        // an aborted spectator's runtime is gone with its probes
+        if (!isRequesterGone(requester)) {
+            await walks?.trustedStart.restore();
+            await walks?.storage.restore();
+            await control.stub.restoreRecordedSyncRejections().request();
+        }
     }
 }
 

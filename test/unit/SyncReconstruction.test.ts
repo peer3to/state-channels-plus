@@ -852,6 +852,8 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 head: endpoint
             });
             expect(outcome.outcomes[1].accepted).to.equal(false);
+            // the spectator stops following a channel with provable fraud
+            expect(outcome.disposed).to.equal(true);
             expect(outcome.blocks).to.deep.equal([null]);
             expect(
                 outcome.retained.map((blocks) =>
@@ -874,6 +876,8 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(outcome.outcomes).to.deep.equal([
                 { accepted: false, threw: "", head: endpoint }
             ]);
+            // the invalid transition is provable fraud: the spectator stops
+            expect(outcome.disposed).to.equal(true);
             expect(
                 outcome.blocks.map((block) => block?.hash ?? null)
             ).to.deep.equal([second.hash, null]);
