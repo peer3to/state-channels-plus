@@ -151,9 +151,14 @@ the receiving path is safe under any delivery mode. Equivocation (different bloc
 sent to different peers) is invisible at a single ingress; honest re-gossip brings both bodies to some
 node, where the conflict rule produces double-sign evidence. Per-copy attribution is what keeps
 relayers of a conflicting body distinguishable from its author. A peer partitioned from honest
-re-gossip keeps the equivocated view until finality or dispute resolution. Residual risk: a local
-intake failure (for example an unavailable chain provider) is not evidence against the sender, and
-reporting it as a rejecting verdict would exclude an honest peer.
+re-gossip keeps the equivocated view until finality or dispute resolution. Residual risks accepted
+under the loose intake policy: a local intake failure drops the copy with no queue entry, so the
+receiver waits for later gossip growth, a successor-triggered sync, or chain fallback — while the
+channel is idle that wait is unbounded. Any intake exception, including one a peer can trigger,
+has no consequence for the sender. When an absent sender's sync application throws, that sender
+is not excluded and can trigger repeated sync attempts, one in flight at a time. The intended
+spam bound, per-peer rate limiting, is still open under
+[`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5).
 
 ## Verification and test plan
 
