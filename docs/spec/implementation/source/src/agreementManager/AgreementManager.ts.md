@@ -97,6 +97,10 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71` — `tryBuildMilestone` over retained blocks with complete signers directly above the start builds no milestone; the proof runs from the start block
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P72` — `tryBuildMilestone` over retained blocks on top of a history block whose snapshot is missing ends there and construction throws
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P73` — `tryBuildMilestone` never takes a retained block as the final point, even when its snapshot is held and its signers are complete
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P74` — `tryBuildMilestoneUp` tries the next retained continuation when the first cannot complete the hop
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P75` — retained continuations are ranked by the hop's threshold set from `getMilestoneThresholdSigners`; outsider confirmations do not lift a sibling
+- [ ] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P76` — `getRetainedContinuations` puts the retained block a history block above the gap names by hash first
+- [ ] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P77` — `collectLinkedRun` tries the next retained continuation when a run does not reach its end
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

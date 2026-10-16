@@ -120,11 +120,13 @@ A walk-valid proof holding two signed blocks at one height is accepted; the bloc
 final history is kept as evidence only. The installed head never rises above the proven endpoint
 before the tail replay, and a failed tail replay does not undo the persisted final history.
 Reconstruction reads final history first, with the confirmations a retained copy of the same block
-holds. Where history lacks a height it takes the retained block that links by hash; among several
-it takes the one signed by the most distinct participants of the latest state held below that
-height, counting only signatures the contracts accept, and a tie takes the lowest block hash.
-Signatures by outsiders, signatures the contracts reject, or several signatures by one key add
-nothing to that choice. A retained block is never a final point, even when its state is held and its
+holds. Where history lacks a height it takes a retained block that links by hash. A retained block
+that a history block above the gap names by hash comes first; other candidates are ranked by the
+distinct signers of the hop's threshold set they carry, counting only signatures the contracts
+accept, and a tie takes the lowest block hash. Signatures by outsiders, signatures the contracts
+reject, or several signatures by one key add nothing to that rank. When a candidate breaks the run
+or the run does not reach the threshold, the next candidate is tried; a tail, and the top of a
+search from a height history lacks, try their candidates in block-hash order. A retained block is never a final point, even when its state is held and its
 signers are complete; a stored
 history block whose state is missing is still a fatal construction error. This requirement does not
 choose between two threshold-final identities at one height; that needs every required signer to
@@ -601,9 +603,9 @@ double sign.
 
 <a id="req-sp-11-535j0r.t1.p11"></a>`REQ-SP-11-535J0R.T1.P11` — A sync proof whose tail fails its replay after its final history is persisted is rejected; the final history stays and the head stays at the proven endpoint.
 
-<a id="req-sp-11-535j0r.t1.p12"></a>`REQ-SP-11-535J0R.T1.P12` — Given the eligible participants, the retained block chosen among those linked to one parent is the one signed by the most distinct of them; many signatures by outsiders do not win.
+<a id="req-sp-11-535j0r.t1.p12"></a>`REQ-SP-11-535J0R.T1.P12` — Given the ranking signers, the retained block chosen among those linked to one parent is the one signed by the most distinct of them; many signatures by outsiders do not win.
 
-<a id="req-sp-11-535j0r.t1.p13"></a>`REQ-SP-11-535J0R.T1.P13` — Given the eligible participants, a tie between retained blocks linked to one parent with as many eligible signers takes the lowest block hash.
+<a id="req-sp-11-535j0r.t1.p13"></a>`REQ-SP-11-535J0R.T1.P13` — Given the ranking signers, a tie between retained blocks linked to one parent with as many eligible signers takes the lowest block hash.
 
 <a id="req-sp-11-535j0r.t1.p14"></a>`REQ-SP-11-535J0R.T1.P14` — Support that equals a block already in history adds its confirmations to that history block and is not retained separately.
 
@@ -625,7 +627,13 @@ double sign.
 
 <a id="req-sp-11-535j0r.t1.p23"></a>`REQ-SP-11-535J0R.T1.P23` — One eligible key that signs a retained block twice counts as one signer in the retained choice.
 
-<a id="req-sp-11-535j0r.t1.p24"></a>`REQ-SP-11-535J0R.T1.P24` — Given the eligible participants, a tie between retained blocks at one height takes the lowest block hash.
+<a id="req-sp-11-535j0r.t1.p24"></a>`REQ-SP-11-535J0R.T1.P24` — Given the ranking signers, a tie between retained blocks at one height takes the lowest block hash.
+
+<a id="req-sp-11-535j0r.t1.p25"></a>`REQ-SP-11-535J0R.T1.P25` — Two retained siblings support a history final point and the one tried first cannot complete the hop: the next sibling is tried and the final point is proved.
+
+<a id="req-sp-11-535j0r.t1.p26"></a>`REQ-SP-11-535J0R.T1.P26` — A retained sibling confirmed by outsiders against one with more of the hop's threshold signers: the hop is proved through the one with more threshold signers.
+
+<a id="req-sp-11-535j0r.t1.p27"></a>`REQ-SP-11-535J0R.T1.P27` — A history block above a gap names its predecessor: the retained block it names is taken before a higher-ranked sibling.
 
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 

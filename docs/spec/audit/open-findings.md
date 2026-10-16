@@ -307,11 +307,24 @@ The behavior is specified as
 - A counter preflight before an auditor stores a counter is out of scope: it changes the contract
   surface. Tracked as [`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](open-findings.md#find-counter-preflight-1-dqmg1t).
 - Reconstruction picks history first, then the evidence block with the most signatures.
+  _Amended twice on 2026-10-16, see the next two decisions._
 - Decided (Ljuba, 2026-10-16): the reconstruction choice counts distinct signers who belong to the
-  participant set (the participants of the latest state held below that height, contract-accepted
-  signatures only), not raw signatures; this refines the decision above. Ties keep a deterministic
+  participant set, contract-accepted signatures only, not raw signatures. Ties keep a deterministic
   rule: the lowest block hash. A history block read for construction also carries the
   confirmations its retained copy holds.
+- Decided (Ljuba, 2026-10-16), amending decision 8 again: where a history block above a gap names
+  its predecessor, the retained block it names by hash is taken first; when a pick breaks the run or
+  does not reach the threshold, the next candidate is tried; candidates are ranked against the hop's
+  threshold set (`getMilestoneThresholdSigners`), the one eligibility rule, not the participants of
+  the latest held state. A tail and the top of a downward search have no threshold set yet and try
+  their candidates in block-hash order. Rejected: one greedy pick that is never revisited.
+- Decided (Ljuba, 2026-10-16): the block at the anchor height is history only when something
+  corroborates it (this peer already holds it, a later final point's ancestry in the proof reaches
+  it, or the first tail block on it has executed); otherwise it is retained evidence. Rejected:
+  storing it on its author signature and snapshot commitment alone (anyone with a key can sign a
+  block at that height committing the real anchor snapshot), and binding the anchor block on chain
+  (a contract change). **Not implemented yet:** an engineer question is open on the case with no
+  tail (see below).
 - Decided (Ljuba, 2026-10-16): a same-author double sign found through retained evidence during
   sync is the author's offense, never the honest responder's; the responder must not be
   blacklisted for it, and it is punished the way other double signatures are. This sync behavior
@@ -336,7 +349,9 @@ The behavior is specified as
   U136 support equal to a history block merges its confirmations, U137 forged support by the real
   author stops the replay on the double sign, U138 failed tail replay keeps final history,
   U139 support alone never makes a final point, U140 a missing history state still throws, U141
-  retained confirmations still count after the block enters history.
+  retained confirmations still count after the block enters history, U142 a retained block with
+  a held state is no final point, U144 the next retained sibling is tried when the first cannot
+  complete the hop, U145 ranking by the hop's threshold set.
 - Audit, `DisputeReplayPersistence.test.ts`: U135 in both persistence orders.
 - Live validation, `ValidationService.test.ts`: the four "retained proof evidence" / "history
   block … retained proof evidence" cases and the self-copy control.
@@ -349,6 +364,14 @@ The behavior is specified as
 Controls for identical overlapping blocks with complementary signatures, virtual finality,
 membership-change reconstruction, genuine invalid transitions and existing finalized conflicts are
 unchanged. Engineer review pending.
+
+**Open on the anchor-height rule (2026-10-16).** When a proof ends at its anchor with no tail
+(for example `[[F′]]` alone) none of the three corroborations can happen, so the start block stays
+retained while the peer's view is installed at that height. The next live block, the participant's
+own next block, and the readers of the previous block (timestamps, linkage, participant checks)
+then have no history block below them. Whether a live block that executes on a retained start block
+corroborates it, and how a participant authors on top of an uncorroborated start, is not settled;
+the rule is not implemented until it is.
 
 **Known limit (pruning).** Retained evidence is never pruned, and one coordinate can hold any number
 of identities. Block history has no pruning seam in `src/` either, so retained evidence follows it.
