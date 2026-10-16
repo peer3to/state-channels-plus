@@ -3,7 +3,7 @@ import {
     deployMathMachine,
     startWithTransitionBudget
 } from "../fixtures/LocalEvmCallGas.fixture";
-import { ContractExecutor, EvmStateMachine } from "@/evm";
+import { ContractExecutor } from "@/evm";
 import {
     DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT,
     localEvmCallGasLimit
@@ -178,13 +178,13 @@ describe("ContractExecutor call gas", function () {
     });
 
     // The runtime host also reads the chain's block gas bound at start and
-    // hands it to the diamond state machine as the reduction-path grant; a
-    // reduction call given that grant runs above the executor's own grant.
+    // hands it to the diamond state machine as the reduction-path grant;
+    // a per-call override with that grant is what funds a reduction call.
     async function assertRuntimeReductionGrant(vmDedicatedThread: boolean) {
         const h = TestSession.getHarness();
         await startWithTransitionBudget(h, 500_000, vmDedicatedThread);
         const result = await h.execOnHost(h.getPeer(0), async (sm) => {
-            const machine = sm.diamondStateMachine as EvmStateMachine;
+            const machine = sm.diamondStateMachine;
             const chainBlock = await sm.signer.provider!.getBlock("latest");
             const diamondAddress =
                 await machine.localDiamondContract.getAddress();
@@ -206,48 +206,14 @@ describe("ContractExecutor call gas", function () {
                 blockHeight: 0,
                 timestamp: 0
             };
-            // one fabricated dispute, so the facet decodes the 4 MB state
-            // before it can return early for the missing window: at the
-            // executor's own grant that decoding exhausts a frame, at the
-            // reduction grant the call returns
-            const dispute = {
-                input: {
-                    channelId: zeroHash,
-                    forkId: zeroHash,
-                    latestStateSnapshotHash: zeroHash,
-                    latestInboundMessageBlockHash: zeroHash,
-                    lastInboundMessageBlockHeight: 0,
-                    stateProof: { milestones: [] },
-                    onChainSlashes: [],
-                    disputeAuditingDataHash: zeroHash,
-                    disputer: "0x0000000000000000000000000000000000000000",
-                    timeout: {
-                        participant:
-                            "0x0000000000000000000000000000000000000000",
-                        blockHeight: 0,
-                        minTimeStamp: 0,
-                        isForced: false,
-                        previousBlockProducer:
-                            "0x0000000000000000000000000000000000000000",
-                        previousBlockProducerPostedCalldata: false,
-                        participantSignatureOnPreviousBlock: "0x"
-                    },
-                    selfRemoval: false,
-                    requireExistingDisputeWindow: false
-                },
-                postedAuditingData: false,
-                outputSnapshotDataHash: zeroHash
-            };
+            // a small reduction call: at a 1,000-gas override it dies in
+            // dispatch (proving the override, not the executor's own
+            // grant, funded it), at the machine's reduction grant it runs
+            // to the facet's empty-disputes revert
             const data =
                 machine.localDiamondContract.interface.encodeFunctionData(
                     "reduceAndFinalize",
-                    [
-                        [dispute],
-                        snapshot,
-                        new Uint8Array(3_000_000).fill(0xff),
-                        [],
-                        zeroHash
-                    ]
+                    [[], snapshot, "0x", [], zeroHash]
                 );
             const call = async (gasLimit?: bigint) => {
                 try {
@@ -264,15 +230,15 @@ describe("ContractExecutor call gas", function () {
             return {
                 chainBlockGasLimit: chainBlock!.gasLimit.toString(),
                 granted: machine.reductionCallGasLimit?.toString(),
-                withDefault: await call(),
+                withTinyOverride: await call(1_000n),
                 withGrant: await call(machine.reductionCallGasLimit)
             };
         });
         expect(result.granted).to.equal(result.chainBlockGasLimit);
         expect(
-            isLocalReductionResourceFailure(new Error(result.withDefault))
+            isLocalReductionResourceFailure(new Error(result.withTinyOverride))
         ).to.equal(true);
-        expect(result.withGrant).to.equal("ok");
+        expect(result.withGrant).to.include("ErrorNoDisputesProvided");
     }
 
     it("the runtime grants reduction calls the chain block gas limit on an inline executor", async function () {

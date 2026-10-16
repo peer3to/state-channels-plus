@@ -403,8 +403,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.disputeWindows.slice(adoptedWindowCount);
 
             let notReducedCount = 0;
-            // the chain's participant maximum, read on the first local reduction
-            let maxChannelParticipants: bigint | undefined;
             // windows whose reduction this sync's own local call committed
             const reducedByThisSync = new Set<ForkId>();
             for (const dw of linkedDisputeWindows) {
@@ -475,6 +473,14 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         localWindow !== undefined &&
                         localWindow.reducedResult.forkId !== ZeroHash &&
                         localWindow.reducedResult.forkId === dw.reducedForkId;
+                    // An anchored mismatch is a verdict only once the chain
+                    // has reduced the window (REQ-SYNC-4): before that, the
+                    // commitments and the chain reduction's output can still
+                    // move under an honest responder, so it is no verdict.
+                    const anchoredMismatch = (reason: string): SyncOutcome =>
+                        isReducedOnChain
+                            ? this.rejectSync(peerAddress, reason)
+                            : { synced: false, unsettledForkId: dw.forkId };
                     if (!alreadyReducedLocally) {
                         // The served bytes are committed by hashes the facet
                         // checks only after the calldata is in EVM memory; anchor
@@ -506,8 +512,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                                 (served) => !committedHashes.has(served)
                             )
                         )
-                            return this.rejectSync(
-                                peerAddress,
+                            return anchoredMismatch(
                                 "reduction disputes not committed"
                             );
                         const reducedOutput =
@@ -534,22 +539,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                                       )
                                   ) === dw.forkId;
                         if (!snapshotAnchored)
-                            return this.rejectSync(
-                                peerAddress,
+                            return anchoredMismatch(
                                 "reduction snapshot mismatch"
                             );
-                        // What passes is genuine: a state matching its anchored
-                        // snapshot commitment, an inbound list ending at the
-                        // chain reduction's head, and a participant list within
-                        // the channel maximum — its exhaustion below is a local
-                        // resource failure.
+                        // What passes is genuine: a state matching its
+                        // anchored snapshot commitment and an inbound list
+                        // ending at the chain reduction's head — its
+                        // exhaustion below is a local resource failure.
                         if (
                             hash(dw.latestEncodedStateMachineState) !==
                             dw.latestStateSnapshot.snapshotData
                                 .stateMachineStateHash
                         )
-                            return this.rejectSync(
-                                peerAddress,
+                            return anchoredMismatch(
                                 "reduction state hash mismatch"
                             );
                         if (
@@ -558,8 +560,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                                 dw.inboundMessageBlocksAppliedInReduce
                             )
                         )
-                            return this.rejectSync(
-                                peerAddress,
+                            return anchoredMismatch(
                                 "reduction inbound chain invalid"
                             );
                         let inboundHead =
@@ -583,30 +584,26 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                                     reducedOutput.latestInboundMessageBlockHeight
                                 )
                         )
-                            return this.rejectSync(
-                                peerAddress,
+                            return anchoredMismatch(
                                 "reduction inbound head mismatch"
-                            );
-                        maxChannelParticipants ??=
-                            await stateManager.stateChannelManagerContract.getMaxChannelParticipants();
-                        if (
-                            dw.latestStateSnapshot.snapshotData.participants
-                                .length > Number(maxChannelParticipants)
-                        )
-                            return this.rejectSync(
-                                peerAddress,
-                                "reduction participants exceed channel maximum"
                             );
                     }
                     try {
-                        const committedReduction =
-                            await diamondStateMachine.reduceAndFinalizeLocally(
-                                disputes,
-                                dw.latestStateSnapshot,
-                                dw.latestEncodedStateMachineState,
-                                dw.inboundMessageBlocksAppliedInReduce,
-                                dw.reducedForkId
-                            );
+                        // A window already reduced in the local diamond to
+                        // the served fork (checked above) needs no facet
+                        // call: it would only compare the claimed fork,
+                        // which the check already did, and calling it on
+                        // unverified served bytes would let padding exhaust
+                        // the grant blamelessly.
+                        const committedReduction = alreadyReducedLocally
+                            ? false
+                            : await diamondStateMachine.reduceAndFinalizeLocally(
+                                  disputes,
+                                  dw.latestStateSnapshot,
+                                  dw.latestEncodedStateMachineState,
+                                  dw.inboundMessageBlocksAppliedInReduce,
+                                  dw.reducedForkId
+                              );
                         if (committedReduction)
                             reducedByThisSync.add(dw.forkId);
                     } catch (e) {

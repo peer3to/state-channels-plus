@@ -333,9 +333,11 @@ Residual risk, reduction size: a window whose reduction exceeds what one transac
 the chain can never settle — not on-chain, and not locally, since reduction-path local calls share
 that bound. Below it, a responder can make a requester spend up to that bound of local computation
 per sync round, but only on chain-committed genuine inputs: disputes the window never committed, a
-snapshot the chain's reduction does not name, an inbound list that does not end at the chain
-reduction's head, and over-maximum participant lists are rejected as evidence before the expensive
-call, and a served reduction is limited to one unreduced window per sync.
+snapshot the chain's reduction does not name, and an inbound list that does not end at the chain
+reduction's head end the sync before the expensive call — as evidence only once the chain has
+reduced the window; before that they are no verdict
+([`REQ-SYNC-4-AWHFPA`](synchronization.md#req-sync-4-awhfpa)) and the requester waits for the chain's reduction. A served reduction is
+limited to one unreduced window per sync.
 
 ## Verification and test plan
 

@@ -250,18 +250,21 @@ verdict; only a completed local revert still rejects as "served reduction revert
 exhaustion is named at the source: `LocalDiamond` declares its own `reduceAndFinalize` entry that
 forwards all remaining gas through its gas-accounted delegation, so an exhausted facet frame reverts
 `ErrorDisputeExecutionOutOfGas` instead of surfacing as the proxy's reasonless delegatecall failure
-(which would otherwise read as a verdict). Before the call, cheap pre-checks reject padded served
-bytes as evidence — the served state must hash to its snapshot commitment, the served inbound list
-must chain-link from the snapshot's inbound head, and the snapshot's participants must fit the
-channel maximum — so only hash-committed genuine inputs can consume the grant. Covered by
+(which would otherwise read as a verdict). Before the call, cheap anchored checks end the sync on
+padded served bytes — the served disputes must be the window's committed ones, the snapshot must
+be the one the chain's reduction of those disputes names, and the inbound list must end where that
+reduction ends — so only hash-committed genuine inputs can consume the grant. On a window the chain
+has not reduced these mismatches are no verdict ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)): the sync ends
+unsettled and the requester waits for the chain's reduction; only once the chain has reduced the
+window do they reject as evidence. Covered by
 [`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34) (a real reduced reduction grant exhausts the
 facet frame inside the sync: throw, no rejection, no blacklist, funded retry succeeds),
 [`INV-SYNC-3-A7A2ED.T1.P35`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p35) (the same through an established
 participant's full `sync()`, recovering after the window settles on chain), the
 [`UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-3-0z8r93) classifier cases on real local
 `reduceAndFinalize` calls (funded revert, call-frame and facet-frame exhaustion, capped computation,
-reasonless revert), and a padded-state sync case that still rejects and blacklists. This removes the
-honest-responder blacklist.
+reasonless revert), and padded-state sync cases that end unsettled with no rejection and no
+blacklist on windows the chain has not reduced. This removes the honest-responder blacklist.
 
 **Gas bound — engineer decisions (Luka, 2026-10-16).** First decision: the local EVM call floor
 (0xffffff, ≈16.7M) as the supported sync bound. Review then established that SDK reducers compute

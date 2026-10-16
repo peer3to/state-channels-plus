@@ -604,4 +604,84 @@ describe("Unit: ReductionExecutor", function () {
             });
         });
     });
+
+    describe("submission gas bound", function () {
+        it("chain transaction gas cap below the block gas limit → the host grants the cap to local reductions", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0, {
+                configOverrides: { CHAIN_TX_GAS_CAP: 1_000_000 }
+            });
+            const granted = await h.execOnHost(h.getPeer(0), async (sm) =>
+                String(sm.diamondStateMachine.reductionCallGasLimit)
+            );
+            expect(granted).to.equal("1000000");
+        });
+
+        it("chain transaction gas cap above the block gas limit → the host grants the block gas limit", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0, {
+                configOverrides: { CHAIN_TX_GAS_CAP: 2_000_000_000 }
+            });
+            const granted = await h.execOnHost(h.getPeer(0), async (sm) => {
+                const block = await sm.signer.provider!.getBlock("latest");
+                return {
+                    cap: String(sm.diamondStateMachine.reductionCallGasLimit),
+                    blockGasLimit: String(block!.gasLimit)
+                };
+            });
+            expect(granted.cap).to.equal(granted.blockGasLimit);
+        });
+
+        it("submission within the bound → the reduction transaction lands with a gas limit no greater than the block gas limit", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
+            const reducer = h.getPeer(0);
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId,
+                peerIndices: [0]
+            });
+            const sent = await h.execOnHost(reducer, async (sm) => {
+                const provider = sm.signer.provider!;
+                const signerAddress = await sm.signer.getAddress();
+                const scmAddress =
+                    await sm.stateChannelManagerContract.getAddress();
+                const latest = await provider.getBlockNumber();
+                for (let n = latest; n > Math.max(0, latest - 200); n--) {
+                    const block = await provider.getBlock(n, true);
+                    if (!block) continue;
+                    for (const tx of block.prefetchedTransactions) {
+                        if (
+                            tx.from.toLowerCase() ===
+                                signerAddress.toLowerCase() &&
+                            tx.to?.toLowerCase() === scmAddress.toLowerCase()
+                        ) {
+                            const receipt =
+                                await provider.getTransactionReceipt(tx.hash);
+                            return {
+                                gasLimit: String(tx.gasLimit),
+                                gasUsed: String(receipt!.gasUsed),
+                                blockGasLimit: String(block.gasLimit)
+                            };
+                        }
+                    }
+                }
+                return null;
+            });
+            expect(sent).to.not.equal(null);
+            expect(BigInt(sent!.gasLimit)).to.be.greaterThan(0n);
+            expect(BigInt(sent!.gasLimit)).to.be.lessThanOrEqual(
+                BigInt(sent!.blockGasLimit)
+            );
+            expect(BigInt(sent!.gasUsed)).to.be.lessThanOrEqual(
+                BigInt(sent!.gasLimit)
+            );
+        });
+    });
 });

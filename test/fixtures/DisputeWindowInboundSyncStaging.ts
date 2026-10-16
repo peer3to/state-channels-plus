@@ -383,6 +383,10 @@ async function stageAndApplyDisputeWindowInboundSync(
                     await requesterStub.restoreReductionGrant().request();
             }
         } else {
+            if (options.reductionGrant)
+                await requesterStub
+                    .stubReductionGrant(options.reductionGrant)
+                    .request();
             await requesterStub
                 .holdSyncWindowPersistence(
                     options.reduction === "chainAfterFinalityRead"
@@ -416,6 +420,8 @@ async function stageAndApplyDisputeWindowInboundSync(
             } finally {
                 await requesterStub.releaseSyncWindowPersistence().request();
                 outcome = await pending;
+                if (options.reductionGrant)
+                    await requesterStub.restoreReductionGrant().request();
             }
         }
         rejections = await requesterStub
@@ -587,6 +593,94 @@ export async function assertSyncReductionOutOfGasRecovery(
         accepted,
         sourceForkId,
         requesterForkId: await requesterControl.query.getForkId().request(),
+        localReducedForkId: await requesterControl.query
+            .getLocalDisputeWindowReducedForkId(sourceForkId)
+            .request()
+    };
+}
+
+/**
+ * An honest race on an open window: peer 0's dispute is committed and peer 0
+ * serves peer 2 a sync payload for it; only then does peer 3's dispute
+ * commit, so the served dispute set no longer matches the chain's
+ * commitments when peer 2 applies the payload. The mismatch is the chain
+ * moving under an honest responder, not fabrication.
+ */
+export async function assertServedCommitmentRaceIsUnsettled(
+    h: MathPeerTestHarness
+) {
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 30 }
+    });
+    const sourceForkId = h.activeForkId!;
+    for (const peer of h.peers)
+        await h.control(peer).stub.stubHoldReductionTasks().request();
+    const responder = h.getPeer(RESPONDER_INDEX);
+    const requester = h.getPeer(REQUESTER_INDEX);
+    const requesterControl = h.control(requester);
+    await h
+        .control(h.getPeer(3))
+        .stub.stubSuppressDisputeInitiation()
+        .request();
+    await h.byzantine.submitInvalidStateTransitionBlock(1);
+    await h.assert.dispute.initiatedAndCommitedWait({
+        peersIndices: [0],
+        expectedCount: 1
+    });
+    const response = await h.execOnHost(
+        requester,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        { source: responder.address, forkId: sourceForkId }
+    );
+    // peer 3's dispute commits only now, after the payload was served
+    await h.control(h.getPeer(3)).stub.restoreDisputeInitiation().request();
+    await waitFor(
+        async () =>
+            (
+                await requesterControl.query
+                    .getDisputeWindowCommitments(sourceForkId)
+                    .request()
+            ).length === 2,
+        h.event.protocolEventTimeoutMs()
+    );
+    await requesterControl.stub.recordSyncRejections().request();
+    let outcome: SyncOutcome;
+    let rejections: string[];
+    try {
+        outcome = await h.execOnHost(
+            requester,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: responder.address,
+                forkId: sourceForkId,
+                encodedSyncPayload: response.encodedSyncPayload as string
+            }
+        );
+    } finally {
+        rejections = await requesterControl.stub
+            .restoreRecordedSyncRejections()
+            .request();
+    }
+    return {
+        accepted: outcome.synced,
+        unsettledForkId: outcome.unsettledForkId,
+        sourceForkId,
+        rejections,
+        responderBlacklisted: await requesterControl.query
+            .isBlacklisted(responder.address)
+            .request(),
         localReducedForkId: await requesterControl.query
             .getLocalDisputeWindowReducedForkId(sourceForkId)
             .request()

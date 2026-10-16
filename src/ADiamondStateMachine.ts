@@ -1,3 +1,4 @@
+import type AContractExecutor from "./evm/contractExecutor/AContractExecutor";
 import { Address, Bytes } from "./types/types";
 
 import type { LocalDiamondContract } from "./utils/localDiamond";
@@ -17,6 +18,9 @@ type TransitionResponse = {
 
 abstract class ADiamondStateMachine {
     localDiamondContract: LocalDiamondContract;
+
+    /** The executor every local contract call of this machine runs on. */
+    public abstract readonly contractExecutor: AContractExecutor;
 
     /**
      * Gas granted to reduction-path local calls (the most gas one
