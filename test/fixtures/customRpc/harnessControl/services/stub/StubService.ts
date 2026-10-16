@@ -548,6 +548,7 @@ export class StubService extends ANetworkRpcService<
         completedSyncs: number;
         successfulSyncs: number;
         networkEntries: number;
+        calldataEntries: number;
         proofEntries: number;
         proofSources: number;
         chainReads: number;
@@ -1070,6 +1071,7 @@ export class StubService extends ANetworkRpcService<
             completedSyncs: 0,
             successfulSyncs: 0,
             networkEntries: 0,
+            calldataEntries: 0,
             proofEntries: 0,
             proofSources: 0,
             chainReads: 0,
@@ -1111,6 +1113,8 @@ export class StubService extends ANetworkRpcService<
                         args[1].senderAddress === options.source))
             )
                 observation.networkEntries++;
+            if (entry.origin === BlockOrigin.CALLDATA)
+                observation.calldataEntries++;
             if (entry.origin === BlockOrigin.PROOF) {
                 observation.proofEntries++;
                 observation.proofSources += entry.sourcesToSignatures.size;
@@ -1173,6 +1177,7 @@ export class StubService extends ANetworkRpcService<
             completedSyncs: observation?.completedSyncs ?? 0,
             successfulSyncs: observation?.successfulSyncs ?? 0,
             networkEntries: observation?.networkEntries ?? 0,
+            calldataEntries: observation?.calldataEntries ?? 0,
             proofEntries: observation?.proofEntries ?? 0,
             proofSources: observation?.proofSources ?? 0,
             chainReads: observation?.chainReads ?? 0,

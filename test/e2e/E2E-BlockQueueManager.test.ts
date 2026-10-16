@@ -1090,12 +1090,9 @@ describe("E2E: BlockQueueManager", function () {
                         .query.isConnectedTo(sourcePeer.address)
                         .request()
                 ).to.equal(true);
-                expect(
-                    await h
-                        .control(targetPeer)
-                        .query.getBlockByHeight(newForkId, 1)
-                        .request()
-                ).to.equal(null);
+                // No "not stored" assertion: an honest sync may install
+                // this block independently of the faulted copy; the queue
+                // entry counts are the fault oracle.
 
                 // The same local fault on the calldata origin: no sender
                 // exists to punish, the copy is dropped, nothing is stored.
@@ -1133,11 +1130,13 @@ describe("E2E: BlockQueueManager", function () {
                     ).failed
                 ).to.be.greaterThan(failuresBeforeCalldata);
                 expect(
-                    await h
-                        .control(targetPeer)
-                        .query.getBlockByHeight(newForkId, 1)
-                        .request()
-                ).to.equal(null);
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).calldataEntries
+                ).to.equal(0);
                 const calldataRecords = await h
                     .control(targetPeer)
                     .stub.getIngestOutcomeRecords()
@@ -1382,12 +1381,8 @@ describe("E2E: BlockQueueManager", function () {
                         .query.isConnectedTo(author!.address)
                         .request()
                 ).to.equal(true);
-                expect(
-                    await h
-                        .control(receiver)
-                        .query.getBlockByHash(judged!.blockHash)
-                        .request()
-                ).to.equal(null);
+                // No "not stored" assertion: an honest sync may install
+                // the author's block independently of the faulted copy.
             } finally {
                 await h
                     .control(receiver)
