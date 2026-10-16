@@ -71,6 +71,7 @@ and hold no queued entry for it.
 - `queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P6
 - `a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P7
 - `recovers the first reduced-fork block by reducing locally at ingest`: REQ-BLOCK-PIPE-9-QA66GT.T1.P5
+- `a local disputed-fork check failure during ingest does not blacklist the honest sender`: REQ-GOSSIP-2-9PMMNH.T2.P1, UNIT-TEST-STATE-TRANSITION-METHODS-1-AVMVVT.P4
 - `queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier`: REQ-BLOCK-PIPE-4-CF52J6.T1.P3, REQ-BLOCK-PIPE-4-CF52J6.T1.P6
 - `a queue timeout accepts a proved successor fork without excluding the supplier or author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P13, REQ-SYNC-1-T2589H.T1.P8
 - `unknown-fork timeout asks both the supplier and the author to sync`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9

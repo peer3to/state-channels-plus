@@ -930,6 +930,139 @@ describe("E2E: BlockQueueManager", function () {
                 "target peer state must converge with the reducing peers"
             );
         });
+        it("a local disputed-fork check failure during ingest does not blacklist the honest sender", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+            const reducingHonestPeers = [0, 3];
+
+            await h.lifecycle.start(4, 2, {
+                timeConfig: forkTimeConfig
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+
+            const race = await h.rpcStub.holdReductionRace(targetPeerIndex);
+
+            const { newForkId } = await h.scenario.disputeAndResolve({
+                maliciousPeerIndex,
+                forkId: originalForkId,
+                honestPeerIndices: reducingHonestPeers,
+                resetEventSpies: false
+            });
+            expect(
+                await h.control(targetPeer).query.getForkId().request()
+            ).to.equal(originalForkId);
+
+            await waitFor(
+                async () => (await race.heldSnapshotEventCount()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+
+            const sourcePeer = h.getPeer(reducingHonestPeers[0]);
+            const nextWriterAddress = await h
+                .control(sourcePeer)
+                .query.getNextToWrite()
+                .request();
+            const writerPeer = h.peers.find(
+                (p) => p.address === nextWriterAddress
+            );
+            expect(writerPeer, "no writer peer found").to.not.be.undefined;
+            expect(writerPeer!.index).not.to.equal(targetPeerIndex);
+
+            await writerPeer!.p2pInstance.p2pContractInstance.add(1);
+            await waitFor(async () => {
+                const block = await h
+                    .control(sourcePeer)
+                    .query.getBlockByHeight(newForkId, 0)
+                    .request();
+                return Boolean(block?.encodedBlockConfirmation);
+            }, h.event.protocolEventTimeoutMs());
+
+            // A second block, so the delivered copy is never one the target
+            // already stored through ordinary gossip (a stored copy settles
+            // as past before the disputed-fork check runs).
+            const secondWriterAddress = await h
+                .control(sourcePeer)
+                .query.getNextToWrite()
+                .request();
+            const secondWriterPeer = h.peers.find(
+                (p) => p.address === secondWriterAddress
+            );
+            expect(secondWriterPeer, "no second writer peer found").to.not.be
+                .undefined;
+            expect(secondWriterPeer!.index).not.to.equal(targetPeerIndex);
+            await secondWriterPeer!.p2pInstance.p2pContractInstance.add(1);
+            await waitFor(async () => {
+                const block = await h
+                    .control(sourcePeer)
+                    .query.getBlockByHeight(newForkId, 1)
+                    .request();
+                return Boolean(block?.encodedBlockConfirmation);
+            }, h.event.protocolEventTimeoutMs());
+            const secondBlock = await h
+                .control(sourcePeer)
+                .query.getBlockByHeight(newForkId, 1)
+                .request();
+            expect(secondBlock).not.to.equal(null);
+
+            // The target's disputed-fork check fails on its own local
+            // diamond while it ingests the wrong-fork block: a local
+            // fault, not evidence against the sender.
+            await h
+                .control(targetPeer)
+                .stub.stubFailDisputedForkChecks(Number.MAX_SAFE_INTEGER)
+                .request();
+            try {
+                // Production gossip is fire-and-forget: the sender's verdict
+                // mapping runs in the receiver's async handler, so a local
+                // fault must not disconnect or blacklist the sender there.
+                await h
+                    .control(sourcePeer)
+                    .byzantine.sendBlockConfirmation(
+                        secondBlock!.encodedBlockConfirmation,
+                        targetPeer.address
+                    )
+                    .request();
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(targetPeer)
+                                .stub.getDisputedForkCheckObservation()
+                                .request()
+                        ).failed > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isBlacklisted(sourcePeer.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isConnectedTo(sourcePeer.address)
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHeight(newForkId, 1)
+                        .request()
+                ).to.equal(null);
+            } finally {
+                await h
+                    .control(targetPeer)
+                    .stub.restoreDisputedForkCheckFailures()
+                    .request();
+                await race.release();
+            }
+        });
 
         it("queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier", async function () {
             const h = TestSession.getHarness();

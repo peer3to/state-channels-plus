@@ -11,6 +11,7 @@
 - [`REQ-BLOCK-PIPE-9-QA66GT` (Dead-fork containment)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
+- [`REQ-GOSSIP-2-9PMMNH` (Verdict-mapped consequences)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)

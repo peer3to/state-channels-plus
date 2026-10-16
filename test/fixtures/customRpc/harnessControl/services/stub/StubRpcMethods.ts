@@ -3529,6 +3529,23 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public stubFailDisputedForkChecks(times: number): boolean {
+        this.service.stubFailDisputedForkChecks(times);
+        return true;
+    }
+
+    public getDisputedForkCheckObservation(): {
+        failed: number;
+        passed: number;
+    } {
+        return this.service.getDisputedForkCheckObservation();
+    }
+
+    public restoreDisputedForkCheckFailures(): boolean {
+        this.service.restoreDisputedForkCheckFailures();
+        return true;
+    }
+
     public holdInitHandshakes(): boolean {
         this.service.holdInitHandshakes();
         return true;

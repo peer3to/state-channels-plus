@@ -592,6 +592,9 @@ export class StubService extends ANetworkRpcService<
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
+    private restoreDisputedForkChecks?: () => void;
+    // disputed-fork checks through the validation service: rejected, then passed through
+    private disputedForkCheckObservation = { failed: 0, passed: 0 };
     // reads of the stubbed chain method: rejected, then passed through
     private chainReadObservation = { failed: 0, passed: 0 };
     private timeoutStoreCalls = 0;
@@ -2350,6 +2353,41 @@ export class StubService extends ANetworkRpcService<
     public restoreChainReadFailures(): void {
         this.restoreChainReads?.();
         this.restoreChainReads = undefined;
+    }
+
+    // the next `times` disputed-fork checks reject (a local-diamond read
+    // failure during ingest); later checks, and every check after restore,
+    // run the real check
+    public stubFailDisputedForkChecks(times: number): void {
+        const validation = this.sm.validationService;
+        const original = validation.isDisputedFork.bind(validation);
+        let remaining = times;
+        const observation = { failed: 0, passed: 0 };
+        this.disputedForkCheckObservation = observation;
+        validation.isDisputedFork = async (...args) => {
+            if (remaining > 0) {
+                remaining -= 1;
+                observation.failed += 1;
+                throw new Error("stubbed disputed-fork check failure");
+            }
+            observation.passed += 1;
+            return original(...args);
+        };
+        this.restoreDisputedForkChecks = () => {
+            validation.isDisputedFork = original;
+        };
+    }
+
+    public getDisputedForkCheckObservation(): {
+        failed: number;
+        passed: number;
+    } {
+        return { ...this.disputedForkCheckObservation };
+    }
+
+    public restoreDisputedForkCheckFailures(): void {
+        this.restoreDisputedForkChecks?.();
+        this.restoreDisputedForkChecks = undefined;
     }
 
     public holdInitHandshakes(): void {

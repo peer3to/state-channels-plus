@@ -726,9 +726,9 @@ guard-rejection send failure, including one attempt, one disconnect, and no unha
 
 ### DEF-9-724SXP
 
-**Defect:** Block ingest wraps everything in try/catch → `false` → disconnect+blacklist the sender,
-so a _local_ chain-provider failure (kill-period read in `maybeScheduleForkRecovery`) blacklists an
-honest gossiper for our own infrastructure fault
+**Defect:** _Resolved (2026-10-16) for block ingest._ Block ingest wrapped everything in try/catch →
+`false` → disconnect+blacklist the sender, so a _local_ chain-provider failure (kill-period read in
+`maybeScheduleForkRecovery`) blacklisted an honest gossiper for our own infrastructure fault
 ([peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)). _Scope
 note (2026-09-02):_ the lobby accepted-lease exclusion approved under
 [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
@@ -739,11 +739,16 @@ a measured universal execution bound. _Scope note (2026-09-16):_ one instance cl
 opening receipt that fails on this node's own chain provider no longer blacklists the counterparty;
 it closes with reconnect allowed and no strike. _Scope note (2026-09-18):_ a sync request that fails
 and a dispute acknowledgement that never arrives now take a counted close rather than a verdict, so
-a local outage during those requests costs the peer one retry, not its identity. Block ingest is
-unchanged, so the finding stays open.
+a local outage during those requests costs the peer one retry, not its identity.
 
-**Proposed direction:** Partition input faults from local faults; never penalize a peer for a local
-error.
+**Resolution:** `BlockQueueManager.ingestBlockConfirmation` now logs an ingest exception and
+returns the accepting verdict instead of the rejecting one, so a local fault drops the copy and
+keeps the sender's session; only its explicit verdicts reject the sender (failed authentication
+through the validation strategy, a wrong-channel network copy, and the sender proven absent after
+the eligibility sync at the intake gate). Rethrowing was rejected: on the fire-and-forget gossip
+path it would make the RPC layer drop the sender's session for our own failure. Regression:
+`a local disputed-fork check failure during ingest does not blacklist the honest sender`
+([`REQ-GOSSIP-2-9PMMNH.T2.P1`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh.t2.p1)).
 
 <a id="def-10-199c7f"></a>
 
