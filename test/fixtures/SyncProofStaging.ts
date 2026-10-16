@@ -997,6 +997,8 @@ export async function stageConflictingOverlapPayload(h: MathPeerTestHarness) {
  *   the anchor height committing the anchor snapshot but not the real anchor
  *   block; `forgedStartBelowHop`: [F′] and [a+1, a+2] with a+1's state;
  *   `forgedStartBesideReal`: [F′] and [a, a+1, a+2] with the anchor's state;
+ * - `invalidAfterAnchor`: [a, a+1‴] with the anchor's state, a+1‴ by a+1's
+ *   author linked to the anchor block, committing no real state;
  * - `tailSibling`: [a, a+1, a+2], [a, a+1″] and [a] with the anchor's state,
  *   a+1″ linked to a by another author than a+1, confirmed by every other
  *   participant and ground below a+1's hash.
@@ -1060,6 +1062,13 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
         height: a,
         stateSnapshotHash: anchor.hash,
         previousBlockHash: randomHash()
+    });
+    const invalidFirst = await craftProofBlock(h, {
+        authorIndex: peerIndexOf(first.author),
+        forkId,
+        height: a + 1,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: anchorBlock.hash
     });
     const siblingAuthor = peerIndexOf(second.author);
     const craftSibling = () =>
@@ -1201,6 +1210,13 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
                 ]
             ],
             [anchor.toStruct(), anchor.toStruct()],
+            anchorState
+        ),
+        anchorBlockHash: anchorBlock.hash,
+        invalidAfterAnchor: servingProof(
+            payload,
+            [[anchorBlock.confirmation, invalidFirst.confirmation]],
+            [anchor.toStruct()],
             anchorState
         ),
         tailSibling: servingProof(

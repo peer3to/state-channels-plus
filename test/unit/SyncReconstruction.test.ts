@@ -1121,5 +1121,28 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 [a, a + 1, a + 2]
             ]);
         });
+
+        it("U150: a spectator without the anchor block replays an invalid first tail block on it → rejected without throwing, the spectator aborts, the anchor block stays retained and never becomes history", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await applyOnFreshRequester(
+                h,
+                staged.forkId,
+                [staged.invalidAfterAnchor],
+                { inspect: { heights: [a], retainedHeights: [a] } }
+            );
+            expect(
+                outcome.outcomes.map((applied) => applied.accepted)
+            ).to.deep.equal([false]);
+            expect(outcome.outcomes[0].threw).to.equal("");
+            expect(outcome.disposed).to.equal(true);
+            expect(outcome.blocks).to.deep.equal([null]);
+            expect(
+                outcome.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[staged.anchorBlockHash]]);
+        });
     });
 });
