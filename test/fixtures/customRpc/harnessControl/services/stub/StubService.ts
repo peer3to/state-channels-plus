@@ -5,6 +5,7 @@ import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
+import { Block } from "@/models";
 import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
 import type PeerProfile from "@/PeerProfile";
@@ -593,8 +594,19 @@ export class StubService extends ANetworkRpcService<
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
     private restoreDisputedForkChecks?: () => void;
+    private restoreKillPeriodReads?: () => void;
+    // reads of the stubbed kill-period method: rejected, then passed through
+    private killPeriodReadObservation = { failed: 0, passed: 0 };
     // disputed-fork checks through the validation service: rejected, then passed through
     private disputedForkCheckObservation = { failed: 0, passed: 0 };
+    private ingestOutcomeRecords: {
+        senderAddress: string;
+        blockHash: string;
+        outcome: string;
+    }[] = [];
+    private restoreIngestOutcomeRecorder?: () => void;
+    private syncApplicationObservation = { thrown: 0 };
+    private restoreSyncApplication?: () => void;
     // reads of the stubbed chain method: rejected, then passed through
     private chainReadObservation = { failed: 0, passed: 0 };
     private timeoutStoreCalls = 0;
@@ -2388,6 +2400,116 @@ export class StubService extends ANetworkRpcService<
     public restoreDisputedForkCheckFailures(): void {
         this.restoreDisputedForkChecks?.();
         this.restoreDisputedForkChecks = undefined;
+    }
+
+    // the next `times` kill-period reads through the reduction manager
+    // reject (a chain-provider outage at the fork-recovery read); later
+    // reads, and every read after restore, reach the chain
+    public stubFailKillPeriodReads(times: number): void {
+        const manager = this.sm.reductionManager;
+        const original = manager.isKillPeriodExpiredCached.bind(manager);
+        let remaining = times;
+        const observation = { failed: 0, passed: 0 };
+        this.killPeriodReadObservation = observation;
+        manager.isKillPeriodExpiredCached = async (...args) => {
+            if (remaining > 0) {
+                remaining -= 1;
+                observation.failed += 1;
+                throw new Error("stubbed kill-period read failure");
+            }
+            observation.passed += 1;
+            return original(...args);
+        };
+        this.restoreKillPeriodReads = () => {
+            manager.isKillPeriodExpiredCached = original;
+        };
+    }
+
+    public getKillPeriodReadObservation(): { failed: number; passed: number } {
+        return { ...this.killPeriodReadObservation };
+    }
+
+    public restoreKillPeriodReadFailures(): void {
+        this.restoreKillPeriodReads?.();
+        this.restoreKillPeriodReads = undefined;
+    }
+
+    // record-only probe: forwards every ingest unchanged and records how
+    // each frame was judged, keyed by its sender and block
+    public recordIngestOutcomes(): void {
+        const queue = this.sm.blockQueueManager;
+        const original = queue.ingestBlockConfirmation.bind(queue);
+        const records: {
+            senderAddress: string;
+            blockHash: string;
+            outcome: string;
+        }[] = [];
+        this.ingestOutcomeRecords = records;
+        queue.ingestBlockConfirmation = async (blockConfirmation, options) => {
+            const block = Block.tryFromBlockConfirmation(blockConfirmation);
+            const record: {
+                senderAddress: string;
+                blockHash: string;
+                outcome: string;
+            } = {
+                senderAddress:
+                    options.origin === BlockOrigin.NETWORK
+                        ? String(options.senderAddress)
+                        : "",
+                blockHash: block?.hash ? String(block.hash) : "",
+                outcome: "rejected"
+            };
+            try {
+                const result = await original(blockConfirmation, options);
+                record.outcome = String(result);
+                records.push(record);
+                return result;
+            } catch (error) {
+                records.push(record);
+                throw error;
+            }
+        };
+        this.restoreIngestOutcomeRecorder = () => {
+            queue.ingestBlockConfirmation = original;
+        };
+    }
+
+    public getIngestOutcomeRecords(): {
+        senderAddress: string;
+        blockHash: string;
+        outcome: string;
+    }[] {
+        return [...this.ingestOutcomeRecords];
+    }
+
+    public restoreIngestOutcomeRecording(): void {
+        this.restoreIngestOutcomeRecorder?.();
+        this.restoreIngestOutcomeRecorder = undefined;
+    }
+
+    // payload application during a sync throws on this node's side (an
+    // internal failure of `applySyncResponse`, not a peer verdict)
+    public stubThrowSyncApplication(): void {
+        const spectate = this.p2pManager.localRpc.spectateService;
+        const original = spectate.applySyncResponse.bind(spectate);
+        const observation = { thrown: 0 };
+        this.syncApplicationObservation = observation;
+        spectate.applySyncResponse = async () => {
+            observation.thrown += 1;
+            throw new Error("stubbed sync application failure");
+        };
+        this.restoreSyncApplication = () => {
+            spectate.applySyncResponse = original;
+        };
+    }
+
+    public getSyncApplicationObservation(): { thrown: number } {
+        return { ...this.syncApplicationObservation };
+    }
+
+    public restoreSyncApplicationStub(): void {
+        this.restoreSyncApplication?.();
+        this.restoreSyncApplication = undefined;
     }
 
     public holdInitHandshakes(): void {

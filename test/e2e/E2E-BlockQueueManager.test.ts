@@ -1,3 +1,4 @@
+import { Block } from "@/models";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
@@ -1011,7 +1012,9 @@ describe("E2E: BlockQueueManager", function () {
 
             // The target's disputed-fork check fails on its own local
             // diamond while it ingests the wrong-fork block: a local
-            // fault, not evidence against the sender.
+            // fault, not evidence against the sender. The ingest probe
+            // records how this exact frame was judged.
+            await h.control(targetPeer).stub.recordIngestOutcomes().request();
             await h
                 .control(targetPeer)
                 .stub.stubFailDisputedForkChecks(Number.MAX_SAFE_INTEGER)
@@ -1027,16 +1030,28 @@ describe("E2E: BlockQueueManager", function () {
                         targetPeer.address
                     )
                     .request();
-                await waitFor(
-                    async () =>
-                        (
-                            await h
-                                .control(targetPeer)
-                                .stub.getDisputedForkCheckObservation()
-                                .request()
-                        ).failed > 0,
-                    h.event.protocolEventTimeoutMs()
-                );
+                const secondBlockHash = Block.fromBlockConfirmation(
+                    Codec.decode(
+                        secondBlock!.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    )
+                ).hash;
+                let judged: { outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(targetPeer)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === sourcePeer.address &&
+                            record.blockHash === secondBlockHash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "delivered frame was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
                 expect(
                     await h
                         .control(targetPeer)
@@ -1055,12 +1070,342 @@ describe("E2E: BlockQueueManager", function () {
                         .query.getBlockByHeight(newForkId, 1)
                         .request()
                 ).to.equal(null);
+
+                // The same local fault on the calldata origin: no sender
+                // exists to punish, the copy is dropped, nothing is stored.
+                const calldataResult = await h
+                    .control(targetPeer)
+                    .transition.ingestBlockConfirmation(
+                        secondBlock!.encodedBlockConfirmation,
+                        {
+                            origin: BlockOrigin.CALLDATA,
+                            onChainTimestamp: Number(
+                                Block.fromBlockConfirmation(
+                                    Codec.decode(
+                                        secondBlock!.encodedBlockConfirmation,
+                                        Type.BlockConfirmation
+                                    )
+                                ).timestamp
+                            )
+                        }
+                    )
+                    .request();
+                expect(calldataResult).to.equal(true);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHeight(newForkId, 1)
+                        .request()
+                ).to.equal(null);
             } finally {
                 await h
                     .control(targetPeer)
                     .stub.restoreDisputedForkCheckFailures()
                     .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
                 await race.release();
+            }
+        });
+
+        it("a kill-period chain read failure while scheduling fork recovery does not blacklist the honest sender", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+
+            await h.lifecycle.start(4, 2, {
+                timeConfig: forkTimeConfig
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+            const sourcePeer = h.getPeer(0);
+
+            await h.control(targetPeer).stub.recordIngestOutcomes().request();
+            await h
+                .control(targetPeer)
+                .stub.stubFailKillPeriodReads(Number.MAX_SAFE_INTEGER)
+                .request();
+            try {
+                // Open a dispute window on the target's current fork, then
+                // deliver a block on another fork: scheduling fork recovery
+                // for it reads the kill period from the chain, and that
+                // read fails on the target's own provider.
+                await h.dispute.createInvalidStateTransitionDispute(
+                    maliciousPeerIndex,
+                    { forkId: originalForkId, resetEventSpies: false }
+                );
+                await waitFor(
+                    async () =>
+                        h.event.getEventCallCount(
+                            targetPeerIndex,
+                            "onDisputeCommitted"
+                        ) > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+
+                const { bogusBlock, blockConfirmation } =
+                    await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
+                await h
+                    .control(sourcePeer)
+                    .byzantine.sendBlockConfirmation(
+                        Codec.encode(
+                            blockConfirmation,
+                            Type.BlockConfirmation
+                        ) as string,
+                        targetPeer.address
+                    )
+                    .request();
+
+                let judged: { outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(targetPeer)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === sourcePeer.address &&
+                            record.blockHash === bogusBlock.hash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "delivered frame was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getKillPeriodReadObservation()
+                            .request()
+                    ).failed
+                ).to.be.greaterThan(0);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isBlacklisted(sourcePeer.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isConnectedTo(sourcePeer.address)
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHash(bogusBlock.hash)
+                        .request()
+                ).to.equal(null);
+            } finally {
+                await h
+                    .control(targetPeer)
+                    .stub.restoreKillPeriodReadFailures()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
+            }
+        });
+
+        it("a local failure during the sender's eligibility refresh does not blacklist the honest sender", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            await h.assert.sync.peersInSyncWait();
+
+            const receiver = h.getPeer(0);
+
+            // Rotate once if the receiver would author the next block
+            // itself: the faulted copy must arrive from another peer.
+            let nextWriterAddress = await h
+                .control(receiver)
+                .query.getNextToWrite()
+                .request();
+            if (nextWriterAddress === receiver.address) {
+                await h.transition.advanceState({ count: 1 });
+                nextWriterAddress = await h
+                    .control(receiver)
+                    .query.getNextToWrite()
+                    .request();
+            }
+            const author = h.peers.find((p) => p.address === nextWriterAddress);
+            expect(author, "no author peer found").to.not.be.undefined;
+            expect(author!.index).not.to.equal(receiver.index);
+
+            await h.control(receiver).stub.recordIngestOutcomes().request();
+            await h
+                .control(receiver)
+                .stub.observeAdmission({ failMembership: true })
+                .request();
+            try {
+                // Clear the receiver's eligibility caches, so the author's
+                // next copy must run the authoritative refresh — whose
+                // pinned chain read now fails on the receiver's side.
+                await h.execOnHost(receiver, async (sm) => {
+                    sm.membershipService.resetEligibility();
+                    return true;
+                });
+                await author!.p2pInstance.p2pContractInstance.add(1);
+
+                let judged: { blockHash: string; outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(receiver)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) => record.senderAddress === author!.address
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "author's copy was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+
+                const admission = await h
+                    .control(receiver)
+                    .stub.getAdmissionObservation()
+                    .request();
+                expect(admission.chainReads).to.be.greaterThan(0);
+                expect(admission.completedSyncs).to.equal(0);
+                expect(admission.networkEntries).to.equal(0);
+                expect(
+                    await h
+                        .control(receiver)
+                        .query.isBlacklisted(author!.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(receiver)
+                        .query.isConnectedTo(author!.address)
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(receiver)
+                        .query.getBlockByHash(judged!.blockHash)
+                        .request()
+                ).to.equal(null);
+            } finally {
+                await h
+                    .control(receiver)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(receiver)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
+            }
+        });
+
+        it("an absent sender whose intake-gate sync fails on our side gets no verdict", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
+            const { peer: outsider } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
+            await h.assert.sync.peersInSyncWait({
+                waitForFinalization: true
+            });
+
+            const observer = h.getPeer(0);
+            const stored = await h
+                .control(outsider)
+                .query.getLatestBlockBundle(h.activeForkId!)
+                .request();
+            expect(stored, "expected a verified spectator block").to.not.be
+                .null;
+            const storedHash = Block.fromBlockConfirmation(
+                Codec.decode(
+                    stored!.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                )
+            ).hash;
+
+            await h.control(observer).stub.recordIngestOutcomes().request();
+            await h.control(observer).stub.stubThrowSyncApplication().request();
+            await h
+                .control(observer)
+                .stub.observeAdmission({ source: outsider.address })
+                .request();
+            try {
+                // The outsider is absent from the observer's membership, so
+                // intake syncs from it — and applying that payload now
+                // throws on the observer's own side.
+                await h
+                    .control(outsider)
+                    .byzantine.sendBlockConfirmation(
+                        stored!.encodedBlockConfirmation,
+                        observer.address
+                    )
+                    .request();
+
+                let judged: { outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(observer)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === outsider.address &&
+                            record.blockHash === storedHash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "delivered frame was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getSyncApplicationObservation()
+                            .request()
+                    ).thrown
+                ).to.be.greaterThan(0);
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).networkEntries
+                ).to.equal(0);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(outsider.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isConnectedTo(outsider.address)
+                        .request()
+                ).to.equal(true);
+            } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreSyncApplicationStub()
+                    .request();
+                await h
+                    .control(observer)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(observer)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
             }
         });
 

@@ -522,7 +522,7 @@ Specification cases tested: 0/9.
 Specification cases tested: 0/4.
 
 [`REQ-GOSSIP-2-9PMMNH` (Verdict-mapped consequences)](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)
-Specification cases tested: 1/8. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7.
+Specification cases tested: 4/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7.
 
 [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)
 Specification cases tested: 7/10. Untested: T1.P1, T1.P2, T1.P3.
