@@ -44,6 +44,7 @@ and that every started root was closed.
 - `raises the call gas to twice the replay gas`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P3
 - `refuses a transition above the default call gas when not raised`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P4, REQ-MIRROR-4-H9C4YS.T1.P11
 - `runs a transition above the default call gas when raised to its requirement`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P5, REQ-MIRROR-4-H9C4YS.T1.P10
+- `a per-call gas limit override runs a call above the executor's own grant`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P6
 - `an inline executor runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1
 - `a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2
 - `a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3

@@ -52,6 +52,7 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true,
                 customPrecompiles: request.customPrecompiles.map(
                     ({ address, module, exportName, options }) => ({
                         address,

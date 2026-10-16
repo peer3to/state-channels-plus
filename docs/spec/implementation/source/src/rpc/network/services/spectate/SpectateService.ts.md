@@ -135,6 +135,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108` — A spectator that installed a later point from one source, without the state at an earlier point, applies another source's payload based at that earlier point: `persistSyncPayload` keeps the local state (`unsafeSetLatestState` not called), the VM state equals the source's at the same height, and the next live blocks execute with no fraud proof or cut source
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109` — The P108 case for a pending participant: it stays pending through the sync, disputes nothing, and the next live block seats it
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — a window the requester reduces locally during the sync whose reduction call runs out of gas locally: the sync throws, the responder is neither rejected nor blacklisted, and a funded retry of the same payload is accepted, reduces the window and stores the served inbound blocks
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — an established participant's full `sync()` whose local reduction exhausts its facet frame: the sync throws, the responder is neither disconnected nor blacklisted, the runtime is kept, and after the window settles on chain the same sync succeeds with no local reduction
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — a window the requester would reduce locally whose served latest state is padded so it no longer hashes to the snapshot commitment: the sync is rejected as a reduction state hash mismatch, the responder is blacklisted, and nothing is persisted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

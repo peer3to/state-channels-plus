@@ -16,11 +16,13 @@ abstract class AContractExecutor {
     abstract deploy(data: Bytes): Promise<ContractExecutionResult>;
     abstract executeCall(
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult>;
     abstract simulateCall(
         data: Bytes,
-        contractAddress: Address
+        contractAddress: Address,
+        gasLimit?: bigint
     ): Promise<ContractExecutionResult>;
 
     dispose(): Promise<void> | void {}

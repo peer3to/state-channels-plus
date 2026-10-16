@@ -298,6 +298,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.disputeWindows.slice(adoptedWindowCount);
 
             let notReducedCount = 0;
+            // the chain's participant maximum, read on the first local reduction
+            let maxChannelParticipants: bigint | undefined;
             // windows whose reduction this sync's own local call committed
             const reducedByThisSync = new Set<ForkId>();
             for (const dw of linkedDisputeWindows) {
@@ -352,6 +354,43 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             peerAddress,
                             "dispute window mismatch"
                         );
+                    // The served bytes are committed by hashes the facet
+                    // checks only after the calldata is in EVM memory; check
+                    // them cheaply here so padded bytes reject as evidence
+                    // instead of exhausting the local grant blamelessly.
+                    // What passes is genuine: a state matching its snapshot
+                    // commitment, a chain-linked inbound list, and a
+                    // participant list within the channel maximum — its
+                    // exhaustion below is a local resource failure.
+                    if (
+                        hash(dw.latestEncodedStateMachineState) !==
+                        dw.latestStateSnapshot.snapshotData
+                            .stateMachineStateHash
+                    )
+                        return this.rejectSync(
+                            peerAddress,
+                            "reduction state hash mismatch"
+                        );
+                    if (
+                        stateManager.validationService.findBrokenInboundMessageChainBlock(
+                            StateSnapshot.from(dw.latestStateSnapshot),
+                            dw.inboundMessageBlocksAppliedInReduce
+                        )
+                    )
+                        return this.rejectSync(
+                            peerAddress,
+                            "reduction inbound chain invalid"
+                        );
+                    maxChannelParticipants ??=
+                        await stateManager.stateChannelManagerContract.getMaxChannelParticipants();
+                    if (
+                        dw.latestStateSnapshot.snapshotData.participants
+                            .length > Number(maxChannelParticipants)
+                    )
+                        return this.rejectSync(
+                            peerAddress,
+                            "reduction participants exceed channel maximum"
+                        );
                     try {
                         const committedReduction =
                             await diamondStateMachine.reduceAndFinalizeLocally(
@@ -364,12 +403,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         if (committedReduction)
                             reducedByThisSync.add(dw.forkId);
                     } catch (e) {
-                        // A local resource failure (out of gas, or a nested
-                        // replay refused as under-funded) proves only that
-                        // this node could not run the reduction; it is an
-                        // internal failure, never evidence against the
-                        // responder. A completed local revert is a verdict
-                        // on the served reduction and rejects it.
+                        // A local resource failure (the reduction's frame
+                        // exhausted its gas) proves only that this node
+                        // could not run the reduction; it is an internal
+                        // failure, never evidence against the responder.
+                        // A completed local revert is a verdict on the
+                        // served reduction and rejects it.
                         if (
                             !isLocalEvmExecutionFailure(e) ||
                             isLocalReductionResourceFailure(e)

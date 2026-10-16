@@ -107,7 +107,10 @@ describe("isInvalidStateTransitionError", function () {
     it("stateTransition returns an invalid transition for a transition that reverts", async function () {
         const executor = new ContractExecutor(
             // the runtime's EVM option: the local diamond exceeds EIP-170
-            await EVM.create({ allowUnlimitedContractSize: true })
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
         );
         const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
         const stateMachine = await createDiamondStateMachine(
@@ -129,7 +132,10 @@ describe("isInvalidStateTransitionError", function () {
     it("stateTransition throws a refusal to run under-funded instead of returning an invalid transition", async function () {
         const executor = new ContractExecutor(
             // the runtime's EVM option: the local diamond exceeds EIP-170
-            await EVM.create({ allowUnlimitedContractSize: true })
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
         );
         const machine = await deployMathMachine(executor, BUDGET_ABOVE_DEFAULT);
         const stateMachine = await createDiamondStateMachine(
@@ -196,8 +202,33 @@ describe("isLocalReductionResourceFailure", function () {
         blockHeight: 0n,
         timestamp: 0n
     };
+    const zeroDisputeInput = {
+        channelId: ethers.ZeroHash,
+        forkId: ethers.ZeroHash,
+        latestStateSnapshotHash: ethers.ZeroHash,
+        latestInboundMessageBlockHash: ethers.ZeroHash,
+        lastInboundMessageBlockHeight: 0n,
+        stateProof: { milestones: [] },
+        onChainSlashes: [],
+        disputeAuditingDataHash: ethers.ZeroHash,
+        disputer: ethers.ZeroAddress,
+        timeout: {
+            participant: ethers.ZeroAddress,
+            blockHeight: 0n,
+            minTimeStamp: 0n,
+            isForced: false,
+            previousBlockProducer: ethers.ZeroAddress,
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: "0x"
+        },
+        selfRemoval: false,
+        requireExistingDisputeWindow: false
+    };
 
-    async function reduceCalldata(executor: ContractExecutor) {
+    async function reduceCalldata(
+        executor: ContractExecutor,
+        encodedState: string = "0x"
+    ) {
         const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
         const stateMachine = await createDiamondStateMachine(
             executor,
@@ -210,17 +241,42 @@ describe("isLocalReductionResourceFailure", function () {
             data: diamond.interface.encodeFunctionData("reduceAndFinalize", [
                 [],
                 emptySnapshot,
-                "0x",
+                encodedState,
                 [],
                 ethers.ZeroHash
             ])
         };
     }
 
+    async function standaloneDiamondMachine(
+        executor: ContractExecutor,
+        disputeExecutionGasLimit: number
+    ) {
+        const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
+        const diamondMachine = await deployMathMachine(
+            executor,
+            DEFAULT_BUDGET
+        );
+        const { evmDiamondStateMachine } =
+            await EvmStateMachine.createStandaloneFromLocalStateMachineWithExecutor(
+                executor,
+                machine.address,
+                diamondMachine.address,
+                MathStateMachine__factory.createInterface(),
+                hardhatEthers.Wallet.createRandom(hardhatEthers.provider),
+                resolveTestTimeConfig(),
+                disputeExecutionGasLimit
+            );
+        return evmDiamondStateMachine;
+    }
+
     it("a reduction that reverts inside the EVM is not a resource failure", async function () {
         const executor = new ContractExecutor(
             // the runtime's EVM option: the local diamond exceeds EIP-170
-            await EVM.create({ allowUnlimitedContractSize: true })
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
         );
         const { diamondAddress, data } = await reduceCalldata(executor);
         const error = await executor.executeCall(data, diamondAddress).then(
@@ -234,7 +290,8 @@ describe("isLocalReductionResourceFailure", function () {
 
     it("a reduction whose call frame runs out of gas is a resource failure", async function () {
         const evm = await EVM.create({
-            allowUnlimitedContractSize: true
+            allowUnlimitedContractSize: true,
+            allowUnlimitedInitCodeSize: true
         });
         const executor = new ContractExecutor(evm);
         const { diamondAddress, data } = await reduceCalldata(executor);
@@ -249,64 +306,49 @@ describe("isLocalReductionResourceFailure", function () {
         expect(isLocalReductionResourceFailure(error)).to.equal(true);
     });
 
-    it("a refusal to run under-funded is a resource failure", async function () {
-        const executor = new ContractExecutor(await EVM.create());
-        const machine = await deployMathMachine(executor, BUDGET_ABOVE_DEFAULT);
-        const error = await machine.addOne().then(
+    it("a reduction that exhausts its facet frame is a resource failure", async function () {
+        const evm = await EVM.create({
+            allowUnlimitedContractSize: true,
+            allowUnlimitedInitCodeSize: true
+        });
+        const executor = new ContractExecutor(evm);
+        // a 2 MB served state: the grant covers the local diamond's own
+        // decoding of the call, but not the facet frame's decoding of it, so
+        // the facet dies with no return data and the diamond names the
+        // exhaustion instead of surfacing a reasonless delegatecall failure
+        const { diamondAddress, data } = await reduceCalldata(
+            executor,
+            `0x${"ff".repeat(2_000_000)}`
+        );
+        const caller = new ContractExecutor(evm, undefined, {
+            callGasLimit: 12_000_000n
+        });
+        const error = await caller.executeCall(data, diamondAddress).then(
             () => undefined,
             (e: unknown) => e
         );
         expect((error as Error).message).to.include(
-            "ErrorInsufficientGasForStateTransition"
+            "ErrorDisputeExecutionOutOfGas"
         );
         expect(isLocalReductionResourceFailure(error)).to.equal(true);
     });
 
     it("a dispute computation that exhausts its capped budget is a resource failure", async function () {
         const executor = new ContractExecutor(
-            await EVM.create({ allowUnlimitedContractSize: true })
-        );
-        const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
-        const diamondMachine = await deployMathMachine(
-            executor,
-            DEFAULT_BUDGET
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
         );
         // a dispute execution gas limit far below the computation's cost:
         // the local diamond's capped delegatecall names the exhaustion
-        const { evmDiamondStateMachine } =
-            await EvmStateMachine.createStandaloneFromLocalStateMachineWithExecutor(
-                executor,
-                machine.address,
-                diamondMachine.address,
-                MathStateMachine__factory.createInterface(),
-                hardhatEthers.Wallet.createRandom(hardhatEthers.provider),
-                resolveTestTimeConfig(),
-                5_000
-            );
+        const evmDiamondStateMachine = await standaloneDiamondMachine(
+            executor,
+            5_000
+        );
         const error = await evmDiamondStateMachine.localDiamondContract
             .computeDisputeOutputState(
-                {
-                    channelId: ethers.ZeroHash,
-                    forkId: ethers.ZeroHash,
-                    latestStateSnapshotHash: ethers.ZeroHash,
-                    latestInboundMessageBlockHash: ethers.ZeroHash,
-                    lastInboundMessageBlockHeight: 0n,
-                    stateProof: { milestones: [] },
-                    onChainSlashes: [],
-                    disputeAuditingDataHash: ethers.ZeroHash,
-                    disputer: ethers.ZeroAddress,
-                    timeout: {
-                        participant: ethers.ZeroAddress,
-                        blockHeight: 0n,
-                        minTimeStamp: 0n,
-                        isForced: false,
-                        previousBlockProducer: ethers.ZeroAddress,
-                        previousBlockProducerPostedCalldata: false,
-                        participantSignatureOnPreviousBlock: "0x"
-                    },
-                    selfRemoval: false,
-                    requireExistingDisputeWindow: false
-                },
+                zeroDisputeInput,
                 emptySnapshot,
                 encodeMathState({
                     number: 0n,
@@ -324,5 +366,34 @@ describe("isLocalReductionResourceFailure", function () {
             "ErrorDisputeExecutionOutOfGas"
         );
         expect(isLocalReductionResourceFailure(error)).to.equal(true);
+    });
+
+    it("a reduction that reverts without a reason and gas to spare is not a resource failure", async function () {
+        const executor = new ContractExecutor(
+            await EVM.create({
+                allowUnlimitedContractSize: true,
+                allowUnlimitedInitCodeSize: true
+            })
+        );
+        const evmDiamondStateMachine = await standaloneDiamondMachine(
+            executor,
+            3_000_000
+        );
+        // a state the machine cannot decode reverts with no data, well
+        // within the budget: a completed verdict, not an exhaustion
+        const error = await evmDiamondStateMachine.localDiamondContract
+            .computeDisputeOutputState(
+                zeroDisputeInput,
+                emptySnapshot,
+                "0x1234",
+                []
+            )
+            .then(
+                () => undefined,
+                (e: unknown) => e
+            );
+        expect((error as Error).message).to.match(/: revert$/);
+        expect(isLocalEvmExecutionFailure(error)).to.equal(true);
+        expect(isLocalReductionResourceFailure(error)).to.equal(false);
     });
 });

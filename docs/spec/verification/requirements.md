@@ -162,7 +162,7 @@ Specification cases tested: 9/17. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T
 Specification cases tested: 3/4. Untested: T1.P2.
 
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-Specification cases tested: 12/32. Untested: T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22, T1.P25, T1.P26, T1.P27, T1.P28.
+Specification cases tested: 13/33. Untested: T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22, T1.P25, T1.P26, T1.P27, T1.P28.
 
 [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 Specification cases tested: 0/5.

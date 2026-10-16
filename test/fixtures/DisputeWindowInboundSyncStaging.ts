@@ -1,6 +1,4 @@
 // @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
-import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
-import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncPayload } from "@/types";
@@ -13,10 +11,28 @@ import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/Dat
 import { expect } from "chai";
 import { ethers, ZeroHash } from "ethers";
 
-/** The requester's executor with its pre-starvation `executeCall` parked on it. */
-type StarvedExecutor = AContractExecutor & {
-    starvedReductionOriginal?: AContractExecutor["executeCall"];
-};
+/**
+ * Set a peer's reduction-path gas grant (the field production sets from the
+ * chain's block gas limit) host-side; returns the previous grant as a
+ * decimal string, or undefined for the executor default.
+ */
+async function setRequesterReductionGrant(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    grant: string | undefined
+): Promise<string | undefined> {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm, args) => {
+            const machine = sm.diamondStateMachine;
+            const original = machine.reductionCallGasLimit;
+            machine.reductionCallGasLimit =
+                args.grant !== null ? BigInt(args.grant) : undefined;
+            return original !== undefined ? original.toString() : undefined;
+        },
+        { grant: grant ?? null }
+    );
+}
 
 const RESPONDER_INDEX = 0;
 const REQUESTER_INDEX = 2;
@@ -30,6 +46,13 @@ const AUDIT_MISSING_INBOUND_RUN_MESSAGE =
 
 function inboundMessageBlockHash(block: MessageBlockStruct): Hash {
     return hash(Codec.encode(block, Type.MessageBlock));
+}
+
+/** Pad the window's served latest state with junk bytes, so it no longer
+ * hashes to the snapshot's committed state hash. */
+export function padServedReductionState(payload: SyncPayload): void {
+    const window = payload.disputeWindows[0];
+    window.latestEncodedStateMachineState = `${window.latestEncodedStateMachineState}${"ff".repeat(50_000)}`;
 }
 
 /**
@@ -296,56 +319,28 @@ async function stageAndApplyDisputeWindowInboundSync(
             options.reduction === "chainBeforeSync"
         ) {
             if (options.reductionOutOfGasFirstAttempt) {
-                // Starve only the reduction's executor call, with the exact
-                // error `ContractExecutor` reports for an exhausted frame.
-                // Genuine production and classification of that error are
-                // covered on a real starved executor in the evm classifier
-                // suite; burning a full local grant through the live sync
-                // path instead (megabytes of AbiCoder/EVM work on watched
-                // threads) trips the harness starvation watchdog, so the
-                // sync-level case drives the same boundary here. The funded
-                // retry below runs the real reduction.
-                await h.execOnHost(requester, async (sm) => {
-                    const machine =
-                        sm.diamondStateMachine as EvmDiamondStateMachine;
-                    const executor =
-                        machine.contractExecutor as StarvedExecutor;
-                    const selector =
-                        machine.localDiamondContract.interface.getFunction(
-                            "reduceAndFinalize"
-                        ).selector;
-                    const original = executor.executeCall.bind(executor);
-                    executor.starvedReductionOriginal = original;
-                    executor.executeCall = async (data, contractAddress) => {
-                        const head =
-                            typeof data === "string"
-                                ? data.slice(0, 10).toLowerCase()
-                                : "0x" +
-                                  Array.from(data.slice(0, 4), (byte) =>
-                                      byte.toString(16).padStart(2, "0")
-                                  ).join("");
-                        if (head === selector)
-                            throw new Error(
-                                "Local EVM execution failed: out of gas"
-                            );
-                        return original(data, contractAddress);
-                    };
-                });
+                // Give the requester a real reduction grant below the
+                // staged reduction's cost (production sets this field from
+                // the chain's block gas limit; a small value here models a
+                // chain whose block gas cannot fund this window's
+                // reduction), so the real reduction exhausts inside the
+                // facet frame. The funded retry below restores the original
+                // grant and runs the real reduction to completion.
+                const originalGrant = await setRequesterReductionGrant(
+                    h,
+                    REQUESTER_INDEX,
+                    "400000"
+                );
                 try {
                     await applyPayload(encodedPayload);
                 } catch (e) {
                     reductionThrew = e instanceof Error ? e.message : String(e);
                 } finally {
-                    await h.execOnHost(requester, async (sm) => {
-                        const executor = (
-                            sm.diamondStateMachine as EvmDiamondStateMachine
-                        ).contractExecutor as StarvedExecutor;
-                        if (executor.starvedReductionOriginal) {
-                            executor.executeCall =
-                                executor.starvedReductionOriginal;
-                            delete executor.starvedReductionOriginal;
-                        }
-                    });
+                    await setRequesterReductionGrant(
+                        h,
+                        REQUESTER_INDEX,
+                        originalGrant
+                    );
                 }
             }
             accepted = await applyPayload(encodedPayload);
@@ -470,10 +465,11 @@ export async function applyDisputeWindowInboundSyncPayload(
 }
 
 /**
- * The same local-reduction sync, but the first attempt's reduction call is
- * starved at the requester's executor (out of gas) and the payload is then
- * applied again funded. `reductionThrew` captures the first attempt's
- * error; `accepted` and the remaining fields describe the funded retry.
+ * The same local-reduction sync, but the first attempt runs with a real
+ * reduction grant below the staged reduction's cost, so its facet frame
+ * exhausts; the genuine payload is then applied again with the original
+ * grant. `reductionThrew` captures the first attempt's error; `accepted`
+ * and the remaining fields describe the funded retry.
  */
 export async function applyDisputeWindowSyncWithReductionOutOfGas(
     h: MathPeerTestHarness
@@ -488,6 +484,75 @@ export async function applyDisputeWindowSyncWithReductionOutOfGas(
     await releaseHolds(false);
     await settleRequesterMissingInboundRunErrors();
     return result;
+}
+
+/**
+ * An established participant (peer 2) syncs a reducible window from peer 0
+ * through the full `sync()` path with a real reduction grant below the
+ * reduction's cost, so the sync throws the facet frame's exhaustion. The
+ * window then settles on chain, and the same sync succeeds with no local
+ * reduction. Fields describe both attempts and the end state.
+ */
+export async function assertSyncReductionOutOfGasRecovery(
+    h: MathPeerTestHarness
+) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+        disputingPeerIndices: [0, 3],
+        beforeDispute: async () => {
+            // a top-up of an existing participant keeps the block turns intact
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(RESPONDER_INDEX).address
+            });
+        }
+    });
+    const responder = h.getPeer(RESPONDER_INDEX);
+    const requester = h.getPeer(REQUESTER_INDEX);
+    const requesterControl = h.control(requester);
+    const syncWithResponder = () =>
+        h.execOnHost(
+            requester,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
+            { source: responder.address, forkId: sourceForkId }
+        );
+    const originalGrant = await setRequesterReductionGrant(
+        h,
+        REQUESTER_INDEX,
+        "400000"
+    );
+    let syncThrew = "";
+    try {
+        await syncWithResponder();
+    } catch (e) {
+        syncThrew = e instanceof Error ? e.message : String(e);
+    } finally {
+        await setRequesterReductionGrant(h, REQUESTER_INDEX, originalGrant);
+    }
+    const responderBlacklisted = await requesterControl.query
+        .isBlacklisted(responder.address)
+        .request();
+    // the window settles on chain; the same sync then needs no local reduction
+    expect(
+        await h.scenario.finalizeReductionOnChainOnly(
+            RESPONDER_INDEX,
+            sourceForkId
+        )
+    ).to.equal(true);
+    const accepted = await syncWithResponder();
+    return {
+        syncThrew,
+        responderBlacklisted,
+        accepted,
+        sourceForkId,
+        requesterForkId: await requesterControl.query.getForkId().request(),
+        localReducedForkId: await requesterControl.query
+            .getLocalDisputeWindowReducedForkId(sourceForkId)
+            .request()
+    };
 }
 
 /**

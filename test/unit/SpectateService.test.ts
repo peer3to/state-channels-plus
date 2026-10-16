@@ -7,6 +7,8 @@ import {
     appendForgedInboundSuccessor,
     applyDisputeWindowInboundSyncPayload,
     applyDisputeWindowSyncWithReductionOutOfGas,
+    assertSyncReductionOutOfGasRecovery,
+    padServedReductionState,
     redirectDisputesToChannelWithoutWindow,
     redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
@@ -825,13 +827,40 @@ describe("Unit: SpectateService", function () {
             const r = await applyDisputeWindowSyncWithReductionOutOfGas(
                 TestSession.getHarness()
             );
-            expect(r.reductionThrew).to.include("out of gas");
+            expect(r.reductionThrew).to.include(
+                "ErrorDisputeExecutionOutOfGas"
+            );
             expect(r.rejections).to.deep.equal([]);
             expect(r.responderBlacklisted).to.equal(false);
             expect(r.accepted).to.equal(true);
             expect(r.localReducedForkId).to.equal(r.reducedForkId);
             expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
+        });
+        it("established participant sync whose reduction runs out of gas → sync throws, responder not blacklisted, sync after on-chain reduction accepted", async function () {
+            const r = await assertSyncReductionOutOfGasRecovery(
+                TestSession.getHarness()
+            );
+            expect(r.syncThrew).to.include("ErrorDisputeExecutionOutOfGas");
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.accepted).to.equal(true);
+            expect(r.localReducedForkId).to.not.equal(ethers.ZeroHash);
+            expect(r.requesterForkId).to.equal(r.localReducedForkId);
+        });
+
+        it("window reduced locally during sync with a padded served state → rejected as reduction state hash mismatch, responder blacklisted, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { reduction: "local", mutate: padServedReductionState }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal([
+                "reduction state hash mismatch"
+            ]);
+            expect(r.responderBlacklisted).to.equal(true);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
         });
 
         it("unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {

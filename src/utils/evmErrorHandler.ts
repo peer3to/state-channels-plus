@@ -126,26 +126,24 @@ export function isInvalidStateTransitionError(error: unknown): boolean {
 
 /**
  * Whether a failed local `reduceAndFinalize` call is a local resource
- * failure rather than a verdict on the reduction's inputs: the reduction
- * call's own frame ran out of gas, a nested replay was refused because
- * it could not grant its full budget, a gas-capped dispute computation
- * used up its whole budget (`ErrorDisputeExecutionOutOfGas`, the capped
- * delegatecall in `LocalDiamond`), or a nested machine frame was starved
- * (`ErrorStateTransitionFrameOutOfGas`). Reduction gas accounting differs
- * from a single transition's — commitment checks, inbound application and
- * state restoration all share the one call grant with no per-step stipend
- * guarantee — so exhaustion proves only that this node could not run the
- * reduction locally, never that a funded reduction reverts. Any other
- * local revert is a completed verdict on the served inputs.
+ * failure rather than a verdict on the reduction's inputs. A local
+ * reduction reports exhaustion in exactly two forms: the call's own frame
+ * runs out of gas (`out of gas`, before the facet delegation), or the
+ * facet frame exhausts the gas the local diamond forwards it and returns
+ * no data, which the diamond names `ErrorDisputeExecutionOutOfGas`.
+ * Reduction gas accounting differs from a single transition's —
+ * commitment checks, inbound application and state restoration all share
+ * the one call grant with no per-step stipend guarantee — so exhaustion
+ * proves only that this node could not run the reduction locally, never
+ * that a funded reduction reverts. Any other local revert (including a
+ * reasonless one the facet returns with gas to spare) is a completed
+ * verdict on the served inputs.
  */
 export function isLocalReductionResourceFailure(error: unknown): boolean {
     const reason = localEvmFailureReason(error);
     if (reason === undefined) return false;
     return (
-        reason === "out of gas" ||
-        reason === "ErrorInsufficientGasForStateTransition" ||
-        reason === "ErrorDisputeExecutionOutOfGas" ||
-        reason === "ErrorStateTransitionFrameOutOfGas"
+        reason === "out of gas" || reason === "ErrorDisputeExecutionOutOfGas"
     );
 }
 

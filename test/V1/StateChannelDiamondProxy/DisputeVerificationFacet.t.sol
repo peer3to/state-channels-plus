@@ -1872,12 +1872,16 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
     }
 
-    // Supported worst case for the sync reduction bound: one dispute per
-    // eligible disputer at the participant cap (32) and 100 inbound top-up
-    // blocks in the reduction interval. The whole on-chain reduction must
-    // commit within the local EVM call floor (0xffffff), so a reduction the
-    // chain can settle at this scale also runs in a syncing node's local
-    // reduction (whose grant is at least that floor).
+    // Supported worst case for the sync reduction bound, on the Math
+    // machine: one dispute per eligible disputer at the participant cap
+    // (32), each carrying a state proof with a latest signed block, slash
+    // candidates, a timeout and a self-removal across the set, non-zero
+    // balances, and 100 inbound top-up blocks in the reduction interval
+    // (a chosen scenario size — the interval itself has no protocol cap;
+    // the per-block cost is what the bound extrapolates from). The whole
+    // on-chain reduction must commit within the local EVM call floor
+    // (0xffffff), so a reduction the chain can settle at this scale also
+    // runs in a syncing node's local reduction.
     function test_reduceAndFinalize_capScaledWorstCase_commitsWithinLocalFloor() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         harness.seedStateMachine(stateMachine);
@@ -1887,6 +1891,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         uint256[] memory balances = new uint256[](participantCount);
         for (uint256 i = 0; i < participantCount; i++) {
             participants[i] = address(uint160(0x1000 + i));
+            balances[i] = 100;
         }
         bytes memory encodedState =
             abi.encode(MathState({number: 0, participants: participants, balances: balances, currentTurnIndex: 0}));
@@ -1937,6 +1942,19 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         StateSnapshot memory snapshot =
             StateSnapshot({snapshotData: snapshotData, forkId: forkId, blockHeight: 0, timestamp: 1000});
 
+        // every dispute carries the same latest signed block, linked to the
+        // snapshot by its hash
+        Block memory latestBlock;
+        latestBlock.transaction.header.channelId = CHANNEL_ID;
+        latestBlock.transaction.header.participant = participants[0];
+        latestBlock.transaction.header.forkId = forkId;
+        latestBlock.transaction.header.transactionCnt = 1;
+        latestBlock.stateSnapshotHash = keccak256(abi.encode(snapshot));
+        BlockConfirmation[] memory confirmations = new BlockConfirmation[](1);
+        confirmations[0].signedBlock = SignedBlock({encodedBlock: abi.encode(latestBlock), signature: ""});
+        MilestoneProof[] memory milestones = new MilestoneProof[](1);
+        milestones[0].blockConfirmations = confirmations;
+
         Dispute[] memory disputes = new Dispute[](participantCount);
         for (uint256 i = 0; i < participantCount; i++) {
             disputes[i].input.channelId = CHANNEL_ID;
@@ -1944,7 +1962,24 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             disputes[i].input.latestInboundMessageBlockHash = inboundHead;
             disputes[i].input.lastInboundMessageBlockHeight = inboundCount;
             disputes[i].input.disputer = participants[i];
+            disputes[i].input.stateProof = StateProof({milestones: milestones});
         }
+        // slash candidates the fold deduplicates, a timeout the fold picks,
+        // and a self-removal: exits are built for the slashed and the removed
+        address[] memory slashes = new address[](2);
+        slashes[0] = participants[30];
+        slashes[1] = participants[31];
+        disputes[0].input.onChainSlashes = slashes;
+        disputes[1].input.timeout = Timeout({
+            participant: participants[29],
+            blockHeight: 1,
+            minTimeStamp: 0,
+            isForced: false,
+            previousBlockProducer: address(0),
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: ""
+        });
+        disputes[2].input.selfRemoval = true;
 
         vm.warp(1000);
         for (uint256 i = 0; i < participantCount; i++) {

@@ -15,7 +15,10 @@ const DEFAULT_BUDGET = 500_000n;
 async function deployLiveMachine() {
     const executor = new ContractExecutor(
         // the runtime's EVM option: the local diamond exceeds EIP-170
-        await EVM.create({ allowUnlimitedContractSize: true })
+        await EVM.create({
+            allowUnlimitedContractSize: true,
+            allowUnlimitedInitCodeSize: true
+        })
     );
     const machine = await deployMathMachine(executor, DEFAULT_BUDGET);
     const stateMachine = await createDiamondStateMachine(

@@ -12,6 +12,7 @@ import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { EVM } from "@ethereumjs/evm";
 import { assertStartupReplayGasReadFailure } from "@test/fixtures/node/RuntimeChainContextFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { MathStateMachine__factory } from "@typechain-types";
 import { expect } from "chai";
 
 describe("ContractExecutor call gas", function () {
@@ -76,6 +77,29 @@ describe("ContractExecutor call gas", function () {
                 BUDGET_ABOVE_DEFAULT
             );
             await machine.addOne();
+            expect(await machine.sum()).to.equal(1n);
+        } finally {
+            await executor.dispose();
+        }
+    });
+
+    it("a per-call gas limit override runs a call above the executor's own grant", async function () {
+        const executor = new ContractExecutor(await EVM.create());
+        try {
+            const machine = await deployMathMachine(
+                executor,
+                BUDGET_ABOVE_DEFAULT
+            );
+            const requirement = await machine.gasRequirement();
+            expect(requirement).to.be.greaterThan(
+                DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT
+            );
+            const data =
+                MathStateMachine__factory.createInterface().encodeFunctionData(
+                    "stateTransition",
+                    [machine.addOneTransaction]
+                );
+            await executor.executeCall(data, machine.address, requirement);
             expect(await machine.sum()).to.equal(1n);
         } finally {
             await executor.dispose();

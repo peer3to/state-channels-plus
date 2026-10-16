@@ -241,45 +241,57 @@ The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, a
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
 **Attribution fix (2026-10-16).** `applySyncResponse`'s reduction catch now rethrows local resource
-failures — the reduction frame's out-of-gas and an under-funded nested replay refusal, classified by
+failures — the reduction call frame's out-of-gas and the facet frame's exhaustion, classified by
 `isLocalReductionResourceFailure` in `evmErrorHandler.ts` — as internal failures with no responder
-verdict; only a completed local revert still rejects as "served reduction reverts". Covered by
-[`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34) (starved first attempt throws, responder neither rejected nor blacklisted,
-funded retry of the same payload succeeds) and the [`UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-3-0z8r93) classifier
-cases on real local `reduceAndFinalize` calls, including a dispute computation exhausting its capped
-dispute-execution budget. This removes the honest-responder blacklist.
+verdict; only a completed local revert still rejects as "served reduction reverts". A facet-frame
+exhaustion is named at the source: `LocalDiamond` declares its own `reduceAndFinalize` entry that
+forwards all remaining gas through its gas-accounted delegation, so an exhausted facet frame reverts
+`ErrorDisputeExecutionOutOfGas` instead of surfacing as the proxy's reasonless delegatecall failure
+(which would otherwise read as a verdict). Before the call, cheap pre-checks reject padded served
+bytes as evidence — the served state must hash to its snapshot commitment, the served inbound list
+must chain-link from the snapshot's inbound head, and the snapshot's participants must fit the
+channel maximum — so only hash-committed genuine inputs can consume the grant. Covered by
+[`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34) (a real reduced reduction grant exhausts the
+facet frame inside the sync: throw, no rejection, no blacklist, funded retry succeeds),
+[`INV-SYNC-3-A7A2ED.T1.P35`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p35) (the same through an established
+participant's full `sync()`, recovering after the window settles on chain), the
+[`UNIT-TEST-EVM-ERROR-HANDLER-3-0Z8R93`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-3-0z8r93) classifier cases on real local
+`reduceAndFinalize` calls (funded revert, call-frame and facet-frame exhaustion, capped computation,
+reasonless revert), and a padded-state sync case that still rejects and blacklists. This removes the
+honest-responder blacklist.
 
-**Gas measurement and bound (2026-10-16).** A throwaway probe (since deleted) measured the real staged
-reduction (3 disputes, 4 participants, 480-byte Math state): on-chain `reduceAndFinalize` execution gas
-(receipt minus intrinsic and calldata) was ≈529k with 1 inbound block / 1 message and ≈715k with 10
-inbound blocks / 10 messages — ≈20.6k per additional inbound block with one message; `reduce` folded to
-the 32-dispute cap (one dispute per eligible disputer; participants capped at channel open by
-`maxChannelParticipants`, default 32) estimated ≈1.89M. **Engineer decision (A, 2026-10-16):** the
-local EVM call floor (0xffffff, ≈16.7M) is the supported sync bound; no grant raise and no admission
-cap. The permanent proof is
+**Gas bound — engineer decisions (Luka, 2026-10-16).** First decision: the local EVM call floor
+(0xffffff, ≈16.7M) as the supported sync bound. Review then established that SDK reducers compute
+their on-chain candidate under the same local grant
+(`ReductionComputationService` → local `reduceOutputToSnapshotData`), so a window beyond the floor
+could never be computed by any SDK peer and would never settle at all. **Decision (a), Luka,
+2026-10-16:** reduction-path local calls — a sync's `reduceAndFinalizeLocally` and a reducer's
+`reduceOutputToSnapshotData` candidate computation — are granted the chain block gas limit, making
+local feasibility equal on-chain feasibility (one bound: the block gas limit). The strongest
+rejected alternative, computing the candidate by chain `eth_call`, moves the bound to the RPC
+provider's call cap and adds provider load on every reduction; an admission cap on the inbound
+interval is a protocol change; accepting the floor as a stall leaves such windows unsettleable.
+Consequences: the supported worst case must fit a chain block, not just the local floor; a responder
+can make a requester spend up to one block of local computation per sync round, but only on
+hash-committed genuine inputs (the pre-checks above); windows beyond block gas are a documented
+residual risk in the synchronization specification's Security considerations.
+
+**Measurement.** The permanent proof is
 [`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3):
-on-chain `reduceAndFinalize` at the supported worst case (32 committed disputes at the participant cap
-and 100 inbound top-up blocks in the interval) commits the expected reduced fork in 5,180,929 gas —
-31% of the local floor, so a reduction the chain settles at this scale also runs in a syncing node's
-local reduction, whose grant is at least that floor. The residual beyond the bound is an inbound
-interval of roughly 650+ messages: such a window settles by an on-chain reduction first (permissionless
-and canonical), after which sync takes the chain-final path and needs no local reduction; a local
-overflow there throws blamelessly under the attribution fix above. This closes the follow-up obligations:
-supported bounds established, local exhaustion reproduced on a real starved executor over a real
-`reduceAndFinalize` call (the classifier suite above) and driven through the sync catch with the
-responder neither rejected nor blacklisted and a funded retry succeeding
-([`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34)), and successful on-chain submission and settlement
-demonstrated at the supported worst case.
+on-chain `reduceAndFinalize` on the Math machine at the dispute/participant caps (32 committed
+disputes, each with a state proof carrying a latest signed block, slash candidates, a timeout and a
+self-removal across the set, non-zero balances) and 100 inbound top-up blocks — a chosen scenario
+size, since the inbound interval has no protocol cap — commits the expected reduced fork in
+6,874,669 gas, 41% of the local floor and far under any block limit. Context from a throwaway probe
+(since deleted): a real staged SDK reduction measured ≈529k execution gas (3 disputes, 1 inbound
+block) growing ≈20.6k per inbound block/message, so the floor alone already covered roughly 650
+inbound messages; the block-gas grant removes that cliff entirely.
 
-**Evidence limit (superseded at resolution).** The original assessment reproduced no valid served
-reduction exhausting its local grant and demonstrated none exceeding an on-chain block gas limit; the
-resolution above supplies the exhaustion reproduction on the real executor and the on-chain worst-case
-settlement within the bound. A full-grant exhaustion driven through the live sync harness is not part
-of the permanent suite: megabytes of AbiCoder/EVM work on the harness's watched threads trips its
-starvation watchdog, so the sync-level case starves only the reduction's executor call with the exact
-error the executor reports, and genuine production/classification of that error is covered separately.
-Beyond the bound, local out-of-gas still does not prove on-chain impossibility — it routes the window
-to the chain-first path described above.
+**Evidence limit.** Local exhaustion is reproduced genuinely at both levels: on a real executor over
+real `reduceAndFinalize` calls (call frame and facet frame), and through the live sync catch with a
+real reduced reduction grant. Exhaustion _at_ the full block-gas grant is not reproduced — by
+decision (a) that boundary is the chain's own block limit, where on-chain settlement is equally
+impossible and out of scope for the local mirror.
 
 **Engineer disposition (Luka, 2026-10-07).** Address this later, not in PR #520. A valid reduction must be
 able to replay successfully on-chain; the follow-up must investigate the complete gas/liveness boundary,
@@ -287,13 +299,15 @@ not merely change the blacklist catch. This is a scope deferral, not a claim tha
 No production behavior or gas configuration is changed for this finding in this PR.
 
 **Follow-up obligations (discharged 2026-10-16).** Supported bounds established at the protocol caps;
-the real reduction path measured against the local grant and on-chain limits; local exhaustion
-reproduced with served evidence; failure without blaming an honest responder and recovery with
-sufficient gas verified; successful on-chain submission and settlement demonstrated for the supported
-worst case, including the reduction's proof checks and state restoration
+the real reduction path measured against local and on-chain limits; local exhaustion reproduced with
+served evidence at the executor and sync levels; failure without blaming an honest responder and
+recovery with sufficient gas verified, including through the full `sync()` entry after on-chain
+settlement; successful on-chain submission and settlement demonstrated for the supported worst case,
+including proof folding and state restoration
 ([`UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#unit-test-dispute-verification-facet-1-pvckn3)).
-Where supported inputs could not fit locally, the engineer chose the local-floor bound over a grant
-raise or admission cap. Genuine invalid-evidence and executor/transport failure oracles remain distinct.
+Where supported inputs could not fit the old local floor, the engineer chose the block-gas reduction
+grant over a chain-call candidate, an admission cap, or an accepted stall. Genuine invalid-evidence
+and executor/transport failure oracles remain distinct.
 
 ## Retained proof evidence and installed history
 
