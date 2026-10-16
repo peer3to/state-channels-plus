@@ -34,6 +34,18 @@ export class RetainedEvidenceStorage {
         return blockHash;
     }
 
+    /** Removes the retained block with `blockHash` (it became history); false when none is retained. */
+    deleteBlock(blockHash: Hash): boolean {
+        const block = this.blocksByHash.get(blockHash);
+        if (!block) return false;
+        this.blocksByHash.delete(blockHash);
+        const key = coordinateKey(block.forkId, block.height);
+        const hashes = this.hashesByCoordinate.get(key)!;
+        hashes.delete(blockHash);
+        if (hashes.size === 0) this.hashesByCoordinate.delete(key);
+        return true;
+    }
+
     getBlock(blockHash: Hash): Block | undefined {
         return this.blocksByHash.get(blockHash);
     }

@@ -580,7 +580,7 @@ class AgreementManager {
     }
 
     /**
-     * The retained block `executed` links to becomes history: a block that
+     * The retained block `executed` links to moves into history: a block that
      * executed on it corroborates it (a start block a sync deferred until its
      * first tail block executed). The view does not move.
      */
@@ -594,6 +594,8 @@ class AgreementManager {
         )
             return;
         this.storage.blocks.storeBlock(parent, { justPersist: true });
+        // history now holds it, with its confirmations: no separate evidence copy
+        this.storage.retainedEvidence.deleteBlock(parent.hash);
     }
 
     /** The resulting snapshot of the milestone's first block. */

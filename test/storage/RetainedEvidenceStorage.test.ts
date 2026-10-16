@@ -78,6 +78,43 @@ describe("RetainedEvidenceStorage", () => {
         ).to.deep.equal([a.address, b.address].sort());
     });
 
+    it("removes a retained block from its hash and its coordinate", async () => {
+        const storage = new Storage();
+        const kept = await factory.authoredBlockAt(
+            factory.randomWallet(),
+            FORK,
+            4
+        );
+        const removed = await factory.authoredBlockAt(
+            factory.randomWallet(),
+            FORK,
+            4
+        );
+        storage.retainedEvidence.storeBlock(kept);
+        storage.retainedEvidence.storeBlock(removed);
+
+        expect(storage.retainedEvidence.deleteBlock(removed.hash)).to.equal(
+            true
+        );
+
+        expect(storage.retainedEvidence.getBlock(removed.hash)).to.equal(
+            undefined
+        );
+        expect(
+            storage.retainedEvidence
+                .getBlocks(FORK, 4)
+                .map((retained) => retained.hash)
+        ).to.deep.equal([kept.hash]);
+    });
+
+    it("removes nothing for a hash it does not retain", () => {
+        const storage = new Storage();
+
+        expect(storage.retainedEvidence.deleteBlock(factory.hash())).to.equal(
+            false
+        );
+    });
+
     it("returns no block for an unknown hash", () => {
         const storage = new Storage();
 

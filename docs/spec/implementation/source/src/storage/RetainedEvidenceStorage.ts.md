@@ -36,3 +36,5 @@ Evidence-only retention of proof support
 - [x] `UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P21` — a contract-rejected signature counts as no signer among linked children
 - [x] `UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P22` — a contract-rejected signature counts as no signer at a coordinate
 - [x] `UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P23` — one eligible key signing twice counts as one signer
+- [x] `UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P24` — a removed block leaves its hash and its coordinate, other identities stay
+- [x] `UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P25` — removing an unknown hash reports false

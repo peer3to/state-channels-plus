@@ -17,6 +17,8 @@ with each negative case on its own.
 - `retains a block by hash and lists it at its coordinate`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P1
 - `keeps every identity retained at one coordinate`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P2
 - `merges the confirmations of a repeated identity into the retained block`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P3
+- `removes a retained block from its hash and its coordinate`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P24
+- `removes nothing for a hash it does not retain`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P25
 - `returns no block for an unknown hash`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P4
 - `lists no blocks at an empty coordinate`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P12
 - `chooses no block at an empty coordinate`: UNIT-TEST-RETAINED-EVIDENCE-STORAGE-1-T2Z7W3.P13
