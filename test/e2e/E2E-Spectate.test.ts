@@ -1787,6 +1787,44 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Sync across an expired window the chain has not reduced", function () {
+        it("a fresh joiner reduces the served window against the chain's inbound head and syncs, without aborting or blacklisting its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const forkId = h.activeForkId!;
+            const joiner = await h.join.createSpectatorPeer();
+            // the window stays unreduced on chain after its kill period
+            for (const peer of h.peers.slice(0, 4))
+                await h.rpcStub.holdReductionRace(peer.index);
+            await openSelfRemovalDispute(h);
+            await waitFor(
+                async () => (await h.query.killPeriod(forkId)).isExpired,
+                h.event.protocolEventTimeoutMs() * 2
+            );
+
+            await h.join.connectSpectator(joiner);
+            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+
+            // premise: the joiner's sync reduced the window itself
+            const [window] = await h.channelManager.getDisputeWindows(
+                h.channelId,
+                [forkId]
+            );
+            expect(window.reducedResult.forkId).to.equal(ethers.ZeroHash);
+            expect(joiner.eventSpies.onAbort?.callCount ?? 0).to.equal(0);
+            for (const peer of h.peers.slice(0, 4)) {
+                expect(
+                    await h
+                        .control(joiner)
+                        .query.isBlacklisted(peer.address)
+                        .request()
+                ).to.equal(false);
+            }
+        });
+    });
+
     describe("Spectate request across a dispute-window event gap", function () {
         // A commitment can sit on-chain while the responder's DisputeCommitted
         // event is still undelivered. generateSyncPayload walks the on-chain

@@ -399,6 +399,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             reducedByThisSync.add(dw.forkId);
                     } catch (e) {
                         if (!isLocalEvmExecutionFailure(e)) throw e;
+                        this.logger.debug(
+                            "applySyncResponse - served reduction reverts",
+                            { peerAddress, error: errorMessage(e) }
+                        );
                         return this.rejectSync(
                             peerAddress,
                             "served reduction reverts"
