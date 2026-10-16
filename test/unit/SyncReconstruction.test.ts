@@ -1,4 +1,7 @@
 import StateSnapshot from "@/models/StateSnapshot";
+import { Status } from "@/types";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { stageAnchoredSyncPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
@@ -1143,6 +1146,128 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                     blocks.map((block) => block.hash)
                 )
             ).to.deep.equal([[staged.anchorBlockHash]]);
+        });
+
+        it("U151: a requester already above the anchor, without the anchor block and the block after it, applies an anchor run with a tail → the base is not installed, the tail is not replayed from the retained anchor block, the state machine reaches the tail head", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const { payload: anchorRun } = await servedRunPayload(
+                h,
+                staged.forkId,
+                staged.payload,
+                { from: a, to: a + 3 },
+                staged.anchor.toStruct()
+            );
+            const outcome = await withHeldFreshRequester(
+                h,
+                async (requester) => {
+                    const first = await applyPayloads(
+                        h,
+                        requester,
+                        staged.forkId,
+                        [staged.thinTail]
+                    );
+                    // the head stays above the anchor while the anchor block
+                    // and the block after it leave history: nothing then
+                    // corroborates the anchor block of the next proof
+                    await h.execOnHost(
+                        requester,
+                        (sm, args) => {
+                            sm.storage.blocks.deleteBlock(args.forkId, args.a);
+                            sm.storage.blocks.deleteBlock(
+                                args.forkId,
+                                args.a + 1
+                            );
+                        },
+                        { forkId: staged.forkId, a }
+                    );
+                    const second = await applyPayloads(
+                        h,
+                        requester,
+                        staged.forkId,
+                        [anchorRun]
+                    );
+                    return { first, second };
+                }
+            );
+            expect(outcome.first.outcomes[0].head).to.equal(a + 2);
+            expect(outcome.second.outcomes).to.deep.equal([
+                { accepted: true, threw: "", head: a + 3 }
+            ]);
+            expect(outcome.second.stateWrites).to.deep.equal([0]);
+            expect(outcome.second.installedStateHash).to.equal(
+                StateSnapshot.from(staged.third.snapshot).stateMachineStateHash
+            );
+        });
+
+        it("U152: a pending participant without the anchor block replays an invalid first tail block on it → no internal error, an invalid-transition fraud proof names the block's author, the anchor block stays retained", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const outcome = await withHeldFreshRequester(
+                h,
+                async (requester) => {
+                    const control = h.control(requester);
+                    // a committed status hands the deviation to the live strategy
+                    await control.stub
+                        .setPeerStatus(Status.PENDING_PARTICIPANT)
+                        .request();
+                    await control.stub
+                        .stubSuppressDisputeInitiation()
+                        .request();
+                    const applied = await applyPayloads(
+                        h,
+                        requester,
+                        staged.forkId,
+                        [staged.invalidAfterAnchor],
+                        { inspect: { heights: [a], retainedHeights: [a] } }
+                    );
+                    const proofType = await control.query
+                        .getFraudProofType(staged.first.author as Address)
+                        .request();
+                    return { applied, proofType };
+                }
+            );
+            expect(
+                outcome.applied.outcomes.map(({ accepted, threw }) => ({
+                    accepted,
+                    threw
+                }))
+            ).to.deep.equal([{ accepted: false, threw: "" }]);
+            expect(outcome.proofType).to.equal(
+                String(
+                    toSolidityFraudProofType(
+                        FraudProofType.BlockInvalidStateTransition
+                    )
+                )
+            );
+            expect(outcome.applied.blocks).to.deep.equal([null]);
+            expect(
+                outcome.applied.retained.map((blocks) =>
+                    blocks.map((block) => block.hash)
+                )
+            ).to.deep.equal([[staged.anchorBlockHash]]);
+        });
+
+        it("U153: a retained sibling outranks the real block by the hop's signers, but a history block above the gap names the real one → the final point is proved through the real block", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportPayloads(h);
+            const a = staged.anchor.blockHeight;
+            const view = await withHeldFreshRequester(h, async (requester) => {
+                await applyPayloads(h, requester, staged.forkId, [
+                    staged.outranked,
+                    staged.firstOnly,
+                    staged.thirdHop
+                ]);
+                return exactFinalProofView(h, requester.index, a + 1);
+            });
+            expect(view.proof?.valid).to.equal(true);
+            expect(
+                view.proof?.milestones.map((run) =>
+                    run.map((block) => block.hash)
+                )
+            ).to.deep.equal([[staged.first.hash, staged.second.hash]]);
         });
     });
 });

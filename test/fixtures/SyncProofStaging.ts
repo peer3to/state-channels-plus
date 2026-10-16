@@ -997,6 +997,13 @@ export async function stageConflictingOverlapPayload(h: MathPeerTestHarness) {
  *   the anchor height committing the anchor snapshot but not the real anchor
  *   block; `forgedStartBelowHop`: [F′] and [a+1, a+2] with a+1's state;
  *   `forgedStartBesideReal`: [F′] and [a, a+1, a+2] with the anchor's state;
+ * - `outranked`: [a, a+1 by its author only, a+2 with the third
+ *   participant's confirmation], [a, a+1, a+2⁗] and [a] with the anchor's
+ *   state, a+2⁗ by the third participant confirmed by the authors of a+1 and
+ *   a+2, so it carries more of the hop's signers than the real a+2;
+ *   `firstOnly`: [a, a+1 by its author only] with the anchor's state;
+ *   `thirdHop`: [a+3, a+4] with a+3's state, a hop whose block names the real
+ *   a+2 by hash while history lacks a+2;
  * - `invalidAfterAnchor`: [a, a+1‴] with the anchor's state, a+1‴ by a+1's
  *   author linked to the anchor block, committing no real state;
  * - `tailSibling`: [a, a+1, a+2], [a, a+1″] and [a] with the anchor's state,
@@ -1063,6 +1070,21 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
         stateSnapshotHash: anchor.hash,
         previousBlockHash: randomHash()
     });
+    // outranks the real a+2 by the hop's signers, yet a+3 names the real one
+    const outranking = await craftProofBlock(h, {
+        authorIndex: voter.index,
+        forkId,
+        height: a + 2,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: first.hash
+    });
+    outranking.confirmation.signatures = await Promise.all(
+        [first.author, second.author].map((address) =>
+            h.peers
+                .find((peer) => peer.address === address)!
+                .signer.signMessage(getBytes(outranking.block.hash))
+        )
+    );
     const invalidFirst = await craftProofBlock(h, {
         authorIndex: peerIndexOf(first.author),
         forkId,
@@ -1211,6 +1233,42 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
             ],
             [anchor.toStruct(), anchor.toStruct()],
             anchorState
+        ),
+        outranking: outranking.block,
+        outranked: servingProof(
+            payload,
+            [
+                [
+                    anchorBlock.confirmation,
+                    keepSignatures(first.confirmation, []),
+                    keepSignatures(second.confirmation, [voter.address])
+                ],
+                [
+                    anchorBlock.confirmation,
+                    keepSignatures(first.confirmation, []),
+                    outranking.confirmation
+                ],
+                [anchorBlock.confirmation]
+            ],
+            [anchor.toStruct(), anchor.toStruct(), anchor.toStruct()],
+            anchorState
+        ),
+        firstOnly: servingProof(
+            payload,
+            [
+                [
+                    anchorBlock.confirmation,
+                    keepSignatures(first.confirmation, [])
+                ]
+            ],
+            [anchor.toStruct()],
+            anchorState
+        ),
+        thirdHop: servingProof(
+            payload,
+            [[third.confirmation, fourth.confirmation]],
+            [third.snapshot],
+            await servedState(h, third.snapshot)
         ),
         anchorBlockHash: anchorBlock.hash,
         invalidAfterAnchor: servingProof(

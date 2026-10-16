@@ -1542,6 +1542,7 @@ export async function exactFinalProofView(
                             })!;
                             return {
                                 height: block.height,
+                                hash: String(block.hash),
                                 signers: [...block.allSignerAddresses]
                             };
                         })
