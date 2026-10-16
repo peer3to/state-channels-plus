@@ -16,7 +16,7 @@ import { postAnchor } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { getBytes } from "ethers";
+import { getBytes, Wallet } from "ethers";
 
 type Peer = ReturnType<MathPeerTestHarness["getPeer"]>;
 type SnapshotStruct = SyncPayload["milestoneSnapshots"][number];
@@ -1181,6 +1181,116 @@ export async function stageForgedSupportPayloads(h: MathPeerTestHarness) {
             ],
             [second.snapshot, second.snapshot],
             secondState
+        )
+    };
+}
+
+/**
+ * `stageAnchoredHistory` with three final blocks above the anchor a, the
+ * authors of a+1 and a+2 (A, B) and the third participant C. Payloads:
+ * - `retainedSiblings`: [a, a+1 by A only, X], [a, a+1, Y] and [a] with the
+ *   anchor's state: X is the real a+2 with C's confirmation, Y a forged a+2′
+ *   by C confirmed by A and ground below X's hash. Y ranks with X ({A, C}
+ *   against {B, C}) but its run cannot complete the hop of a+1;
+ * - `outsiderSiblings`: [a, a+1, X], [a, a+1, Z, Z3] and [a]: Z a forged
+ *   a+2″ by C confirmed by five outsiders, Z3 a forged a+3″ by B on Z, so
+ *   Z's run completes the hop too, with fewer threshold signers on Z than X;
+ * - `firstIntoHistory`: [a, a+1 by A only] with the anchor's state: its tail
+ *   replays a+1 into history, the hop the retained siblings support.
+ */
+export async function stageRetainedSiblings(h: MathPeerTestHarness) {
+    const staged = await stageAnchoredHistory(h, { blocksAfter: 3 });
+    const { forkId, anchor, payload } = staged;
+    const a = anchor.blockHeight;
+    const anchorBlock = await servedBlock(h, forkId, a);
+    const first = await servedBlock(h, forkId, a + 1);
+    const second = await servedBlock(h, forkId, a + 2);
+    const peerOf = (address: string) =>
+        h.peers.find((peer) => peer.address === address)!;
+    const third = h.peers.find(
+        (peer) =>
+            peer.address !== first.author && peer.address !== second.author
+    )!;
+    const firstAlone = keepSignatures(first.confirmation, []);
+    const real = keepSignatures(second.confirmation, [third.address]);
+    // a forged sibling that sorts before the real block on a tie
+    let forged = await craftProofBlock(h, {
+        authorIndex: third.index,
+        forkId,
+        height: a + 2,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: first.hash
+    });
+    while (String(forged.block.hash) > second.hash)
+        forged = await craftProofBlock(h, {
+            authorIndex: third.index,
+            forkId,
+            height: a + 2,
+            stateSnapshotHash: randomHash(),
+            previousBlockHash: first.hash
+        });
+    forged.confirmation.signatures = [
+        await peerOf(first.author).signer.signMessage(
+            getBytes(forged.block.hash)
+        )
+    ];
+    const outsider = await craftProofBlock(h, {
+        authorIndex: third.index,
+        forkId,
+        height: a + 2,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: first.hash
+    });
+    outsider.confirmation.signatures = await Promise.all(
+        Array.from({ length: 5 }, () =>
+            Wallet.createRandom().signMessage(getBytes(outsider.block.hash))
+        )
+    );
+    const outsiderChild = await craftProofBlock(h, {
+        authorIndex: peerOf(second.author).index,
+        forkId,
+        height: a + 3,
+        stateSnapshotHash: randomHash(),
+        previousBlockHash: String(outsider.block.hash)
+    });
+    const anchorState = await servedState(h, anchor.toStruct());
+    const snapshots = [anchor.toStruct(), anchor.toStruct(), anchor.toStruct()];
+    return {
+        ...staged,
+        first,
+        second,
+        forged: forged.block,
+        outsider: outsider.block,
+        retainedSiblings: servingProof(
+            payload,
+            [
+                [anchorBlock.confirmation, firstAlone, real],
+                [anchorBlock.confirmation, firstAlone, forged.confirmation],
+                [anchorBlock.confirmation]
+            ],
+            snapshots,
+            anchorState
+        ),
+        outsiderSiblings: servingProof(
+            payload,
+            [
+                [anchorBlock.confirmation, firstAlone, real],
+                [
+                    anchorBlock.confirmation,
+                    firstAlone,
+                    outsider.confirmation,
+                    outsiderChild.confirmation
+                ],
+                [anchorBlock.confirmation]
+            ],
+            snapshots,
+            anchorState
+        ),
+        firstIntoHistory: servingProof(
+            payload,
+            [[anchorBlock.confirmation, firstAlone]],
+            [anchor.toStruct()],
+            anchorState
         )
     };
 }

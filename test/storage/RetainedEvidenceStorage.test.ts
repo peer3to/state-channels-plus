@@ -96,12 +96,8 @@ describe("RetainedEvidenceStorage", () => {
         const storage = new Storage();
 
         expect(
-            storage.retainedEvidence.getMostSignedBlock(
-                FORK,
-                4,
-                new Set<Address>()
-            )
-        ).to.equal(undefined);
+            storage.retainedEvidence.rankBlocksAt(FORK, 4, new Set<Address>())
+        ).to.deep.equal([]);
     });
 
     it("keeps the retained block unchanged when the stored input is mutated", async () => {
@@ -156,11 +152,11 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(more);
 
         expect(
-            storage.retainedEvidence.getMostSignedBlock(
+            storage.retainedEvidence.rankBlocksAt(
                 FORK,
                 4,
                 new Set([a.address, b.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(more.hash);
     });
 
@@ -194,10 +190,10 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(more);
 
         expect(
-            storage.retainedEvidence.getLinkedChild(
+            storage.retainedEvidence.rankLinkedChildren(
                 parent,
                 new Set([a.address, b.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(more.hash);
     });
 
@@ -232,10 +228,10 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(forged);
 
         expect(
-            storage.retainedEvidence.getLinkedChild(
+            storage.retainedEvidence.rankLinkedChildren(
                 parent,
                 new Set([a.address, b.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(real.hash);
     });
 
@@ -269,10 +265,10 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(second);
 
         expect(
-            storage.retainedEvidence.getLinkedChild(
+            storage.retainedEvidence.rankLinkedChildren(
                 parent,
                 new Set([a.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal([first.hash, second.hash].sort()[0]);
     });
 
@@ -291,11 +287,11 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(second);
 
         expect(
-            storage.retainedEvidence.getMostSignedBlock(
+            storage.retainedEvidence.rankBlocksAt(
                 FORK,
                 4,
                 new Set([a.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal([first.hash, second.hash].sort()[0]);
     });
 
@@ -332,10 +328,10 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(accepted);
 
         expect(
-            storage.retainedEvidence.getLinkedChild(
+            storage.retainedEvidence.rankLinkedChildren(
                 parent,
                 new Set([a.address, b.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(accepted.hash);
     });
 
@@ -357,11 +353,11 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(accepted);
 
         expect(
-            storage.retainedEvidence.getMostSignedBlock(
+            storage.retainedEvidence.rankBlocksAt(
                 FORK,
                 4,
                 new Set([a.address, b.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(accepted.hash);
     });
 
@@ -381,11 +377,11 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(distinct);
 
         expect(
-            storage.retainedEvidence.getMostSignedBlock(
+            storage.retainedEvidence.rankBlocksAt(
                 FORK,
                 4,
                 new Set([a.address, b.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(distinct.hash);
     });
 
@@ -411,10 +407,10 @@ describe("RetainedEvidenceStorage", () => {
         storage.retainedEvidence.storeBlock(unlinked);
 
         expect(
-            storage.retainedEvidence.getLinkedChild(
+            storage.retainedEvidence.rankLinkedChildren(
                 parent,
                 new Set([a.address] as Address[])
-            )?.hash
+            )[0]?.hash
         ).to.equal(linked.hash);
     });
 
@@ -438,8 +434,11 @@ describe("RetainedEvidenceStorage", () => {
         );
 
         expect(
-            storage.retainedEvidence.getLinkedChild(parent, new Set<Address>())
-        ).to.equal(undefined);
+            storage.retainedEvidence.rankLinkedChildren(
+                parent,
+                new Set<Address>()
+            )
+        ).to.deep.equal([]);
     });
 
     it("finds another block by the same author at the coordinate as a double sign", async () => {

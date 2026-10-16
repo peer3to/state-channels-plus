@@ -6,6 +6,7 @@ import {
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
 import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
+import { exactFinalProofView } from "@test/fixtures/ProofOwnerStaging";
 import {
     applyOnFreshRequester,
     applyPayloads,
@@ -23,6 +24,7 @@ import {
     stageConflictingOverlapPayload,
     stageForgedSupportPayloads,
     stageMergedSignaturePayload,
+    stageRetainedSiblings,
     stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
     storedBlocks,
@@ -985,6 +987,52 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             );
             expect(rebuilt.milestones).to.deep.equal([[a + 1, a + 2, a + 3]]);
             expect(rebuilt.chainValid).to.equal(true);
+        });
+
+        it("U144: two retained siblings support a history final point, the first tried cannot complete its hop → the next sibling is tried and proves the final point", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageRetainedSiblings(h);
+            const a = staged.anchor.blockHeight;
+            const view = await withHeldFreshRequester(h, async (requester) => {
+                await applyPayloads(h, requester, staged.forkId, [
+                    staged.retainedSiblings,
+                    staged.firstIntoHistory
+                ]);
+                return exactFinalProofView(h, requester.index, a + 1);
+            });
+            expect(view.proof?.valid).to.equal(true);
+            expect(view.proof?.finalHeight).to.equal(a + 1);
+            expect(
+                view.proof?.milestones.map((run) =>
+                    run.map((block) => block.height)
+                )
+            ).to.deep.equal([[a + 1, a + 2]]);
+            // the real sibling, not the forged one sorted before it
+            expect(view.proof!.milestones[0][1].signers).to.include(
+                staged.second.author
+            );
+        });
+
+        it("U145: a retained sibling confirmed by outsiders against one with more of the hop's threshold signers → the hop is proved through the one with more threshold signers", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageRetainedSiblings(h);
+            const a = staged.anchor.blockHeight;
+            const view = await withHeldFreshRequester(h, async (requester) => {
+                await applyPayloads(h, requester, staged.forkId, [
+                    staged.outsiderSiblings,
+                    staged.firstIntoHistory
+                ]);
+                return exactFinalProofView(h, requester.index, a + 1);
+            });
+            expect(view.proof?.valid).to.equal(true);
+            expect(
+                view.proof?.milestones.map((run) =>
+                    run.map((block) => block.height)
+                )
+            ).to.deep.equal([[a + 1, a + 2]]);
+            expect(view.proof!.milestones[0][1].signers).to.include(
+                staged.second.author
+            );
         });
     });
 });
