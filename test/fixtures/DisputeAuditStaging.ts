@@ -2091,11 +2091,12 @@ export async function stageTimeoutOfCalldataPostedBlock(
 }
 
 /**
- * {@link stageTimeoutOfCalldataPostedBlock}, then a dispute window opened by
- * another peer, and the auditor's audit of the disputer's forced timeout
- * dispute (not uploaded). Reductions are held.
+ * {@link stageTimeoutOfCalldataPostedBlock}, then reductions held, a dispute
+ * window opened by another peer, and the disputer's constructed timeout
+ * dispute of the posted block's author (not uploaded, not forced).
+ * `previousBlock` is the block below the posted one, or null at genesis.
  */
-export async function auditTimeoutOfCalldataPostedBlock(
+export async function constructTimeoutOfCalldataPostedBlock(
     h: MathPeerTestHarness,
     options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
 ) {
@@ -2120,13 +2121,38 @@ export async function auditTimeoutOfCalldataPostedBlock(
     expect(Number(dispute.input.timeout.blockHeight)).to.equal(
         options.blocksBefore
     );
-    dispute.input.timeout.isForced = true;
+    expect(dispute.postedAuditingData).to.equal(false);
+    const previousBlock =
+        options.blocksBefore > 0
+            ? await h
+                  .control(h.getPeer(staged.auditorIndex))
+                  .query.getBlockByHeight(
+                      staged.forkId,
+                      options.blocksBefore - 1
+                  )
+                  .request()
+            : null;
+    return { ...staged, dispute, previousBlock };
+}
 
-    const run = await h.dispute.auditDispute(staged.auditorIndex, dispute);
+/**
+ * {@link constructTimeoutOfCalldataPostedBlock}, forced, audited by the
+ * auditor.
+ */
+export async function auditTimeoutOfCalldataPostedBlock(
+    h: MathPeerTestHarness,
+    options: { blocksBefore: number; beforeCalldataBlock?: () => Promise<void> }
+) {
+    const constructed = await constructTimeoutOfCalldataPostedBlock(h, options);
+    constructed.dispute.input.timeout.isForced = true;
+    const run = await h.dispute.auditDispute(
+        constructed.auditorIndex,
+        constructed.dispute
+    );
     return {
         run,
-        postedBlock: staged.postedBlock,
-        disputerAddress: h.getPeer(staged.disputerIndex).address
+        postedBlock: constructed.postedBlock,
+        disputerAddress: h.getPeer(constructed.disputerIndex).address
     };
 }
 
