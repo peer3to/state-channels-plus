@@ -654,6 +654,10 @@ double sign.
 
 <a id="req-sp-11-535j0r.t1.p33"></a>`REQ-SP-11-535J0R.T1.P33` — An invalid block whose predecessor is held only as retained evidence still yields its invalid-transition proof, built from that retained block.
 
+<a id="req-sp-11-535j0r.t1.p34"></a>`REQ-SP-11-535J0R.T1.P34` — A pending participant without the anchor block replays an invalid first tail block on it: no internal error, an invalid-transition fraud proof names the block's author, and the anchor block stays retained.
+
+<a id="req-sp-11-535j0r.t1.p35"></a>`REQ-SP-11-535J0R.T1.P35` — A requester already above the anchor, holding neither the anchor block nor the block after it, applies an anchor run with a tail: it keeps its own state, does not replay from the retained anchor block, and reaches the tail head.
+
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 
 **Requirements / invariants:**

@@ -144,7 +144,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — Forged support by the real block's own author, then an honest tail replaying the real block: the second sync stops, neither block becomes history
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — A tail whose first block links to a retained start block replays that block from the start block as its predecessor, then writes the start block into history
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117` — An invalid first tail block on a retained start block: rejected without an internal error, the spectator aborts, the start block stays retained
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118` — A requester that already holds the base or a later point replays without the retained start block as predecessor, so its state machine is never moved back
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118` — A requester that already holds the base or a later point replays without the retained start block as predecessor, so its state machine is never moved back
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P119` — A committed participant replays an invalid first tail block on a retained start block: the live strategy stores the invalid-transition proof built from that start block, without an internal error
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 
