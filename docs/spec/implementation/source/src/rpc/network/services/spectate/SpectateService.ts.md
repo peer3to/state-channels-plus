@@ -10,7 +10,6 @@
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-  Contradicts: a dispute committed after `generateSyncPayload` walked its tip fork makes a latest-mode request fail step 2.8.1 and blacklist the honest responder ([`FIND-SYNC-2-VV16K8`](../../../../../../../audit/open-findings.md#find-sync-2-vv16k8)).
   Contradicts: a local reduction out-of-gas in `sync` is classified as invalid served evidence and blacklists the responder; reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
   Contradicts: `generateSyncPayload` cuts the latest-fork outbound run at the responder's own anchor while `applySyncResponse` verifies it from the requester's chain read, so a requester whose provider lags rejects and blacklists an honest responder ([`FIND-SYNC-5-7W9TWW`](../../../../../../../audit/open-findings.md#find-sync-5-7w9tww)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
@@ -18,6 +17,7 @@
   Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f): honest can't-prove-yet refusal punishes the requester (fault taxonomy pending).
 - [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
 - [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
+- [`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)

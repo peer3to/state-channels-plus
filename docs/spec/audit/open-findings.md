@@ -1547,37 +1547,42 @@ All-skipped walk success alone is not evidence of a valid newer adoption.
 
 ### FIND-SYNC-2-VV16K8
 
-**Defect:** A spectating sync cuts an honest responder when a dispute lands on the tip fork
-mid-sync. `generateSyncPayload` stops its walk at a fork `isForkDisputed` reports undisputed
-(src/rpc/network/services/spectate/SpectateService.ts:684-688). The requester later re-reads the
-dispute window for the payload's final fork in step 2.8.1 (:384-393) and rejects with "latest fork
-is disputed" when one now exists; `rejectSync` (:1160-1166) disconnects and blacklists the
-responder. A dispute committed between the two reads is a chain change the responder did not cause,
-yet the [failure outcomes](../specification/peer-communication/synchronization.md#failure-outcomes)
-table treats every verification failure as Byzantine evidence against the responder. Same class as
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp); it also bears on the agreementTime assumption the
-owner retained under [`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n). Code-traced, not executed.
+**Defect:** _Resolved (2026-10-16)._ A spectating sync cut an honest responder when a dispute
+landed on the tip fork mid-sync: `generateSyncPayload` stopped its walk at a fork the chain then
+reported undisputed, the requester re-read the final fork's window in step 2.8.1 of
+`applySyncResponse` and rejected with "latest fork is disputed", and `rejectSync` blacklisted the
+responder for a chain change it did not cause.
 
-**Proposed direction:** Classify a dispute window that appears on the final fork after the payload
-was served as a retryable race: fail the sync without penalizing the responder and re-request.
+**Fix:** step 2.8.1 reads the final fork's kill period from the chain. A window still in its kill
+period fails the sync with no verdict; served, it would fail step 2.2 the same way, so omitting it
+gains a responder nothing. An expired window was there to be walked and stays a verification
+failure ([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+Regressions: [`REQ-SYNC-4-AWHFPA.T1.P3`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p3),
+[`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4).
 
 <a id="find-sync-3-hpyce2"></a>
 
 ### FIND-SYNC-3-HPYCE2
 
-**Defect:** A responder whose tip fork has an open kill period serves a payload every honest
-requester rejects. `generateSyncPayload` walks and locally reduces every disputed fork without
-checking kill-period expiry (src/rpc/network/services/spectate/SpectateService.ts:610-690). Step 2.2
-of `applySyncResponse` (:255-266) requires each served window to be expired in the requester's local
-diamond, and otherwise rejects with "kill period not expired" and blacklists the responder through
-`rejectSync` (:1160-1166). This is not a timing race: it holds for the whole kill period. The
-local-diamond read also reports `windowExists = false` when the requester has not yet processed the
-dispute event, which is a local condition. Same class as
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp). Code-traced, not executed.
+**Defect:** _Resolved (2026-10-16)._ For the whole kill period of a dispute, every honest requester
+cut an honest responder: `generateSyncPayload` walks every disputed fork without a kill-period
+check, and step 2.2 of `applySyncResponse` rejected an unexpired window with "kill period not
+expired" and blacklisted the responder through `rejectSync`. Reproduced end to end with a
+participant's source probe inside an open kill period.
 
-**Proposed direction:** Align the responder's walk with the requester's expiry check: never serve a
-window whose kill period is open, and never blacklist a responder for an unexpired or locally
-unknown window.
+**Fix:** step 2.2 splits the two cases. A window still in its kill period fails the sync with no
+verdict and no close. A served window the requester's own chain view does not hold stays a
+verification failure, now "dispute window not on chain": the requester fetches the served windows
+from its chain view into its local diamond before the check, so only a lagging provider can make an
+honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
+tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
+blacklist the requester instead
+([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+A fresh spectator whose one initial load lands in a kill period still aborts its runtime; only the
+false verdict is removed. Regressions:
+[`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
+[`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
+[`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5).
 
 <a id="find-sync-4-kgp4kf"></a>
 

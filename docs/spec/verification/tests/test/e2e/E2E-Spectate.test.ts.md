@@ -52,6 +52,11 @@ returns true, the install entry is never called, the VM state equals the first s
 three more live blocks the observer has executed them with no fraud proof, dispute or blacklisted
 participant.
 
+The open-kill-period case commits an honest invalid-transition dispute under a long evidence window,
+then has one honest participant probe another with the pinned sync a queued block's source probe
+sends. The chain still reports the kill period open afterwards, and the requester has not
+blacklisted the responder.
+
 ## Tests
 
 - `overlapping newcomer gossip waits for its membership proof without blacklisting`: none
@@ -85,5 +90,6 @@ participant.
 - `serves the latest sync payload for minimum height 0 while ahead`: REQ-SYNC-1-T2589H.T1.P3, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2
 - `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17
 - `serves a newer sync payload across a leave above the minimum height`: REQ-SYNC-1-T2589H.T1.P5
+- `a participant's source probe while the tip fork's kill period is open does not blacklist its honest responder`: REQ-SYNC-4-AWHFPA.T1.P5
 - `suppressed dispute event on the responder → the on-chain window is recovered and its successor is proved`: none
 - `a spectator sees posted junk calldata → no forced timeout check and it stays synced`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P19

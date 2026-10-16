@@ -838,62 +838,29 @@ export async function applySyncPayloadServedBeforeAdoption(
     responderBlacklisted: boolean;
 }> {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
-    const observer = h.getPeer(2);
-    const source = h.getPeer(0);
-    const response = await h.execOnHost(
-        observer,
-        async (sm, args) =>
-            sm.p2pManager.remoteRpc.spectateService
-                .onSpectateRequest({ channelId: sm.channelId })
-                .request(args.source),
-        { source: source.address }
-    );
-    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
-    expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
-        [sourceForkId]
-    );
-    const successorForkId = payload.disputeWindows[0].reducedForkId;
-    mutate(payload);
-
-    await h.control(source).stub.startTryReduce(sourceForkId).request();
-    await waitFor(
-        async () =>
-            StateSnapshot.from(
-                await h.channelManager.getStateSnapshot(h.channelId)
-            ).forkID === successorForkId,
-        h.event.protocolEventTimeoutMs()
-    );
-
-    const stub = h.control(observer).stub;
-    await stub.recordSyncRejections().request();
-    try {
-        const accepted = await h.execOnHost(
-            observer,
-            async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId },
-                    args.encodedSyncPayload
-                ),
-            {
-                source: source.address,
-                encodedSyncPayload: Codec.encode(
-                    payload,
-                    Type.SyncPayload
-                ) as string
-            }
-        );
-        return {
-            accepted,
-            rejections: await stub.restoreRecordedSyncRejections().request(),
-            responderBlacklisted: await h
-                .control(observer)
-                .query.isBlacklisted(source.address)
-                .request()
-        };
-    } finally {
-        await stub.restoreRecordedSyncRejections().request();
-    }
+    let successorForkId: ForkId | undefined;
+    return applyLatestSyncPayload(h, {
+        mutate: (served) => {
+            expect(
+                served.disputeWindows.map((window) => window.forkId)
+            ).to.deep.equal([sourceForkId]);
+            successorForkId = served.disputeWindows[0].reducedForkId;
+            mutate(served);
+        },
+        afterServe: async () => {
+            await h
+                .control(h.getPeer(0))
+                .stub.startTryReduce(sourceForkId)
+                .request();
+            await waitFor(
+                async () =>
+                    StateSnapshot.from(
+                        await h.channelManager.getStateSnapshot(h.channelId)
+                    ).forkID === successorForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+        }
+    });
 }
 
 /**
@@ -974,5 +941,75 @@ export async function assertTimeoutCheckWaitsForSyncInstall(
         await recorder.restore();
         for (const race of races)
             await race.release({ replayEvents: false, keepTasksHeld: true });
+    }
+}
+
+/** Peer 1 opens a valid self-removal dispute on the latest fork; returns once peers 0 and 2 committed it. */
+export async function openSelfRemovalDispute(h: MathPeerTestHarness) {
+    await h.control(h.getPeer(1)).dispute.setForceExit(true).request();
+    await h.tamper.postTamperedDispute(1, () => {}, { markMalicious: false });
+    await h.assert.dispute.committedWait({
+        expectedCount: 1,
+        peersIndices: [0, 2]
+    });
+}
+
+/**
+ * Peer 0 serves peer 2 a latest-state payload, optionally altered by
+ * `mutate`; `afterServe` runs, then peer 2 applies the payload. Returns the
+ * served payload, the verdict, the recorded rejections and whether peer 2
+ * blacklisted peer 0.
+ */
+export async function applyLatestSyncPayload(
+    h: MathPeerTestHarness,
+    options: {
+        mutate?: (payload: SyncPayload) => void;
+        afterServe?: () => Promise<void>;
+    }
+) {
+    const observer = h.getPeer(2);
+    const source = h.getPeer(0);
+    const response = await h.execOnHost(
+        observer,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({ channelId: sm.channelId })
+                .request(args.source),
+        { source: source.address }
+    );
+    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    options.mutate?.(payload);
+    await options.afterServe?.();
+
+    const stub = h.control(observer).stub;
+    await stub.recordSyncRejections().request();
+    try {
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: source.address,
+                encodedSyncPayload: Codec.encode(
+                    payload,
+                    Type.SyncPayload
+                ) as string
+            }
+        );
+        return {
+            payload,
+            accepted,
+            rejections: await stub.restoreRecordedSyncRejections().request(),
+            responderBlacklisted: await h
+                .control(observer)
+                .query.isBlacklisted(source.address)
+                .request()
+        };
+    } finally {
+        await stub.restoreRecordedSyncRejections().request();
     }
 }

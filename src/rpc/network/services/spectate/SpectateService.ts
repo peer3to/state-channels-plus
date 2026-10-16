@@ -162,8 +162,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return false. The caller owns
-     * the lifecycle consequence of a failed sync. A disposed runtime applies
-     * nothing and returns false with no verdict on the peer.
+     * the lifecycle consequence of a failed sync. A disposed runtime, or a
+     * served window whose kill period is still open, applies nothing and
+     * returns false with no verdict on the peer.
      */
     public async applySyncResponse(
         peerAddress: string,
@@ -310,11 +311,20 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         channelId,
                         dw.forkId
                     );
-                if (!windowExists || !isExpired)
+                if (!windowExists)
                     return this.rejectSync(
                         peerAddress,
-                        "kill period not expired"
+                        "dispute window not on chain"
                     );
+                // an open kill period is chain timing the responder does not
+                // control -> no verdict, the window is provable once it expires
+                if (!isExpired) {
+                    this.logger.debug(
+                        "applySyncResponse - kill period not expired, no verdict",
+                        { peerAddress, forkId: dw.forkId }
+                    );
+                    return false;
+                }
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal = finalizedByFork.get(dw.forkId);
@@ -453,12 +463,22 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2.8.2) (requested) prove the pinned fork or a successor whose verified lineage contains it.
             if (!syncRequest.forkId) {
                 // 2.8.1) (spectating)
-                const _timestamp =
-                    await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                const { windowExists, isExpired } =
+                    await stateManager.stateChannelManagerContract.isKillPeriodExpired(
                         channelId,
                         currentForkId
                     );
-                if (Number(_timestamp) != 0)
+                // a window still in its kill period can have opened after the
+                // payload was served; served, it would fail 2.2 the same way
+                // -> no verdict. an expired window was there to be walked.
+                if (windowExists && !isExpired) {
+                    this.logger.debug(
+                        "applySyncResponse - latest fork disputed in its kill period, no verdict",
+                        { peerAddress, forkId: currentForkId }
+                    );
+                    return false;
+                }
+                if (windowExists)
                     return this.rejectSync(
                         peerAddress,
                         "latest fork is disputed"

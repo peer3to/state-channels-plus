@@ -938,6 +938,9 @@ Specification cases tested: 1/3. Untested: T1.P1, T1.P3.
 [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 Specification cases tested: 0/3.
 
+[`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+Specification cases tested: 5/5.
+
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.
 

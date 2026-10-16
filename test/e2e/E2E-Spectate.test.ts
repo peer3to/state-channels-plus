@@ -1658,6 +1658,55 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Sync inside an open kill period", function () {
+        it("a participant's source probe while the tip fork's kill period is open does not blacklist its honest responder", async function () {
+            const h = TestSession.getHarness();
+            // a long evidence window keeps the kill period open through the probe
+            await h.lifecycle.start(4, 0, { timeConfig: { evidenceTime: 30 } });
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const [requesterIndex, responderIndex] = [0, 1, 2, 3].filter(
+                (peerIndex) => peerIndex !== maliciousPeerIndex
+            ) as [number, number];
+            const requester = h.getPeer(requesterIndex);
+            const responder = h.getPeer(responderIndex);
+            const forkId = h.activeForkId!;
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.committedWait({
+                peersIndices: [requesterIndex, responderIndex]
+            });
+
+            // the probe BlockQueueManager.probeSource sends a queued block's
+            // source: the requester's own fork and height
+            const height = await h
+                .control(requester)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            await h
+                .control(requester)
+                .spectate.sync(responder.address, forkId, Number(height))
+                .request();
+
+            // premise: the probe ran while the kill period was open
+            const { isExpired } = await h.channelManager.isKillPeriodExpired(
+                h.channelId,
+                forkId
+            );
+            expect(isExpired).to.equal(false);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(false);
+        });
+    });
+
     describe("Spectate request across a dispute-window event gap", function () {
         // A commitment can sit on-chain while the responder's DisputeCommitted
         // event is still undelivered. generateSyncPayload walks the on-chain

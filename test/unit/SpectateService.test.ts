@@ -16,6 +16,7 @@ import {
 } from "@test/fixtures/HistoricSyncStaging";
 import {
     applyDisputedSyncPayload,
+    applyLatestSyncPayload,
     applySyncPayloadServedBeforeAdoption,
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
@@ -24,7 +25,8 @@ import {
     assertFailedSyncInstallPersistsNothing,
     assertPinnedHeight,
     assertQueuedSuccessorBlockSurvivesSyncInstall,
-    assertSyncWindowReadRace
+    assertSyncWindowReadRace,
+    openSelfRemovalDispute
 } from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -714,6 +716,101 @@ describe("Unit: SpectateService", function () {
             expect(rejections).to.deep.equal([
                 "latest-fork outbound blocks invalid"
             ]);
+        });
+    });
+
+    describe("dispute window kill period", function () {
+        it("served window still in its kill period → not accepted, no verdict, responder not blacklisted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            await openSelfRemovalDispute(h);
+            const { payload, accepted, rejections, responderBlacklisted } =
+                await applyLatestSyncPayload(h, {});
+            // premise: the payload carries the open window
+            expect(
+                payload.disputeWindows.map((window) => window.forkId)
+            ).to.deep.equal([forkId]);
+            expect((await h.query.killPeriod(forkId, 2)).isExpired).to.equal(
+                false
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([]);
+            expect(responderBlacklisted).to.equal(false);
+        });
+
+        it("served window the chain does not hold → rejected, dispute window not on chain", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const { accepted, rejections, responderBlacklisted } =
+                await applyLatestSyncPayload(h, {
+                    // a window for the undisputed on-chain fork
+                    mutate: (payload) => {
+                        payload.disputeWindows.push({
+                            disputeConfirmations: [],
+                            forkId,
+                            latestStateSnapshot:
+                                payload.latestForkGenesisSnapshot,
+                            latestEncodedStateMachineState:
+                                payload.latestForkGenesisEncodedState,
+                            inboundMessageBlocksAppliedInReduce: [],
+                            reducedForkId: ethers.hexlify(
+                                ethers.randomBytes(32)
+                            )
+                        });
+                    }
+                });
+            // premise: the chain holds no window for the served fork
+            expect((await h.query.killPeriod(forkId, 2)).windowExists).to.equal(
+                false
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["dispute window not on chain"]);
+            expect(responderBlacklisted).to.equal(true);
+        });
+
+        it("dispute opens on the latest fork after the payload was served → not accepted, no verdict, responder not blacklisted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const { payload, accepted, rejections, responderBlacklisted } =
+                await applyLatestSyncPayload(h, {
+                    afterServe: () => openSelfRemovalDispute(h)
+                });
+            // premise: the latest fork was undisputed when the payload was
+            // served, and its window is in its kill period when applied
+            expect(payload.disputeWindows).to.deep.equal([]);
+            const killPeriod = await h.query.killPeriod(forkId, 2);
+            expect(killPeriod.windowExists).to.equal(true);
+            expect(killPeriod.isExpired).to.equal(false);
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([]);
+            expect(responderBlacklisted).to.equal(false);
+        });
+
+        it("latest fork's expired window missing from the payload → rejected, latest fork is disputed", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            // the expired window stays unreduced, so the chain keeps the latest fork
+            for (const peer of h.peers) {
+                await h.rpcStub.holdReductionRace(peer.index);
+            }
+            const { accepted, rejections, responderBlacklisted } =
+                await applyLatestSyncPayload(h, {
+                    afterServe: async () => {
+                        await openSelfRemovalDispute(h);
+                        await waitFor(
+                            async () =>
+                                (await h.query.killPeriod(forkId, 2)).isExpired,
+                            h.event.protocolEventTimeoutMs()
+                        );
+                    }
+                });
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["latest fork is disputed"]);
+            expect(responderBlacklisted).to.equal(true);
         });
     });
 
