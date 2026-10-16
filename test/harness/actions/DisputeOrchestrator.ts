@@ -249,12 +249,26 @@ export class DisputeOrchestrator<
             honestPeerIndices?: number[];
             syntheticOnChainParticipants?: number;
             expectedDisputesCommittedPerPeer?: number;
+            /**
+             * Peers that leave during the resolution (e.g. a leaver whose exit
+             * turn comes first on the reduced fork): never read or restored,
+             * and still counted as participants of the reduced fork.
+             */
+            departingPeerIndices?: number[];
         }
     ): Promise<CreateAndResolveDisputeResult<THost>> {
+        const departing = options?.departingPeerIndices ?? [];
         try {
             return await this.resolveDisputeWait({
                 forkId: submitted.forkId,
-                honestPeerIndices: options?.honestPeerIndices,
+                honestPeerIndices:
+                    options?.honestPeerIndices ??
+                    (departing.length > 0
+                        ? this.harness
+                              .getActiveHonestPeers()
+                              .map((peer) => peer.index)
+                              .filter((index) => !departing.includes(index))
+                        : undefined),
                 expectedDisputesCommittedPerPeer:
                     options?.expectedDisputesCommittedPerPeer ?? 1,
                 disputesCommittedMode: "atLeast",
@@ -266,7 +280,8 @@ export class DisputeOrchestrator<
                     withFirstBlockGrace: true
                 }),
                 syntheticOnChainParticipants:
-                    options?.syntheticOnChainParticipants,
+                    (options?.syntheticOnChainParticipants ?? 0) +
+                    departing.length,
                 expectedResolution: {
                     kind: "final-dispute",
                     forkId: submitted.finalResolution.forkId,
@@ -276,8 +291,11 @@ export class DisputeOrchestrator<
                 }
             });
         } finally {
+            // a departing peer may already be disposed
             await this.restoreDisputeInitiation(
-                submitted.suppressedPeerIndices
+                submitted.suppressedPeerIndices.filter(
+                    (index) => !departing.includes(index)
+                )
             );
         }
     }

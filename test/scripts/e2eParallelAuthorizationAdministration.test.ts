@@ -376,7 +376,7 @@ describe("distributed authorization administration", function () {
                 {
                     command: "authorization-add",
                     stateDir: path.join(root, "admin"),
-                    discoveryTimeoutMs: 5000,
+                    discoveryTimeoutMs: TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
                     publicKey: addedAdminKeyPair.publicKey.toString("hex"),
                     role: "admin",
                     note: "backup operator",
@@ -412,7 +412,7 @@ describe("distributed authorization administration", function () {
                 {
                     command: "authorization-list",
                     stateDir: path.join(root, "added-admin"),
-                    discoveryTimeoutMs: 5000,
+                    discoveryTimeoutMs: TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
                     worker: worker.workerId,
                     role: "orchestrator",
                     note: "",
@@ -559,7 +559,7 @@ describe("distributed authorization administration", function () {
                 {
                     command: "authorization-list",
                     stateDir: path.join(root, "admin"),
-                    discoveryTimeoutMs: 5000,
+                    discoveryTimeoutMs: TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
                     role: "orchestrator",
                     note: "",
                     poolSecret,
