@@ -1652,7 +1652,7 @@ full `gasLimit` ([L189-L193](../../../contracts/V1/AStateMachine.sol#L189-L193))
 transition can catch an inner out-of-gas and still succeed or fail with its own error;
 `getStateTransitionGasRequirement` publishes the gas the machine frame needs.
 [UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
-`getStateTransitionReplayGas` adds the 1/64 kept at each of four enclosing calls;
+`getStateTransitionReplayGas` adds the 1/64 kept at each of five enclosing calls (multicall, facet delegatecall, `FraudProofFacet` delegatecall, `executeStateTransition`, state machine);
 [StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 routes it, re-raises the refusal and rejects empty-returndata machine frames;
 [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends the

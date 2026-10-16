@@ -37,6 +37,15 @@ Threshold and shape predicates
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P15` — `decodeBlock` rejects decodable noncanonical encodings with `ErrorNonCanonicalEncoding` and malformed bytes with an ordinary revert
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P16` — `tryDecodeBlock` reports canonical bytes true with exact fields and every noncanonical or malformed input false with the default block
 
+## UNIT-TEST-UTILITY-FACET-3-VYANPT
+
+Replay gas estimate
+
+- Setup: Send a funded timeout refutation through the deepest path that replays a state transition, the upload multicall, on a budget large enough that a missing frame's 1/64 exceeds the estimate's slack
+- Oracle: The refutation attached with the transition cost plus `getStateTransitionReplayGas` kills the dispute
+
+- [x] `UNIT-TEST-UTILITY-FACET-3-VYANPT.P1` — the refutation inside the upload multicall on a 32M budget is funded
+
 ## UNIT-TEST-UTILITY-FACET-2-89EC3Q
 
 Delegatecalled proxy-storage views
