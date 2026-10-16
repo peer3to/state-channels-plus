@@ -138,10 +138,10 @@ export default class ValidationService {
             return await strategy.blockForkIsDisputed(entry);
         }
 
-        // isNext
-        const expectedNextHeight = this.storage.blocks.getNextBlockHeight(
-            block.forkId
-        );
+        // isNext: a replayed block is next to its predecessor
+        const expectedNextHeight = entry.predecessor
+            ? (entry.predecessor.block?.height ?? -1) + 1
+            : this.storage.blocks.getNextBlockHeight(block.forkId);
         if (
             strategy.enforcesLiveForkAndOrderingGates &&
             block.height > expectedNextHeight

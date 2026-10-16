@@ -469,8 +469,13 @@ class AgreementManager {
         const kept: Block[] = [];
         // every checked block, the tail included, by hash: the ancestry of the final points
         const checked = new Map<Hash, Block>();
-        // the start block and each hop's first block
-        const finalPoints: Block[] = [];
+        // each hop's first block, and the block at the start height of each
+        // run holding the start (its author signature and snapshot commitment
+        // alone do not tell which block it is)
+        const hopPoints: Block[] = [];
+        const startBlocks: Block[] = [];
+        // the first block the tail replays
+        let firstTail: Block | undefined;
         const hops: { block: Block; snapshot: StateSnapshot }[] = [];
         stateProof.milestones.forEach((milestone, i) => {
             const blocks = milestone.blockConfirmations.map((confirmation) =>
@@ -487,22 +492,37 @@ class AgreementManager {
             blocks.forEach((block, j) => {
                 if (j < fromIndex) return;
                 checked.set(block!.hash, block!);
+                if (i === lastIndex && j === replayFromIndex)
+                    firstTail = block!;
                 if (i === lastIndex && j >= replayFromIndex)
                     tail.add(block!.hash);
                 else kept.push(block!);
             });
-            if (holdsStart) finalPoints.push(blocks[fromIndex]!);
+            if (holdsStart) startBlocks.push(blocks[fromIndex]!);
             const isUnfinalizedGenesisRun =
                 i === lastIndex && walk.replayBlockIndex === 0;
             if (!holdsStart && !isUnfinalizedGenesisRun) {
-                finalPoints.push(first!);
+                hopPoints.push(first!);
                 hops.push({
                     block: first!,
                     snapshot: StateSnapshot.from(evidence.milestoneSnapshots[i])
                 });
             }
         });
-        const finalHistory = this.selectFinalHistory(finalPoints, checked);
+        const finalHistory = this.selectFinalHistory(
+            [
+                ...startBlocks.filter((block) =>
+                    this.isStartBlockCorroborated(block, {
+                        startBlocks,
+                        hopHistory: this.selectFinalHistory(hopPoints, checked),
+                        hasHops: hopPoints.length > 0,
+                        firstTail
+                    })
+                ),
+                ...hopPoints
+            ],
+            checked
+        );
         const verified = kept.filter((block) => !tail.has(block.hash));
         const history = verified.filter((block) =>
             finalHistory.has(block.hash)
@@ -557,6 +577,23 @@ class AgreementManager {
             }
             return true;
         };
+    }
+
+    /**
+     * The retained block `executed` links to becomes history: a block that
+     * executed on it corroborates it (a start block a sync deferred until its
+     * first tail block executed). The view does not move.
+     */
+    public persistExecutedPredecessor(executed: Block): void {
+        const parent = this.storage.retainedEvidence.getBlock(
+            executed.previousBlockHash
+        );
+        if (
+            !parent ||
+            this.storage.blocks.getBlock(parent.forkId, parent.height)
+        )
+            return;
+        this.storage.blocks.storeBlock(parent, { justPersist: true });
     }
 
     /** The resulting snapshot of the milestone's first block. */
@@ -755,6 +792,39 @@ class AgreementManager {
                 ? Number(result.failedBlockIndex)
                 : undefined
         };
+    }
+
+    /**
+     * Whether the block at the start height is final history: this peer
+     * already holds it, a hop's ancestry in the proof reaches it, or the
+     * first tail block on it has already executed. A proof that ends at its
+     * start with no hop and no tail, holding one block there, has nothing to
+     * corroborate it; that block is stored as before (a known limit). Any
+     * other start block is retained, and one the tail links to becomes
+     * history once that tail block executes (`persistExecutedPredecessor`).
+     */
+    private isStartBlockCorroborated(
+        block: Block,
+        proof: {
+            startBlocks: Block[];
+            hopHistory: Set<Hash>;
+            hasHops: boolean;
+            firstTail?: Block;
+        }
+    ): boolean {
+        const blocks = this.storage.blocks;
+        if (blocks.hasBlock(block.hash)) return true;
+        if (proof.hopHistory.has(block.hash)) return true;
+        const { firstTail } = proof;
+        if (firstTail)
+            return (
+                firstTail.previousBlockHash === block.hash &&
+                blocks.hasBlock(firstTail.hash)
+            );
+        return (
+            !proof.hasHops &&
+            proof.startBlocks.every((other) => other.hash === block.hash)
+        );
     }
 
     /**

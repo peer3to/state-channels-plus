@@ -586,19 +586,41 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             this.logger.debug(
                 `Spectate sync - BlockConfirmation pipeline for ${tail.length} blocks from height ${base.snapshot.blockHeight + 1}`
             );
-            for (const block of tail) {
+            // a start block the persistence retained (nothing corroborated it
+            // yet) is not in history: the first tail block is judged from it
+            // and its execution makes it history
+            const predecessorBlock =
+                base.fromIndex > 0 ? lastRun[base.fromIndex - 1] : undefined;
+            const deferredStart =
+                predecessorBlock &&
+                !stateManager.storage.blocks.hasBlock(predecessorBlock.hash)
+                    ? predecessorBlock
+                    : undefined;
+            for (const [index, block] of tail.entries()) {
                 const isOk =
                     await stateManager.blockIngestService.onBlockConfirmationStruct(
                         block.blockConfirmationStruct,
                         {
                             validationStrategy:
-                                stateManager.spectatingValidationStrategy
+                                stateManager.spectatingValidationStrategy,
+                            predecessor:
+                                index === 0 && deferredStart
+                                    ? {
+                                          block: deferredStart,
+                                          snapshot: base.snapshot,
+                                          state: base.state
+                                      }
+                                    : undefined
                         }
                     );
                 if (!isOk)
                     return this.rejectSync(
                         peerAddress,
                         "block confirmation rejected"
+                    );
+                if (index === 0 && deferredStart)
+                    stateManager.agreementManager.persistExecutedPredecessor(
+                        block
                     );
             }
             this.logger.debug(
