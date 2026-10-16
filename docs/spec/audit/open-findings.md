@@ -612,8 +612,8 @@ tests are the regression suite.
 
 **Update (2026-10-16, PR #556):** Part (2) — blaming the sender — is fixed: the ingest catch now
 logs the local failure and returns the accepting verdict, so no local failure blacklists, suspends
-or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision (Luka,
-2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
+or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision
+(2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
 (logged, copy dropped, session kept) rather than surfaced as fatal, because an unaccounted honest
 failure must never blacklist an honest node; the general rate limit (planned) is the spam bound,
 and invalid inputs keep their explicit blacklisting verdicts. The ingest half of the
