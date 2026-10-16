@@ -58,7 +58,7 @@ contract DepartedTimeoutCalldataPostedTest is TimeoutCalldataPostedStaging {
         bytes memory departureState = _encodedState(departureParticipants);
         // Deep copy: a memory struct assignment would alias the genesis snapshot.
         StateSnapshot memory departureSnapshot = abi.decode(abi.encode(genesis), (StateSnapshot));
-        departureSnapshot.blockHeight = 1;
+        departureSnapshot.blockHeight = 0;
         departureSnapshot.timestamp = departureTimestamp;
         departureSnapshot.snapshotData.participants = departureParticipants;
         departureSnapshot.snapshotData.stateMachineStateHash = keccak256(departureState);

@@ -194,7 +194,8 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         next = abi.decode(abi.encode(base.latestStateSnapshot), (StateSnapshot));
         next.snapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
         next.snapshotData.participants = participants;
-        next.blockHeight = base.latestStateSnapshot.blockHeight + 1;
+        // clients number a block's snapshot by the block's own height
+        next.blockHeight = transaction.header.transactionCnt;
         next.timestamp = transaction.header.timestamp;
     }
 }

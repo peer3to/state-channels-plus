@@ -659,61 +659,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 != (hasBlock ? keccak256(latestSignedBlock.encodedBlock) : keccak256(abi.encode(latestStateSnapshot)))
         ) return false;
         // make sure we can do the STF - it's a valid block
-        bool isSuccess;
-        bytes memory encodedModifiedState;
-        Message[] memory outboundMessages;
-        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
-            .executeStateTransition(
-                dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
-            );
-        if (!isSuccess) {
-            return false;
-        }
-
-        Balance memory updatedTotalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
-        bytes32 nextOutboundMessageBlockHash = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash;
-        uint256 outboundHeight = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHeight;
-        if (outboundMessages.length > 0) {
-            for (uint256 i = 0; i < outboundMessages.length; i++) {
-                updatedTotalWithdrawals =
-                    stateMachineImplementation.addBalance(updatedTotalWithdrawals, outboundMessages[i].balance);
-            }
-
-            outboundHeight += 1;
-
-            MessageBlock memory outboundMessageBlock;
-            outboundMessageBlock.previousBlockHash = nextOutboundMessageBlockHash;
-            outboundMessageBlock.blockHeight = outboundHeight;
-            outboundMessageBlock.messages = outboundMessages;
-            outboundMessageBlock.totalBalance = updatedTotalWithdrawals;
-            outboundMessageBlock.timestamp = _block.transaction.header.timestamp;
-            nextOutboundMessageBlockHash = keccak256(abi.encode(outboundMessageBlock));
-        }
-
-        SnapshotData memory newSnapshotData = SnapshotData({
-            originForkId: latestStateSnapshot.snapshotData.originForkId,
-            stateMachineStateHash: keccak256(encodedModifiedState),
-            // executeStateTransition left this state loaded
-            participants: stateMachineImplementation.getParticipants(),
-            latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
-            latestInboundMessageBlockHeight: latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight,
-            latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
-            latestOutboundMessageBlockHeight: outboundHeight,
-            totalDeposits: latestStateSnapshot.snapshotData.totalDeposits,
-            totalWithdrawals: updatedTotalWithdrawals
-        });
-
-        StateSnapshot memory recomputedSnapshot = StateSnapshot({
-            snapshotData: newSnapshotData,
-            forkId: latestStateSnapshot.forkId,
-            blockHeight: latestStateSnapshot.blockHeight + 1,
-            timestamp: _block.transaction.header.timestamp
-        });
-
-        if (_block.stateSnapshotHash != keccak256(abi.encode(recomputedSnapshot))) {
-            return false;
-        }
-        return true;
+        bytes memory result = _delegatecall(
+            fraudProofFacetAddress,
+            abi.encodeCall(
+                FraudProofFacet.isBlockReplayValid,
+                (_block, latestStateSnapshot, timeoutCalldataPostedProof.latestStateStateMachineState)
+            )
+        );
+        return abi.decode(result, (bool));
     }
 
     function _handleDisputeInvalidBlockInStateProofApplyFraudProof(

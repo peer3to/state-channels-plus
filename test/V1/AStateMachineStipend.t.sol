@@ -734,7 +734,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
         // Deep copy: a memory struct assignment would alias the genesis snapshot.
         StateSnapshot memory latestSnapshot = abi.decode(abi.encode(genesis), (StateSnapshot));
-        latestSnapshot.blockHeight = 1;
+        latestSnapshot.blockHeight = 0;
         latestSnapshot.timestamp = block.timestamp;
 
         Block memory latestBlock;

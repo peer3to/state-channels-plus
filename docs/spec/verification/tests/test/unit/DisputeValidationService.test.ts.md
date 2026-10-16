@@ -61,6 +61,8 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `timeout.participantSignatureOnPreviousBlock: 0x / timed-out signer / other signer -> TimeoutTooEarly, none, TimeoutTooEarly`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P49
 - `block at timeout.blockHeight signed by every participant -> false + TimeoutThreshold`: none
 - `timeout.blockHeight = a block whose calldata is on-chain, isForced true -> false + TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P51
+- `timeout.blockHeight = an honest first block whose calldata is on-chain -> false + TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P130
+- `timeout.blockHeight = an honest block carrying an inbound top-up whose calldata is on-chain -> false + TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P131
 - `stale local previousBlockCalldata -> validateTimeoutCalldataPostedProof false, audit continues without TimeoutCalldataPosted`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P52
 - `timeout dispute audited before the window reaches the local chain view -> throw`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P53
 - `a replay holds the state mutex with the predecessor state installed while the timeout audit peeks the next writer -> the audit settles under the hold and judges the disputed state, true, no TimeoutParticipantNotNext`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129, UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P5
