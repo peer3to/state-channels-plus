@@ -56,17 +56,16 @@ export interface SyncOutcome {
     unsettledForkId?: ForkId;
 }
 
-const SYNCED: SyncOutcome = { synced: true };
-const NOT_SYNCED: SyncOutcome = { synced: false };
-
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
         { request: SyncRequest; result: Promise<boolean> }
     > = new Map();
-    // settlers of the waits for a window's chain reduction; `dispose`
-    // settles them false
-    private readonly reductionWaits = new Set<(reduced: boolean) => void>();
+    // resolved by `dispose`: every wait for a window's chain reduction ends
+    private stop = () => {};
+    private readonly stopped = new Promise<void>((resolve) => {
+        this.stop = resolve;
+    });
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -134,9 +133,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
     }
 
-    /** Settle every pending wait for a window's chain reduction false. */
+    /** End every pending wait for a window's chain reduction. */
     public dispose(): void {
-        for (const settle of this.reductionWaits) settle(false);
+        this.stop();
     }
 
     private async runSync(
@@ -152,19 +151,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         // a window the chain has not reduced -> wait for its reduction, then
         // ask the same peer again. a pass names only a window the chain had
         // not reduced, which the next pass finds reduced
-        while (
-            outcome.unsettledForkId !== undefined &&
-            (await this.waitForChainReduction(
+        while (outcome.unsettledForkId !== undefined) {
+            const reduced = await this.waitForChainReduction(
                 normalizedPeerAddress,
                 syncRequest.channelId,
                 outcome.unsettledForkId
-            ))
-        )
+            );
+            if (!reduced) break;
             outcome = await this.requestAndApply(
                 normalizedPeerAddress,
                 syncRequest,
                 timeoutMs
             );
+        }
         return outcome.synced;
     }
 
@@ -189,7 +188,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 normalizedPeerAddress,
                 DisconnectPolicy.allowRetry()
             );
-            return NOT_SYNCED;
+            return { synced: false };
         }
         try {
             return await this.applySyncResponse(
@@ -213,7 +212,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * dispute window, false when the runtime stops first. A failed chain
      * read rejects.
      */
-    private waitForChainReduction(
+    private async waitForChainReduction(
         peerAddress: string,
         channelId: ChannelId,
         forkId: ForkId
@@ -223,44 +222,39 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             "spectateSync - waiting for the chain to reduce a dispute window",
             { peerAddress, forkId }
         );
-        return new Promise<boolean>((resolve, reject) => {
-            const settle = (reduced: boolean) => {
-                if (!this.reductionWaits.delete(settle)) return;
-                unsubscribe();
-                this.logger.debug("spectateSync - dispute window wait ended", {
-                    peerAddress,
-                    forkId,
-                    reduced
-                });
-                resolve(reduced);
-            };
-            const unsubscribe = stateManager.events.on(
+        const ended = new AbortController();
+        const reducedEvent = stateManager.events
+            .next(
                 "eventHandler",
                 "onDisputeReducedResultCommitted",
-                (reducedChannelId, reducedWindowForkId) => {
-                    if (
-                        channelKey(reducedChannelId) ===
-                            channelKey(channelId) &&
-                        reducedWindowForkId === forkId
-                    )
-                        settle(true);
-                }
+                (reducedChannelId, reducedWindowForkId) =>
+                    channelKey(reducedChannelId) === channelKey(channelId) &&
+                    reducedWindowForkId === forkId,
+                ended.signal
+            )
+            .then((args) => args !== undefined);
+        // a reduction mined between the window read and the subscription
+        // fired an event this listener never saw
+        const reducedBeforeSubscribe = stateManager.stateChannelManagerContract
+            .getReducedResult(channelId, forkId)
+            .then(({ reducedForkId }) =>
+                reducedForkId !== ZeroHash ? true : reducedEvent
             );
-            this.reductionWaits.add(settle);
-            if (stateManager.isDisposed) return settle(false);
-            // a reduction mined between the window read and the subscription
-            // fired an event this listener never saw
-            stateManager.stateChannelManagerContract
-                .getReducedResult(channelId, forkId)
-                .then(({ reducedForkId }) => {
-                    if (String(reducedForkId) !== ZeroHash) settle(true);
-                })
-                .catch((error) => {
-                    if (!this.reductionWaits.delete(settle)) return;
-                    unsubscribe();
-                    reject(error);
-                });
-        });
+        try {
+            const reduced = await Promise.race([
+                reducedEvent,
+                reducedBeforeSubscribe,
+                this.stopped.then(() => false)
+            ]);
+            this.logger.debug("spectateSync - dispute window wait ended", {
+                peerAddress,
+                forkId,
+                reduced
+            });
+            return reduced;
+        } finally {
+            ended.abort();
+        }
     }
 
     /**
@@ -280,7 +274,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
     ): Promise<SyncOutcome> {
-        if (this.p2pManager.stateManager.isDisposed) return NOT_SYNCED;
+        if (this.p2pManager.stateManager.isDisposed) return { synced: false };
         const channelId = syncRequest.channelId;
 
         // A malicious/broken peer can return bytes that aren't a valid
@@ -716,7 +710,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 }
             );
             if (shouldAbort) {
-                if (stateManager.isDisposed) return NOT_SYNCED;
+                if (stateManager.isDisposed) return { synced: false };
                 return this.rejectSync(
                     peerAddress,
                     "payload persistence aborted"
@@ -769,7 +763,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             this.logger.debug(
                 "Spectator successfully synced to latest proven state"
             );
-            return SYNCED;
+            return { synced: true };
         }
     }
 
@@ -1292,7 +1286,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             peerAddress,
             `sync payload rejected: ${reason}`
         );
-        return NOT_SYNCED;
+        return { synced: false };
     }
 }
 

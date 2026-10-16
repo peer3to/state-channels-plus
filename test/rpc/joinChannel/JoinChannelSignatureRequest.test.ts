@@ -8,6 +8,7 @@ import { prepareFirstJoinDeadline } from "@test/fixtures/JoinDeadlineStaging";
 import { collectAcrossSnapshotMove } from "@test/fixtures/JoinPinRaceStaging";
 import { assertJoinSignatureDeadlineBoundary } from "@test/fixtures/node/JoinSignatureDeadlineStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import assert from "node:assert/strict";
 
@@ -538,6 +539,56 @@ describe("JoinChannel signature requests", function () {
         expect(await readTrackedJoin(h, h.getPeer(joiner.index))).to.equal(
             null
         );
+    });
+
+    it("waits through reachability grace until a threshold participant's handshake completes, then collects every countersignature", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 1);
+        const joiner = await h.join.addSpectatorWait();
+        await h.assert.sync.peersInSyncWait();
+        const missing = h.getPeer(1);
+        const joinerControl = h.control(joiner);
+        // the joiner loses peer 1, then holds the handshake that would
+        // prove peer 1's address again
+        await h
+            .control(missing)
+            .network.blacklistAndDisconnectPeerByAddress(joiner.address)
+            .request();
+        await joinerControl.network
+            .blacklistAndDisconnectPeerByAddress(missing.address)
+            .request();
+        await joinerControl.stub.holdInitHandshakes().request();
+        await h.network.restorePairDiscovery(joiner.index, missing.index);
+        await waitFor(
+            async () =>
+                (await joinerControl.stub.getHeldHandshakeCount().request()) >
+                0,
+            h.event.protocolEventTimeoutMs()
+        );
+        const scheduled = await h.rpcStub.recordScheduledTasks(joiner.index);
+        try {
+            const chainTime = await Clock.getBlockchainTime();
+            const collecting =
+                joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation({
+                    participant: joiner.address,
+                    channelId: h.channelId,
+                    balance: { amount: 500n, data: "0x00" },
+                    deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+                });
+            // collection is in the grace wait once it scheduled its timeout
+            await waitFor(async () =>
+                (await scheduled.tasks()).some(
+                    (task) =>
+                        task.taskName ===
+                        "join threshold participant reachability"
+                )
+            );
+            await joinerControl.stub.releaseInitHandshakes().request();
+            const prepared = await collecting;
+            expect(prepared.confirmation.signatures).to.have.length(2);
+        } finally {
+            await scheduled.restore();
+        }
     });
 
     it("rejects erroring, wrong-signer, and deadline-silent threshold members", async function () {

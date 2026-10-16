@@ -28,6 +28,66 @@ describe("EventBus (component)", function () {
         expect(received).to.deep.equal([`hook:${ADDRESS}`]);
     });
 
+    it("next resolves with the first event its filter accepts, then stops listening", async function () {
+        const bus = new EventBus();
+        const other = "0x00000000000000000000000000000000000000aa";
+        const seen: string[] = [];
+        const next = bus.next("p2pEventHooks", "onTurn", (address) => {
+            seen.push(String(address));
+            return address === ADDRESS;
+        });
+
+        bus.emit("p2pEventHooks", "onTurn", [other, 3, 3, 3, 1_700_000_000]);
+        bus.emit("p2pEventHooks", "onTurn", TURN_ARGS);
+        bus.emit("p2pEventHooks", "onTurn", TURN_ARGS);
+
+        expect(await next).to.deep.equal(TURN_ARGS);
+        // the third emission reached no filter: the listener is gone
+        expect(seen).to.deep.equal([other, ADDRESS]);
+    });
+
+    it("next resolves undefined when its signal aborts first, then stops listening", async function () {
+        const bus = new EventBus();
+        const aborted = new AbortController();
+        let filterCalls = 0;
+        const next = bus.next(
+            "p2pEventHooks",
+            "onTurn",
+            () => {
+                filterCalls += 1;
+                return true;
+            },
+            aborted.signal
+        );
+
+        aborted.abort();
+        bus.emit("p2pEventHooks", "onTurn", TURN_ARGS);
+
+        expect(await next).to.equal(undefined);
+        expect(filterCalls).to.equal(0);
+    });
+
+    it("next with an already aborted signal resolves undefined without subscribing", async function () {
+        const bus = new EventBus();
+        const aborted = new AbortController();
+        aborted.abort();
+        let filterCalls = 0;
+        const next = bus.next(
+            "p2pEventHooks",
+            "onTurn",
+            () => {
+                filterCalls += 1;
+                return true;
+            },
+            aborted.signal
+        );
+
+        bus.emit("p2pEventHooks", "onTurn", TURN_ARGS);
+
+        expect(await next).to.equal(undefined);
+        expect(filterCalls).to.equal(0);
+    });
+
     it("clear() removes consumer subscriptions but keeps runtime wiring (bridge tap and attached mirrors)", async function () {
         const bus = new EventBus();
         const bridged: string[] = [];
