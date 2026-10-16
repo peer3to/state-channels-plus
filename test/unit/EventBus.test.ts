@@ -5,6 +5,7 @@ import {
     EVENT_FIXTURE_ADDRESS as ADDRESS
 } from "@test/fixtures/eventFixtures";
 import { expect } from "chai";
+import { getEventListeners } from "node:events";
 
 // Real onTurn argument shape: (address, p2pTime, agreementTime,
 // chainFallbackTime, turnStartedAtBlockTimestamp).
@@ -44,6 +45,23 @@ describe("EventBus (component)", function () {
         expect(await next).to.deep.equal(TURN_ARGS);
         // the third emission reached no filter: the listener is gone
         expect(seen).to.deep.equal([other, ADDRESS]);
+    });
+
+    it("next resolved by an event detaches from its signal: a later abort changes nothing and leaves no listener", async function () {
+        const bus = new EventBus();
+        const aborted = new AbortController();
+        const next = bus.next(
+            "p2pEventHooks",
+            "onTurn",
+            (address) => address === ADDRESS,
+            aborted.signal
+        );
+
+        bus.emit("p2pEventHooks", "onTurn", TURN_ARGS);
+        aborted.abort();
+
+        expect(await next).to.deep.equal(TURN_ARGS);
+        expect(getEventListeners(aborted.signal, "abort")).to.deep.equal([]);
     });
 
     it("next resolves undefined when its signal aborts first, then stops listening", async function () {

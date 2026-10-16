@@ -591,6 +591,80 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
+    it("keeps waiting through reachability grace after a handshake that leaves another threshold participant unreachable", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const joiner = await h.join.addSpectatorWait();
+        await h.assert.sync.peersInSyncWait();
+        const [first, second] = [h.getPeer(1), h.getPeer(2)];
+        const joinerControl = h.control(joiner);
+        // the joiner loses peers 1 and 2, then holds the handshake that
+        // would prove peer 1's address again
+        for (const missing of [first, second]) {
+            await h
+                .control(missing)
+                .network.blacklistAndDisconnectPeerByAddress(joiner.address)
+                .request();
+            await joinerControl.network
+                .blacklistAndDisconnectPeerByAddress(missing.address)
+                .request();
+        }
+        await joinerControl.stub.holdInitHandshakes().request();
+        await h.network.restorePairDiscovery(joiner.index, first.index);
+        await waitFor(
+            async () =>
+                (await joinerControl.stub.getHeldHandshakeCount().request()) >
+                0,
+            h.event.protocolEventTimeoutMs()
+        );
+        await h
+            .control(h.getPeer(0))
+            .stub.stubCountJoinSignatureRequests()
+            .request();
+        const scheduled = await h.rpcStub.recordScheduledTasks(joiner.index);
+        try {
+            const chainTime = await Clock.getBlockchainTime();
+            let settled = false;
+            const collecting = joiner.p2pInstance.p2pSigner
+                .collectJoinChannelConfirmation({
+                    participant: joiner.address,
+                    channelId: h.channelId,
+                    balance: { amount: 500n, data: "0x00" },
+                    deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+                })
+                .finally(() => {
+                    settled = true;
+                });
+            await waitFor(async () =>
+                (await scheduled.tasks()).some(
+                    (task) =>
+                        task.taskName ===
+                        "join threshold participant reachability"
+                )
+            );
+            // peer 1's handshake completes during the grace; peer 2 is
+            // still unreachable
+            await joinerControl.stub.releaseInitHandshakes().request();
+            await waitFor(async () =>
+                (await joiner.p2pInstance.p2pSigner.getOpenConnections()).some(
+                    (connection) => connection.peerAddress === first.address
+                )
+            );
+            expect(settled).to.equal(false);
+            expect(
+                await h
+                    .control(h.getPeer(0))
+                    .stub.getJoinSignatureRequestCount()
+                    .request()
+            ).to.equal(0);
+            await h.network.restorePairDiscovery(joiner.index, second.index);
+            const prepared = await collecting;
+            expect(prepared.confirmation.signatures).to.have.length(3);
+        } finally {
+            await scheduled.restore();
+        }
+    });
+
     it("rejects erroring, wrong-signer, and deadline-silent threshold members", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1);

@@ -939,7 +939,7 @@ Specification cases tested: 1/3. Untested: T1.P1, T1.P3.
 Specification cases tested: 0/3.
 
 [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
-Specification cases tested: 21/21.
+Specification cases tested: 22/22.
 
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.

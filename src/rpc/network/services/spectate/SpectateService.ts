@@ -61,11 +61,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         ChecksumAddress,
         { request: SyncRequest; result: Promise<boolean> }
     > = new Map();
-    // resolved by `dispose`: every wait for a window's chain reduction ends
-    private stop = () => {};
-    private readonly stopped = new Promise<void>((resolve) => {
-        this.stop = resolve;
-    });
+    // aborted by `dispose`: every wait for a window's chain reduction ends
+    private readonly disposal = new AbortController();
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -135,7 +132,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
     /** End every pending wait for a window's chain reduction. */
     public dispose(): void {
-        this.stop();
+        this.disposal.abort();
     }
 
     private async runSync(
@@ -217,12 +214,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<boolean> {
+        if (this.disposal.signal.aborted) return false;
         const stateManager = this.p2pManager.stateManager;
         this.logger.debug(
             "spectateSync - waiting for the chain to reduce a dispute window",
             { peerAddress, forkId }
         );
+        // ended by the wait's own exit or by `dispose`
         const ended = new AbortController();
+        const endOnDispose = () => ended.abort();
+        this.disposal.signal.addEventListener("abort", endOnDispose);
         const reducedEvent = stateManager.events
             .next(
                 "eventHandler",
@@ -243,8 +244,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         try {
             const reduced = await Promise.race([
                 reducedEvent,
-                reducedBeforeSubscribe,
-                this.stopped.then(() => false)
+                reducedBeforeSubscribe
             ]);
             this.logger.debug("spectateSync - dispute window wait ended", {
                 peerAddress,
@@ -253,6 +253,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             });
             return reduced;
         } finally {
+            this.disposal.signal.removeEventListener("abort", endOnDispose);
             ended.abort();
         }
     }

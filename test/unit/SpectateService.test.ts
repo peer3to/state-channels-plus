@@ -1057,6 +1057,57 @@ describe("Unit: SpectateService", function () {
             ).to.equal(true);
         });
 
+        it("the service is disposed after the sync applied its answer but before it waits → the sync returns false without waiting, the responder is asked once and not blacklisted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const requester = h.control(h.getPeer(2));
+            const responder = h.getPeer(0);
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
+            await openSelfRemovalDispute(h);
+            // the applied outcome names the unreduced window and is held
+            // before the sync acts on it
+            await requester.stub
+                .stubHoldSpectateSyncApplication(responder.address, false, true)
+                .request();
+            const syncing = h.execOnHost(
+                h.getPeer(2),
+                (sm, { source }) =>
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        source,
+                        sm.channelId
+                    ),
+                { source: responder.address },
+                { timeoutMs: h.event.hostExecTimeoutMs() }
+            );
+            await waitFor(
+                async () =>
+                    (await requester.stub
+                        .getHeldSpectateSyncApplicationCount()
+                        .request()) === 1
+            );
+            await h.execOnHost(h.getPeer(2), (sm) => {
+                sm.p2pManager.localRpc.spectateService.dispose();
+            });
+            await requester.stub.restoreHoldSpectateSyncApplication().request();
+            expect(await syncing).to.equal(false);
+            expect(await h.query.reducedForkOnChain(forkId)).to.equal(
+                ethers.ZeroHash
+            );
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(1);
+            expect(
+                await requester.query.isBlacklisted(responder.address).request()
+            ).to.equal(false);
+        });
+
         it("reductions of another window and of another channel while the sync waits → ignored: the responder is asked again only after the chain reduces the served window", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();

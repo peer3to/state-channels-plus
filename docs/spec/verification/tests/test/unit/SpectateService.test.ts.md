@@ -33,7 +33,7 @@ reduction (served before the dispute, applied after `reduceWindowOnChain`) is re
 `latest fork is disputed`; both blacklist peer 0. The last case blacklists an honest payload under
 the current stale-response policy.
 
-Four cases pin the chain as the judge and the wait itself. A reduction landed between the
+Five cases pin the chain as the judge and the wait itself. A reduction landed between the
 finality read and the window fetch makes the local recomputation of a payload claiming another
 successor revert on a reduced window: rejected as `served reduction reverts`. With the applied
 outcome held before the sync acts on it (`stubHoldSpectateSyncApplication` with `holdAfterApply`),
@@ -43,7 +43,9 @@ own chain read. When the wait's `getReducedResult` read fails (`stubFailChainRea
 rejects with that error, the responder is neither asked again nor blacklisted, and `stop` resolves.
 Reductions of another fork's window and of this fork in another channel, emitted on the requester's
 event bus while it waits, leave the responder at one request; the chain's own reduction then
-brings the second request and the sync returns true.
+brings the second request and the sync returns true. Disposing the service while the applied
+outcome is held, before the wait starts, makes the sync return false at once with one request and no
+blacklist.
 
 ## Tests
 
@@ -84,6 +86,7 @@ brings the second request and the sync returns true.
 - `the chain reduces the served window between the finality read and the window fetch, the payload claiming another successor → local reduction reverts on the reduced window, rejected, served reduction reverts`: REQ-SYNC-4-AWHFPA.T1.P16
 - `the chain reduces the window after the sync read it but before the sync waits → the wait ends on its chain read, the same peer is asked again and the sync succeeds`: REQ-SYNC-4-AWHFPA.T1.P18
 - `the wait's chain read fails → the sync rejects with the read's error, the responder is neither blacklisted nor asked again, stop resolves`: REQ-SYNC-4-AWHFPA.T1.P20
+- `the service is disposed after the sync applied its answer but before it waits → the sync returns false without waiting, the responder is asked once and not blacklisted`: REQ-SYNC-4-AWHFPA.T1.P22
 - `reductions of another window and of another channel while the sync waits → ignored: the responder is asked again only after the chain reduces the served window`: REQ-SYNC-4-AWHFPA.T1.P21
 - `first dispute window not on the on-chain fork → rejected, dispute window not linked`: INV-SYNC-1-XCQZ28.T1.P7, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P36
 - `second dispute window not continuing from the first reduced fork → rejected, dispute window not linked`: INV-SYNC-1-XCQZ28.T1.P8, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P37
