@@ -16,7 +16,7 @@
 Collector unanimity
 
 - Setup: Collect with responsive/silent/erroring/wrong-signer/unreachable members and deadline pressure
-- Oracle: Only full unanimity assembles; every failure mode fails whole; requests never outlive the join deadline
+- Oracle: Only full unanimity assembles; every failure mode fails whole; requests never outlive the join deadline; an unreachable-member failure names every threshold member with no transport
 
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P1` — unanimous success
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P2` — single silent member

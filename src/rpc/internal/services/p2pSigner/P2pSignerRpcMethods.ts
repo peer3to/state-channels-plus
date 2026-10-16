@@ -35,6 +35,7 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
             .connectToChannel(channelId, {
                 autoOpen: options?.autoOpen,
                 shouldJoin: options?.shouldJoin,
+                shouldSpectateWhenFull: options?.shouldSpectateWhenFull,
                 balance: options?.encodedBalance
                     ? Codec.decode(options.encodedBalance, Type.Balance)
                     : undefined,

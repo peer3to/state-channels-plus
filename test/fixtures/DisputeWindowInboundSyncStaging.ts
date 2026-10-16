@@ -1,4 +1,6 @@
 // @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
+import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
+import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncPayload } from "@/types";
@@ -10,6 +12,11 @@ import { waitFor } from "@test/utils/waitFor";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 import { ethers, ZeroHash } from "ethers";
+
+/** The requester's executor with its pre-starvation `executeCall` parked on it. */
+type StarvedExecutor = AContractExecutor & {
+    starvedReductionOriginal?: AContractExecutor["executeCall"];
+};
 
 const RESPONDER_INDEX = 0;
 const REQUESTER_INDEX = 2;
@@ -289,20 +296,56 @@ async function stageAndApplyDisputeWindowInboundSync(
             options.reduction === "chainBeforeSync"
         ) {
             if (options.reductionOutOfGasFirstAttempt) {
-                // Genuine exhaustion through the real path: the responder
-                // serves a bloated latest state, and copying/decoding its
-                // megabytes into the reduction call exhausts the requester's
-                // local grant (memory expansion alone exceeds it) before any
-                // verdict on the reduction's inputs. The funded retry below
-                // applies the genuine payload.
-                const bloated = structuredClone(payload);
-                bloated.disputeWindows[0].latestEncodedStateMachineState = `0x${"ff".repeat(3_000_000)}`;
+                // Starve only the reduction's executor call, with the exact
+                // error `ContractExecutor` reports for an exhausted frame.
+                // Genuine production and classification of that error are
+                // covered on a real starved executor in the evm classifier
+                // suite; burning a full local grant through the live sync
+                // path instead (megabytes of AbiCoder/EVM work on watched
+                // threads) trips the harness starvation watchdog, so the
+                // sync-level case drives the same boundary here. The funded
+                // retry below runs the real reduction.
+                await h.execOnHost(requester, async (sm) => {
+                    const machine =
+                        sm.diamondStateMachine as EvmDiamondStateMachine;
+                    const executor =
+                        machine.contractExecutor as StarvedExecutor;
+                    const selector =
+                        machine.localDiamondContract.interface.getFunction(
+                            "reduceAndFinalize"
+                        ).selector;
+                    const original = executor.executeCall.bind(executor);
+                    executor.starvedReductionOriginal = original;
+                    executor.executeCall = async (data, contractAddress) => {
+                        const head =
+                            typeof data === "string"
+                                ? data.slice(0, 10).toLowerCase()
+                                : "0x" +
+                                  Array.from(data.slice(0, 4), (byte) =>
+                                      byte.toString(16).padStart(2, "0")
+                                  ).join("");
+                        if (head === selector)
+                            throw new Error(
+                                "Local EVM execution failed: out of gas"
+                            );
+                        return original(data, contractAddress);
+                    };
+                });
                 try {
-                    await applyPayload(
-                        Codec.encode(bloated, Type.SyncPayload) as string
-                    );
+                    await applyPayload(encodedPayload);
                 } catch (e) {
                     reductionThrew = e instanceof Error ? e.message : String(e);
+                } finally {
+                    await h.execOnHost(requester, async (sm) => {
+                        const executor = (
+                            sm.diamondStateMachine as EvmDiamondStateMachine
+                        ).contractExecutor as StarvedExecutor;
+                        if (executor.starvedReductionOriginal) {
+                            executor.executeCall =
+                                executor.starvedReductionOriginal;
+                            delete executor.starvedReductionOriginal;
+                        }
+                    });
                 }
             }
             accepted = await applyPayload(encodedPayload);
@@ -427,11 +470,10 @@ export async function applyDisputeWindowInboundSyncPayload(
 }
 
 /**
- * The same local-reduction sync, but the first attempt serves a bloated
- * latest state whose reduction call genuinely exhausts the requester's
- * local grant, and the genuine payload is then applied again funded.
- * `reductionThrew` captures the first attempt's error; `accepted` and
- * the remaining fields describe the funded retry.
+ * The same local-reduction sync, but the first attempt's reduction call is
+ * starved at the requester's executor (out of gas) and the payload is then
+ * applied again funded. `reductionThrew` captures the first attempt's
+ * error; `accepted` and the remaining fields describe the funded retry.
  */
 export async function applyDisputeWindowSyncWithReductionOutOfGas(
     h: MathPeerTestHarness

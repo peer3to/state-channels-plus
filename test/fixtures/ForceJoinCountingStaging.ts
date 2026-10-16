@@ -98,6 +98,13 @@ export async function authorUntilForceJoinCountingStarted(
         waitForPeers: [...writers, joinerIndex],
         maximumBlocks: 20
     });
+    // The wait above ends once the joiner counts the last block, maybe
+    // before every writer stores it. A writer behind the tip would author
+    // a stale height that the SDK drops, and the caller's next blocks
+    // would fall short of the bound.
+    await h.assert.sync.peersInSyncWait({
+        peerIndices: [...writers, joinerIndex]
+    });
     return await readForceJoinBounds(h, joiner);
 }
 
@@ -113,8 +120,9 @@ export async function readForceJoinBounds(
             countingStartsAt: join?.countingStartsAt ?? null,
             countingFromHeight: join?.countingFromHeight ?? null,
             disputeStarted: join?.isDisputeStarted ?? false,
-            latestBlockHeight:
-                sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1,
+            latestBlockHeight: sm.storage.blocks.getLatestBlockHeight(
+                sm.forkId
+            ),
             timeConfig: { ...sm.timeConfig },
             participantCount: (await sm.diamondStateMachine.getParticipants())
                 .length

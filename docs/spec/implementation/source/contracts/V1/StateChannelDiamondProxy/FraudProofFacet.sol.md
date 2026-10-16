@@ -12,12 +12,13 @@
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
 - [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
-  Partial: `_handleBlockInvalidStateTransition` sums withdrawals through the integrator's `addBalance`; overflow rejection is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+  Partial: `isBlockReplayValid` sums withdrawals through the integrator's `addBalance`; overflow rejection is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
 - [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the…)](../../../../../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
 - [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../../../../../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
 - [`REQ-FP-2-CH4DA1` (Every block fraud-proof handler is sound)](../../../../../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1)
+- [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
 - [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../../../../../specification/protocol-model/time.md#req-time-1-fm4651)

@@ -241,15 +241,14 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
         return this.service.storage.disputes.didIDispute(forkId);
     }
 
-    /** Plant a fresh timeout for `participant` at head+1 height on `forkId`. */
+    /** Plant a fresh timeout for `participant` at head+1 height on `forkId` (0 on a fork with no block). */
     public plantFreshTimeout(forkId: ForkId, participant: string): boolean {
         const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
-            throw new Error(`plantFreshTimeout: no latest block for ${forkId}`);
-        }
         this.service.storage.timeout.storeTimeout(forkId, {
             participant,
-            blockHeight: BigInt(Number(latestBlock.height) + 1),
+            blockHeight: latestBlock
+                ? BigInt(Number(latestBlock.height) + 1)
+                : 0n,
             minTimeStamp: BigInt(Clock.getTimeInSeconds()),
             isForced: false,
             previousBlockProducer: ZeroAddress,

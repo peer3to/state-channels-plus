@@ -10,6 +10,7 @@ import {
     blockStructWithTransactionHeader
 } from "@test/factory";
 import {
+    auditTimeoutOfCalldataPostedBlock,
     holdReplayOnPredecessorState,
     postTimelyNextWriterTimeout,
     stageBlindPendingAuditor
@@ -1296,69 +1297,48 @@ describe("Unit: DisputeValidationService", function () {
 
         it("timeout.blockHeight = a block whose calldata is on-chain, isForced true -> false + TimeoutCalldataPosted", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.timeoutSetup(4, 0, {
-                timeConfig: { evidenceTime: 8 }
-            });
-            await h.transition.advanceState({ count: 2 });
-            const calldataAuthor = await h.query.getNextPeerToWrite();
-            await h
-                .control(h.getPeer(3))
-                .stub.stubRejectIngestedConfirmations()
-                .request();
-            await Promise.all(
-                [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
-            );
-            await h.network.blacklistAndDisconnectPeer(3);
-            await h.transition.advanceState({
-                count: 1,
-                waitForPeers: [0, 1, 2],
-                waitForFinalization: false
-            });
-            await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
-                mode: "atLeast"
-            });
-            const forkId = h.activeForkId!;
-            for (const i of [0, 1, 2, 3]) {
-                await h.rpcStub.holdReductionRace(i);
-            }
-
-            // too-early clock for coords height 2 is block 1
-            const block1 = await h
-                .control(h.getPeer(1))
-                .query.getBlockByHeight(forkId, 1)
-                .request();
-            const wait = timeoutWaitTime(
-                resolveTestTimeConfig({ evidenceTime: 8 }),
-                2
-            );
-            await h.event.waitUntilTimestamp(block1!.timestamp + wait + 1);
-            await h.control(h.getPeer(2)).dispute.setForceExit(true).request();
-            await h.tamper.postTamperedDispute(2, () => {}, {
-                markMalicious: false
-            });
-
-            // peer 3's proof stops at height 1, blaming the calldata author
-            await h.tamper.plantFreshTimeoutForParticipant(
-                3,
-                calldataAuthor.address
-            );
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            await h
-                .control(h.getPeer(3))
-                .stub.restoreRejectIngestedConfirmations()
-                .request();
-            expect(Number(dispute.input.timeout.blockHeight)).to.equal(2);
-            expect(dispute.postedAuditingData).to.equal(false);
-            dispute.input.timeout.isForced = true; // same deviation the e2e posts
-
-            const run = await h.dispute.auditDispute(1, dispute);
+            const { run, disputerAddress } =
+                await auditTimeoutOfCalldataPostedBlock(h, { blocksBefore: 2 });
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.TimeoutCalldataPosted
             );
-            expect(run.storedProof?.proofParticipant).to.equal(
-                h.getPeer(3).address
+            expect(run.storedProof?.proofParticipant).to.equal(disputerAddress);
+        });
+
+        it("timeout.blockHeight = an honest first block whose calldata is on-chain -> false + TimeoutCalldataPosted", async function () {
+            const h = TestSession.getHarness();
+            const { run, postedBlock, disputerAddress } =
+                await auditTimeoutOfCalldataPostedBlock(h, { blocksBefore: 0 });
+            // premise: the posted block is the fork's first block
+            expect(
+                Number(postedBlock.transaction.header.transactionCnt)
+            ).to.equal(0);
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.TimeoutCalldataPosted
             );
+            expect(run.storedProof?.proofParticipant).to.equal(disputerAddress);
+        });
+
+        it("timeout.blockHeight = an honest block carrying an inbound top-up whose calldata is on-chain -> false + TimeoutCalldataPosted", async function () {
+            const h = TestSession.getHarness();
+            const { run, postedBlock, disputerAddress } =
+                await auditTimeoutOfCalldataPostedBlock(h, {
+                    blocksBefore: 2,
+                    beforeCalldataBlock: async () => {
+                        await h.join.forceInboundJoinWait({
+                            participant: h.getPeer(0).address
+                        });
+                    }
+                });
+            // premise: the posted block consumes the inbound top-up
+            expect(postedBlock.messageBlocks.length).to.be.greaterThan(0);
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.TimeoutCalldataPosted
+            );
+            expect(run.storedProof?.proofParticipant).to.equal(disputerAddress);
         });
 
         it("stale local previousBlockCalldata -> validateTimeoutCalldataPostedProof false, audit continues without TimeoutCalldataPosted", async function () {

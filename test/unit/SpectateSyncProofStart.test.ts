@@ -180,19 +180,26 @@ describe("Unit: SpectateService sync proof verification order", function () {
             expect(Number(served[0].blockHeight)).to.equal(2);
             const stored = await h.execOnHost(
                 requester,
-                (sm, a) => ({
-                    anchorBlock: !!sm.storage.outboundMessages.getMessageBlock(
-                        a.anchorHead
-                    ),
-                    aboveAnchor: sm.storage.outboundMessages
-                        .getLatestMessageBlocks()
-                        .map((block) => String(block.previousBlockHash))
-                }),
+                (sm, a) => {
+                    const fromTip =
+                        sm.storage.outboundMessages.tryGetMessageBlocksInRange();
+                    return {
+                        anchorBlock:
+                            !!sm.storage.outboundMessages.getMessageBlock(
+                                a.anchorHead
+                            ),
+                        aboveAnchor: fromTip.blocks.map((block) =>
+                            String(block.previousBlockHash)
+                        ),
+                        missingBlockHash: fromTip.missingBlockHash
+                    };
+                },
                 { anchorHead }
             );
             expect(stored).to.deep.equal({
                 anchorBlock: false,
-                aboveAnchor: [anchorHead]
+                aboveAnchor: [anchorHead],
+                missingBlockHash: anchorHead
             });
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(

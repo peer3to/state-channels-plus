@@ -105,7 +105,7 @@ Specification cases tested: 11/14. Untested: T1.P2, T1.P3, T1.P4.
 Specification cases tested: 7/8. Untested: T1.P6.
 
 [`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-Specification cases tested: 3/9. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
+Specification cases tested: 4/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 Specification cases tested: 0/14.
@@ -222,7 +222,7 @@ Specification cases tested: 2/3. Untested: T1.P2.
 Specification cases tested: 9/12. Untested: T1.P1, T1.P3, T1.P4.
 
 [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-Specification cases tested: 3/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 4/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
@@ -330,7 +330,7 @@ Specification cases tested: 0/3.
 Specification cases tested: 2/3. Untested: T1.P3.
 
 [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../specification/protocol-model/data-types.md#req-data-1-1knrqs)
-Specification cases tested: 0/9.
+Specification cases tested: 7/16. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-DATA-2-A5HMZP` (Field and collection ordering, duplicate policy, optionality, and nested-byte…)](../specification/protocol-model/data-types.md#req-data-2-a5hmzp)
 Specification cases tested: 0/7.
@@ -360,7 +360,7 @@ Specification cases tested: 4/16. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22.
 
 [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)
-Specification cases tested: 11/26. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16, T1.P20.
+Specification cases tested: 14/27. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P15, T1.P16.
 
 [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2)
 Specification cases tested: 6/6.
@@ -390,7 +390,7 @@ Specification cases tested: 17/22. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P9.
 Specification cases tested: 3/3.
 
 [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
-Specification cases tested: 8/8.
+Specification cases tested: 9/9.
 
 [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
 Specification cases tested: 39/41. Untested: T1.P37, T1.P39.
@@ -579,13 +579,16 @@ Specification cases tested: 0/4.
 Specification cases tested: 0/6.
 
 [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
-Specification cases tested: 12/13. Untested: T1.P4.
+Specification cases tested: 19/20. Untested: T1.P4.
 
 [`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)
 Specification cases tested: 8/8.
 
 [`REQ-JOINSIG-3-VAGFVD` (Refusal is penalty-free)](../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd)
 Specification cases tested: 6/6.
+
+[`REQ-JOINSIG-4-3NBKHK` (Full-channel join)](../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk)
+Specification cases tested: 7/7.
 
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
@@ -609,7 +612,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 26/26.
+Specification cases tested: 36/36.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -717,7 +720,7 @@ Specification cases tested: 4/20. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 0/13.
 
 [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
-Specification cases tested: 0/7.
+Specification cases tested: 23/24. Untested: T1.P3.
 
 [`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)
 Specification cases tested: 8/9. Untested: T1.P6.
@@ -789,7 +792,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 79/83. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 80/84. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
@@ -799,6 +802,9 @@ Specification cases tested: 0/17.
 
 [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../specification/runtime/execution.md#req-runtime-6-6f4ssm)
 Specification cases tested: 2/2.
+
+[`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0)
+Specification cases tested: 8/8.
 
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.
@@ -864,7 +870,7 @@ Specification cases tested: 3/13. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T
 Specification cases tested: 0/17.
 
 [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
-Specification cases tested: 7/7.
+Specification cases tested: 8/8.
 
 [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
 Specification cases tested: 18/18.
@@ -921,7 +927,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 0/6.
 
 [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../specification/storage/durability.md#req-stor-6-skp0km)
-Specification cases tested: 0/6.
+Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P4, T1.P7, T1.P16.

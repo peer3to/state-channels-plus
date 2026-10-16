@@ -85,7 +85,6 @@ const TIMING_RE = /##E2E_TIMING##\s*(\{[^\n}]*\})/g;
 function parseTimings(text) {
     let startupMs = 0;
     let deployMs = 0;
-    let workerBootMs = 0;
     let runtimeReadyMs = 0;
     // Peak event-loop delay per thread role (main + the peers' sdk/vm workers).
     const el = { main: 0, sdk: 0, vm: 0, watchdog: 0 };
@@ -97,8 +96,6 @@ function parseTimings(text) {
                 const o = JSON.parse(m[1]);
                 if (Number.isFinite(o.startupMs)) startupMs += o.startupMs;
                 if (Number.isFinite(o.deployMs)) deployMs += o.deployMs;
-                if (Number.isFinite(o.workerBootMs))
-                    workerBootMs += o.workerBootMs;
                 if (Number.isFinite(o.runtimeReadyMs))
                     runtimeReadyMs += o.runtimeReadyMs;
                 // Event-loop delay is a peak; keep the max per thread role.
@@ -127,7 +124,7 @@ function parseTimings(text) {
     return {
         startupMs,
         deployMs,
-        workerBootMs,
+        workerBootMs: 0, // see validateReducedAttempt
         runtimeReadyMs,
         el,
         maxEventLoopDelayMs,
@@ -568,10 +565,6 @@ function summary({
     const starvation = getStarvationSummary(tasks);
     const totalStartupMs = tasks.reduce((s, t) => s + (t.startupMs || 0), 0);
     const totalDeployMs = tasks.reduce((s, t) => s + (t.deployMs || 0), 0);
-    const totalWorkerBootMs = tasks.reduce(
-        (s, t) => s + (t.workerBootMs || 0),
-        0
-    );
 
     console.log("\n");
     if (totalPassing > 0) {
@@ -648,7 +641,7 @@ function summary({
         `  wall ${formatDurationMs(wallMs)} · sum ${formatDurationMs(sumDurationMs)} · ${speedup.toFixed(1)}x speedup`
     );
     console.log(
-        `  startup sum ${formatDurationMs(totalStartupMs)} (worker-boot ${formatDurationMs(totalWorkerBootMs)}) · deploy sum ${formatDurationMs(totalDeployMs)}`
+        `  startup sum ${formatDurationMs(totalStartupMs)} · deploy sum ${formatDurationMs(totalDeployMs)}`
     );
     console.log(
         `  mem: ${memoryPeakLabel} ${peakOccupiedGb.toFixed(1)}GB, avg/process ${avgPerTestGb.toFixed(2)}GB (bound ${memBoundGb.toFixed(1)}GB)`

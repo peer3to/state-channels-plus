@@ -134,6 +134,35 @@ describe("EventSyncService", function () {
             await dropped.release();
         });
 
+        it("logs recovered into an empty inbound store set its tip to the recovered head", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            const lagging = 2;
+            // lost from before the channel opens -> the lagging peer holds no
+            // inbound block and no inbound tip
+            const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+            await h.lifecycle.openChannel();
+            const inboundHead = await stageInboundHead(h, lagging);
+            await dropped.waitUntilDropped();
+            const laggingCtl = h.control(h.getPeer(lagging));
+            const tipBefore =
+                await h.query.getLatestInboundMessageHash(lagging);
+
+            const probe = await laggingCtl.validation
+                .probeInboundRunRecovery(inboundHead)
+                .request();
+            const tipAfter = await h.query.getLatestInboundMessageHash(lagging);
+
+            // premise - the store really was empty
+            expect(tipBefore).to.equal(null);
+            expect(probe.threw).to.equal(null);
+            expect(probe.heldAfter).to.equal(true);
+            // recovered logs take the tip-moving store path
+            expect(tipAfter).to.equal(inboundHead);
+
+            await dropped.release();
+        });
+
         it("only the inbound log we do not hold is dispatched", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);

@@ -54,12 +54,15 @@ function isReductionRaceErrorName(
 /**
  * Reverts of a fork adoption post (`updateStateSnapshotFork`) that leave
  * nothing to adopt: a later reduction is already final (the next post adopts
- * it), or the target fork is disputed. Another post that adopted the fork
- * first is no revert: the call returns on the adopted fork.
+ * it), the target fork is disputed, or another post of a fork with no
+ * participant already closed the channel. Another post that adopted the fork
+ * first and left the channel open is no revert: the call returns on the
+ * adopted fork.
  */
 const SETTLED_ADOPTION_ERRORS = [
     "RaceConditionSnapshotUpdateNotLatestFork",
-    "RaceConditionSnapshotUpdateDisputedFork"
+    "RaceConditionSnapshotUpdateDisputedFork",
+    "RaceConditionGenesisTimestampNotAvailable"
 ] as const;
 
 function isSettledAdoptionError(error: unknown): boolean {

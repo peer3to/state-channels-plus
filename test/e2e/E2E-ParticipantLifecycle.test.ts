@@ -1,13 +1,24 @@
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { recordSnapshotPostWaitResults } from "@test/fixtures/BotConnectionFixesStaging";
+import {
+    stageExitPostInFlightAcrossClose,
+    stageLateJoinerMissingPostedExitBlock
+} from "@test/fixtures/ClosedChannelExitPostStaging";
+import {
+    readTotalStateBalance,
+    stageEveryExitBlockedByLateJoin
+} from "@test/fixtures/EveryExitBlockedByLateJoinStaging";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
+import { stageLoneLeaverSelfRemoval } from "@test/fixtures/LoneLeaverStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -304,6 +315,116 @@ describe("E2E: Participant Lifecycle", function () {
             await assertLeaverCanBeForceJoinedBackAfterExit();
         });
 
+        it("a late joiner's exit post that runs after its co-leavers' exits closed the channel posts nothing and does not fail, and its runtime stays alive and leaves", async function () {
+            const h = TestSession.getHarness();
+            const { founders, joiner } =
+                await stageLateJoinerMissingPostedExitBlock(h);
+            const members = [...founders, joiner.index];
+            const hostErrors: string[] = [];
+            const removeHostErrorListener = joiner.p2pInstance.onHostError(
+                (error) => hostErrors.push(error.message)
+            );
+            const posts = await recordSnapshotPostWaitResults(h, joiner);
+            try {
+                await posts.holdStarts();
+                await h.transition.keepAuthoringUntil({
+                    until: async () =>
+                        (await h.query.getNextPeerToWrite()).index ===
+                        joiner.index,
+                    waitForPeers: members,
+                    maximumBlocks: 6
+                });
+                // The joiner exits first: its exit post parks before it
+                // prepares anything.
+                await h.transition.participantLeaveStateTransition({
+                    leaverIndex: joiner.index
+                });
+                await waitFor(
+                    async () => (await posts.started()) >= 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                // Both founders exit next; their posts land every exit and
+                // the empty snapshot closes the channel.
+                await h.transition.participantLeaveStateTransition();
+                await h.transition.participantLeaveStateTransition();
+                await waitFor(
+                    async () =>
+                        !(await h.channelManager.isChannelOpen(h.channelId))[0],
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await posts.results(),
+                    "premise: the joiner's exit post had prepared nothing before the close"
+                ).to.deep.equal([]);
+
+                await posts.releaseStarts();
+                const results = await posts.resultsWait(await posts.started());
+
+                expect(results).to.deep.equal(results.map(() => "no-op"));
+                for (const index of members)
+                    await h.event.waitUntilLeftChannel(index);
+                // the leave's own membership check can drop the joiner to
+                // SYNCED before its close event moves it to NOT_OPENED
+                await h.event.waitUntilPeerStatus(
+                    joiner.index,
+                    Status.NOT_OPENED
+                );
+                expect(hostErrors).to.deep.equal([]);
+            } finally {
+                removeHostErrorListener();
+                await posts.restore();
+            }
+        });
+
+        it("an exit post prepared against the open fork and still unsent when its co-leavers' exits close the channel is rejected at its estimate with RaceConditionSnapshotForkMismatch, logged as a chain refusal, and the leaver's runtime stays alive and leaves", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageExitPostInFlightAcrossClose(h, "send");
+            try {
+                // the released send is estimated against the closed channel
+                expect(await staged.releasePost()).to.equal(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                await staged.assertRefusedAndLeft(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                // rejected before broadcast: no transaction was mined
+                expect(await staged.readNonce()).to.equal(
+                    staged.nonceBeforeRelease
+                );
+                // no detached error: settleDetached throws on one
+                await TestSession.settleDetached();
+            } finally {
+                await staged.restore();
+            }
+        });
+
+        it("an exit post whose estimate passed before its co-leavers' exits closed the channel and that is mined after the close reverts in its block, its replay recovers RaceConditionSnapshotForkMismatch, it is logged as a chain refusal, and the leaver's runtime stays alive and leaves", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageExitPostInFlightAcrossClose(
+                h,
+                "broadcast"
+            );
+            try {
+                const rawOutcome = await staged.releasePost();
+                // the mined revert's receipt names no custom error
+                expect(rawOutcome).to.be.a("string");
+                expect(rawOutcome).to.not.equal(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                // the transaction was mined: the leaver's nonce moved
+                expect(await staged.readNonce()).to.equal(
+                    staged.nonceBeforeRelease + 1
+                );
+                await staged.assertRefusedAndLeft(
+                    "RaceConditionSnapshotForkMismatch"
+                );
+                // no detached error: settleDetached throws on one
+                await TestSession.settleDetached();
+            } finally {
+                await staged.restore();
+            }
+        });
+
         it("public terminal leave settles before disposal and excludes the former signer", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
@@ -367,6 +488,140 @@ describe("E2E: Participant Lifecycle", function () {
                         .query.isBlacklisted(h.getPeer(otherIndex).address)
                         .request()
                 ).to.equal(false);
+            }
+        });
+        it("a lone participant's leave that falls back to its self-removal dispute posts the reduced fork that has no participant: the channel closes and the leaver gets onLeftChannel once", async function () {
+            const h = TestSession.getHarness();
+            const { lone, expireWatchdog } =
+                await stageLoneLeaverSelfRemoval(h);
+
+            // its self-removal dispute is final at upload and leaves no
+            // participant; only the leaver can post that reduced fork
+            await expireWatchdog();
+            await h.event.waitUntilLeftChannel(lone.index);
+
+            expect(
+                (await h.channelManager.isChannelOpen(h.channelId))[0]
+            ).to.equal(false);
+            expect(
+                StateSnapshot.from(
+                    await h.channelManager.getStateSnapshot(h.channelId)
+                ).forkID
+            ).to.equal(ethers.ZeroHash);
+            expect(
+                (await h.channelManager.getParticipants(h.channelId)).length
+            ).to.equal(0);
+            expect(lone.eventSpies.onLeftChannel?.callCount).to.equal(1);
+            expect(lone.eventSpies.onAbort?.called).to.equal(false);
+            expect(await h.control(lone).query.getStatus().request()).to.equal(
+                Status.NOT_OPENED
+            );
+        });
+        it("every participant leaves and a JOIN lands before any exit snapshot is posted: the refused exit posts fall back to the leave watchdogs' self-removal disputes, whose reduction seats the joiner as the only participant and keeps the channel open; each leaver gets onLeftChannel once with no abort, the exits and the deposit are counted once, and the joiner authors the next block", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageEveryExitBlockedByLateJoin(h);
+            const { forkId, founders, joiner } = staged;
+            try {
+                // no dispute before the leave watchdogs expire
+                for (const recorder of staged.disputes)
+                    expect(await recorder.submissions()).to.deep.equal([]);
+                await staged.expireWatchdogs();
+
+                // each leaver submits its self-removal dispute on the fork
+                await waitFor(async () => {
+                    for (const recorder of staged.disputes)
+                        if ((await recorder.submissions()).length === 0)
+                            return false;
+                    return true;
+                }, h.event.protocolEventTimeoutMs());
+                for (const [index, recorder] of staged.disputes.entries()) {
+                    const dispute = Codec.decode(
+                        (await recorder.submissions())[0].encodedDispute,
+                        Type.Dispute
+                    );
+                    expect(dispute.input.disputer).to.equal(
+                        founders[index].address
+                    );
+                    expect(dispute.input.selfRemoval).to.equal(true);
+                    expect(dispute.input.forkId).to.equal(forkId);
+                }
+
+                // the reduction applies the pending JOIN and drops the
+                // leavers; its adopted fork seats the joiner alone
+                for (const founder of founders)
+                    await h.event.waitUntilLeftChannel(founder.index);
+                await h.event.waitUntilPeerStatus(
+                    joiner.index,
+                    Status.PARTICIPATING
+                );
+                const reducedForkId = String(
+                    (
+                        await h.channelManager.getReducedResult(
+                            h.channelId,
+                            forkId
+                        )
+                    ).reducedForkId
+                );
+                expect(reducedForkId).to.not.equal(forkId);
+                expect(
+                    StateSnapshot.from(
+                        await h.channelManager.getStateSnapshot(h.channelId)
+                    ).forkID
+                ).to.equal(reducedForkId);
+                expect(
+                    (await h.channelManager.isChannelOpen(h.channelId))[0]
+                ).to.equal(true);
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.deep.equal([joiner.address]);
+                expect(
+                    await h.channelManager.getPendingParticipants(h.channelId)
+                ).to.deep.equal([]);
+                expect(
+                    await h.control(joiner).query.getForkId().request()
+                ).to.equal(reducedForkId);
+
+                // the exits are paid once and the joiner holds its deposit
+                const balance = await h.channelManager.getChannelBalance(
+                    h.channelId
+                );
+                expect(
+                    BigInt(balance.totalWithdrawals.amount) -
+                        staged.withdrawalsBefore
+                ).to.equal(staged.foundersBalance);
+                expect(
+                    BigInt(balance.totalDeposits.amount) - staged.depositsBefore
+                ).to.equal(staged.deposit);
+                expect(await readTotalStateBalance(h, joiner)).to.equal(
+                    staged.deposit
+                );
+
+                // the channel goes on: the joiner authors the next block of
+                // the reduced fork alone
+                for (const founder of founders)
+                    h.contextApi.markAfkPeer({ afkPeerIndex: founder.index });
+                await h.transition.advanceState({
+                    waitForPeers: [joiner.index]
+                });
+                expect(
+                    (
+                        await h
+                            .control(joiner)
+                            .query.getLatestBlockInfo(reducedForkId)
+                            .request()
+                    )?.author
+                ).to.equal(joiner.address);
+
+                for (const founder of founders) {
+                    expect(
+                        founder.eventSpies.onLeftChannel?.callCount
+                    ).to.equal(1);
+                    expect(founder.eventSpies.onAbort?.called).to.equal(false);
+                }
+                expect(joiner.eventSpies.onLeftChannel?.called).to.equal(false);
+                expect(joiner.eventSpies.onAbort?.called).to.equal(false);
+            } finally {
+                await staged.restore();
             }
         });
     });

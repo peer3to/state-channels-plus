@@ -34,6 +34,13 @@ fires it while the joiner's clock is still at or before the deadline; a record-o
 shows the check armed the `join authorization expiry` timer again, and once the chain passed the
 deadline the joiner ends `SYNCED` with one `onLeftChannel`.
 
+The second `U71` case runs the same two-founder flow with both founders' exit posts parked before they
+prepare. Once both exit blocks are committed, a JOIN lands that no block can consume, because no member is
+left to author one. The last leaver's parked post is released and refused, and its result is parked. One
+membership check then runs and queues one post, and the result is released. The oracles are the two
+recorded refusals and, after a three-second absence window with no block or chain event, exactly two
+started posts.
+
 The `U72` exit cases stage an exit, with a leave call or without one (an exit block the application
 authors on its own turn), and most of them block its same-fork post with a JOIN the founders omit (the
 joiner's force-join dispute is suppressed; the leaver's self-removal disputes are recorded, and sent only
@@ -52,13 +59,35 @@ no leave call, so that block is never final; another founder then signs an out-o
 height, a real invalid state transition that the blind founder disputes from the state before the exit.
 The offender contributes no evidence and the leaver's own disputes are recorded, not sent, so the reduction
 proves the state before the exit: the successor fork drops the offender and still seats the leaver; the oracles are its leave state on the new fork, its `onLeaveTurn` count, its self-removal flag
-and the chain participants after its second exit. While a watchdog expiry is awaited the remaining participants keep authoring, so no idle writer
+and the chain participants after its second exit. The lone-leaver case starts two founders; founder 0 exits on its
+leave turn and its posted exit leaves founder 1 alone. Founder 1 then leaves without sending its exit, and its held
+leave watchdog is run, so its self-removal dispute (final at upload) leaves no participant. Its oracles are one
+started exit post recorded as posted, one recorded self-removal submission, the closed channel and the leaver's
+`onLeftChannel`. The two two-leaver cases start two founders that both leave without sending their exits, with
+timeout checks suppressed and both leave watchdogs held. Founder 0's watchdog is run, and founder 1 answers its
+self-removal dispute with its own, so the window holds two disputes and none is final. Founder 1's reduction
+attempts are held, so founder 0 alone reduces; its adopt-only post is parked at its send and its exit posts park
+before they prepare. After the kill period founder 1's attempt is released and it installs the reduced fork with no
+participant. In the first case founder 1's exit post closes the channel; the parked adoption is then sent, and its
+oracles are its revert name, the recorded `adoptReducedFork-*` retries, the deleted chain snapshot, both
+`onLeftChannel` and `onAbort` counts and the host errors. In the second case founder 1's exit post is parked at its
+send, the adoption closes the channel and the post is then sent; its oracles are the post's revert name, the
+recorded post result, the leave logger's refusal entry, the host errors and its `onLeftChannel` count. A third
+two-leaver case holds founder 1's reduce at its send instead, so founder 1 installs the reduced fork at the end of
+the kill period without reducing; its install-time exit post finds no reduced result and is parked after its
+no-op result. Founder 0's reduce then lands while that post is parked, founder 1's commit check queues a post, and
+founder 0's adoption and its one retry fail at their send. Once the parked post is released, its oracles are a
+second founder-1 post recorded as posted, the deleted chain snapshot and closed channel, the two failed adoption
+sends with one scheduled retry, both `onLeftChannel` and `onAbort` counts and no host error other than the failed
+retry. The case where the leave awaits its leave turn also checks that the leaver starts no post of the
+reduced state, which keeps the other founders. While a watchdog expiry is awaited the remaining participants keep authoring, so no idle writer
 is timed out.
 
 ## Tests
 
 - `U70: a lobby open makes both founders join the opened channel's discovery key as participants`: REQ-TJOIN-2-MFWADG.T2.P1, UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6
 - `U71: both founders leave and the last exit closes the channel → both get onLeftChannel on NOT_OPENED`: REQ-LIF-10-QR8NQ9.T2.P1, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23
+- `U71: a last leaver whose exit leaves no participant and whose posts a JOIN that no block consumes refuses makes one follow-up post per queued trigger, never back-to-back posts`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P49
 - `U72: a same-fork snapshot post waiting on an inbound message its snapshot has not consumed reverts with the pending-inbound refusal and posts nothing`: REQ-ENFSNAP-3-VD9T8A.T2.P1, UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N.P10
 - `U72: a leaver posts the latest state snapshot once its exit block is final, and that snapshot settles the leave with no dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P32
 - `U72: a leaver whose exit is blocked by an inbound join that no block consumes posts again on each finalized block and starts one self-removal dispute when the one leave watchdog expires`: REQ-ENFSNAP-3-VD9T8A.T2.P2, REQ-LIF-10-QR8NQ9.T1.P13, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P34
@@ -66,14 +95,20 @@ is timed out.
 - `U72: blocks finalized while the exit's snapshot post runs queue one more post after it when that post did not land the exit, and the next finalized block posts again`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P35
 - `U72: a leaver whose exit the remaining participants post while it sees no further block settles the leave, and the leave watchdog starts no self-removal dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P29, REQ-LIF-10-QR8NQ9.T1.P17
 - `U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P30
-- `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it`: REQ-LIF-10-QR8NQ9.T1.P18
+- `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants`: REQ-LIF-10-QR8NQ9.T1.P18, REQ-LIF-10-QR8NQ9.T1.P30, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46
 - `U72: a dispute observed after an exit block the application authored with no leave call makes the leaver submit its self-removal dispute at once, with no evidence comparison; the reduced snapshot drops it and its runtime is SYNCED with the self-removal still set`: REQ-LIF-10-QR8NQ9.T1.P19, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P37
+- `U72: a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the leave completes once on the reduced snapshot that drops it`: REQ-LIF-10-QR8NQ9.T1.P33, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P50
+- `U72: an exit snapshot that lands before the leaver's self-removal dispute is sent makes the chain refuse that upload with ErrorCantParticipateInDispute; the refusal is not fatal and the leave completes once, SYNCED with no abort`: REQ-LIF-10-QR8NQ9.T1.P34, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P51
 - `U72: an exit block the application authored with no leave call is posted the same way: a later finalized block's post lands it once the join is consumed, and the runtime ends SYNCED with onLeftChannel, the self-removal still set and no dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P36, REQ-LIF-10-QR8NQ9.T1.P21
 - `U72: a block finalized while the exit's snapshot post runs queues no further post when that post lands the exit: the leaver sends once and posts no more`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P44
 - `U72: a chain refusal of the exit's snapshot post reaches the leave's logger with its custom error and is not fatal: the next finalized block posts again`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P42, REQ-LIF-10-QR8NQ9.T1.P24
 - `U72: an exit post that fails with an error that is no chain refusal is a fatal runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P43, REQ-LIF-10-QR8NQ9.T1.P25
 - `U72: a leave of a pending join the chain has not shown re-arms the leave watchdog at each expiry with no dispute, and the join's expiry ends the leave and cancels the watchdog`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P38, REQ-TJOIN-7-NNGTAY.T1.P12
 - `U72: a reduction that replaces the fork of an exit block the application authored with no leave call by a state that still seats the leaver restarts the exit there as a requested leave: its leave turn comes, self-removal stays set and its exit settles`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P39
+- `U72: a lone leaver whose self-removal dispute leaves no participant posts that reduced fork once after installing it, and that post closes the channel and settles the leave`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P45
+- `U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a leaver's post closes the channel, the reducer's later adoption post of that fork is refused with RaceConditionGenesisTimestampNotAvailable and not retried, and each leaver leaves once with no abort`: REQ-LIF-10-QR8NQ9.T1.P31, UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P23
+- `U72: a leaver's exit post of a non-final reduction that leaves no participant, held at its send while the reducer's adoption post closes the channel, is refused with RaceConditionGenesisTimestampNotAvailable, logged as a chain refusal and not fatal, and the leaver leaves once`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P47
+- `U72: two leavers whose self-removal disputes form a non-final reduction that leaves no participant: a reduced result committed while the leaver's install-time post runs queues a post that the leaver's membership check sends after it, and that post closes the channel while the reducer's adoption and its retry fail; each leaver leaves once with no abort`: REQ-LIF-10-QR8NQ9.T1.P32, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P48
 - `U73: a latest-state request to a responder past its initial load that has not installed the chain's fork → refused for that fork, requester not blacklisted`: REQ-SYNC-1-T2589H.T2.P1, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42
 - `U73: a latest-state request to a responder whose own fork is behind the chain-derived fork → served from the derived fork, neither side blacklisted`: REQ-SYNC-1-T2589H.T2.P2, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43
 - `RO2: seating a join during its deadline membership read prevents a stale dispute request`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P46, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P72

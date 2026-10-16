@@ -8,7 +8,6 @@
 - [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-  Partial: Envelope decoding is `Codec`, not the contracts' decoder, and is not at parity with it ([`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 
 ## UNIT-TEST-BLOCK-MODEL-1-037DM6
@@ -42,6 +41,7 @@ Model semantics
 - [x] `UNIT-TEST-BLOCK-MODEL-1-037DM6.P27` — A contract-rejected author signature is omitted from accepted signers while both valid confirmers remain; strict all-signer access throws
 - [x] `UNIT-TEST-BLOCK-MODEL-1-037DM6.P28` — With all signatures valid, accepted signers equal strict all signers and contain author and both confirmers
 - [x] `UNIT-TEST-BLOCK-MODEL-1-037DM6.P29` — Logging a block with a rejected confirmation does not throw and lists exactly its accepted author and confirmer
+- [x] `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30` — `fromSignedBlock`/`fromBlockConfirmation` throw on noncanonical block bytes while `tryFromSignedBlock`/`tryFromBlockConfirmation` return null, and canonical construction still succeeds
 
 ## UNIT-TEST-BLOCK-COPY-MERGE-32-8JDDQR
 

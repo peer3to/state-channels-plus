@@ -10,6 +10,7 @@
 - [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../../../../../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
+- [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF
 

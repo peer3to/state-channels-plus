@@ -14,6 +14,9 @@ const {
     isDiscoveryAuthenticationFailure
 } = require("../../../scripts/e2e-parallel/distributed/authentication.js");
 const {
+    closeStream
+} = require("../../../scripts/e2e-parallel/distributed/connectionLifecycle.js");
+const {
     createPool
 } = require("../../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
@@ -26,6 +29,9 @@ const {
 const {
     DEFAULTS
 } = require("../../../scripts/e2e-parallel/distributed/serverArgParser.js");
+const {
+    loadWorkerKeyPair
+} = require("../../../scripts/e2e-parallel/distributed/workerIdentity.js");
 
 type LeaseEvent = {
     sequence: number;
@@ -388,6 +394,40 @@ export async function startLeaseWorkerServer(options: {
         shutdown: server.shutdown,
         connectionCount: () => server.pool.swarm.connections.size
     };
+}
+
+/**
+ * Under the identity that worker `name` of `workRoot` uses, dials the pool's
+ * orchestrators and closes the first stream at once, before authentication,
+ * as a reverse dial dropped in transit is. Resolves with that worker's
+ * public key once the stream was dropped and this pool closed, so the real
+ * worker can take the identity next.
+ */
+export async function dropOneOrchestratorStreamAsWorker(options: {
+    dht: unknown;
+    name: string;
+    poolSecret: string;
+    workRoot: string;
+}): Promise<string> {
+    const keyPair = loadWorkerKeyPair(options.workRoot, options.name);
+    const pool = await createPool({
+        announceTopics: [],
+        lookupTopics: [derivePoolKeys(options.poolSecret).orchestratorTopic],
+        dht: options.dht,
+        keyPair,
+        refreshIntervalMs: 25
+    });
+    try {
+        await new Promise<void>((resolve) =>
+            pool.onConnection((stream: unknown) => {
+                closeStream(stream, "dropped before authentication");
+                resolve();
+            })
+        );
+    } finally {
+        await pool.close();
+    }
+    return keyPair.publicKey.toString("hex");
 }
 
 export class LeasePoolHarness {

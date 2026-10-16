@@ -20,11 +20,16 @@ exit block with no idle writer timed out. The leave returns at once; the cases w
 (or the runtime's disposal after it), and a stopped leave is asserted as a fatal detached error.
 The pending-participant leave case authors through `keepAuthoringUntil` until the joiner is promoted, since the
 block that carries the join is the first one whose author has already received the join's inbound event.
+The spectate-when-full forwarding case opens a channel whose maximum participant count is two with two
+peers, then connects a third through the client signer with `shouldJoin` and `shouldSpectateWhenFull`; the
+call returns `false`, and the runtime is `SYNCED` with no abort. With the option dropped by the client
+signer it fails: the runtime aborts to `OPENED`.
 
 ## Tests
 
 - `invalid channel ID rejects before state mutation`: none
 - `non-boolean autoOpen rejects before state mutation`: none
+- `non-boolean shouldSpectateWhenFull rejects before state mutation`: UNIT-TEST-CLIENT-P2P-SIGNER-1-HY9PZB.P1
 - `balance missing amount rejects before port dispatch`: none
 - `balance missing data rejects before port dispatch`: none
 - `negative balance amount rejects before port dispatch`: none
@@ -48,6 +53,7 @@ block that carries the join is the first one whose author has already received t
 - `already-open target with balance but no shouldJoin syncs without membership`: none
 - `autoOpen without shouldJoin opens and syncs without membership`: REQ-TJOIN-1-5VGR1F.T1.P2
 - `shouldJoin on an already-open target uses the default balance when omitted`: none
+- `shouldJoin with shouldSpectateWhenFull on an already-open full target reaches the host: connect returns false and the runtime stays SYNCED with no abort`: UNIT-TEST-CLIENT-P2P-SIGNER-1-HY9PZB.P2
 - `shouldJoin on an already-open target preserves supplied amount and data`: none
 - `autoOpen with shouldJoin uses the default balance when omitted`: none
 - `autoOpen with shouldJoin preserves supplied amount and data`: none

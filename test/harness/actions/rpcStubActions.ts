@@ -25,7 +25,8 @@ import type {
     HeldNegotiationReplyKind,
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
-    ReductionAttemptResume
+    ReductionAttemptResume,
+    SnapshotPostHoldPoint
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -1216,18 +1217,22 @@ export class RpcStubActions<
     /**
      * Park a peer's snapshot post at its contract send until `release`, after
      * the post was prepared against the chain; `waitUntilHeld` resolves once
-     * a post is parked there.
+     * a post is parked there. With `at: "broadcast"` it parks later, after
+     * its gas estimate passed, so at release it is mined against the chain
+     * state then.
      */
     async holdSnapshotPostSend(
         peerIndex: number,
-        options?: { adoptionOnly?: boolean }
+        options?: { adoptionOnly?: boolean; at?: SnapshotPostHoldPoint }
     ): Promise<{
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
         /** Resolves with the first parked send's revert name, or null when it was mined or nothing was parked. */
         release: () => Promise<string | null>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubHoldSnapshotPostSend(options?.adoptionOnly).request();
+        await ctl()
+            .stubHoldSnapshotPostSend(options?.adoptionOnly, options?.at)
+            .request();
         return {
             waitUntilHeld: (
                 timeoutMs = this.harness.event.protocolEventTimeoutMs({
@@ -1312,6 +1317,16 @@ export class RpcStubActions<
                 await ctl().restoreDisputeKill().request();
             }
         };
+    }
+
+    /** Count peer `peerIndex`'s full state-proof builds; `failFirst` fails the first. */
+    async countStateProofBuilds(
+        peerIndex: number,
+        options: { failFirst: boolean } = { failFirst: false }
+    ): Promise<{ count: () => Promise<number> }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubCountStateProofBuilds(options).request();
+        return { count: () => ctl().getStateProofBuildCount().request() };
     }
 
     private async disputeMutexWaiterCount(peerIndex: number): Promise<number> {

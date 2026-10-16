@@ -406,14 +406,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             );
         }
         if (stateManager.status !== Status.SYNCED) return false;
-        const prepared =
-            await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
-                options.balance ?? this.defaultBalance()
-            );
-        return stateManager.channelJoinService.joinChannel(
-            prepared.confirmation,
-            prepared.expectedSnapshotHash,
-            prepared.expectedForkId
+        return stateManager.channelJoinService.collectAndJoinChannel(
+            options.balance ?? this.defaultBalance(),
+            options.shouldSpectateWhenFull ?? false
         );
     }
 

@@ -80,9 +80,10 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
             this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesis) return null;
 
+        // a fork without blocks proves height 0, not the -1 genesis marker
         const height =
             blockHeight ??
-            Math.max(0, this.storage.blocks.getNextBlockHeight(forkId) - 1);
+            Math.max(0, this.storage.blocks.getLatestBlockHeight(forkId));
         const built = await agreementManager.buildStateProof(forkId, height);
         const proof = built.stateProof;
 

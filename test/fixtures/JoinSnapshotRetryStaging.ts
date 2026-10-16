@@ -143,3 +143,166 @@ export async function chainJoinAmounts(
             .map((join) => BigInt(join.balance.amount))
     );
 }
+
+/**
+ * Each of the joiner's first `count` held join submissions meets a snapshot
+ * move to a stored one before it runs, so each is refused on its stale pin.
+ * Later submissions stay held.
+ */
+export async function refuseHeldJoinsOnSnapshotMoves(
+    h: MathPeerTestHarness,
+    joinerIndex: number,
+    count: number
+): Promise<void> {
+    for (let held = 1; held <= count; held++) {
+        await waitForHeldJoins(h, joinerIndex, held);
+        await moveChainSnapshot(h);
+        await h.rpcStub.releaseOneMembershipSubmission(joinerIndex);
+    }
+}
+
+/**
+ * A synced spectator's connect join is held at its send while two more
+ * synced spectators join one after another: the first lands while the
+ * joiner's first submission is held, which is then released and refused for
+ * the threshold set the first widened; the second lands while the joiner's
+ * second submission is held. Returns then, with that submission still held
+ * (later ones stay held), the countersignature requests the first joiner
+ * answered for the joiner's second collection, and reads of the requests
+ * the two landed joiners answer from then on.
+ */
+export async function raceJoinPastTwoLandingJoins(
+    h: MathPeerTestHarness,
+    options: {
+        maxChannelParticipants?: number;
+        shouldSpectateWhenFull?: boolean;
+    } = {}
+) {
+    const joiner = await h.scenario.syncSpectator(4, {
+        maxChannelParticipants: options.maxChannelParticipants
+    });
+    const addSpectator = async () =>
+        (
+            await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 0,
+                maximumBlocks: 16
+            })
+        ).peer;
+    const first = await addSpectator();
+    const second = await addSpectator();
+    await h.assert.sync.peersInSyncWait();
+    const releaseJoiner = await h.rpcStub.holdMembershipSubmission(
+        joiner.index,
+        "joinChannel"
+    );
+    const join = joiner.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+        shouldJoin: true,
+        shouldSpectateWhenFull: options.shouldSpectateWhenFull
+    });
+    // observed by the caller; keeps a failure from being an unhandled rejection meanwhile
+    join.catch(() => undefined);
+    // the first confirmation is collected against the founders alone
+    await waitForHeldJoins(h, joiner.index, 1);
+
+    const isFirstJoined = await first.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId!,
+        { shouldJoin: true }
+    );
+    const secondRoundByFirst = await countJoinSignatureRequests(h, [
+        first.index
+    ]);
+    await h.rpcStub.releaseOneMembershipSubmission(joiner.index);
+    await waitForHeldJoins(h, joiner.index, 2);
+    const secondRound = { byFirst: await secondRoundByFirst() };
+
+    const isSecondJoined = await second.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId!,
+        { shouldJoin: true }
+    );
+    // counted from here: the second's own collection asked the first too
+    const countersignedByFirst = await countJoinSignatureRequests(h, [
+        first.index
+    ]);
+    const countersignedBySecond = await countJoinSignatureRequests(h, [
+        second.index
+    ]);
+    return {
+        joiner,
+        first,
+        second,
+        isFirstJoined,
+        isSecondJoined,
+        join,
+        releaseJoiner,
+        secondRound,
+        countersignedByFirst,
+        countersignedBySecond
+    };
+}
+
+/**
+ * A synced spectator connects with a join to a channel already at its
+ * maximum participant count: the three founders alone, or with
+ * `isFilledByPendingJoin` the founders and a second spectator whose join
+ * landed pending before the connect. Returns the connect's result, the
+ * on-chain seated and pending participants just before the connect, the
+ * countersignature requests the threshold set answered for it, and the
+ * joiner's JOIN amounts on chain since the connect.
+ */
+export async function joinFullChannel(
+    h: MathPeerTestHarness,
+    options: {
+        shouldSpectateWhenFull?: boolean;
+        isFilledByPendingJoin?: boolean;
+    } = {}
+) {
+    const joiner = await h.scenario.syncSpectator(4, {
+        maxChannelParticipants: options.isFilledByPendingJoin ? 4 : 3
+    });
+    const pendingJoiner = options.isFilledByPendingJoin
+        ? await landPendingJoin(h)
+        : undefined;
+    const countersigned = await countJoinSignatureRequests(
+        h,
+        await remoteThresholdPeerIndices(h, joiner.index)
+    );
+    const fromBlock =
+        await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+    const [participantsAtConnect, pendingAtConnect] = await Promise.all([
+        h.channelManager.getParticipants(h.channelId),
+        h.channelManager.getPendingParticipants(h.channelId)
+    ]);
+    const isJoined = await joiner.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId!,
+        {
+            shouldJoin: true,
+            shouldSpectateWhenFull: options.shouldSpectateWhenFull
+        }
+    );
+    return {
+        joiner,
+        pendingJoiner,
+        participantsAtConnect,
+        pendingAtConnect,
+        isJoined,
+        countersignatures: await countersigned(),
+        joinAmounts: await chainJoinAmounts(h, joiner.address, fromBlock)
+    };
+}
+
+/** A new spectator syncs and its join lands pending; returns that peer. */
+export async function landPendingJoin(h: MathPeerTestHarness) {
+    const { peer } = await h.join.addSpectatorAuthoring({
+        authoringPeerIndices: [0, 1, 2],
+        minimumBlocks: 0,
+        maximumBlocks: 16
+    });
+    await h.assert.sync.peersInSyncWait();
+    const isJoined = await peer.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId!,
+        { shouldJoin: true }
+    );
+    if (!isJoined) throw new Error("the spectator's join did not land");
+    return peer;
+}

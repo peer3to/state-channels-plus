@@ -26,6 +26,7 @@ The kill-period case uses the production fifteen-second writer window, since not
 ## Tests
 
 - `dispute.input.selfRemoval = true; honest disputer voluntarily exits → dispute commits and disputer removed from participant set`: REQ-DIS-1-XAJ1VA.T1.P9, REQ-SM-8-8CHSQ8.T1.P17
-- `an honest leaver's exit post refused for an unconsumed inbound join → its watchdog self-removal dispute; the others contribute newer state into the existing window and remain participants`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P21
+- `an honest leaver's exit post refused for an unconsumed inbound join → its watchdog self-removal dispute; the others contribute newer state into the existing window and remain participants`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P21, REQ-DISPUTE-PIPE-8-BVR8XV.T1.P11
 - `an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash`: REQ-ENFSNAP-4-ESP98F.T1.P5
+- `an honest leaver's exit block is finalized off-chain and its exit post is refused → its self-removal dispute on a state that already excludes it; the reduced fork pays its exit exactly once at the exit block amount, the balance invariant holds, it is not slashed, and it gets onLeftChannel once`: REQ-SM-10-JD8TSF.T1.P8
 - `dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState`: none

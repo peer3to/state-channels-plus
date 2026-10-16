@@ -14,7 +14,10 @@ import {
     tryDecodeCustomError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    BalanceStruct,
+    JoinChannelConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 /** A join or top-up submission the chain proved failed (see `isProvenSubmissionFailure`). */
 type SubmissionRefusal = { error: unknown; custom: CustomEvmError | null };
@@ -61,22 +64,49 @@ export default class ChannelJoinService {
 
     /**
      * Submits a prepared join; a call while one runs gets the same promise.
-     * A refusal after the channel's on-chain snapshot moved to a stored one
-     * is collected again once with the same balance and submitted once
-     * more; a second refusal is final.
+     * A refusal that a fresh confirmation can win (the threshold set widened,
+     * or the channel's on-chain snapshot moved to a stored one) is collected
+     * again with the same balance and submitted again, for each such refusal
+     * up to the channel's maximum participant count of retries; any other
+     * refusal, or one past that cap, is final. A refusal for a full channel
+     * aborts the runtime: this route makes no full-channel read first.
      */
     public joinChannel(
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
-        return (this.joining ??= this.runJoin({
-            confirmation,
-            expectedSnapshotHash,
-            expectedForkId
-        }).finally(() => {
-            this.joining = undefined;
-        }));
+        return this.shareJoin(() =>
+            this.runJoin(
+                { confirmation, expectedSnapshotHash, expectedForkId },
+                false
+            )
+        );
+    }
+
+    /**
+     * Collects a join confirmation for `balance` and submits it like
+     * `joinChannel`. A channel already full is neither collected for nor
+     * submitted to. A full channel, found here or refused by the chain,
+     * aborts the runtime, or leaves it SYNCED with `shouldSpectateWhenFull`.
+     * A call while a join runs gets that join's promise.
+     */
+    public collectAndJoinChannel(
+        balance: BalanceStruct,
+        shouldSpectateWhenFull: boolean
+    ): Promise<boolean> {
+        return this.shareJoin(async () => {
+            if (await this.isChannelFull()) {
+                this.onChannelFull(shouldSpectateWhenFull);
+                return false;
+            }
+            return this.runJoin(
+                await this.stateManager.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
+                    balance
+                ),
+                shouldSpectateWhenFull
+            );
+        });
     }
 
     /** Submits a prepared top-up, retried like a join; a failed top-up keeps the participation. */
@@ -124,41 +154,63 @@ export default class ChannelJoinService {
         this.cancelTimer();
     }
 
+    /** A join call while one runs gets the running join's promise. */
+    private shareJoin(run: () => Promise<boolean>): Promise<boolean> {
+        return (this.joining ??= run().finally(() => {
+            this.joining = undefined;
+        }));
+    }
+
     private async runJoin(
-        prepared: PreparedJoinChannelConfirmation
+        prepared: PreparedJoinChannelConfirmation,
+        shouldSpectateWhenFull: boolean
     ): Promise<boolean> {
         const sm = this.stateManager;
         if (sm.status !== Status.SYNCED)
             throw new Error(
                 `joinChannel requires SYNCED status, got ${Status[sm.status]}`
             );
-        let outcome = await this.submitJoin(prepared);
-        // one logical join: the refused attempt's expiry and checks retire
-        // before the retry is decided and while the fresh confirmation is
-        // collected, so nothing ends the join or reports it in between; a
-        // check already past a read stops at its next isActive check
-        const refused =
-            typeof outcome === "object" ? this.markJoinRetrying() : undefined;
-        if (
+        let attempt = prepared;
+        let outcome = await this.submitJoin(attempt);
+        // each round retries a refusal that a fresh confirmation can win; a
+        // disposed runtime handles no refusal. The cap is the channel's
+        // maximum participant count: each threshold refusal means another
+        // member landed, and a full channel refuses a join finally.
+        for (
+            let retries = 0;
             typeof outcome === "object" &&
-            (await this.shouldRetryWithFreshConfirmation(prepared, outcome))
+            !sm.isDisposed &&
+            retries < sm.storage.queues.maxChannelParticipants;
+            retries++
         ) {
+            // one logical join: the refused attempt's expiry and checks retire
+            // before the retry is decided and while the fresh confirmation is
+            // collected, so nothing ends the join or reports it in between; a
+            // check already past a read stops at its next isActive check
+            const refused = this.markJoinRetrying();
+            if (
+                !(await this.shouldRetryWithFreshConfirmation(attempt, outcome))
+            )
+                break;
             const fresh = await this.prepareConfirmationAgain(
-                prepared.confirmation
+                attempt.confirmation
             );
             // the join ended or the runtime was disposed meanwhile: no
-            // second funded submission
+            // further funded submission
             if (sm.isDisposed || !refused || !this.isCurrent(refused))
                 return false;
-            // a retry that cannot be collected ends the join with no second
+            // a retry that cannot be collected ends the join with no further
             // submission; the race refusal itself is no abort
             if (!fresh) {
                 sm.setStatus(Status.SYNCED);
                 return false;
             }
-            outcome = await this.submitJoin(fresh);
+            attempt = fresh;
+            outcome = await this.submitJoin(attempt);
         }
-        if (typeof outcome === "object") this.onJoinRefused(outcome);
+        // a runtime disposed while a submission was pending handles no refusal
+        if (typeof outcome === "object" && !sm.isDisposed)
+            this.onJoinRefused(outcome, shouldSpectateWhenFull);
         return outcome === "submitted";
     }
 
@@ -170,16 +222,22 @@ export default class ChannelJoinService {
             throw new Error(
                 `topUpBalance requires PARTICIPATING or PENDING_PARTICIPANT status, got ${Status[sm.status]}`
             );
-        let outcome = await this.submitTopUp(prepared);
-        if (
+        let attempt = prepared;
+        let outcome = await this.submitTopUp(attempt);
+        for (
+            let retries = 0;
             typeof outcome === "object" &&
-            (await this.shouldRetryWithFreshConfirmation(prepared, outcome))
+            !sm.isDisposed &&
+            retries < sm.storage.queues.maxChannelParticipants &&
+            (await this.shouldRetryWithFreshConfirmation(attempt, outcome));
+            retries++
         ) {
             const fresh = await this.prepareConfirmationAgain(
-                prepared.confirmation
+                attempt.confirmation
             );
-            if (!fresh) return false;
-            outcome = await this.submitTopUp(fresh);
+            if (!fresh || sm.isDisposed) return false;
+            attempt = fresh;
+            outcome = await this.submitTopUp(attempt);
         }
         if (typeof outcome === "object")
             this.logger.warn("topUpBalance failed", {
@@ -200,7 +258,7 @@ export default class ChannelJoinService {
             Type.JoinChannel
         );
         const join = sm.storage.forceJoin.startJoin(
-            sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1,
+            sm.storage.blocks.getLatestBlockHeight(sm.forkId),
             Number(deadlineTimestamp)
         );
         sm.setStatus(Status.PENDING_PARTICIPANT);
@@ -267,14 +325,21 @@ export default class ChannelJoinService {
 
     /**
      * A final join refusal leaves the runtime SYNCED (it left); a race or
-     * authorization revert also aborts it.
+     * authorization revert also aborts it, and a full channel is handled by
+     * `onChannelFull`.
      */
-    private onJoinRefused({ error, custom }: SubmissionRefusal): void {
+    private onJoinRefused(
+        { error, custom }: SubmissionRefusal,
+        shouldSpectateWhenFull: boolean
+    ): void {
         const sm = this.stateManager;
         // ends the join (status subscription); LeaveChannelService emits
         // onLeftChannel, before the abort's onAbort below
         sm.setStatus(Status.SYNCED);
         switch (custom?.name) {
+            case "ErrorTooManyParticipants":
+                this.onChannelFull(shouldSpectateWhenFull);
+                return;
             case "RaceConditionJoinChannelExpired":
             case "RaceConditionSnapshotForkMismatch":
             case "RaceConditionJoinChannelSnapshotMismatch":
@@ -296,6 +361,25 @@ export default class ChannelJoinService {
         });
     }
 
+    /** Whether the chain's seated and pending participants already fill the channel. */
+    private async isChannelFull(): Promise<boolean> {
+        return (
+            (
+                await this.stateManager.membershipService.getOnChainParticipantUnion()
+            ).length >= this.stateManager.storage.queues.maxChannelParticipants
+        );
+    }
+
+    /** A full channel ends the join: the runtime aborts, or stays SYNCED spectating with `shouldSpectateWhenFull`. */
+    private onChannelFull(shouldSpectateWhenFull: boolean): void {
+        if (shouldSpectateWhenFull) {
+            this.logger.warn("joinChannel - the channel is full; spectating");
+            return;
+        }
+        this.logger.warn("joinChannel - the channel is full; aborting");
+        this.stateManager.abort();
+    }
+
     /**
      * Whether a refusal is a race that a fresh confirmation can win: another
      * join landed first and widened the threshold set past the confirmation's
@@ -305,9 +389,11 @@ export default class ChannelJoinService {
         prepared: PreparedJoinChannelConfirmation,
         { custom }: SubmissionRefusal
     ): Promise<boolean> {
+        // a full channel is final, even when the snapshot moved after the refusal
+        if (custom?.name === "ErrorTooManyParticipants") return false;
         if (custom?.name === "ErrorJoinChannelConfirmationNotThresholdSigned") {
             this.logger.info(
-                "The threshold set changed before the submission landed; a fresh confirmation is submitted once more"
+                "The threshold set changed before the submission landed; a fresh confirmation is submitted again"
             );
             return true;
         }
@@ -334,7 +420,7 @@ export default class ChannelJoinService {
             snapshots.getStateSnapshotByHash(current.hash) !== undefined;
         if (hasMoved)
             this.logger.info(
-                "The channel snapshot moved to a stored one before the submission landed; a fresh confirmation is submitted once more",
+                "The channel snapshot moved to a stored one before the submission landed; a fresh confirmation is submitted again",
                 { pinnedHash, currentHash: current.hash }
             );
         return hasMoved;
@@ -358,7 +444,7 @@ export default class ChannelJoinService {
             );
         } catch (error) {
             this.logger.warn(
-                "The fresh confirmation for the retry could not be collected; the call fails without a second submission",
+                "The fresh confirmation for the retry could not be collected; the call fails without a further submission",
                 { error: errorMessage(error) }
             );
             return undefined;

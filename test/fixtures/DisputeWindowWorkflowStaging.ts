@@ -214,6 +214,13 @@ export async function stageKillAndReplacement(
 }
 
 /**
+ * Evidence window (seconds) for the E22 staging, widened from the default 8
+ * (approved by Luka 2026-10-14; see "Test timing inputs" in
+ * docs/spec/audit/verification.md). A protocol input, not a wait budget.
+ */
+const SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME = 12;
+
+/**
  * E22: four peers, reductions held. Peer 0 opens the window with its own
  * self-removal dispute, so it audits the later spam dispute of peer 1 as a
  * peer that already disputed: its kill goes alone (`killDispute`). The other
@@ -223,9 +230,16 @@ export async function stageKillAndReplacement(
  */
 export async function stageSpamAfterOwnDispute(
     h: MathPeerTestHarness,
-    options: { holdKill: boolean }
+    options: { holdKill: boolean; countStateProofBuilds?: boolean }
 ) {
-    await h.scenario.preDisputeSetup({ peerCount: 4 });
+    // The spam upload must land inside peer 0's evidence window, after the
+    // three peers' full commit handling, one estimate and send, and one 1 s
+    // interval-mining block; under load it was mined 1 s after the default
+    // 8 s window.
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: SPAM_AFTER_OWN_DISPUTE_EVIDENCE_TIME }
+    });
     const forkId = h.activeForkId!;
     const killer = h.getPeer(0);
     const spammer = h.getPeer(1);
@@ -252,8 +266,11 @@ export async function stageSpamAfterOwnDispute(
     const kills = await h.rpcStub.recordDisputeFraudProofApplies(killer.index, {
         hold: options.holdKill
     });
+    const stateProofBuilds = options.countStateProofBuilds
+        ? await h.rpcStub.countStateProofBuilds(killer.index)
+        : undefined;
     const { dispute: spam } = await submitSpam();
-    return { forkId, killer, spammer, own, spam, kills };
+    return { forkId, killer, spammer, own, spam, kills, stateProofBuilds };
 }
 
 /**

@@ -851,7 +851,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
 
         const latestBlockHeight =
-            stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+            stateManager.storage.blocks.getLatestBlockHeight(forkId);
 
         // A pinned height is a minimum. Serve the newest proof available, but
         // refuse a target above it rather than silently returning older state.
@@ -1113,7 +1113,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 const baseHeight =
                     base.fromIndex === 0 ? -1 : base.snapshot.blockHeight;
                 const localLatestHeight =
-                    storage.blocks.getNextBlockHeight(forkId) - 1;
+                    storage.blocks.getLatestBlockHeight(forkId);
                 const holdsBase =
                     stateManager.forkId === forkId &&
                     localLatestHeight >= baseHeight;

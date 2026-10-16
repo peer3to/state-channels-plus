@@ -76,6 +76,13 @@ export type BlockWorkHoldPoint =
     | "storedMerge"
     | "stateApplicationInspection";
 
+/**
+ * Where a held snapshot post parks: `send` before the contract method (it is
+ * prepared, not estimated); `broadcast` in the signer after its gas estimate
+ * passed, before it is signed and broadcast.
+ */
+export type SnapshotPostHoldPoint = "send" | "broadcast";
+
 export type SignatureBlockMatch = {
     forkId: ForkId;
     participant: Address;
@@ -91,6 +98,7 @@ export type StubKey =
     | "proofWalkHold"
     | "auditingDataBuild"
     | "disputeKillMulticall"
+    | "stateProofBuilds"
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
@@ -237,7 +245,9 @@ type HeldRpcReply = {
         | "timeoutBuild"
         | "eventListenerRemoval"
         | "joinThresholdRead"
-        | "joinRetryEligibilityRead";
+        | "joinRetryEligibilityRead"
+        | "joinRetryDecision"
+        | "joinCollectionResult";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -448,7 +458,7 @@ export type PausedConstructDisputeStatus = {
     entered: number;
     /**
      * Constructions for the target fork that `dispute()` started, held or
-     * not. It is the only caller that passes construction options, so an
+     * not. It is the only caller that passes `expectedSlashes`, so an
      * evidence comparison is not counted.
      */
     uploadConstructions: number;
@@ -619,6 +629,21 @@ export class StubService extends ANetworkRpcService<
     /** The held chain snapshot read of a join or top-up retry-eligibility check, and the restore of the real read. */
     private joinRetryEligibilityReadHold?: HeldRpcReply;
     private restoreJoinRetryEligibilityRead?: () => void;
+    /** The held retry decision of a join or top-up refusal, and the restore of the real decision. */
+    private joinRetryDecisionHold?: HeldRpcReply;
+    private restoreJoinRetryDecision?: () => void;
+    // the custom error name of each refusal that entered the held retry
+    // decision, in order; null for a refusal with no decoded error
+    private joinRetryDecisionRefusals: (string | null)[] = [];
+    /** The held result of a join collection, and the restore of the real collection. */
+    private joinCollectionResultHold?: HeldRpcReply;
+    private restoreJoinCollectionResult?: () => void;
+    /** The top-up recorded while a join collection result is held, and the restore of the real top-up. */
+    private recordedTopUp?: Promise<boolean>;
+    private restoreTopUpRecording?: () => void;
+    /** Calls that entered the recorded collect-and-join, and the restore of the real one. */
+    private collectAndJoinEntered = 0;
+    private restoreCollectAndJoinRecording?: () => void;
     /** The last snapshot membership published while recorded, and the restore of the real publication. */
     private lastPublishedSnapshotHash?: Hash;
     private originalPublishOnChainSnapshot?: MembershipService["publishOnChainSnapshot"];
@@ -740,6 +765,10 @@ export class StubService extends ANetworkRpcService<
     replayGasReadHold?: DisputeSubmissionHold;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
+    // full state-proof builds counted by stubCountStateProofBuilds
+    stateProofBuildCount = 0;
+    // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
+    replayGasBlockReadFailures = 0;
     /** The state the state-mutex hold installed, while it is held. */
     stateMutexStateHold?: StateMutexStateHold;
     /** State for the dispute-audit hold at the on-chain-slashes query. */
@@ -762,6 +791,8 @@ export class StubService extends ANetworkRpcService<
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
     private readonly heldSnapshotPostSendWaiters: (() => void)[] = [];
+    /** Restores the signer patched by a snapshot post hold at its broadcast. */
+    private restoreSnapshotPostBroadcast?: () => void;
     private heldLobbyReply?: HeldRpcReply;
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
@@ -772,6 +803,8 @@ export class StubService extends ANetworkRpcService<
     private postMatchTargetRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
+    /** The latest call a membership submission hold let through. */
+    private releasedMembershipSubmission?: Promise<unknown>;
     /** Record-only probe on the post-audit evidence comparison. */
     readonly evidenceComparisons = new EvidenceComparisonRecorder();
     /** Record-only probe on live block RPCs and their sync-wait retention. */
@@ -1528,8 +1561,39 @@ export class StubService extends ANetworkRpcService<
                 hold.entered += 1;
                 await hold.gate;
             }
-            return Reflect.apply(original, contract, parameters);
+            const submission = Reflect.apply(
+                original,
+                contract,
+                parameters
+            ) as Promise<unknown>;
+            this.releasedMembershipSubmission = submission;
+            return submission;
         });
+    }
+
+    /**
+     * Abort the runtime, then release the held membership submissions into
+     * the disposed runtime. Both run in one timeout-manager task, which the
+     * teardown drains until the released submission settled and its caller
+     * handled the outcome: that handling meets a disposed runtime that is not
+     * torn down yet.
+     */
+    public abortReleasingMembershipSubmission(): void {
+        const nextTick = () =>
+            new Promise<void>((resolve) => setTimeout(resolve, 0));
+        this.sm.timeoutManager.scheduleTask(
+            async () => {
+                this.sm.abort();
+                this.releaseOneMembershipSubmission();
+                // the released call starts after the gate's continuation
+                await nextTick();
+                await this.releasedMembershipSubmission?.catch(() => undefined);
+                // the caller's handling of the outcome runs in microtasks
+                await nextTick();
+            },
+            0,
+            "harness abort releasing a held membership submission"
+        );
     }
 
     /**
@@ -1631,6 +1695,30 @@ export class StubService extends ANetworkRpcService<
         this.joinThresholdReadHold = undefined;
     }
 
+    /** Record-only: count each call that enters this runtime's collect-and-join, then run it. */
+    public recordCollectAndJoinEntries(): void {
+        this.restoreCollectAndJoinEntries();
+        const joinService = this.sm.channelJoinService;
+        const original = joinService.collectAndJoinChannel;
+        this.restoreCollectAndJoinRecording = () => {
+            joinService.collectAndJoinChannel = original;
+        };
+        joinService.collectAndJoinChannel = (...args) => {
+            this.collectAndJoinEntered += 1;
+            return original.apply(joinService, args);
+        };
+    }
+
+    public getCollectAndJoinEntered(): number {
+        return this.collectAndJoinEntered;
+    }
+
+    public restoreCollectAndJoinEntries(): void {
+        this.restoreCollectAndJoinRecording?.();
+        this.restoreCollectAndJoinRecording = undefined;
+        this.collectAndJoinEntered = 0;
+    }
+
     /**
      * Hold the chain snapshot read of this runtime's next join or top-up
      * retry-eligibility check (`ChannelJoinService.hasSnapshotMovedToStoredOne`)
@@ -1687,6 +1775,127 @@ export class StubService extends ANetworkRpcService<
         this.restoreJoinRetryEligibilityRead = undefined;
         this.joinRetryEligibilityReadHold?.release();
         this.joinRetryEligibilityReadHold = undefined;
+    }
+
+    /**
+     * Hold this runtime's next join or top-up retry decision
+     * (`ChannelJoinService.shouldRetryWithFreshConfirmation`) at its entry,
+     * before it reads anything, and record the refusal it decides on: the
+     * retry is decided once released.
+     */
+    public holdJoinRetryDecision(): void {
+        this.releaseJoinRetryDecision();
+        this.joinRetryDecisionRefusals = [];
+        const joinService = this.sm.channelJoinService;
+        const decide = Reflect.get(
+            joinService,
+            "shouldRetryWithFreshConfirmation"
+        ) as (
+            prepared: unknown,
+            refusal: { custom: { name: string } | null }
+        ) => Promise<boolean>;
+        const hold = this.createRpcHold("joinRetryDecision");
+        this.joinRetryDecisionHold = hold;
+        this.restoreJoinRetryDecision = () => {
+            Reflect.deleteProperty(
+                joinService,
+                "shouldRetryWithFreshConfirmation"
+            );
+        };
+        Reflect.set(
+            joinService,
+            "shouldRetryWithFreshConfirmation",
+            async (
+                prepared: unknown,
+                refusal: { custom: { name: string } | null }
+            ) => {
+                this.restoreJoinRetryDecision?.();
+                this.joinRetryDecisionRefusals.push(
+                    refusal.custom?.name ?? null
+                );
+                hold.entered += 1;
+                await hold.gate;
+                return decide.call(joinService, prepared, refusal);
+            }
+        );
+    }
+
+    public getJoinRetryDecisionRefusals(): (string | null)[] {
+        return this.joinRetryDecisionRefusals;
+    }
+
+    public releaseJoinRetryDecision(): void {
+        this.restoreJoinRetryDecision?.();
+        this.restoreJoinRetryDecision = undefined;
+        this.joinRetryDecisionHold?.release();
+        this.joinRetryDecisionHold = undefined;
+    }
+
+    /**
+     * Hold this runtime's next join confirmation collection once it has
+     * collected, before the confirmation reaches its caller, and record the
+     * next top-up this runtime runs.
+     */
+    public holdJoinCollectionResult(): void {
+        this.releaseJoinCollectionResult();
+        this.recordedTopUp = undefined;
+        const channelJoin = this.sm.channelJoinService;
+        const originalTopUp = channelJoin.topUpBalance;
+        this.restoreTopUpRecording = () => {
+            channelJoin.topUpBalance = originalTopUp;
+        };
+        channelJoin.topUpBalance = (...args) => {
+            this.restoreTopUpRecording?.();
+            this.recordedTopUp = originalTopUp.apply(channelJoin, args);
+            return this.recordedTopUp;
+        };
+        const joinService = this.p2pManager.localRpc.joinChannelService;
+        const original = joinService.prepareJoinChannelConfirmation;
+        const hold = this.createRpcHold("joinCollectionResult");
+        this.joinCollectionResultHold = hold;
+        this.restoreJoinCollectionResult = () => {
+            joinService.prepareJoinChannelConfirmation = original;
+        };
+        joinService.prepareJoinChannelConfirmation = async (...args) => {
+            this.restoreJoinCollectionResult?.();
+            const prepared = await original.apply(joinService, args);
+            hold.entered += 1;
+            await hold.gate;
+            return prepared;
+        };
+    }
+
+    public getJoinCollectionResultEntered(): number {
+        return this.joinCollectionResultHold?.entered ?? 0;
+    }
+
+    public releaseJoinCollectionResult(): void {
+        this.restoreTopUpRecording?.();
+        this.restoreTopUpRecording = undefined;
+        this.restoreJoinCollectionResult?.();
+        this.restoreJoinCollectionResult = undefined;
+        this.joinCollectionResultHold?.release();
+        this.joinCollectionResultHold = undefined;
+    }
+
+    /**
+     * Abort the runtime, then release the held join collection result into
+     * the disposed runtime. Both run in one timeout-manager task, which the
+     * teardown drains until the recorded top-up settled: its caller meets a
+     * disposed runtime that is not torn down yet.
+     */
+    public abortReleasingJoinCollectionResult(): void {
+        this.sm.timeoutManager.scheduleTask(
+            async () => {
+                this.sm.abort();
+                this.releaseJoinCollectionResult();
+                const topUp = this.recordedTopUp;
+                this.recordedTopUp = undefined;
+                await topUp?.catch(() => undefined);
+            },
+            0,
+            "harness abort releasing a held join collection result"
+        );
     }
 
     /** Record-only: record each snapshot membership publishes, then publish it. */
@@ -3418,9 +3627,15 @@ export class StubService extends ANetworkRpcService<
      * runs for real against the chain state at release. With `adoptionOnly`
      * only an adopt-only post (a multicall whose only call is
      * `updateStateSnapshotFork`) is parked; every other multicall, such as a
-     * reduction, runs at once.
+     * reduction, runs at once. With `at: "broadcast"` the post parks in the
+     * signer instead, after its gas estimate passed against the chain state
+     * of that moment; at release it is signed, broadcast and mined against
+     * the chain state then.
      */
-    public installSnapshotPostSendHold(adoptionOnly = false): void {
+    public installSnapshotPostSendHold(
+        adoptionOnly = false,
+        at: SnapshotPostHoldPoint = "send"
+    ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("snapshotPostSend")) {
             this.stubOriginals.set("snapshotPostSend", contract.multicall);
@@ -3443,6 +3658,34 @@ export class StubService extends ANetworkRpcService<
         };
         this.heldSnapshotPostSend = held;
         this.snapshotPostSendOutcome = undefined;
+        const enter = () => {
+            held.entered += 1;
+            this.heldSnapshotPostSendWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+        };
+        // Encoded multicall data of each post to park at its broadcast.
+        const encodedBroadcastMulticalls = new Set<string>();
+        if (at === "broadcast") {
+            this.restoreSnapshotPostBroadcast?.();
+            // The wrapped wallet signs after the host nonce manager's
+            // estimate and before its broadcast.
+            const wallet = this.sm.signer.signer;
+            const sign = wallet.signTransaction;
+            this.restoreSnapshotPostBroadcast = () => {
+                wallet.signTransaction = sign;
+            };
+            wallet.signTransaction = async (tx) => {
+                if (
+                    typeof tx.data === "string" &&
+                    encodedBroadcastMulticalls.delete(tx.data)
+                ) {
+                    enter();
+                    await gate;
+                }
+                return sign.call(wallet, tx);
+            };
+        }
         // Only the send is held; simulation and population keep the real
         // contract method's properties, including when another hold wraps it.
         contract.multicall = new Proxy(original, {
@@ -3456,15 +3699,23 @@ export class StubService extends ANetworkRpcService<
                     if (!isAdoption)
                         return Reflect.apply(target, receiver, parameters);
                 }
-                held.entered += 1;
-                this.heldSnapshotPostSendWaiters
-                    .splice(0)
-                    .forEach((resolve) => resolve());
-                const sent = gate.then(
-                    (): ReturnType<typeof original> =>
-                        Reflect.apply(target, receiver, parameters)
-                );
-                if (held.entered === 1)
+                let sent: ReturnType<typeof original>;
+                if (at === "broadcast") {
+                    encodedBroadcastMulticalls.add(
+                        contract.interface.encodeFunctionData("multicall", [
+                            parameters[0] as string[]
+                        ])
+                    );
+                    sent = Reflect.apply(target, receiver, parameters);
+                } else {
+                    enter();
+                    sent = gate.then(
+                        (): ReturnType<typeof original> =>
+                            Reflect.apply(target, receiver, parameters)
+                    );
+                }
+                // the first post this hold parks
+                if (!this.snapshotPostSendOutcome)
                     this.snapshotPostSendOutcome = sent
                         .then((response) => response.wait())
                         .then(
@@ -3481,6 +3732,8 @@ export class StubService extends ANetworkRpcService<
     public releaseSnapshotPostSendHold(): boolean {
         this.heldSnapshotPostSend?.release();
         this.heldSnapshotPostSend = undefined;
+        this.restoreSnapshotPostBroadcast?.();
+        this.restoreSnapshotPostBroadcast = undefined;
         const original = this.stubOriginals.get("snapshotPostSend");
         if (original === undefined) return false;
         this.sm.stateChannelManagerContract.multicall =

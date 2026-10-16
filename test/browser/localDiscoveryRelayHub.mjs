@@ -17,18 +17,40 @@ import { WebSocketServer } from "ws";
  *    socket closes, the hub closes the other. A third socket for a link ends
  *    the old pair and starts a new one. `pairings(id)` counts the pairs a
  *    link id has formed, so a gate can prove two peers never linked.
+ *
+ * `holdLinks()` holds the opening handshake of every later link socket, so
+ * the peer's socket stays connecting, until `releaseLinks()` lets them open;
+ * `heldLinks()` counts the held ones and `linkCloses(id)` counts the link
+ * sockets of a link id that closed.
  */
 export async function startLocalDiscoveryRelayHub({
     host = "127.0.0.1",
     port = 0
 } = {}) {
-    const wss = new WebSocketServer({ host, port });
+    // Releases of link sockets whose opening handshake is held.
+    const heldLinkUpgrades = [];
+    let isHoldingLinks = false;
+    const wss = new WebSocketServer({
+        host,
+        port,
+        verifyClient: (info, accept) => {
+            const isLink = new URL(
+                info.req.url ?? "/",
+                "ws://localhost"
+            ).searchParams.has("link");
+            if (isLink && isHoldingLinks)
+                heldLinkUpgrades.push(() => accept(true));
+            else accept(true);
+        }
+    });
     // topic -> address -> membership socket
     const topics = new Map();
     // link id -> { sockets: ws[], buffer: string[] }
     const links = new Map();
     // link id -> pairs formed
     const pairCounts = new Map();
+    // link id -> link sockets closed
+    const closeCounts = new Map();
 
     const join = (ws, topic, address) => {
         let members = topics.get(topic);
@@ -73,6 +95,7 @@ export async function startLocalDiscoveryRelayHub({
             else current.buffer.push(frame);
         });
         ws.on("close", () => {
+            closeCounts.set(id, (closeCounts.get(id) ?? 0) + 1);
             for (const socket of current.sockets) socket.close();
             if (links.get(id) === current) links.delete(id);
         });
@@ -95,6 +118,15 @@ export async function startLocalDiscoveryRelayHub({
     return {
         url: `ws://${host}:${address.port}`,
         pairings: (id) => pairCounts.get(id) ?? 0,
+        linkCloses: (id) => closeCounts.get(id) ?? 0,
+        holdLinks: () => {
+            isHoldingLinks = true;
+        },
+        heldLinks: () => heldLinkUpgrades.length,
+        releaseLinks: () => {
+            isHoldingLinks = false;
+            for (const release of heldLinkUpgrades.splice(0)) release();
+        },
         close: () =>
             new Promise((resolve) => {
                 for (const ws of wss.clients) ws.terminate();

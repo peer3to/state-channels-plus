@@ -6,7 +6,9 @@ import {
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("SnapshotUpdateService", function () {
     it("returns an admissible no-op when the on-chain fork is not disputed", async function () {
@@ -204,6 +206,78 @@ describe("SnapshotUpdateService", function () {
             posted: true
         });
         expect((await chainSnapshot(h)).forkID).to.equal(reducedForkId);
+    });
+
+    it("once the channel is closed on chain, the same-fork preparation returns nothing to post without building a state proof or reading local outbound blocks, and the post resolves undefined", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        // both members exit: the snapshot that lands the last exit has no
+        // participant, and the chain closes the channel
+        await h.transition.participantLeaveStateTransition();
+        await h.transition.participantLeaveStateTransition();
+        await waitFor(
+            async () => !(await h.channelManager.isChannelOpen(h.channelId))[0],
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            (await chainSnapshot(h)).forkID,
+            "premise: the close deleted the chain snapshot"
+        ).to.equal(ethers.ZeroHash);
+
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm) => {
+                // record-only: each call still runs the real method
+                const outbound = sm.storage.outboundMessages;
+                const agreement = sm.agreementManager;
+                const readRange = outbound.getMessageBlocksInRange;
+                const buildProof = agreement.buildStateProof;
+                const reads = { rangeReads: 0, proofBuilds: 0 };
+                outbound.getMessageBlocksInRange = (...args) => {
+                    reads.rangeReads += 1;
+                    return readRange.apply(outbound, args);
+                };
+                agreement.buildStateProof = (...args) => {
+                    reads.proofBuilds += 1;
+                    return buildProof.apply(agreement, args);
+                };
+                try {
+                    const prepared = await sm.snapshotUpdateService[
+                        "prepareUpdateSnapshotSameFork"
+                    ](sm.forkId);
+                    const posted =
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
+                            sm.forkId
+                        );
+                    return {
+                        localBlockCount: sm.storage.blocks.getNextBlockHeight(
+                            sm.forkId
+                        ),
+                        canPost: prepared.canPost,
+                        callDataCount: prepared.callData.length,
+                        posted: posted !== undefined,
+                        ...reads
+                    };
+                } finally {
+                    // the own properties shadow the prototype methods
+                    Reflect.deleteProperty(outbound, "getMessageBlocksInRange");
+                    Reflect.deleteProperty(agreement, "buildStateProof");
+                }
+            },
+            {}
+        );
+
+        expect(
+            result.localBlockCount,
+            "premise: the member holds blocks of the closed fork"
+        ).to.be.greaterThan(0);
+        expect(result).to.deep.include({
+            canPost: false,
+            callDataCount: 0,
+            posted: false,
+            rangeReads: 0,
+            proofBuilds: 0
+        });
     });
 
     it("a same-fork post whose snapshot has not consumed the on-chain inbound head reverts with the pending-inbound refusal", async function () {

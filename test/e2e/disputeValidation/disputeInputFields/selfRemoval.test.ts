@@ -1,6 +1,7 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import {
+    assertHonestLeaverExitPaidOnce,
     assertHonestLeaverKillPeriodRefusal,
     assertHonestPeersContributeAfterSelfRemoval
 } from "@test/fixtures/HonestLeaverDisputeStaging";
@@ -112,6 +113,10 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
 
     it("an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash", async function () {
         await assertHonestLeaverKillPeriodRefusal(TestSession.getHarness());
+    });
+
+    it("an honest leaver's exit block is finalized off-chain and its exit post is refused → its self-removal dispute on a state that already excludes it; the reduced fork pays its exit exactly once at the exit block amount, the balance invariant holds, it is not slashed, and it gets onLeftChannel once", async function () {
+        await assertHonestLeaverExitPaidOnce(TestSession.getHarness());
     });
 
     it("dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState", async function () {

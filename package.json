@@ -190,7 +190,9 @@
     "scripts/test-e2e-parallel.js",
     "scripts/infra",
     "test/utils/nodeInfra.js",
-    "test/utils/nodeInfra.d.ts"
+    "test/utils/nodeInfra.d.ts",
+    "test/browser/chromiumLaunch.js",
+    "test/browser/localDiscoveryRelayHub.mjs"
   ],
   "exports": {
     ".": {
@@ -205,6 +207,8 @@
       "import": "./dist/test-harness.js",
       "default": "./dist/test-harness.js"
     },
+    "./browser-harness/chromium-launch": "./test/browser/chromiumLaunch.js",
+    "./browser-harness/local-discovery-relay-hub": "./test/browser/localDiscoveryRelayHub.mjs",
     "./test-parallel": "./scripts/test-e2e-parallel.js",
     "./test-parallel-server": "./scripts/e2e-parallel/distributed/server.js",
     "./test-parallel-worker": "./scripts/e2e-parallel/distributed/worker.js",

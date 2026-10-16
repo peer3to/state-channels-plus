@@ -4,6 +4,7 @@
 const path = require("node:path");
 const {
     buildDocumentationGraph,
+    isWithdrawnFinding,
     linkedIds,
     requirementPath,
     sorted
@@ -36,7 +37,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         `**${k}/${n}**${n ? ` (${Math.round((k / n) * 100)}%)` : ""}`;
     const requirements = graph.requirements.definitions;
     const activeFindings = [...graph.findings.entries.values()].filter(
-        (item) => !/withdrawn/i.test(item.raw)
+        (item) => !isWithdrawnFinding(item)
     );
     const rows = [];
     let structurallyComplete = 0;
@@ -87,7 +88,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
             ...specification
         ]).filter(
             (findingId) =>
-                !/withdrawn/i.test(graph.findings.entries.get(findingId).raw)
+                !isWithdrawnFinding(graph.findings.entries.get(findingId))
         );
         const structural =
             specification.length &&

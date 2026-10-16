@@ -220,6 +220,8 @@ Exhaustive dispute audit, persistence, timeout, and snapshot-hash paths
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P67` — concurrent virtual-final audits keep the real proof first and counter the conflicting proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P68` — concurrent virtual-final audits keep the forged proof first and counter the conflicting proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129` — while a replay holds the state mutex with the predecessor state installed on the shared state machine, a timeout audit's next-writer peek settles without the mutex and judges the disputed state; the valid timeout dispute stays valid with no `TimeoutParticipantNotNext`.
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P130` — a forced timeout of an honest first block whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P131` — a forced timeout of an honest block that carries inbound message blocks and whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
 
 ## UNIT-TEST-DISPUTE-INBOUND-RECOVERY-32-6PBRKZ
 

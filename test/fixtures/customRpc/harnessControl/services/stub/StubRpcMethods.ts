@@ -33,6 +33,7 @@ import type {
     BlockWorkHoldPoint,
     StubService,
     SignatureBlockMatch,
+    SnapshotPostHoldPoint,
     StateMutexStateHold
 } from "./StubService";
 
@@ -1383,8 +1384,33 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public recordCollectAndJoinEntries(): boolean {
+        this.service.recordCollectAndJoinEntries();
+        return true;
+    }
+    public getCollectAndJoinEntered(): number {
+        return this.service.getCollectAndJoinEntered();
+    }
+
     public holdJoinRetryEligibilityRead(): boolean {
         this.service.holdJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public holdJoinCollectionResult(): boolean {
+        this.service.holdJoinCollectionResult();
+        return true;
+    }
+    public getJoinCollectionResultEntered(): number {
+        return this.service.getJoinCollectionResultEntered();
+    }
+    /**
+     * Abort the runtime after this request answers, then release the held
+     * join collection result into the disposed runtime; the teardown waits
+     * for the recorded top-up to settle.
+     */
+    public abortReleasingJoinCollectionResult(): boolean {
+        this.service.abortReleasingJoinCollectionResult();
         return true;
     }
     public getJoinRetryEligibilityReadEntered(): number {
@@ -1392,6 +1418,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
     public releaseJoinRetryEligibilityRead(): boolean {
         this.service.releaseJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public holdJoinRetryDecision(): boolean {
+        this.service.holdJoinRetryDecision();
+        return true;
+    }
+    public getJoinRetryDecisionRefusals(): (string | null)[] {
+        return this.service.getJoinRetryDecisionRefusals();
+    }
+    public releaseJoinRetryDecision(): boolean {
+        this.service.releaseJoinRetryDecision();
         return true;
     }
 
@@ -2019,9 +2057,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreCalldataPost();
     }
 
-    /** Park this peer's snapshot post at its contract send until restored. */
-    public stubHoldSnapshotPostSend(adoptionOnly?: boolean): boolean {
-        this.service.installSnapshotPostSendHold(adoptionOnly);
+    /** Park this peer's snapshot post at its contract send (or, with `at: "broadcast"`, after its estimate) until restored. */
+    public stubHoldSnapshotPostSend(
+        adoptionOnly?: boolean,
+        at?: SnapshotPostHoldPoint
+    ): boolean {
+        this.service.installSnapshotPostSendHold(adoptionOnly, at);
         return true;
     }
 
@@ -2555,6 +2596,71 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.suppressedDisputeKillCount;
     }
 
+    /**
+     * Record-only: count this peer's full state-proof builds (finalized-only
+     * reads are not counted). `failFirst` rejects the first counted build.
+     */
+    public stubCountStateProofBuilds(options: { failFirst: boolean }): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("stateProofBuilds"))
+            this.service.stubOriginals.set(
+                "stateProofBuilds",
+                agreementManager.buildStateProof.bind(agreementManager)
+            );
+        const build = this.service.stubOriginals.get(
+            "stateProofBuilds"
+        ) as typeof agreementManager.buildStateProof;
+        this.service.stateProofBuildCount = 0;
+        agreementManager.buildStateProof = async (
+            forkId,
+            blockHeight,
+            buildOptions
+        ) => {
+            if (buildOptions?.finalizedOnly)
+                return build(forkId, blockHeight, buildOptions);
+            this.service.stateProofBuildCount += 1;
+            if (options.failFirst && this.service.stateProofBuildCount === 1)
+                throw new Error("stubbed state proof build failure");
+            return build(forkId, blockHeight, buildOptions);
+        };
+        return true;
+    }
+
+    public getStateProofBuildCount(): number {
+        return this.service.stateProofBuildCount;
+    }
+
+    public getReplayGasBlockReadFailures(): number {
+        return this.service.replayGasBlockReadFailures;
+    }
+
+    /**
+     * Reject the next latest-block read made by the dispute manager's gas
+     * limit (`replayGasLimit`); every other read of the shared provider passes.
+     */
+    public stubFailReplayGasBlockRead(): boolean {
+        const provider =
+            this.service.sm.stateChannelManagerContract.runner?.provider;
+        if (!provider) throw new Error("the manager contract has no provider");
+        const getBlock = provider.getBlock.bind(provider);
+        let failed = false;
+        Reflect.set(
+            provider,
+            "getBlock",
+            (...args: Parameters<typeof getBlock>) => {
+                if (!failed && new Error().stack?.includes("replayGasLimit")) {
+                    failed = true;
+                    this.service.replayGasBlockReadFailures += 1;
+                    return Promise.reject(
+                        new Error("stubbed block read failure")
+                    );
+                }
+                return getBlock(...args);
+            }
+        );
+        return true;
+    }
+
     public restoreDisputeKill(): boolean {
         const original = this.service.stubOriginals.get("disputeKill");
         if (original === undefined) return false;
@@ -2643,8 +2749,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 return originalConstruct(requestedForkId, options);
             }
             state.inside = true;
-            if (options) state.uploadConstructions += 1;
-            return originalConstruct(requestedForkId, options).finally(() => {
+            // only the upload passes expectedSlashes; the evidence comparison does not
+            if (options?.expectedSlashes) state.uploadConstructions += 1;
+            // the audit's proof is dropped -> construction builds its own and parks
+            return originalConstruct(
+                requestedForkId,
+                options && { ...options, latestStateProof: undefined }
+            ).finally(() => {
                 state.inside = false;
             });
         };
@@ -3350,6 +3461,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Releases the submissions held so far and keeps holding later ones. */
     public releaseOneMembershipSubmission(): number {
         return this.service.releaseOneMembershipSubmission();
+    }
+
+    /**
+     * Abort the runtime after this request answers, then release the held
+     * submissions into the disposed runtime; the teardown waits for their outcome.
+     */
+    public abortReleasingMembershipSubmission(): boolean {
+        this.service.abortReleasingMembershipSubmission();
+        return true;
     }
 
     public holdQueueProbe(): boolean {

@@ -235,6 +235,8 @@ discussion requires another review before approval.
 
 Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Review retrieval has no cumulative request, page or byte cap; zero in those configured limits means unlimited. Counters remain recorded. Progress and reconnect do not reset the model timeout. Missing evidence prevents approval.
 
+The CI client separately waits at most sixty seconds (`SERVICE_CONNECT_TIMEOUT_MS` in `scripts/bot/client.js`) for an authenticated review worker, at the start and again after losing an authenticated worker. A stream that drops before authentication does not restart the wait, so a worker that keeps dropping streams cannot hold CI. When none answers, the job fails with "Review service is unavailable." instead of holding CI for the whole review budget. This client-side bound is not part of the policy digest, so changing it needs no worker redeploy.
+
 ### GitHub read token
 
 Without a token the worker's GitHub reads share the anonymous limit of 60 requests per hour per IP. Set `SCP_REVIEW_GITHUB_TOKEN` in the worker's `.env` to a fine-grained personal access token with **Public repositories (read-only)** access and no other permissions; the limit becomes 5,000 requests per hour. The worker sends it only to `api.github.com`, never to the model processes, and never logs it. Restart the worker after changing it.

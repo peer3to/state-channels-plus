@@ -15,7 +15,7 @@ fork-traversal and post-dispute spectating, spectator promotion to participant (
 and `joinChannel`, including concurrent promotion races — the losing joiner's static call is
 decoded and matched against the widened threshold set and the set its pre-signed signatures
 recover to, which is what identifies the pending participant as the missing signer; the losing
-joiner's `joinChannel` then has its held first submission refused and its one retry submitted as the
+joiner's `joinChannel` then has its held first submission refused and its retry submitted as the
 second and last held submission, returns `true`, and ends on-chain pending and `PENDING_PARTICIPANT`
 with one countersignature request answered by the pending participant, no abort, no `onLeftChannel` and
 no status change to `SYNCED` since the call), genesis and

@@ -1401,7 +1401,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         resultingState.currentTurnIndex = 1;
         StateSnapshot memory resultingSnapshot = abi.decode(abi.encode(latestSnapshot), (StateSnapshot));
         resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
-        resultingSnapshot.blockHeight = latestSnapshot.blockHeight + 1;
+        // the first block keeps the genesis height 0, as clients number it
+        resultingSnapshot.blockHeight = 0;
         resultingSnapshot.timestamp = block.timestamp;
 
         Block memory postedBlock;

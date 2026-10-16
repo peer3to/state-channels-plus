@@ -55,6 +55,11 @@ answers true, and the join keeps no force-join counting start. A seated particip
 lists is not pending on chain but is on chain. The joiner that its mirror missed is on chain from the
 chain's pending set alone.
 
+One pushed-snapshot case loses one inbound log on a peer, so a new participant's JOIN lands above
+the hole. After a cache reset, `publishOnChainSnapshot` with the chain snapshot makes that
+participant eligible from the one linked block, while the range down to the snapshot stays
+truncated.
+
 ## Tests
 
 - `an authoritative slash survives failed slash log recovery and repeated lookups`: none
@@ -86,6 +91,7 @@ chain's pending set alone.
 - `a local diamond failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P67, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18, REQ-GOSSIP-4-J5Z4DF.T1.P45
 - `a local diamond failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P68, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P19, REQ-GOSSIP-4-J5Z4DF.T1.P46
 - `a delivered join event makes a pending-only sender a cache hit`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P26
+- `a JOIN in the linked part above a missing inbound block is eligible after a pushed snapshot`: REQ-MSGSTORE-1-6ME9D7.T2.P5
 - `a pushed snapshot preserves unconsumed pending JOINs without a membership read`: REQ-GOSSIP-4-J5Z4DF.T1.P33, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P30
 - `already-open join forwards supplied and default balances with an internal deadline`: none
 - `finite matchmaking timeout does not settle a first-join receipt wait`: none

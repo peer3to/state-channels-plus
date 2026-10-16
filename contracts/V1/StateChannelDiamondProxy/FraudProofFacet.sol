@@ -35,6 +35,73 @@ contract FraudProofFacet is StateChannelCommon {
         return _getHandle(fraudProof.proofType)(fraudProof, fraudProofVerificationContext);
     }
 
+    /// Whether replaying `_block` on its previous state rebuilds the snapshot the block commits to,
+    /// as clients build it. Shared by the invalid-transition fraud proof and the timeout refutation.
+    function isBlockReplayValid(
+        Block memory _block,
+        StateSnapshot memory previousStateSnapshot,
+        bytes memory previousStateStateMachineState
+    ) public returns (bool) {
+        (bool isSuccess, bytes memory encodedModifiedState, Message[] memory outboundMessages) = StateChannelManagerInterface(
+                address(this)
+            )
+            .executeStateTransition(
+                _block.transaction.header.channelId, previousStateStateMachineState, _block.transaction
+            );
+        if (!isSuccess) {
+            return false;
+        }
+
+        SnapshotData memory newSnapshotData = previousStateSnapshot.snapshotData;
+        if (outboundMessages.length > 0) {
+            for (uint256 i = 0; i < outboundMessages.length; i++) {
+                newSnapshotData.totalWithdrawals = stateMachineImplementation.addBalance(
+                    newSnapshotData.totalWithdrawals, outboundMessages[i].balance
+                );
+            }
+
+            newSnapshotData.latestOutboundMessageBlockHeight += 1;
+
+            MessageBlock memory outboundMessageBlock;
+            outboundMessageBlock.previousBlockHash = newSnapshotData.latestOutboundMessageBlockHash;
+            outboundMessageBlock.blockHeight = newSnapshotData.latestOutboundMessageBlockHeight;
+            outboundMessageBlock.messages = outboundMessages;
+            outboundMessageBlock.totalBalance = newSnapshotData.totalWithdrawals;
+            outboundMessageBlock.timestamp = _block.transaction.header.timestamp;
+            newSnapshotData.latestOutboundMessageBlockHash = keccak256(abi.encode(outboundMessageBlock));
+        }
+
+        if (_block.messageBlocks.length > 0) {
+            for (uint256 i = 0; i < _block.messageBlocks.length; i++) {
+                if (_block.messageBlocks[i].previousBlockHash != newSnapshotData.latestInboundMessageBlockHash) {
+                    return false;
+                }
+                uint256 expectedInboundHeight = newSnapshotData.latestInboundMessageBlockHeight + 1;
+                if (_block.messageBlocks[i].blockHeight != expectedInboundHeight) {
+                    return false;
+                }
+                newSnapshotData.latestInboundMessageBlockHeight = expectedInboundHeight;
+                newSnapshotData.latestInboundMessageBlockHash = keccak256(abi.encode(_block.messageBlocks[i]));
+            }
+            // executeStateTransition left the transitioned state loaded
+            newSnapshotData.totalDeposits =
+                _applyInboundMessages(encodedModifiedState, _block.messageBlocks, newSnapshotData.totalDeposits);
+            encodedModifiedState = stateMachineImplementation.getState();
+        }
+
+        newSnapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
+        newSnapshotData.participants = stateMachineImplementation.getParticipants();
+
+        StateSnapshot memory newStateSnapshot = StateSnapshot({
+            snapshotData: newSnapshotData,
+            forkId: previousStateSnapshot.forkId,
+            // a first block's snapshot keeps the genesis height 0, as clients build it
+            blockHeight: _block.transaction.header.transactionCnt == 0 ? 0 : previousStateSnapshot.blockHeight + 1,
+            timestamp: _block.transaction.header.timestamp
+        });
+        return _block.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot));
+    }
+
     function _getHandle(FraudProofType proofType)
         internal
         pure
@@ -114,9 +181,6 @@ contract FraudProofFacet is StateChannelCommon {
                 blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
             );
 
-        bool isSuccess;
-        bytes memory encodedModifiedState;
-        Message[] memory outboundMessages;
         if (fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             return _invalid();
         }
@@ -144,62 +208,7 @@ contract FraudProofFacet is StateChannelCommon {
         // fork verdict only after the snapshot is bound to the signed block -> unlinked evidence never slashes
         if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return _valid(signer);
 
-        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
-            .executeStateTransition(
-                fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
-            );
-        if (!isSuccess) {
-            return _valid(signer);
-        }
-
-        SnapshotData memory newSnapshotData = previousStateSnapshot.snapshotData;
-        if (outboundMessages.length > 0) {
-            for (uint256 i = 0; i < outboundMessages.length; i++) {
-                newSnapshotData.totalWithdrawals = stateMachineImplementation.addBalance(
-                    newSnapshotData.totalWithdrawals, outboundMessages[i].balance
-                );
-            }
-
-            newSnapshotData.latestOutboundMessageBlockHeight += 1;
-
-            MessageBlock memory outboundMessageBlock;
-            outboundMessageBlock.previousBlockHash = newSnapshotData.latestOutboundMessageBlockHash;
-            outboundMessageBlock.blockHeight = newSnapshotData.latestOutboundMessageBlockHeight;
-            outboundMessageBlock.messages = outboundMessages;
-            outboundMessageBlock.totalBalance = newSnapshotData.totalWithdrawals;
-            outboundMessageBlock.timestamp = fraudBlock.transaction.header.timestamp;
-            newSnapshotData.latestOutboundMessageBlockHash = keccak256(abi.encode(outboundMessageBlock));
-        }
-
-        if (fraudBlock.messageBlocks.length > 0) {
-            for (uint256 i = 0; i < fraudBlock.messageBlocks.length; i++) {
-                if (fraudBlock.messageBlocks[i].previousBlockHash != newSnapshotData.latestInboundMessageBlockHash) {
-                    return _valid(signer);
-                }
-                uint256 expectedInboundHeight = newSnapshotData.latestInboundMessageBlockHeight + 1;
-                if (fraudBlock.messageBlocks[i].blockHeight != expectedInboundHeight) {
-                    return _valid(signer);
-                }
-                newSnapshotData.latestInboundMessageBlockHeight = expectedInboundHeight;
-                newSnapshotData.latestInboundMessageBlockHash = keccak256(abi.encode(fraudBlock.messageBlocks[i]));
-            }
-            // executeStateTransition left the transitioned state loaded
-            newSnapshotData.totalDeposits =
-                _applyInboundMessages(encodedModifiedState, fraudBlock.messageBlocks, newSnapshotData.totalDeposits);
-            encodedModifiedState = stateMachineImplementation.getState();
-        }
-
-        newSnapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
-        newSnapshotData.participants = stateMachineImplementation.getParticipants();
-
-        StateSnapshot memory newStateSnapshot = StateSnapshot({
-            snapshotData: newSnapshotData,
-            forkId: previousStateSnapshot.forkId,
-            // a first block's snapshot keeps the genesis height 0, as clients build it
-            blockHeight: fraudBlock.transaction.header.transactionCnt == 0 ? 0 : previousStateSnapshot.blockHeight + 1,
-            timestamp: fraudBlock.transaction.header.timestamp
-        });
-        if (fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot))) {
+        if (isBlockReplayValid(fraudBlock, previousStateSnapshot, previousStateStateMachineState)) {
             return _invalid();
         } // valid state transition
 
