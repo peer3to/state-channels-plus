@@ -58,6 +58,10 @@ reports the kill period open afterwards. The sync returns false with no recorded
 responder served (a refusal or a timeout never reaches verification); neither peer has blacklisted
 the other and the requester still holds its transport to the responder.
 
+The open-kill-period joiner case creates a spectator, opens a valid self-removal dispute, then
+connects it: the spectator reaches synced only once the chain's kill period has ended, never aborts,
+and blacklists none of the four participants.
+
 ## Tests
 
 - `overlapping newcomer gossip waits for its membership proof without blacklisting`: none
@@ -91,6 +95,7 @@ the other and the requester still holds its transport to the responder.
 - `serves the latest sync payload for minimum height 0 while ahead`: REQ-SYNC-1-T2589H.T1.P3, UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2
 - `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17
 - `serves a newer sync payload across a leave above the minimum height`: REQ-SYNC-1-T2589H.T1.P5
+- `a joiner whose initial load lands in an open kill period syncs once it ends, without aborting or blacklisting a responder`: REQ-SYNC-4-AWHFPA.T1.P7
 - `a participant's source probe while the tip fork's kill period is open does not blacklist its honest responder`: REQ-SYNC-4-AWHFPA.T1.P5
 - `suppressed dispute event on the responder → the on-chain window is recovered and its successor is proved`: none
 - `a spectator sees posted junk calldata → no forced timeout check and it stays synced`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P19

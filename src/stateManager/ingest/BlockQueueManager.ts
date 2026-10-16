@@ -2,6 +2,7 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import Clock from "@/Clock";
 import { Block } from "@/models";
+import { retryAfterDelayMs } from "@/rpc/network/services/spectate/SpectateService";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
     BlockOrigin,
@@ -740,14 +741,25 @@ export default class BlockQueueManager {
         // Sync waits for an in-flight request and proves this target before
         // returning success; an invalid proof excludes the peer, a sync
         // failing with no verdict (open kill period) excludes nobody.
-        const synced =
+        const { synced, retryAfter } =
             await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,
                 block.channelId,
                 block.forkId,
                 block.height
             );
-        if (!synced || this.stateManager.isDisposed) return;
+        if (this.stateManager.isDisposed) return;
+        // an open kill period gave no verdict -> probe again once it ends, so
+        // a junk supplier is still excluded
+        if (retryAfter !== undefined) {
+            this.timeoutManager.scheduleTask(
+                () => this.track(() => this.probeSource(peer, entry)),
+                retryAfterDelayMs(retryAfter),
+                "BlockQueueManager - source probe after kill period"
+            );
+            return;
+        }
+        if (!synced) return;
         if (!this.isBlockUnbackedByLineage(block)) return;
         this.logger.verbose(
             "queueTimeout - source proved a lineage that does not carry the block, excluding",

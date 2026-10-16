@@ -39,11 +39,9 @@ export async function assertComputedSuccessorSync(
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    args.forkId
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, args.forkId)
+                    .then(({ synced }) => synced),
             {
                 source: source.address,
                 forkId: requestSuccessor ? successor : sourceForkId
@@ -147,11 +145,9 @@ export async function assertFailedSyncInstallPersistsNothing(
                 const stateBefore = String(await machine.getState());
                 let threw = "";
                 try {
-                    await sm.p2pManager.localRpc.spectateService.sync(
-                        args.source,
-                        sm.channelId,
-                        args.forkId
-                    );
+                    await sm.p2pManager.localRpc.spectateService
+                        .sync(args.source, sm.channelId, args.forkId)
+                        .then(({ synced }) => synced);
                 } catch (error) {
                     threw = String(error);
                 } finally {
@@ -245,11 +241,9 @@ export async function assertQueuedSuccessorBlockSurvivesSyncInstall(
         const sync = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    args.forkId
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, args.forkId)
+                    .then(({ synced }) => synced),
             { source: source.address, forkId: sourceForkId }
         );
         await waitFor(
@@ -366,12 +360,9 @@ export async function assertPinnedHeight(
     const accepted = await h.execOnHost(
         requester,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.sync(
-                args.source,
-                sm.channelId,
-                sm.forkId,
-                args.height
-            ),
+            sm.p2pManager.localRpc.spectateService
+                .sync(args.source, sm.channelId, sm.forkId, args.height)
+                .then(({ synced }) => synced),
         { source: source.address, height: height + offset }
     );
     expect(accepted).to.equal(offset <= 0);
@@ -453,11 +444,9 @@ export async function assertSyncWindowReadRace(
     const sync = h.execOnHost(
         observer,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.sync(
-                args.source,
-                sm.channelId,
-                args.forkId
-            ),
+            sm.p2pManager.localRpc.spectateService
+                .sync(args.source, sm.channelId, args.forkId)
+                .then(({ synced }) => synced),
         { source: source.address, forkId: sourceForkId }
     );
     try {
@@ -508,11 +497,13 @@ export async function assertSyncWindowReadRace(
                         await sm.p2pManager.remoteRpc.spectateService
                             .onSpectateRequest(request)
                             .request(args.source);
-                    return sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                        args.source,
-                        request,
-                        response.encodedSyncPayload
-                    );
+                    return sm.p2pManager.localRpc.spectateService
+                        .applySyncResponse(
+                            args.source,
+                            request,
+                            response.encodedSyncPayload
+                        )
+                        .then(({ synced }) => synced);
                 },
                 { source: source.address, forkId: sourceForkId }
             );
@@ -562,11 +553,9 @@ export async function assertConcurrentSyncWindowOverwrite(
     const first = h.execOnHost(
         observer,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.sync(
-                args.source,
-                sm.channelId,
-                args.forkId
-            ),
+            sm.p2pManager.localRpc.spectateService
+                .sync(args.source, sm.channelId, args.forkId)
+                .then(({ synced }) => synced),
         { source: sources[0].address, forkId: sourceForkId }
     );
     let second: Promise<boolean> | undefined;
@@ -578,11 +567,9 @@ export async function assertConcurrentSyncWindowOverwrite(
         second = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    args.forkId
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, args.forkId)
+                    .then(({ synced }) => synced),
             { source: sources[1].address, forkId: sourceForkId }
         );
         await waitFor(
@@ -658,11 +645,13 @@ export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId, forkId: args.forkId },
-                    args.encodedSyncPayload
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .applySyncResponse(
+                        args.source,
+                        { channelId: sm.channelId, forkId: args.forkId },
+                        args.encodedSyncPayload
+                    )
+                    .then(({ synced }) => synced),
             {
                 source: source.address,
                 forkId: sourceForkId,
@@ -708,18 +697,12 @@ export async function assertConcurrentPinnedRequests(
         observer,
         (sm, args) =>
             Promise.all([
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    sm.forkId,
-                    args.first
-                ),
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    sm.forkId,
-                    args.second
-                )
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, sm.forkId, args.first)
+                    .then(({ synced }) => synced),
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, sm.forkId, args.second)
+                    .then(({ synced }) => synced)
             ]),
         {
             source: source.address,
@@ -860,11 +843,9 @@ export async function assertTimeoutCheckWaitsForSyncInstall(
         const sync = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    args.forkId
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, args.forkId)
+                    .then(({ synced }) => synced),
             { source: source.address, forkId: sourceForkId }
         );
         await waitFor(
@@ -921,8 +902,8 @@ export async function openSelfRemovalDispute(
 /**
  * Peer 0 serves peer 2 a payload (latest state, or pinned to `forkId`),
  * optionally altered by `mutate`; `afterServe` runs, then peer 2 applies the
- * payload. Returns the served payload, the verdict, the recorded rejections
- * and whether peer 2 blacklisted peer 0.
+ * payload. Returns the served payload, the verdict and its `retryAfter`, the
+ * recorded rejections and whether peer 2 blacklisted peer 0.
  */
 export async function applySyncPayload(
     h: MathPeerTestHarness,
@@ -952,7 +933,7 @@ export async function applySyncPayload(
     const stub = h.control(observer).stub;
     await stub.recordSyncRejections().request();
     try {
-        const accepted = await h.execOnHost(
+        const { synced: accepted, retryAfter } = await h.execOnHost(
             observer,
             async (sm, args) =>
                 sm.p2pManager.localRpc.spectateService.applySyncResponse(
@@ -972,6 +953,7 @@ export async function applySyncPayload(
         return {
             payload,
             accepted,
+            retryAfter,
             rejections: await stub.restoreRecordedSyncRejections().request(),
             responderBlacklisted: await h
                 .control(observer)

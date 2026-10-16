@@ -2,6 +2,7 @@
 import * as factory from "../factory";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { QueueIntakeFixture } from "./QueueIntakeFixture";
+import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { ForkId, Hash } from "@/types/types";
@@ -34,7 +35,7 @@ export async function stopWithRejectedAndPendingProbes() {
                 bothEntered = resolve;
             });
             spectate.sync = (...parameters) =>
-                new Promise<boolean>((resolve, reject) => {
+                new Promise<SyncOutcome>((resolve, reject) => {
                     probes.push({
                         release: () =>
                             resolve(sync.apply(spectate, parameters)),
@@ -431,4 +432,94 @@ export async function assertStoredTipCopyDrainsNextBlock(
         if (next === "gossiped")
             await stub.restoreLiveBlockRetention().request();
     }
+}
+
+/**
+ * Peer 1 opens a valid self-removal dispute (reductions held, so the chain
+ * keeps the fork), gossips peer 0 a junk first block on the window's
+ * successor fork, and answers every sync request with its real payload,
+ * which proves that fork only through the still-open window. Peer 0's queue
+ * timeout probes peer 1 inside the kill period and again after it ends.
+ * Returns every probe sync outcome toward peer 1, in order, and whether
+ * peer 0 then blacklisted it.
+ */
+export async function probeJunkSourceAcrossKillPeriod(f: QueueIntakeFixture) {
+    const h = f.h;
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers) await h.rpcStub.holdReductionRace(peer.index);
+    await h.control(h.getPeer(1)).dispute.setForceExit(true).request();
+    await h.tamper.postTamperedDispute(1, () => {}, { markMalicious: false });
+    await h.assert.dispute.committedWait({
+        expectedCount: 1,
+        peersIndices: [0, 1]
+    });
+    const served = await h
+        .control(h.getPeer(1))
+        .spectate.generateSyncPayload(h.channelId, forkId, 0)
+        .request();
+    await h
+        .control(h.getPeer(1))
+        .stub.stubSpectatePayload(served!.encodedSyncPayload)
+        .request();
+    const successorForkId = Codec.decode(
+        served!.encodedSyncPayload,
+        Type.SyncPayload
+    ).disputeWindows[0].reducedForkId;
+    const encodedJunkBlock = await factory.buildAndEncodeBlock(
+        h.getPeer(1).signer,
+        {
+            header: {
+                channelId: h.channelId,
+                forkId: successorForkId,
+                transactionCnt: 0,
+                participant: h.getPeer(1).address
+            }
+        }
+    );
+    const outcomes = await h.execOnHost(
+        h.getPeer(0),
+        async (sm, args, { ethers }) => {
+            const spectate = sm.p2pManager.localRpc.spectateService;
+            const sync = spectate.sync;
+            const seen: SyncOutcome[] = [];
+            spectate.sync = async (...parameters) => {
+                const outcome = await sync.apply(spectate, parameters);
+                if (String(parameters[0]) === args.source) seen.push(outcome);
+                return outcome;
+            };
+            try {
+                const block = ethers.AbiCoder.defaultAbiCoder().decode(
+                    [args.blockType],
+                    args.encodedBlockConfirmation
+                )[0];
+                await sm.blockQueueManager.ingestBlockConfirmation(block, {
+                    origin: args.origin,
+                    senderAddress: args.source
+                });
+                const deadline = Date.now() + args.budgetMs;
+                while (seen.length < 2 && Date.now() < deadline)
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                return seen;
+            } finally {
+                spectate.sync = sync;
+            }
+        },
+        {
+            blockType: BlockConfirmationEthersType,
+            encodedBlockConfirmation: encodedJunkBlock,
+            origin: BlockOrigin.NETWORK as const,
+            source: h.getPeer(1).address,
+            // inside the host call's own deadline, so a missing re-probe
+            // returns one outcome instead of timing the call out
+            budgetMs: h.event.hostExecTimeoutMs() - 5000
+        },
+        { timeoutMs: h.event.hostExecTimeoutMs() }
+    );
+    return {
+        outcomes,
+        sourceBlacklisted: await h
+            .control(h.getPeer(0))
+            .query.isBlacklisted(h.getPeer(1).address)
+            .request()
+    };
 }

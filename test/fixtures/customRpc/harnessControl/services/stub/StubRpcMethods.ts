@@ -402,8 +402,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                     return apply();
                 gate.entered += 1;
                 await gate.gate;
-                const result = fail ? false : await apply();
-                results.push(result);
+                const result = fail ? { synced: false } : await apply();
+                results.push(result.synced);
                 return result;
             }
         );
@@ -3342,7 +3342,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
             this.service.recordSpectateSyncCall(String(args[0]));
             if (forward) return original(...args);
-            return Promise.resolve(true);
+            return Promise.resolve({ synced: true });
         }) as typeof spectate.sync;
         return true;
     }

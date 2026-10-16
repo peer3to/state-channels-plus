@@ -1581,12 +1581,15 @@ honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync
 tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
 blacklist the requester instead
 ([`REQ-SYNC-4-AWHFPA` (No verdict for an open kill period)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
-A fresh spectator whose one initial load lands in a kill period still aborts its runtime; only the
-false verdict is removed. Regressions:
+A no-verdict sync reports the kill period's end: the initial-load owner retries once after it
+instead of aborting, and a queue probe probes the same source again after it, so a junk supplier
+that answers through the open window is still judged. Regressions:
 [`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
 [`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
 [`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
-[`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5).
+[`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5),
+[`REQ-SYNC-4-AWHFPA.T1.P7`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p7),
+[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8).
 
 <a id="find-sync-4-kgp4kf"></a>
 

@@ -1,3 +1,4 @@
+import Clock from "@/Clock";
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
@@ -12,7 +13,10 @@ import {
     assertVerifiedSyncPromotion,
     assertPromotionBeforeReceiverApplication
 } from "@test/fixtures/OffChainPromotionFixture";
-import { expectSyncPayloadAboveRequestedHeightWhileAhead } from "@test/fixtures/PinnedSyncStaging";
+import {
+    expectSyncPayloadAboveRequestedHeightWhileAhead,
+    openSelfRemovalDispute
+} from "@test/fixtures/PinnedSyncStaging";
 import {
     assertSpectatorSilence,
     assertSpectatorRejectedWork
@@ -327,14 +331,16 @@ describe("E2E: Spectate Service", function () {
                                 args.blockConfirmation
                             );
                         const applyPromise =
-                            sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                                args.sourceAddress,
-                                {
-                                    channelId: sm.channelId,
-                                    forkId: args.forkId
-                                },
-                                args.encodedSyncPayload
-                            );
+                            sm.p2pManager.localRpc.spectateService
+                                .applySyncResponse(
+                                    args.sourceAddress,
+                                    {
+                                        channelId: sm.channelId,
+                                        forkId: args.forkId
+                                    },
+                                    args.encodedSyncPayload
+                                )
+                                .then(({ synced }) => synced);
                         await new Promise((r) => setTimeout(r, 100));
                         sm.mutex.unlock();
                         await Promise.allSettled([
@@ -1659,6 +1665,40 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Sync inside an open kill period", function () {
+        it("a joiner whose initial load lands in an open kill period syncs once it ends, without aborting or blacklisting a responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const forkId = h.activeForkId!;
+            // the slow part of a spawn runs before the dispute
+            const joiner = await h.join.createSpectatorPeer();
+            await openSelfRemovalDispute(h);
+            const { killPeriodEnd } =
+                await h.channelManager.isKillPeriodExpired(h.channelId, forkId);
+
+            await h.join.connectSpectator(joiner);
+            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED, {
+                timeoutMs:
+                    (Number(killPeriodEnd) - Clock.getTimeInSeconds()) * 1000 +
+                    h.event.protocolEventTimeoutMs()
+            });
+
+            // premise: the joiner could not sync before the kill period ended
+            expect(Clock.getTimeInSeconds()).to.be.at.least(
+                Number(killPeriodEnd)
+            );
+            expect(joiner.eventSpies.onAbort?.callCount ?? 0).to.equal(0);
+            for (const peer of h.peers.slice(0, 4)) {
+                expect(
+                    await h
+                        .control(joiner)
+                        .query.isBlacklisted(peer.address)
+                        .request()
+                ).to.equal(false);
+            }
+        });
+
         it("a participant's source probe while the tip fork's kill period is open does not blacklist its honest responder", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0);

@@ -62,6 +62,11 @@ connection kept, it is not queued again, and no second queue timeout is armed. W
 check at expiry the entry goes to queued execution; without it at restore the entry is queued
 again.
 
+One probe case stages a real open kill period: peer 1 self-removes (reductions held), gossips peer 0
+a junk first block on the window's successor fork, and answers every sync with its real payload,
+which proves that fork only through the open window. Peer 0's queue-timeout probe gets no verdict
+with `retryAfter` set, probes again once the kill period ends, and then blacklists peer 1.
+
 ## Tests
 
 - `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
@@ -70,6 +75,7 @@ again.
 - `stop waits for a fork recovery held in flight, then clears the recovery state`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45
 - `a fork recovery scheduled or firing after stop began never runs`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46
 - `a queue timeout firing after stop began starts no source probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
+- `a junk supplier answering a source probe through an open kill period gets no verdict, is probed again once it ends, then excluded`: REQ-SYNC-4-AWHFPA.T1.P8
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
 - `a drain that dequeues a stored copy still drains the queued next block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47
 - `an oversized verified eligibility cache does not expand the N-source allowance`: REQ-QSTORE-2-VYWJAQ.T1.P39, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P14

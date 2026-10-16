@@ -3,6 +3,7 @@ import type {
     ProofTierWalk,
     StateProofEvidence
 } from "@/agreementManager/AgreementManager";
+import Clock from "@/Clock";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
@@ -12,7 +13,14 @@ import type { ReductionComputation } from "@/stateManager/reduction/ReductionCom
 import NetworkTransport from "@/transport/NetworkTransport";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
 import type { ChecksumAddress } from "@/types/types";
-import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
+import {
+    Address,
+    Bytes,
+    ChannelId,
+    Hash,
+    ForkId,
+    Timestamp
+} from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
@@ -44,10 +52,28 @@ export interface SyncRequest {
     blockHeight?: number;
 }
 
+/**
+ * A sync's result. `retryAfter`: chain time (seconds) a kill period still
+ * open on the served proof ends -> the sync failed with no verdict and is
+ * provable after it.
+ */
+export interface SyncOutcome {
+    synced: boolean;
+    retryAfter?: Timestamp;
+}
+
+const SYNCED: SyncOutcome = { synced: true };
+const NOT_SYNCED: SyncOutcome = { synced: false };
+
+/** Milliseconds until one second past `retryAfter` on the runtime clock. */
+export function retryAfterDelayMs(retryAfter: Timestamp): number {
+    return Math.max(0, retryAfter + 1 - Clock.getTimeInSeconds()) * 1000;
+}
+
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        { request: SyncRequest; result: Promise<boolean> }
+        { request: SyncRequest; result: Promise<SyncOutcome> }
     > = new Map();
 
     constructor(p2pManager: P2PManager) {
@@ -72,7 +98,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         forkId?: ForkId,
         blockHeight?: number,
         timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime * 1000
-    ): Promise<boolean> {
+    ): Promise<SyncOutcome> {
         const syncRequest: SyncRequest = {
             channelId,
             forkId,
@@ -95,8 +121,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     (request.blockHeight !== undefined &&
                         blockHeight !== undefined &&
                         request.blockHeight >= blockHeight));
-            const synced = await inFlight.result;
-            if (!synced || coversRequest) return synced;
+            const outcome = await inFlight.result;
+            if (!outcome.synced || coversRequest) return outcome;
             inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
@@ -120,7 +146,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         normalizedPeerAddress: string,
         syncRequest: SyncRequest,
         timeoutMs: number
-    ): Promise<boolean> {
+    ): Promise<SyncOutcome> {
         let response: { encodedSyncPayload: Bytes };
         try {
             response = await this.remoteRpc.spectateService
@@ -137,7 +163,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 normalizedPeerAddress,
                 DisconnectPolicy.allowRetry()
             );
-            return false;
+            return NOT_SYNCED;
         }
         try {
             return await this.applySyncResponse(
@@ -161,18 +187,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * body of the old `onSpectateResponse` endpoint; the request now lives in
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
-     * Validation failures reject the peer and return false. The caller owns
-     * the lifecycle consequence of a failed sync. A disposed runtime, a
-     * served window still in its kill period, or (latest mode) a final-fork
-     * window still in its kill period returns false with no verdict on the
-     * peer.
+     * Validation failures reject the peer and return not synced. The caller
+     * owns the lifecycle consequence of a failed sync. A disposed runtime
+     * returns not synced with no verdict on the peer; a served window, or
+     * (latest mode) a final-fork window, still in its kill period does too
+     * and carries `retryAfter`, the kill period's end.
      */
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
-    ): Promise<boolean> {
-        if (this.p2pManager.stateManager.isDisposed) return false;
+    ): Promise<SyncOutcome> {
+        if (this.p2pManager.stateManager.isDisposed) return NOT_SYNCED;
         const channelId = syncRequest.channelId;
 
         // A malicious/broken peer can return bytes that aren't a valid
@@ -307,7 +333,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         "dispute window not linked"
                     );
                 // 2.2) verify that they're expired - if they're not expired abort
-                const { windowExists, isExpired } =
+                const { windowExists, isExpired, killPeriodEnd } =
                     await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
                         channelId,
                         dw.forkId
@@ -324,7 +350,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         "applySyncResponse - kill period not expired, no verdict",
                         { peerAddress, forkId: dw.forkId }
                     );
-                    return false;
+                    return { synced: false, retryAfter: Number(killPeriodEnd) };
                 }
 
                 // 2.3) reduce them if they're not already reduced
@@ -464,7 +490,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2.8.2) (requested) prove the pinned fork or a successor whose verified lineage contains it.
             if (!syncRequest.forkId) {
                 // 2.8.1) (spectating)
-                const { windowExists, isExpired } =
+                const { windowExists, isExpired, killPeriodEnd } =
                     await stateManager.stateChannelManagerContract.isKillPeriodExpired(
                         channelId,
                         currentForkId
@@ -479,7 +505,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         "applySyncResponse - latest fork disputed in its kill period, no verdict",
                         { peerAddress, forkId: currentForkId }
                     );
-                    return false;
+                    return { synced: false, retryAfter: Number(killPeriodEnd) };
                 }
                 if (windowExists)
                     return this.rejectSync(
@@ -596,7 +622,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 }
             );
             if (shouldAbort) {
-                if (stateManager.isDisposed) return false;
+                if (stateManager.isDisposed) return NOT_SYNCED;
                 return this.rejectSync(
                     peerAddress,
                     "payload persistence aborted"
@@ -649,7 +675,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             this.logger.debug(
                 "Spectator successfully synced to latest proven state"
             );
-            return true;
+            return SYNCED;
         }
     }
 
@@ -1163,7 +1189,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
     }
 
-    private rejectSync(peerAddress: string, reason: string): false {
+    private rejectSync(peerAddress: string, reason: string): SyncOutcome {
         this.logger.debug("applySyncResponse - rejecting sync", {
             peerAddress,
             reason
@@ -1172,7 +1198,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             peerAddress,
             `sync payload rejected: ${reason}`
         );
-        return false;
+        return NOT_SYNCED;
     }
 }
 

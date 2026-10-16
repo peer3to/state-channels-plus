@@ -203,12 +203,9 @@ export async function assertDisposalDuringSyncInstall(
     };
     stub.holdSyncInstall();
     try {
-        const sync = localRpc.spectateService.sync(
-            responder.address,
-            sm.channelId,
-            forkId,
-            tip
-        );
+        const sync = localRpc.spectateService
+            .sync(responder.address, sm.channelId, forkId, tip)
+            .then(({ synced }) => synced);
         await waitFor(async () => stub.getSyncInstallEntered() === 1);
         const stopping = sm.stop();
         stub.releaseSyncInstall();

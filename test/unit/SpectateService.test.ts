@@ -98,15 +98,19 @@ describe("Unit: SpectateService", function () {
                 const response = await sm.p2pManager.remoteRpc.spectateService
                     .onSpectateRequest(request)
                     .request(source);
-                return sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    source,
-                    {
-                        ...request,
-                        blockHeight:
-                            sm.storage.blocks.getNextBlockHeight(sm.forkId) + 1
-                    },
-                    response.encodedSyncPayload
-                );
+                return sm.p2pManager.localRpc.spectateService
+                    .applySyncResponse(
+                        source,
+                        {
+                            ...request,
+                            blockHeight:
+                                sm.storage.blocks.getNextBlockHeight(
+                                    sm.forkId
+                                ) + 1
+                        },
+                        response.encodedSyncPayload
+                    )
+                    .then(({ synced }) => synced);
             },
             { source: h.getPeer(0).address }
         );
@@ -138,12 +142,9 @@ describe("Unit: SpectateService", function () {
             const accepted = await h.execOnHost(
                 observer,
                 async (sm, args) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
-                        args.source,
-                        sm.channelId,
-                        args.forkId,
-                        0
-                    ),
+                    sm.p2pManager.localRpc.spectateService
+                        .sync(args.source, sm.channelId, args.forkId, 0)
+                        .then(({ synced }) => synced),
                 { source: source.address, forkId: sourceForkId }
             );
             expect(accepted).to.equal(true);
@@ -169,12 +170,9 @@ describe("Unit: SpectateService", function () {
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
-                    args.source,
-                    sm.channelId,
-                    args.forkId,
-                    0
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .sync(args.source, sm.channelId, args.forkId, 0)
+                    .then(({ synced }) => synced),
             { source: source.address, forkId: ethers.id("unknown-pinned-fork") }
         );
         expect(accepted).to.equal(false);
@@ -725,8 +723,13 @@ describe("Unit: SpectateService", function () {
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
             await openSelfRemovalDispute(h);
-            const { payload, accepted, rejections, responderBlacklisted } =
-                await applySyncPayload(h, {});
+            const {
+                payload,
+                accepted,
+                retryAfter,
+                rejections,
+                responderBlacklisted
+            } = await applySyncPayload(h, {});
             // premise: the payload carries the open window
             expect(
                 payload.disputeWindows.map((window) => window.forkId)
@@ -735,6 +738,10 @@ describe("Unit: SpectateService", function () {
                 false
             );
             expect(accepted).to.equal(false);
+            // no verdict carries the kill period's end to retry after
+            expect(retryAfter).to.equal(
+                (await h.query.killPeriod(forkId, 2)).killPeriodEnd
+            );
             expect(rejections).to.deep.equal([]);
             expect(responderBlacklisted).to.equal(false);
         });
@@ -751,18 +758,23 @@ describe("Unit: SpectateService", function () {
             );
             try {
                 await openSelfRemovalDispute(h, [0]);
-                const { payload, accepted, rejections, responderBlacklisted } =
-                    await applySyncPayload(h, {
-                        afterServe: async () => {
-                            // premise: the requester's local diamond lacks the window
-                            expect(
-                                await h
-                                    .control(h.getPeer(2))
-                                    .query.getDisputeWindowCommitments(forkId)
-                                    .request()
-                            ).to.deep.equal([]);
-                        }
-                    });
+                const {
+                    payload,
+                    accepted,
+                    retryAfter,
+                    rejections,
+                    responderBlacklisted
+                } = await applySyncPayload(h, {
+                    afterServe: async () => {
+                        // premise: the requester's local diamond lacks the window
+                        expect(
+                            await h
+                                .control(h.getPeer(2))
+                                .query.getDisputeWindowCommitments(forkId)
+                                .request()
+                        ).to.deep.equal([]);
+                    }
+                });
                 // premise: the payload carries the open window
                 expect(
                     payload.disputeWindows.map((window) => window.forkId)
@@ -771,6 +783,10 @@ describe("Unit: SpectateService", function () {
                     (await h.query.killPeriod(forkId, 2)).isExpired
                 ).to.equal(false);
                 expect(accepted).to.equal(false);
+                // no verdict carries the kill period's end to retry after
+                expect(retryAfter).to.equal(
+                    (await h.query.killPeriod(forkId, 2)).killPeriodEnd
+                );
                 expect(rejections).to.deep.equal([]);
                 expect(responderBlacklisted).to.equal(false);
             } finally {
@@ -782,7 +798,7 @@ describe("Unit: SpectateService", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
-            const { accepted, rejections, responderBlacklisted } =
+            const { accepted, retryAfter, rejections, responderBlacklisted } =
                 await applySyncPayload(h, {
                     // a window for the undisputed on-chain fork
                     mutate: (payload) => {
@@ -805,6 +821,7 @@ describe("Unit: SpectateService", function () {
                 false
             );
             expect(accepted).to.equal(false);
+            expect(retryAfter).to.equal(undefined);
             expect(rejections).to.deep.equal(["dispute window not on chain"]);
             expect(responderBlacklisted).to.equal(true);
         });
@@ -813,10 +830,15 @@ describe("Unit: SpectateService", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
-            const { payload, accepted, rejections, responderBlacklisted } =
-                await applySyncPayload(h, {
-                    afterServe: () => openSelfRemovalDispute(h)
-                });
+            const {
+                payload,
+                accepted,
+                retryAfter,
+                rejections,
+                responderBlacklisted
+            } = await applySyncPayload(h, {
+                afterServe: () => openSelfRemovalDispute(h)
+            });
             // premise: the latest fork was undisputed when the payload was
             // served, and its window is in its kill period when applied
             expect(payload.disputeWindows).to.deep.equal([]);
@@ -824,6 +846,10 @@ describe("Unit: SpectateService", function () {
             expect(killPeriod.windowExists).to.equal(true);
             expect(killPeriod.isExpired).to.equal(false);
             expect(accepted).to.equal(false);
+            // no verdict carries the kill period's end to retry after
+            expect(retryAfter).to.equal(
+                (await h.query.killPeriod(forkId, 2)).killPeriodEnd
+            );
             expect(rejections).to.deep.equal([]);
             expect(responderBlacklisted).to.equal(false);
         });
@@ -836,7 +862,7 @@ describe("Unit: SpectateService", function () {
             for (const peer of h.peers) {
                 await h.rpcStub.holdReductionRace(peer.index);
             }
-            const { accepted, rejections, responderBlacklisted } =
+            const { accepted, retryAfter, rejections, responderBlacklisted } =
                 await applySyncPayload(h, {
                     afterServe: async () => {
                         await openSelfRemovalDispute(h);
@@ -848,6 +874,7 @@ describe("Unit: SpectateService", function () {
                     }
                 });
             expect(accepted).to.equal(false);
+            expect(retryAfter).to.equal(undefined);
             expect(rejections).to.deep.equal(["latest fork is disputed"]);
             expect(responderBlacklisted).to.equal(true);
         });

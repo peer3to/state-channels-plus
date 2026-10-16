@@ -266,11 +266,13 @@ async function stageAndApplyDisputeWindowInboundSync(
         h.execOnHost(
             requester,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId, forkId: args.forkId },
-                    args.encodedSyncPayload
-                ),
+                sm.p2pManager.localRpc.spectateService
+                    .applySyncResponse(
+                        args.source,
+                        { channelId: sm.channelId, forkId: args.forkId },
+                        args.encodedSyncPayload
+                    )
+                    .then(({ synced }) => synced),
             {
                 source: responder.address,
                 forkId: sourceForkId,

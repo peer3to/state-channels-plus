@@ -32,6 +32,9 @@ period (served before the dispute, applied after it expired, reductions held) is
 `latest fork is disputed`; both blacklist peer 0. The last case blacklists an honest payload under
 the current stale-response policy.
 
+Every no-verdict kill-period case also asserts the outcome's `retryAfter` equals the chain's
+`killPeriodEnd`; the rejection cases carry none.
+
 ## Tests
 
 - `concurrent identical sync requests share the completed result`: none

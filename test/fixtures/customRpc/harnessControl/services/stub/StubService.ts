@@ -2226,7 +2226,7 @@ export class StubService extends ANetworkRpcService<
             await hold.gate;
             try {
                 const result = await original(...args);
-                if (result) hold.succeeded += 1;
+                if (result.synced) hold.succeeded += 1;
                 return result;
             } finally {
                 hold.completed += 1;

@@ -1251,11 +1251,9 @@ export async function probeSyncingParticipantPastTimeout(
             participant,
             async (sm, a) => {
                 const started = Date.now();
-                const synced =
-                    await sm.p2pManager.localRpc.spectateService.sync(
-                        a.responder,
-                        sm.channelId
-                    );
+                const synced = await sm.p2pManager.localRpc.spectateService
+                    .sync(a.responder, sm.channelId)
+                    .then(({ synced }) => synced);
                 return {
                     synced,
                     elapsedMs: Date.now() - started,
@@ -1427,13 +1425,15 @@ export async function probeOpenedRuntimeWithoutParticipant(
         spectator,
         async (sm, a) =>
             // three windows outlast the responder's two-window deadline
-            await sm.p2pManager.localRpc.spectateService.sync(
-                a.responder,
-                sm.channelId,
-                undefined,
-                undefined,
-                sm.timeConfig.agreementTime * 3 * 1000
-            ),
+            await sm.p2pManager.localRpc.spectateService
+                .sync(
+                    a.responder,
+                    sm.channelId,
+                    undefined,
+                    undefined,
+                    sm.timeConfig.agreementTime * 3 * 1000
+                )
+                .then(({ synced }) => synced),
         { responder: responder.address }
     );
     await waitFor(

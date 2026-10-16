@@ -12,6 +12,7 @@ import {
 import { assertDeployedMaximum } from "@test/fixtures/QueueDeploymentFixture";
 import {
     assertStoredTipCopyDrainsNextBlock,
+    probeJunkSourceAcrossKillPeriod,
     scheduleForkRecoveryAroundStop,
     stopWithHeldForkRecovery,
     stopWithRejectedAndPendingProbes
@@ -305,6 +306,20 @@ describe("Unit: BlockQueueManager", () => {
             MathTestSession.getHarness(),
             "ingested"
         );
+    });
+
+    it("a junk supplier answering a source probe through an open kill period gets no verdict, is probed again once it ends, then excluded", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start();
+        const { outcomes, sourceBlacklisted } =
+            await probeJunkSourceAcrossKillPeriod(f);
+        // the first probe ran inside the kill period: no verdict, retry after it
+        expect(outcomes[0]?.synced).to.equal(false);
+        expect(outcomes[0]?.retryAfter).to.be.a("number");
+        // the probe ran again after it ended and judged the supplier
+        expect(outcomes).to.have.length(2);
+        expect(outcomes[1]?.retryAfter).to.equal(undefined);
+        expect(sourceBlacklisted).to.equal(true);
     });
 
     it("sync succeeds but the sender is still absent: blacklisted with no queue entry", async () => {

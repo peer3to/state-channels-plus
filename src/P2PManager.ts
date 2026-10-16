@@ -14,6 +14,7 @@ import Holepunch from "@/Holepunch";
 import type PeerProfile from "@/PeerProfile";
 import ProfileManager from "@/ProfileManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
+import { retryAfterDelayMs } from "@/rpc/network/services/spectate/SpectateService";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import type StateManager from "@/stateManager";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
@@ -296,13 +297,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     private async syncConnectedParticipant(
-        peerAddress: Address
+        peerAddress: Address,
+        isKillPeriodRetry = false
     ): Promise<void> {
-        if (this.initialSyncStarted) return;
-        this.initialSyncStarted = true;
-        this.cancelInitialSyncDeadline();
+        if (!isKillPeriodRetry) {
+            if (this.initialSyncStarted) return;
+            this.initialSyncStarted = true;
+            this.cancelInitialSyncDeadline();
+        }
         const stateManager = this.stateManager;
-        const success = await this.localRpc.spectateService.sync(
+        const { synced, retryAfter } = await this.localRpc.spectateService.sync(
             peerAddress,
             stateManager.channelId,
             undefined,
@@ -313,13 +317,38 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
         if (this.initialSyncSettled || stateManager.status !== Status.OPENED) {
-            this.settleInitialSync(success);
+            this.settleInitialSync(synced);
             return;
         }
-        if (!success && !stateManager.isDisposed) {
+        // the proof crossed a kill period still open -> no verdict, provable
+        // once it ends: retry once then instead of aborting
+        if (
+            !synced &&
+            retryAfter !== undefined &&
+            !isKillPeriodRetry &&
+            !stateManager.isDisposed
+        ) {
+            stateManager.timeoutManager.scheduleTask(
+                () =>
+                    this.syncConnectedParticipant(peerAddress, true).catch(
+                        (error) => {
+                            this.logger.error(
+                                "Initial sync retry after the kill period failed",
+                                { peerAddress, error: errorMessage(error) }
+                            );
+                            if (!stateManager.isDisposed) stateManager.abort();
+                            this.settleInitialSync(false);
+                        }
+                    ),
+                retryAfterDelayMs(retryAfter),
+                "P2PManager - initial sync retry after kill period"
+            );
+            return;
+        }
+        if (!synced && !stateManager.isDisposed) {
             stateManager.abort();
         }
-        this.settleInitialSync(success);
+        this.settleInitialSync(synced);
     }
 
     private settleInitialSync(success: boolean): void {
