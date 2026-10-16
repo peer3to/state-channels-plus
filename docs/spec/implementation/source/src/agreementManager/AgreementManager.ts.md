@@ -100,7 +100,10 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P74` — `tryBuildMilestoneUp` tries the next retained continuation when the first cannot complete the hop
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P75` — retained continuations are ranked by the hop's threshold set from `getMilestoneThresholdSigners`; outsider confirmations do not lift a sibling
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P76` — `getRetainedContinuations` puts the retained block a history block above the gap names by hash first
-- [ ] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P77` — `collectLinkedRun` tries the next retained continuation when a run does not reach its end
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P77` — `collectLinkedRun` tries the next retained continuation when a run does not reach its end
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P78` — `stageVerifiedProof` retains a start block that neither this peer holds, nor a hop's ancestry reaches, nor the first tail block links to
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P79` — `persistExecutedPredecessor` writes a retained start block into history once the first tail block on it executed
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P80` — `stageVerifiedProof` stores the one start block of a proof with no hop and no tail
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

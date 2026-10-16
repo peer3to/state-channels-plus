@@ -1200,8 +1200,12 @@ height, and only for a block by the same author. Requirement
 [`FIND-PROOF-PERSISTENCE-1-HYC9DS`](open-findings.md#find-proof-persistence-1-hyc9ds). Residual
 risks: [`FIND-COUNTER-PREFLIGHT-1-DQMG1T`](open-findings.md#find-counter-preflight-1-dqmg1t),
 [`FIND-SYNC-DOUBLE-SIGN-RESPONDER-1-X40BQY`](open-findings.md#find-sync-double-sign-responder-1-x40bqy),
-two threshold-final identities at one height (unspecified), and retained evidence that is never
-pruned. Mirrors:
+two threshold-final identities at one height (unspecified), a proof that ends at its anchor with
+no hop and no tail (its start block is still stored uncorroborated), and retained evidence that is
+never pruned. In a proof with a tail, the block at the anchor height is history only when this peer
+holds it, a hop's ancestry reaches it, or the first tail block on it executed; sync judges that first
+tail block from the retained start block. Retained continuations are taken by hash link first, then
+ranked by the hop's threshold set, and the next is tried when a run breaks. Mirrors:
 [AgreementManager.ts.md](../implementation/source/src/agreementManager/AgreementManager.ts.md),
 [RetainedEvidenceStorage.ts.md](../implementation/source/src/storage/RetainedEvidenceStorage.ts.md),
 [ValidationService.ts.md](../implementation/source/src/stateManager/ingest/ValidationService.ts.md).

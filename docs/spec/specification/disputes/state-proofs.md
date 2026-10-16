@@ -112,7 +112,11 @@ Audit evidence persistence alone must not advance the peer's active view or caus
 **<a id="req-sp-11-535j0r"></a>`REQ-SP-11-535J0R`.** Persisting a verified proof, in synchronization or
 in dispute audit, splits its checked blocks outside the replayed tail into final history and
 support. Final history is the start block, each threshold hop's first block, and their hash
-ancestors inside the proof. Every other checked block is support. Support is retained as evidence only: it keeps its signatures for later proof
+ancestors inside the proof. The start block counts only when something corroborates which block it
+is: the peer already holds it, a hop's ancestry in the proof reaches it, or the first tail block
+on it has executed (that block is judged from the retained start block, which becomes history once
+it executed). A proof that ends at its start with no hop and no tail stores its one start block,
+because nothing can corroborate it. Every other checked block is support. Support is retained as evidence only: it keeps its signatures for later proof
 reconstruction, but it never occupies executed history, never moves the installed view, and never
 grounds a history conflict, a persistence abort or an invalid-transition accusation. A support
 block by the same author as a later block at its height still exposes that author's double sign.
@@ -155,8 +159,11 @@ key can append support that links by hash to a real block. Treating that support
 history would let one walk-valid proof poison the coordinate of a later real block: an honest
 auditor would accuse the real block of an invalid transition and lose its counter on chain, and a
 synced peer would abort and blacklist the next honest responder. Retaining support as evidence only
-removes that ground. Residual risk: an auditor still stores a block counter without first
-confirming that the chain accepts its verdict.
+removes that ground. The walk binds the block at the anchor height only by its author signature and
+snapshot commitment, so that block too is history only when corroborated. Residual risks: an auditor
+still stores a block counter without first confirming that the chain accepts its verdict, and a
+proof that ends at its anchor with no hop and no tail can still install a forged block at the anchor
+height.
 
 The per-step invalidity counter avoids re-walking earlier milestones, but binding supplied data
 still costs more as the proof grows. Its total cost is not constant. The safety argument for
@@ -634,6 +641,14 @@ double sign.
 <a id="req-sp-11-535j0r.t1.p26"></a>`REQ-SP-11-535J0R.T1.P26` — A retained sibling confirmed by outsiders against one with more of the hop's threshold signers: the hop is proved through the one with more threshold signers.
 
 <a id="req-sp-11-535j0r.t1.p27"></a>`REQ-SP-11-535J0R.T1.P27` — A history block above a gap names its predecessor: the retained block it names is taken before a higher-ranked sibling.
+
+<a id="req-sp-11-535j0r.t1.p28"></a>`REQ-SP-11-535J0R.T1.P28` — A forged block at the anchor height in its own milestone below a later hop with a tail never becomes history and is retained as evidence.
+
+<a id="req-sp-11-535j0r.t1.p29"></a>`REQ-SP-11-535J0R.T1.P29` — A forged block at the anchor height beside the real anchor run whose tail links to the real anchor block: the real block becomes history once its first tail block executes, the forged one stays evidence.
+
+<a id="req-sp-11-535j0r.t1.p30"></a>`REQ-SP-11-535J0R.T1.P30` — A proof that is only a block at the anchor height, with no hop and no tail, stores that block as history.
+
+<a id="req-sp-11-535j0r.t1.p31"></a>`REQ-SP-11-535J0R.T1.P31` — A retained sibling tried first ends the tail before the requested height: the tail search tries the next sibling and the rebuilt proof reaches the height.
 
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 

@@ -142,6 +142,7 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — A payload with forged support from one responder, then an honest payload from another holding the real block there: both accepted, no persistence abort, the honest responder not blacklisted
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — A proof whose tail fails replay after its final history is persisted: rejected, the history stays, the head stays at the endpoint
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — Forged support by the real block's own author, then an honest tail replaying the real block: the second sync stops, neither block becomes history
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — A tail whose first block links to a retained start block replays that block from the start block as its predecessor, then writes the start block into history
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

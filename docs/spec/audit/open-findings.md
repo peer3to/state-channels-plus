@@ -318,13 +318,18 @@ The behavior is specified as
   threshold set (`getMilestoneThresholdSigners`), the one eligibility rule, not the participants of
   the latest held state. A tail and the top of a downward search have no threshold set yet and try
   their candidates in block-hash order. Rejected: one greedy pick that is never revisited.
-- Decided (Ljuba, 2026-10-16): the block at the anchor height is history only when something
-  corroborates it (this peer already holds it, a later final point's ancestry in the proof reaches
-  it, or the first tail block on it has executed); otherwise it is retained evidence. Rejected:
-  storing it on its author signature and snapshot commitment alone (anyone with a key can sign a
-  block at that height committing the real anchor snapshot), and binding the anchor block on chain
-  (a contract change). **Not implemented yet:** an engineer question is open on the case with no
-  tail (see below).
+- Decided (Ljuba, 2026-10-16): in a proof with a tail, the block at the anchor height is history
+  only when something corroborates it: this peer already holds it, a later final point's ancestry in
+  the proof reaches it, or the first tail block on it has executed (sync judges that first block
+  from the retained start block and writes the start block once it executed). Otherwise it is
+  retained evidence. Rejected: storing it on its author signature and snapshot commitment alone
+  (anyone with a key can sign a block at that height committing the real anchor snapshot), and
+  binding the anchor block on chain (a contract change).
+- Decided (Ljuba, 2026-10-16): a proof that ends at its anchor with no hop and no tail stores its
+  one start block as history, as before, and the residual risk is a known limit (below). Rejected:
+  promoting a retained start block when a live block executes on it, because that changes the live
+  block pipeline and every previous-block reader, beyond this fix; and refusing such a sync, because
+  honest syncs legitimately end at the anchor.
 - Decided (Ljuba, 2026-10-16): a same-author double sign found through retained evidence during
   sync is the author's offense, never the honest responder's; the responder must not be
   blacklisted for it, and it is punished the way other double signatures are. This sync behavior
@@ -351,7 +356,10 @@ The behavior is specified as
   U139 support alone never makes a final point, U140 a missing history state still throws, U141
   retained confirmations still count after the block enters history, U142 a retained block with
   a held state is no final point, U144 the next retained sibling is tried when the first cannot
-  complete the hop, U145 ranking by the hop's threshold set.
+  complete the hop, U145 ranking by the hop's threshold set, U146 a forged anchor-height block below
+  a hop stays evidence, U147 the real anchor block becomes history once its first tail block executes
+  while a forged one beside it stays evidence, U148 the no-tail limit, U149 the tail search tries the
+  next sibling.
 - Audit, `DisputeReplayPersistence.test.ts`: U135 in both persistence orders.
 - Live validation, `ValidationService.test.ts`: the four "retained proof evidence" / "history
   block … retained proof evidence" cases and the self-copy control.
@@ -365,13 +373,13 @@ Controls for identical overlapping blocks with complementary signatures, virtual
 membership-change reconstruction, genuine invalid transitions and existing finalized conflicts are
 unchanged. Engineer review pending.
 
-**Open on the anchor-height rule (2026-10-16).** When a proof ends at its anchor with no tail
-(for example `[[F′]]` alone) none of the three corroborations can happen, so the start block stays
-retained while the peer's view is installed at that height. The next live block, the participant's
-own next block, and the readers of the previous block (timestamps, linkage, participant checks)
-then have no history block below them. Whether a live block that executes on a retained start block
-corroborates it, and how a participant authors on top of an uncorroborated start, is not settled;
-the rule is not implemented until it is.
+**Known limit (anchor height without a tail).** For the proof shape `[[F′]]` (one milestone, only
+the block at the anchor height, no hop and no tail; also with several runs that hold only that one
+block) none of the three corroborations is possible: this peer does not hold the block yet, no later
+final point exists whose ancestry could reach it, and no tail block executes on it. The walk accepts
+any authentic block at that height whose snapshot commitment equals the anchor's, so such a proof
+can still install a forged block at the anchor height, as before this fix. Pinned by U148
+(`SyncReconstruction.test.ts`).
 
 **Known limit (pruning).** Retained evidence is never pruned, and one coordinate can hold any number
 of identities. Block history has no pruning seam in `src/` either, so retained evidence follows it.
