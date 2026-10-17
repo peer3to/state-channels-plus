@@ -18,7 +18,7 @@ same reduction to completion. Oracles are completed-reduction and status queries
 commitments, event spies, and quiesced host errors. Real concurrent multi-reducer races and
 `ReductionManager`'s completion-mismatch fatal path are not exercised (simulation errors stand in
 for the races), so those permutations stay unassigned.
-The empty-dispute-window case runs with `evidenceTime: 6` (owner-approved harness evidence floor, plan 30 item 7): the automatic kill and replacement evidence must both land inside one evidence period, which the three-second floor could not hold under gate load.
+The empty-dispute-window case runs at the harness evidence floor (`MIN_TEST_TIME_CONFIG.evidenceTime`): the automatic kill and replacement evidence must both land inside one evidence period, and a kill under farm load needs the floor's room.
 
 ## Tests
 
