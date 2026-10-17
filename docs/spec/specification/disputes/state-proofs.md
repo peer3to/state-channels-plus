@@ -81,7 +81,8 @@ milestone. Missing signatures can lower the proved final point while leaving a v
 tail; they do not necessarily mean data is unavailable. A snapshot update targets the first final
 block of the last milestone, never its evidence tail. An anchor-only update makes no progress.
 A node that keeps the stored proof of [proof-store.md](../storage/proof-store.md) reuses its kept
-hops and searches only above them ([`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](../storage/proof-store.md#req-proofstore-4-zfcwnb)).
+hops, searches only above them for its latest proof, and ends a proof at a lower final point with
+only the kept hops at or below it ([`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](../storage/proof-store.md#req-proofstore-4-zfcwnb)).
 
 ## Verification and replay
 

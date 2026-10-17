@@ -76,7 +76,9 @@ explicit-failure joins prevent that.
 
 ## Future Work
 
-_Non-normative._ Deduplicated large-state storage once the disk medium lands. Pruning gaps above
-the on-chain snapshot ([proof-store.md](./proof-store.md)) would end the contiguous history that
-the participant-union read of [`REQ-SNAPSTORE-2-Q7E6TQ`](snapshots-and-states.md#req-snapstore-2-q7e6tq) presumes ([`OQ-SPEC-PROOFSTORE-2-V4N7VH` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-v4n7vh));
+_Non-normative._ Deduplicated large-state storage once the disk medium lands. The pruning of
+[proof-store.md](./proof-store.md) removes links that the participant-union read of
+[`REQ-SNAPSTORE-2-Q7E6TQ`](snapshots-and-states.md#req-snapstore-2-q7e6tq) presumes: pruning below the on-chain snapshot removes the block below the anchor
+block ([`OQ-SPEC-PROOFSTORE-1-SW4ZGT` (Retention rule for pruning below the on-chain snapshot)](../open-questions.md#oq-spec-proofstore-1-sw4zgt)), and pruning gaps above it would end the contiguous history
+([`OQ-SPEC-PROOFSTORE-2-V4N7VH` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-v4n7vh));
 which full states stay is [`OQ-SPEC-PROOFSTORE-6-X70EWK` (Full-state retention)](../open-questions.md#oq-spec-proofstore-6-x70ewk).

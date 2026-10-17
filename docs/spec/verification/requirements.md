@@ -132,7 +132,7 @@ Specification cases tested: 3/11. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T
 Specification cases tested: 0/6.
 
 [`INV-PROOFSTORE-2-NT5FD6` (Absence is never evidence)](../specification/storage/proof-store.md#inv-proofstore-2-nt5fd6)
-Specification cases tested: 0/6.
+Specification cases tested: 0/7.
 
 [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 Specification cases tested: 3/6. Untested: T1.P2, T1.P4, T1.P5.
@@ -741,31 +741,31 @@ Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 Specification cases tested: 17/18. Untested: T1.P6.
 
 [`REQ-PROOFSTORE-1-G11DH7` (One stored proof per active fork)](../specification/storage/proof-store.md#req-proofstore-1-g11dh7)
-Specification cases tested: 0/6.
+Specification cases tested: 0/12.
 
 [`REQ-PROOFSTORE-2-99RRXK` (Seeding from a verified proof)](../specification/storage/proof-store.md#req-proofstore-2-99rrxk)
-Specification cases tested: 0/6.
+Specification cases tested: 0/8.
 
 [`REQ-PROOFSTORE-3-QDXNH9` (Extension keeps earlier evidence)](../specification/storage/proof-store.md#req-proofstore-3-qdxnh9)
 Specification cases tested: 0/8.
 
 [`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](../specification/storage/proof-store.md#req-proofstore-4-zfcwnb)
-Specification cases tested: 0/5.
+Specification cases tested: 0/12.
 
-[`REQ-PROOFSTORE-5-VNQGDG` (One proof for every reader)](../specification/storage/proof-store.md#req-proofstore-5-vnqgdg)
-Specification cases tested: 0/7.
+[`REQ-PROOFSTORE-5-VNQGDG` (One proof source for every reader)](../specification/storage/proof-store.md#req-proofstore-5-vnqgdg)
+Specification cases tested: 0/9.
 
 [`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](../specification/storage/proof-store.md#req-proofstore-6-38g1kc)
-Specification cases tested: 0/6.
+Specification cases tested: 0/7.
 
 [`REQ-PROOFSTORE-7-T0EBMX` (Reset on fork change)](../specification/storage/proof-store.md#req-proofstore-7-t0ebmx)
 Specification cases tested: 0/4.
 
 [`REQ-PROOFSTORE-8-XWEMTJ` (Pruning below the on-chain snapshot)](../specification/storage/proof-store.md#req-proofstore-8-xwemtj)
-Specification cases tested: 0/6.
+Specification cases tested: 0/8.
 
 [`REQ-PROOFSTORE-9-CZTA0N` (Pruning between proven parts of the stored proof)](../specification/storage/proof-store.md#req-proofstore-9-czta0n)
-Specification cases tested: 0/7.
+Specification cases tested: 0/8.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.
