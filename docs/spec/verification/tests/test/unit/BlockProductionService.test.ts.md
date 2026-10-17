@@ -11,6 +11,9 @@ constructed for the same coordinate. The concurrency case holds the state mutex 
 are queued, then proves that only one block commits. The rollback case makes the writer's state
 machine refuse a real pending top-up and checks that the failed candidate leaves the next writer,
 the live VM state hash and the height unchanged, then authors once the refusal is lifted. The
+post-commit case makes the writer's `leaveChannelService.onBlockCommitted` throw once, after the
+block is stored: the candidate rejects with that error, the next height moves past the stored
+block, and the live VM state hash equals the stored state hash, not the pre-assembly one. The
 shutdown rollback case has the writer's refusal start the runtime's real stop mid-assembly; a
 record-only wrapper counts local state writes and snapshot-assembly error logs after the stop began.
 The candidate rejects with the refusal, both records stay empty, the height is unchanged, and a
@@ -36,6 +39,7 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `a reduction replaces the fork before the candidate takes the mutex → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P11, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P14
 - `not my turn → throws instead of authoring`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P6
 - `the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P11
+- `a post-commit step throws once after the block is stored → throws, the block stays stored and the VM keeps the stored state`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19, INV-BLOCK-PIPE-1-1AB2ME.T1.P7
 - `the restore after a refused pending inbound message fails → the runtime aborts, the candidate rejects with its own error and the mutex is released`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P17, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P13, INV-BLOCK-PIPE-1-1AB2ME.T1.P13
 - `an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P12
 - `a candidate parked on the state mutex when the runtime aborts → rejects without authoring once the mutex frees`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18, INV-BLOCK-PIPE-1-1AB2ME.T1.P14

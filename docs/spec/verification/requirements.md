@@ -15,7 +15,7 @@ Specification cases tested: 0/2.
 Specification cases tested: 4/4.
 
 [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
-Specification cases tested: 7/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
+Specification cases tested: 8/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8.
 
 [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
 Specification cases tested: 8/8.
@@ -777,7 +777,7 @@ Specification cases tested: 12/12.
 Specification cases tested: 0/3.
 
 [`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
-Specification cases tested: 14/14.
+Specification cases tested: 16/16.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.
@@ -879,7 +879,7 @@ Specification cases tested: 8/8.
 Specification cases tested: 18/18.
 
 [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
-Specification cases tested: 0/6.
+Specification cases tested: 1/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
 Specification cases tested: 1/3. Untested: T1.P2, T1.P3.

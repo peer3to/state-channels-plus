@@ -1,9 +1,11 @@
 import {
     assertApplicationEventReachesClient,
+    assertBundledHostRootAppliesPeerConfig,
     assertDefaultHostRootStarts,
     assertDisposalDrainsThenRejects,
     assertManifestHostRootServesProbe,
     assertNonClassManifestRejects,
+    assertSecondDeployCompleteRejects,
     assertServiceErrorKeepsIdentity
 } from "@test/fixtures/hostRoot/ApplicationHostRootFixture";
 import { probeHostRootManifest } from "@test/fixtures/hostRoot/ProbeHostRootManifest";
@@ -49,5 +51,11 @@ describe("ApplicationHostRoot", function () {
     });
     it("an application event emitted in the runtime reaches the client listener with its args inline", async function () {
         await assertApplicationEventReachesClient(false);
+    });
+    it("rejects a second deployComplete and keeps the original runtime serving in a worker", async function () {
+        await assertSecondDeployCompleteRejects(true);
+    });
+    it("a worker host root compiled apart from the SDK reads its peer's config from its own config module", async function () {
+        await assertBundledHostRootAppliesPeerConfig();
     });
 });

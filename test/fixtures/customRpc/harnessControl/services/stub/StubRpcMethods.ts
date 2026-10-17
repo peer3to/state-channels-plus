@@ -359,6 +359,21 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /**
+     * Make this peer's next `leaveChannelService.onBlockCommitted` throw once,
+     * as a post-commit side effect that fails after the block is stored. The
+     * real method is back in place before the throw.
+     */
+    public stubThrowOnceFromLeaveOnBlockCommitted(): boolean {
+        const leave = this.service.sm.leaveChannelService;
+        const onBlockCommitted = leave.onBlockCommitted;
+        leave.onBlockCommitted = () => {
+            leave.onBlockCommitted = onBlockCommitted;
+            throw new Error("stubbed post-commit failure");
+        };
+        return true;
+    }
+
     public getFailedRestore(): FailedRestoreRecord | null {
         const record = this.service.failedRestore;
         return record

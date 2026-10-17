@@ -20,7 +20,13 @@ runtime is built, rejects as not ready. In the drain case, `slow` replies only o
 disposal reaches its in-flight reply drain, and reports, one task later, whether that drain is still
 waiting for it; the reply must arrive and report that it was held, and a later call rejects with the
 disposed-child error. `emitProbeEvent` reaches the typed listener with its arguments by the time the
-emitting call replies.
+emitting call replies. In the second-build case the client deploys two fresh local state machines
+through the deploy signer and calls `sdkSetup.deployComplete` with them after setup; the call must
+reject with "Runtime already built" and the probe must still answer with the same signer address. In
+the separately built case the test bundles `ProbeHostRoot` with esbuild into a temporary module that
+carries its own copies of the probe, `P2pRuntimeHostRoot` and the config module, every other module
+staying shared; the worker loads that module by manifest, and the probe's `readConfig` value of
+`RUN_SDK_IN_THREAD` from its own copy must equal the peer's `true`, whose module default is `false`.
 
 ## Tests
 
@@ -36,3 +42,5 @@ emitting call replies.
 - `drains a running service call at disposal and rejects a later one in a worker`: REQ-RPC-9-8FFE6S.T1.P10
 - `an application event emitted in the runtime reaches the client listener with its args in a worker`: REQ-RPC-9-8FFE6S.T1.P11
 - `an application event emitted in the runtime reaches the client listener with its args inline`: REQ-RPC-9-8FFE6S.T1.P12
+- `rejects a second deployComplete and keeps the original runtime serving in a worker`: REQ-RPC-9-8FFE6S.T1.P15
+- `a worker host root compiled apart from the SDK reads its peer's config from its own config module`: REQ-RPC-9-8FFE6S.T1.P16

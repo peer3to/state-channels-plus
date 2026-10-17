@@ -6,6 +6,9 @@ import type InternalTransport from "@/transport/InternalTransport";
 import type { Logger } from "@/utils";
 
 export class SdkSetupService extends AInternalRpcService<SdkSetupRpcMethods> {
+    // set when the first build starts, so a call during that build is refused too
+    private isDeployStarted = false;
+
     constructor(
         router: InternalRpcRouter,
         private readonly buildRuntime: (
@@ -26,6 +29,9 @@ export class SdkSetupService extends AInternalRpcService<SdkSetupRpcMethods> {
         diamondAddress: string,
         sender: InternalTransport
     ) {
+        // Before the try: its cleanup would dispose the live runtime.
+        if (this.isDeployStarted) throw new Error("Runtime already built");
+        this.isDeployStarted = true;
         try {
             await this.buildRuntime(localAddress, diamondAddress);
         } catch (error) {

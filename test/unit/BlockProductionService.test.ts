@@ -542,6 +542,44 @@ describe("Unit: BlockProductionService", function () {
             ).to.equal(0);
         });
 
+        it("a post-commit step throws once after the block is stored → throws, the block stays stored and the VM keeps the stored state", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+
+            const writer = await h.query.getNextPeerToWrite();
+            const control = h.control(writer);
+            const vmStateBefore = await control.query
+                .getLiveStateMachineStateHash()
+                .request();
+            const heightBefore = await control.query
+                .getNextBlockHeight(forkId)
+                .request();
+            await h.rpcStub.throwOnceAfterBlockCommit(writer.index);
+
+            let message = "no throw";
+            try {
+                await h
+                    .getPeer(writer.index)
+                    .p2pInstance.p2pContractInstance.add(1);
+            } catch (e) {
+                message = e instanceof Error ? e.message : String(e);
+            }
+
+            expect(message).to.contain("stubbed post-commit failure");
+            // the block at heightBefore is stored
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(heightBefore + 1);
+            const storedStateHash = await control.query
+                .getLatestStateMachineStateHash(forkId)
+                .request();
+            expect(storedStateHash).to.not.equal(vmStateBefore);
+            expect(
+                await control.query.getLiveStateMachineStateHash().request()
+            ).to.equal(storedStateHash);
+        });
+
         it("the restore after a refused pending inbound message fails → the runtime aborts, the candidate rejects with its own error and the mutex is released", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);

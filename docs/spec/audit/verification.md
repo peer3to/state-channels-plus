@@ -470,6 +470,14 @@ transport and returns how it settled. The removed host-only guard's test
 plan and its unit family left no evidence behind. The suites have not run yet; the
 engineer runs them. This update grants no engineer approval.
 
+2026-10-17 update: the same report maps [`REQ-RPC-9-8FFE6S.T1.P15`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p15) and [`REQ-RPC-9-8FFE6S.T1.P16`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p16). The second-build case
+calls `deployComplete` with two real local state machines, so without the guard the rebuild succeeds and
+the case fails on the missing rejection. The separately built case bundles the probe root, the SDK host
+root and the config module into one temporary module and keeps every other module shared, so the only
+thing that sets the bundled config copy is the root's own configuration step; without that step the copy
+keeps its default and the case fails. It covers the config copy only; it does not duplicate the clock,
+logger or detached-work registry of a full application bundle.
+
 ## Milestone-only proof update — current assessment
 
 The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis

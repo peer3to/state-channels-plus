@@ -2267,7 +2267,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         if (!authenticatedAddress) this.p2pManager.addConnection(transport);
         const capture = this.captureScheduledTasks();
         // one clock reading for both sides: a second ticking between the
-        // request time and the responder's own reading would shift the skew
+        // request time and the responder's own reading would shift the skew.
+        // The pin is process-wide, so callers isolate their peers
         const originalClock = Clock.getTimeInSeconds;
         const now = originalClock();
         Clock.getTimeInSeconds = () => now;

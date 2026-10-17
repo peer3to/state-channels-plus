@@ -22,6 +22,8 @@ export type P2PManagerFixtureSetup = {
     peerCount?: number;
     openChannel?: boolean;
     timeConfig?: HarnessOptions["timeConfig"];
+    /** Each peer in its own thread, so a probe's process-wide patch stays in its peer. */
+    isolatedPeers?: boolean;
 };
 
 export class P2PManagerFixture {
@@ -34,6 +36,9 @@ export class P2PManagerFixture {
         await this.harness.setup(options.peerCount ?? 2, {
             autoConnect: false,
             timeConfig: options.timeConfig,
+            configOverrides: options.isolatedPeers
+                ? { RUN_SDK_IN_THREAD: true }
+                : undefined,
             customRpcManifest: {
                 module: path.resolve(
                     __dirname,

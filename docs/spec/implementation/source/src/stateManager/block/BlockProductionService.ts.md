@@ -36,3 +36,4 @@ Local block authoring
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16` — the runtime starts stopping while the candidate's assembly fails: no local state is restored, no restore error is logged, the candidate throws its own error, and the mutex is released
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P17` — the restore after the candidate's failed assembly fails: the runtime aborts, the candidate throws its own error, nothing is stored, and the mutex is released
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18` — a candidate parked on the state mutex when the runtime aborts: once the mutex frees it rejects with "Channel participation stopped" and authors nothing
+- [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19` — a post-commit step throws once after the block is stored: the candidate throws, the block stays stored, and the live VM state equals the stored state, not the pre-assembly state

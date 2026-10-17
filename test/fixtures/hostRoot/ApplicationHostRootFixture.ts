@@ -6,9 +6,12 @@ import {
 } from "../RuntimeTransportModesFixture";
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
+import DeploymentBridgeSigner from "@/evm/signer/DeploymentBridgeSigner";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { childDisposedError } from "@/rpc/internal/RemoteRoot";
 import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
+import { config } from "@/utils/config";
+import { bundleProbeHostRoot } from "@test/fixtures/hostRoot/BundledProbeHostRoot";
 import type { ProbeSlowReply } from "@test/fixtures/hostRoot/probe/HostProbeService";
 import type { ProbeHostRoot } from "@test/fixtures/hostRoot/ProbeHostRoot";
 import {
@@ -19,6 +22,7 @@ import {
 } from "@test/fixtures/hostRoot/ProbeHostRootManifest";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
+import type { Signer } from "ethers";
 
 type ProbeInstance = P2pInstance<MathStateMachine, ProbeHostRoot>;
 
@@ -45,7 +49,10 @@ async function rejectionOf(pending: Promise<unknown>): Promise<Error> {
 async function withRuntime(
     runSdkInThread: boolean,
     hostRootManifest: HostRootManifest<ProbeHostRoot> | undefined,
-    run: (instance: ProbeInstance) => Promise<void>
+    run: (
+        instance: ProbeInstance,
+        deployStateMachine: (signer: Signer) => Promise<string>
+    ) => Promise<void>
 ): Promise<void> {
     await startRuntimeTransportModesFixture();
     let instance: ProbeInstance | undefined;
@@ -67,7 +74,7 @@ async function withRuntime(
                 hostRootManifest
             }
         );
-        await run(instance);
+        await run(instance, setup.deployStateMachine);
     } finally {
         await instance?.dispose();
         stopRuntimeTransportModesFixture();
@@ -94,6 +101,60 @@ export async function assertManifestHostRootServesProbe(
             ).to.equal(signerAddress);
         }
     );
+}
+
+/**
+ * A second `deployComplete` over a live runtime rejects before any build or
+ * cleanup, and the original runtime keeps serving.
+ */
+export async function assertSecondDeployCompleteRejects(
+    runSdkInThread: boolean
+): Promise<void> {
+    await withRuntime(
+        runSdkInThread,
+        probeHostRootManifest(),
+        async (instance, deployStateMachine) => {
+            const signerAddress = await instance.p2pSigner.getAddress();
+            // Two fresh local state machines, deployed like the setup's own.
+            const deployer = new DeploymentBridgeSigner(
+                instance.host,
+                signerAddress
+            );
+            const localAddress = await deployStateMachine(deployer);
+            const diamondAddress = await deployStateMachine(deployer);
+            const failure = await rejectionOf(
+                instance.host.sdkSetup
+                    .deployComplete(localAddress, diamondAddress)
+                    .request()
+            );
+            expect(failure.message).to.equal("Runtime already built");
+            expect(
+                await instance.host.probe.echo("still served").request()
+            ).to.deep.equal({ value: "still served", signerAddress });
+        }
+    );
+}
+
+/**
+ * A worker host root compiled apart from the SDK worker entry reads its own
+ * config module copy, which holds its peer's configuration.
+ */
+export async function assertBundledHostRootAppliesPeerConfig(): Promise<void> {
+    const bundle = await bundleProbeHostRoot();
+    try {
+        await withRuntime(true, bundle.manifest, async (instance) => {
+            // The setup sent the config it applied here as payload.config;
+            // the module default is false.
+            expect(config.RUN_SDK_IN_THREAD).to.equal(true);
+            expect(
+                await instance.host.probe
+                    .readConfig("RUN_SDK_IN_THREAD")
+                    .request()
+            ).to.equal(config.RUN_SDK_IN_THREAD);
+        });
+    } finally {
+        await bundle.dispose();
+    }
 }
 
 /** No manifest: the SDK's own root serves its services and no probe. */

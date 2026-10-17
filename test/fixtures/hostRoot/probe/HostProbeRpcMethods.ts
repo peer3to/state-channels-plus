@@ -5,6 +5,7 @@ import type {
     ProbeSlowReply
 } from "./HostProbeService";
 import { AInternalRpcMethods } from "@/rpc/internal/AInternalRpcMethods";
+import { config, type Config } from "@/utils/config";
 
 export class HostProbeRpcMethods extends AInternalRpcMethods<HostProbeService> {
     public echo(value: string): ProbeEcho {
@@ -29,6 +30,11 @@ export class HostProbeRpcMethods extends AInternalRpcMethods<HostProbeService> {
             value,
             isDrainHolding: await this.service.isDrainHoldingAfterStart()
         };
+    }
+
+    /** A value of the config module copy this probe was compiled with. */
+    public readConfig(key: keyof Config): Config[keyof Config] {
+        return config[key];
     }
 
     public emitProbeEvent(label: string, count: number): void {

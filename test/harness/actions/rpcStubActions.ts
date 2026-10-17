@@ -223,7 +223,6 @@ export class RpcStubActions<
         };
     }
 
-    /** Hold the peer's state-manager mutex until released. */
     /** Tasks parked on this peer's state mutex behind its current holder. */
     async getStateMutexWaitingCount(peerIndex: number): Promise<number> {
         return await this.peerStub(peerIndex)
@@ -242,6 +241,7 @@ export class RpcStubActions<
         };
     }
 
+    /** Hold the peer's state-manager mutex until released. */
     async holdStateMutex(peerIndex: number): Promise<StateMutexHold> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().holdStateMutex().request();
@@ -650,6 +650,17 @@ export class RpcStubActions<
                 .control(peer)
                 .stub.getStopDuringAssembly()
                 .request();
+    }
+
+    /**
+     * Make this peer's next `leaveChannelService.onBlockCommitted` throw once:
+     * a post-commit step fails after the block is stored. One-shot by design.
+     */
+    async throwOnceAfterBlockCommit(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.stubThrowOnceFromLeaveOnBlockCommitted()
+            .request();
     }
 
     /**

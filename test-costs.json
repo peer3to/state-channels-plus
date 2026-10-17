@@ -3481,6 +3481,12 @@
       "peakRssGb": 0.835,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-StateTransition.test.ts|E2E: State Transitions Authoring Rollback the writer's state machine refuses a pending top-up → its candidate fails, it recovers and authors, every peer stores the same block and no dispute starts": {
+      "durationMs": 11842,
+      "avgCores": 0.855,
+      "peakRssGb": 0.778,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-StateTransition.test.ts|E2E: State Transitions Basic State Advancement should handle consecutive blocks between participants": {
       "durationMs": 19125,
       "avgCores": 1.205,
@@ -7339,6 +7345,12 @@
       "peakRssGb": 0.2,
       "measurementReason": null
     },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a worker host root compiled apart from the SDK reads its peer's config from its own config module": {
+      "durationMs": 15452,
+      "avgCores": 0.147,
+      "peakRssGb": 0.276,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot an application event emitted in the runtime reaches the client listener with its args in a worker": {
       "durationMs": 14481,
       "avgCores": 0.308,
@@ -7355,6 +7367,12 @@
       "durationMs": 16094,
       "avgCores": 0.185,
       "peakRssGb": 0.301,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot rejects a second deployComplete and keeps the original runtime serving in a worker": {
+      "durationMs": 16627,
+      "avgCores": 0.218,
+      "peakRssGb": 0.286,
       "measurementReason": null
     },
     "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot rejects a service call before the runtime is built": {
@@ -12751,6 +12769,12 @@
       "peakRssGb": 0.091,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelTestTransport.test.ts|distributed test transport fixture serves a peer that dials while createPool still flushes its announcement through the listener given at creation, so the hello arrives within the authentication timeout": {
+      "durationMs": 475,
+      "avgCores": 0.737,
+      "peakRssGb": 0.085,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelWorkerLease.test.ts|distributed worker lease allows shared-host servers with distinct resolved work roots": {
       "durationMs": 2661,
       "avgCores": 1.052,
@@ -13825,10 +13849,34 @@
       "peakRssGb": 0.789,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments dispute log recovery dispatches itself fails → recovery rejects with that failure": {
+      "durationMs": 13769,
+      "avgCores": 1.218,
+      "peakRssGb": 0.987,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments dispute recovery defeated → the window is reported unreadable, not thrown": {
       "durationMs": 22245,
       "avgCores": 1.396,
       "peakRssGb": 1.02,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments in-flight dispute log fails before storing its dispute → recovery rejects with that failure, also on a second call": {
+      "durationMs": 17697,
+      "avgCores": 1.057,
+      "peakRssGb": 0.977,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments in-flight dispute log stores its dispute, then fails → recovery resolves with the window": {
+      "durationMs": 16091,
+      "avgCores": 0.904,
+      "peakRssGb": 0.978,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments in-flight dispute log succeeds → recovery awaits it and resolves with its dispute stored": {
+      "durationMs": 23068,
+      "avgCores": 0.929,
+      "peakRssGb": 0.976,
       "measurementReason": null
     },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService scheduleLog deduplication dispatches a log a second stream delivers again only once": {
@@ -16513,10 +16561,22 @@
       "peakRssGb": 0.806,
       "measurementReason": null
     },
+    "hardhat|test/unit/BlockIngestService.test.ts|Unit: BlockIngestService onBlockConfirmation → parked behind the mutex while the runtime aborts a valid block parked on the state mutex when the runtime aborts → true, nothing judged or stored once the mutex frees": {
+      "durationMs": 12300,
+      "avgCores": 0.835,
+      "peakRssGb": 0.742,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BlockIngestService.test.ts|Unit: BlockIngestService onBlockConfirmation → reject paths (full pipeline probe) a forged inbound message block → forged hook fires, block rejected": {
       "durationMs": 13836,
       "avgCores": 1.035,
       "peakRssGb": 0.78,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockIngestService.test.ts|Unit: BlockIngestService onBlockConfirmation → reject paths (full pipeline probe) a linked writer block with a wrong snapshot hash whose restore fails → invalid transition, the runtime aborts": {
+      "durationMs": 10557,
+      "avgCores": 1.068,
+      "peakRssGb": 0.752,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockIngestService.test.ts|Unit: BlockIngestService onBlockConfirmation → reject paths (full pipeline probe) a linked writer block with a wrong snapshot hash → invalid transition, VM turn restored": {
@@ -16601,6 +16661,24 @@
       "durationMs": 7787,
       "avgCores": 0.736,
       "peakRssGb": 0.737,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → parked behind the mutex while the runtime aborts a candidate parked on the state mutex when the runtime aborts → rejects without authoring once the mutex frees": {
+      "durationMs": 10991,
+      "avgCores": 0.772,
+      "peakRssGb": 0.764,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → rollback a post-commit step throws once after the block is stored → throws, the block stays stored and the VM keeps the stored state": {
+      "durationMs": 8423,
+      "avgCores": 0.784,
+      "peakRssGb": 0.748,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → rollback the restore after a refused pending inbound message fails → the runtime aborts, the candidate rejects with its own error and the mutex is released": {
+      "durationMs": 11070,
+      "avgCores": 0.804,
+      "peakRssGb": 0.777,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockProductionService.test.ts|Unit: BlockProductionService playTransaction → rollback the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable": {
