@@ -12,6 +12,12 @@ existing failure path and cannot satisfy targeted connect.
 The status-recompute case applies a snapshot on an already-synced spectator; it does not drive a connect's
 one-peer initial sync, so it assigns no targeted-join permutation. The related requirement is `REQ-TJOIN-3-DCZKS6`.
 
+The genesis-index cases open a three-peer channel with no block, then peer 0 installs its latest
+snapshot (the genesis) one second later through `unsafeSetLatestState`, with and without the
+block-result option, while a record-only stub counts the snapshot storage's genesis refusal warnings.
+Both store the result by hash and keep the genesis registered; only the install without the option
+logs a refusal.
+
 ## Tests
 
 - `snapshot preparation preserves the complete previous cache for concurrent intake until publication`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P10
@@ -25,3 +31,5 @@ one-peer initial sync, so it assigns no targeted-join permutation. The related r
 - `a snapshot timestamp far in the past → the scheduled delay goes negative (unclamped, pinned)`: none
 - `unsafeSetGenesisState stores a height-0 snapshot for the fork and swaps the active fork`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P1
 - `failed chain membership inspection restores VM state without publishing storage, fork or eligibility`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P15
+- `an unchanged block-0 result installed as a block result → stored by hash, the fork genesis stays registered and no refusal is logged`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P19
+- `an unchanged block-0 result installed without the block-result option → stored by hash, refused as a conflicting genesis with one warning, the first genesis stays registered`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P20

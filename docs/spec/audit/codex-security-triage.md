@@ -226,9 +226,21 @@ canonical time, with the relevant stored snapshot and first-block commitment obs
 unauthenticated timestamp can reach a trusted consumer, its binding to chain or reduction history
 still needs correction. No new behavior is selected here.
 
+Genesis-start case closed (2026-10-14): when the replay starts at the fork genesis, the sync
+rejects a supplied genesis that differs from the genesis the walk dated from the chain, before
+anything is persisted. A replay starting past the genesis still accepts the supplied timestamp.
+An empty proof whose genesis the chain cannot date accepts only a supplied genesis with timestamp
+0 (one with the real date is rejected).
+
 Tracked regressions:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
-and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
-These are obligations, not passing-test claims. Owners are the
+covers the genesis-start case on the first fork, whose genesis the chain dates from the on-chain
+snapshot;
+[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13)
+covers it on a successor fork the chain has not adopted, whose genesis the walk dates from the
+origin window's kill period end. Owed regression for a replay starting past the genesis:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18).
+The empty proof whose genesis the chain cannot date stays an open gap with no planned test; its
+expected outcome waits for the fix of this finding. Owners are the
 [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
 and [synchronization](../specification/peer-communication/synchronization.md).

@@ -100,6 +100,17 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         this.service.restoreDoubleSignatureLogs();
         return true;
     }
+    public observeGenesisRefusalLogs(): boolean {
+        this.service.observeGenesisRefusalLogs();
+        return true;
+    }
+    public getGenesisRefusalLogCount(): number {
+        return this.service.getGenesisRefusalLogCount();
+    }
+    public restoreGenesisRefusalLogs(): boolean {
+        this.service.restoreGenesisRefusalLogs();
+        return true;
+    }
     public stubBlacklistWriteFailure(): boolean {
         this.service.stubBlacklistWriteFailure();
         return true;

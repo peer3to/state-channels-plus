@@ -13,6 +13,8 @@
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
+- [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../../../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
+  Contradicts: `isGenesisSnapshotWithoutTimeCheck` reads an unchanged block-0 result as the fork genesis, and `isSnapshotNewer` lets that result replace the genesis on chain ([`FIND-GENESIS-ANCHOR-1-E18SBX`](../../../../../audit/open-findings.md#find-genesis-anchor-1-e18sbx)).
 
 ## UNIT-TEST-UTILITY-FACET-1-ER4P0V
 

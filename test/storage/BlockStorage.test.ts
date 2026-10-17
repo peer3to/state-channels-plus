@@ -3,6 +3,7 @@ import { Block } from "@/models";
 import Storage, { SortOrder } from "@/storage";
 import { BlockStorage } from "@/storage/BlockStorage";
 import { Hash, ForkId, BlockHeight } from "@/types/types";
+import { createLogger } from "@/utils";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
@@ -10,6 +11,8 @@ import {
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, beforeEach } from "mocha";
+
+const logger = createLogger({}, {}, { level: "error" });
 
 const sig = () => ethers.hexlify(ethers.randomBytes(65));
 
@@ -367,7 +370,7 @@ describe("BlockStorage", () => {
         let storageWithProxy: Storage;
 
         beforeEach(() => {
-            storageWithProxy = new Storage();
+            storageWithProxy = new Storage(logger);
         });
 
         it("altering object inside storage (adding signatures) doesn't affect original object", () => {

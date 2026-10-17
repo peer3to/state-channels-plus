@@ -9,13 +9,15 @@ import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
     proofHeights,
+    servedLatestPayload,
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
 import { postAnchor } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
+import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { getBytes } from "ethers";
+import { getBytes, ZeroHash } from "ethers";
 
 type Peer = ReturnType<MathPeerTestHarness["getPeer"]>;
 type SnapshotStruct = SyncPayload["milestoneSnapshots"][number];
@@ -55,6 +57,8 @@ export type ApplyOptions = {
     reconstructHeight?: number;
     /** Read the requester's local finalized height after each apply (a trusted-start walk). */
     readLocalFinality?: boolean;
+    /** Count the requester's genesis refusal warnings across the applies. */
+    countGenesisRefusals?: boolean;
     inspect?: SyncInspection;
 };
 
@@ -302,8 +306,9 @@ export async function applyAfterMissedTopUp(
  * spectate request pinned to `forkId`. Returns per payload the verdict or
  * the thrown message and the head after it; then the rejection reasons, the
  * responder blacklist, the head, the hash of the state the machine holds,
- * the inspected storage, the participant-set change heights, the observed
- * walks and the rebuilt proof.
+ * the registered genesis of `forkId`, the genesis refusal warnings logged
+ * during the applies (when counted), the inspected storage, the
+ * participant-set change heights, the observed walks and the rebuilt proof.
  */
 export async function applyPayloads(
     h: MathPeerTestHarness,
@@ -331,6 +336,8 @@ export async function applyPayloads(
           }
         : undefined;
     try {
+        if (options.countGenesisRefusals)
+            await control.stub.observeGenesisRefusalLogs().request();
         if (options.walkFault === "localFinalized")
             await h.mirror.failNextLocalRead(
                 requester.index,
@@ -450,10 +457,17 @@ export async function applyPayloads(
             },
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
+        const genesisRefusals = options.countGenesisRefusals
+            ? await control.stub.getGenesisRefusalLogCount().request()
+            : undefined;
         const persisted = await h.execOnHost(
             requester,
             async (sm, a, { ethers }) => ({
                 head: sm.storage.blocks.getLatestBlockHeight(a.forkId),
+                genesisSnapshotHash:
+                    sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        a.forkId
+                    )?.hash ?? null,
                 installedStateHash: ethers.keccak256(
                     await sm.diamondStateMachine.getState()
                 ),
@@ -488,6 +502,7 @@ export async function applyPayloads(
                 .isBlacklisted(responder.address)
                 .request(),
             ...persisted,
+            genesisRefusals,
             changeHeights: await control.query
                 .getParticipantChangeHeights(forkId)
                 .request(),
@@ -508,6 +523,8 @@ export async function applyPayloads(
         await walks?.trustedStart.restore();
         await walks?.storage.restore();
         await control.stub.restoreRecordedSyncRejections().request();
+        if (options.countGenesisRefusals)
+            await control.stub.restoreGenesisRefusalLogs().request();
     }
 }
 
@@ -599,6 +616,81 @@ export async function stageAnchoredHistory(
         anchor,
         latestHeight,
         payload: await servedPayload(h, responder, forkId)
+    };
+}
+
+/**
+ * Three participants, no snapshot post: one peer that does not write block 0
+ * is cut off first, so block 0 stays unfinal and the proof is the genesis
+ * run [0]. Every timeout check is suppressed and the two others do not post
+ * block 0 on chain (as `stageAnchoredHistory` with `cutPeer`). Returns peer
+ * 0's payload for block 0.
+ */
+export async function stageUnfinalizedGenesisRun(h: MathPeerTestHarness) {
+    await h.lifecycle.start(3, 0);
+    const forkId = String(h.activeForkId!);
+    const writer = await h.query.getNextPeerToWrite();
+    // peer 0 stays connected: it serves the payload
+    const cutIndex = writer.index === 2 ? 1 : 2;
+    const remaining = [0, 1, 2].filter((index) => index !== cutIndex);
+    for (const index of [0, 1, 2]) await h.rpcStub.suppressTimeoutCheck(index);
+    for (const index of remaining)
+        await h
+            .control(h.getPeer(index))
+            .stub.stubSuppressMaybePostBlockOnChain()
+            .request();
+    await h.network.blacklistAndDisconnectPeer(cutIndex);
+    await h.transition.advanceState({ count: 1, waitForPeers: remaining });
+    const responder = h.getPeer(0);
+    expect(
+        await h.control(responder).query.getLatestBlockHeight(forkId).request()
+    ).to.equal(0);
+    return { forkId, payload: await servedPayload(h, responder, forkId) };
+}
+
+/**
+ * `stageReducibleDisputedFork` (peer 1 slashed); only peer 0 gets its
+ * reduction task back, and every adopt-only post of it fails, so its
+ * reduction lands on chain while the chain snapshot stays on the source
+ * fork. Every timeout check is suppressed and no block is authored, so the
+ * successor has no block. Peer 0 serves the successor's latest state: an
+ * empty proof whose final point is the successor genesis it installed.
+ * Returns the forks, that payload and the source window's kill period end
+ * read from the chain.
+ */
+export async function stageUnadoptedSuccessorGenesis(h: MathPeerTestHarness) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    for (const index of [0, 2, 3]) await h.rpcStub.suppressTimeoutCheck(index);
+    const reducer = h.getPeer(0);
+    await h.rpcStub.failFirstAdoptionPost(
+        reducer.index,
+        Number.MAX_SAFE_INTEGER
+    );
+    await h.control(reducer).stub.restoreReductionTasks(true).request();
+    let successorForkId = ZeroHash;
+    await waitFor(async () => {
+        const { reducedForkId } = await h.channelManager.getReducedResult(
+            h.channelId,
+            sourceForkId
+        );
+        successorForkId = String(reducedForkId);
+        return successorForkId !== ZeroHash;
+    }, h.event.protocolEventTimeoutMs());
+    // every failed adopt-only post, now or from a later retry, is expected
+    await MathTestSession.expectFirstDetachedError({
+        includes: "injected adoption post send failure",
+        required: false
+    });
+    const payload = await servedLatestPayload(h, reducer, successorForkId);
+    const { killPeriodEnd } = await h.channelManager.isKillPeriodExpired(
+        h.channelId,
+        sourceForkId
+    );
+    return {
+        sourceForkId: String(sourceForkId),
+        successorForkId,
+        payload,
+        killPeriodEnd: Number(killPeriodEnd)
     };
 }
 

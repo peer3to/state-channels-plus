@@ -59,7 +59,9 @@ export default class BlockCommitService {
         }
         // step 2 - persist the state snapshot + state machine state first:
         // shouldSignBlock reads the resulting participants from storage
-        sm.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
+        sm.storage.stateSnapshots.storeStateSnapshot(stateSnapshot, {
+            blockResult: true
+        });
         sm.storage.stateMachineStates.storeStateMachineState(
             encodedStateMachineState,
             { hash: stateSnapshot.stateMachineStateHash }

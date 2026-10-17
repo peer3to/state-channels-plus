@@ -10,6 +10,8 @@
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
 - [`REQ-SP-1-9YABY1` (A milestone normally proves its first block final, directly or through…)](../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
 - [`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required final membership hops to the…)](../../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
+- [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
+  Contradicts: `reconstructAuditingData` requests the empty genesis proof for any latest snapshot whose data hashes to its fork id, at any height ([`FIND-DISPUTE-BUILDER-1-YVQMEM`](../../../../audit/open-findings.md#find-dispute-builder-1-yvqmem)).
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../../../../specification/disputes/disputes.md#req-dis-11-wqk8p2)
