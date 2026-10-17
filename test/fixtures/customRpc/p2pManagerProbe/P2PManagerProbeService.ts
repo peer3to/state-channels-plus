@@ -2266,6 +2266,11 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             : this.holepunchTransport(publicKey);
         if (!authenticatedAddress) this.p2pManager.addConnection(transport);
         const capture = this.captureScheduledTasks();
+        // one clock reading for both sides: a second ticking between the
+        // request time and the responder's own reading would shift the skew
+        const originalClock = Clock.getTimeInSeconds;
+        const now = originalClock();
+        Clock.getTimeInSeconds = () => now;
         let responded = false;
         let threw = false;
         try {
@@ -2273,12 +2278,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 .createRPCMethods(transport)
                 .onInitHandshakeRequest(
                     ethers.keccak256(ethers.randomBytes(32)),
-                    Clock.getTimeInSeconds() + offsetSeconds
+                    now + offsetSeconds
                 );
             responded = ethers.isHexString(response.signature);
         } catch {
             threw = true;
         } finally {
+            Clock.getTimeInSeconds = originalClock;
             capture.restore();
         }
         return {

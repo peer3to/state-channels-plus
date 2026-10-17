@@ -1104,6 +1104,39 @@ export class MathScenarioActions extends ScenarioActions {
         return { forkId, race, restoreEvents };
     }
 
+    /**
+     * A final dispute whose DisputeCommitted log reached the observer, with
+     * its handling held in flight until the observer's next dispute log
+     * query has answered: the window's one commitment is missing from the
+     * observer's storage while its log's handling is scheduled. The
+     * observer's reduction entry points stay held until disposal: the final
+     * dispute's DisputeReducedResultCommitted log would otherwise start a
+     * reduction whose window recovery releases the hold first.
+     */
+    async finalDisputeWithInFlightCommit(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+    }) {
+        const { observerIndex, maliciousPeerIndex } = options;
+        const h = this.harness;
+        await this.preDisputeSetup({ peerCount: 4 });
+        await h.rpcStub.holdReductionRace(observerIndex);
+        const held =
+            await h.rpcStub.holdDisputeCommittedHandlingUntilLogQuery(
+                observerIndex
+            );
+        try {
+            const { forkId } = await h.dispute.submitFinalDispute({
+                maliciousPeerIndex
+            });
+            await held.waitUntilHeld();
+            return { forkId, held };
+        } catch (error) {
+            await held.release();
+            throw error;
+        }
+    }
+
     async activeChannelWithDispute(options: {
         numPeers: number;
         numBlocks: number;

@@ -15,7 +15,7 @@ Specification cases tested: 0/2.
 Specification cases tested: 4/4.
 
 [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
-Specification cases tested: 4/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
+Specification cases tested: 7/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
 
 [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
 Specification cases tested: 8/8.

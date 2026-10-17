@@ -52,8 +52,8 @@ Reconnect catch-up
 
 Ordering and recovery
 
-- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied
-- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers; a failed recovery read or a local handler failure on a recovered log rejects the recovery for every caller
+- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied; hold a streamed dispute log's handling in flight while the dispute-window recovery runs, and let it succeed, store its dispute then fail, or fail before storing
+- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers; a failed recovery read or a local handler failure on a log the recovery itself dispatched rejects the recovery for every caller; the dispute-window recovery awaits a dispute log already in flight or already failed and rejects with its failure only while its dispute is still missing, so a log that stored its dispute and then failed leaves the window readable
 
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P1` — ordering
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P2` — gap recovery within attempts
@@ -74,6 +74,10 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18` — membership synchronization rejects with the failure of a local handler applying a slash log its recovery read
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P19` — membership synchronization rejects with the failure of a local handler applying an inbound log its recovery read
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20` — the reduce, audit and dispute inbound recovery rejects with the failure of a local handler applying a recovered log
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P21` — the dispute-window recovery awaits an in-flight dispute log that succeeds and resolves with the window, its dispute stored
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P22` — the dispute-window recovery joins an in-flight dispute log that stores its dispute and then fails, and resolves with the window
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 

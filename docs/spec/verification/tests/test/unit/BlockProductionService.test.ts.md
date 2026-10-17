@@ -14,8 +14,15 @@ the live VM state hash and the height unchanged, then authors once the refusal i
 shutdown rollback case has the writer's refusal start the runtime's real stop mid-assembly; a
 record-only wrapper counts local state writes and snapshot-assembly error logs after the stop began.
 The candidate rejects with the refusal, both records stay empty, the height is unchanged, and a
-state-mutex hold then enters, so the failed candidate released the mutex. The two skipped defensive cases remain
-unassigned gaps.
+state-mutex hold then enters, so the failed candidate released the mutex. The failed-restore case
+repeats the refused top-up with a one-shot fault on the writer's next local state write and holds the
+runtime abort it triggers: the candidate rejects with the refusal, the snapshot assembly logs exactly
+one "failed to restore … aborting" error, one abort is held, the height is unchanged and a state-mutex
+hold enters; once the abort is released the writer's `onAbort` fires. The parked-candidate case holds the runtime
+disposal and the state mutex, parks a real `add(1)` behind the mutex, aborts the runtime for real and
+then frees the mutex: the candidate rejects with "Channel participation stopped" and the height is
+unchanged. The two skipped defensive cases
+remain unassigned gaps.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 
 ## Tests
@@ -28,8 +35,10 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `a follower behind by the writer's parked block stamps a slot that was never its own → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P10, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P13
 - `a reduction replaces the fork before the candidate takes the mutex → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P11, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P14
 - `not my turn → throws instead of authoring`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P6
-- `the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15
-- `an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16
+- `the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P11
+- `the restore after a refused pending inbound message fails → the runtime aborts, the candidate rejects with its own error and the mutex is released`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P17, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P13, INV-BLOCK-PIPE-1-1AB2ME.T1.P13
+- `an assembly that fails after the runtime started stopping → restores nothing, logs no restore error, rejects with its own error and releases the mutex`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P16, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P12
+- `a candidate parked on the state mutex when the runtime aborts → rejects without authoring once the mutex frees`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18, INV-BLOCK-PIPE-1-1AB2ME.T1.P14
 - `connected but never synced → throws Channel not open`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P7
 - `authored promptly → timestamp is the local clock, one second ahead`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P9
 - `authored after the window closed → timestamp clamped back below the local clock`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P11

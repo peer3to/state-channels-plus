@@ -93,6 +93,9 @@ export default class BlockIngestService {
 
         try {
             await sm.mutex.lock({ taskName: "onBlockConfirmation" });
+            // a stopped runtime's VM may be dirty (a failed restore aborts);
+            // not a peer fault
+            if (sm.isDisposed) return true;
 
             strategy =
                 options?.validationStrategy ||

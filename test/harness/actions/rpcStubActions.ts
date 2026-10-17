@@ -31,7 +31,8 @@ import type {
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
     SnapshotPostHoldPoint,
-    StopDuringAssemblyRecord
+    StopDuringAssemblyRecord,
+    FailedRestoreRecord
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -223,6 +224,24 @@ export class RpcStubActions<
     }
 
     /** Hold the peer's state-manager mutex until released. */
+    /** Tasks parked on this peer's state mutex behind its current holder. */
+    async getStateMutexWaitingCount(peerIndex: number): Promise<number> {
+        return await this.peerStub(peerIndex)
+            .getStateMutexWaitingCount()
+            .request();
+    }
+
+    /**
+     * Hold the runtime disposal a real abort starts on this peer, so its
+     * control RPC stays reachable after the abort. Returns the release.
+     */
+    async holdRuntimeDisposal(peerIndex: number): Promise<() => Promise<void>> {
+        await this.peerStub(peerIndex).stubHoldRuntimeDisposal().request();
+        return async () => {
+            await this.peerStub(peerIndex).releaseRuntimeDisposal().request();
+        };
+    }
+
     async holdStateMutex(peerIndex: number): Promise<StateMutexHold> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().holdStateMutex().request();
@@ -633,6 +652,35 @@ export class RpcStubActions<
                 .request();
     }
 
+    /**
+     * Fail this peer's next local state restore and hold the runtime abort it
+     * triggers. `read` returns what the snapshot assembly logged and how many
+     * aborts are held; `releaseAbort` lets the held abort run.
+     */
+    async failNextRestoreAndHoldAbort(peerIndex: number): Promise<{
+        read: () => Promise<FailedRestoreRecord | null>;
+        releaseAbort: () => Promise<void>;
+    }> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubFailNextRestoreAndHoldAbort()
+            .request();
+        return {
+            read: async () =>
+                await this.harness
+                    .control(peer)
+                    .stub.getFailedRestore()
+                    .request(),
+            releaseAbort: async () => {
+                await this.harness
+                    .control(peer)
+                    .stub.releaseHeldAbort()
+                    .request();
+            }
+        };
+    }
+
     async failNextFinalDisputePreparation(
         peerIndex: number
     ): Promise<() => Promise<void>> {
@@ -836,6 +884,40 @@ export class RpcStubActions<
                     .request(),
             restore: async () => {
                 await ctl().restoreDisputeCommittedHandler().request();
+            }
+        };
+    }
+
+    /**
+     * Hold a peer's onDisputeCommitted until its next chain log query for
+     * dispute logs has answered: a dispute log streamed meanwhile stays in
+     * flight, so a window recovery finds its handling scheduled and joins it.
+     * The held handlings then run the real handler.
+     */
+    async holdDisputeCommittedHandlingUntilLogQuery(
+        peerIndex: number
+    ): Promise<{
+        /** Wait until a dispute log's handling is held in flight. */
+        waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        /** Run the held handlings now, if no log query released them yet. */
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldDisputeCommittedHandlingUntilLogQuery().request();
+        this.logger.debug(`Holding onDisputeCommitted on peer ${peerIndex}`);
+        return {
+            waitUntilHeld: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) =>
+                waitFor(
+                    async () =>
+                        (await ctl()
+                            .getHeldDisputeCommittedHandlingCount()
+                            .request()) > 0,
+                    timeoutMs
+                ),
+            release: async () => {
+                await ctl().releaseDisputeCommittedHandling().request();
             }
         };
     }

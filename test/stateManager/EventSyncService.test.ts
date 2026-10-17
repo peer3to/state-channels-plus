@@ -362,6 +362,159 @@ describe("EventSyncService", function () {
             });
             await restoreEvents(false);
         });
+
+        it("in-flight dispute log succeeds → recovery awaits it and resolves with its dispute stored", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, held } =
+                await h.scenario.finalDisputeWithInFlightCommit({
+                    observerIndex,
+                    maliciousPeerIndex: 1
+                });
+            const observer = h.control(h.getPeer(observerIndex));
+            const commitments = await h.channelManager.getWindowCommitments(
+                h.channelId,
+                forkId
+            );
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request(),
+                "the held log must not have stored its dispute yet"
+            ).to.equal(false);
+
+            let recoveredCount: number | null;
+            try {
+                recoveredCount = await observer.dispute
+                    .recoverCommittedDisputes(forkId)
+                    .request();
+            } finally {
+                await held.release();
+            }
+
+            expect(recoveredCount).to.equal(commitments.length);
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request()
+            ).to.equal(true);
+        });
+
+        it("in-flight dispute log stores its dispute, then fails → recovery resolves with the window", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, held } =
+                await h.scenario.finalDisputeWithInFlightCommit({
+                    observerIndex,
+                    maliciousPeerIndex: 1
+                });
+            const observer = h.control(h.getPeer(observerIndex));
+            const commitments = await h.channelManager.getWindowCommitments(
+                h.channelId,
+                forkId
+            );
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request(),
+                "the held log must not have stored its dispute yet"
+            ).to.equal(false);
+            // the final path stores the dispute before this preparation
+            await h.rpcStub.failNextFinalDisputePreparation(observerIndex);
+
+            let recoveredCount: number | null;
+            try {
+                recoveredCount = await observer.dispute
+                    .recoverCommittedDisputes(forkId)
+                    .request();
+            } finally {
+                await held.release();
+            }
+
+            expect(recoveredCount).to.equal(commitments.length);
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request()
+            ).to.equal(true);
+            // the streamed log's own pipeline still reports its failure
+            await TestSession.settleDetached({
+                expectedErrorIncludes:
+                    "Forced final-dispute output preparation failure"
+            });
+        });
+
+        it("in-flight dispute log fails before storing its dispute → recovery rejects with that failure, also on a second call", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, held } =
+                await h.scenario.finalDisputeWithInFlightCommit({
+                    observerIndex,
+                    maliciousPeerIndex: 1
+                });
+            const observer = h.control(h.getPeer(observerIndex));
+            const commitments = await h.channelManager.getWindowCommitments(
+                h.channelId,
+                forkId
+            );
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request(),
+                "the held log must not have stored its dispute yet"
+            ).to.equal(false);
+            // the handler's first step, before the dispute is stored
+            await h.mirror.failNextUpdate(observerIndex, "onDisputeCommitted");
+
+            try {
+                await expect(
+                    observer.dispute.recoverCommittedDisputes(forkId).request()
+                ).to.be.rejectedWith(/Local EVM execution failed: revert/);
+            } finally {
+                await held.release();
+            }
+            // the failed log is never dispatched again: the retry joins the
+            // same failure instead of reporting the window unreadable
+            await expect(
+                observer.dispute.recoverCommittedDisputes(forkId).request()
+            ).to.be.rejectedWith(/Local EVM execution failed: revert/);
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request()
+            ).to.equal(false);
+            await TestSession.settleDetached({
+                expectedErrorIncludes: "Local EVM execution failed: revert"
+            });
+        });
+
+        it("dispute log recovery dispatches itself fails → recovery rejects with that failure", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2
+                });
+            const failing =
+                await h.rpcStub.failDisputeCommittedHandler(observerIndex);
+
+            await expect(
+                h
+                    .control(h.getPeer(observerIndex))
+                    .dispute.recoverCommittedDisputes(forkId)
+                    .request()
+            ).to.be.rejectedWith("stubbed onDisputeCommitted failure");
+            expect(
+                await failing.handlerCalls(),
+                "the recovery must really have dispatched the dropped logs"
+            ).to.be.greaterThan(0);
+            await failing.restore();
+
+            // Keep event and timer holds until harness disposal. Restoring only
+            // event handlers lets a late chain event await a deferred reduction
+            // whose retry timer is still held, hanging the detached-promise drain.
+        });
     });
 
     describe("scheduleLog deduplication", function () {

@@ -35,7 +35,8 @@ import type {
     SignatureBlockMatch,
     SnapshotPostHoldPoint,
     StateMutexStateHold,
-    StopDuringAssemblyRecord
+    StopDuringAssemblyRecord,
+    FailedRestoreRecord
 } from "./StubService";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -318,6 +319,60 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return record
             ? { ...record, restoreErrors: [...record.restoreErrors] }
             : null;
+    }
+
+    /**
+     * Fail this peer's next local state write, as a VM that cannot be
+     * restored, and hold the runtime abort it triggers so the record stays
+     * readable. Records the snapshot assembly's error logs. Release the abort
+     * with `releaseHeldAbort`.
+     */
+    public stubFailNextRestoreAndHoldAbort(): boolean {
+        const sm = this.service.sm;
+        const stateMachine = sm.diamondStateMachine;
+        const record: FailedRestoreRecord = {
+            restoreErrors: [],
+            heldAborts: 0
+        };
+        this.service.failedRestore = record;
+        const setState = stateMachine.setState;
+        stateMachine.setState = async () => {
+            stateMachine.setState = setState;
+            throw new Error("stubbed local state restore failure");
+        };
+        const logger = sm.snapshotAssemblyService["logger"];
+        const logError = logger.error.bind(logger);
+        logger.error = (message, meta) => {
+            record.restoreErrors.push(String(message));
+            return logError(message, meta);
+        };
+        // One-shot by flag, not by reassigning `sm.abort`: another wrapper
+        // (the validation probe's) may reinstall this one when it restores.
+        const abort = sm.abort.bind(sm);
+        let held = false;
+        sm.abort = () => {
+            if (held) return abort();
+            held = true;
+            record.heldAborts += 1;
+            this.service.heldAbort = abort;
+        };
+        return true;
+    }
+
+    public getFailedRestore(): FailedRestoreRecord | null {
+        const record = this.service.failedRestore;
+        return record
+            ? { ...record, restoreErrors: [...record.restoreErrors] }
+            : null;
+    }
+
+    /** Run the held runtime abort on the next tick so this request answers. */
+    public releaseHeldAbort(): boolean {
+        const abort = this.service.heldAbort;
+        if (abort === undefined) return false;
+        this.service.heldAbort = undefined;
+        setTimeout(abort, 0);
+        return true;
     }
 
     public restoreInboundMessageProcessing(): boolean {
@@ -1992,6 +2047,40 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** Tasks parked on the state mutex behind its current holder. */
+    public getStateMutexWaitingCount(): number {
+        return this.service.sm.mutex["queue"].length;
+    }
+
+    /**
+     * Hold the runtime disposal that a real abort starts, so the control RPC
+     * stays reachable after the abort. Release with `releaseRuntimeDisposal`.
+     */
+    public stubHoldRuntimeDisposal(): boolean {
+        // the state manager's private disposal callback
+        const host = this.service.sm as unknown as {
+            disposeRuntime: () => Promise<void>;
+        };
+        const dispose = host.disposeRuntime;
+        const gate = this.service.createGate();
+        this.service.runtimeDisposalGate = gate;
+        host.disposeRuntime = async () => {
+            gate.entered += 1;
+            await gate.gate;
+            return dispose();
+        };
+        return true;
+    }
+
+    public releaseRuntimeDisposal(): boolean {
+        const gate = this.service.runtimeDisposalGate;
+        if (gate === undefined) return false;
+        this.service.runtimeDisposalGate = undefined;
+        // next tick, so this request answers before the disposal runs
+        setTimeout(gate.release, 0);
+        return true;
+    }
+
     /**
      * Start a direct `completeWithGenesis` for the current fork host-side,
      * using the fork's own genesis snapshot and state as the reduced genesis,
@@ -3130,6 +3219,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getFailedDisputeCommittedHandlerCallCount(): number {
         return this.service.failedDisputeCommittedHandlerCalls;
+    }
+
+    /** Hold onDisputeCommitted until the next dispute log query answered. */
+    public stubHoldDisputeCommittedHandlingUntilLogQuery(): boolean {
+        this.service.holdDisputeCommittedHandlingUntilLogQuery();
+        return true;
+    }
+
+    public releaseDisputeCommittedHandling(): boolean {
+        return this.service.releaseDisputeCommittedHandling();
+    }
+
+    public getHeldDisputeCommittedHandlingCount(): number {
+        return this.service.disputeCommittedHandlingGate?.entered ?? 0;
     }
 
     /** Drop subscribed dispute logs before the scheduler records their key. */

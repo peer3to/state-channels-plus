@@ -75,14 +75,15 @@ export type MirrorChainEvent =
 /**
  * The local diamond's event-application entry points a mirror hold can
  * suspend: InboundMessagesProcessed, ChainSlashed (also applied on
- * DisputeKilled), StateSnapshotUpdated and ChannelStorageCleared (a snapshot
- * update's pruning of consumed inbound blocks) logs.
+ * DisputeKilled), StateSnapshotUpdated, ChannelStorageCleared (a snapshot
+ * update's pruning of consumed inbound blocks) and DisputeCommitted logs.
  */
 export const MIRROR_UPDATES = [
     "onInboundMessagesProcessed",
     "onOnChainSlashAdded",
     "onStateSnapshotUpdated",
-    "onChannelStorageCleared"
+    "onChannelStorageCleared",
+    "onDisputeCommitted"
 ] as const satisfies readonly (keyof LocalDiamondContract)[];
 export type MirrorUpdate = (typeof MIRROR_UPDATES)[number];
 

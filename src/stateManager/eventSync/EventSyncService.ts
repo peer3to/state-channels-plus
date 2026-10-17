@@ -400,9 +400,9 @@ export default class EventSyncService {
         );
         if (missing.size > 0) {
             // we cannot invent a dispute whose log never reached us -> the
-            // window is not locally readable yet, and the caller retries. never
-            // a throw: a throw here reaches `abort()` through
-            // `getSyncedForkDisputes`
+            // window is not locally readable yet, and the caller retries. a
+            // log that never reached us is never a throw: a throw here
+            // reaches `abort()` through `getSyncedForkDisputes`
             this.logger.warn("Disputes unavailable after event recovery", {
                 channelId,
                 disputeWindow: LoggerUtils.getDisputeWindowMetadata({
@@ -659,7 +659,8 @@ export default class EventSyncService {
 
     /**
      * Recover the dispute logs of the fork's window whose dispute local
-     * storage lacks. The commitments still missing after recovery.
+     * storage lacks. The commitments still missing after recovery. A joined
+     * log that failed while its dispute is still missing throws its failure.
      */
     private async recoverWindowDisputes(
         channelId: ChannelId,
@@ -676,32 +677,39 @@ export default class EventSyncService {
             window.latest.blockNumber,
             window.span
         )) {
-            const recovered = logs.filter((log) => {
+            const recovered = logs.flatMap((log) => {
                 const args = this.parseLog(log)?.args;
-                return (
-                    args &&
-                    missing.has(
-                        hash(
-                            args.disputeConfirmation.signedDispute
-                                .encodedDispute
-                        ).toLowerCase()
-                    )
-                );
+                if (!args) return [];
+                const commitment = hash(
+                    args.disputeConfirmation.signedDispute.encodedDispute
+                ).toLowerCase();
+                return missing.has(commitment) ? [{ log, commitment }] : [];
             });
+            const joinedFailures: {
+                commitment: NormalizedDisputeCommitment;
+                error: unknown;
+            }[] = [];
             await Promise.all(
-                recovered.map((log) => {
+                recovered.map(({ log, commitment }) => {
                     const handling = this.eventPromises.get(
                         this.getEventKey(log)
                     );
-                    // a log already being handled is awaited, not joined: its
-                    // failure is its own pipeline's, not this recovery's; its
-                    // dispute then stays missing and the caller retries later
+                    // a log in flight or already failed is joined: its
+                    // failure is fatal only while its dispute stays missing.
+                    // a log that stored its dispute, then failed, leaves the
+                    // window readable
                     return handling
-                        ? handling.catch(() => undefined)
+                        ? handling.catch((error: unknown) => {
+                              joinedFailures.push({ commitment, error });
+                          })
                         : this.scheduleLog(log, channelId);
                 })
             );
             missing = this.getMissingDisputes(commitments);
+            const fatal = joinedFailures.find(({ commitment }) =>
+                missing.has(commitment)
+            );
+            if (fatal) throw fatal.error;
             if (missing.size === 0) break;
         }
         return missing;

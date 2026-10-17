@@ -190,7 +190,9 @@ reference and is resolved in the context that runs the runtime; without one, the
 runs. The application gives manifests and options only; the SDK owns all wiring.
 
 The application declares its map of application events once, on its network root; its host root
-names that network root and adds internal services. The internal services serve only the application's own client across the runtime boundary. They are not
+names that network root and adds internal services. Pairing the host root with the manifest of the
+network root it names is the application's obligation: the SDK does not check it, and a mismatched
+pair fails at the first internal call that reaches a member the loaded network root lacks. The internal services serve only the application's own client across the runtime boundary. They are not
 network services: a peer's network call that names one finds no network service and takes the
 unknown-service consequence of [Ingress dispatch algorithm](#ingress-dispatch-algorithm) step 4, with no
 effect on the internal service. An internal service reaches the application's network services, and
@@ -296,7 +298,8 @@ failure's name, message, and code. A call made before the runtime is built MUST 
 still running when the client disposes MUST still reply within the runtime's bounded in-flight reply
 drain, and a call made after disposal MUST reject. An
 event the application declares MUST reach the client's subscribers with its arguments, ahead of the reply
-of the call that emitted it.
+of the call that emitted it. The application MUST pair its host root with the manifest of the network root that host root
+names; the SDK MUST NOT be relied on to detect a mismatched pair.
 
 ## Assumptions and constraints
 

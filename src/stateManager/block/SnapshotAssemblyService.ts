@@ -123,6 +123,9 @@ export default class SnapshotAssemblyService {
      * Rolls the state machine back to the state captured before an assembly.
      * The assembly advances the VM; every caller exit that does not commit the
      * block (failed validation, failed authoring, thrown error) restores it.
+     * A failed restore is fatal: the runtime aborts instead of serving on
+     * the dirty VM. It does not throw, so the caller's own outcome stands
+     * and the caller still releases the mutex.
      */
     public async restoreState(
         encodedState: Bytes,
@@ -147,7 +150,7 @@ export default class SnapshotAssemblyService {
             );
         } catch (error) {
             this.logger.error(
-                "failed to restore local state after a block that was not committed",
+                "failed to restore local state after a block that was not committed; aborting",
                 {
                     reason,
                     block: block
@@ -159,6 +162,7 @@ export default class SnapshotAssemblyService {
                     error
                 }
             );
+            this.stateManager.abort();
         }
     }
 
