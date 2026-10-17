@@ -2109,6 +2109,9 @@ export async function constructTimeoutOfCalldataPostedBlock(
         .control(h.getPeer(staged.windowOpenerIndex))
         .dispute.setForceExit(true)
         .request();
+    // the opened window would make the disputer dispute on its own and use
+    // up the planted timeout before it is constructed
+    await h.dispute.suppressDisputeInitiation([staged.disputerIndex]);
     await h.tamper.postTamperedDispute(staged.windowOpenerIndex, () => {}, {
         markMalicious: false
     });
@@ -2121,6 +2124,9 @@ export async function constructTimeoutOfCalldataPostedBlock(
         .request();
     expect(Number(dispute.input.timeout.blockHeight)).to.equal(
         options.blocksBefore
+    );
+    expect(dispute.input.timeout.participant).to.equal(
+        staged.calldataAuthor.address
     );
     expect(dispute.postedAuditingData).to.equal(false);
     const previousBlock =

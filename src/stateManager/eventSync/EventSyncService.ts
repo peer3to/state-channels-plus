@@ -217,9 +217,7 @@ export default class EventSyncService {
             );
             return Promise.resolve();
         }
-        // the block hash keeps a log re-mined in another block after a reorg
-        // apart from the log it replaces
-        const eventKey = `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
+        const eventKey = this.getEventKey(log);
         const existing = this.eventPromises.get(eventKey);
         if (existing) return existing;
         this.logger.info(
@@ -678,25 +676,42 @@ export default class EventSyncService {
             window.latest.blockNumber,
             window.span
         )) {
-            await this.scheduleRecoveredLogs(
-                channelId,
-                logs.filter((log) => {
-                    const args = this.parseLog(log)?.args;
-                    return (
-                        args &&
-                        missing.has(
-                            hash(
-                                args.disputeConfirmation.signedDispute
-                                    .encodedDispute
-                            ).toLowerCase()
-                        )
+            const recovered = logs.filter((log) => {
+                const args = this.parseLog(log)?.args;
+                return (
+                    args &&
+                    missing.has(
+                        hash(
+                            args.disputeConfirmation.signedDispute
+                                .encodedDispute
+                        ).toLowerCase()
+                    )
+                );
+            });
+            await Promise.all(
+                recovered.map((log) => {
+                    const handling = this.eventPromises.get(
+                        this.getEventKey(log)
                     );
+                    // a log already being handled is awaited, not joined: its
+                    // failure is its own pipeline's, not this recovery's; its
+                    // dispute then stays missing and the caller retries later
+                    return handling
+                        ? handling.catch(() => undefined)
+                        : this.scheduleLog(log, channelId);
                 })
             );
             missing = this.getMissingDisputes(commitments);
             if (missing.size === 0) break;
         }
         return missing;
+    }
+
+    /** The key one contract log is scheduled under. */
+    private getEventKey(log: Log): string {
+        // the block hash keeps a log re-mined in another block after a reorg
+        // apart from the log it replaces
+        return `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
     }
 
     /** Commitments of the window whose dispute local storage still lacks. */
