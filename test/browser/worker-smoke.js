@@ -201,7 +201,7 @@ globalThis.runInternalRootWasmBrowserSmoke = async () => {
         });
     return {
         internalRoot: await probe("internal-root"),
-        index: await probe("index")
+        relay: await probe("relay")
     };
 };
 

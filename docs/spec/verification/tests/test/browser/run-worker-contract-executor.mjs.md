@@ -15,7 +15,7 @@ The clock case brackets its asynchronous read with wall-time samples. It checks 
 - `browser performance reporting uses long-task metadata`: UNIT-TEST-BROWSER-LOGGER-1-6FCT8F.P1
 - `browser logger renders one thread label for unnamed, main, sdk, vm and prover lines`: UNIT-TEST-BROWSER-LOGGER-THREAD-LABEL-1-5ZFBPM.P1, UNIT-TEST-BROWSER-LOGGER-THREAD-LABEL-1-5ZFBPM.P2, UNIT-TEST-BROWSER-LOGGER-THREAD-LABEL-1-5ZFBPM.P3, UNIT-TEST-BROWSER-LOGGER-THREAD-LABEL-1-5ZFBPM.P4, UNIT-TEST-BROWSER-LOGGER-THREAD-LABEL-1-5ZFBPM.P5
 - `browser worker root starts with the creating page's config and the thread name its entry gives`: REQ-CONFIG-4-WW7BRX.T1.P2, UNIT-TEST-ROOT-CREATION-1-1NWN3V.P39
-- `browser worker importing the internal-root entry creates no WASM, while one importing the package index does`: UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P5
+- `browser worker importing the internal-root entry creates no WASM, while one importing the relay does`: UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P5
 - `browser worker executes a contract`: UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P4, UNIT-TEST-BROWSER-EXECUTOR-URL-1-YNHKVA.P1
 - `browser worker advances adjusted chain time`: REQ-TIME-5-S9NQXK.T1.P3, REQ-RUNTIME-6-6F4SSM.T1.P2
 - `browser worker reports detached errors and keeps serving`: UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P1, UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P2, UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P3

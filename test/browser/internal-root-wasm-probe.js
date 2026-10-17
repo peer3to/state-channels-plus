@@ -42,11 +42,12 @@ WebAssembly.Memory.prototype = NativeMemory.prototype;
 
 self.onmessage = async ({ data: entry }) => {
     try {
-        // The built browser targets the package exports, as a consumer loads them.
+        // Sources under the gate's browser aliases: the gate never builds dist.
+        // The relay module is the control: the index reaches the relay through it.
         const exports =
-            entry === "index"
-                ? await import("../../dist/browser/src/index.js")
-                : await import("../../dist/browser/src/internalRoot.js");
+            entry === "relay"
+                ? await import("../../src/HolepunchRelay.ts")
+                : await import("../../src/internalRoot.ts");
         self.postMessage({
             instances: instanceCount,
             memories: memoryCount,
