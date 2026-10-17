@@ -818,8 +818,14 @@ until the stored proof survives restart ([`OQ-SPEC-PROOFSTORE-9-53J8GE`](open-qu
 block's union, which combine with any rule: (a) keep the snapshot of the block below the anchor
 block while the anchor block is held; (b) keep the anchor block's participant union with the stored
 proof; (c) merge no late confirmation into a block at or below the anchor; (d) drop such a
-signature as unverifiable input, without punishment. Requested engineer decision: the rule, its
-pins, and how the anchor block's union survives pruning. This blocks first-phase pruning, not the
+signature as unverifiable input, without punishment. Alternatives for the blocks of a run that
+re-rooting drops from the stored proof ([`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](storage/proof-store.md#req-proofstore-6-38g1kc)), including support that only the
+stored proof held, such as a block that conflicts with the adopted block at the anchor height and
+is evidence of a double sign by its author, which also combine with any rule: (e) keep all of them
+under the chosen rule, like block history below the anchor; (f) keep only the blocks that conflict
+with an adopted block under the chosen rule, and let the rest go at the next prune. Requested
+engineer decision: the rule, its pins, how the anchor block's union survives pruning, and how long
+the blocks of a dropped run stay. This blocks first-phase pruning, not the
 stored proof itself.
 
 <a id="oq-spec-proofstore-2-v4n7vh"></a>

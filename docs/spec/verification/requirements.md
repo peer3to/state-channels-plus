@@ -756,7 +756,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 0/9.
 
 [`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](../specification/storage/proof-store.md#req-proofstore-6-38g1kc)
-Specification cases tested: 0/7.
+Specification cases tested: 0/8.
 
 [`REQ-PROOFSTORE-7-T0EBMX` (Reset on fork change)](../specification/storage/proof-store.md#req-proofstore-7-t0ebmx)
 Specification cases tested: 0/4.
