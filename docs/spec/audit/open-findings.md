@@ -505,13 +505,41 @@ pending. Mapped regressions:
 ### FIND-SECURITY-6-884TAJ
 
 **Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state.
+trusted walk now chooses canonical final state. Since
+[`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1) the genesis index keeps its first
+registration: on a peer that held no genesis for the fork, a supplied genesis with a wrong timestamp
+is no longer replaced by a later correct install, and every later install of the correct genesis is
+refused with a warning. The genesis-start case is closed (2026-10-14): when the sync's replay starts
+at the fork genesis, `SpectateService.applySyncResponse` rejects a supplied genesis whose hash
+differs from the replay base, which is the genesis the walk dated from the chain, as
+`genesis snapshot invalid` and blacklists the responder before anything is persisted. Remaining: a
+sync whose replay starts past the genesis (a finalized point past it) still persists the supplied
+genesis unverified; and an empty proof on the first fork while the chain anchor is past the genesis
+walks from an undated genesis (timestamp 0), so a supplied genesis with timestamp 0 equals the base
+and is registered, while one with the real date is rejected (code-traced, not executed). Both
+remaining cases break
+[`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj),
+which requires every genesis registration to verify its timestamp first.
 
 **Proposed direction and handoff:**
 [Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
-preserve the report's prerequisites and proof gaps. Owed regression:
-[`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12),
-[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+preserve the report's prerequisites and proof gaps.
+
+**Decided (Ljuba, 2026-10-14):** for the genesis-start case, reject the sync when the replay base
+starts at the genesis (`fromIndex` 0) and its snapshot hash differs from the supplied genesis,
+through the existing sync rejection. Not taken here: keep the walk's genesis start in the tier walk
+and compare the supplied genesis against it whenever the walk started at the genesis; the cases past
+the genesis stay with this finding.
+
+Regressions for the genesis-start case:
+[`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
+(first fork, dated from the on-chain snapshot) and
+[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13)
+(successor fork not adopted on chain, dated from its origin window's kill period end). Owed
+regression for the replay past the genesis:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18).
+Open gap with no planned test: the empty proof on the first fork while the chain anchor is past the
+genesis. The chain has no genesis date there, so the expected outcome waits for this finding's fix.
 
 ## Implementation defects with a proposed direction
 
@@ -1132,7 +1160,34 @@ that lands.
 
 ### FIND-STORAGE-5-T301Z1
 
-**Defect:** `StateSnapshotStorage` never refuses a conflicting genesis registration, violating
+**Defect:** _Resolved (2026-10-13; amended 2026-10-14)._ `StateSnapshotStorage.storeStateSnapshot`
+keeps the first genesis registered for a fork id. A registration conflicts when its snapshot hash
+differs from the registered one; only the timestamp can differ between two height-0 registrations,
+because the fork id pins `snapshotData`. A conflicting registration is refused by the genesis index,
+logged as one warning through the internal logger, and still stored by its hash; an identical repeat
+is a no-op. A genesis is identified by how it enters storage: the stores that save a block's
+resulting snapshot pass the `blockResult` store option and never touch the index, at any height.
+They are `BlockCommitService.success`, the start and proven-block stores of
+`AgreementManager.stageVerifiedProof`, which sync and dispute audit share, and the sync replay-base
+install past the fork genesis (`SpectateService.persistSyncPayload` through
+`StateApplicationService.unsafeSetLatestState`). The genesis installs (channel open, reduction, a
+verified sync's latest fork genesis) keep registering. Any store without the option registers only a
+snapshot at `blockHeight` 0; a later-height snapshot with genesis `snapshotData` is stored by hash
+only, with no index change and no warning. The return value is unchanged.
+
+Remaining: the sync store of a dispute window's `latestStateSnapshot` passes no option
+([`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); the replay-base part of
+[`FIND-STORAGE-8-FQW5EE`](open-findings.md#find-storage-8-fqw5ee) is resolved);
+`StateSnapshot.isGenesis` still ignores the height
+([`FIND-DISPUTE-BUILDER-1-YVQMEM`](open-findings.md#find-dispute-builder-1-yvqmem)); the contracts
+still read an unchanged block-0 result posted as the channel snapshot as the fork genesis
+([`FIND-GENESIS-ANCHOR-1-E18SBX`](open-findings.md#find-genesis-anchor-1-e18sbx)); first-write-wins
+keeps an unverified sync genesis timestamp when the sync's replay starts past the fork genesis
+([`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)); the genesis-start case is
+closed: such a sync rejects a supplied genesis that differs from the genesis the walk dated from the
+chain.
+
+Was: `StateSnapshotStorage` never refuses a conflicting genesis registration, violating
 [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj):
 `storeStateSnapshot` sets the genesis-by-fork index unconditionally
 (src/storage/StateSnapshotStorage.ts:30-34). The audited persistence path is safe — snapshots that
@@ -1146,8 +1201,139 @@ via the first-block full-snapshot hash, FraudProofFacet.sol:231-237) but poisons
 verdicts: `getPreviousRelevantTimestamp`, timeout scheduling, and local `InvalidTimestamp`
 judgments.
 
-**Proposed direction:** Decided (engineer review): the spec is the intent — refuse a registration
-for an existing fork id whose outer fields differ (compare-and-refuse). Closes when that lands.
+**Proposed direction:** **Decided (Ljuba, 2026-10-13):** keep the first registration, refuse a
+conflict silently to the caller, log it as a warning, and still store the refused snapshot in the
+by-hash map — matching `FraudProofStorage` first-write-wins. Rejected: return a sentinel and make
+the callers handle it; throw. The chosen form keeps `storeStateSnapshot`'s signature and return
+value.
+
+**Decided (Ljuba, 2026-10-14):** identify a genesis by how it enters storage, not by height: the
+block-result stores pass a store option and skip the genesis index; the genesis installs keep
+registering. Rejected: keep the height rule and store the served genesis before the proof material
+in sync (fixes only the sync order, keeps the warning for an honest unchanged block 0, and leaves
+dispute audit order-dependent); accept it and require applications never to produce an unchanged
+block 0 (an integrator constraint no requirement states). This changes the two block-result call
+sites. Earlier engineer review: the spec is the intent — compare-and-refuse.
+
+Evidence:
+[`REQ-SNAPSTORE-1-AJW0HJ.T1.P3`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p3),
+[`.P4`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p4),
+[`.P5`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p5) and
+[`UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2`](../implementation/source/src/storage/StateSnapshotStorage.ts.md#unit-test-state-snapshot-storage-1-51qze2)
+`.P7`–`.P9` fail with the unconditional set restored and pass now;
+[`.P6`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p6) / `.P12` fail
+without the height-0 guard, and
+[`.P7`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p7) / `.P13` fail
+with the guard moved after the empty-index registration.
+[`.P8`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p8) / `.P14` and
+[`.P9`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p9) / `.P15` fail
+when the store ignores the option. Integration:
+[`REQ-SNAPSTORE-1-AJW0HJ.T2.P1`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t2.p1)
+fails without the option at the block commit,
+[`.T2.P2`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t2.p2) fails
+without it at the proven-block store (the block 0 result becomes the registered genesis), and
+[`.T2.P3`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t2.p3) fails when
+an identical repeat warns. The option on the proof start store of `stageVerifiedProof` has no
+observable effect, so no test pins it: a walk never takes a height-0 snapshot whose data hashes to
+its fork id as a non-genesis start (`_canStartFromOnChainSnapshot`), and the height-0 rule already
+keeps any later start out of the index.
+
+<a id="find-storage-8-fqw5ee"></a>
+
+### FIND-STORAGE-8-FQW5EE
+
+**Defect:** _Resolved (2026-10-14)._ Two stores in `SpectateService.persistSyncPayload` could hold a
+block's resulting snapshot but passed no `blockResult` option, so they fell back to the height-0
+genesis rule of
+[`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj).
+(1) The replay base, stored by `StateApplicationService.unsafeSetLatestState` → `commit`: when the
+base was the result of a block 0 that changes no state, the store logged a refusal warning for an
+honest block result. Fixed: `unsafeSetLatestState` takes the `blockResult` store option and passes
+it to `commit`; `persistSyncPayload` sets it when the base is past the fork genesis (`fromIndex`
+above 0). Its other callers pass no option, so the genesis installs keep registering. (2) The
+`latestStateSnapshot` of each dispute window the chain has not reduced: not fixed here; tracked with
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), which already tracks that unchecked
+window state. Reachable only with a state machine that accepts a block 0 that changes no state; the
+bundled `MathStateMachine` always changes its state.
+
+**Proposed direction:** **Decided (Ljuba, 2026-10-14):** option (A) for (1): carry the store option
+through `unsafeSetLatestState` for the sync replay-base install only. (2) moves to
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Rejected: (B) accept the warning for
+(1) as a known limit.
+
+Evidence:
+[`REQ-SNAPSTORE-1-AJW0HJ.T2.P2`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t2.p2)
+logs one refusal when the base install drops the option or `commit` ignores it, and none now;
+[`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR`](../implementation/source/src/stateManager/snapshotUpdate/StateApplicationService.ts.md#unit-test-state-application-service-1-b8v3dr)
+`.P19` fails when `commit` ignores the option, and `.P20` and `.P1` fail when the option defaults to
+a block result.
+
+<a id="find-dispute-builder-1-yvqmem"></a>
+
+### FIND-DISPUTE-BUILDER-1-YVQMEM
+
+**Defect:** _Open (2026-10-13)._ `StateSnapshot.isGenesis` compares only `forkId` with
+`hash(snapshotData)` and ignores the height. `DisputeBuilder.reconstructAuditingData`
+(src/disputeManager/DisputeBuilder.ts:183) builds the state proof with
+`latestStateSnapshot.isGenesis ? -1 : latestStateSnapshot.blockHeight`. A block at height N that
+changes no state has `snapshotData` equal to the fork genesis, so its snapshot reads as a genesis
+and the builder requests the empty genesis proof instead of the proof at N. An empty proof
+represents fork genesis only
+([`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)),
+so the reconstructed auditing data claims genesis for a latest state at height N. Pre-existing; not
+changed by the genesis-index fix in
+[`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1).
+
+**Proposed direction:** the store-path rule of
+[`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1) — a block's resulting snapshot is
+never a genesis — because a height-zero check still reads block 0's unchanged result as the genesis.
+The contracts make that height-zero check; tracked as
+[`FIND-GENESIS-ANCHOR-1-E18SBX`](open-findings.md#find-genesis-anchor-1-e18sbx). Open; no decision
+taken. Needs engineer decision.
+
+<a id="find-genesis-anchor-1-e18sbx"></a>
+
+### FIND-GENESIS-ANCHOR-1-E18SBX
+
+**Defect:** _Open (2026-10-14)._ The contracts identify a fork genesis by height and data alone, so
+an unchanged block-0 result posted as the channel snapshot becomes the fork genesis on chain.
+`UtilityFacet.isSnapshotNewer` treats any different height-0 snapshot as newer than a height-0
+genesis, so `StateSnapshotFacet.updateStateSnapshotSameFork` accepts block 0's result once the
+threshold walk from the genesis proves it. When block 0 changes no state, that stored snapshot has
+height 0 and data that hashes to the fork id. `UtilityFacet.isGenesisSnapshotWithoutTimeCheck` then
+reads it as the genesis, `StateChannelCommon._canStartFromOnChainSnapshot` refuses it as a
+non-genesis start, `StateChannelCommon._getGenesisSnapshot` returns it as the fork genesis, and
+`StateChannelCommon._getGenesisTimestamp` dates the genesis with its timestamp (block 0's).
+Consequences: an empty proof on that fork claims block 0's result as the genesis; every later walk
+must link block 0 to that snapshot, so an honest block 0, which links to the real genesis, fails and
+later same-fork snapshot posts and genesis-start proofs stop verifying; and
+`FraudProofFacet._handleWrongGenesis` compares block 0's `previousBlockHash` with the on-chain
+snapshot and returns a valid verdict against the honest block-0 author. (2026-10-14) The sync check
+in `SpectateService.applySyncResponse` that a replay base at the genesis equals the served genesis
+inherits this defect only for a served empty proof: the walk's genesis is then that posted block-0
+result, so a served real genesis is rejected as `genesis snapshot invalid`. A proof with milestones
+reaches a base at the genesis only through an unfinal block-0 run, which must link block 0 to that
+posted result; an honest block 0 links to the real genesis, so that sync already fails at the walk
+as `milestones invalid`. Any other valid proof finalizes a point past the genesis, where the check
+does not run. An honest responder that holds block 0 does not serve an empty proof. Fixing the
+contract side fixes both. This violates
+[`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
+(a finalized block-zero anchor protects that block although genesis and block zero share a height)
+and
+[`REQ-FP-2-CH4DA1` (Every block fraud-proof handler is sound)](../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1).
+Reachable only with a state machine that accepts a block 0 that changes no state (the premise of
+[`FIND-STORAGE-8-FQW5EE`](open-findings.md#find-storage-8-fqw5ee)); the bundled `MathStateMachine`
+always changes its state. Pre-existing in the contracts and not changed by
+[`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1), whose off-chain store-path rule
+does not reach the chain. The TypeScript counterpart is
+[`FIND-DISPUTE-BUILDER-1-YVQMEM`](open-findings.md#find-dispute-builder-1-yvqmem). Code-traced, not
+executed; the full dispute admission of such a fraud proof is not traced.
+
+**Proposed direction:** Open; no decision taken. A fix needs a contract change to how the chain
+tells a genesis from a block result (for example, record on chain whether the stored snapshot is a
+block result), which needs an engineer decision. Owed regression:
+[`REQ-SP-4-NCSEX4.T1.P15`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4.t1.p15),
+[`REQ-SP-4-NCSEX4.T1.P16`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4.t1.p16).
 
 <a id="find-storage-6-mt9z2d"></a>
 
@@ -1642,7 +1828,11 @@ the snapshot
 src/rpc/network/services/spectate/SpectateService.ts:1042-1052). A genesis-shaped snapshot there
 would land in `genesisSnapshotByForkId` with an unverified timestamp, the same class as
 [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) through another field.
-Pre-existing; code-traced, not executed. No signature or penalty consequence is shown yet.
+Pre-existing; code-traced, not executed. No signature or penalty consequence is shown yet. **Added
+(2026-10-14):** that window `latestStateSnapshot` store also passes no `blockResult` option, so on a
+peer that holds no genesis of that earlier fork, an unchanged block-0 result there is registered as
+that fork's genesis (moved from [`FIND-STORAGE-8-FQW5EE`](open-findings.md#find-storage-8-fqw5ee);
+reachable only with a state machine that accepts a block 0 that changes no state).
 
 **Proposed direction:** Apply the inbound rule to these fields too: persist a window's reduction
 inputs only when this sync's own reduction checked them, or validate them against chain data first.
@@ -2101,7 +2291,3 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 outcomes and best-effort gossip.
 
 The old queued-exclusion implementation and its unsupported whole-tree coverage credit have been removed. The current [service contract](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) has no per-origin summary. Its [exact tests](../verification/tests/test/utils/logging/LoggerService.test.ts.md) observe local outcomes, generation behavior and receiver arrivals. This disposition does not claim that the former algorithm was correct.
-
-| <a id="find-dispute-builder-1-yvqmem"></a>`FIND-DISPUTE-BUILDER-1-YVQMEM` | _Open (2026-10-13)._ `StateSnapshot.isGenesis` compares only `forkId` with `hash(snapshotData)` and ignores the height. `DisputeBuilder.reconstructAuditingData` (src/disputeManager/DisputeBuilder.ts:183) builds the state proof with `latestStateSnapshot.isGenesis ? -1 : latestStateSnapshot.blockHeight`. A block at height N that changes no state has `snapshotData` equal to the fork genesis, so its snapshot reads as a genesis and the builder requests the empty genesis proof instead of the proof at N. An empty proof represents fork genesis only ([`REQ-SP-4-NCSEX4`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)), so the reconstructed auditing data claims genesis for a latest state at height N. Pre-existing; not changed by the genesis-index fix in [`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Open; no decision taken. Proposed direction: the store-path rule of [`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1) — a block's resulting snapshot is never a genesis — because a height-zero check still reads block 0's unchanged result as the genesis. The contracts make that height-zero check; tracked as [`FIND-GENESIS-ANCHOR-1-E18SBX`](open-findings.md#find-genesis-anchor-1-e18sbx). Needs engineer decision.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| <a id="find-genesis-anchor-1-e18sbx"></a>`FIND-GENESIS-ANCHOR-1-E18SBX`   | _Open (2026-10-14)._ The contracts identify a fork genesis by height and data alone, so an unchanged block-0 result posted as the channel snapshot becomes the fork genesis on chain. `UtilityFacet.isSnapshotNewer` treats any different height-0 snapshot as newer than a height-0 genesis, so `StateSnapshotFacet.updateStateSnapshotSameFork` accepts block 0's result once the threshold walk from the genesis proves it. When block 0 changes no state, that stored snapshot has height 0 and data that hashes to the fork id. `UtilityFacet.isGenesisSnapshotWithoutTimeCheck` then reads it as the genesis, `StateChannelCommon._canStartFromOnChainSnapshot` refuses it as a non-genesis start, `StateChannelCommon._getGenesisSnapshot` returns it as the fork genesis, and `StateChannelCommon._getGenesisTimestamp` dates the genesis with its timestamp (block 0's). Consequences: an empty proof on that fork claims block 0's result as the genesis; every later walk must link block 0 to that snapshot, so an honest block 0, which links to the real genesis, fails and later same-fork snapshot posts and genesis-start proofs stop verifying; and `FraudProofFacet._handleWrongGenesis` compares block 0's `previousBlockHash` with the on-chain snapshot and returns a valid verdict against the honest block-0 author. (2026-10-14) The sync check in `SpectateService.applySyncResponse` that a replay base at the genesis equals the served genesis inherits this defect only for a served empty proof: the walk's genesis is then that posted block-0 result, so a served real genesis is rejected as `genesis snapshot invalid`. A proof with milestones reaches a base at the genesis only through an unfinal block-0 run, which must link block 0 to that posted result; an honest block 0 links to the real genesis, so that sync already fails at the walk as `milestones invalid`. Any other valid proof finalizes a point past the genesis, where the check does not run. An honest responder that holds block 0 does not serve an empty proof. Fixing the contract side fixes both. This violates [`REQ-SP-4-NCSEX4`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4) (a finalized block-zero anchor protects that block although genesis and block zero share a height) and [`REQ-FP-2-CH4DA1`](../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1). Reachable only with a state machine that accepts a block 0 that changes no state (the premise of [`FIND-STORAGE-8-FQW5EE`](open-findings.md#find-storage-8-fqw5ee)); the bundled `MathStateMachine` always changes its state. Pre-existing in the contracts and not changed by [`FIND-STORAGE-5-T301Z1`](open-findings.md#find-storage-5-t301z1), whose off-chain store-path rule does not reach the chain. The TypeScript counterpart is [`FIND-DISPUTE-BUILDER-1-YVQMEM`](open-findings.md#find-dispute-builder-1-yvqmem). Code-traced, not executed; the full dispute admission of such a fraud proof is not traced.                                                                                                                                                                                                                                                                                                                                                                                                                      | Open; no decision taken. A fix needs a contract change to how the chain tells a genesis from a block result (for example, record on chain whether the stored snapshot is a block result), which needs an engineer decision. Owed regression: [`REQ-SP-4-NCSEX4.T1.P15`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4.t1.p15), [`REQ-SP-4-NCSEX4.T1.P16`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4.t1.p16).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| <a id="find-storage-8-fqw5ee"></a>`FIND-STORAGE-8-FQW5EE`                 | _Resolved (2026-10-14)._ Two stores in `SpectateService.persistSyncPayload` could hold a block's resulting snapshot but passed no `blockResult` option, so they fell back to the height-0 genesis rule of [`REQ-SNAPSTORE-1-AJW0HJ`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj). (1) The replay base, stored by `StateApplicationService.unsafeSetLatestState` → `commit`: when the base was the result of a block 0 that changes no state, the store logged a refusal warning for an honest block result. Fixed: `unsafeSetLatestState` takes the `blockResult` store option and passes it to `commit`; `persistSyncPayload` sets it when the base is past the fork genesis (`fromIndex` above 0). Its other callers pass no option, so the genesis installs keep registering. (2) The `latestStateSnapshot` of each dispute window the chain has not reduced: not fixed here; tracked with [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), which already tracks that unchecked window state. Reachable only with a state machine that accepts a block 0 that changes no state; the bundled `MathStateMachine` always changes its state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | **Decided (Ljuba, 2026-10-14):** option (A) for (1): carry the store option through `unsafeSetLatestState` for the sync replay-base install only. (2) moves to [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Rejected: (B) accept the warning for (1) as a known limit. Evidence: [`REQ-SNAPSTORE-1-AJW0HJ.T2.P2`](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t2.p2) logs one refusal when the base install drops the option or `commit` ignores it, and none now; [`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR`](../implementation/source/src/stateManager/snapshotUpdate/StateApplicationService.ts.md#unit-test-state-application-service-1-b8v3dr) `.P19` fails when `commit` ignores the option, and `.P20` and `.P1` fail when the option defaults to a block result.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
