@@ -1417,6 +1417,11 @@ describe("E2E: join snapshot guard", function () {
         // the retry decision names the refusal: a moved snapshot would be
         // refused first, and could abort for the wrong reason
         const stub = h.control(joiner).stub;
+        // keeps the joiner's control RPC reachable after the abort, so the
+        // reads below cannot race the runtime's disposal
+        const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+            joiner.index
+        );
         await stub.holdJoinRetryDecision().request();
         try {
             await h.rpcStub.releaseOneMembershipSubmission(joiner.index);
@@ -1430,12 +1435,8 @@ describe("E2E: join snapshot guard", function () {
                 await stub.getJoinRetryDecisionRefusals().request()
             ).to.deep.equal(["ErrorTooManyParticipants"]);
         } finally {
-            // the released decision aborts the join and disposes the runtime,
-            // so the release reply may not arrive
-            await stub
-                .releaseJoinRetryDecision()
-                .request()
-                .catch(() => undefined);
+            // the released decision aborts the join
+            await stub.releaseJoinRetryDecision().request();
         }
 
         // the abort disposes the runtime, so the call may also reject
@@ -1463,8 +1464,8 @@ describe("E2E: join snapshot guard", function () {
         expect(
             await chainJoinAmounts(h, joiner.address, fromBlock)
         ).to.deep.equal([]);
-        // the abort disposed the runtime, so the release may reject
-        await releaseAll().catch(() => undefined);
+        await releaseAll();
+        await releaseDisposal();
     });
 
     it("a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED", async function () {

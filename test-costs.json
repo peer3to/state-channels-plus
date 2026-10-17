@@ -9967,10 +9967,10 @@
       "peakRssGb": 0.239,
       "measurementReason": null
     },
-    "hardhat|test/scripts/e2eParallelBrowserTasks.test.ts|browser tier environment moves Chromium's shared memory off /dev/shm where the image declares a contained environment": {
-      "durationMs": 2859,
-      "avgCores": 0.983,
-      "peakRssGb": 0.33,
+    "hardhat|test/scripts/e2eParallelBrowserTasks.test.ts|browser tier environment moves Chromium's shared memory off /dev/shm and the shared /tmp where the image declares a contained environment": {
+      "durationMs": 1010,
+      "avgCores": 0.624,
+      "peakRssGb": 0.127,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelBrowserTasks.test.ts|browser tier environment names PLAYWRIGHT_BROWSERS_PATH when Playwright finds no browser there": {
