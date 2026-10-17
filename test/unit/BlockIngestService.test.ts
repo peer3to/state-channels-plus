@@ -743,38 +743,42 @@ describe("Unit: BlockIngestService", function () {
             const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
                 observer.index
             );
-            const hold = await h.rpcStub.holdStateMutex(observer.index);
-            await waitFor(
-                async () => (await hold.entered()) === 1,
-                h.event.protocolEventTimeoutMs()
-            );
+            try {
+                const hold = await h.rpcStub.holdStateMutex(observer.index);
+                await waitFor(
+                    async () => (await hold.entered()) === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
 
-            const parked = h
-                .control(observer)
-                .validation.runBlockIngest(authored.encodedBlockConfirmation)
-                .request();
-            await waitFor(
-                async () =>
-                    (await h.rpcStub.getStateMutexWaitingCount(
-                        observer.index
-                    )) === 1,
-                h.event.protocolEventTimeoutMs()
-            );
-            await h.control(observer).stub.abortDetached().request();
-            await h.event.waitForPeers("onAbort", [observer.index], 1);
-            await hold.release();
-
-            const probe = await parked;
-            expect(probe).to.include({ keepConnection: true, threw: null });
-            expect(probe.firedHooks).to.deep.equal([]);
-            expect(
-                await h
+                const parked = h
                     .control(observer)
-                    .query.getNextBlockHeight(forkId)
-                    .request()
-            ).to.equal(startHeight);
+                    .validation.runBlockIngest(
+                        authored.encodedBlockConfirmation
+                    )
+                    .request();
+                await waitFor(
+                    async () =>
+                        (await h.rpcStub.getStateMutexWaitingCount(
+                            observer.index
+                        )) === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                await h.control(observer).stub.abortDetached().request();
+                await h.event.waitForPeers("onAbort", [observer.index], 1);
+                await hold.release();
 
-            await releaseDisposal();
+                const probe = await parked;
+                expect(probe).to.include({ keepConnection: true, threw: null });
+                expect(probe.firedHooks).to.deep.equal([]);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getNextBlockHeight(forkId)
+                        .request()
+                ).to.equal(startHeight);
+            } finally {
+                await releaseDisposal();
+            }
         });
     });
 

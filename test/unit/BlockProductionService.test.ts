@@ -700,36 +700,41 @@ describe("Unit: BlockProductionService", function () {
             const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
                 writer.index
             );
-            const hold = await h.rpcStub.holdStateMutex(writer.index);
-            await waitFor(
-                async () => (await hold.entered()) === 1,
-                h.event.protocolEventTimeoutMs()
-            );
-
-            const parked = h
-                .getPeer(writer.index)
-                .p2pInstance.p2pContractInstance.add(1)
-                .then(
-                    () => "no throw",
-                    (e: unknown) => (e instanceof Error ? e.message : String(e))
+            try {
+                const hold = await h.rpcStub.holdStateMutex(writer.index);
+                await waitFor(
+                    async () => (await hold.entered()) === 1,
+                    h.event.protocolEventTimeoutMs()
                 );
-            await waitFor(
-                async () =>
-                    (await h.rpcStub.getStateMutexWaitingCount(
-                        writer.index
-                    )) === 1,
-                h.event.protocolEventTimeoutMs()
-            );
-            await control.stub.abortDetached().request();
-            await h.event.waitForPeers("onAbort", [writer.index], 1);
-            await hold.release();
 
-            expect(await parked).to.contain("Channel participation stopped");
-            expect(
-                await control.query.getNextBlockHeight(forkId).request()
-            ).to.equal(heightBefore);
+                const parked = h
+                    .getPeer(writer.index)
+                    .p2pInstance.p2pContractInstance.add(1)
+                    .then(
+                        () => "no throw",
+                        (e: unknown) =>
+                            e instanceof Error ? e.message : String(e)
+                    );
+                await waitFor(
+                    async () =>
+                        (await h.rpcStub.getStateMutexWaitingCount(
+                            writer.index
+                        )) === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                await control.stub.abortDetached().request();
+                await h.event.waitForPeers("onAbort", [writer.index], 1);
+                await hold.release();
 
-            await releaseDisposal();
+                expect(await parked).to.contain(
+                    "Channel participation stopped"
+                );
+                expect(
+                    await control.query.getNextBlockHeight(forkId).request()
+                ).to.equal(heightBefore);
+            } finally {
+                await releaseDisposal();
+            }
         });
     });
 

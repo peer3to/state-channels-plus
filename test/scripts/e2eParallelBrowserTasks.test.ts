@@ -992,6 +992,12 @@ describe("browser tier environment", function () {
         expect(chromiumLaunchOptions({})).to.deep.equal({ headless: true });
     });
 
+    it("refuses a contained environment without HOME, so Chromium never falls back to the shared /tmp", function () {
+        expect(() =>
+            chromiumLaunchOptions({ SCP_BROWSER_CONTAINED: "1" })
+        ).to.throw("A contained browser environment needs HOME");
+    });
+
     it("moves Chromium's shared memory off /dev/shm and the shared /tmp where the image declares a contained environment", function () {
         expect(
             chromiumLaunchOptions({
