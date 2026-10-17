@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)

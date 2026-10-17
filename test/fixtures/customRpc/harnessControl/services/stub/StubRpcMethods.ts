@@ -34,7 +34,9 @@ import type {
     StubService,
     SignatureBlockMatch,
     SnapshotPostHoldPoint,
-    StateMutexStateHold
+    StateMutexStateHold,
+    StopDuringAssemblyRecord,
+    FailedRestoreRecord
 } from "./StubService";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -257,6 +259,146 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         production["getPendingInboundMessageBlocks"] =
             original as (typeof production)["getPendingInboundMessageBlocks"];
         this.service.stubOriginals.delete("pendingInboundInclusion");
+        return true;
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message: its
+     * `processInboundMessage` answers false, as a state machine that rejects
+     * the message would.
+     */
+    public stubRefuseInboundMessages(): boolean {
+        const stateMachine = this.service.sm.diamondStateMachine;
+        if (!this.service.stubOriginals.has("inboundMessageRefusal")) {
+            this.service.stubOriginals.set(
+                "inboundMessageRefusal",
+                stateMachine.processInboundMessage
+            );
+        }
+        stateMachine.processInboundMessage = async () => false;
+        return true;
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message and start
+     * the runtime's real stop while it refuses, as a shutdown that overtakes
+     * an assembly in flight. Record-only from then on: local state writes and
+     * the snapshot assembly's error logs still run unchanged. No restore: the
+     * runtime is stopping and dies with the peer.
+     */
+    public stubRefuseInboundAndStartStop(): boolean {
+        const sm = this.service.sm;
+        const stateMachine = sm.diamondStateMachine;
+        const record: StopDuringAssemblyRecord = {
+            restoreAttempts: 0,
+            restoreErrors: []
+        };
+        this.service.stopDuringAssembly = record;
+        const setState = stateMachine.setState.bind(stateMachine);
+        stateMachine.setState = async (serializedState) => {
+            if (sm.isDisposed) record.restoreAttempts += 1;
+            return setState(serializedState);
+        };
+        const logger = sm.snapshotAssemblyService["logger"];
+        const logError = logger.error.bind(logger);
+        logger.error = (message, meta) => {
+            if (sm.isDisposed) record.restoreErrors.push(String(message));
+            return logError(message, meta);
+        };
+        stateMachine.processInboundMessage = async () => {
+            // The root's disposal awaits this same stop and surfaces its
+            // failure there.
+            sm.stop().catch(() => undefined);
+            return false;
+        };
+        return true;
+    }
+
+    public getStopDuringAssembly(): StopDuringAssemblyRecord | null {
+        const record = this.service.stopDuringAssembly;
+        return record
+            ? { ...record, restoreErrors: [...record.restoreErrors] }
+            : null;
+    }
+
+    /**
+     * Fail this peer's next local state write, as a VM that cannot be
+     * restored, and hold the runtime abort it triggers so the record stays
+     * readable. Records the snapshot assembly's error logs. Release the abort
+     * with `releaseHeldAbort`.
+     */
+    public stubFailNextRestoreAndHoldAbort(): boolean {
+        const sm = this.service.sm;
+        const stateMachine = sm.diamondStateMachine;
+        const record: FailedRestoreRecord = {
+            restoreErrors: [],
+            heldAborts: 0
+        };
+        this.service.failedRestore = record;
+        const setState = stateMachine.setState;
+        stateMachine.setState = async () => {
+            stateMachine.setState = setState;
+            throw new Error("stubbed local state restore failure");
+        };
+        const logger = sm.snapshotAssemblyService["logger"];
+        const logError = logger.error.bind(logger);
+        logger.error = (message, meta) => {
+            record.restoreErrors.push(String(message));
+            return logError(message, meta);
+        };
+        // One-shot by flag, not by reassigning `sm.abort`: another wrapper
+        // (the validation probe's) may reinstall this one when it restores.
+        const abort = sm.abort.bind(sm);
+        let held = false;
+        sm.abort = () => {
+            if (held) return abort();
+            held = true;
+            record.heldAborts += 1;
+            this.service.heldAbort = abort;
+        };
+        return true;
+    }
+
+    /**
+     * Make this peer's next `leaveChannelService.onBlockCommitted` throw once,
+     * as a post-commit side effect that fails after the block is stored. The
+     * real method is back in place before the throw.
+     */
+    public stubThrowOnceFromLeaveOnBlockCommitted(): boolean {
+        const leave = this.service.sm.leaveChannelService;
+        const onBlockCommitted = leave.onBlockCommitted;
+        leave.onBlockCommitted = () => {
+            leave.onBlockCommitted = onBlockCommitted;
+            throw new Error("stubbed post-commit failure");
+        };
+        return true;
+    }
+
+    public getFailedRestore(): FailedRestoreRecord | null {
+        const record = this.service.failedRestore;
+        return record
+            ? { ...record, restoreErrors: [...record.restoreErrors] }
+            : null;
+    }
+
+    /** Run the held runtime abort on the next tick so this request answers. */
+    public releaseHeldAbort(): boolean {
+        const abort = this.service.heldAbort;
+        if (abort === undefined) return false;
+        this.service.heldAbort = undefined;
+        setTimeout(abort, 0);
+        return true;
+    }
+
+    public restoreInboundMessageProcessing(): boolean {
+        const original = this.service.stubOriginals.get(
+            "inboundMessageRefusal"
+        );
+        if (original === undefined) return false;
+        const stateMachine = this.service.sm.diamondStateMachine;
+        stateMachine.processInboundMessage =
+            original as typeof stateMachine.processInboundMessage;
+        this.service.stubOriginals.delete("inboundMessageRefusal");
         return true;
     }
 
@@ -1920,6 +2062,40 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** Tasks parked on the state mutex behind its current holder. */
+    public getStateMutexWaitingCount(): number {
+        return this.service.sm.mutex["queue"].length;
+    }
+
+    /**
+     * Hold the runtime disposal that a real abort starts, so the control RPC
+     * stays reachable after the abort. Release with `releaseRuntimeDisposal`.
+     */
+    public stubHoldRuntimeDisposal(): boolean {
+        // the state manager's private disposal callback
+        const host = this.service.sm as unknown as {
+            disposeRuntime: () => Promise<void>;
+        };
+        const dispose = host.disposeRuntime;
+        const gate = this.service.createGate();
+        this.service.runtimeDisposalGate = gate;
+        host.disposeRuntime = async () => {
+            gate.entered += 1;
+            await gate.gate;
+            return dispose();
+        };
+        return true;
+    }
+
+    public releaseRuntimeDisposal(): boolean {
+        const gate = this.service.runtimeDisposalGate;
+        if (gate === undefined) return false;
+        this.service.runtimeDisposalGate = undefined;
+        // next tick, so this request answers before the disposal runs
+        setTimeout(gate.release, 0);
+        return true;
+    }
+
     /**
      * Start a direct `completeWithGenesis` for the current fork host-side,
      * using the fork's own genesis snapshot and state as the reduced genesis,
@@ -3060,6 +3236,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.failedDisputeCommittedHandlerCalls;
     }
 
+    /** Hold onDisputeCommitted until the next dispute log query answered. */
+    public stubHoldDisputeCommittedHandlingUntilLogQuery(): boolean {
+        this.service.holdDisputeCommittedHandlingUntilLogQuery();
+        return true;
+    }
+
+    public releaseDisputeCommittedHandling(): boolean {
+        return this.service.releaseDisputeCommittedHandling();
+    }
+
+    public getHeldDisputeCommittedHandlingCount(): number {
+        return this.service.disputeCommittedHandlingGate?.entered ?? 0;
+    }
+
     /** Drop subscribed dispute logs before the scheduler records their key. */
     public stubHoldDisputeCommittedEvents(passFirst = true): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
@@ -3542,10 +3732,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getHeldHandshakeCount(): number {
         return this.service.getHeldHandshakeCount();
-    }
-
-    public getAckedHeldHandshakeCount(): number {
-        return this.service.getAckedHeldHandshakeCount();
     }
 
     public releaseInitHandshakes(): boolean {

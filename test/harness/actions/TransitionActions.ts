@@ -1,10 +1,14 @@
 // @spec-test-coverage-ignore: shared transition actions exercised by owning mapped test declarations
 import { Block, StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Logger, sleep, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
@@ -68,11 +72,12 @@ export function effectiveWaitForFinalization(
  * Handles state transition operations on the state machine
  */
 export class TransitionActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>,
     TContract extends AStateMachineContract = AStateMachineContract
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc, TContract>,
+        protected harness: PeerTestHarness<THost, TContract>,
         protected logger: Logger
     ) {}
 
@@ -85,7 +90,7 @@ export class TransitionActions<
     ): Promise<any> {
         const nextPeer =
             (await this.harness.query.getNextPeerToWrite()) as TestPeer<
-                TCustomRpc,
+                THost,
                 TContract
             >;
 
@@ -359,7 +364,7 @@ export class TransitionActions<
      * Submit a transaction from a specific peer
      */
     async submit(
-        peer: TestPeer<TCustomRpc, TContract>,
+        peer: TestPeer<THost, TContract>,
         txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
@@ -463,7 +468,7 @@ export class TransitionActions<
      * Wait for a peer to receive their turn
      */
     private async waitForTurn(
-        peer: TestPeer<TCustomRpc, TContract>,
+        peer: TestPeer<THost, TContract>,
         timeoutMs?: number
     ): Promise<void> {
         const waitTimeoutMs =
@@ -556,7 +561,7 @@ export class TransitionActions<
 
     /** Waits until `waitForPeers` reach the writer's latest height, or `until` holds. */
     private async waitUntilSyncedOr(
-        writer: TestPeer<TCustomRpc, TContract>,
+        writer: TestPeer<THost, TContract>,
         waitForPeers: number[] | undefined,
         until: () => boolean | Promise<boolean>
     ): Promise<void> {

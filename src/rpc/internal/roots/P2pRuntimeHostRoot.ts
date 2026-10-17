@@ -25,7 +25,9 @@ import HostNonceManager from "@/evm/signer/HostNonceManager";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import MainRpcService from "@/rpc/network/MainRpcService";
+import MainRpcService, {
+    type ApplicationEventsOf
+} from "@/rpc/network/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/network/resolveCustomRpcManifest";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCProvider";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
@@ -34,7 +36,7 @@ import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import { DebugProxy } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
-import { config, isNodeRuntime } from "@/utils/config";
+import { config, createConfig, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -102,14 +104,35 @@ async function bubbleWebRTCBridgePortIfNeeded(
     return factory;
 }
 
+/** Type-only key of the network root class a host root serves. */
+declare const applicationType: unique symbol;
+
+/** The network root (custom RPC) class a host root class serves. */
+export type ApplicationOf<THost extends P2pRuntimeHostRoot> =
+    THost[typeof applicationType];
+
+/** The application event map a host root's network root declares. */
+export type HostEventsOf<THost extends P2pRuntimeHostRoot> =
+    ApplicationEventsOf<ApplicationOf<THost>>;
+
 /**
  * Construct the live p2p runtime graph and drive it from a {@link RuntimePort}.
  *
  * Requests arriving on the port are dispatched to the state manager / internal
  * signer; p2p event hooks and contract events are forwarded back to the client.
  * Emits a `ready` message once fully constructed.
+ *
+ * An application extends this root the way it extends `MainRpcService`: its
+ * subclass adds internal services as typed fields and reaches its custom RPC
+ * (`TApplication`, which also declares the application events) through
+ * {@link application}. A host root manifest names the subclass; the SDK loads
+ * it in the runtime's realm.
  */
-export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
+export class P2pRuntimeHostRoot<
+    TApplication extends MainRpcService = MainRpcService
+> extends AInternalRpcRoot<P2pRuntimeClientRoot> {
+    /** Type-only: carries `TApplication` to the client; never set at runtime. */
+    declare public readonly [applicationType]: TApplication;
     public chainSigner!: ChainSignerService;
     private webRTCConnectionFactory?: WorkerBridgeWebRTCConnectionFactory;
     public deploySigner!: DeploySignerService;
@@ -130,12 +153,19 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
     private maxChannelParticipants!: number;
     private signerAddress!: string;
     private readonly context: HostContext;
+    private readonly payload: SetupPayload;
 
     constructor(
-        private readonly payload: SetupPayload,
+        payload: SetupPayload,
         local: HostContext = {},
         context: RootStartContext
     ) {
+        // A worker's bootstrap applies the config to the entry's module graph.
+        // A host root bundled apart from that entry has its own copy of the
+        // config module, so the root applies its own peer's configuration to
+        // its graph before its logger reads it; with one shared graph this
+        // reapplies the same values.
+        if (context.mode === "worker") createConfig(payload.config);
         super(
             (error) => {
                 // Parent closure during disposal must not restart the worker error funnel.
@@ -157,6 +187,7 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             30_000,
             context
         );
+        this.payload = payload;
         this.context = {
             ...local,
             threadLabel:
@@ -300,6 +331,89 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         });
     }
 
+    // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
+    public override get isDisposed(): boolean {
+        return (
+            super.isDisposed ||
+            (this.runtimeHandle?.stateManager.isDisposed ?? false)
+        );
+    }
+
+    // Implements root cleanup through the shared recursive disposal contract.
+    public override dispose(): Promise<void> {
+        return this.disposeRoot(
+            async () => {
+                const runtimeHandle = this.runtimeHandle;
+                const provider = this.chainContext?.provider;
+                const ctx = this.context;
+                // Reported before the provider closes; the settle is bounded
+                // so disposal never hangs on the chain.
+                if (this.managedSigner) {
+                    this.rootLogger.info(
+                        "gas usage",
+                        LoggerUtils.getGasUsageMetadata(
+                            await this.managedSigner.gasUsage.settledSnapshot(
+                                config.GAS_USAGE_SETTLE_MS
+                            )
+                        )
+                    );
+                    // The report is out; end the receipt waits still running
+                    // before the provider that would never end them closes.
+                    this.managedSigner.gasUsage.dispose();
+                }
+                try {
+                    try {
+                        // Destroy first so ethers sends no eth_unsubscribe the destroy
+                        // would cancel; node sockets settle any that are sent (NodeSocket).
+                        if (provider && !Clock.ownsProvider(provider))
+                            await provider.destroy();
+                        // The Clock keeps reading through it, but this
+                        // runtime's node reconnects and their logs end here;
+                        // the Clock destroys it once a new provider replaces it.
+                        else if (provider) {
+                            provider.stopReconnecting();
+                            Clock.releaseProvider(provider);
+                        }
+                    } finally {
+                        if (runtimeHandle) {
+                            await runtimeHandle.stateManager.dispose();
+                        }
+                    }
+                } finally {
+                    this.closeChildConnections();
+                    try {
+                        // TODO: Delegate cleanup through the shared Holepunch/local
+                        // discovery lifecycle API once the backend is injected.
+                        if (
+                            ctx.threadLabel &&
+                            config.DEBUG_LOCAL_TRANSPORT &&
+                            isNodeRuntime() &&
+                            config.LOCAL_DISCOVERY_REGISTRY_URL
+                        ) {
+                            await LocalDiscoveryServer.cleanup();
+                        }
+                    } finally {
+                        // Late network callbacks must not use the disposed parent connection.
+                        runtimeHandle?.stateManager.events.setBridgeTap(
+                            undefined
+                        );
+                    }
+                }
+            },
+            () => this.runtimeHandle?.stateManager.stop()
+        );
+    }
+
+    /**
+     * The live custom RPC of this runtime; rejects with "Runtime is not ready"
+     * before the runtime is built.
+     */
+    protected get application(): TApplication {
+        // The custom RPC manifest fixes the class at runtime; the subclass
+        // names its type.
+        return this.requireManager().localRpc as TApplication;
+    }
+
     private requireManager() {
         if (!this.runtimeHandle) throw new Error("Runtime is not ready");
         return this.runtimeHandle.stateManager.p2pManager;
@@ -392,78 +506,5 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
 
         this.runtimeHandle = { stateManager, evmDiamondStateMachine };
         await stateManager.p2pManager.localRpc.ready();
-    }
-
-    // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
-    public override get isDisposed(): boolean {
-        return (
-            super.isDisposed ||
-            (this.runtimeHandle?.stateManager.isDisposed ?? false)
-        );
-    }
-
-    // Implements root cleanup through the shared recursive disposal contract.
-    public override dispose(): Promise<void> {
-        return this.disposeRoot(
-            async () => {
-                const runtimeHandle = this.runtimeHandle;
-                const provider = this.chainContext?.provider;
-                const ctx = this.context;
-                // Reported before the provider closes; the settle is bounded
-                // so disposal never hangs on the chain.
-                if (this.managedSigner) {
-                    this.rootLogger.info(
-                        "gas usage",
-                        LoggerUtils.getGasUsageMetadata(
-                            await this.managedSigner.gasUsage.settledSnapshot(
-                                config.GAS_USAGE_SETTLE_MS
-                            )
-                        )
-                    );
-                    // The report is out; end the receipt waits still running
-                    // before the provider that would never end them closes.
-                    this.managedSigner.gasUsage.dispose();
-                }
-                try {
-                    try {
-                        // Destroy first so ethers sends no eth_unsubscribe the destroy
-                        // would cancel; node sockets settle any that are sent (NodeSocket).
-                        if (provider && !Clock.ownsProvider(provider))
-                            await provider.destroy();
-                        // The Clock keeps reading through it, but this
-                        // runtime's node reconnects and their logs end here;
-                        // the Clock destroys it once a new provider replaces it.
-                        else if (provider) {
-                            provider.stopReconnecting();
-                            Clock.releaseProvider(provider);
-                        }
-                    } finally {
-                        if (runtimeHandle) {
-                            await runtimeHandle.stateManager.dispose();
-                        }
-                    }
-                } finally {
-                    this.closeChildConnections();
-                    try {
-                        // TODO: Delegate cleanup through the shared Holepunch/local
-                        // discovery lifecycle API once the backend is injected.
-                        if (
-                            ctx.threadLabel &&
-                            config.DEBUG_LOCAL_TRANSPORT &&
-                            isNodeRuntime() &&
-                            config.LOCAL_DISCOVERY_REGISTRY_URL
-                        ) {
-                            await LocalDiscoveryServer.cleanup();
-                        }
-                    } finally {
-                        // Late network callbacks must not use the disposed parent connection.
-                        runtimeHandle?.stateManager.events.setBridgeTap(
-                            undefined
-                        );
-                    }
-                }
-            },
-            () => this.runtimeHandle?.stateManager.stop()
-        );
     }
 }

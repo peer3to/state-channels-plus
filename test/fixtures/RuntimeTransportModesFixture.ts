@@ -10,6 +10,7 @@ import {
     setupP2pRuntime,
     type P2pSetupOptions
 } from "@/evm/p2pRuntime/setupP2pRuntime";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { createLogger, type Logger } from "@/utils/logging";
 import { LocalDiscoveryServer } from "@/utils/node/LocalDiscoveryServer";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -170,12 +171,10 @@ async function setupP2pInstance(options: {
 }) {
     const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
         await prepareRuntimeSetup(options);
-    return EvmStateMachine.p2pSetup<MathStateMachine, ReadyLifecycleRpc>(
-        scm,
-        deployedStateMachine,
-        deployStateMachine,
-        setupOptions
-    );
+    return EvmStateMachine.p2pSetup<
+        MathStateMachine,
+        P2pRuntimeHostRoot<ReadyLifecycleRpc>
+    >(scm, deployedStateMachine, deployStateMachine, setupOptions);
 }
 
 const WATCHDOG_VM_WORKER_ENTRY = path.resolve(

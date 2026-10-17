@@ -179,8 +179,6 @@ export class HolepunchLocalDhtFixture {
 
     private control(index: number): RemoteRpcProxyType<PingPongRpc> {
         const harness = this.runtimes.getHarness();
-        return harness.control(
-            harness.getPeer(index)
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        return harness.getPeer(index).p2pInstance.hostRpc;
     }
 }

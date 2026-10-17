@@ -1,5 +1,9 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     MirrorChainEvent,
     ObservableRead,
@@ -28,9 +32,10 @@ export type MirrorUpdateHold = {
  * real contract.
  */
 export class MirrorActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private harness: PeerTestHarness<THost>) {}
 
     private mirror(peerIndex: number) {
         return this.harness.control(this.harness.getPeer(peerIndex)).mirror;

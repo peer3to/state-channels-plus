@@ -7,10 +7,15 @@ import ClientChainSigner from "../signer/ClientChainSigner";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import DeploymentBridgeSigner from "../signer/DeploymentBridgeSigner";
 import { attachContractEvents } from "@/events/EventBus";
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { createRoot } from "@/rpc/internal/createRoot";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
-import type { HostContext } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import type MainRpcService from "@/rpc/network/MainRpcService";
+import type {
+    ApplicationOf,
+    HostContext,
+    P2pRuntimeHostRoot
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import { createLogger } from "@/utils";
 import type { Logger } from "@/utils";
@@ -24,11 +29,18 @@ import type {
 import { ethers, type InterfaceAbi } from "ethers";
 import type { LocalStateMachineDeployer } from "scripts/V1/deploy";
 
-/** Public options of `EvmStateMachine.p2pSetup`, unchanged. */
-export type P2pSetupOptions = {
+/** Public options of `EvmStateMachine.p2pSetup`. */
+export type P2pSetupOptions<
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
+> = {
     peerId?: number;
     peerLogger?: Logger;
     customRpcManifest?: CustomRpcManifest;
+    /**
+     * The application's `P2pRuntimeHostRoot` subclass. Its class type types
+     * `P2pInstance.host` and the `application` events on `P2pInstance.events`.
+     */
+    hostRootManifest?: HostRootManifest<THost>;
     /**
      * Runtime configuration. PROVIDER_URL must expose WebSocket RPC on
      * the same authority; http(s) URLs are converted to ws(s).
@@ -69,14 +81,14 @@ export type P2pSetupDependencies = {
  */
 export async function setupP2pRuntime<
     T extends AStateMachineContract,
-    TCustomRpc extends MainRpcService = MainRpcService
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
 >(
     deployedStateChannelContractInstance: StateChannelManagerInterface,
     stateMachineContractInstance: T,
     deployStateMachine: LocalStateMachineDeployer,
-    options: P2pSetupOptions | undefined,
+    options: P2pSetupOptions<THost> | undefined,
     dependencies: P2pSetupDependencies = {}
-): Promise<P2pInstance<T, TCustomRpc>> {
+): Promise<P2pInstance<T, THost>> {
     // Initialize SDK config for this runtime (intended to be called once).
     const activeConfig = createConfig(options?.config);
 
@@ -98,8 +110,8 @@ export async function setupP2pRuntime<
             { attachErrorListener: true }
         );
 
-    let root: P2pRuntimeClientRoot | undefined;
-    let instance: P2pInstance<T, TCustomRpc> | undefined;
+    let root: P2pRuntimeClientRoot<THost> | undefined;
+    let instance: P2pInstance<T, THost> | undefined;
     try {
         // Client description of the app contract (rebuilt by the client).
         const stateMachine: SerializedContract = {
@@ -130,6 +142,7 @@ export async function setupP2pRuntime<
             signerSecret: runtimeSignerSecret,
             peerId: options?.peerId,
             customRpcManifest: options?.customRpcManifest,
+            hostRootManifest: options?.hostRootManifest,
             customPrecompiles: options?.customPrecompiles?.map(
                 (precompile) => ({
                     ...precompile,
@@ -138,7 +151,7 @@ export async function setupP2pRuntime<
             )
         };
 
-        root = await createRoot(P2pRuntimeClientRoot, {
+        root = await createRoot(P2pRuntimeClientRoot<THost>, {
             args: {
                 payload,
                 signerAddress: resolvedSignerAddress
@@ -147,7 +160,9 @@ export async function setupP2pRuntime<
             handlerExecutionContext: options?.handlerExecutionContext,
             local: dependencies
         });
-        const remote = root.p2pRuntimeHostRemoteRoot!.rpc;
+        // The SDK's own services, which every host root subclass inherits.
+        const remote = root.p2pRuntimeHostRemoteRoot!
+            .rpc as RuntimeConnection<P2pRuntimeHostRoot>;
         const signer = new ClientP2pSigner(remote, resolvedSignerAddress);
         const chainSigner = new ClientChainSigner(
             remote,
@@ -164,13 +179,13 @@ export async function setupP2pRuntime<
             JSON.parse(stateMachine.abiJson),
             signer
         );
-        instance = new P2pInstance<T, TCustomRpc>(root, {
+        instance = new P2pInstance<T, THost>(root, {
             contract: contract as ethers.Contract & T,
             signer,
             chainSigner,
             stateChannelManagerContract,
             logger,
-            hostRpc: createHostRpc<TCustomRpc>(remote)
+            hostRpc: createHostRpc<ApplicationOf<THost>>(remote)
         });
         // The client contract mirror: the same helper worker code uses.
         // Events are forwarded as { name, args } and re-emitted by event name,

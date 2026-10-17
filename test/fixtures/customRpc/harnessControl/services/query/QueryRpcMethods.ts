@@ -219,6 +219,13 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         );
     }
 
+    /** Hash of the state the local state machine holds right now. */
+    public async getLiveStateMachineStateHash(): Promise<Hash> {
+        return hash(
+            await this.service.sm.diamondStateMachine.getState()
+        ) as Hash;
+    }
+
     public async isMyTurn(): Promise<boolean> {
         return await this.service.sm.blockProductionService["isMyTurn"]();
     }

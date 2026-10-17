@@ -183,12 +183,8 @@ describe("E2E: ReductionManager", function () {
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
         const h = TestSession.getHarness();
         // Four peers race one automatic kill against a window of one-second
-        // blocks; the harness evidence floor gives that race room. Approved
-        // timeConfig change (plan 30, decision 5).
-        await h.scenario.preDisputeSetup({
-            peerCount: 4,
-            timeConfig: { evidenceTime: 6 }
-        });
+        // blocks; the harness evidence floor gives that race room.
+        await h.scenario.preDisputeSetup({ peerCount: 4 });
         const targetPeer = h.getPeer(0);
         const sourceForkId = h.activeForkId!;
 

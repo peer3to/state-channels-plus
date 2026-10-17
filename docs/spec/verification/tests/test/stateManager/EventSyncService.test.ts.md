@@ -21,6 +21,16 @@ release the other), then moves to the top-up's block. A third holds a channel th
 watermark yet at the current chain head, opens the channel, checks the watermark is still unset
 while held, and that the release publishes the opening block.
 
+Four dispute-window cases run the real synchronized window load on an observer. Three stage a
+final dispute whose streamed log reaches the observer while its handling is held until the
+recovery's log query has answered, so the recovery finds that handling in flight. When the held
+handling succeeds, the load resolves with the window and the dispute is stored. When the
+handling stores the dispute and then fails its final-dispute preparation, the load still resolves
+with the window. When the local diamond's write, the handling's first step, reverts, the load
+rejects with that revert, a second load rejects the same way and the dispute stays missing. The
+fourth loses the observer's streamed dispute logs and makes its dispute handler throw, so the
+logs the recovery dispatches itself fail and the load rejects with that failure.
+
 One inbound-run case loses a top-up's live inbound log and reverts the local diamond's next inbound
 application once. The recovery rejects with the local EVM revert after its first query.
 
@@ -47,6 +57,10 @@ peer holds no inbound tip; the load recovers the logs and the store tip becomes 
 - `local diamond failure applying a recovered log → recovery rejects with it`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20, REQ-CHAINOBS-3-N137ZP.T1.P23
 - `missed calldata log → recovered by query, validation scheduled`: none
 - `dispute recovery defeated → the window is reported unreadable, not thrown`: none
+- `in-flight dispute log succeeds → recovery awaits it and resolves with its dispute stored`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P21
+- `in-flight dispute log stores its dispute, then fails → recovery resolves with the window`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P22
+- `in-flight dispute log fails before storing its dispute → recovery rejects with that failure, also on a second call`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23
+- `dispute log recovery dispatches itself fails → recovery rejects with that failure`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24
 - `the subscription filter is unchanged by the shared topic builder`: none
 - `dispatches a log a second stream delivers again only once`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P1, INV-CHAINOBS-1-ASVKC1.T1.P1
 - `dispatches a log re-mined in another block after a reorg as a new event`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P2, INV-CHAINOBS-1-ASVKC1.T1.P2

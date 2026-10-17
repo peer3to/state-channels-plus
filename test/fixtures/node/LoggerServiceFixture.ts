@@ -38,7 +38,10 @@ import { Wallet } from "ethers";
 import path from "node:path";
 
 export interface LoggerSdkFixture {
-    instance: P2pInstance<MathStateMachine, ReadyLifecycleRpc>;
+    instance: P2pInstance<
+        MathStateMachine,
+        P2pRuntimeHostRoot<ReadyLifecycleRpc>
+    >;
     logger: Logger;
     roots: Set<AInternalRpcRoot>;
     clientRoot: P2pRuntimeClientRoot;
@@ -97,7 +100,10 @@ export async function createLoggerSdkFixture(
         P2pRuntimeHostRoot & LoggerProbeRoot & RuntimeProbeRoot
     >;
     let control!: RuntimeRpcControl;
-    const instance = await setupP2pRuntime<MathStateMachine, ReadyLifecycleRpc>(
+    const instance = await setupP2pRuntime<
+        MathStateMachine,
+        P2pRuntimeHostRoot<ReadyLifecycleRpc>
+    >(
         setup.scm,
         setup.deployedStateMachine,
         setup.deployStateMachine,

@@ -4,7 +4,11 @@ import {
     deserializeError,
     type SerializedError
 } from "../errorWire";
-import { P2pRuntimeHostRoot } from "./P2pRuntimeHostRoot";
+import { P2pRuntimeHostRoot, type HostEventsOf } from "./P2pRuntimeHostRoot";
+import {
+    resolveHostRootConstructor,
+    type HostRootConstructor
+} from "./resolveHostRootManifest";
 import type { RemoteRoot } from "../RemoteRoot";
 import {
     installWebRTCMainThreadBridge,
@@ -29,12 +33,17 @@ export interface ClientRootOptions {
 export interface ClientRootDependencies
     extends Pick<P2pSetupDependencies, "hostContext"> {}
 
-/** Owns client communication with the SDK host. */
-export class P2pRuntimeClientRoot extends AInternalRpcRoot {
+/**
+ * Owns client communication with the SDK host. `THost` is the host root class
+ * the payload's host root manifest names.
+ */
+export class P2pRuntimeClientRoot<
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
+> extends AInternalRpcRoot {
     public readonly sdkClient: SdkClientService;
-    public p2pRuntimeHostRemoteRoot?: RemoteRoot<P2pRuntimeHostRoot>;
+    public p2pRuntimeHostRemoteRoot?: RemoteRoot<THost>;
     public webRTCBridgePort?: MessagePort;
-    public readonly events: EventBus;
+    public readonly events: EventBus<HostEventsOf<THost>>;
     private readonly hostErrorListeners = new Set<(error: Error) => void>();
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
     private disposed = false;
@@ -54,16 +63,19 @@ export class P2pRuntimeClientRoot extends AInternalRpcRoot {
             context
         );
         this.signerAddress = options.signerAddress;
-        this.events = new EventBus((kind, eventName, error) =>
-            this.logger.attachedLogger.error("Event bus listener failed", {
-                kind,
-                eventName,
-                error: errorMessage(error)
-            })
+        this.events = new EventBus<HostEventsOf<THost>>(
+            (kind, eventName, error) =>
+                this.logger.attachedLogger.error("Event bus listener failed", {
+                    kind,
+                    eventName,
+                    error: errorMessage(error)
+                })
         );
         this.sdkClient = new SdkClientService(this.router, {
             busEvent: (kind, eventName, args) => {
-                this.events.emit(kind, eventName, args);
+                // Relays the host bus's own emission, already checked there.
+                const relay: EventBus = this.events;
+                relay.emit(kind, eventName, args);
                 if (kind === "p2pEventHooks" && eventName === "onAbort")
                     this.hostAborted = true;
             },
@@ -81,9 +93,18 @@ export class P2pRuntimeClientRoot extends AInternalRpcRoot {
         { payload }: ClientRootOptions,
         dependencies: ClientRootDependencies
     ): Promise<void> {
-        const creation = createRoot(P2pRuntimeHostRoot, {
+        const inThread = payload.config.RUN_SDK_IN_THREAD;
+        // A worker resolves the host root manifest in its own realm; an
+        // inline host resolves it here. The manifest's builder typed THost.
+        const entry = (
+            inThread
+                ? // In a worker the class only names the thread's root.
+                  P2pRuntimeHostRoot
+                : await resolveHostRootConstructor(payload.hostRootManifest)
+        ) as HostRootConstructor<THost>;
+        const creation = createRoot(entry, {
             parent: this,
-            mode: payload.config.RUN_SDK_IN_THREAD ? "worker" : "inline",
+            mode: inThread ? "worker" : "inline",
             workerUrl,
             local: dependencies.hostContext,
             args: payload

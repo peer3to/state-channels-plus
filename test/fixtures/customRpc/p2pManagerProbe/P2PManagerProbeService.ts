@@ -71,9 +71,22 @@ class RecordingTransport extends NetworkTransport {
     public sendError?: Error;
     public closeError?: Error;
 
+    private frameWaiters: (() => void)[] = [];
+
     public _send(frame: string): void {
         if (this.sendError) throw this.sendError;
         this.frames.push(frame);
+        const waiters = this.frameWaiters;
+        this.frameWaiters = [];
+        for (const wake of waiters) wake();
+    }
+
+    /** Resolve once a recorded frame matches `predicate`. */
+    public async waitForFrame(
+        predicate: (frame: string) => boolean
+    ): Promise<void> {
+        while (!this.frames.some(predicate))
+            await new Promise<void>((wake) => this.frameWaiters.push(wake));
     }
 
     // Overrides NetworkTransport.onMessage: deliver through this probe transport.
@@ -2253,6 +2266,12 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             : this.holepunchTransport(publicKey);
         if (!authenticatedAddress) this.p2pManager.addConnection(transport);
         const capture = this.captureScheduledTasks();
+        // one clock reading for both sides: a second ticking between the
+        // request time and the responder's own reading would shift the skew.
+        // The pin is process-wide, so callers isolate their peers
+        const originalClock = Clock.getTimeInSeconds;
+        const now = originalClock();
+        Clock.getTimeInSeconds = () => now;
         let responded = false;
         let threw = false;
         try {
@@ -2260,12 +2279,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 .createRPCMethods(transport)
                 .onInitHandshakeRequest(
                     ethers.keccak256(ethers.randomBytes(32)),
-                    Clock.getTimeInSeconds() + offsetSeconds
+                    now + offsetSeconds
                 );
             responded = ethers.isHexString(response.signature);
         } catch {
             threw = true;
         } finally {
+            Clock.getTimeInSeconds = originalClock;
             capture.restore();
         }
         return {
@@ -4414,26 +4434,31 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         service.runRPC(rpc, transport);
         const responseBeforeInitialization = transport.frames.length > 0;
         const { outcome } = await this.startNegotiation(service, match);
-        for (let retry = 0; retry < 50; retry += 1) {
-            if (
-                transport.frames.some((frame) => {
-                    const parsed = JSON.parse(frame) as {
-                        requestId?: string;
-                    };
-                    return parsed.requestId === "early-negotiation";
-                })
-            ) {
-                break;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 0));
-        }
+        // The replayed request answers only after its balance check and
+        // channel selection, which read the chain; wait for the answer for
+        // as long as the deferred admission itself would wait.
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        const responseAfterInitialization = await Promise.race([
+            transport
+                .waitForFrame(
+                    (frame) =>
+                        (JSON.parse(frame) as { requestId?: string })
+                            .requestId === "early-negotiation"
+                )
+                .then(() => true),
+            new Promise<boolean>((expire) => {
+                deadline = setTimeout(
+                    () => expire(false),
+                    this.p2pManager.stateManager.timeConfig.agreementTime *
+                        2 *
+                        1000
+                );
+            })
+        ]);
+        clearTimeout(deadline);
         const selectedChannelId = String(
             this.p2pManager.stateManager.channelId
         );
-        const responseAfterInitialization = transport.frames.some((frame) => {
-            const parsed = JSON.parse(frame) as { requestId?: string };
-            return parsed.requestId === "early-negotiation";
-        });
 
         this.p2pManager.profileManager.removeTransport(transport);
         await outcome;

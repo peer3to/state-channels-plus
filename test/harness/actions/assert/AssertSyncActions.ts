@@ -1,16 +1,21 @@
 // @spec-test-coverage-ignore: shared sync assertion exercised by owning mapped test declarations
 import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { ForkId, Hash } from "@/types/types";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
 
 export class AssertSyncActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     async peersInSyncWait(options?: {
         expectedStateMachineStateHash?: Hash;

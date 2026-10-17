@@ -1314,7 +1314,12 @@ describe("E2E: join snapshot guard", function () {
             // joiner stores: a snapshot race would now be retried
             await moveChainSnapshot(h);
         } finally {
-            await stub.releaseJoinRetryDecision().request();
+            // the released decision aborts the join and disposes the runtime,
+            // so the release reply may not arrive
+            await stub
+                .releaseJoinRetryDecision()
+                .request()
+                .catch(() => undefined);
         }
 
         expect(await race.join).to.equal(false);
@@ -1412,49 +1417,58 @@ describe("E2E: join snapshot guard", function () {
         // the retry decision names the refusal: a moved snapshot would be
         // refused first, and could abort for the wrong reason
         const stub = h.control(joiner).stub;
-        await stub.holdJoinRetryDecision().request();
+        // keeps the joiner's control RPC reachable after the abort, so the
+        // reads below cannot race the runtime's disposal
+        const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+            joiner.index
+        );
         try {
-            await h.rpcStub.releaseOneMembershipSubmission(joiner.index);
+            await stub.holdJoinRetryDecision().request();
+            try {
+                await h.rpcStub.releaseOneMembershipSubmission(joiner.index);
+                await waitFor(
+                    async () =>
+                        (await stub.getJoinRetryDecisionRefusals().request())
+                            .length === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await stub.getJoinRetryDecisionRefusals().request()
+                ).to.deep.equal(["ErrorTooManyParticipants"]);
+            } finally {
+                // the released decision aborts the join
+                await stub.releaseJoinRetryDecision().request();
+            }
+
+            // the abort disposes the runtime, so the call may also reject
+            expect(await join.catch(() => false)).to.equal(false);
             await waitFor(
-                async () =>
-                    (await stub.getJoinRetryDecisionRefusals().request())
-                        .length === 1,
+                async () => joiner.eventSpies.onAbort?.called === true,
                 h.event.protocolEventTimeoutMs()
             );
+            await h.event.waitUntilLeftChannel(joiner.index);
+            const spies = joiner.eventSpies;
+            expect(spies.onLeftChannel?.callCount).to.equal(1);
+            expect(spies.onAbort?.callCount).to.equal(1);
             expect(
-                await stub.getJoinRetryDecisionRefusals().request()
-            ).to.deep.equal(["ErrorTooManyParticipants"]);
+                spies
+                    .onLeftChannel!.getCall(0)
+                    .calledBefore(spies.onAbort!.getCall(0))
+            ).to.equal(true);
+            // later submissions stay held: the count read below is the total
+            expect(
+                await h
+                    .control(joiner)
+                    .stub.getHeldMembershipReceiptCount()
+                    .request()
+            ).to.equal(1);
+            expect(
+                await chainJoinAmounts(h, joiner.address, fromBlock)
+            ).to.deep.equal([]);
         } finally {
-            await stub.releaseJoinRetryDecision().request();
+            await releaseAll();
+            await releaseDisposal();
         }
-
-        // the abort disposes the runtime, so the call may also reject
-        expect(await join.catch(() => false)).to.equal(false);
-        await waitFor(
-            async () => joiner.eventSpies.onAbort?.called === true,
-            h.event.protocolEventTimeoutMs()
-        );
-        await h.event.waitUntilLeftChannel(joiner.index);
-        const spies = joiner.eventSpies;
-        expect(spies.onLeftChannel?.callCount).to.equal(1);
-        expect(spies.onAbort?.callCount).to.equal(1);
-        expect(
-            spies
-                .onLeftChannel!.getCall(0)
-                .calledBefore(spies.onAbort!.getCall(0))
-        ).to.equal(true);
-        // later submissions stay held: the count read below is the total
-        expect(
-            await h
-                .control(joiner)
-                .stub.getHeldMembershipReceiptCount()
-                .request()
-        ).to.equal(1);
-        expect(
-            await chainJoinAmounts(h, joiner.address, fromBlock)
-        ).to.deep.equal([]);
-        // the abort disposed the runtime, so the release may reject
-        await releaseAll().catch(() => undefined);
     });
 
     it("a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED", async function () {

@@ -4,5 +4,6 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 - [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../../../../../specification/runtime/execution.md#req-runtime-5-wj1xkk)

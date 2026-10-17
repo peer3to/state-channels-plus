@@ -1,19 +1,24 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
     createLocalDhtNetwork,
+    holdAnnouncementReplies,
     TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
     type LocalDhtNetwork
 } from "../fixtures/distributed/testTransport";
 import { expect } from "chai";
 import { randomBytes } from "crypto";
 import dgram from "dgram";
+import type { Duplex } from "stream";
 
+const {
+    DISCOVERY_AUTH_TIMEOUT_MS
+} = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     createPool
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 
 type Pool = {
-    onConnection(listener: () => void): void;
+    onConnection(listener: (stream: Duplex) => void): void;
     close(): Promise<void>;
 };
 
@@ -64,13 +69,61 @@ describe("distributed test transport fixture", function () {
                     () => reject(new Error("pools did not connect")),
                     TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
                 );
-                looker.onConnection(resolve);
+                looker.onConnection(() => resolve());
             });
         } finally {
             clearTimeout(timer);
             for (const pool of pools.reverse()) await pool.close();
             await network?.close();
             await held.close();
+        }
+    });
+
+    it("serves a peer that dials while createPool still flushes its announcement through the listener given at creation, so the hello arrives within the authentication timeout", async function () {
+        const network = await createLocalDhtNetwork();
+        const pools: Pool[] = [];
+        let timer: NodeJS.Timeout | undefined;
+        let releaseAnnouncement: (() => void) | undefined;
+        let creatingAnnouncer: Promise<void> | undefined;
+        try {
+            const topic = randomBytes(32);
+            const dialer: Pool = await createPool({
+                lookupTopics: [topic],
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(dialer);
+            const helloReceived = new Promise<void>((resolve, reject) => {
+                dialer.onConnection((stream: Duplex) => {
+                    timer = setTimeout(
+                        () => reject(new Error("hello did not arrive")),
+                        DISCOVERY_AUTH_TIMEOUT_MS
+                    );
+                    stream.once("data", () => resolve());
+                });
+            });
+            const announcerNode = network.createNode();
+            releaseAnnouncement = holdAnnouncementReplies(announcerNode);
+            let announcerCreated = false;
+            creatingAnnouncer = createPool({
+                announceTopics: [topic],
+                dht: announcerNode,
+                refreshIntervalMs: 25,
+                onConnection: (stream: Duplex) => stream.write("hello")
+            }).then((pool: Pool) => {
+                announcerCreated = true;
+                pools.push(pool);
+            });
+
+            await helloReceived;
+
+            expect(announcerCreated).to.equal(false);
+        } finally {
+            clearTimeout(timer);
+            releaseAnnouncement?.();
+            await creatingAnnouncer;
+            for (const pool of pools.reverse()) await pool.close();
+            await network.close();
         }
     });
 

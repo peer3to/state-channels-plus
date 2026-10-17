@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared fixture builds real signatures and block copies; executable evidence belongs to its calling test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Codec, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { MathTestSession } from "@test/harness";
@@ -66,7 +67,7 @@ export function encodeJoinRequest(
  * RPC and return the receiver's rejection message, or `undefined` if it signed.
  */
 export async function sendJoinSignatureRequest(
-    from: TestPeer<HarnessControlRpc, MathStateMachine>,
+    from: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>, MathStateMachine>,
     toAddress: string,
     request: JoinRequest
 ): Promise<string | undefined> {

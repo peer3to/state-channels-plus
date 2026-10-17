@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: real handshake dispatch with a failing chain read or sync, observed at the runtime's host-error route
-import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -35,7 +35,10 @@ export type HandshakeFailureOutcome = {
 export async function runHandshakeFailure(
     staging: "read" | "sync" | "teardown"
 ): Promise<HandshakeFailureOutcome> {
-    const harness = new PeerTestHarness<PingPongRpc, MathStateMachine>({
+    const harness = new PeerTestHarness<
+        P2pRuntimeHostRoot<PingPongRpc>,
+        MathStateMachine
+    >({
         deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
     });
     const hostErrors: Error[] = [];
@@ -54,9 +57,7 @@ export async function runHandshakeFailure(
         await harness.lifecycle.openChannel();
         const opener = harness.getPeer(0);
         const control = (index: number) =>
-            harness.control(
-                harness.getPeer(index)
-            ) as RemoteRpcProxyType<PingPongRpc>;
+            harness.getPeer(index).p2pInstance.hostRpc;
         unsubscribe = opener.p2pInstance.onHostError((error) =>
             hostErrors.push(error)
         );

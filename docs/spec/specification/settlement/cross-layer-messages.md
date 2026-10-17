@@ -81,7 +81,9 @@ chain storage is the proof of authenticity.
 - **Consumption.** The channel's processed inbound tip is the one committed by its latest snapshot.
   A block author packages the pending inbound range into its next channel block; applying the block
   applies each message in order and rolls the deposit total forward to the last packaged block's
-  `totalBalance`.
+  `totalBalance`. Every packaged message MUST be processed successfully; only an exhausted execution
+  budget may fail, and the author then packages fewer pending blocks
+  ([`REQ-SM-12-J6QD9B`](../protocol-model/state-machines.md#req-sm-12-j6qd9b)).
 - **Validation.** Every validator checks that the packaged inbound blocks chain from the previous
   snapshot's inbound tip (a break is an invalid state transition) and that every packaged block is
   persisted on chain (a fabricated block is provable fraud) ([`REQ-MSG-3-YY569F`](cross-layer-messages.md#req-msg-3-yy569f)).

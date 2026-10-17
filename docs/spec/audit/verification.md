@@ -412,29 +412,10 @@ The user superseded review 4's application-heavy client root. Application setup 
 
 ## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
 
-The [LocalOnlyGuard unit report](../verification/tests/test/rpc/guards/LocalOnlyGuard.test.ts.md) and
-[E2E report](../verification/tests/test/e2e/E2E-LocalOnlyGuard.test.ts.md) map the
-[`REQ-RPC-7-9CBSHK.T2`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2) and [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8) permutations. By engineer decision after
-the second implementation review, the unit suite now runs on two real harness peers instead of
-substitute recorder transports and hardcoded identities. The negotiating state uses the real registered
-pre-handshake profile. The "neither profile nor proven address" and "proven address without profile"
-states unregister the real profile for one call through the harness stub pairs and restore it. The
-retired-transport call re-injects a captured real request frame on its closed connection. A record-only
-observation, patched only on the receiver's own transports, reads response attempts, response frames
-matched by request id and exact transport, `Failed to send RPC response`
-errors, and every disconnect decision with its origin (direct, response-failure path, or close
-bookkeeping), so the response-path oracles are now observed directly rather than inferred from caller
-outcomes. The E2E remote-request case now reads zero response attempts and settlement by closure, and a
-new control case shows that an earlier guard's rejection still reaches a real remote requester, which
-stays connected; it covers the new [`REQ-RPC-7-9CBSHK.T2.P13`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p13). The negotiating E2E case asserts no
-guard-failure response, no execution, settlement through the closed pre-handshake transport rather than
-by timeout, and no verdict against the sender's unproven claimed address, as the amended
-[`REQ-RPC-7-9CBSHK.T2.P4`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p4) states. Before proof the receiver only closes that transport and bars nothing.
+The host-only guard suites this entry recorded were removed with the guard; the
+[Application host root](#application-host-root--2026-10-16) entry records the evidence that replaces them.
 
-The shared no-response helper requires exactly one direct `BLACKLIST` decision per rejected delivery,
-so the single-delivery notification and earlier-passing-guard cases also establish the "one decision"
-oracles, and every [`REQ-RPC-7-9CBSHK.T2`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2) and [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8) permutation is assigned to one
-declaration. The [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md)
+The [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md)
 drops the removed parentless-rejection case, maps the six parentless-worker cases and the inline-owner
 case, and repairs the shifted declaration lines. The [EvmFactory report](../verification/tests/test/evm/EvmFactory.test.ts.md)
 maps the owner-context and admission-drain cases and the existing bare-EVM composition case. The
@@ -468,9 +449,34 @@ settles a pending handshake wait and every later wait as not completed once the 
 covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m): its probe awaits the runtime RPC root's real
 `dispose()` shutdown hook with a pending wait, then waits again, and both waits return `false` long before
 their timeout. The indentation fix in that suite moved no declaration line. It does not read the order of negotiation and lobby cleanup or a logger error directly;
-immediate settlement is what keeps any wait timer from outliving the logger. The E2E-LocalOnlyGuard
-reconnect case no longer fails in cleanup, but cleanup success is not an asserted oracle and earns no
-credit.
+immediate settlement is what keeps any wait timer from outliving the logger.
+
+## Application host root — 2026-10-16
+
+The [ApplicationHostRoot report](../verification/tests/test/rpc/ApplicationHostRoot.test.ts.md) maps
+[`REQ-RPC-9-8FFE6S.T1.P1`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p1)–[`REQ-RPC-9-8FFE6S.T1.P12`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p12),
+[`UNIT-TEST-RESOLVE-HOST-ROOT-1-AS1DZ3`](../implementation/source/src/rpc/internal/roots/resolveHostRootManifest.ts.md#unit-test-resolve-host-root-1-as1dz3) and the two new host root entry permutations; the
+[E2E report](../verification/tests/test/e2e/E2E-ApplicationHostRoot.test.ts.md) maps
+[`REQ-RPC-9-8FFE6S.T1.P13`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p13) and [`REQ-RPC-9-8FFE6S.T1.P14`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p14). Every unit case starts a real runtime through the public setup,
+isolated in the production SDK worker entry or inline, and calls the test application's probe service
+through the typed host connection; no root, router or transport is replaced. In the drain case the
+probe call replies only once the root's disposal reaches its in-flight reply drain, and a record-only
+wrapper on the probe root's own router reports whether that drain was still waiting one task later; a
+disposal that skipped the drain fails the case every time, either by the reported flag or by rejecting
+the call. The event cases assert
+the listener ran by the time the emitting call replied, which the ordered runtime channel guarantees.
+The E2E network case uses a new byzantine control that sends a real request over the authenticated
+transport and returns how it settled. The removed host-only guard's test
+plan and its unit family left no evidence behind. The suites have not run yet; the
+engineer runs them. This update grants no engineer approval.
+
+2026-10-17 update: the same report maps [`REQ-RPC-9-8FFE6S.T1.P15`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p15) and [`REQ-RPC-9-8FFE6S.T1.P16`](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s.t1.p16). The second-build case
+calls `deployComplete` with two real local state machines, so without the guard the rebuild succeeds and
+the case fails on the missing rejection. The separately built case bundles the probe root, the SDK host
+root and the config module into one temporary module and keeps every other module shared, so the only
+thing that sets the bundled config copy is the root's own configuration step; without that step the copy
+keeps its default and the case fails. It covers the config copy only; it does not duplicate the clock,
+logger or detached-work registry of a full application bundle.
 
 ## Milestone-only proof update — current assessment
 
