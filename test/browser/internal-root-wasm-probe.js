@@ -32,6 +32,12 @@ WebAssembly.instantiate = async (...args) => {
     seeInstance(result.instance ?? result);
     return result;
 };
+const nativeInstantiateStreaming = WebAssembly.instantiateStreaming;
+WebAssembly.instantiateStreaming = async (...args) => {
+    const result = await nativeInstantiateStreaming(...args);
+    seeInstance(result.instance);
+    return result;
+};
 const NativeMemory = WebAssembly.Memory;
 WebAssembly.Memory = function (descriptor) {
     const memory = new NativeMemory(descriptor);

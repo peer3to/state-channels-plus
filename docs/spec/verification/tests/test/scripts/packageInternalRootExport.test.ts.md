@@ -1,6 +1,7 @@
 # packageInternalRootExport.test.ts
 
 Test file: [test/scripts/packageInternalRootExport.test.ts](../../../../../../test/scripts/packageInternalRootExport.test.ts)
+Exercises: [internalRoot.ts](../../../../implementation/source/src/internalRoot.ts.md)
 
 ## Overview
 
@@ -16,3 +17,4 @@ which shows the probe sees them.
 - `exports exactly the internal root API, as the same values as the package index`: UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P2
 - `loads neither the P2P runtime host nor its relay`: UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P3
 - `loads the P2P runtime host and its relay through the package index`: UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P4
+- `mirrors the package index's export targets for every condition`: UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P6

@@ -177,9 +177,6 @@ globalThis.runBrowserLoggerThreadLabelSmoke = async () => {
     });
 };
 
-// Parentless browser worker roots created from this page: one whose class
-// checks the page's config before the root is built, and two logger-probe
-// roots that read the thread name their entry started them with.
 // The WASM a fresh worker creates while importing one package entry.
 globalThis.runInternalRootWasmBrowserSmoke = async () => {
     const probe = (entry) =>
@@ -205,6 +202,9 @@ globalThis.runInternalRootWasmBrowserSmoke = async () => {
     };
 };
 
+// Parentless browser worker roots created from this page: one whose class
+// checks the page's config before the root is built, and two logger-probe
+// roots that read the thread name their entry started them with.
 globalThis.runWorkerRootBootstrapBrowserSmoke = async () => {
     const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
     const { ContractExecutorRoot } = await import(

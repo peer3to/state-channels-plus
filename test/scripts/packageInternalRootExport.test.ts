@@ -1,6 +1,7 @@
 import { repoRoot as findRepoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { execFileSync } from "child_process";
+import fs from "fs";
 import path from "path";
 
 // The package root, also when this suite runs compiled under dist/.
@@ -58,6 +59,27 @@ describe("package internal-root export", function () {
         for (const name of INTERNAL_ROOT_RUNTIME_EXPORTS) {
             expect(entry[name], name).to.equal(index[name]);
         }
+    });
+
+    it("mirrors the package index's export targets for every condition", function () {
+        const { exports } = JSON.parse(
+            fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")
+        );
+        const index: Record<string, string> = exports["."];
+        const expected = Object.fromEntries(
+            Object.entries(index).map(([condition, target]) => [
+                condition,
+                target.replace(/\/index\.(js|d\.ts)$/, "/internalRoot.$1")
+            ])
+        );
+        expect(exports["./internal-root"]).to.deep.equal(expected);
+        expect(Object.keys(expected)).to.have.members([
+            "types",
+            "browser",
+            "node",
+            "import",
+            "default"
+        ]);
     });
 
     it("loads neither the P2P runtime host nor its relay", function () {
