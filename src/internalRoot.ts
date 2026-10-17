@@ -1,6 +1,8 @@
-// The internal RPC root API alone. A worker that runs only its own services
-// (such as a crypto worker) imports this entry instead of the package index,
-// so it never loads the P2P runtime, its relay, and their WASM instances.
+// The internal RPC root API, for a worker that runs only its own services
+// (such as a crypto worker). Unlike the package index it never loads the P2P
+// runtime host, its relay, or their WASM instances; it still loads the channel
+// models, storage, and contract ABIs that logging uses. The index re-exports
+// this list, so the two entries cannot drift apart.
 export {
     AInternalRpcRoot,
     type RuntimeConnection
@@ -8,9 +10,12 @@ export {
 export { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 export { AInternalRpcMethods } from "@/rpc/internal/AInternalRpcMethods";
 export {
+    createRoot,
     startRootWorker,
+    type RootConstructor,
     type RootStartContext
 } from "@/rpc/internal/createRoot";
+export type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 export type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
 export type { default as InternalTransport } from "@/transport/InternalTransport";
 export type { Logger } from "@/utils/logging/Logger";

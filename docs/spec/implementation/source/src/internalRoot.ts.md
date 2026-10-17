@@ -2,12 +2,17 @@
 
 > **Source:** [src/internalRoot.ts](../../../../../src/internalRoot.ts)
 
-Package entry `@peer3/state-channels-plus/internal-root`: the internal root API alone, for a worker
-that runs only its own services. It re-exports the same modules as the package index, so a root or
-service class is the same class through either entry; it adds no behavior. Its static import graph
-leaves out the runtime host root and its transports.
+No specified behavior: Internal root API re-exports.
 
-## Requirements
+## UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP
 
-- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
-- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+Service-only worker entry
+
+- Setup: Resolve and load the `internal-root` package subpath next to the package index, in a fresh node process and in a fresh browser module worker that counts WASM before it imports.
+- Oracle: The resolved file, the runtime export names and their identity with the index's, the modules the node process holds, and the WASM instances and memories the browser worker creates.
+
+- [x] `UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P1` — the subpath resolves to the built node entry
+- [x] `UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P2` — the entry exports exactly `AInternalRpcMethods`, `AInternalRpcRoot`, `AInternalRpcService`, `createRoot` and `startRootWorker`, each the same value as the package index's
+- [x] `UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P3` — node loading the entry holds no P2P runtime host, `P2PManager`, `Holepunch`, relay, hyperswarm or sodium module
+- [x] `UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P4` — node loading the package index holds the relay (control for P3)
+- [x] `UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P5` — a browser worker importing the entry creates no WASM instance or memory, while one importing the package index creates at least one memory

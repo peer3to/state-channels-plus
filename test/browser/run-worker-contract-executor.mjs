@@ -226,6 +226,20 @@ try {
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 
+    await test("browser worker importing the internal-root entry creates no WASM, while one importing the package index does", async () => {
+        const { internalRoot, index } = await runSmoke(
+            "runInternalRootWasmBrowserSmoke"
+        );
+        assert.deepEqual(internalRoot, {
+            instances: 0,
+            memories: 0,
+            startRootWorker: "function"
+        });
+        assert.equal(index.startRootWorker, "function");
+        assert.ok(index.memories > 0, JSON.stringify(index));
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
     await test("browser worker executes a contract", async () => {
         const result = {
             contractExecutor: await runSmoke(
