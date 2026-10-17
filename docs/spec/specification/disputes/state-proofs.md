@@ -80,6 +80,8 @@ existing milestone only when its first block is the same. Append the linked tail
 milestone. Missing signatures can lower the proved final point while leaving a valid unfinalized
 tail; they do not necessarily mean data is unavailable. A snapshot update targets the first final
 block of the last milestone, never its evidence tail. An anchor-only update makes no progress.
+A node that keeps the stored proof of [proof-store.md](../storage/proof-store.md) reuses its kept
+hops and searches only above them ([`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](../storage/proof-store.md#req-proofstore-4-zfcwnb)).
 
 ## Verification and replay
 
@@ -108,6 +110,9 @@ itself that final point, retain its block, snapshot and full state so its proof 
 If a later point is final, the older anchor's full state and a separate proof ending at it are
 not required. For example, finality at 70 does not require retaining a separate state at 50.
 Audit evidence persistence alone must not advance the peer's active view or cause it to sign.
+Where a node keeps the stored proof of [proof-store.md](../storage/proof-store.md), this material
+is written into it ([`REQ-PROOFSTORE-2-99RRXK` (Seeding from a verified proof)](../storage/proof-store.md#req-proofstore-2-99rrxk)), and proof support stays there rather than in block
+history ([`INV-PROOFSTORE-1-5KG1NX` (Proof support stays evidence)](../storage/proof-store.md#inv-proofstore-1-5kg1nx)).
 
 ## Assumptions and constraints
 

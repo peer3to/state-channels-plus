@@ -76,4 +76,7 @@ explicit-failure joins prevent that.
 
 ## Future Work
 
-_Non-normative._ Deduplicated large-state storage once the disk medium lands.
+_Non-normative._ Deduplicated large-state storage once the disk medium lands. Pruning gaps above
+the on-chain snapshot ([proof-store.md](./proof-store.md)) would end the contiguous history that
+the participant-union read of [`REQ-SNAPSTORE-2-Q7E6TQ`](snapshots-and-states.md#req-snapstore-2-q7e6tq) presumes ([`OQ-SPEC-PROOFSTORE-2-V4N7VH` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-v4n7vh));
+which full states stay is [`OQ-SPEC-PROOFSTORE-6-X70EWK` (Full-state retention)](../open-questions.md#oq-spec-proofstore-6-x70ewk).
