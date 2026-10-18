@@ -618,7 +618,7 @@ Specification cases tested: 36/36.
 Specification cases tested: 4/4.
 
 [`REQ-LOBBY-2-TSWRV6` (Authenticated admission)](../specification/peer-communication/lobby-matching.md#req-lobby-2-tswrv6)
-Specification cases tested: 6/6.
+Specification cases tested: 7/7.
 
 [`REQ-LOBBY-3-Q9WY40` (Convergent roles)](../specification/peer-communication/lobby-matching.md#req-lobby-3-q9wy40)
 Specification cases tested: 5/5.
@@ -975,7 +975,7 @@ Specification cases tested: 14/14.
 Specification cases tested: 3/4. Untested: T1.P2.
 
 [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
-Specification cases tested: 22/22.
+Specification cases tested: 23/23.
 
 [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
 Specification cases tested: 5/5.

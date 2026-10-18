@@ -10,6 +10,7 @@ import type {
 } from "@/rpc/network/services";
 import { validateMatchTimeout } from "@/rpc/network/services/lobbyMatching/LobbyMatchingValidation";
 import { DEFAULT_JOIN_AMOUNT } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import type { NegotiationOutcome } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type { OpenConnection } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -356,16 +357,24 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             } else {
                 await stateManager.refreshOpenedStatusFromChain();
                 if (stateManager.status === Status.NOT_OPENED) {
-                    const outcome =
-                        await this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation(
-                            match,
-                            {
-                                mode: "targeted",
-                                channelId: normalizedChannelId,
-                                balance:
-                                    options.balance ?? this.defaultBalance()
-                            }
-                        );
+                    let outcome: NegotiationOutcome;
+                    try {
+                        outcome =
+                            await this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation(
+                                match,
+                                {
+                                    mode: "targeted",
+                                    channelId: normalizedChannelId,
+                                    balance:
+                                        options.balance ?? this.defaultBalance()
+                                }
+                            );
+                    } catch (error) {
+                        // The commitment promoted the peer: release it before
+                        // the failure reaches the caller.
+                        await matching.releaseNegotiationHandoff(topic);
+                        throw error;
+                    }
                     if (outcome.status === "opened") {
                         openedGenesis = true;
                         await matching.completeLobby(topic);

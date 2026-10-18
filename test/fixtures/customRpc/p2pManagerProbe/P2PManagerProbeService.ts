@@ -223,12 +223,13 @@ export type LobbyProtocolProbe = {
     localChannelId: string;
     lobbyTransportsExcludedBeforeCommit: boolean;
     ordinaryHookCountBeforeCommit: number;
-    selectedTransportHeldBeforeCompletion: boolean;
+    selectedTransportPromotedAtCommit: boolean;
     selectedTransportHeldAfterExpiredTimeout: boolean;
-    selectedTransportPromotedAfterCompletion: boolean;
+    selectedTransportConnectedAfterCompletion: boolean;
     nonSelectedTransportClosed: boolean;
-    ordinaryHookCountAfterCommitBeforeCompletion: number;
+    ordinaryHookCountAfterCommit: number;
     ordinaryHookCountAfterCompletion: number;
+    selectedPeerReceivedOrdinaryBroadcast: boolean;
     discardedPeerMissedOrdinaryBroadcast: boolean;
 };
 
@@ -3492,24 +3493,27 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             match,
             "channelId"
         );
-        const selectedTransportHeldBeforeCompletion =
-            !this.p2pManager.openConnections.includes(first) &&
+        const selectedTransportPromotedAtCommit =
+            this.p2pManager.openConnections.includes(first) &&
             service.isHandedOffTransport(first);
         await new Promise((resolve) => setTimeout(resolve, 225));
         const selectedTransportHeldAfterExpiredTimeout =
             !first.isClosed && service.isHandedOffTransport(first);
         const nonSelectedTransportClosed = second.isClosed;
-        const ordinaryHookCountAfterCommitBeforeCompletion = ordinaryHookCount;
+        const ordinaryHookCountAfterCommit = ordinaryHookCount;
+        const selectedFramesBeforeBroadcast = first.frames.length;
         const discardedFramesBeforeBroadcast = second.frames.length;
         this.p2pManager.rpcRouter.broadcastRpc({
             service: "pingService",
             method: "recordPing",
             params: ["post-lobby"]
         });
+        const selectedPeerReceivedOrdinaryBroadcast =
+            first.frames.length > selectedFramesBeforeBroadcast;
         const discardedPeerMissedOrdinaryBroadcast =
             second.frames.length === discardedFramesBeforeBroadcast;
         await service.completeLobby(topic);
-        const selectedTransportPromotedAfterCompletion =
+        const selectedTransportConnectedAfterCompletion =
             this.p2pManager.openConnections.includes(first);
         const ordinaryHookCountAfterCompletion = ordinaryHookCount;
         unsubscribeConnection();
@@ -3527,12 +3531,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             localChannelId: String(this.p2pManager.stateManager.channelId),
             lobbyTransportsExcludedBeforeCommit,
             ordinaryHookCountBeforeCommit,
-            selectedTransportHeldBeforeCompletion,
+            selectedTransportPromotedAtCommit,
             selectedTransportHeldAfterExpiredTimeout,
-            selectedTransportPromotedAfterCompletion,
+            selectedTransportConnectedAfterCompletion,
             nonSelectedTransportClosed,
-            ordinaryHookCountAfterCommitBeforeCompletion,
+            ordinaryHookCountAfterCommit,
             ordinaryHookCountAfterCompletion,
+            selectedPeerReceivedOrdinaryBroadcast,
             discardedPeerMissedOrdinaryBroadcast
         };
     }

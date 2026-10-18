@@ -2431,6 +2431,12 @@
       "peakRssGb": 0.611,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching promotes the committed peer into the connection set at commitment and drops it when the negotiation fails": {
+      "durationMs": 7228,
+      "avgCores": 0.703,
+      "peakRssGb": 0.561,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching queues early negotiation while matched initialization and ID selection are held": {
       "durationMs": 12058,
       "avgCores": 1.041,
@@ -3653,6 +3659,12 @@
       "durationMs": 16296,
       "avgCores": 1.087,
       "peakRssGb": 0.794,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-TargetedChannelJoin.test.ts|E2E: Targeted channel join releases the promoted peer when targeted negotiation throws after commitment": {
+      "durationMs": 6773,
+      "avgCores": 0.721,
+      "peakRssGb": 0.573,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-TargetedChannelJoin.test.ts|E2E: Targeted channel join starts a fresh same-ID targeted attempt only after another explicit call": {

@@ -766,6 +766,39 @@ describe("E2E: Targeted channel join", function () {
         ).to.equal(channelId);
     });
 
+    it("releases the promoted peer when targeted negotiation throws after commitment", async function () {
+        const { h, channelId, targeted } = await unopened(
+            "target-negotiation-throw-releases"
+        );
+        // The zero balance passes matching and fails at the start of
+        // negotiation, after the commitment promoted the peer.
+        const results = await Promise.allSettled(
+            h.peers.map((peer) =>
+                targeted.connect(peer, channelId, {
+                    autoOpen: true,
+                    balance: { amount: 0n, data: "0x" }
+                })
+            )
+        );
+        expect(
+            results.map((result) =>
+                result.status === "rejected"
+                    ? String(result.reason?.message)
+                    : result.status
+            )
+        ).to.deep.equal([
+            "local opening balance must be greater than zero",
+            "local opening balance must be greater than zero"
+        ]);
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).query.getConnectedPeerAddresses().request()
+                )
+            )
+        ).to.deep.equal([[], []]);
+    });
+
     it("starts a fresh same-ID targeted attempt only after another explicit call", async function () {
         const { h, channelId, targeted } = await unopened(
             "target-explicit-retry"
@@ -947,8 +980,8 @@ describe("E2E: Targeted channel join", function () {
         const probe = await control.p2pManagerProbe
             .probeLobbyProtocol()
             .request();
-        expect(probe.selectedTransportHeldBeforeCompletion).to.equal(true);
-        expect(probe.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(probe.selectedTransportPromotedAtCommit).to.equal(true);
+        expect(probe.selectedTransportConnectedAfterCompletion).to.equal(true);
         expect(probe.ordinaryHookCountAfterCompletion).to.equal(1);
     });
 

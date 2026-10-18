@@ -31,7 +31,7 @@ Exclusive lobby protocol
 - Setup: Use the default RPC root with authenticated concrete profiles.
 - Oracle: Canonical bootstrap, one reservation, explicit busy or rejection, no channel ID, session-local transport isolation, selected-only promotion, monotonic retry epochs, one exhaustion timer, neutral final loss, bounded inactive traffic, role timing, and complete cleanup.
 
-- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P1` — advertiser bootstrap, accepted/busy pick results, rejected malformed commit, acknowledged valid commit, ID-free match, lobby transports absent from ordinary connections, selected-only promotion, non-selected close, and ordinary-broadcast isolation
+- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P1` — advertiser bootstrap, accepted/busy pick results, rejected malformed commit, acknowledged valid commit, ID-free match, lobby transports absent from ordinary connections, selected-only promotion at commitment with one connection hook, non-selected close, and ordinary broadcasts reaching only the selected peer
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P2` — final profile loss of a reserved selector keeps the reservation until its bound, counts one close against the absent selector there, and repeated wrong-topic traffic closes the abusive transport
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P3` — both-none and one-none bootstrap, current epoch, topic, self, malformed, and reputation admission
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P4` — production and configured jitter, held-reservation transition, one counted close at expiry, and re-advertisement without timer reset
@@ -65,7 +65,7 @@ Caller-topic matching and channel opening
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P7` — stale, duplicate, malformed, wrong-peer, and stale-channel traffic does not mutate a reservation or discovery
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P8` — early negotiation waits across matched initialization and channel-ID selection
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P9` — a pending selection survives a successful transport upgrade without blacklist
-- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P10` — a replacement authenticated after commitment joins the selected handoff and the pair opens without blacklist
+- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P10` — a replacement authenticated after commitment joins the selected handoff and ordinary connection tracking, and the pair opens without blacklist
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P11` — the ordinary handoff leaves the topic before it closes the non-selected transports, so local discovery never recreates one for the whole negotiation and `completeLobby` still preserves the selected handoff, with no promotion and no exclusion
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P12` — the targeted handoff leaves its derived topic the same way, so no non-selected peer is recreated before `releaseNegotiationHandoff`, with no promotion and no exclusion
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P15` — a peer that ends a live negotiation with the protocol's abort message keeps its identity standing and records no strike
@@ -76,6 +76,7 @@ Caller-topic matching and channel opening
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18` — the advertiser's first negotiation request that reaches the selector before its commit acknowledgement waits like other early negotiation: the pair opens one channel and neither side blacklists the other
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P19` — a negotiation request from a third authenticated peer that reaches the selector while its commit is in flight is refused through the negotiation failure policy on arrival, not deferred; the selector blacklists that peer, and the committed pair still opens one channel without it
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P20` — the advertiser's negotiation request deferred while the selector's commit is in flight expires when that commit is rejected: the selector refuses it through the negotiation failure policy at the readiness bound, blacklists the advertiser, and no channel opens
+- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P21` — while matched negotiation is held and no channel exists, each committed peer already lists the other in ordinary connection tracking, and an unsigned failure after it empties both connection sets
 
 ## UNIT-TEST-LOBBY-MATCHING-SERVICE-32-R6FA7Z
 

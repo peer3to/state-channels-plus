@@ -788,6 +788,28 @@ describe("E2E: lobby matching", function () {
                 h.event.protocolEventTimeoutMs(),
                 200
             );
+            // The replacement joins the connection set the commitment
+            // promoted, not only the handoff.
+            for (const [index, peer] of h.peers.entries()) {
+                expect(
+                    await h.execOnHost(
+                        peer,
+                        (stateManager, args) => {
+                            const transport =
+                                stateManager.p2pManager.profileManager.getTransportByEvmAddress(
+                                    args.peerAddress
+                                );
+                            return (
+                                !!transport &&
+                                stateManager.p2pManager.openConnections.includes(
+                                    transport
+                                )
+                            );
+                        },
+                        { peerAddress: h.peers[1 - index].address }
+                    )
+                ).to.equal(true);
+            }
             expect(
                 await Promise.all([
                     h
@@ -851,6 +873,51 @@ describe("E2E: lobby matching", function () {
         } finally {
             await Promise.all(releaseMatched.map((release) => release()));
             await h.network.leaveLobby([0, 1], topic);
+        }
+    });
+
+    it("promotes the committed peer into the connection set at commitment and drops it when the negotiation fails", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-promotion-at-commitment");
+        const connectedPeers = async () =>
+            (
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .query.getConnectedPeerAddresses()
+                            .request()
+                    )
+                )
+            ).map((addresses) => [
+                ...new Set(addresses.map((address) => address.toLowerCase()))
+            ]);
+        const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
+        try {
+            // Negotiation has not started and no channel exists: the
+            // broadcast set already holds the committed peer.
+            expect(await connectedPeers()).to.deep.equal([
+                [h.peers[1].address.toLowerCase()],
+                [h.peers[0].address.toLowerCase()]
+            ]);
+            expect(
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([ethers.ZeroHash, ethers.ZeroHash]);
+
+            // The left joins end on the failed negotiation without a
+            // rematch, and the release closes the promoted transports.
+            expect(
+                await h.network.leaveLobbyAtHeldHandoff([0, 1], topic, release)
+            ).to.deep.equal([true, true]);
+            await TestSession.settleDetached();
+            expect(await connectedPeers()).to.deep.equal([[], []]);
+        } finally {
+            await release();
         }
     });
 

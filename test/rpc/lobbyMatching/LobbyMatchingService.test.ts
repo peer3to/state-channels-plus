@@ -120,12 +120,13 @@ describe("LobbyMatchingService", function () {
         expect(result.localChannelId).to.equal(ethers.ZeroHash);
         expect(result.lobbyTransportsExcludedBeforeCommit).to.equal(true);
         expect(result.ordinaryHookCountBeforeCommit).to.equal(0);
-        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
         expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
-        expect(result.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(result.selectedTransportConnectedAfterCompletion).to.equal(true);
         expect(result.nonSelectedTransportClosed).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.ordinaryHookCountAfterCommit).to.equal(1);
         expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
+        expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
     });
 
@@ -260,7 +261,7 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.matchHasChannelId).to.equal(false);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.localChannelId).to.equal(ethers.ZeroHash);
     });
 
     it("unmatched finite timeout cleans only matcher-owned resources", async function () {
@@ -290,7 +291,6 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
     });
 
     it("accepted match has no matchmaking timeout during negotiation", async function () {
@@ -300,7 +300,7 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
-        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
     });
 
     it("finite matchmaking timeout returns false while unmatched", async function () {
@@ -319,8 +319,9 @@ describe("LobbyMatchingService", function () {
             .p2pManagerProbe.probeLobbyProtocol()
             .request();
 
-        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
-        expect(result.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
+        expect(result.selectedTransportConnectedAfterCompletion).to.equal(true);
+        expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
         expect(result.nonSelectedTransportClosed).to.equal(true);
     });
 
@@ -415,7 +416,7 @@ describe("LobbyMatchingService", function () {
             .request();
 
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
     });
 
     it("observed-open loser releases matching ownership for the selected channel", async function () {
