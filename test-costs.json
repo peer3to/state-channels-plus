@@ -2359,6 +2359,12 @@
       "peakRssGb": 0.563,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching delivers block #0 of a lobby-opened channel over P2P before the lobby session ends": {
+      "durationMs": 8086,
+      "avgCores": 0.646,
+      "peakRssGb": 0.579,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching ends a lobby join left during the negotiation handoff instead of rematching": {
       "durationMs": 10363,
       "avgCores": 0.76,
@@ -2429,6 +2435,12 @@
       "durationMs": 11062,
       "avgCores": 1.027,
       "peakRssGb": 0.611,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching promotes the committed peer into the connection set at commitment and drops it when the negotiation fails": {
+      "durationMs": 7228,
+      "avgCores": 0.703,
+      "peakRssGb": 0.561,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching queues early negotiation while matched initialization and ID selection are held": {
@@ -3653,6 +3665,12 @@
       "durationMs": 16296,
       "avgCores": 1.087,
       "peakRssGb": 0.794,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-TargetedChannelJoin.test.ts|E2E: Targeted channel join releases the promoted peer when targeted negotiation throws after commitment": {
+      "durationMs": 6773,
+      "avgCores": 0.721,
+      "peakRssGb": 0.573,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-TargetedChannelJoin.test.ts|E2E: Targeted channel join starts a fresh same-ID targeted attempt only after another explicit call": {
@@ -9067,6 +9085,12 @@
       "peakRssGb": 0.772,
       "measurementReason": null
     },
+    "hardhat|test/rpc/lobbyMatching/LobbyMatchingService.test.ts|LobbyMatchingService promotes a replacement transport once during the handoff and closes it on release": {
+      "durationMs": 7756,
+      "avgCores": 0.663,
+      "peakRssGb": 0.578,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/lobbyMatching/LobbyMatchingService.test.ts|LobbyMatchingService propagates the configured filter error unchanged for a foreign peer": {
       "durationMs": 8467,
       "avgCores": 0.946,
@@ -9083,6 +9107,24 @@
       "durationMs": 8107,
       "avgCores": 0.995,
       "peakRssGb": 0.584,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/lobbyMatching/LobbyMatchingService.test.ts|LobbyMatchingService removes the promoted peer from the connection set on handoff disconnect": {
+      "durationMs": 7788,
+      "avgCores": 0.705,
+      "peakRssGb": 0.563,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/lobbyMatching/LobbyMatchingService.test.ts|LobbyMatchingService removes the promoted peer from the connection set on handoff dispose": {
+      "durationMs": 6991,
+      "avgCores": 0.682,
+      "peakRssGb": 0.566,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/lobbyMatching/LobbyMatchingService.test.ts|LobbyMatchingService removes the promoted peer from the connection set on handoff release": {
+      "durationMs": 6958,
+      "avgCores": 0.686,
+      "peakRssGb": 0.566,
       "measurementReason": null
     },
     "hardhat|test/rpc/lobbyMatching/LobbyMatchingService.test.ts|LobbyMatchingService returns a committed match without starting negotiation": {
@@ -15697,6 +15739,12 @@
       "peakRssGb": 0.556,
       "measurementReason": null
     },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch connection attempts logs one attempt per dial and keeps other update listeners on a shared swarm": {
+      "durationMs": 7353,
+      "avgCores": 0.549,
+      "peakRssGb": 0.512,
+      "measurementReason": null
+    },
     "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lifecycle does not reannounce a topic removed before a rejoin cycle": {
       "durationMs": 7342,
       "avgCores": 0.945,
@@ -15749,6 +15797,12 @@
       "durationMs": 2936,
       "avgCores": 1.076,
       "peakRssGb": 0.476,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup keeps the announce timing of a duplicate join after leaving once": {
+      "durationMs": 6771,
+      "avgCores": 0.679,
+      "peakRssGb": 0.577,
       "measurementReason": null
     },
     "hardhat|test/transport/HolepunchLeaveTopic.test.ts|Holepunch topic lookup logs a failed announce at debug level and does not look the topic up": {

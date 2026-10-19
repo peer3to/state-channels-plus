@@ -41,11 +41,14 @@ import type {
     HolepunchAnnounceScenario,
     HolepunchAnnounceLookupProbe,
     HolepunchBanReleaseProbe,
+    HolepunchConnectionAttemptProbe,
     HolepunchSwarmProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
     ProfileDisconnectLifecycleProbe,
     LobbyProtocolProbe,
+    LobbyHandoffExit,
+    LobbyHandoffExitProbe,
     LobbyRecoveryProbe,
     LobbyRecoveryBoundProbe,
     LobbyCommitCancellationProbe,
@@ -437,6 +440,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeHolepunchAnnounceLookup(scenario);
     }
 
+    public probeHolepunchConnectionAttempts(): Promise<HolepunchConnectionAttemptProbe> {
+        return this.service.probeHolepunchConnectionAttempts();
+    }
+
     public probeHolepunchBanReleaseLookup(
         value: boolean
     ): Promise<HolepunchBanReleaseProbe> {
@@ -535,6 +542,13 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
         return this.service.probeLobbyProtocol();
+    }
+
+    public probeLobbyHandoffExit(
+        exit: LobbyHandoffExit,
+        withReplacement: boolean
+    ): Promise<LobbyHandoffExitProbe> {
+        return this.service.probeLobbyHandoffExit(exit, withReplacement);
     }
 
     public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {

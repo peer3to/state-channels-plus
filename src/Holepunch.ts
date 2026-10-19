@@ -13,6 +13,11 @@ class Holepunch {
     p2pManager: P2PManager;
     topics: Buffer[] = [];
     connectionCount = 0;
+    /** When each joined topic was last announced, for the discovery timing logs. */
+    private readonly announcedAtMs = new Map<string, number>();
+    private lastAttemptedCount = 0;
+    /** Bound once, so `off` removes only this listener from a shared swarm. */
+    private readonly onSwarmUpdate = () => this.logConnectionAttempts();
     private readonly isBrowserRuntime: boolean;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -28,6 +33,7 @@ class Holepunch {
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
+                this.swarm?.off("update", this.onSwarmUpdate);
                 const swarm = HolepunchRelay.getInstance().getSwarm();
                 this.swarm = (globalThis as any).Hyperswarm || swarm;
                 this.setupSwarm();
@@ -48,6 +54,7 @@ class Holepunch {
     //Mark resources for garbage collection
     public async dispose() {
         this.leaveTopics();
+        this.swarm?.off("update", this.onSwarmUpdate);
         if (typeof this.swarm?.destroy === "function") {
             await Promise.resolve(this.swarm.destroy());
             return;
@@ -69,6 +76,8 @@ class Holepunch {
         );
         if (index === -1) return;
         this.topics.splice(index, 1);
+        if (!this.topics.some((joinedTopic) => joinedTopic.equals(topic)))
+            this.announcedAtMs.delete(topic.toString("hex"));
         if (!this.swarm) return;
         await Promise.resolve(this.swarm.leave(topic));
         this.p2pManager.logger.debug("Left holepunch topic", {
@@ -81,7 +90,9 @@ class Holepunch {
         this.swarm.on("connection", (socket: any, info: any) => {
             this.p2pManager.logger.info("New holepunch peer connection", {
                 connectionCount: ++this.connectionCount,
-                transportType: "HOLEPUNCH"
+                transportType: "HOLEPUNCH",
+                isInitiator: socket.isInitiator,
+                ...this.getTopicTimings()
             });
             this.p2pManager.logger.debug("Holepunch peer info", {
                 peerInfo: info
@@ -92,7 +103,36 @@ class Holepunch {
                 this.p2pManager.rpcRouter
             );
         });
+        // Only this handler: the swarm can be shared, and Hyperswarm keeps
+        // its own `update` listener.
+        this.swarm.off("update", this.onSwarmUpdate);
+        this.lastAttemptedCount = this.getAttemptedCount();
+        this.swarm.on("update", this.onSwarmUpdate);
         this.rejoinTopics();
+    }
+
+    /**
+     * Hyperswarm has no attempt event: it emits `update` after each outbound
+     * dial, and its stats count the dials.
+     */
+    private logConnectionAttempts(): void {
+        const attempted = this.getAttemptedCount();
+        if (attempted > this.lastAttemptedCount) {
+            this.p2pManager.logger.debug(
+                "Holepunch connection attempt started",
+                {
+                    attempts: attempted - this.lastAttemptedCount,
+                    connecting: this.swarm.connecting,
+                    knownPeers: this.swarm.peers?.size,
+                    ...this.getTopicTimings()
+                }
+            );
+        }
+        this.lastAttemptedCount = attempted;
+    }
+
+    private getAttemptedCount(): number {
+        return this.swarm.stats?.connects?.client?.attempted ?? 0;
     }
 
     /**
@@ -129,12 +169,20 @@ class Holepunch {
             server: true,
             client: true
         });
+        const topicHex = topic.toString("hex");
+        this.announcedAtMs.set(topicHex, Date.now());
         this.p2pManager.logger.debug("Joined holepunch topic", {
-            topic: topic.toString("hex")
+            topic: topicHex
         });
         discovery
             .flushed()
-            .then(() => this.refreshTopic(topic))
+            .then(() => {
+                this.p2pManager.logger.debug("Holepunch topic announced", {
+                    topic: topicHex,
+                    sinceJoinMs: this.getSinceAnnounceMs(topicHex)
+                });
+                this.refreshTopic(topic);
+            })
             .catch((error: unknown) =>
                 this.p2pManager.logger.debug("Holepunch announce failed", {
                     topic: topic.toString("hex"),
@@ -151,15 +199,45 @@ class Holepunch {
     private refreshTopic(topic: Buffer) {
         if (!this.swarm || this.swarm.destroyed) return;
         if (!this.topics.some((joined) => joined.equals(topic))) return;
+        const topicHex = topic.toString("hex");
         this.swarm
             .status(topic)
             ?.refresh()
+            .then(() =>
+                this.p2pManager.logger.debug(
+                    "Holepunch topic lookup finished",
+                    {
+                        topic: topicHex,
+                        sinceJoinMs: this.getSinceAnnounceMs(topicHex),
+                        knownPeers: this.swarm.peers?.size,
+                        connections: this.swarm.connections?.size
+                    }
+                )
+            )
             .catch((error: unknown) =>
                 this.p2pManager.logger.debug("Holepunch topic lookup failed", {
                     topic: topic.toString("hex"),
                     error
                 })
             );
+    }
+
+    private getSinceAnnounceMs(topicHex: string): number | undefined {
+        const announcedAtMs = this.announcedAtMs.get(topicHex);
+        return announcedAtMs === undefined
+            ? undefined
+            : Date.now() - announcedAtMs;
+    }
+
+    /** Milliseconds since each joined topic was announced. */
+    private getTopicTimings(): { sinceJoinMs: Record<string, number> } {
+        const sinceJoinMs: Record<string, number> = {};
+        for (const topic of this.topics) {
+            const topicHex = topic.toString("hex");
+            const elapsedMs = this.getSinceAnnounceMs(topicHex);
+            if (elapsedMs !== undefined) sinceJoinMs[topicHex] = elapsedMs;
+        }
+        return { sinceJoinMs };
     }
 
     private rejoinTopics() {
@@ -176,6 +254,7 @@ class Holepunch {
             });
         }
         this.topics = [];
+        this.announcedAtMs.clear();
     }
 }
 

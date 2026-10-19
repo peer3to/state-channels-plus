@@ -2040,6 +2040,8 @@ describe("E2E: Spectate Service", function () {
             let threw = "";
             let syncResult: { encodedSyncPayload: string } | null = null;
             try {
+                // the recovery handles each recovered dispute event in full,
+                // its audit included, before the payload is built
                 syncResult = await h
                     .control(responder)
                     .spectate.generateSyncPayload(
@@ -2047,7 +2049,7 @@ describe("E2E: Spectate Service", function () {
                         forkId,
                         responderLatestHeight!
                     )
-                    .request();
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } catch (e) {
                 threw = e instanceof Error ? e.message : String(e);
             }

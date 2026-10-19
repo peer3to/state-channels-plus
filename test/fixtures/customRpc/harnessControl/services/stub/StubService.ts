@@ -174,6 +174,7 @@ export type StubKey =
     | "lobbyCreateRpcMethods"
     | "negotiationCreateRpcMethods"
     | "matchedNegotiation"
+    | "lobbyCompletion"
     | "failMatchedNegotiation"
     | "setChannelId"
     | "eventListenerRemoval"
@@ -825,6 +826,7 @@ export class StubService extends ANetworkRpcService<
     private heldLobbyReply?: HeldRpcReply;
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
+    private heldLobbyCompletion?: HeldRpcReply;
     private heldSetChannelId?: HeldRpcReply;
     private heldEventListenerRemoval?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
@@ -1417,6 +1419,37 @@ export class StubService extends ANetworkRpcService<
 
     public getHeldMatchedNegotiationCount(): number {
         return this.heldMatchedNegotiation?.entered ?? 0;
+    }
+
+    /**
+     * Holds `completeLobby` after negotiation reported the open: the channel
+     * runs while the lobby session has not ended yet.
+     */
+    public holdLobbyCompletion(): void {
+        this.releaseLobbyCompletion();
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const original = service.completeLobby.bind(service);
+        this.stubOriginals.set("lobbyCompletion", original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldLobbyCompletion = hold;
+        service.completeLobby = async (topic: string) => {
+            hold.entered += 1;
+            await hold.gate;
+            return original(topic);
+        };
+    }
+
+    public releaseLobbyCompletion(): number {
+        const entered = this.heldLobbyCompletion?.entered ?? 0;
+        this.heldLobbyCompletion?.release();
+        const original = this.stubOriginals.get("lobbyCompletion");
+        if (original) {
+            this.p2pManager.localRpc.lobbyMatchingService.completeLobby =
+                original as (topic: string) => Promise<void>;
+            this.stubOriginals.delete("lobbyCompletion");
+        }
+        this.heldLobbyCompletion = undefined;
+        return entered;
     }
 
     public failNextMatchedNegotiation(): void {

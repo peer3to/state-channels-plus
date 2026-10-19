@@ -223,13 +223,32 @@ export type LobbyProtocolProbe = {
     localChannelId: string;
     lobbyTransportsExcludedBeforeCommit: boolean;
     ordinaryHookCountBeforeCommit: number;
-    selectedTransportHeldBeforeCompletion: boolean;
+    selectedTransportPromotedAtCommit: boolean;
     selectedTransportHeldAfterExpiredTimeout: boolean;
-    selectedTransportPromotedAfterCompletion: boolean;
+    selectedTransportConnectedAfterCompletion: boolean;
     nonSelectedTransportClosed: boolean;
-    ordinaryHookCountAfterCommitBeforeCompletion: number;
+    ordinaryHookCountAfterCommit: number;
     ordinaryHookCountAfterCompletion: number;
+    selectedPeerReceivedOrdinaryBroadcast: boolean;
     discardedPeerMissedOrdinaryBroadcast: boolean;
+};
+
+/** How a committed lobby handoff ends without an opened channel. */
+export type LobbyHandoffExit = "release" | "disconnect" | "dispose";
+
+export type LobbyHandoffExitProbe = {
+    selectedPromotedAtCommit: boolean;
+    /** Unset when the probe adds no replacement transport. */
+    replacementPromoted?: boolean;
+    ordinaryHookCountBeforeExit: number;
+    /** The selected (and replacement) transports are closed and out of the connection set. */
+    handedOffTransportsRemovedAfterExit: boolean;
+    /** Peer addresses of the last connection set `onConnectionsChanged` reported before the exit. */
+    reportedConnectionsAfterCommit: string[];
+    /** `onConnectionsChanged` calls during the exit. */
+    reportsDuringExit: number;
+    /** Peer addresses of the last connection set reported by `onConnectionsChanged`. */
+    lastReportedConnections: string[];
 };
 
 export type LobbyRecoveryProbe = {
@@ -624,6 +643,7 @@ export type HolepunchTopicProbe = {
 /** How the announce of one joined topic ends before its lookup. */
 export type HolepunchAnnounceScenario =
     | "flushed"
+    | "duplicate-left-once"
     | "left-before-flush"
     | "destroyed-before-flush"
     | "flush-failed"
@@ -637,6 +657,21 @@ export type HolepunchAnnounceLookupProbe = {
     /** Holepunch log messages by level, in order. */
     debugs: string[];
     warningsAndErrors: string[];
+    /** `sinceJoinMs` of each Holepunch debug message that has one, in order. */
+    debugTimings: { message: string; sinceJoinMs: unknown }[];
+};
+
+export type HolepunchConnectionAttemptProbe = {
+    /** "connection attempt started" messages after each step, in order. */
+    attemptLogsAfterUpdateWithoutDial: number;
+    attemptLogsAfterOneDial: number;
+    attemptLogsAfterUpdateWithoutDialAgain: number;
+    attemptLogsAfterTwoDials: number;
+    /** Calls of a listener another owner added before Holepunch set the swarm up. */
+    foreignUpdateCalls: number;
+    /** `update` listeners on the swarm while joined and after dispose. */
+    updateListenersWhileJoined: number;
+    updateListenersAfterDispose: number;
 };
 
 export type HolepunchBanReleaseProbe = {
@@ -2884,6 +2919,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             const topic = Buffer.from("topic-a");
             await holepunch.join(topic);
             if (scenario === "left-before-flush") await holepunch.leave(topic);
+            if (scenario === "duplicate-left-once") {
+                await holepunch.join(topic);
+                await holepunch.leave(topic);
+            }
             if (scenario === "destroyed-before-flush") swarm.destroyed = true;
             if (scenario === "lookup-failed")
                 swarm.refreshError = new Error("lookup failed");
@@ -2902,12 +2941,90 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 warningsAndErrors: [
                     ...holepunchMessages(warn),
                     ...holepunchMessages(error)
-                ]
+                ],
+                debugTimings: debug.args
+                    .filter(
+                        ([message, metadata]) =>
+                            String(message).startsWith("Holepunch") &&
+                            Object.prototype.hasOwnProperty.call(
+                                metadata ?? {},
+                                "sinceJoinMs"
+                            )
+                    )
+                    .map(([message, metadata]) => ({
+                        message: String(message),
+                        sinceJoinMs: metadata.sinceJoinMs ?? null
+                    }))
             };
         } finally {
             debug.restore();
             warn.restore();
             error.restore();
+            holepunch.swarm = previousSwarm;
+            holepunch.topics = [];
+        }
+    }
+
+    /**
+     * Inject a recording swarm that already has another owner's `update`
+     * listener, join a topic so Holepunch sets the swarm up, start dials,
+     * then dispose Holepunch.
+     */
+    public async probeHolepunchConnectionAttempts(): Promise<HolepunchConnectionAttemptProbe> {
+        const holepunch = this.p2pManager.holepunch;
+        const swarm = new RecordingSwarm();
+        const debug = sinon.spy(this.p2pManager.logger, "debug");
+        const previousSwarm = holepunch.swarm;
+        const previousInjectedSwarm = Object.getOwnPropertyDescriptor(
+            globalThis,
+            "Hyperswarm"
+        );
+        let foreignUpdateCalls = 0;
+        swarm.on("update", () => {
+            foreignUpdateCalls += 1;
+        });
+        Object.defineProperty(globalThis, "Hyperswarm", {
+            configurable: true,
+            value: swarm
+        });
+        holepunch.swarm = undefined;
+        const attemptLogs = () =>
+            holepunchMessages(debug).filter(
+                (message) => message === "Holepunch connection attempt started"
+            ).length;
+        try {
+            await holepunch.join(Buffer.from("topic-a"));
+            swarm.emitUpdate();
+            const attemptLogsAfterUpdateWithoutDial = attemptLogs();
+            swarm.startDial();
+            const attemptLogsAfterOneDial = attemptLogs();
+            swarm.emitUpdate();
+            const attemptLogsAfterUpdateWithoutDialAgain = attemptLogs();
+            swarm.startDial();
+            swarm.startDial();
+            const attemptLogsAfterTwoDials = attemptLogs();
+            const updateListenersWhileJoined = swarm.updateListenerCount;
+            await holepunch.dispose();
+            return {
+                attemptLogsAfterUpdateWithoutDial,
+                attemptLogsAfterOneDial,
+                attemptLogsAfterUpdateWithoutDialAgain,
+                attemptLogsAfterTwoDials,
+                foreignUpdateCalls,
+                updateListenersWhileJoined,
+                updateListenersAfterDispose: swarm.updateListenerCount
+            };
+        } finally {
+            debug.restore();
+            if (previousInjectedSwarm) {
+                Object.defineProperty(
+                    globalThis,
+                    "Hyperswarm",
+                    previousInjectedSwarm
+                );
+            } else {
+                Reflect.deleteProperty(globalThis, "Hyperswarm");
+            }
             holepunch.swarm = previousSwarm;
             holepunch.topics = [];
         }
@@ -3492,24 +3609,27 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             match,
             "channelId"
         );
-        const selectedTransportHeldBeforeCompletion =
-            !this.p2pManager.openConnections.includes(first) &&
+        const selectedTransportPromotedAtCommit =
+            this.p2pManager.openConnections.includes(first) &&
             service.isHandedOffTransport(first);
         await new Promise((resolve) => setTimeout(resolve, 225));
         const selectedTransportHeldAfterExpiredTimeout =
             !first.isClosed && service.isHandedOffTransport(first);
         const nonSelectedTransportClosed = second.isClosed;
-        const ordinaryHookCountAfterCommitBeforeCompletion = ordinaryHookCount;
+        const ordinaryHookCountAfterCommit = ordinaryHookCount;
+        const selectedFramesBeforeBroadcast = first.frames.length;
         const discardedFramesBeforeBroadcast = second.frames.length;
         this.p2pManager.rpcRouter.broadcastRpc({
             service: "pingService",
             method: "recordPing",
             params: ["post-lobby"]
         });
+        const selectedPeerReceivedOrdinaryBroadcast =
+            first.frames.length > selectedFramesBeforeBroadcast;
         const discardedPeerMissedOrdinaryBroadcast =
             second.frames.length === discardedFramesBeforeBroadcast;
         await service.completeLobby(topic);
-        const selectedTransportPromotedAfterCompletion =
+        const selectedTransportConnectedAfterCompletion =
             this.p2pManager.openConnections.includes(first);
         const ordinaryHookCountAfterCompletion = ordinaryHookCount;
         unsubscribeConnection();
@@ -3527,14 +3647,129 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             localChannelId: String(this.p2pManager.stateManager.channelId),
             lobbyTransportsExcludedBeforeCommit,
             ordinaryHookCountBeforeCommit,
-            selectedTransportHeldBeforeCompletion,
+            selectedTransportPromotedAtCommit,
             selectedTransportHeldAfterExpiredTimeout,
-            selectedTransportPromotedAfterCompletion,
+            selectedTransportConnectedAfterCompletion,
             nonSelectedTransportClosed,
-            ordinaryHookCountAfterCommitBeforeCompletion,
+            ordinaryHookCountAfterCommit,
             ordinaryHookCountAfterCompletion,
+            selectedPeerReceivedOrdinaryBroadcast,
             discardedPeerMissedOrdinaryBroadcast
         };
+    }
+
+    /**
+     * Commit one lobby match, optionally authenticate a replacement transport
+     * of the selected peer twice, then end the handoff as `exit` says.
+     */
+    public async probeLobbyHandoffExit(
+        exit: LobbyHandoffExit,
+        withReplacement: boolean
+    ): Promise<LobbyHandoffExitProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"ac".repeat(32)}`;
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const selected = this.transport(peerAddress);
+        this.registerProfile(selected, peerAddress);
+        let ordinaryHookCount = 0;
+        const reportedConnections: string[][] = [];
+        const unsubscribeConnection = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                ordinaryHookCount += 1;
+            }
+        );
+        const unsubscribeConnectionsChanged =
+            this.p2pManager.stateManager.events.on(
+                "p2pEventHooks",
+                "onConnectionsChanged",
+                (connections) => {
+                    reportedConnections.push(
+                        connections.map((connection) =>
+                            String(connection.peerAddress)
+                        )
+                    );
+                }
+            );
+        try {
+            const matchPromise = service.match(topic);
+            await Promise.resolve();
+            service.onAuthenticatedTransport(selected);
+            service.receiveAvailability(selected, {
+                topic,
+                role: "none",
+                roleEpoch: 0,
+                available: false
+            });
+            const attemptNonce = `0x${"ad".repeat(32)}`;
+            const selectorChallenge = `0x${"ae".repeat(32)}`;
+            const pick = service.receivePick(
+                selected,
+                attemptNonce,
+                1,
+                selectorChallenge
+            );
+            if (pick.status !== "accepted") {
+                throw new Error("Expected the lobby pick to be accepted");
+            }
+            service.receiveCommit(
+                selected,
+                attemptNonce,
+                1,
+                selectorChallenge,
+                pick.advertiserChallenge
+            );
+            if (!(await matchPromise)) {
+                throw new Error("Expected a committed lobby match");
+            }
+            const selectedPromotedAtCommit =
+                this.p2pManager.openConnections.includes(selected);
+            const handedOff = [selected];
+            let replacementPromoted: boolean | undefined;
+            if (withReplacement) {
+                const replacement = this.transport(peerAddress);
+                this.p2pManager.profileManager.updateTransport(
+                    peerAddress,
+                    replacement
+                );
+                service.onAuthenticatedTransport(replacement);
+                service.onAuthenticatedTransport(replacement);
+                replacementPromoted =
+                    this.p2pManager.openConnections.includes(replacement);
+                handedOff.push(replacement);
+            }
+            const ordinaryHookCountBeforeExit = ordinaryHookCount;
+            const reportsBeforeExit = reportedConnections.length;
+            const reportedConnectionsAfterCommit =
+                reportedConnections.at(-1) ?? [];
+            if (exit === "release") {
+                await service.releaseNegotiationHandoff(topic);
+            } else if (exit === "disconnect") {
+                service.disconnectLobbyTransports();
+            } else {
+                await service.dispose();
+            }
+            return {
+                selectedPromotedAtCommit,
+                replacementPromoted,
+                ordinaryHookCountBeforeExit,
+                handedOffTransportsRemovedAfterExit: handedOff.every(
+                    (transport) =>
+                        transport.isClosed &&
+                        !this.p2pManager.openConnections.includes(transport)
+                ),
+                reportedConnectionsAfterCommit,
+                reportsDuringExit:
+                    reportedConnections.length - reportsBeforeExit,
+                lastReportedConnections: reportedConnections.at(-1) ?? []
+            };
+        } finally {
+            unsubscribeConnection();
+            unsubscribeConnectionsChanged();
+        }
     }
 
     public async probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {

@@ -3609,6 +3609,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldMatchedNegotiationCount();
     }
 
+    public holdLobbyCompletion(): boolean {
+        this.service.holdLobbyCompletion();
+        return true;
+    }
+
+    public releaseLobbyCompletion(): number {
+        return this.service.releaseLobbyCompletion();
+    }
+
     public failNextMatchedNegotiation(): boolean {
         this.service.failNextMatchedNegotiation();
         return true;

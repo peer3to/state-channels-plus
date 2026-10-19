@@ -38,7 +38,7 @@ Discovery reannouncement
 Topic lookup after an announce and after a ban release
 
 - Setup: Drive the real join/leave surface and the peer info Holepunch hands to a new connection's transport over a recording swarm whose announces (`flushed`) the test completes or fails and whose topic lookups (`status(topic).refresh()`) it records.
-- Oracle: A completed announce of a still-joined topic starts one lookup; a topic left first, or a destroyed swarm, starts none; `ban(false)` looks each joined topic up once and `ban(true)` looks nothing up; a failed announce or lookup is one debug message and reaches no warning or error.
+- Oracle: A completed announce of a still-joined topic starts one lookup; a topic left first, or a destroyed swarm, starts none; `ban(false)` looks each joined topic up once and `ban(true)` looks nothing up; a failed announce or lookup is one debug message and reaches no warning or error; a completed announce and lookup are each one debug message with the time since the topic was joined.
 
 - [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P1` — one lookup after the announce completes, none before
 - [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P2` — no lookup of a topic left before its announce completes
@@ -47,3 +47,15 @@ Topic lookup after an announce and after a ban release
 - [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P5` — `ban(true)` looks nothing up
 - [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P6` — a failed announce is logged at debug level and starts no lookup
 - [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P7` — a failed lookup is logged at debug level
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P8` — a completed announce and its lookup are each logged once at debug level with a numeric time since the join
+- [x] `UNIT-TEST-HOLEPUNCH-LOOKUP-1-CS5RF8.P9` — a topic joined twice and left once keeps its join time for both logs
+
+## UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK
+
+Outbound connection attempt log on a shared swarm
+
+- Setup: Inject a recording swarm that already has another owner's `update` listener, join a topic so Holepunch sets the swarm up, start dials and emit updates without a dial, then dispose Holepunch.
+- Oracle: Each dial is one debug message and an update without a dial is none; the other owner's listener receives every update, and dispose removes only Holepunch's listener.
+
+- [x] `UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK.P1` — one attempt message per dial, none for an update without a dial
+- [x] `UNIT-TEST-HOLEPUNCH-ATTEMPT-1-H6QZVK.P2` — another owner's `update` listener survives setup and dispose; dispose removes Holepunch's own

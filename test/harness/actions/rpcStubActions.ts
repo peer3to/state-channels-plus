@@ -307,6 +307,19 @@ export class RpcStubActions<
                 .request();
     }
 
+    /** Holds the peer's `completeLobby` after the open; the returned call releases it. */
+    async holdLobbyCompletion(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.holdLobbyCompletion().request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseLobbyCompletion()
+                .request();
+    }
+
     /** Waits until each peer has one matched negotiation parked by holdMatchedNegotiation. */
     async waitForHeldMatchedNegotiation(
         peerIndices: number[],
