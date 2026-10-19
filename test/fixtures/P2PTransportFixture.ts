@@ -93,8 +93,12 @@ export class RecordingSwarm {
         if (event === "connection") this.connectionListener = listener;
     }
 
-    public removeAllListeners(): void {
-        this.connectionListener = undefined;
+    /** Clears the connection listener when `event` names it or is omitted. */
+    public removeAllListeners(event?: string | string[]): void {
+        const events = event === undefined ? undefined : [event].flat();
+        if (!events || events.includes("connection")) {
+            this.connectionListener = undefined;
+        }
     }
 
     public join(
