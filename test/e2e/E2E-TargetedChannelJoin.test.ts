@@ -797,6 +797,24 @@ describe("E2E: Targeted channel join", function () {
                 )
             )
         ).to.deep.equal([[], []]);
+        // The release also ended the lobby session: a new explicit connect
+        // matches again instead of finding a stuck handoff.
+        expect(
+            (
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).query.getLobbyAvailability().request()
+                    )
+                )
+            ).map(({ topic }) => topic)
+        ).to.deep.equal([undefined, undefined]);
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    targeted.connect(peer, channelId, { autoOpen: true })
+                )
+            )
+        ).to.deep.equal([true, true]);
     });
 
     it("starts a fresh same-ID targeted attempt only after another explicit call", async function () {

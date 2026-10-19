@@ -87,18 +87,49 @@ export class RecordingSwarm {
         resolve: () => void;
         reject: (error: Error) => void;
     }[] = [];
+    /** Hyperswarm's dial counter, which `startDial` advances. */
+    public readonly stats = { connects: { client: { attempted: 0 } } };
     private connectionListener?: HolepunchConnectionListener;
+    private readonly updateListeners: (() => void)[] = [];
 
-    public on(event: string, listener: HolepunchConnectionListener): void {
-        if (event === "connection") this.connectionListener = listener;
+    public on(
+        event: string,
+        listener: HolepunchConnectionListener | (() => void)
+    ): void {
+        if (event === "connection")
+            this.connectionListener = listener as HolepunchConnectionListener;
+        if (event === "update")
+            this.updateListeners.push(listener as () => void);
     }
 
-    /** Clears the connection listener when `event` names it or is omitted. */
+    public off(event: string, listener: () => void): void {
+        if (event !== "update") return;
+        const index = this.updateListeners.indexOf(listener);
+        if (index !== -1) this.updateListeners.splice(index, 1);
+    }
+
+    /** Like EventEmitter: clears the listeners of `event`, or of every event. */
     public removeAllListeners(event?: string | string[]): void {
-        const events = event === undefined ? undefined : [event].flat();
-        if (!events || events.includes("connection")) {
+        const name = event === undefined ? undefined : String(event);
+        if (name === undefined || name === "connection")
             this.connectionListener = undefined;
-        }
+        if (name === undefined || name === "update")
+            this.updateListeners.length = 0;
+    }
+
+    public get updateListenerCount(): number {
+        return this.updateListeners.length;
+    }
+
+    /** Emit `update`, as Hyperswarm does after any swarm change. */
+    public emitUpdate(): void {
+        for (const listener of [...this.updateListeners]) listener();
+    }
+
+    /** Start one outbound dial, as Hyperswarm does: count it, then emit `update`. */
+    public startDial(): void {
+        this.stats.connects.client.attempted += 1;
+        this.emitUpdate();
     }
 
     public join(

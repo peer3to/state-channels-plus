@@ -25,6 +25,10 @@ Both joins then leave and the held negotiations fail: neither peer rematches and
 are empty.
 The commitment-handoff upgrade case also asserts that the WebRTC replacement is in that set.
 
+The first-block case holds `completeLobby` on both founders after the open, advances one turn, and
+asserts that both reach block #0 while neither founder's `onPostingCalldata` fired, so the block reached
+the other founder over P2P and not through the chain fallback.
+
 The pending-selection upgrade case holds the pick reply and its matching RPC-expiry task until the real WebRTC upgrade completes. It asserts one captured expiry task, pending selection and no blacklist, then releases the reply and observes channel opening. The bound-order cases exercise timeout liability separately.
 
 The disconnect-during-selection case holds the completion of the higher peer's channel selection (its event listener's subscription removal) after the lower peer's terms validated, then isolates the lower peer, so the unsigned attempt is cleared while the selection is still pending. A third peer joins the same topic; once both sides of the new pair selected the new ID and one `openProposal` reply is parked, the stale selection is released. The oracle is that the new pair opens exactly the negotiated channel, both peers reach `PARTICIPATING` on it, the dead ID never opens, and neither new partner blacklists the other. Without the selection guards the released selection re-subscribes the higher peer's listener to the dead channel, the higher peer never observes its own opening, and the case times out waiting for `PARTICIPATING`.
@@ -94,7 +98,8 @@ deadline before leaving the lobby.
 - `excludes both sides when the selector bound fires before the advertiser bound`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P14, REQ-LOBBY-7-BXQ1QA.T1.P6
 - `keeps a pending selection intact through a successful transport upgrade`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P9, REQ-LOBBY-6-QSZEXP.T1.P1, REQ-LOBBY-8-31BE0F.T1.P3
 - `keeps the committed pair intact when transport upgrade completes during negotiation handoff`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P10, REQ-LOBBY-8-31BE0F.T1.P6
-- `promotes the committed peer into the connection set at commitment and drops it when the negotiation fails`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P21, REQ-LOBBY-2-TSWRV6.T1.P7
+- `promotes the committed peer into the connection set at commitment and drops it when the negotiation fails`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P21
+- `delivers block #0 of a lobby-opened channel over P2P before the lobby session ends`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P22
 - `keeps a reservation unchanged under stale, duplicate, malformed, and wrong-peer RPCs`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P7, REQ-LOBBY-4-E0TARV.T1.P4, REQ-LOBBY-9-N894C0.T1.P1, REQ-LOBBY-2-TSWRV6.T1.P5
 - `queues early negotiation while matched initialization and ID selection are held`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P8
 - `defers the advertiser's first negotiation request that reaches the selector before its commit acknowledgement: one channel opens and neither side blacklists the other`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P18

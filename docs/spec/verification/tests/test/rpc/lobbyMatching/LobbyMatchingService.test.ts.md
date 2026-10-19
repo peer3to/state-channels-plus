@@ -11,7 +11,11 @@ The default main RPC root is driven through a worker-hosted P2P manager with con
 
 ## Tests
 
-- `bootstraps an advertiser, reserves one picker, and resolves only after valid commitment`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P1, REQ-LOBBY-2-TSWRV6.T1.P2, REQ-LOBBY-2-TSWRV6.T1.P3, REQ-LOBBY-2-TSWRV6.T1.P6, REQ-LOBBY-3-Q9WY40.T1.P1, REQ-LOBBY-4-E0TARV.T1.P1, REQ-LOBBY-4-E0TARV.T1.P2, REQ-LOBBY-5-VTRX8C.T1.P2, REQ-LOBBY-5-VTRX8C.T1.P3, REQ-LOBBY-5-VTRX8C.T1.P4, INV-LOBBY-1-TW7RZT.T1.P2, INV-LOBBY-1-TW7RZT.T1.P4
+- `bootstraps an advertiser, reserves one picker, and resolves only after valid commitment`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P1, REQ-LOBBY-2-TSWRV6.T1.P2, REQ-LOBBY-2-TSWRV6.T1.P3, REQ-LOBBY-2-TSWRV6.T1.P6, REQ-LOBBY-2-TSWRV6.T1.P7, REQ-LOBBY-3-Q9WY40.T1.P1, REQ-LOBBY-4-E0TARV.T1.P1, REQ-LOBBY-4-E0TARV.T1.P2, REQ-LOBBY-5-VTRX8C.T1.P2, REQ-LOBBY-5-VTRX8C.T1.P3, REQ-LOBBY-5-VTRX8C.T1.P4, INV-LOBBY-1-TW7RZT.T1.P2, INV-LOBBY-1-TW7RZT.T1.P4
+- `removes the promoted peer from the connection set on handoff release`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P20
+- `removes the promoted peer from the connection set on handoff disconnect`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P21
+- `removes the promoted peer from the connection set on handoff dispose`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P22
+- `promotes a replacement transport once during the handoff and closes it on release`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P23
 - `keeps a reservation through final profile loss, strikes at its bound, and bounds rejected lobby traffic`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P2, UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P11, REQ-LOBBY-9-N894C0.T1.P2
 - `assigns opposite bootstrap roles and rejects invalid lobby candidates`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P3, REQ-LOBBY-2-TSWRV6.T1.P1, REQ-LOBBY-3-Q9WY40.T1.P2
 - `uses bounded role jitter and defers a role transition while reserved`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P4, REQ-LOBBY-3-Q9WY40.T1.P4, REQ-LOBBY-5-VTRX8C.T1.P1, REQ-LOBBY-6-QSZEXP.T1.P2, REQ-LOBBY-6-QSZEXP.T1.P3, REQ-LOBBY-6-QSZEXP.T1.P5

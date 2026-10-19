@@ -48,6 +48,10 @@ Exclusive lobby protocol
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P17` — a session started while the previous cleanup still awaits its topic leave begins only after that cleanup finished, keeps its own transports and its caller-set status
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P18` — a discovery leave that rejects is reported and the handoff still completes with the selected transport kept and the non-selected closed
 - [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P19` — peers that met in an earlier session bootstrap roles again in a later session on the same service
+- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P20` — releasing the handoff after commitment closes the promoted selected transport, removes it from ordinary connection tracking, and reports a connection set without the peer
+- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P21` — disconnecting the lobby transports during the handoff closes the promoted selected transport, removes it from ordinary connection tracking, and reports a connection set without the peer
+- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P22` — disposing the service during the handoff closes the promoted selected transport, removes it from ordinary connection tracking, and reports a connection set without the peer
+- [x] `UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P23` — a replacement transport of the selected peer authenticated twice during the handoff is promoted once with one more connection hook, and the release closes and removes it with the selected transport
 
 ## INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B
 
@@ -77,6 +81,7 @@ Caller-topic matching and channel opening
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P19` — a negotiation request from a third authenticated peer that reaches the selector while its commit is in flight is refused through the negotiation failure policy on arrival, not deferred; the selector blacklists that peer, and the committed pair still opens one channel without it
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P20` — the advertiser's negotiation request deferred while the selector's commit is in flight expires when that commit is rejected: the selector refuses it through the negotiation failure policy at the readiness bound, blacklists the advertiser, and no channel opens
 - [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P21` — while matched negotiation is held and no channel exists, each committed peer already lists the other in ordinary connection tracking, and an unsigned failure after it empties both connection sets
+- [x] `INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P22` — while both founders hold the lobby completion after the open, block #0 of the lobby-opened channel reaches the other founder and neither founder posts calldata
 
 ## UNIT-TEST-LOBBY-MATCHING-SERVICE-32-R6FA7Z
 

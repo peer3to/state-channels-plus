@@ -15,7 +15,7 @@ class Holepunch {
     connectionCount = 0;
     /** When each joined topic was last announced, for the discovery timing logs. */
     private readonly announcedAtMs = new Map<string, number>();
-    private lastConnectingCount = 0;
+    private lastAttemptedCount = 0;
     private readonly isBrowserRuntime: boolean;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -31,6 +31,7 @@ class Holepunch {
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
+                this.swarm?.off("update", this.onSwarmUpdate);
                 const swarm = HolepunchRelay.getInstance().getSwarm();
                 this.swarm = (globalThis as any).Hyperswarm || swarm;
                 this.setupSwarm();
@@ -51,6 +52,7 @@ class Holepunch {
     //Mark resources for garbage collection
     public async dispose() {
         this.leaveTopics();
+        this.swarm?.off("update", this.onSwarmUpdate);
         if (typeof this.swarm?.destroy === "function") {
             await Promise.resolve(this.swarm.destroy());
             return;
@@ -72,7 +74,8 @@ class Holepunch {
         );
         if (index === -1) return;
         this.topics.splice(index, 1);
-        this.announcedAtMs.delete(topic.toString("hex"));
+        if (!this.topics.some((joinedTopic) => joinedTopic.equals(topic)))
+            this.announcedAtMs.delete(topic.toString("hex"));
         if (!this.swarm) return;
         await Promise.resolve(this.swarm.leave(topic));
         this.p2pManager.logger.debug("Left holepunch topic", {
@@ -98,25 +101,36 @@ class Holepunch {
                 this.p2pManager.rpcRouter
             );
         });
-        this.swarm.removeAllListeners("update");
-        // Hyperswarm has no attempt event: `update` follows each change of
-        // its `connecting` count, so a rise is a new outbound attempt.
-        this.lastConnectingCount = 0;
-        this.swarm.on("update", () => {
-            const connecting: number = this.swarm.connecting ?? 0;
-            if (connecting > this.lastConnectingCount) {
-                this.p2pManager.logger.debug(
-                    "Holepunch connection attempt started",
-                    {
-                        connecting,
-                        knownPeers: this.swarm.peers?.size,
-                        ...this.getTopicTimings()
-                    }
-                );
-            }
-            this.lastConnectingCount = connecting;
-        });
+        // Only this handler: the swarm can be shared, and Hyperswarm keeps
+        // its own `update` listener.
+        this.swarm.off("update", this.onSwarmUpdate);
+        this.lastAttemptedCount = this.getAttemptedCount();
+        this.swarm.on("update", this.onSwarmUpdate);
         this.rejoinTopics();
+    }
+
+    /**
+     * Hyperswarm has no attempt event: it emits `update` after each outbound
+     * dial, and its stats count the dials.
+     */
+    private readonly onSwarmUpdate = () => {
+        const attempted = this.getAttemptedCount();
+        if (attempted > this.lastAttemptedCount) {
+            this.p2pManager.logger.debug(
+                "Holepunch connection attempt started",
+                {
+                    attempts: attempted - this.lastAttemptedCount,
+                    connecting: this.swarm.connecting,
+                    knownPeers: this.swarm.peers?.size,
+                    ...this.getTopicTimings()
+                }
+            );
+        }
+        this.lastAttemptedCount = attempted;
+    };
+
+    private getAttemptedCount(): number {
+        return this.swarm.stats?.connects?.client?.attempted ?? 0;
     }
 
     /**

@@ -14,6 +14,10 @@ import { ethers } from "ethers";
 
 describe("LobbyMatchingService", function () {
     let fixture: P2PManagerFixture;
+    /** The selected peer of `probeLobbyHandoffExit`. */
+    const handedOffPeer = ethers.getAddress(
+        "0xffffffffffffffffffffffffffffffffffffffff"
+    );
 
     beforeEach(async function () {
         fixture = new P2PManagerFixture();
@@ -128,6 +132,54 @@ describe("LobbyMatchingService", function () {
         expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
         expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
+    });
+
+    it("removes the promoted peer from the connection set on handoff release", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("release", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("removes the promoted peer from the connection set on handoff disconnect", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("disconnect", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("removes the promoted peer from the connection set on handoff dispose", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("dispose", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("promotes a replacement transport once during the handoff and closes it on release", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("release", true)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.replacementPromoted).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(2);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
     });
 
     it("keeps a reservation through final profile loss, strikes at its bound, and bounds rejected lobby traffic", async function () {

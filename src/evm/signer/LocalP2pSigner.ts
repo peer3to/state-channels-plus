@@ -8,9 +8,13 @@ import type {
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
 } from "@/rpc/network/services";
+import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import { validateMatchTimeout } from "@/rpc/network/services/lobbyMatching/LobbyMatchingValidation";
 import { DEFAULT_JOIN_AMOUNT } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-import type { NegotiationOutcome } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type {
+    MatchedNegotiationOptions,
+    NegotiationOutcome
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type { OpenConnection } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -357,31 +361,19 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             } else {
                 await stateManager.refreshOpenedStatusFromChain();
                 if (stateManager.status === Status.NOT_OPENED) {
-                    let outcome: NegotiationOutcome;
-                    try {
-                        outcome =
-                            await this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation(
-                                match,
-                                {
-                                    mode: "targeted",
-                                    channelId: normalizedChannelId,
-                                    balance:
-                                        options.balance ?? this.defaultBalance()
-                                }
-                            );
-                    } catch (error) {
-                        // The commitment promoted the peer: release it before
-                        // the failure reaches the caller.
-                        await matching.releaseNegotiationHandoff(topic);
-                        throw error;
-                    }
+                    const outcome = await this.negotiateOrRelease(
+                        match,
+                        topic,
+                        {
+                            mode: "targeted",
+                            channelId: normalizedChannelId,
+                            balance: options.balance ?? this.defaultBalance()
+                        }
+                    );
                     if (outcome.status === "opened") {
                         openedGenesis = true;
                         await matching.completeLobby(topic);
-                    } else if (outcome.status === "observed-target-open") {
-                        await matching.releaseNegotiationHandoff(topic);
-                    } else {
-                        await matching.releaseNegotiationHandoff(topic);
+                    } else if (outcome.status !== "observed-target-open") {
                         return false;
                     }
                 } else {
@@ -427,8 +419,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     ): Promise<LobbyJoinResult | undefined> {
         const lobbyTopic = join.topic;
         const matching = this.p2pManager.localRpc.lobbyMatchingService;
-        const negotiation =
-            this.p2pManager.localRpc.openChannelNegotiationService;
         const left = () => join.left;
         let match = await matching.match(
             lobbyTopic,
@@ -437,38 +427,28 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             left
         );
         while (match) {
-            let opened: LobbyJoinResult | undefined;
+            let outcome: NegotiationOutcome | undefined;
             try {
-                const outcome = await negotiation.initMatchedNegotiation(
-                    match,
-                    {
-                        mode: "ordinary",
-                        balance: options.balance
-                    }
-                );
-                if (outcome.status === "opened") {
-                    join.opened = true;
-                    await matching.completeLobby(lobbyTopic);
-                    opened = outcome.result;
-                } else if (outcome.status === "cancelled") {
-                    return undefined;
-                }
-                if (!opened)
-                    await matching.releaseNegotiationHandoff(lobbyTopic);
+                outcome = await this.negotiateOrRelease(match, lobbyTopic, {
+                    mode: "ordinary",
+                    balance: options.balance
+                });
             } catch (error) {
                 this.logger.warn("Matched lobby negotiation failed to start", {
                     error: errorMessage(error)
                 });
-                await matching.releaseNegotiationHandoff(lobbyTopic);
             }
-            if (opened) {
+            if (outcome?.status === "opened") {
+                join.opened = true;
+                await matching.completeLobby(lobbyTopic);
                 // Announce the opened channel as a direct connect does, so
                 // spectators and joiners can find its participants.
                 await this.p2pManager.joinDiscoveryKey(
-                    channelIdToDiscoveryKey(opened.channelId)
+                    channelIdToDiscoveryKey(outcome.result.channelId)
                 );
-                return opened;
+                return outcome.result;
             }
+            if (outcome?.status === "cancelled") return undefined;
             // Unsigned failures start from a clean discovery session. The
             // matching service leaves the old topic and closes all lobby-owned
             // transports before rejoining this caller-owned topic.
@@ -480,6 +460,33 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             );
         }
         return undefined;
+    }
+
+    /**
+     * Negotiates a committed lobby match. The commitment promoted the
+     * selected peer, so every outcome but an open, and a failed start,
+     * releases it; the caller completes the lobby after an open.
+     */
+    private async negotiateOrRelease(
+        match: LobbyMatch,
+        topic: string,
+        options: MatchedNegotiationOptions
+    ): Promise<NegotiationOutcome> {
+        const matching = this.p2pManager.localRpc.lobbyMatchingService;
+        let outcome: NegotiationOutcome;
+        try {
+            outcome =
+                await this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation(
+                    match,
+                    options
+                );
+        } catch (error) {
+            await matching.releaseNegotiationHandoff(topic);
+            throw error;
+        }
+        if (outcome.status !== "opened")
+            await matching.releaseNegotiationHandoff(topic);
+        return outcome;
     }
 
     private defaultBalance(): BalanceStruct {

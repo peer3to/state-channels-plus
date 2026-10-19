@@ -890,16 +890,14 @@ describe("E2E: lobby matching", function () {
                             .request()
                     )
                 )
-            ).map((addresses) => [
-                ...new Set(addresses.map((address) => address.toLowerCase()))
-            ]);
+            ).map((addresses) => [...new Set(addresses)]);
         const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
         try {
             // Negotiation has not started and no channel exists: the
             // broadcast set already holds the committed peer.
             expect(await connectedPeers()).to.deep.equal([
-                [h.peers[1].address.toLowerCase()],
-                [h.peers[0].address.toLowerCase()]
+                [h.peers[1].address],
+                [h.peers[0].address]
             ]);
             expect(
                 await Promise.all(
@@ -918,6 +916,63 @@ describe("E2E: lobby matching", function () {
             expect(await connectedPeers()).to.deep.equal([[], []]);
         } finally {
             await release();
+        }
+    });
+
+    it("delivers block #0 of a lobby-opened channel over P2P before the lobby session ends", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-first-block-over-p2p");
+        // The open is reported but `completeLobby` waits: the channel runs
+        // on the connection set the commitment built.
+        const releases = await Promise.all(
+            [0, 1].map((index) => h.rpcStub.holdLobbyCompletion(index))
+        );
+        try {
+            await h.network.joinLobby([0, 1], topic);
+            await waitFor(
+                async () => {
+                    const statuses = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getStatus().request()
+                        )
+                    );
+                    return statuses.every(
+                        (status) => status === Status.PARTICIPATING
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+
+            // The lobby session has not ended: `completeLobby` is held.
+            expect(
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.getLobbyAvailability()
+                                .request()
+                        )
+                    )
+                ).every(({ topic }) => topic !== undefined)
+            ).to.equal(true);
+
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.blockHeight({ expectedHeight: 0 });
+            // A block that only reached the peer through the chain fallback
+            // had its author post calldata first.
+            expect(
+                h.peers.map(
+                    (peer) => peer.eventSpies.onPostingCalldata?.callCount
+                )
+            ).to.deep.equal([0, 0]);
+            expect(
+                await Promise.all(releases.map((release) => release()))
+            ).to.deep.equal([1, 1]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
         }
     });
 
