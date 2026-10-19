@@ -243,6 +243,10 @@ export type LobbyHandoffExitProbe = {
     ordinaryHookCountBeforeExit: number;
     /** The selected (and replacement) transports are closed and out of the connection set. */
     handedOffTransportsRemovedAfterExit: boolean;
+    /** Peer addresses of the last connection set `onConnectionsChanged` reported before the exit. */
+    reportedConnectionsAfterCommit: string[];
+    /** `onConnectionsChanged` calls during the exit. */
+    reportsDuringExit: number;
     /** Peer addresses of the last connection set reported by `onConnectionsChanged`. */
     lastReportedConnections: string[];
 };
@@ -3670,7 +3674,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const selected = this.transport(peerAddress);
         this.registerProfile(selected, peerAddress);
         let ordinaryHookCount = 0;
-        let lastReportedConnections: string[] = [];
+        const reportedConnections: string[][] = [];
         const unsubscribeConnection = this.p2pManager.stateManager.events.on(
             "p2pEventHooks",
             "onConnection",
@@ -3683,8 +3687,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 "p2pEventHooks",
                 "onConnectionsChanged",
                 (connections) => {
-                    lastReportedConnections = connections.map((connection) =>
-                        String(connection.peerAddress)
+                    reportedConnections.push(
+                        connections.map((connection) =>
+                            String(connection.peerAddress)
+                        )
                     );
                 }
             );
@@ -3736,6 +3742,9 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 handedOff.push(replacement);
             }
             const ordinaryHookCountBeforeExit = ordinaryHookCount;
+            const reportsBeforeExit = reportedConnections.length;
+            const reportedConnectionsAfterCommit =
+                reportedConnections.at(-1) ?? [];
             if (exit === "release") {
                 await service.releaseNegotiationHandoff(topic);
             } else if (exit === "disconnect") {
@@ -3752,7 +3761,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                         transport.isClosed &&
                         !this.p2pManager.openConnections.includes(transport)
                 ),
-                lastReportedConnections
+                reportedConnectionsAfterCommit,
+                reportsDuringExit:
+                    reportedConnections.length - reportsBeforeExit,
+                lastReportedConnections: reportedConnections.at(-1) ?? []
             };
         } finally {
             unsubscribeConnection();

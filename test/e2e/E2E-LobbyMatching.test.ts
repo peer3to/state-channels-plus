@@ -971,6 +971,20 @@ describe("E2E: lobby matching", function () {
             expect(
                 await Promise.all(releases.map((release) => release()))
             ).to.deep.equal([1, 1]);
+            // The released joins complete the lobby and end the session.
+            await TestSession.settleDetached();
+            expect(
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.getLobbyAvailability()
+                                .request()
+                        )
+                    )
+                ).map(({ topic }) => topic)
+            ).to.deep.equal([undefined, undefined]);
         } finally {
             await Promise.all(releases.map((release) => release()));
         }

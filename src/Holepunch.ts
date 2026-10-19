@@ -16,6 +16,8 @@ class Holepunch {
     /** When each joined topic was last announced, for the discovery timing logs. */
     private readonly announcedAtMs = new Map<string, number>();
     private lastAttemptedCount = 0;
+    /** Bound once, so `off` removes only this listener from a shared swarm. */
+    private readonly onSwarmUpdate = () => this.logConnectionAttempts();
     private readonly isBrowserRuntime: boolean;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -113,7 +115,7 @@ class Holepunch {
      * Hyperswarm has no attempt event: it emits `update` after each outbound
      * dial, and its stats count the dials.
      */
-    private readonly onSwarmUpdate = () => {
+    private logConnectionAttempts(): void {
         const attempted = this.getAttemptedCount();
         if (attempted > this.lastAttemptedCount) {
             this.p2pManager.logger.debug(
@@ -127,7 +129,7 @@ class Holepunch {
             );
         }
         this.lastAttemptedCount = attempted;
-    };
+    }
 
     private getAttemptedCount(): number {
         return this.swarm.stats?.connects?.client?.attempted ?? 0;

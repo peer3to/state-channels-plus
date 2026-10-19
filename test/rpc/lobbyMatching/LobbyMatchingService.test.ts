@@ -143,6 +143,8 @@ describe("LobbyMatchingService", function () {
         expect(result.selectedPromotedAtCommit).to.equal(true);
         expect(result.ordinaryHookCountBeforeExit).to.equal(1);
         expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
         expect(result.lastReportedConnections).to.not.include(handedOffPeer);
     });
 
@@ -155,6 +157,8 @@ describe("LobbyMatchingService", function () {
         expect(result.selectedPromotedAtCommit).to.equal(true);
         expect(result.ordinaryHookCountBeforeExit).to.equal(1);
         expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
         expect(result.lastReportedConnections).to.not.include(handedOffPeer);
     });
 
@@ -167,6 +171,8 @@ describe("LobbyMatchingService", function () {
         expect(result.selectedPromotedAtCommit).to.equal(true);
         expect(result.ordinaryHookCountBeforeExit).to.equal(1);
         expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
         expect(result.lastReportedConnections).to.not.include(handedOffPeer);
     });
 
