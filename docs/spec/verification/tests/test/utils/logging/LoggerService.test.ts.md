@@ -33,7 +33,7 @@ Real SDK roots and their actual message ports exercise store attachment, local o
 - `a realm asked to flush after the deadline answers at once while its upload is held`: UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P7
 - `a realm whose logger service was disposed answers a flush at once and forwards nothing`: UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P8
 - `with log collection off a flush asks no realm and settles at once`: UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P9
-- `a flush answer to a requester whose connection closed reports no error`: UNIT-TEST-RUNTIME-DOMAIN-SERVICE-1-CKHC76.P2, REQ-LOG-11-F5TJQC.T1.P13
+- `a flush answer to a requester whose connection closed reports no error`: UNIT-TEST-RUNTIME-REPLY-1-B5QZZA.P1, REQ-LOG-11-F5TJQC.T1.P13
 - `a slow flush answer that lands after its requester's logger was disposed warns nothing`: UNIT-TEST-REMOTE-ROOT-1-7D9JVE.P5
 - `a logger without a coordination service refuses to flush`: UNIT-TEST-LOGGER-1-4MNRMD.P11, REQ-LOG-11-F5TJQC.T1.P12
 - `a flush across a cycle of real root connections settles once`: UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P2, REQ-LOG-11-F5TJQC.T1.P2

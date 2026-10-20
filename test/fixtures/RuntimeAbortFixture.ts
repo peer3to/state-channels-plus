@@ -12,6 +12,7 @@ import {
     type ReceivedUpload,
     startLogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
+import { DRAIN_WARNING } from "@test/fixtures/node/WorkerTeardownFixture";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
 import { type HarnessOptions, MathTestSession } from "@test/harness";
 import { deferred } from "@test/utils/deferred";
@@ -117,6 +118,56 @@ export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
         // The main realm stops waiting at the deadline, so the close does not wait past it.
         expect(elapsedMs).to.be.below(ABORT_FLUSH_MS + 3_000);
         expect(isTaskRun).to.equal(false);
+        await peer.p2pInstance.dispose();
+    } finally {
+        held.resolve();
+        await receiver.close();
+    }
+}
+
+/**
+ * The aborting runtime's VM worker ends while its upload is still held: the
+ * thread end cancels that upload, so the worker drains at once and the client
+ * closes soon after the bound, without the parent's drain-timeout warning.
+ */
+export async function assertVmThreadEndCancelsHeldUpload(): Promise<void> {
+    const held = deferred();
+    let abortingAddress: string | undefined;
+    // Only the aborting peer's VM uploads are held; they are still open when its VM worker ends.
+    const receiver = await startLogReceiver({
+        respond: async (received) => {
+            if (abortingAddress && isVmUploadOf(received, abortingAddress))
+                await held.promise;
+            return 200;
+        }
+    });
+    try {
+        await startPeersUploadingTo(receiver, {
+            RUN_SDK_IN_THREAD: false,
+            VM_DEDICATED_THREAD: true,
+            CRASH_LOG_FLUSH_MS: ABORT_FLUSH_MS
+        });
+        const peer = MathTestSession.getHarness().getPeer(0);
+        abortingAddress = peer.address;
+        // The inline host is the VM worker's parent: its store receives the drain warning.
+        const hostLogs = inlineHostFor(peer.p2pInstance).rootLogger["logStore"];
+
+        const elapsedMs = await abortFirstPeerUntilClosed();
+
+        expect(
+            receiver.requests.some((request) =>
+                isVmUploadOf(request, peer.address)
+            )
+        ).to.equal(true);
+        // The held upload kept the flush to its bound; the lower limit is loose as in the bound case.
+        expect(elapsedMs).to.be.at.least(ABORT_FLUSH_MS / 2);
+        // Without the cancel the VM worker's loop holds the close until its drain timeout.
+        expect(elapsedMs).to.be.below(ABORT_FLUSH_MS + 1_000);
+        expect(
+            hostLogs
+                .getAllLogs()
+                .filter((entry) => entry.message === DRAIN_WARNING)
+        ).to.deep.equal([]);
         await peer.p2pInstance.dispose();
     } finally {
         held.resolve();

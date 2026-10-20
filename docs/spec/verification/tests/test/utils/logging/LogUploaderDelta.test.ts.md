@@ -18,9 +18,9 @@ an upload requested while one is in flight resolves only after its own POST; and
 - `sends the whole store on the first upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P1
 - `sends only entries added since the last upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P2
 - `does not POST when there is nothing new`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P3, REQ-LOG-3-T9FM2K.T1.P2
-- `ends an upload still running when its thread ends, without a retry or its queued follow-up`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P15, REQ-LOG-11-F5TJQC.T1.P10
-- `ends an upload in its jitter wait when its thread ends, before it posts`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P16, REQ-LOG-11-F5TJQC.T1.P11
-- `ends an upload in its retry delay when its thread ends, without the retry`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P17, REQ-LOG-11-F5TJQC.T1.P17
+- `ends an upload still running when its thread ends, without a retry or its queued follow-up`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P15
+- `ends an upload in its jitter wait when its thread ends, before it posts`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P16
+- `ends an upload in its retry delay when its thread ends, without the retry`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P17
 - `re-sends the delta after a failed upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P5, REQ-LOG-5-ST6S0G.T1.P2
 - `files an upload under the identity current after the jitter`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P13
 - `sends threadName and the sequence range`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P6, REQ-LOG-4-W5XR7Q.T1.P1

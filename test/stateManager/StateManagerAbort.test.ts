@@ -4,6 +4,7 @@ import {
     assertAbortUploadsLogsWithinBound,
     assertClockOwnedProviderReleasedOnDispose,
     assertProviderShutdownOrder,
+    assertVmThreadEndCancelsHeldUpload,
     assertWorkerHostAbortUploadsLogs
 } from "@test/fixtures/RuntimeAbortFixture";
 
@@ -19,6 +20,9 @@ describe("StateManager abort", function () {
     });
     it("uploads its realms' logs before disposal, waiting for them no longer than its bound", async function () {
         await assertAbortUploadsLogsWithinBound();
+    });
+    it("cancels a VM worker's held upload when the worker ends, so the client closes without the drain timeout", async function () {
+        await assertVmThreadEndCancelsHeldUpload();
     });
     it("uploads the worker host's, main thread's and VM worker's logs before the client closes, without waiting for the bound", async function () {
         await assertWorkerHostAbortUploadsLogs();

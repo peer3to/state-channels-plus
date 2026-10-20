@@ -17,4 +17,12 @@ Immutable per-invocation sender through awaited forwarding.
 - Oracle: Release interleaved calls in reverse order and assert each callback reaches its own caller identity.
 
 - [x] `UNIT-TEST-RUNTIME-DOMAIN-SERVICE-1-CKHC76.P1` — Retains each invocation sender across interleaved awaits and callbacks
-- [x] `UNIT-TEST-RUNTIME-DOMAIN-SERVICE-1-CKHC76.P2` — Sends no reply to a requester whose connection already closed, and reports no error for it
+
+## UNIT-TEST-RUNTIME-REPLY-1-B5QZZA
+
+A reply to a requester whose connection already closed is dropped.
+
+- Setup: Actual SDK-owned roots and a connected domain service; the requester's connection closes before the handler replies.
+- Oracle: The handler's answer, which ends after the requester closed, is dropped with no error reported for it.
+
+- [x] `UNIT-TEST-RUNTIME-REPLY-1-B5QZZA.P1` — A handler answer to a requester whose connection already closed reports no error
