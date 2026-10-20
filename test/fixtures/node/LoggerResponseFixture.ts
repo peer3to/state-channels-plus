@@ -69,3 +69,46 @@ export function connectLoggerPeers(
         parent["transport"].close(true);
     };
 }
+
+/**
+ * Replaces the inline SDK host's flush handler (its answer to a neighbour's flush) and returns
+ * the restore.
+ */
+export function replaceHostFlush(
+    sdk: LoggerSdkFixture,
+    flush: () => Promise<void>
+): () => void {
+    const service = inlineHostOf(sdk).logger;
+    const original = service.flush.bind(service);
+    service.flush = flush;
+    return () => {
+        service.flush = original;
+    };
+}
+
+/** Records the errors a root reports (instead of reporting them) and when; returns the restore. */
+export function recordReportedErrors(root: AInternalRpcRoot) {
+    const errors: unknown[] = [];
+    const atMs: number[] = [];
+    const reportError = root.reportError.bind(root);
+    root.reportError = (error: unknown) => {
+        errors.push(error);
+        atMs.push(Date.now());
+    };
+    return {
+        errors,
+        atMs,
+        restore: () => {
+            root.reportError = reportError;
+        }
+    };
+}
+
+/** The inline SDK fixture's host root. */
+export function inlineHostOf(sdk: LoggerSdkFixture): P2pRuntimeHostRoot {
+    const host = [...sdk.roots].find(
+        (root): root is P2pRuntimeHostRoot => root instanceof P2pRuntimeHostRoot
+    );
+    if (!host) throw new Error("Expected actual inline SDK host");
+    return host;
+}

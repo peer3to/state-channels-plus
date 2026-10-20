@@ -54,7 +54,7 @@ export interface LoggerSdkFixture {
     uploadState: LoggerProbeRoot["loggerProbe"]["uploadState"];
     cancelPendingUpload(): void;
     own(): Promise<LogUploadOutcome>;
-    flush(reason: string): Promise<LogUploadOutcome>;
+    gossipUpload(reason: string): Promise<LogUploadOutcome>;
     dispose(): Promise<void>;
 }
 
@@ -200,7 +200,7 @@ export async function createLoggerSdkFixture(
                 throw new Error("Disposed service retained its upload timer");
         },
         own: () => logger.uploadOwnLogs(),
-        flush: (reason: string) => logger.upload(reason),
+        gossipUpload: (reason: string) => logger.upload(reason),
         async dispose() {
             await instance.dispose();
             ownLogger?.logger.dispose();

@@ -1,4 +1,5 @@
 import { encodeLogEntry } from "./logEncoder";
+import { randomHexId } from "../randomHexId";
 import { LogEntry } from "./Logger";
 
 /** entries newer than a cursor. fromSeq > sinceSeq + 1 means eviction outran it;
@@ -12,13 +13,8 @@ export type LogStoreDelta = {
 // Shared log storage helper (instance-based)
 export class LogStore {
     /** distinguishes one process's stream from the next: seq restarts at 0 per
-     *  store, so without it a second run overwrites the first's chunks. 64
-     *  random bits from the platform CSPRNG - `randomUUID` needs a secure
-     *  context, and this file is browser-compiled */
-    public readonly storeId: string = Array.from(
-        crypto.getRandomValues(new Uint8Array(8)),
-        (byte) => byte.toString(16).padStart(2, "0")
-    ).join("");
+     *  store, so without it a second run overwrites the first's chunks */
+    public readonly storeId: string = randomHexId();
     private logs: Array<{ entry: LogEntry; sizeInBytes: number; seq: number }> =
         [];
     private currentSize = 0;

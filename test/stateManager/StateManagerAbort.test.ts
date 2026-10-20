@@ -1,6 +1,7 @@
 import {
     assertAbortClosesRuntime,
     assertAbortCancelsTimeout,
+    assertAbortUploadsLogsWithinBound,
     assertClockOwnedProviderReleasedOnDispose,
     assertProviderShutdownOrder
 } from "@test/fixtures/RuntimeAbortFixture";
@@ -14,6 +15,9 @@ describe("StateManager abort", function () {
     });
     it("disposes the worker host and executor roots on abort", async function () {
         await assertAbortClosesRuntime(true);
+    });
+    it("uploads its realms' logs before disposal, waiting for them no longer than its bound", async function () {
+        await assertAbortUploadsLogsWithinBound();
     });
     it("cancels session-owned timeout work", async function () {
         await assertAbortCancelsTimeout();

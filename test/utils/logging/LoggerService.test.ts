@@ -7,6 +7,9 @@ import {
 } from "@test/fixtures/logging/LogUploader.fixture";
 import {
     connectLoggerCycle,
+    inlineHostOf,
+    recordReportedErrors,
+    replaceHostFlush,
     createLateLoggerChild,
     connectLoggerPeers
 } from "@test/fixtures/node/LoggerResponseFixture";
@@ -17,6 +20,11 @@ import {
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
+
+/** A short flush bound, so a case that waits for it is quick. */
+const SHORT_FLUSH_MS = 300;
+/** A bound a neighbour's failure surely reaches the origin within, even on a loaded worker. */
+const FAILURE_FLUSH_MS = 1_000;
 
 describe("LoggerService", function () {
     let receiver: LogReceiver;
@@ -50,7 +58,7 @@ describe("LoggerService", function () {
         );
         extra.logger.dispose();
         child.info("surviving store");
-        await sdk.flush("attached store");
+        await sdk.gossipUpload("attached store");
         await receiver.waitForRequests(1);
         expect(
             receiver.requests
@@ -134,7 +142,7 @@ describe("LoggerService", function () {
         const sdk = await createLoggerSdkFixture(receiver);
         fixtures.push(sdk);
         await sdk.remote.loggerProbe.write("sdk entry").request();
-        expect(await sdk.flush("connected")).to.deep.equal({
+        expect(await sdk.gossipUpload("connected")).to.deep.equal({
             ok: true,
             entries: 0
         });
@@ -146,7 +154,7 @@ describe("LoggerService", function () {
         const sdk = await createLoggerSdkFixture(receiver, { vmWorker: true });
         fixtures.push(sdk);
         await sdk.remote.loggerProbe.childWriteAtEndpoint("vm entry").request();
-        await sdk.flush("two ports");
+        await sdk.gossipUpload("two ports");
         await receiver.waitForRequests(1);
         expect(receiver.requests[0].threadName).to.equal("vm");
     });
@@ -155,7 +163,7 @@ describe("LoggerService", function () {
         const sdk = await createLoggerSdkFixture(receiver, { vmWorker: true });
         fixtures.push(sdk);
         sdk.logger.info("main entry");
-        await sdk.remote.loggerProbe.childFlush("leaf").request();
+        await sdk.remote.loggerProbe.childGossipUpload("leaf").request();
         await receiver.waitForRequests(1);
         expect(receiver.requests[0].threadName).to.equal("main");
     });
@@ -174,7 +182,7 @@ describe("LoggerService", function () {
         try {
             sdk.logger.info("local result");
             await sdk.remote.loggerProbe.write("remote held").request();
-            expect(await sdk.flush("local outcome")).to.deep.equal({
+            expect(await sdk.gossipUpload("local outcome")).to.deep.equal({
                 ok: true,
                 entries: 1
             });
@@ -190,9 +198,9 @@ describe("LoggerService", function () {
         const sdk = await createLoggerSdkFixture(receiver);
         fixtures.push(sdk);
         await Promise.all([
-            sdk.flush("one"),
-            sdk.flush("two"),
-            sdk.flush("three")
+            sdk.gossipUpload("one"),
+            sdk.gossipUpload("two"),
+            sdk.gossipUpload("three")
         ]);
         expect(
             sdk.frames.filter(
@@ -205,10 +213,10 @@ describe("LoggerService", function () {
     it("advances for a fresh local trigger after the window", async () => {
         const sdk = await createLoggerSdkFixture(receiver);
         fixtures.push(sdk);
-        await sdk.flush("first");
+        await sdk.gossipUpload("first");
         // Time is the oracle: cross the configured 100 ms coalescing window.
         await new Promise((resolve) => setTimeout(resolve, 120));
-        await sdk.flush("second");
+        await sdk.gossipUpload("second");
         expect(
             sdk.frames
                 .filter(
@@ -251,7 +259,7 @@ describe("LoggerService", function () {
         const sdk = await createLoggerSdkFixture(receiver);
         fixtures.push(sdk);
         const received = sdk.control.holdNextMessage("upload");
-        await sdk.remote.loggerProbe.flush("held generation").request();
+        await sdk.remote.loggerProbe.gossipUpload("held generation").request();
         await received;
         sdk.clientRoot.logger.upload(10, "newer generation");
         // Time is the oracle: cross the configured 100 ms coalescing window.
@@ -264,7 +272,7 @@ describe("LoggerService", function () {
         expect(after.calls).to.equal(before.calls);
         expect(after.pending).to.equal(false);
         expect(receiver.requests).to.have.length(0);
-        await sdk.flush("fresh local");
+        await sdk.gossipUpload("fresh local");
         await receiver.waitForRequests(1);
     });
 
@@ -343,7 +351,7 @@ describe("LoggerService", function () {
         try {
             sdk.logger.info("cycle main");
             await sdk.remote.loggerProbe.write("cycle host").request();
-            await sdk.flush("cycle");
+            await sdk.gossipUpload("cycle");
             await receiver.waitForRequests(2);
             await sdk.remote.runtimeProbe.sum(1, 2).request();
             expect(
@@ -357,14 +365,245 @@ describe("LoggerService", function () {
         }
     });
 
+    it("a flush settles only once every connected realm has posted its logs", async () => {
+        const held = deferred();
+        await receiver.close();
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (received.threadName === "sdk") await held.promise;
+                return 200;
+            }
+        });
+        const sdk = await createLoggerSdkFixture(receiver);
+        fixtures.push(sdk);
+        sdk.logger.info("flush main");
+        await sdk.remote.loggerProbe.write("flush host").request();
+        let isSettled = false;
+
+        const flush = sdk.logger.flushLogs().then(() => {
+            isSettled = true;
+        });
+        await receiver.waitForRequests(2);
+        // The main realm's own post has finished: a flush that waited only for it would settle.
+        await sdk.own();
+        await new Promise(setImmediate);
+
+        // The sdk realm's post is still held: the flush waits for it.
+        expect(isSettled).to.equal(false);
+        held.resolve();
+        await flush;
+        expect(
+            receiver.requests
+                .flatMap(decodeUpload)
+                .map((entry) => entry.message)
+                .filter((message) => message.startsWith("flush "))
+                .sort()
+        ).to.deep.equal(["flush host", "flush main"]);
+    });
+
+    it("a flush skips a neighbour that closes while its upload is held", async () => {
+        const held = deferred();
+        await receiver.close();
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (received.threadName === "sdk") await held.promise;
+                return 200;
+            }
+        });
+        const sdk = await createLoggerSdkFixture(receiver);
+        fixtures.push(sdk);
+        sdk.logger.info("flush before close");
+        await sdk.remote.loggerProbe.write("held before close").request();
+        const reported = recordReportedErrors(sdk.clientRoot);
+        const flush = sdk.logger.flushLogs();
+        await receiver.waitForRequests(2);
+
+        try {
+            // The connection to the sdk realm closes with its upload still held.
+            const closedAtMs = Date.now();
+            sdk.parentTransport.close();
+            await flush;
+            // Its closure ended the wait, not the flush's bound, and is no failure.
+            expect(Date.now() - closedAtMs).to.be.below(1_000);
+            expect(reported.errors).to.deep.equal([]);
+        } finally {
+            reported.restore();
+            held.resolve();
+        }
+    });
+
+    it("a flush reports a neighbour's failure at once and still waits for the other uploads", async () => {
+        const held = deferred();
+        await receiver.close();
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (received.threadName === "main") await held.promise;
+                return 200;
+            }
+        });
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        // After the fixture: its setup rebuilds the config.
+        const restoreBound = applyCrashLogConfig({
+            CRASH_LOG_FLUSH_MS: FAILURE_FLUSH_MS
+        });
+        sdk.logger.info("main upload outlasts the bound");
+        const restoreFlush = replaceHostFlush(sdk, () =>
+            Promise.reject(new Error("host flush failed"))
+        );
+        const reported = recordReportedErrors(sdk.clientRoot);
+        try {
+            const startedAtMs = Date.now();
+
+            await sdk.logger.flushLogs();
+
+            const elapsedMs = Date.now() - startedAtMs;
+            expect(
+                reported.errors.map((error) => (error as Error).message)
+            ).to.deep.equal(["host flush failed"]);
+            // Reported when it happened, not when the flush settled.
+            expect(reported.atMs[0] - startedAtMs).to.be.below(
+                FAILURE_FLUSH_MS / 2
+            );
+            // The failure did not cut the held upload short: the flush waited for its bound.
+            expect(elapsedMs).to.be.at.least(FAILURE_FLUSH_MS - 50);
+            await receiver.waitForRequests(1);
+            expect(
+                receiver.requests
+                    .flatMap(decodeUpload)
+                    .some(
+                        (entry) =>
+                            entry.message === "main upload outlasts the bound"
+                    )
+            ).to.equal(true);
+        } finally {
+            held.resolve();
+            reported.restore();
+            restoreFlush();
+            restoreBound();
+        }
+    });
+
+    it("a flush ends at its bound when a neighbour never answers", async () => {
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        // After the fixture: its setup rebuilds the config.
+        const restoreBound = applyCrashLogConfig({
+            CRASH_LOG_FLUSH_MS: SHORT_FLUSH_MS
+        });
+        // Answered only after the case, so disposal has no handler left to drain.
+        const unanswered = deferred();
+        const restore = replaceHostFlush(sdk, () => unanswered.promise);
+        try {
+            const startedAtMs = Date.now();
+
+            await sdk.logger.flushLogs();
+
+            const elapsedMs = Date.now() - startedAtMs;
+            expect(elapsedMs).to.be.at.least(SHORT_FLUSH_MS - 50);
+            expect(elapsedMs).to.be.below(SHORT_FLUSH_MS + 2_000);
+        } finally {
+            unanswered.resolve();
+            restore();
+            restoreBound();
+        }
+    });
+
+    it("a flush answer to a requester whose connection closed reports no error", async () => {
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        // After the fixture: its setup rebuilds the config.
+        const restoreBound = applyCrashLogConfig({
+            CRASH_LOG_FLUSH_MS: SHORT_FLUSH_MS
+        });
+        const answer = deferred();
+        const restoreFlush = replaceHostFlush(sdk, () => answer.promise);
+        const host = inlineHostOf(sdk);
+        const reported = recordReportedErrors(host);
+        try {
+            await sdk.logger.flushLogs();
+            sdk.parentTransport.close();
+            await waitFor(() => host.parent === null);
+
+            // The host answers only now, to a requester that is gone.
+            answer.resolve();
+            await new Promise(setImmediate);
+
+            expect(reported.errors).to.deep.equal([]);
+        } finally {
+            answer.resolve();
+            reported.restore();
+            restoreFlush();
+            restoreBound();
+        }
+    });
+
+    it("a slow flush answer that lands after its requester's logger was disposed warns nothing", async () => {
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        // After the fixture: its setup rebuilds the config.
+        const restoreBound = applyCrashLogConfig({
+            CRASH_LOG_FLUSH_MS: SHORT_FLUSH_MS
+        });
+        const answer = deferred();
+        const restoreFlush = replaceHostFlush(sdk, () => answer.promise);
+        try {
+            const startedAtMs = Date.now();
+            await sdk.logger.flushLogs();
+            // Slow enough for the slow-request warning (one second), then the logger goes.
+            await new Promise((resolve) =>
+                setTimeout(resolve, 1_100 - (Date.now() - startedAtMs))
+            );
+            sdk.clientRoot.logger.attachedLogger.dispose();
+
+            answer.resolve();
+            await new Promise(setImmediate);
+        } finally {
+            answer.resolve();
+            restoreFlush();
+            restoreBound();
+        }
+    });
+
+    it("a logger without a coordination service refuses to flush", () => {
+        const { logger } = createUploaderFixture({
+            uploadEndpoint: receiver.url
+        });
+
+        expect(() => logger.flushLogs()).to.throw(
+            "Logger has no coordination service to flush through"
+        );
+    });
+
+    it("a flush across a cycle of real root connections settles once", async () => {
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        const close = connectLoggerCycle(sdk);
+        try {
+            sdk.logger.info("cycle flush main");
+            await sdk.remote.loggerProbe.write("cycle flush host").request();
+
+            await sdk.logger.flushLogs();
+
+            expect(
+                receiver.requests
+                    .flatMap(decodeUpload)
+                    .filter((entry) => entry.message.startsWith("cycle flush "))
+            ).to.have.length(2);
+            expect(sdk.clientRoot.router.pendingRequestCount).to.equal(0);
+        } finally {
+            close();
+        }
+    });
+
     it("concurrent roots upload without waiting on one another", async () => {
         const sdk = await createLoggerSdkFixture(receiver);
         fixtures.push(sdk);
         sdk.logger.info("main concurrent");
         await sdk.remote.loggerProbe.write("sdk concurrent").request();
         const outcomes = await Promise.all([
-            sdk.flush("main"),
-            sdk.remote.loggerProbe.flush("sdk").request()
+            sdk.gossipUpload("main"),
+            sdk.remote.loggerProbe.gossipUpload("sdk").request()
         ]);
         expect(outcomes.every((outcome) => outcome.ok)).to.equal(true);
         await receiver.waitForRequests(2);
@@ -383,7 +622,7 @@ describe("LoggerService", function () {
         fixtures.push(sdk);
         try {
             sdk.logger.info("first snapshot");
-            const active = sdk.flush("active");
+            const active = sdk.gossipUpload("active");
             await receiver.waitForRequests(1);
             sdk.logger.info("after snapshot");
             sdk.clientRoot.logger.upload(10, "newer");
@@ -406,7 +645,7 @@ describe("LoggerService", function () {
     it("cancels a pending service upload on disposal", async () => {
         const sdk = await createLoggerSdkFixture(receiver);
         fixtures.push(sdk);
-        await sdk.flush("window");
+        await sdk.gossipUpload("window");
         sdk.logger.info("pending entry");
         sdk.cancelPendingUpload();
         expect(receiver.requests).to.have.length(0);
@@ -421,7 +660,9 @@ describe("LoggerService", function () {
         try {
             extra.logger.attachLoggerService(sdk.clientRoot.logger);
             extra.logger.info("enabled extra store");
-            await sdk.remote.loggerProbe.flush("disabled relay").request();
+            await sdk.remote.loggerProbe
+                .gossipUpload("disabled relay")
+                .request();
             await receiver.waitForRequests(1);
             expect(
                 receiver.requests
@@ -439,7 +680,7 @@ describe("LoggerService", function () {
         const child = sdk.logger.child({ component: "child" });
         try {
             child.info("one shared delta");
-            await sdk.flush("shared");
+            await sdk.gossipUpload("shared");
             expect(receiver.requests).to.have.length(1);
         } finally {
             child.dispose();
@@ -468,12 +709,12 @@ describe("LoggerService", function () {
         fixtures.push(sdk);
         sdk.logger.info("retry me");
         await sdk.remote.loggerProbe.write("other store succeeds").request();
-        expect((await sdk.flush("failed local")).ok).to.equal(false);
+        expect((await sdk.gossipUpload("failed local")).ok).to.equal(false);
         expect(
             receiver.requests.some((request) => request.threadName === "sdk")
         ).to.equal(true);
         fail = false;
-        expect((await sdk.flush("retry local")).ok).to.equal(true);
+        expect((await sdk.gossipUpload("retry local")).ok).to.equal(true);
         expect(
             decodeUpload(receiver.requests[receiver.requests.length - 1]).some(
                 (entry) => entry.message === "retry me"
@@ -486,7 +727,7 @@ describe("LoggerService", function () {
         fixtures.push(sdk);
         sdk.control.failNextPost("upload");
         sdk.logger.info("local despite failed port");
-        expect((await sdk.flush("post failure")).ok).to.equal(true);
+        expect((await sdk.gossipUpload("post failure")).ok).to.equal(true);
         expect(receiver.requests).to.have.length(1);
         expect(sdk.clientRoot.router.pendingRequestCount).to.equal(0);
     });
@@ -525,7 +766,7 @@ describe("LoggerService", function () {
         const channelId = ethers.id("channel-set-after-connecting");
         await sdk.remote.loggerProbe.childWriteAtEndpoint("vm entry").request();
         await sdk.remote.loggerProbe.updateContext({ channelId }).request();
-        await sdk.flush("context");
+        await sdk.gossipUpload("context");
         await receiver.waitForRequests(1);
         expect(
             receiver.requests.find((request) => request.threadName === "vm")
@@ -567,7 +808,7 @@ describe("LoggerService", function () {
         sdk.logger.info("main mixed");
         await sdk.remote.loggerProbe.write("host mixed").request();
         await sdk.remote.loggerProbe.childWriteAtEndpoint("vm mixed").request();
-        await sdk.flush("mixed placement");
+        await sdk.gossipUpload("mixed placement");
         await receiver.waitForRequests(3);
         expect(
             receiver.requests
@@ -595,7 +836,7 @@ describe("LoggerService", function () {
             sdk.logger.info("shared caller store");
             await sdk.remote.loggerProbe.write("first host").request();
             await sibling.remote.loggerProbe.write("second host").request();
-            await sdk.flush("connected SDKs");
+            await sdk.gossipUpload("connected SDKs");
             await receiver.waitForRequests(3);
             expect(
                 receiver.requests

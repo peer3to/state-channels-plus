@@ -9,3 +9,4 @@
 - [`INV-CONFIG-1-0FJ2HX` (Deterministic effective configuration)](../../../../specification/runtime/configuration.md#inv-config-1-0fj2hx)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
 - [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
+- [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)

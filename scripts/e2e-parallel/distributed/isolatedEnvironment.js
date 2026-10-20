@@ -822,6 +822,11 @@ class DockerBackend {
         await this.removeEgressPolicy(handle);
     }
 
+    /** True for a stop that failed because the container no longer exists. */
+    isMissingRuntime(error) {
+        return /No such container/i.test(String(error?.message ?? error));
+    }
+
     async removeEgressPolicy(handle) {
         if (
             this.platform === "linux" &&
@@ -1434,11 +1439,21 @@ class IsolatedEnvironmentManager {
             if (metadata.runtimeHandle.container) {
                 recoveredNames.add(metadata.runtimeHandle.container);
             }
+            // A container that no longer exists (its host restarted and the
+            // daemon removed it) has nothing to stop: its cache is discarded
+            // like a dirty one instead of blocking its key for good.
+            let isRuntimeGone = false;
             try {
                 await this.backend.stop(metadata.runtimeHandle);
             } catch (error) {
-                this.blockedEnvironments.set(metadata.environmentKey, error);
-                continue;
+                if (!this.backend.isMissingRuntime?.(error)) {
+                    this.blockedEnvironments.set(
+                        metadata.environmentKey,
+                        error
+                    );
+                    continue;
+                }
+                isRuntimeGone = true;
             }
             // A cache built from another runner image is discarded like a
             // dirty one, so its next task runs in the configured image.
@@ -1448,7 +1463,12 @@ class IsolatedEnvironmentManager {
                 !(await this.backend
                     .runtimeUsesCurrentImage(metadata.runtimeHandle)
                     .catch(() => false));
-            if (metadata.dirty || !metadata.allocation || staleImage) {
+            if (
+                isRuntimeGone ||
+                metadata.dirty ||
+                !metadata.allocation ||
+                staleImage
+            ) {
                 await this.backend
                     .destroy(metadata.runtimeHandle)
                     .catch(() => {});

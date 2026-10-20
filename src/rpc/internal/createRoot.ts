@@ -8,6 +8,7 @@ import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import { config } from "@/utils/config";
 import type { Logger, SharedLoggerContext } from "@/utils/logging/Logger";
+import { LogUploader } from "@/utils/logging/LogUploader";
 import { runCleanup } from "@/utils/runCleanup";
 import { createTransferableChannel } from "@platform/p2pRuntimeChannel";
 import {
@@ -389,7 +390,7 @@ export function rootStartContext(
         handlerExecutionContext,
         attached,
         sameRealm = mode === "inline",
-        close = mode === "worker" ? closeRootWorker : () => {}
+        close = mode === "worker" ? closeWorkerThread : () => {}
     }: {
         logger?: Logger;
         handlerExecutionContext?: HostHandlerExecutionContext;
@@ -493,8 +494,14 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             } finally {
                 receivingRoot?.closeConnections();
                 port.close();
-                await closeRootWorker();
+                await closeWorkerThread();
             }
         }
     });
+}
+
+/** The worker thread ends: it cancels its uploads still running, then closes its handles. */
+function closeWorkerThread(): void | Promise<void> {
+    LogUploader.cancelRealmUploads();
+    return closeRootWorker();
 }

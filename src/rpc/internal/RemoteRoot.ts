@@ -27,6 +27,8 @@ export class RemoteRoot<T extends AInternalRpcRoot> {
     ) {
         const removeSettlement = owner.router.onRequestSettled((details) => {
             if (details.transport !== transport) return;
+            // A reply can land after this root's disposal released its logging.
+            if (owner.logger.attachedLogger.isDisposed) return;
             const metadata = LoggerUtils.getRpcRequestMetadata(
                 details.rpc,
                 details.startedAtMs

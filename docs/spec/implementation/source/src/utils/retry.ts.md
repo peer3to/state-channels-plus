@@ -2,4 +2,6 @@
 
 > **Source:** [src/utils/retry.ts](../../../../../../src/utils/retry.ts)
 
-No specified behavior: Bounded retry helper with backoff.
+## Requirements
+
+- [`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)

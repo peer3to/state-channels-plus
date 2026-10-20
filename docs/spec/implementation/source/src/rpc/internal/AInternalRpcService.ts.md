@@ -7,6 +7,7 @@
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 
 ## UNIT-TEST-RUNTIME-DOMAIN-SERVICE-1-CKHC76
 
@@ -16,3 +17,4 @@ Immutable per-invocation sender through awaited forwarding.
 - Oracle: Release interleaved calls in reverse order and assert each callback reaches its own caller identity.
 
 - [x] `UNIT-TEST-RUNTIME-DOMAIN-SERVICE-1-CKHC76.P1` — Retains each invocation sender across interleaved awaits and callbacks
+- [x] `UNIT-TEST-RUNTIME-DOMAIN-SERVICE-1-CKHC76.P2` — Sends no reply to a requester whose connection already closed, and reports no error for it

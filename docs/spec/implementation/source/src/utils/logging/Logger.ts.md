@@ -8,6 +8,7 @@
 - [`REQ-LOG-3-T9FM2K` (Writing a log line does not disturb the session)](../../../../../specification/runtime/log-collection.md#req-log-3-t9fm2k)
 - [`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)
 - [`REQ-LOG-9-V6SMAC` (An application report records its reason)](../../../../../specification/runtime/log-collection.md#req-log-9-v6smac)
+- [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 
 ## UNIT-TEST-LOGGER-1-4MNRMD
 
@@ -26,3 +27,4 @@ The logger's own boundary: defaults, disposal, and what it lets through.
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P8` — cascades through reparented grandchildren and rejects child creation after disposal
 - [ ] `UNIT-TEST-LOGGER-1-4MNRMD.P9` — continues collecting an SDK store after its parent logger is disposed while children remain alive
 - [x] `UNIT-TEST-LOGGER-1-4MNRMD.P10` — every log level and direct entry replay throws with the component name after disposal, including filtered levels, while repeated disposal is harmless
+- [x] `UNIT-TEST-LOGGER-1-4MNRMD.P11` — a logger without a coordination service refuses to flush
