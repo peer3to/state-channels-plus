@@ -1186,15 +1186,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     if (stateManager.isDisposed || !persistProof())
                         return false;
                     for (const dw of syncPayload.disputeWindows) {
-                        // only this sync's own reduction checked a window's reduce input;
-                        // any other window's input is dropped: chain events deliver the
-                        // genuine disputes and blocks, and a chain-final or early-return
-                        // window ran no check on its confirmations or snapshot
+                        // no reduction checks a confirmation's signatures, so the
+                        // window's disputes come from chain logs only. only this
+                        // sync's own reduction checked the rest of a window's reduce
+                        // input; a chain-final or early-return window ran no check
                         if (!verified.selfReducedForkIds.has(dw.forkId))
                             continue;
-                        for (const dispute of dw.disputeConfirmations) {
-                            storage.disputes.storeDisputeConfirmation(dispute);
-                        }
                         storage.stateSnapshots.storeStateSnapshot(
                             StateSnapshot.from(dw.latestStateSnapshot)
                         );

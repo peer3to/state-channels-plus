@@ -41,6 +41,19 @@ export function appendForgedInboundSuccessor(payload: SyncPayload): void {
     });
 }
 
+const FORGED_SIGNATURE = new ethers.Wallet(
+    ethers.id("forged window signer")
+).signingKey.sign(ethers.id("forged window confirmation")).serialized;
+
+/** Append a signature no participant made to every window confirmation. */
+export function forgeWindowConfirmationSignatures(payload: SyncPayload): void {
+    for (const confirmation of payload.disputeWindows[0].disputeConfirmations)
+        confirmation.signatures = [
+            ...confirmation.signatures,
+            FORGED_SIGNATURE
+        ];
+}
+
 /**
  * Forge the window's reduction inputs that a local reduction would check:
  * add a signature by a non-participant to every dispute confirmation, add a
@@ -48,12 +61,8 @@ export function appendForgedInboundSuccessor(payload: SyncPayload): void {
  * snapshot's timestamp.
  */
 export function forgeWindowReductionInputs(payload: SyncPayload): void {
+    forgeWindowConfirmationSignatures(payload);
     const window = payload.disputeWindows[0];
-    const forgedSignature = new ethers.Wallet(
-        ethers.id("forged window signer")
-    ).signingKey.sign(ethers.id("forged window confirmation")).serialized;
-    for (const confirmation of window.disputeConfirmations)
-        confirmation.signatures = [...confirmation.signatures, forgedSignature];
     const { signedDispute } = window.disputeConfirmations[0];
     const dispute = Codec.decode(signedDispute.encodedDispute, Type.Dispute);
     window.disputeConfirmations.push({
@@ -67,7 +76,7 @@ export function forgeWindowReductionInputs(payload: SyncPayload): void {
                 Type.Dispute
             )
         },
-        signatures: [forgedSignature]
+        signatures: [FORGED_SIGNATURE]
     });
     window.latestStateSnapshot = {
         ...window.latestStateSnapshot,

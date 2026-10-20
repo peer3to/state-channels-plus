@@ -6,6 +6,7 @@ import { Codec, Type } from "@/utils";
 import {
     appendForgedInboundSuccessor,
     applyDisputeWindowInboundSyncPayload,
+    forgeWindowConfirmationSignatures,
     forgeWindowReductionInputs,
     recoverWindowDisputesAfterSyncPastFork,
     redirectDisputesToChannelWithoutWindow,
@@ -1355,17 +1356,18 @@ describe("Unit: SpectateService", function () {
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });
 
-        it("window reduced locally during sync → accepted, its dispute confirmations and window snapshot stored", async function () {
+        it("window reduced locally during sync, with forged confirmation signatures → accepted, no forged signature stored", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
-                { reduction: "local", mutate: () => {} }
+                {
+                    reduction: "local",
+                    mutate: forgeWindowConfirmationSignatures
+                }
             );
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
-            expect(r.storedServedDisputeHashes).to.have.members(
-                r.servedDisputeHashes
-            );
-            expect(r.appliedWindowSnapshotStored).to.equal(true);
+            expect(r.unservedSignatures.length).to.be.greaterThan(0);
+            expect(r.storedUnservedSignatures).to.deep.equal([]);
         });
 
         it("chain-final unadopted window with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored", async function () {

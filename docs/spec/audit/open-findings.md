@@ -505,7 +505,11 @@ pending. Mapped regressions:
 ### FIND-SECURITY-6-884TAJ
 
 **Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state.
+trusted walk now chooses canonical final state. The same unverified timestamp can also arrive as
+the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
+reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
+`genesisSnapshotByForkId` (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
 
 **Proposed direction and handoff:**
 [Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
@@ -1640,15 +1644,19 @@ unverified timestamp). The requester treated a stored confirmation as present an
 the genuine one from the chain, and it served the forged signatures to its own sync requesters. No
 signature or penalty consequence was shown.
 
-**Fix:** `persistSyncPayload` applies the inbound rule to all of a window's reduction inputs: its
-dispute confirmations, latest snapshot, state and inbound blocks are stored only for a window this
-sync reduced itself. Other windows' disputes are recovered from the chain's dispute logs when a
-reader needs them (`loadSynchronizedWindowCommitments`), and their inbound blocks arrive through
-chain events. Residual: until the chain adopts a window reduced on chain after the finality read,
-the requester lacks that window's reduction input and refuses to serve it, as it already did for a
-chain-final window. Regressions:
+**Fix:** `persistSyncPayload` never stores a window's dispute confirmations, since no reduction
+checks their signatures, and stores a window's latest snapshot, state and inbound blocks only for a
+window this sync reduced itself. Disputes are recovered from the chain's dispute logs when a reader
+needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy itself when
+the dispute handler skips a fork the node already left. Inbound blocks arrive through chain events.
+Residual: until the chain adopts a window reduced on chain after the finality read, the requester
+lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
+window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
+that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+Regressions:
 [`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
-[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19).
+[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
+[`INV-SYNC-1-XCQZ28.T1.P20`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p20).
 
 <a id="find-sync-5-7w9tww"></a>
 
