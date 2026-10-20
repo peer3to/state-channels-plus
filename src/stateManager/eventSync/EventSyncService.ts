@@ -712,8 +712,9 @@ export default class EventSyncService {
                 missing.has(commitment)
             );
             if (fatal) throw fatal.error;
-            // the handler stores no dispute for a fork this node is not on;
-            // the chain's copy still backs this window's readers
+            // a handler that stored no dispute (a fork this node left, or a
+            // dispute its audit rejected) leaves the chain's copy to back
+            // this window's readers
             for (const { commitment, args } of recovered) {
                 if (missing.has(commitment))
                     this.storage.disputes.storeDisputeConfirmation(

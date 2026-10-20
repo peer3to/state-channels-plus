@@ -1647,8 +1647,9 @@ signature or penalty consequence was shown.
 **Fix:** `persistSyncPayload` never stores a window's dispute confirmations, since no reduction
 checks their signatures, and stores a window's latest snapshot, state and inbound blocks only for a
 window this sync reduced itself. Disputes are recovered from the chain's dispute logs when a reader
-needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy itself when
-the dispute handler skips a fork the node already left. Inbound blocks arrive through chain events.
+needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy of any
+dispute its handler left unstored (a fork the node already left, or a dispute its audit rejected), so
+a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
 Residual: until the chain adopts a window reduced on chain after the finality read, the requester
 lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
 window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;

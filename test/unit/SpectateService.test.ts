@@ -1366,6 +1366,8 @@ describe("Unit: SpectateService", function () {
             );
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
+            // only a window this sync reduced stores its inbound blocks
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
             expect(r.unservedSignatures.length).to.be.greaterThan(0);
             expect(r.storedUnservedSignatures).to.deep.equal([]);
         });
