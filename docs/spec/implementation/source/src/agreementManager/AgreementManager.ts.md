@@ -16,6 +16,7 @@
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
+- [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 
@@ -89,6 +90,7 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63` — Exact construction at an exit height retains the departing and remaining union signatures through a later linked block, verifies on chain at exactly that height without moving the view, and returns no proof after the sole required later confirmation is removed
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — A fresh requester's verified proof finalizing a block 0 that changes no state stores that result by hash before the served genesis; the served genesis is the registered genesis
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

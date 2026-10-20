@@ -1,4 +1,10 @@
 import { Status } from "@/types";
+import { Codec, Type } from "@/utils";
+import {
+    freshSpectatorStopsOnPayload,
+    servedLatestPayload,
+    withGenesisTimestampShifted
+} from "@test/fixtures/MilestoneSyncStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -99,6 +105,27 @@ describe("E2E: Spectate stale-proof guard", function () {
             spectatorPeerIndex: spectator.index,
             peerIndices: [0, 1]
         });
+    });
+
+    it("aborts sync when every participant serves the fork genesis with a timestamp other than the chain's before block 0", async function () {
+        const h = TestSession.getHarness();
+        const forkId = String(await h.lifecycle.start(2, 0));
+        // block 0 is due from the genesis on: no timeout dispute meanwhile
+        for (const index of [0, 1]) await h.rpcStub.suppressTimeoutCheck(index);
+        const shifted = withGenesisTimestampShifted(
+            await servedLatestPayload(h, h.getPeer(0), forkId),
+            1
+        );
+
+        const stopped = await freshSpectatorStopsOnPayload(
+            h,
+            Codec.encode(shifted, Type.SyncPayload) as string,
+            [0, 1],
+            { expectedDetachedError: "connectToChannel failed" }
+        );
+
+        expect(stopped.closed).to.equal(true);
+        expect(stopped.statuses).to.not.include(Status.SYNCED);
     });
 
     // A participant must blacklist a responder that supplies a real but stale proof.

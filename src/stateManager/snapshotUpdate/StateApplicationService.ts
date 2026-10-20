@@ -47,12 +47,15 @@ export default class StateApplicationService {
      * When `persistHistory` stores nothing (false) the VM is restored and
      * nothing is committed (false). When it throws the VM is restored and
      * the error is rethrown.
+     * `blockResult` marks `stateSnapshot` as a block's resulting snapshot,
+     * stored by hash only and never registered as a fork genesis.
      */
     public async unsafeSetLatestState(
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
         outboundMessageBlock?: MessageBlockStruct,
-        persistHistory: () => boolean = () => true
+        persistHistory: () => boolean = () => true,
+        options?: { blockResult?: boolean }
     ): Promise<boolean> {
         const sm = this.stateManager;
         const prepared = await this.prepare(encodedState);
@@ -74,7 +77,8 @@ export default class StateApplicationService {
             stateSnapshot,
             encodedState,
             outboundMessageBlock,
-            prepared
+            prepared,
+            options?.blockResult
         );
         if (previousForkId !== stateSnapshot.forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
@@ -185,12 +189,14 @@ export default class StateApplicationService {
         stateSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
         outboundMessageBlock: MessageBlockStruct | undefined,
-        prepared: PreparedState
+        prepared: PreparedState,
+        blockResult?: boolean
     ): void {
         const sm = this.stateManager;
         // Persist state snapshot (as a model)
         sm.storage.stateSnapshots.storeStateSnapshot(
-            StateSnapshot.from(stateSnapshot)
+            StateSnapshot.from(stateSnapshot),
+            { blockResult }
         );
         // Persist outbound message block if provided
         if (outboundMessageBlock)

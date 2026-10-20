@@ -1,7 +1,9 @@
 import { buildAndEncodeBlock } from "../factory";
+import StateSnapshot from "@/models/StateSnapshot";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
+import { Codec, Type } from "@/utils";
 import { MathTestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -328,4 +330,60 @@ export async function assertReductionCache(cancelled: boolean) {
         expect(result.forkAfter).not.to.equal(result.forkBefore);
     }
     expect(result.published).to.equal(!cancelled);
+}
+
+/**
+ * Peer 0 of a fresh channel with no block installs, through
+ * `unsafeSetLatestState`, a block-0 result that changes no state: the
+ * genesis data one second after the genesis, as a block result or not.
+ * Returns the genesis and result hashes, whether the result is stored by
+ * its hash, the genesis registered after the install and the genesis
+ * refusal warnings logged during it.
+ */
+export async function installUnchangedBlockZeroResult(options: {
+    blockResult?: boolean;
+}) {
+    const h = MathTestSession.getHarness();
+    const forkId = await h.lifecycle.start(3);
+    const control = h.control(h.getPeer(0));
+    const encodedGenesis = await control.dispute
+        .getGenesisSnapshotStruct(forkId)
+        .request();
+    expect(encodedGenesis).to.not.equal(null);
+    const genesis = StateSnapshot.from(
+        Codec.decode(encodedGenesis!.encodedSnapshot, Type.StateSnapshot)
+    );
+    // what peer 0 installs: its latest snapshot (the genesis, no block yet)
+    // one second later
+    const unchangedResult = StateSnapshot.from({
+        ...genesis.toStruct(),
+        timestamp: BigInt(genesis.timestamp + 1)
+    });
+    expect(unchangedResult.isGenesis).to.equal(true);
+    expect(unchangedResult.blockHeight).to.equal(0);
+    expect(unchangedResult.hash).to.not.equal(genesis.hash);
+
+    await control.stub.observeGenesisRefusalLogs().request();
+    try {
+        await h.transition.runSetLatestState({
+            peerIndex: 0,
+            forkId,
+            timestampOffsetSeconds: 1,
+            blockResult: options.blockResult
+        });
+        return {
+            genesisHash: genesis.hash,
+            resultHash: unchangedResult.hash,
+            resultStored:
+                (await control.query
+                    .getStateSnapshotStructByHash(unchangedResult.hash)
+                    .request()) !== null,
+            registeredGenesisHash: await control.query
+                .getGenesisSnapshotHash(forkId)
+                .request(),
+            refusals: await control.stub.getGenesisRefusalLogCount().request()
+        };
+    } finally {
+        await control.stub.restoreGenesisRefusalLogs().request();
+    }
 }

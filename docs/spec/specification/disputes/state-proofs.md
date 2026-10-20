@@ -285,6 +285,10 @@ Fork genesis is the implicit final anchor: empty proofs claim the genesis snapsh
 
 <a id="req-sp-4-ncsex4.t1.p14"></a>`REQ-SP-4-NCSEX4.T1.P14` — membership boundary
 
+<a id="req-sp-4-ncsex4.t1.p15"></a>`REQ-SP-4-NCSEX4.T1.P15` — block-zero anchor that changes no state: after block zero's result, whose data equals the genesis data, is adopted as the on-chain snapshot, an empty proof still claims the fork genesis, and a later same-fork proof whose block zero links to the genesis still verifies
+
+<a id="req-sp-4-ncsex4.t1.p16"></a>`REQ-SP-4-NCSEX4.T1.P16` — block-zero anchor that changes no state, wrong-genesis claim: with that block-zero result adopted on chain, a wrong-genesis fraud proof against the honest block zero is invalid
+
 #### <a id="req-sp-5-mte4rv.t1"></a>`REQ-SP-5-MTE4RV.T1`
 
 **Requirements / invariants:**

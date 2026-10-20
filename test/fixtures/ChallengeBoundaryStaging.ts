@@ -405,9 +405,21 @@ export async function reissueBlock(
     edit: (block: BlockStruct) => BlockStruct
 ): Promise<void> {
     const run = lastRun(dispute);
-    const original = Block.fromBlockConfirmation(run[index]);
+    run[index] = await reissueConfirmation(h, run[index], edit);
+}
+
+/**
+ * `confirmation`'s block after `edit`: signed by its author, and again by
+ * every peer that confirmed the original.
+ */
+export async function reissueConfirmation(
+    h: MathPeerTestHarness,
+    confirmation: BlockConfirmationStruct,
+    edit: (block: BlockStruct) => BlockStruct
+): Promise<BlockConfirmationStruct> {
+    const original = Block.fromBlockConfirmation(confirmation);
     const struct = edit(
-        Codec.decode(run[index].signedBlock.encodedBlock, Type.Block)
+        Codec.decode(confirmation.signedBlock.encodedBlock, Type.Block)
     );
     const author = struct.transaction.header.participant;
     const block = await Block.fromBlockStruct(struct, signerOf(h, author));
@@ -419,7 +431,7 @@ export async function reissueBlock(
             confirmers.map((address) => block.sign(signerOf(h, address)))
         )
     );
-    run[index] = block.blockConfirmationStruct;
+    return block.blockConfirmationStruct;
 }
 
 /** A different transaction body: the block no longer yields its committed state. */

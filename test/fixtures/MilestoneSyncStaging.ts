@@ -120,13 +120,50 @@ export async function servedPayload(
     responder: Peer,
     forkId: ForkId
 ): Promise<SyncPayload> {
+    return await generatedPayload(
+        h,
+        responder,
+        forkId,
+        await latestHeight(h, responder, forkId)
+    );
+}
+
+/**
+ * The responder's payload for the latest state of `forkId` with no pinned
+ * height, built by its real generator: also for a fork with no block yet.
+ */
+export async function servedLatestPayload(
+    h: MathPeerTestHarness,
+    responder: Peer,
+    forkId: ForkId
+): Promise<SyncPayload> {
+    return await generatedPayload(h, responder, forkId, null);
+}
+
+/** `payload` with its fork genesis `seconds` later; nothing else differs. */
+export function withGenesisTimestampShifted(
+    payload: SyncPayload,
+    seconds: number
+): SyncPayload {
+    const genesis = payload.latestForkGenesisSnapshot;
+    return {
+        ...payload,
+        latestForkGenesisSnapshot: {
+            ...genesis,
+            timestamp: BigInt(genesis.timestamp) + BigInt(seconds)
+        }
+    };
+}
+
+async function generatedPayload(
+    h: MathPeerTestHarness,
+    responder: Peer,
+    forkId: ForkId,
+    blockHeight: number | null
+): Promise<SyncPayload> {
     const served = await h
         .control(responder)
-        .spectate.generateSyncPayload(
-            h.channelId,
-            forkId,
-            await latestHeight(h, responder, forkId)
-        )
+        .spectate.generateSyncPayload(h.channelId, forkId, blockHeight)
         .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
     expect(served, "the responder serves a payload").to.not.equal(null);
     return Codec.decode(served!.encodedSyncPayload, Type.SyncPayload);
@@ -465,22 +502,29 @@ export async function forgeRepeatedTailTransition(
 export async function freshSpectatorStopsOnPayload(
     h: MathPeerTestHarness,
     encodedSyncPayload: string,
-    servers: number[]
+    servers: number[],
+    options: {
+        /** the failed connection's detached error, when the sync itself fails */
+        expectedDetachedError?: string;
+    } = {}
 ) {
     const stubs = servers.map((index) => h.control(h.getPeer(index)).stub);
     try {
         for (const stub of stubs)
             await stub.stubSpectatePayload(encodedSyncPayload).request();
         const spectator = await h.join.addSpectator();
-        // The tail replay meets the forged transition after the sync already
-        // set SYNCED: the spectating strategy aborts the participation, so
-        // the connect itself does not fail.
+        // When the tail replay meets a forged transition after the sync
+        // already set SYNCED, the spectating strategy aborts the
+        // participation, so the connect itself does not fail. A rejected
+        // sync fails the connect instead.
         await h.event.waitForPeers("onAbort", [spectator.index], 1);
         await waitFor(
             () => runtimeIsClosed(spectator.p2pInstance),
             h.event.protocolEventTimeoutMs()
         );
-        await MathTestSession.settleDetached();
+        await MathTestSession.settleDetached({
+            expectedErrorIncludes: options.expectedDetachedError
+        });
         return {
             closed: runtimeIsClosed(spectator.p2pInstance),
             // each status the spectator moved to, in order

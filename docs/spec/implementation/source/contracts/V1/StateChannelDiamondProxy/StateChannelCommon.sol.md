@@ -19,6 +19,8 @@
 - [`INV-MSG-2-PQ0T1K` (No replay, no omission)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k)
 - [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
+- [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../../../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
+  Contradicts: `_canStartFromOnChainSnapshot`, `_getGenesisSnapshot` and `_getGenesisTimestamp` treat an unchanged block-0 result posted as the channel snapshot as the fork genesis, so an honest block 0 no longer links ([`FIND-GENESIS-ANCHOR-1-E18SBX`](../../../../../audit/open-findings.md#find-genesis-anchor-1-e18sbx)).
 
 ## UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK
 

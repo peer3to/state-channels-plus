@@ -3,9 +3,12 @@ import { StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import { StateMachineStateStorage } from "@/storage/StateMachineStateStorage";
 import { Hash, Bytes, ForkId } from "@/types/types";
+import { createLogger } from "@/utils";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, beforeEach } from "mocha";
+
+const logger = createLogger({}, {}, { level: "error" });
 
 describe("StateMachineStateStorage", () => {
     let storage: StateMachineStateStorage;
@@ -59,14 +62,14 @@ describe("StateMachineStateStorage", () => {
         let encodedStateMachineState: Bytes;
 
         beforeEach(() => {
-            mainStorage = new Storage();
+            mainStorage = new Storage(logger);
 
             // Create encoded state machine state
             encodedStateMachineState = ethers.hexlify(ethers.randomBytes(128));
             stateMachineStateHash = ethers.keccak256(encodedStateMachineState);
 
             // Create genesis state snapshot with the stateMachineStateHash
-            const baseSnapshot = factory.stateSnapshot();
+            const baseSnapshot = factory.stateSnapshot({ blockHeight: 0 });
             const genesisSnapshotStruct = baseSnapshot.toStruct();
             // link it to the state machine state
             genesisSnapshotStruct.snapshotData.stateMachineStateHash =

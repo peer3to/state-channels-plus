@@ -6,9 +6,12 @@ import {
     QueueStorage,
     getSignatureSuppliers
 } from "@/storage/QueueStorage";
+import { createLogger } from "@/utils";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { before, describe, it } from "mocha";
+
+const logger = createLogger({}, {}, { level: "error" });
 
 describe("QueueStorage", () => {
     before(async () => {
@@ -315,7 +318,7 @@ describe("QueueStorage", () => {
 
     it("dequeued entries restore attribution through the Storage proxy", () => {
         const f = new QueueAdmissionFixture(2);
-        const storage = new Storage(2);
+        const storage = new Storage(logger, 2);
         storage.queues.queueBlock(f.copy([f.signature(1)]), {
             origin: BlockOrigin.NETWORK,
             senderAddress: f.wallets[1].address
@@ -340,7 +343,7 @@ describe("QueueStorage", () => {
 
     it("Storage isolates returned block and source maps", () => {
         const f = new QueueAdmissionFixture();
-        const storage = new Storage(3);
+        const storage = new Storage(logger, 3);
         const signature = f.signature(1);
         storage.queues.queueBlock(f.copy([signature]), {
             origin: BlockOrigin.NETWORK,
@@ -513,7 +516,9 @@ describe("QueueStorage", () => {
 
     it("standalone default and explicit maxima are observable", () => {
         expect(new QueueStorage().maxChannelParticipants).to.equal(32);
-        expect(new Storage(4).queues.maxChannelParticipants).to.equal(4);
+        expect(new Storage(logger, 4).queues.maxChannelParticipants).to.equal(
+            4
+        );
     });
     it("keeps the first author envelope and attributes an alternative only to its supplier", () => {
         const f = new QueueAdmissionFixture(2);

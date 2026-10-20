@@ -656,6 +656,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     peerAddress,
                     "served state does not reach the final point"
                 );
+            // a walk that finalized nothing past the genesis installs the
+            // walk's genesis (the served data with the chain's date, or no
+            // date for an empty proof the chain cannot date): the served
+            // genesis, persisted with it, must hash the same. A base built
+            // from the served genesis itself always passes here.
+            if (
+                base.fromIndex === 0 &&
+                base.snapshot.hash !== genesisSnapshot.hash
+            )
+                return this.rejectSync(peerAddress, "genesis snapshot invalid");
 
             // 2.10) verify outboundMessageBlocks of the latest fork from the on-chain anchor (1) when it is on
             // this fork, else from the fork genesis (2.6), to the installed state. Only the run above the
@@ -1250,13 +1260,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                     return { shouldAbort: false };
                 }
-                // a conflict found after the VM write restores the VM
+                // a conflict found after the VM write restores the VM; a base
+                // past the genesis is a block's result, never a fork genesis
                 const installed =
                     await stateManager.stateApplicationService.unsafeSetLatestState(
                         base.snapshot.toStruct(),
                         base.state,
                         undefined,
-                        persistHistory
+                        persistHistory,
+                        { blockResult: base.fromIndex !== 0 }
                     );
                 this.logger.debug(`Finished persisting sync payload`);
                 return { shouldAbort: !installed };

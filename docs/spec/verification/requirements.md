@@ -147,7 +147,7 @@ Specification cases tested: 0/11.
 Specification cases tested: 0/7.
 
 [`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)
-Specification cases tested: 3/4. Untested: T1.P2.
+Specification cases tested: 4/4.
 
 [`INV-SP-6-GNW74H` (A non-final tail remains accountable through non-equivocating signatures)](../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
 Specification cases tested: 0/19.
@@ -156,7 +156,7 @@ Specification cases tested: 0/19.
 Specification cases tested: 1/1.
 
 [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
-Specification cases tested: 9/17. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
+Specification cases tested: 11/18. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P17, T1.P18.
 
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
 Specification cases tested: 3/4. Untested: T1.P2.
@@ -882,7 +882,7 @@ Specification cases tested: 18/18.
 Specification cases tested: 1/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
 [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
-Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
+Specification cases tested: 13/13.
 
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
 Specification cases tested: 4/6. Untested: T1.P4, T1.P5.
@@ -897,7 +897,7 @@ Specification cases tested: 0/8.
 Specification cases tested: 22/35. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
 [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
-Specification cases tested: 14/28. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 14/30. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
 
 [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
 Specification cases tested: 0/12.

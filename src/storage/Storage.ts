@@ -18,6 +18,7 @@ import { Block, BlockCoordinates, StateSnapshot } from "@/models";
 import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
 import { Address } from "@/types/types";
 import { deepCopyProxy, getChecksumAddress } from "@/utils";
+import type { Logger } from "@/utils/logging/Logger";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -39,11 +40,11 @@ export class Storage {
 
     // `maxChannelParticipants` comes from the deployed contract, so the queue's
     // retention bound follows the chain instead of restating it.
-    constructor(maxChannelParticipants?: number) {
+    constructor(logger: Logger, maxChannelParticipants?: number) {
         this.blocks = deepCopyProxy(new BlockStorage());
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
-        this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
+        this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage(logger));
         this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
         this.participantSetChanges = deepCopyProxy(
             new ParticipantSetChangeStorage()

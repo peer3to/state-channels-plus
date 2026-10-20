@@ -494,7 +494,11 @@ class AgreementManager {
                     coordinates: block.coordinates,
                     justPersist: !options?.advanceView
                 });
-            if (start) this.storage.stateSnapshots.storeStateSnapshot(start);
+            // the start and each hop are block results, never a fork genesis
+            if (start)
+                this.storage.stateSnapshots.storeStateSnapshot(start, {
+                    blockResult: true
+                });
             // each proven hop: its snapshot, and a change point where the set changes
             let participants = new Set(
                 (
@@ -503,7 +507,9 @@ class AgreementManager {
             );
             for (const { block, snapshot } of hops) {
                 if (snapshot.hash !== block.stateSnapshotHash) continue;
-                this.storage.stateSnapshots.storeStateSnapshot(snapshot);
+                this.storage.stateSnapshots.storeStateSnapshot(snapshot, {
+                    blockResult: true
+                });
                 const next = new Set(
                     snapshot.snapshotData.participants.map(String)
                 );

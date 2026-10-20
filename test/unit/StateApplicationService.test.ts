@@ -2,7 +2,8 @@ import { Status } from "@/types";
 import {
     assertStateApplicationCache,
     assertCacheDuringSnapshotPreparation,
-    assertReductionCache
+    assertReductionCache,
+    installUnchangedBlockZeroResult
 } from "@test/fixtures/StateApplicationEligibilityFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -169,5 +170,23 @@ describe("Unit: StateApplicationService", function () {
         expect(r.activeForkId).to.equal(r.newForkId);
         expect(r.activeForkId).to.not.equal(r.previousForkId);
         expect(r.genesisHeight).to.equal(0);
+    });
+
+    it("an unchanged block-0 result installed as a block result → stored by hash, the fork genesis stays registered and no refusal is logged", async function () {
+        const installed = await installUnchangedBlockZeroResult({
+            blockResult: true
+        });
+
+        expect(installed.resultStored).to.equal(true);
+        expect(installed.registeredGenesisHash).to.equal(installed.genesisHash);
+        expect(installed.refusals).to.equal(0);
+    });
+
+    it("an unchanged block-0 result installed without the block-result option → stored by hash, refused as a conflicting genesis with one warning, the first genesis stays registered", async function () {
+        const installed = await installUnchangedBlockZeroResult({});
+
+        expect(installed.resultStored).to.equal(true);
+        expect(installed.registeredGenesisHash).to.equal(installed.genesisHash);
+        expect(installed.refusals).to.equal(1);
     });
 });

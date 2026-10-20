@@ -10,8 +10,19 @@ The suite drives `StateSnapshotStorage` directly with factory snapshots, one reb
 exactly (struct deep-equality), a genesis store auto-registers in the fork-id → genesis index,
 reads of absent snapshot hashes and unregistered fork ids return `undefined`, and a non-genesis
 snapshot never enters the genesis index. The atomized absent-key permutations are assigned per
-index below; repeated stores and a conflicting genesis registration for a known fork id are not
-present, so the idempotent-repeat and conflict-refusal permutations stay unassigned.
+index below. The conflict group registers a genesis, then stores an identical copy (index, hash read
+and log unchanged) or a copy with a later timestamp under the same fork id: the index keeps the
+first registration, the refused copy is still stored and returned under its own hash, and the
+storage's real logger records exactly one warning naming both snapshot hashes. A genesis of another
+fork id and a non-genesis snapshot of the registered fork leave the registered genesis unchanged.
+Geneses are built at block height 0. A copy of the registered genesis at a later block height is
+stored and read back under its own hash, while the index keeps the genesis and the logger records
+no warning. Stored first into an empty index, that later-height copy does not register, and the height-0
+genesis stored after it does. A copy at height 0 with a later timestamp stored with the
+`blockResult` option (block 0's result when block 0 changes no state) is stored under its own hash
+and never registers: after the genesis the index keeps the genesis, and into an empty index it stays
+unregistered so the genesis stored after it registers; the logger records no warning in either
+order.
 
 ## Tests
 
@@ -25,3 +36,13 @@ present, so the idempotent-repeat and conflict-refusal permutations stay unassig
 - `should return undefined for non-existent genesis forkId`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P6
 - `should identify genesis snapshot correctly`: none
 - `should not non-genesis snapshots in genesis mapping`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P4
+- `keeps the registered genesis and logs nothing when the same genesis is stored again`: REQ-SNAPSTORE-1-AJW0HJ.T1.P2, INV-SNAPSTORE-1-DPHPJE.T1.P2, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P3
+- `refuses a conflicting genesis for a known fork id and keeps the original registered`: REQ-SNAPSTORE-1-AJW0HJ.T1.P3, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P7
+- `still stores a refused conflicting genesis under its hash`: REQ-SNAPSTORE-1-AJW0HJ.T1.P4, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P8
+- `logs one warning naming the registered and the refused genesis on a conflict`: REQ-SNAPSTORE-1-AJW0HJ.T1.P5, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P9
+- `registers a genesis for a different fork id next to an existing one`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P10
+- `keeps the registered genesis when a non-genesis snapshot of the same fork is stored`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P11
+- `stores a later-height snapshot with the genesis snapshotData by hash only, without touching the genesis index or warning`: REQ-SNAPSTORE-1-AJW0HJ.T1.P6, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P12
+- `does not register a later-height snapshot with the genesis snapshotData into an empty index, and a height-0 genesis then registers`: REQ-SNAPSTORE-1-AJW0HJ.T1.P7, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P13
+- `stores a height-0 block result with the genesis snapshotData by hash only after the genesis, without touching the genesis index or warning`: REQ-SNAPSTORE-1-AJW0HJ.T1.P8, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P14
+- `does not register a height-0 block result with the genesis snapshotData into an empty index, so the genesis stored after it registers`: REQ-SNAPSTORE-1-AJW0HJ.T1.P9, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P15

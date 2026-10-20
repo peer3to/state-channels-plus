@@ -1,11 +1,13 @@
+import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
-import { addressesEqual } from "@/utils";
+import { addressesEqual, Codec, Type } from "@/utils";
 import {
     assertCommitCachePreserved,
     assertSpectatorCommit
 } from "@test/fixtures/CommitEligibilityFixture";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverRelaysNothingAfterItsLeave } from "@test/fixtures/LeaverRelayFixture";
+import { craftProofBlock, servedState } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -273,6 +275,76 @@ describe("Unit: BlockCommitService", function () {
             expect(await readTrackedJoin(h, h.getPeer(joiner.index))).to.equal(
                 null
             );
+        });
+    });
+
+    describe("success → genesis index", function () {
+        it("a committed block 0 that changes no state → its result stored by hash, the fork genesis stays registered and no refusal is logged", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            const forkId = String(
+                await h.lifecycle.openChannelForParticipants([0, 1])
+            );
+            // a non-participant present at the opening: SYNCED at the
+            // genesis, it neither signs nor gossips what it commits
+            const spectator = h.getPeer(2);
+            await h.join.connectSpectator(spectator);
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const control = h.control(spectator);
+            const encodedGenesis = await control.dispute
+                .getGenesisSnapshotStruct(forkId)
+                .request();
+            expect(encodedGenesis).to.not.equal(null);
+            const genesis = StateSnapshot.from(
+                Codec.decode(
+                    encodedGenesis!.encodedSnapshot,
+                    Type.StateSnapshot
+                )
+            );
+            const genesisHash = genesis.hash;
+            const encodedState = await servedState(h, genesis.toStruct());
+            // block 0's result: the genesis data at block 0's later timestamp
+            const unchangedResult = StateSnapshot.from({
+                ...genesis.toStruct(),
+                timestamp: BigInt(genesis.timestamp + 1)
+            });
+            expect(unchangedResult.isGenesis).to.equal(true);
+            expect(unchangedResult.hash).to.not.equal(genesisHash);
+            const { confirmation } = await craftProofBlock(h, {
+                authorIndex: 0,
+                forkId,
+                height: 0,
+                stateSnapshotHash: unchangedResult.hash,
+                previousBlockHash: String(genesisHash)
+            });
+
+            await control.stub.observeGenesisRefusalLogs().request();
+            try {
+                const result = await control.validation
+                    .commitPreparedSnapshot(
+                        Codec.encode(
+                            confirmation,
+                            Type.BlockConfirmation
+                        ) as string,
+                        Codec.encode(
+                            unchangedResult.toStruct(),
+                            Type.StateSnapshot
+                        ) as string,
+                        encodedState
+                    )
+                    .request();
+
+                expect(result.height).to.equal(0);
+                expect(result.snapshotHash).to.equal(unchangedResult.hash);
+                expect(
+                    await control.query.getGenesisSnapshotHash(forkId).request()
+                ).to.equal(genesisHash);
+                expect(
+                    await control.stub.getGenesisRefusalLogCount().request()
+                ).to.equal(0);
+            } finally {
+                await control.stub.restoreGenesisRefusalLogs().request();
+            }
         });
     });
 });
