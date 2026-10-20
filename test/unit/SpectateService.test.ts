@@ -6,6 +6,8 @@ import { Codec, Type } from "@/utils";
 import {
     appendForgedInboundSuccessor,
     applyDisputeWindowInboundSyncPayload,
+    forgeWindowReductionInputs,
+    recoverWindowDisputesAfterSyncPastFork,
     redirectDisputesToChannelWithoutWindow,
     redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
@@ -1351,6 +1353,99 @@ describe("Unit: SpectateService", function () {
             );
             expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
+        });
+
+        it("window reduced locally during sync → accepted, its dispute confirmations and window snapshot stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { reduction: "local", mutate: () => {} }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.storedServedDisputeHashes).to.have.members(
+                r.servedDisputeHashes
+            );
+            expect(r.appliedWindowSnapshotStored).to.equal(true);
+        });
+
+        it("chain-final unadopted window with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainBeforeSync",
+                    mutate: forgeWindowReductionInputs
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.unservedSignatures.length).to.be.greaterThan(0);
+            expect(r.storedUnservedSignatures).to.deep.equal([]);
+            expect(r.storedUnservedDisputeHashes).to.deep.equal([]);
+            expect(r.appliedWindowSnapshotHash).to.not.equal(
+                r.servedWindowSnapshotHash
+            );
+            expect(r.appliedWindowSnapshotStored).to.equal(false);
+        });
+
+        it("reduction lands on chain after the finality read and before the window fetch, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainAfterFinalityRead",
+                    mutate: forgeWindowReductionInputs
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.unservedSignatures.length).to.be.greaterThan(0);
+            expect(r.storedUnservedSignatures).to.deep.equal([]);
+            expect(r.storedUnservedDisputeHashes).to.deep.equal([]);
+            expect(r.appliedWindowSnapshotHash).to.not.equal(
+                r.servedWindowSnapshotHash
+            );
+            expect(r.appliedWindowSnapshotStored).to.equal(false);
+        });
+
+        it("window already reduced locally by a concurrent sync, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "concurrentLocalSync",
+                    mutate: forgeWindowReductionInputs
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.unservedSignatures.length).to.be.greaterThan(0);
+            expect(r.storedUnservedSignatures).to.deep.equal([]);
+            expect(r.storedUnservedDisputeHashes).to.deep.equal([]);
+            expect(r.appliedWindowSnapshotHash).to.not.equal(
+                r.servedWindowSnapshotHash
+            );
+            expect(r.appliedWindowSnapshotStored).to.equal(false);
+        });
+
+        it("chain-final unadopted window synced by a requester that handled none of its dispute logs → the sync stores no confirmation, and the requester, now on the reduced fork, recovers every window dispute from chain logs without auditing", async function () {
+            const r = await recoverWindowDisputesAfterSyncPastFork(
+                TestSession.getHarness()
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.disputeLogsHandledDuringSync).to.equal(0);
+            expect(r.requesterForkId).to.equal(r.reducedForkId);
+            expect(r.storedServedDisputeHashesAfterSync).to.deep.equal([]);
+            expect(r.recoveredCommitments).to.not.equal(null);
+            expect(
+                r.recoveredCommitments!.map((commitment) =>
+                    commitment.toLowerCase()
+                )
+            ).to.have.members(
+                r.servedDisputeHashes.map((disputeHash) =>
+                    String(disputeHash).toLowerCase()
+                )
+            );
+            expect(r.heldDisputeHashes).to.have.members(r.servedDisputeHashes);
+            expect(r.auditReads).to.equal(0);
         });
     });
 

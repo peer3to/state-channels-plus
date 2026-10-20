@@ -1,7 +1,10 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
-import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
+import {
+    assertSyncedParticipantNeverSignsInjectedInbound,
+    assertSyncedParticipantServesOnlyGenuineWindowInputs
+} from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     countJoinSignatureRequests,
     waitForHeldJoins
@@ -738,6 +741,11 @@ describe("E2E: Spectate Service", function () {
             await assertSyncedParticipantNeverSignsInjectedInbound(
                 TestSession.getHarness(),
                 "droppedLog"
+            );
+        });
+        it("responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs", async function () {
+            await assertSyncedParticipantServesOnlyGenuineWindowInputs(
+                TestSession.getHarness()
             );
         });
     });

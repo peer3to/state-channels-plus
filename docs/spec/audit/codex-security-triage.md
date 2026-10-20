@@ -178,7 +178,7 @@ Mapped permutations: [`REQ-ENFADM-4-2NN96F.T1.P1`](../specification/enforcement/
 
 **Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
 
-**Fix status:** resolved, with one residual limit outside the inbound claim: [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf).
+**Fix status:** resolved; the residual limit outside the inbound claim is resolved under [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf).
 
 Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence `occ_482d7e145268e00610d5142b`.
 

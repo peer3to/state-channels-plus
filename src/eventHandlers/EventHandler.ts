@@ -518,6 +518,9 @@ export class EventHandler {
             (isFinal &&
                 this.stateManager.reductionManager.hasOperation(forkId));
         if (!isRelevant) {
+            // no audit runs for a fork this node left; the chain's copy still
+            // backs readers that recover the window's disputes
+            this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
             return;
         }
 
