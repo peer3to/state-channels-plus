@@ -495,7 +495,7 @@ list. The genuine blocks arrive through chain events and chain-log recovery. The
 a window whose disputes name another fork or channel, which let the local reduce return early and
 the sync adopt an unchecked successor fork
 ([`INV-SYNC-1-XCQZ28.T1.P15`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p15)).
-Residual limit: [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
+The other reduction inputs followed under [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
 pending. Mapped regressions:
 [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11),
 [`INV-SYNC-1-XCQZ28.T1.P14`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p14).
@@ -505,7 +505,11 @@ pending. Mapped regressions:
 ### FIND-SECURITY-6-884TAJ
 
 **Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state.
+trusted walk now chooses canonical final state. The same unverified timestamp can also arrive as
+the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
+reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
+`genesisSnapshotByForkId` (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
 
 **Proposed direction and handoff:**
 [Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
@@ -1628,26 +1632,32 @@ nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for 
 
 ### FIND-SYNC-4-KGP4KF
 
-**Defect:** _Open (2026-10-05), engineer decision: tracked, not fixed with
-[`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)._ A sync window whose reduction
-the requester did not execute itself still persists the responder's unchecked
-`disputeConfirmations`, and in some cases its `latestStateSnapshot`. A window chain-final at the
-finality read skips `reduceAndFinalize`; persistence then skips its snapshot, state and inbound list
-(`chainFinalForkIds`) but still stores its confirmations. A window reduced on chain after that read,
-or already reduced in the local EVM, makes `reduceAndFinalize` return early before it checks either
-input, and persistence stores both. `persistSyncPayload` stores each confirmation through
-`storeDisputeConfirmation`, which merges the given signatures into an existing record, and stores
-the snapshot
-([SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md),
-src/rpc/network/services/spectate/SpectateService.ts:1042-1052). A genesis-shaped snapshot there
-would land in `genesisSnapshotByForkId` with an unverified timestamp, the same class as
-[`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) through another field.
-Pre-existing; code-traced, not executed. No signature or penalty consequence is shown yet.
+**Defect:** _Resolved (2026-10-20)._ A sync window whose reduction the requester did not execute
+itself persisted the responder's unchecked `disputeConfirmations`, and in some cases its
+`latestStateSnapshot`. A window chain-final at the finality read skipped `reduceAndFinalize` but
+still stored its confirmations; a window reduced on chain after that read, or already reduced in
+the local EVM, made `reduceAndFinalize` return early before it checked either input, and both were
+stored. A dispute's commitment pins only its encoded dispute, so a responder could add signatures
+to a genuine confirmation, store a confirmation of a dispute the chain never committed, or replace
+the window snapshot (a genesis-shaped one would land in `genesisSnapshotByForkId` with an
+unverified timestamp). The requester treated a stored confirmation as present and never recovered
+the genuine one from the chain, and it served the forged signatures to its own sync requesters. No
+signature or penalty consequence was shown.
 
-**Proposed direction:** Apply the inbound rule to these fields too: persist a window's reduction
-inputs only when this sync's own reduction checked them, or validate them against chain data first.
-Confirm with a unit test that serves a chain-final window with an extra signature on a dispute
-confirmation, then checks the stored confirmation and any later forwarding of it.
+**Fix:** `persistSyncPayload` never stores a window's dispute confirmations, since no reduction
+checks their signatures, and stores a window's latest snapshot, state and inbound blocks only for a
+window this sync reduced itself. Disputes are recovered from the chain's dispute logs when a reader
+needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy of any
+dispute its handler left unstored (a fork the node already left, or a dispute its audit rejected), so
+a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
+Residual: until the chain adopts a window reduced on chain after the finality read, the requester
+lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
+window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
+that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+Regressions:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
+[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
+[`INV-SYNC-1-XCQZ28.T1.P20`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p20).
 
 <a id="find-sync-5-7w9tww"></a>
 

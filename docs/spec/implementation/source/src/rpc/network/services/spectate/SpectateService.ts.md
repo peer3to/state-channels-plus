@@ -6,7 +6,6 @@
 
 - [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
   Contradicts: The supplied genesis timestamp is still persisted; downstream impact needs recheck under the new trusted walk ([`FIND-SECURITY-6-884TAJ`](../../../../../../../audit/open-findings.md#find-security-6-884taj)). The former chain-final reduction-input persistence path is removed; its broader regression assessment remains pending.
-  Contradicts: `persistSyncPayload` still stores the responder's unchecked `disputeConfirmations`, and in some cases its `latestStateSnapshot`, for a window this sync did not reduce itself ([`FIND-SYNC-4-KGP4KF`](../../../../../../../audit/open-findings.md#find-sync-4-kgp4kf)).
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
@@ -135,6 +134,10 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107` — A requester that already holds the base, with a stored block at the base height that conflicts with the served history: the conflict is found when the proof is staged, no install runs, the sync aborts with the local state kept and the responder is blacklisted.
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108` — A spectator that installed a later point from one source, without the state at an earlier point, applies another source's payload based at that earlier point: `persistSyncPayload` keeps the local state (`unsafeSetLatestState` not called), the VM state equals the source's at the same height, and the next live blocks execute with no fraud proof or cut source
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109` — The P108 case for a pending participant: it stays pending through the sync, disputes nothing, and the next live block seats it
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — a window the requester reduces locally during the sync, served with an extra signature on each dispute confirmation: the sync is accepted and no extra signature is stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — a chain-final window the chain has not adopted, served with an extra signature on each dispute confirmation, a confirmation of an uncommitted dispute and a latest snapshot with another timestamp: the sync is accepted and none of them is stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — the P111 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted and none of the forged inputs is stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — the P111 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond first: the sync is accepted and none of the forged inputs is stored
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 
