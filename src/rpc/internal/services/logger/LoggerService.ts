@@ -79,8 +79,13 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
         this.uploadStores(store);
     }
 
-    /** A flush of every reachable realm that settles within the configured bound. */
+    /**
+     * A flush of every reachable realm that settles within the configured bound.
+     * With no upload endpoint there is nothing to flush: every realm runs with
+     * its creator's configuration, so none of them can upload either.
+     */
     public startFlush(): Promise<void> {
+        if (!config.CRASH_LOG_UPLOAD_ENDPOINT) return Promise.resolve();
         return this.flush(
             randomHexId(),
             Date.now() + config.CRASH_LOG_FLUSH_MS

@@ -8,8 +8,8 @@ import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/DisputeTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
-/// Review 2's proposed proof (temp/videos/Ljuba-Pruning-PR560-review-2.md, "Side-chain fraud proof"). It does not
-/// exist in the contracts yet; replace it with the real struct when `DisputeFinalPointRegression` lands.
+/// The proof proposed in FIND-DISPUTE-6-E2YJ9X (docs/spec/audit/open-findings.md). It does not exist in the contracts
+/// yet; replace it with the real struct when `DisputeFinalPointRegression` lands.
 struct ProposedDisputeFinalPointRegression {
     ProofWalkInput finalProof;
     uint256 milestoneIndex;
@@ -25,24 +25,24 @@ struct RawDisputeFraudProof {
     bytes encodedProof;
 }
 
-/// The side-chain bypass of a later joiner (review 2, "The gap: a competing history bypasses a later joiner", plan
-/// case K1). The chain anchor is 50 {A, B, C, D, E}. L posts a JOIN on chain. The honest history X consumes it in the
-/// join hop at 60 (signed by A to E and L) and reaches the threshold-final point F = 100, where L has won 30 from A.
-/// A to E build the side chain Y from the anchor: one hop to 1000' signed by A to E alone, whose inbound head stays
-/// below L's JOIN. Y's walk counts the joiners inside its own inbound interval only, so L is never required.
-/// L disputes with X, A disputes with Y, both in one window.
+/// The side-chain bypass of a later joiner. The chain anchor is 50 {A, B, C, D, E}. L posts a JOIN on chain. The honest
+/// history X consumes it in the join hop at 60 (signed by A to E and L) and reaches the threshold-final point F = 100,
+/// where L has won 30 from A. A to E build the side chain Y from the anchor: one hop to 1000' signed by A to E alone,
+/// whose inbound head stays below L's JOIN. Y's walk counts the joiners inside its own inbound interval only, so L is
+/// never required. L disputes with X, A disputes with Y, both in one window.
 ///
 /// Today no kill removes Y: its proof walks valid from the anchor and it holds no block at F's height, so
 /// `DisputeConflictsWithFinalState` cannot be built. `reduce` then picks Y by longest chain, and L's final outcomes on
-/// X are rolled back (its deposit is carried, because the reduction consumes the pending JOIN). Review 2 proposes
-/// `DisputeFinalPointRegression`: F = 100 is final with inbound height 2, Y's final point G = 1000' is above F with
-/// inbound height 1. The test fails today on the last assertion and passes once that kill exists.
-// test naming: test_<plan case>_<scenario>
+/// X are rolled back (its deposit is carried, because the reduction consumes the pending JOIN). FIND-DISPUTE-6-E2YJ9X
+/// proposes `DisputeFinalPointRegression`: F = 100 is final with inbound height 2, Y's final point G = 1000' is above F
+/// with inbound height 1. The test fails today on the last assertion and passes once that kill exists.
+// test naming: test_<case>_<scenario>
 contract DisputeFinalPointRegressionTest is StateProofStaging {
     uint256 internal constant ERIN_KEY = 0xE121;
     uint256 internal constant JOINER_KEY = 0x10E1;
-    /// the slot review 2's kill takes when appended to `DisputeFraudProofType` (today's last, DisputeInvalidOutboundRun,
-    /// is 21); replace with `DisputeFraudProofType.DisputeFinalPointRegression` when it lands
+    /// the slot the proposed kill takes when appended to `DisputeFraudProofType` (today's last,
+    /// DisputeInvalidOutboundRun, is 21); replace with `DisputeFraudProofType.DisputeFinalPointRegression` when it
+    /// lands
     uint8 internal constant FINAL_POINT_REGRESSION_TYPE = 22;
 
     address internal erin = vm.addr(ERIN_KEY);
@@ -137,7 +137,7 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
 
     // ---- the proposed kill ----
 
-    /// L submits review 2's `DisputeFinalPointRegression` against `dispute` with F from `finalProof` and G as the
+    /// L submits the proposed `DisputeFinalPointRegression` against `dispute` with F from `finalProof` and G as the
     /// first block of the dispute's milestone 0, whose snapshot is `gSnapshot`
     function _submitFinalPointRegression(
         Dispute memory dispute,

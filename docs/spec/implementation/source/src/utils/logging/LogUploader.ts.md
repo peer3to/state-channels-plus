@@ -35,3 +35,4 @@ Delta upload against a real receiver, and crash capture that never throws.
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P14` — an awaited upload completes its retry after the last logger is disposed, without logging through the disposed logger
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P15` — ending its thread cancels an upload still posting at once, with no entries and no retry
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P16` — ending its thread cancels an upload in its jitter wait before it posts
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P17` — ending its thread cancels an upload in its retry delay at once, with no entries and no retry

@@ -672,7 +672,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 0/3.
 
 [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)
-Specification cases tested: 13/13.
+Specification cases tested: 17/18. Untested: T1.P16.
 
 [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 Specification cases tested: 1/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T2.P2.
@@ -798,7 +798,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 80/84. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 81/85. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.

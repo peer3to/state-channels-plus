@@ -6,7 +6,7 @@ import {
     startLogReceiver,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
-import { deferred } from "@test/fixtures/node/LoggerServiceFixture";
+import { deferred } from "@test/utils/deferred";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -132,6 +132,35 @@ describe("LogUploader delta uploads", function () {
         expect(await running).to.deep.equal({ ok: false, entries: 0 });
         expect(Date.now() - endedAtMs).to.be.below(500);
         expect(receiver!.requests).to.have.length(0);
+    });
+
+    it("ends an upload in its retry delay when its thread ends, without the retry", async function () {
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: (_received, index) => (index === 0 ? 500 : 200)
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("refused once");
+        // onRetry reads the network snapshot just before the 1 s delay starts.
+        const inDelay = deferred();
+        const snapshot =
+            logUploader["getSyncNetworkSnapshot"].bind(logUploader);
+        logUploader["getSyncNetworkSnapshot"] = (endpoint, uploadError) => {
+            inDelay.resolve();
+            return snapshot(endpoint, uploadError);
+        };
+        const running = logUploader.uploadLogs();
+        await inDelay.promise;
+        const endedAtMs = Date.now();
+
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        expect(Date.now() - endedAtMs).to.be.below(500);
+        // The refused POST only: the retry never starts.
+        expect(receiver!.requests).to.have.length(1);
     });
 
     it("re-sends the delta after a failed upload", async function () {

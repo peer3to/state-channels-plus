@@ -38,18 +38,6 @@ export abstract class LogUploader {
     /** This realm's uploaders with an upload running or queued, so a thread that ends finds them. */
     private static readonly busyUploaders = new Set<LogUploader>();
 
-    /**
-     * Cancels every upload of this realm still running or queued; those uploaders start no
-     * further upload. A node worker's thread calls it as it ends: an open upload, its retry
-     * delay or its jitter wait keeps the loop alive after disposal, past an abort's flush
-     * bound. A realm whose thread lives on keeps its uploads running after disposal.
-     */
-    public static cancelRealmUploads(): void {
-        for (const uploader of LogUploader.busyUploaders) {
-            uploader.cancel.abort();
-        }
-    }
-
     /** Aborted once its thread ended: every upload of this uploader, a queued one too, ends at once. */
     private readonly cancel = new AbortController();
     protected logger?: Logger;
@@ -72,6 +60,18 @@ export abstract class LogUploader {
     ) {
         if (attachErrorListener && this.isEnabled()) {
             this.attachListeners();
+        }
+    }
+
+    /**
+     * Cancels every upload of this realm still running or queued; those uploaders start no
+     * further upload. A worker thread calls it as it ends: an open upload, its retry
+     * delay or its jitter wait keeps the loop alive after disposal, past an abort's flush
+     * bound. A realm whose thread lives on keeps its uploads running after disposal.
+     */
+    public static cancelRealmUploads(): void {
+        for (const uploader of LogUploader.busyUploaders) {
+            uploader.cancel.abort();
         }
     }
 

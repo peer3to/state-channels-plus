@@ -52,18 +52,12 @@ export interface LoggerSdkFixture {
     frames: RuntimeRpcControl["sent"];
     control: RuntimeRpcControl;
     uploadState: LoggerProbeRoot["loggerProbe"]["uploadState"];
+    /** Every entry the client root's store holds, after its logger's disposal too. */
+    entries: LoggerProbeRoot["loggerProbe"]["entries"];
     cancelPendingUpload(): void;
     own(): Promise<LogUploadOutcome>;
     gossipUpload(reason: string): Promise<LogUploadOutcome>;
     dispose(): Promise<void>;
-}
-
-export function deferred() {
-    let resolve!: () => void;
-    const promise = new Promise<void>((done) => {
-        resolve = done;
-    });
-    return { promise, resolve };
 }
 
 export async function createLoggerSdkFixture(
@@ -189,6 +183,10 @@ export async function createLoggerSdkFixture(
             (
                 clientRoot as P2pRuntimeClientRoot & LoggerProbeRoot
             ).loggerProbe.uploadState(),
+        entries: () =>
+            (
+                clientRoot as P2pRuntimeClientRoot & LoggerProbeRoot
+            ).loggerProbe.entries(),
         cancelPendingUpload() {
             // Pin the timer branch synchronously; farm latency is not the oracle.
             clientRoot.logger["windowEndsAt"] = Date.now() + 100;

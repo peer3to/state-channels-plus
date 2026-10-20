@@ -9,6 +9,7 @@ import {
 } from "@/rpc/internal/errorWire";
 import type InternalTransport from "@/transport/InternalTransport";
 import { hasRpcService } from "@/utils/ObjectChecks";
+import { settleBy } from "@/utils/settleBy";
 
 export class InternalRpcRouter extends ARpcRouter<InternalTransport> {
     // Request handlers still running per transport, for the services that take
@@ -78,17 +79,10 @@ export class InternalRpcRouter extends ARpcRouter<InternalTransport> {
     ): Promise<void> {
         const handlers = this.inFlightHandlers.get(transport);
         if (!handlers?.size) return;
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        try {
-            await Promise.race([
-                Promise.allSettled([...handlers]),
-                new Promise<void>((resolve) => {
-                    timeout = setTimeout(resolve, timeoutMs);
-                })
-            ]);
-        } finally {
-            clearTimeout(timeout);
-        }
+        await settleBy(
+            Promise.allSettled([...handlers]),
+            Date.now() + timeoutMs
+        );
     }
 
     public async onMessage(

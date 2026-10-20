@@ -1,4 +1,8 @@
-import { applyCrashLogConfig } from "@test/fixtures/logging/crashLogConfig";
+import { randomHexId } from "@/utils/randomHexId";
+import {
+    applyCrashLogConfig,
+    crashLogUploadOverrides
+} from "@test/fixtures/logging/crashLogConfig";
 import {
     createUploaderFixture,
     decodeUpload,
@@ -7,16 +11,14 @@ import {
 } from "@test/fixtures/logging/LogUploader.fixture";
 import {
     connectLoggerCycle,
+    failHostFlush,
     inlineHostOf,
-    recordReportedErrors,
-    replaceHostFlush,
     createLateLoggerChild,
     connectLoggerPeers
 } from "@test/fixtures/node/LoggerResponseFixture";
-import {
-    createLoggerSdkFixture,
-    deferred
-} from "@test/fixtures/node/LoggerServiceFixture";
+import { createLoggerSdkFixture } from "@test/fixtures/node/LoggerServiceFixture";
+import { recordReportedErrors } from "@test/fixtures/RuntimeRootObservation";
+import { deferred } from "@test/utils/deferred";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -443,14 +445,14 @@ describe("LoggerService", function () {
         });
         const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
         fixtures.push(sdk);
-        // After the fixture: its setup rebuilds the config.
+        // After the fixture: its setup rebuilds the config, and so does this, so the
+        // receiver's endpoint goes in again.
         const restoreBound = applyCrashLogConfig({
+            ...crashLogUploadOverrides(receiver.url),
             CRASH_LOG_FLUSH_MS: FAILURE_FLUSH_MS
         });
         sdk.logger.info("main upload outlasts the bound");
-        const restoreFlush = replaceHostFlush(sdk, () =>
-            Promise.reject(new Error("host flush failed"))
-        );
+        const restoreFlush = failHostFlush(sdk, new Error("host flush failed"));
         const reported = recordReportedErrors(sdk.clientRoot);
         try {
             const startedAtMs = Date.now();
@@ -487,13 +489,14 @@ describe("LoggerService", function () {
     it("a flush ends at its bound when a neighbour never answers", async () => {
         const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
         fixtures.push(sdk);
-        // After the fixture: its setup rebuilds the config.
+        // After the fixture: its setup rebuilds the config, and so does this, so the
+        // receiver's endpoint goes in again.
         const restoreBound = applyCrashLogConfig({
+            ...crashLogUploadOverrides(receiver.url),
             CRASH_LOG_FLUSH_MS: SHORT_FLUSH_MS
         });
-        // Answered only after the case, so disposal has no handler left to drain.
-        const unanswered = deferred();
-        const restore = replaceHostFlush(sdk, () => unanswered.promise);
+        // The host's real answer is held until the flush has ended.
+        void sdk.control.holdNextResponse("flush");
         try {
             const startedAtMs = Date.now();
 
@@ -503,64 +506,255 @@ describe("LoggerService", function () {
             expect(elapsedMs).to.be.at.least(SHORT_FLUSH_MS - 50);
             expect(elapsedMs).to.be.below(SHORT_FLUSH_MS + 2_000);
         } finally {
-            unanswered.resolve();
-            restore();
+            sdk.control.release();
             restoreBound();
         }
     });
 
-    it("a flush answer to a requester whose connection closed reports no error", async () => {
+    it("every realm in a flush stops at the origin's deadline, not at its own", async () => {
+        /** The flush bound: wide, so a loaded worker still answers inside it. */
+        const SHARED_DEADLINE_FLUSH_MS = 1_000;
+        /** How late the host gets the flush request: most of the bound. */
+        const LATE_DELIVERY_MS = 700;
+        const held = deferred();
+        await receiver.close();
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (received.threadName === "vm") await held.promise;
+                return 200;
+            }
+        });
+        const sdk = await createLoggerSdkFixture(receiver, {
+            inlineSdk: true,
+            vmWorker: true
+        });
+        fixtures.push(sdk);
+        // After the fixture: its setup rebuilds the config, and so does this, so the
+        // receiver's endpoint goes in again.
+        const restoreBound = applyCrashLogConfig({
+            ...crashLogUploadOverrides(receiver.url),
+            CRASH_LOG_FLUSH_MS: SHARED_DEADLINE_FLUSH_MS
+        });
+        // The VM's upload stays held, so the host waits on the VM until the deadline.
+        await sdk.remote.loggerProbe
+            .childWriteAtEndpoint("held vm upload")
+            .request();
+        const posted = sdk.control.holdNextPost("flush");
+        const answered = sdk.control
+            .holdNextResponse("flush")
+            .then(() => Date.now());
+        try {
+            const startedAtMs = Date.now();
+            const flush = sdk.logger.flushLogs();
+            await posted;
+            // Time is the input: the host gets the request late.
+            await new Promise((resolve) =>
+                setTimeout(resolve, LATE_DELIVERY_MS)
+            );
+            const releasedAtMs = Date.now();
+            sdk.control.releaseAt(0);
+
+            const answeredAtMs = await answered;
+            await flush;
+
+            expect(answeredAtMs - startedAtMs).to.be.at.least(
+                SHARED_DEADLINE_FLUSH_MS - 50
+            );
+            // A host with its own deadline cannot answer before this.
+            expect(answeredAtMs).to.be.below(
+                releasedAtMs + SHARED_DEADLINE_FLUSH_MS
+            );
+        } finally {
+            sdk.control.release();
+            held.resolve();
+            restoreBound();
+        }
+    });
+
+    it("a realm asked to flush after the deadline answers at once while its upload is held", async () => {
+        const held = deferred();
+        await receiver.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
         const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
         fixtures.push(sdk);
-        // After the fixture: its setup rebuilds the config.
-        const restoreBound = applyCrashLogConfig({
-            CRASH_LOG_FLUSH_MS: SHORT_FLUSH_MS
+        await sdk.remote.loggerProbe.write("held late upload").request();
+        let isSettled = false;
+        try {
+            const flush = inlineHostOf(sdk)
+                .logger.flush(randomHexId(), Date.now() - 1)
+                .then(() => {
+                    isSettled = true;
+                });
+            // Time is the oracle: the upload stays held long after this window.
+            await Promise.race([
+                flush,
+                new Promise((resolve) => setTimeout(resolve, 1_000))
+            ]);
+
+            expect(isSettled).to.equal(true);
+            await receiver.waitForRequests(1);
+            expect(
+                receiver.requests
+                    .flatMap(decodeUpload)
+                    .map((entry) => entry.message)
+            ).to.include("held late upload");
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("a realm whose logger service was disposed answers a flush at once and forwards nothing", async () => {
+        const held = deferred();
+        await receiver.close();
+        // A forwarded flush would wait on this held upload until its deadline.
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (
+                    decodeUpload(received).some(
+                        (entry) => entry.message === "beyond disposed realm"
+                    )
+                )
+                    await held.promise;
+                return 200;
+            }
         });
-        const answer = deferred();
-        const restoreFlush = replaceHostFlush(sdk, () => answer.promise);
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        const beyond = await createLoggerSdkFixture(receiver, {
+            inlineSdk: true
+        });
+        fixtures.push(beyond);
+        const disconnect = connectLoggerPeers(sdk, beyond);
+        try {
+            beyond.logger.info("beyond disposed realm");
+            sdk.clientRoot.logger.dispose();
+            const startedAtMs = Date.now();
+
+            await inlineHostOf(sdk).logger.flush(
+                randomHexId(),
+                Date.now() + 5_000
+            );
+
+            // Time is the oracle: half the 5 s deadline a forwarded flush would wait for.
+            expect(Date.now() - startedAtMs).to.be.below(2_500);
+            expect(
+                receiver.requests
+                    .flatMap(decodeUpload)
+                    .map((entry) => entry.message)
+            ).to.not.include("beyond disposed realm");
+        } finally {
+            held.resolve();
+            disconnect();
+        }
+    });
+
+    it("with log collection off a flush asks no realm and settles at once", async () => {
+        const sdk = await createLoggerSdkFixture(receiver, {
+            inlineSdk: true,
+            disabled: true
+        });
+        fixtures.push(sdk);
+        // A host answer, were the host asked, would stay held.
+        void sdk.control.holdNextResponse("flush");
+        let isSettled = false;
+        try {
+            const flush = sdk.logger.flushLogs().then(() => {
+                isSettled = true;
+            });
+            await new Promise(setImmediate);
+
+            expect(isSettled).to.equal(true);
+            expect(
+                sdk.control.sent.filter((frame) => frame.method === "flush")
+            ).to.deep.equal([]);
+            await flush;
+        } finally {
+            sdk.control.release();
+        }
+    });
+
+    it("a flush answer to a requester whose connection closed reports no error", async () => {
+        const held = deferred();
+        await receiver.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
+        fixtures.push(sdk);
+        // The host's held upload keeps its real flush running.
+        await sdk.remote.loggerProbe.write("held host upload").request();
         const host = inlineHostOf(sdk);
+        const hostTransport = host.parent!["transport"];
         const reported = recordReportedErrors(host);
         try {
-            await sdk.logger.flushLogs();
+            const flush = sdk.logger.flushLogs();
+            await waitFor(() =>
+                receiver.requests
+                    .flatMap(decodeUpload)
+                    .some((entry) => entry.message === "held host upload")
+            );
             sdk.parentTransport.close();
             await waitFor(() => host.parent === null);
 
-            // The host answers only now, to a requester that is gone.
-            answer.resolve();
+            // The host's flush ends only now and answers a requester that is gone.
+            held.resolve();
+            // 5 s is only a bound: the drain ends once the host's flush handler answers.
+            await host.router.drainInFlightHandlers(hostTransport, 5_000);
             await new Promise(setImmediate);
+            await flush;
 
             expect(reported.errors).to.deep.equal([]);
         } finally {
-            answer.resolve();
+            held.resolve();
             reported.restore();
-            restoreFlush();
-            restoreBound();
         }
     });
 
     it("a slow flush answer that lands after its requester's logger was disposed warns nothing", async () => {
         const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: true });
         fixtures.push(sdk);
-        // After the fixture: its setup rebuilds the config.
+        // After the fixture: its setup rebuilds the config, and so does this, so the
+        // receiver's endpoint goes in again.
         const restoreBound = applyCrashLogConfig({
+            ...crashLogUploadOverrides(receiver.url),
             CRASH_LOG_FLUSH_MS: SHORT_FLUSH_MS
         });
-        const answer = deferred();
-        const restoreFlush = replaceHostFlush(sdk, () => answer.promise);
+        // The host's real answer is held until the requester's logger is gone.
+        const answered = sdk.control.holdNextResponse("flush");
+        const reported = recordReportedErrors(sdk.clientRoot);
         try {
             const startedAtMs = Date.now();
             await sdk.logger.flushLogs();
+            await answered;
             // Slow enough for the slow-request warning (one second), then the logger goes.
             await new Promise((resolve) =>
                 setTimeout(resolve, 1_100 - (Date.now() - startedAtMs))
             );
             sdk.clientRoot.logger.attachedLogger.dispose();
 
-            answer.resolve();
+            sdk.control.release();
             await new Promise(setImmediate);
+
+            expect(reported.errors).to.deep.equal([]);
+            expect(
+                sdk
+                    .entries()
+                    .filter(
+                        (entry) =>
+                            entry.message === "Slow worker request completed"
+                    )
+            ).to.deep.equal([]);
         } finally {
-            answer.resolve();
-            restoreFlush();
+            sdk.control.release();
+            reported.restore();
             restoreBound();
         }
     });

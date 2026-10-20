@@ -3,11 +3,7 @@ import { installLoggerProbe } from "../runtimeRpc/probe/logger/LoggerProbeServic
 import { installRuntimeProbe } from "../runtimeRpc/probe/runtime/RuntimeProbeService";
 import { startRootWorker } from "@/rpc/internal/createRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
-import { config, createConfig } from "@/utils/config";
 import { BroadcastChannel, workerData } from "node:worker_threads";
-
-/** Well inside the parent's 10 s wait for this worker's disposal. */
-const BLOCKED_PARENT_FLUSH_MS = 500;
 
 class LostParentHostRoot extends P2pRuntimeHostRoot {
     // Overrides P2pRuntimeHostRoot.start to hold real cleanup across parent loss.
@@ -51,13 +47,6 @@ class LostParentHostRoot extends P2pRuntimeHostRoot {
                     };
                     channel.onmessage = (event) => {
                         if ((event as MessageEvent).data !== "abort") return;
-                        // The parent blocks its thread until this worker is disposed, so it
-                        // cannot answer the abort's log flush: the flush ends at its bound,
-                        // well inside the parent's wait.
-                        createConfig({
-                            ...config,
-                            CRASH_LOG_FLUSH_MS: BLOCKED_PARENT_FLUSH_MS
-                        });
                         manager.abort();
                     };
                     return;

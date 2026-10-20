@@ -3,7 +3,8 @@ import {
     assertAbortCancelsTimeout,
     assertAbortUploadsLogsWithinBound,
     assertClockOwnedProviderReleasedOnDispose,
-    assertProviderShutdownOrder
+    assertProviderShutdownOrder,
+    assertWorkerHostAbortUploadsLogs
 } from "@test/fixtures/RuntimeAbortFixture";
 
 describe("StateManager abort", function () {
@@ -18,6 +19,9 @@ describe("StateManager abort", function () {
     });
     it("uploads its realms' logs before disposal, waiting for them no longer than its bound", async function () {
         await assertAbortUploadsLogsWithinBound();
+    });
+    it("uploads the worker host's, main thread's and VM worker's logs before the client closes, without waiting for the bound", async function () {
+        await assertWorkerHostAbortUploadsLogs();
     });
     it("cancels session-owned timeout work", async function () {
         await assertAbortCancelsTimeout();

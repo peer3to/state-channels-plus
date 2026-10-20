@@ -4,14 +4,17 @@ import Clock from "@/Clock";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
+import { config } from "@/utils/config";
 import { crashLogUploadOverrides } from "@test/fixtures/logging/crashLogConfig";
 import {
     decodeUpload,
+    type LogReceiver,
+    type ReceivedUpload,
     startLogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
-import { deferred } from "@test/fixtures/node/LoggerServiceFixture";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
-import { MathTestSession } from "@test/harness";
+import { type HarnessOptions, MathTestSession } from "@test/harness";
+import { deferred } from "@test/utils/deferred";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { type WebSocketProvider } from "ethers";
@@ -22,6 +25,47 @@ const RECONNECT_ABSENCE_WINDOW_MS = 1_000;
 /** The abort's log-flush bound in the bounded-flush case: short, so the case is quick. */
 const ABORT_FLUSH_MS = 3_000;
 
+/** Longer than the rest of a worker host's disposal; time is the input. */
+const HOST_UPLOAD_HOLD_MS = 2_000;
+
+/** The line an aborting runtime logs before it flushes. */
+const ABORT_LINE = "Aborting channel participation";
+
+/** Starts four peers whose realms upload their logs to the receiver; peer 0 is the one to abort. */
+async function startPeersUploadingTo(
+    receiver: LogReceiver,
+    configOverrides: HarnessOptions["configOverrides"]
+): Promise<void> {
+    await MathTestSession.getHarness().lifecycle.start(4, 0, {
+        configOverrides: {
+            ...crashLogUploadOverrides(receiver.url),
+            ...configOverrides
+        }
+    });
+}
+
+/** Aborts peer 0 and waits until its client root closes; returns the time from the abort to the close. */
+async function abortFirstPeerUntilClosed(): Promise<number> {
+    const harness = MathTestSession.getHarness();
+    const peer = harness.getPeer(0);
+    const client = clientRootFor(peer.p2pInstance);
+    const closed = new Promise<void>((resolve) => client.onClosed(resolve));
+    await harness.control(peer).stub.abortDetached(true).request();
+    await harness.event.waitForPeers("onAbort", [0], 1);
+    const abortedAtMs = Date.now();
+    await closed;
+    return Date.now() - abortedAtMs;
+}
+
+function hasAbortLine(request: ReceivedUpload): boolean {
+    return decodeUpload(request).some((entry) => entry.message === ABORT_LINE);
+}
+
+/** Every peer uploads to the same receiver, so a VM upload counts only from the aborting peer. */
+function isVmUploadOf(request: ReceivedUpload, peerAddress: string): boolean {
+    return request.threadName === "vm" && request.peerAddress === peerAddress;
+}
+
 /**
  * An aborting runtime uploads its realms' logs (its VM worker's included)
  * before disposal ends them, an upload that never answers holds the disposal
@@ -29,24 +73,21 @@ const ABORT_FLUSH_MS = 3_000;
  */
 export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
     const held = deferred();
+    // VM uploads answer, so the VM worker's own disposal drain ends at once:
+    // only the abort flush can hold the close until the bound.
     const receiver = await startLogReceiver({
-        respond: async () => {
-            await held.promise;
+        respond: async (received) => {
+            if (received.threadName !== "vm") await held.promise;
             return 200;
         }
     });
     try {
-        const harness = MathTestSession.getHarness();
-        await harness.lifecycle.start(4, 0, {
-            configOverrides: {
-                RUN_SDK_IN_THREAD: false,
-                VM_DEDICATED_THREAD: true,
-                ...crashLogUploadOverrides(receiver.url),
-                CRASH_LOG_FLUSH_MS: ABORT_FLUSH_MS
-            }
+        await startPeersUploadingTo(receiver, {
+            RUN_SDK_IN_THREAD: false,
+            VM_DEDICATED_THREAD: true,
+            CRASH_LOG_FLUSH_MS: ABORT_FLUSH_MS
         });
-        const peer = harness.getPeer(0);
-        const client = clientRootFor(peer.p2pInstance);
+        const peer = MathTestSession.getHarness().getPeer(0);
         const stateManager = inlineHostFor(
             peer.p2pInstance
         ).hostRpc.requireManager().stateManager;
@@ -60,35 +101,82 @@ export async function assertAbortUploadsLogsWithinBound(): Promise<void> {
             ABORT_FLUSH_MS - 500,
             "StateManagerAbort.test"
         );
-        const closed = new Promise<void>((resolve) => client.onClosed(resolve));
-        await harness.control(peer).stub.abortDetached(true).request();
-        await harness.event.waitForPeers("onAbort", [0], 1);
-        const abortedAtMs = Date.now();
 
-        await closed;
+        const elapsedMs = await abortFirstPeerUntilClosed();
 
-        const elapsedMs = Date.now() - abortedAtMs;
-        expect(
-            receiver.requests
-                .flatMap(decodeUpload)
-                .some(
-                    (entry) =>
-                        entry.message === "Aborting channel participation"
-                )
-        ).to.equal(true);
+        expect(receiver.requests.some(hasAbortLine)).to.equal(true);
         // The VM worker's logs too: the flush reached the thread disposal ends.
         expect(
-            receiver.requests.some((request) => request.threadName === "vm")
+            receiver.requests.some((request) =>
+                isVmUploadOf(request, peer.address)
+            )
         ).to.equal(true);
         // The uploads never answer: disposal waited for the bound, and no longer. The lower limit is
-        // loose since abortedAtMs follows the onAbort event round trip; the task check guards the wait.
+        // loose since the abort time follows the onAbort event round trip; the task check guards the wait.
         expect(elapsedMs).to.be.at.least(ABORT_FLUSH_MS / 2);
-        // Uploads still running at the deadline are canceled, so no worker outlives it waiting.
+        // The main realm stops waiting at the deadline, so the close does not wait past it.
         expect(elapsedMs).to.be.below(ABORT_FLUSH_MS + 3_000);
         expect(isTaskRun).to.equal(false);
         await peer.p2pInstance.dispose();
     } finally {
         held.resolve();
+        await receiver.close();
+    }
+}
+
+/**
+ * An SDK host in a worker thread aborts while the receiver holds the host's
+ * own abort-line upload: the client closes only after that upload is
+ * answered, its abort line, the main thread's logs and its VM worker's logs
+ * all reach the receiver, and the close does not wait for the bound.
+ */
+export async function assertWorkerHostAbortUploadsLogs(): Promise<void> {
+    let releasedAtMs: number | undefined;
+    const receiver = await startLogReceiver({
+        respond: async (received) => {
+            if (received.threadName === "sdk" && hasAbortLine(received)) {
+                await sleep(HOST_UPLOAD_HOLD_MS);
+                releasedAtMs = Date.now();
+            }
+            return 200;
+        }
+    });
+    try {
+        await startPeersUploadingTo(receiver, {
+            RUN_SDK_IN_THREAD: true,
+            VM_DEDICATED_THREAD: true
+        });
+        const peer = MathTestSession.getHarness().getPeer(0);
+        // A main-thread line written just before the abort. The flush uploads it; an
+        // error-level gossip upload could also carry it.
+        const marker = `worker-host-abort-${Date.now()}`;
+        peer.p2pInstance.logger.warn(marker);
+
+        const elapsedMs = await abortFirstPeerUntilClosed();
+        const closedAtMs = Date.now();
+
+        // The host worker's own abort line: the client closed only after its upload was answered.
+        expect(releasedAtMs).not.to.equal(undefined);
+        expect(closedAtMs).to.be.at.least(releasedAtMs!);
+        // The flush crossed up to the main thread and down to the VM worker.
+        expect(
+            receiver.requests.some(
+                (request) =>
+                    request.threadName === "main" &&
+                    decodeUpload(request).some(
+                        (entry) => entry.message === marker
+                    )
+            )
+        ).to.equal(true);
+        expect(
+            receiver.requests.some((request) =>
+                isVmUploadOf(request, peer.address)
+            )
+        ).to.equal(true);
+        // Every other upload answered at once, so the close did not wait for the bound.
+        expect(elapsedMs).to.be.below(config.CRASH_LOG_FLUSH_MS / 2);
+        await peer.p2pInstance.dispose();
+    } finally {
         await receiver.close();
     }
 }

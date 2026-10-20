@@ -54,8 +54,20 @@ Optional store coordination, generations, cleanup and context
 - [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P32` — does not pass peer identity between inline roots
 - [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P33` — rapid channel changes at a worker root reach parent and child with the final value and produce no context echo to the sender
 - [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P34` — updates the channel of every local store attached to the service
-- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P35` — a flush settles only once every connected realm has posted its logs
-- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P36` — a flush across a cycle of real root connections settles once and leaves no request pending
-- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P37` — a flush skips a neighbour that closes while its upload is held, reports no error, and settles soon after the closure
-- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P38` — a flush reports a neighbour's failure that is not a closure through the root error channel at once, still resolves, and waits for a held local upload until it arrives or the bound passes
-- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P39` — a flush ends at its bound when a neighbour never answers
+
+## UNIT-TEST-LOGGER-FLUSH-1-GW82M3
+
+Abort flush across connected realms
+
+- Setup: Actual SDK roots, real ports, HTTP receiver with held responses
+- Oracle: Settlement time against the shared deadline, reported errors, receiver entries and pending requests
+
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P1` — a flush settles only once every connected realm has posted its logs
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P2` — a flush across a cycle of real root connections settles once and leaves no request pending
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P3` — a flush skips a neighbour that closes while its upload is held, reports no error, and settles soon after the closure
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P4` — a flush reports a neighbour's failure that is not a closure through the root error channel at once, still resolves, and waits for a held local upload until it arrives or the bound passes
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P5` — a flush ends at its bound when a neighbour never answers
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P6` — a realm that gets the flush request late still answers at the origin's deadline, not at a deadline of its own
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P7` — a realm asked to flush after the deadline answers at once while its own upload is still held
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P8` — a realm whose logger service was disposed answers a flush at once and asks no neighbour
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P9` — with no upload endpoint, a flush asks no realm and settles at once
