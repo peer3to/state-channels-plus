@@ -1952,6 +1952,51 @@ shorten the pipeline when the remaining kill period is too short for the measure
 sizing.** Give guidance that sizes `evidenceTime` against the measured audit, construction,
 estimation and inclusion latency under the expected load.
 
+<a id="find-dispute-6-e2yj9x"></a>
+
+### FIND-DISPUTE-6-E2YJ9X
+
+**Defect:** _Open (2026-10-20)._ A competing history can bypass a later joiner, and no kill removes it.
+The chain anchor is 50 with participants A to E. A later joiner L posts a JOIN on chain. The honest
+history X consumes that JOIN in the join hop at 60, signed by A to E and L, and reaches the
+threshold-final point F = 100, where L has won 30 from A. A to E build a side chain Y from the
+anchor: one hop to 1000', signed by A to E alone, whose inbound head stays below L's JOIN. Y's walk
+counts only the joiners inside its own inbound interval, so L's signature is never required
+([`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)).
+L disputes with X and A disputes with Y in one window. Y's proof walks valid from the anchor, and Y
+holds no block at F's height, so `DisputeConflictsWithFinalState` cannot be built against it
+([`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)). `reduce` then picks Y by
+longest chain and rolls back L's final outcomes on X. L's deposit is carried, because the reduction
+consumes the pending JOIN.
+
+**Proposed direction:** A `DisputeFinalPointRegression` kill, proposed in the review of
+[PR #560](https://github.com/peer3to/state-channels-plus/pull/560). F = 100 is final with inbound
+height 2, while Y's final point G = 1000' is above F with inbound height 1, so Y's final point
+regresses the inbound height of a proved final point. The kill does not exist in the contracts yet.
+Its proof carries three fields, and it kills dispute D when all of these hold:
+
+- `finalProof` walks F from the chain's start and proves it threshold-final, as
+  `DisputeConflictsWithFinalState` does. F may be the on-chain anchor.
+- `milestoneIndex` selects one of D's milestones whose first block G lies strictly above the
+  on-chain anchor, so G is final in a valid walk. A milestone that holds the anchor, a block below
+  the anchor and a tail block are never accepted.
+- `gSnapshot` is the preimage of G's `stateSnapshotHash`, checked by `keccak256`.
+- `F.blockHeight < G.transactionCnt`, and the stored inbound height of F is greater than that of G.
+  Each height is read from `inboundMessageBlockMap` for the snapshot's
+  `latestInboundMessageBlockHash`, never from the snapshot's own height field: a colluding side can
+  sign a real hash next to a false, larger height.
+
+On one history the inbound height never goes down, so the kill never fires there.
+
+**Evidence:** `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory` in
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+builds the case with a proposed proof struct and fails on its last assertion today. It is skipped
+(`vm.skip(true)`) until the kill lands.
+
+**Exit:** Implement the `DisputeFinalPointRegression` kill, replace the test's proposed struct and
+proof-type slot with the real ones, remove the skip, and the test passes. Then add its requirement
+and test mapping in the specification and verification layers.
+
 <a id="find-events-1-3jf8fm"></a>
 
 ### FIND-EVENTS-1-3JF8FM

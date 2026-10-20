@@ -28,7 +28,7 @@ Common readiness and prepared child cleanup.
 - [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P12` — A later worker quiesce collects an error raised after the first drain
 - [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P13` — Worker custom RPC cleanup runs before manager cleanup
 - [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P14` — Worker manager cleanup completes after custom RPC cleanup rejects
-- [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P15` — An admitted disposal loses its parent during held cleanup; final closure still runs once after the failed reply attempt
+- [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P15` — An admitted disposal loses its parent during held cleanup; final closure still runs once after its reply is dropped, and no error is reported for it
 - [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P16` — A worker loses its parent during admitted cleanup; final closure releases the worker and a separate runtime remains usable
 - [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P17` — Failed application setup loses its error reply during cleanup; final closure releases the worker and a separate runtime remains usable
 - [x] `UNIT-TEST-RUNTIME-LIFECYCLE-1-GRZ48T.P18` — A worker SDK abort with a worker executor waits for disposal acknowledgement while its parent loop is blocked; no false fatal exit, one final closure and a usable sibling

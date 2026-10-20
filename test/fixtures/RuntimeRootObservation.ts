@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: observations of real SDK roots for assertions after port cleanup
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 import type { EventBus } from "@/events/EventBus";
+import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
@@ -74,5 +75,23 @@ export async function observeRuntimeDisposal(instance: { events: EventBus }) {
         connectionsAtRootDispose,
         connectionsAfter: sm.p2pManager.getConnectedPeers().size,
         message
+    };
+}
+
+/** Records the errors a root reports (instead of reporting them) and when; returns the restore. */
+export function recordReportedErrors(root: AInternalRpcRoot) {
+    const errors: unknown[] = [];
+    const atMs: number[] = [];
+    const reportError = root.reportError.bind(root);
+    root.reportError = (error: unknown) => {
+        errors.push(error);
+        atMs.push(Date.now());
+    };
+    return {
+        errors,
+        atMs,
+        restore: () => {
+            root.reportError = reportError;
+        }
     };
 }

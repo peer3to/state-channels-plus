@@ -43,6 +43,12 @@
       "peakRssGb": 0.256,
       "measurementReason": null
     },
+    "forge|test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol|DisputeFinalPointRegressionTest": {
+      "durationMs": 868,
+      "avgCores": 0.829,
+      "peakRssGb": 0.221,
+      "measurementReason": null
+    },
     "forge|test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol|DisputeFraudProofFacetPayloadsTest": {
       "durationMs": 1113,
       "avgCores": 0.683,
@@ -10051,6 +10057,12 @@
       "peakRssGb": 0.356,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelBrowserTasks.test.ts|browser tier environment refuses a contained environment without HOME, so Chromium never falls back to the shared /tmp": {
+      "durationMs": 407,
+      "avgCores": 0.86,
+      "peakRssGb": 0.119,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelBrowserTasks.test.ts|browser tier environment typechecks the browser sources through the project's own script": {
       "durationMs": 1999,
       "avgCores": 0.92,
@@ -11641,6 +11653,12 @@
       "peakRssGb": 0.189,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelIsolatedEnvironment.test.ts|distributed isolated environment discards an orphan whose container is gone after a host restart, and allocates its key again": {
+      "durationMs": 278,
+      "avgCores": 0.396,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelIsolatedEnvironment.test.ts|distributed isolated environment does not poll Docker exit classification while an environment is running": {
       "durationMs": 2738,
       "avgCores": 0.537,
@@ -11687,6 +11705,12 @@
       "durationMs": 1744,
       "avgCores": 0.981,
       "peakRssGb": 0.296,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelIsolatedEnvironment.test.ts|distributed isolated environment recognises Docker's missing-container failure": {
+      "durationMs": 312,
+      "avgCores": 1.218,
+      "peakRssGb": 0.094,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelIsolatedEnvironment.test.ts|distributed isolated environment recognises a retained Docker container by the configured runner image's ID": {
@@ -13675,6 +13699,36 @@
       "peakRssGb": 0.081,
       "measurementReason": null
     },
+    "hardhat|test/scripts/packageInternalRootExport.test.ts|package internal-root export exports exactly the internal root API, as the same values as the package index": {
+      "durationMs": 960,
+      "avgCores": 0.719,
+      "peakRssGb": 0.142,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageInternalRootExport.test.ts|package internal-root export loads neither the P2P runtime host nor its relay": {
+      "durationMs": 609,
+      "avgCores": 0.558,
+      "peakRssGb": 0.134,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageInternalRootExport.test.ts|package internal-root export loads the P2P runtime host and its relay through the package index": {
+      "durationMs": 793,
+      "avgCores": 1.11,
+      "peakRssGb": 0.147,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageInternalRootExport.test.ts|package internal-root export mirrors the package index's export targets for every condition": {
+      "durationMs": 280,
+      "avgCores": 0.429,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/packageInternalRootExport.test.ts|package internal-root export resolves the internal-root subpath to the built entry": {
+      "durationMs": 422,
+      "avgCores": 0.735,
+      "peakRssGb": 0.082,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/DisputeCommitReductionSchedule.test.ts|Dispute commit reduction schedule a commit whose evidence-improvement upload is skipped as already initiated still schedules the reduction": {
       "durationMs": 83496,
       "avgCores": 0.294,
@@ -14261,6 +14315,18 @@
       "durationMs": 8291,
       "avgCores": 0.914,
       "peakRssGb": 0.345,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort uploads its realms' logs before disposal, waiting for them no longer than its bound": {
+      "durationMs": 16295,
+      "avgCores": 0.449,
+      "peakRssGb": 0.594,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort uploads the worker host's, main thread's and VM worker's logs before the client closes, without waiting for the bound": {
+      "durationMs": 11877,
+      "avgCores": 0.929,
+      "peakRssGb": 0.953,
       "measurementReason": null
     },
     "hardhat|test/stateManager/StateManagerTimeout.test.ts|StateManager timeout does not submit a timeout when the existing dispute window predates its deadline": {
@@ -22927,6 +22993,24 @@
       "peakRssGb": 0.282,
       "measurementReason": null
     },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads ends an upload in its jitter wait when its thread ends, before it posts": {
+      "durationMs": 834,
+      "avgCores": 1.151,
+      "peakRssGb": 0.166,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads ends an upload in its retry delay when its thread ends, without the retry": {
+      "durationMs": 614,
+      "avgCores": 0.586,
+      "peakRssGb": 0.091,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads ends an upload still running when its thread ends, without a retry or its queued follow-up": {
+      "durationMs": 858,
+      "avgCores": 1.166,
+      "peakRssGb": 0.168,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads files an upload under the identity current after the jitter": {
       "durationMs": 2819,
       "avgCores": 1.064,
@@ -22981,6 +23065,42 @@
       "peakRssGb": 0.383,
       "measurementReason": null
     },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a flush across a cycle of real root connections settles once": {
+      "durationMs": 10140,
+      "avgCores": 0.166,
+      "peakRssGb": 0.222,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a flush answer to a requester whose connection closed reports no error": {
+      "durationMs": 14564,
+      "avgCores": 0.148,
+      "peakRssGb": 0.214,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a flush ends at its bound when a neighbour never answers": {
+      "durationMs": 10310,
+      "avgCores": 0.152,
+      "peakRssGb": 0.228,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a flush reports a neighbour's failure at once and still waits for the other uploads": {
+      "durationMs": 24247,
+      "avgCores": 0.088,
+      "peakRssGb": 0.253,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a flush settles only once every connected realm has posted its logs": {
+      "durationMs": 14619,
+      "avgCores": 0.197,
+      "peakRssGb": 0.31,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a flush skips a neighbour that closes while its upload is held": {
+      "durationMs": 14898,
+      "avgCores": 0.168,
+      "peakRssGb": 0.333,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a leaf crash retains late channel identity and triggers its client upload": {
       "durationMs": 17776,
       "avgCores": 0.301,
@@ -22993,10 +23113,34 @@
       "peakRssGb": 0.427,
       "measurementReason": null
     },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a logger without a coordination service refuses to flush": {
+      "durationMs": 889,
+      "avgCores": 1.001,
+      "peakRssGb": 0.165,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a realm asked to flush after the deadline answers at once while its upload is held": {
+      "durationMs": 14539,
+      "avgCores": 0.153,
+      "peakRssGb": 0.228,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a realm whose logger service was disposed answers a flush at once and forwards nothing": {
+      "durationMs": 27775,
+      "avgCores": 0.112,
+      "peakRssGb": 0.29,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a second root in the same realm follows the channel": {
       "durationMs": 12264,
       "avgCores": 0.267,
       "peakRssGb": 0.256,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a slow flush answer that lands after its requester's logger was disposed warns nothing": {
+      "durationMs": 11328,
+      "avgCores": 0.204,
+      "peakRssGb": 0.214,
       "measurementReason": null
     },
     "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService a standalone logger uploads without collecting an unrelated SDK": {
@@ -23089,6 +23233,12 @@
       "peakRssGb": 0.521,
       "measurementReason": null
     },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService every realm in a flush stops at the origin's deadline, not at its own": {
+      "durationMs": 11078,
+      "avgCores": 0.236,
+      "peakRssGb": 0.33,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService ignores an old frame released after a newer generation and delay": {
       "durationMs": 18514,
       "avgCores": 0.275,
@@ -23165,6 +23315,12 @@
       "durationMs": 14009,
       "avgCores": 0.368,
       "peakRssGb": 0.366,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LoggerService.test.ts|LoggerService with log collection off a flush asks no realm and settles at once": {
+      "durationMs": 14256,
+      "avgCores": 0.121,
+      "peakRssGb": 0.21,
       "measurementReason": null
     },
     "hardhat|test/utils/logging/LoggerThreadContext.test.ts|Logger thread context cascades through grandchildren reparented by an earlier disposal": {
@@ -23357,6 +23513,12 @@
       "durationMs": 2211,
       "avgCores": 0.742,
       "peakRssGb": 0.188,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/retry.test.ts|retry an abort during the retry delay rejects at once with the last error, after one attempt": {
+      "durationMs": 325,
+      "avgCores": 1.138,
+      "peakRssGb": 0.091,
       "measurementReason": null
     },
     "hardhat|test/utils/runCleanup.test.ts|runCleanup accepts empty cleanup sequences": {

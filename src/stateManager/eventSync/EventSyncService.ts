@@ -26,6 +26,7 @@ import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import { assertLogQueryMaxBlocks, config } from "@/utils/config";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { settleBy } from "@/utils/settleBy";
 import { StateChannelManagerInterface } from "@typechain-types";
 import type { ChannelBalanceStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import {
@@ -166,13 +167,10 @@ export default class EventSyncService {
     }
 
     async waitForScheduled(timeoutMs: number): Promise<void> {
-        const pending = Promise.allSettled([...this.eventPromises.values()]);
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        const timedOut = new Promise<void>((resolve) => {
-            timeout = setTimeout(resolve, timeoutMs);
-        });
-        await Promise.race([pending.then(() => undefined), timedOut]);
-        if (timeout) clearTimeout(timeout);
+        await settleBy(
+            Promise.allSettled([...this.eventPromises.values()]),
+            Date.now() + timeoutMs
+        );
     }
 
     getSubscriptionFilter(channelId: ChannelId): Filter {

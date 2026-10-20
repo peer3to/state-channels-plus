@@ -2,6 +2,7 @@
 import { startLogReceiver } from "./logging/LogUploader.fixture";
 import { createLoggerSdkFixture } from "./node/LoggerServiceFixture";
 import { withRuntimeRpc } from "./RpcRouterFixture";
+import { recordReportedErrors } from "./RuntimeRootObservation";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { RuntimeRpcControl } from "./runtimeRpc/RuntimeRpcControl";
 import type {
@@ -490,21 +491,28 @@ export async function assertLostDisposalReply(): Promise<void> {
                 finished();
             }
         };
+        const reported = recordReportedErrors(host);
         const disposal = sdk.remote.lifecycle
             .dispose()
             .request()
             .catch((error: Error) => error);
         try {
-            await started;
-            sdk.parentTransport.close();
-            await parentClosed;
+            try {
+                await started;
+                sdk.parentTransport.close();
+                await parentClosed;
+            } finally {
+                release();
+            }
+            expect((await disposal) instanceof Error).to.equal(true);
+            await closed;
+            await host.dispose();
+            expect(closeCount).to.equal(1);
+            expect(host.connections.size).to.equal(0);
+            // The reply to the closed parent is dropped, not reported.
+            expect(reported.errors).to.deep.equal([]);
         } finally {
-            release();
+            reported.restore();
         }
-        expect((await disposal) instanceof Error).to.equal(true);
-        await closed;
-        await host.dispose();
-        expect(closeCount).to.equal(1);
-        expect(host.connections.size).to.equal(0);
     });
 }
