@@ -80,6 +80,18 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
 
+## UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6
+
+Waiting for the chain head
+
+- Setup: A head already at the block, a block mined during the wait, an abort before it arrives, and a failing head read
+- Oracle: Resolves true once the provider's head reaches the block, false on timeout or abort, and rejects with a failed head read's error
+
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P1` — the head is already at the block: true without a new block
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P2` — the block is mined during the wait: true
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P3` — aborted before the block arrives: false
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P4` — the head read fails: rejects with its error
+
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 
 Paged log reads

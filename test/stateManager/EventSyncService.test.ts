@@ -564,6 +564,86 @@ describe("EventSyncService", function () {
         });
     });
 
+    describe("waitForChainHead", function () {
+        it("head already at the block → true without waiting for a new block", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const reached = await h.execOnHost(h.getPeer(0), async (sm) => {
+                const head = await sm.eventSyncService.readChainHead();
+                return sm.eventSyncService.waitForChainHead(
+                    head,
+                    60_000,
+                    new AbortController().signal
+                );
+            });
+            expect(reached).to.equal(true);
+        });
+
+        it("the block is mined during the wait → true", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const head = await h.provider.getBlockNumber();
+            const waiting = h.execOnHost(
+                h.getPeer(0),
+                async (sm, a) =>
+                    sm.eventSyncService.waitForChainHead(
+                        a.target,
+                        60_000,
+                        new AbortController().signal
+                    ),
+                { target: head + 1 }
+            );
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            expect(await waiting).to.equal(true);
+        });
+
+        it("aborted before the block arrives → false", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const reached = await h.execOnHost(h.getPeer(0), async (sm) => {
+                const head = await sm.eventSyncService.readChainHead();
+                const abort = new AbortController();
+                setTimeout(() => abort.abort(), 200);
+                return sm.eventSyncService.waitForChainHead(
+                    head + 1_000,
+                    60_000,
+                    abort.signal
+                );
+            });
+            expect(reached).to.equal(false);
+        });
+
+        it("a failed head read rejects with its error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const error = await h.execOnHost(h.getPeer(0), async (sm) => {
+                const provider =
+                    sm.stateChannelManagerContract.runner!.provider!;
+                const original = provider.getBlockNumber.bind(provider);
+                provider.getBlockNumber = async () => {
+                    throw new Error("head read failed");
+                };
+                try {
+                    await sm.eventSyncService.waitForChainHead(
+                        1,
+                        60_000,
+                        new AbortController().signal
+                    );
+                    return null;
+                } catch (error) {
+                    return error instanceof Error
+                        ? error.message
+                        : String(error);
+                } finally {
+                    provider.getBlockNumber = original;
+                }
+            });
+            expect(error).to.equal("head read failed");
+        });
+    });
+
     describe("scheduleStreamedLog", function () {
         it("drops a lagging node's log below the watermark", async function () {
             const h = TestSession.getHarness();

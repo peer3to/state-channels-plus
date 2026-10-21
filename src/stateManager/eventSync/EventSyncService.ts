@@ -559,6 +559,48 @@ export default class EventSyncService {
         );
     }
 
+    /** The chain head block this node's provider reports. */
+    public async readChainHead(): Promise<BlockNumber> {
+        return await this.getProvider().getBlockNumber();
+    }
+
+    /**
+     * Resolves true once this node's provider reports `blockNumber` or a later
+     * head, false when `timeoutMs` passes or `signal` aborts first. A failed
+     * head read rejects.
+     */
+    public async waitForChainHead(
+        blockNumber: BlockNumber,
+        timeoutMs: number,
+        signal: AbortSignal
+    ): Promise<boolean> {
+        const provider = this.getProvider();
+        let onBlock = () => {};
+        let onAbort = () => {};
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        // subscribed before the first read: a block mined in between still
+        // triggers a read
+        const reached = new Promise<boolean>((resolve, reject) => {
+            const check = () =>
+                this.readChainHead().then(
+                    (head) => head >= blockNumber && resolve(true),
+                    reject
+                );
+            onBlock = () => void check();
+            onAbort = () => resolve(false);
+            timer = setTimeout(() => resolve(false), timeoutMs);
+            signal.addEventListener("abort", onAbort);
+            void provider.on("block", onBlock).then(check, reject);
+        });
+        try {
+            return signal.aborted ? false : await reached;
+        } finally {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", onAbort);
+            void provider.off("block", onBlock);
+        }
+    }
+
     /**
      * Recover the InboundMessagesProcessed logs of the run (lowerBlockHash,
      * upperBlockHash] up to `head`. The run, or `undefined` when the gap

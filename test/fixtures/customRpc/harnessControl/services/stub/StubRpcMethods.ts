@@ -3331,6 +3331,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreCalldataPostedEvents();
     }
 
+    /** Pin this peer's chain view at the current block. Returns that block. */
+    public stubLagChainView(): Promise<number> {
+        return this.service.lagChainView();
+    }
+
+    public getLaggedHeadReads(): number {
+        return this.service.laggedHeadReads;
+    }
+
+    public restoreChainView(): Promise<boolean> {
+        return this.service.releaseChainView();
+    }
+
     /** Resolves once a subscribed calldata log has been held. */
     public waitForHeldCalldataPostedEvent(): Promise<boolean> {
         return this.service.waitForHeldCalldataPostedEvent();

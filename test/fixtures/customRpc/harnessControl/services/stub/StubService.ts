@@ -20,6 +20,7 @@ import type {
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import { deserializeRpcFrame } from "@/rpc/Rpc";
+import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import type MembershipService from "@/stateManager/membership/MembershipService";
 import type StateManager from "@/stateManager/StateManager";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
@@ -29,6 +30,7 @@ import type NetworkTransport from "@/transport/NetworkTransport";
 import type {
     Address,
     BlockHeight,
+    ChannelId,
     ForkId,
     Hash,
     Timestamp
@@ -55,7 +57,9 @@ import {
     hexlify,
     type Interface,
     JsonRpcApiProvider,
+    type Log,
     resolveAddress,
+    toQuantity,
     type TransactionRequest,
     ZeroAddress
 } from "ethers";
@@ -95,6 +99,8 @@ type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
+    | "chainViewSend"
+    | "chainViewStream"
     | "proofWalkHold"
     | "auditingDataBuild"
     | "disputeKillMulticall"
@@ -745,6 +751,10 @@ export class StubService extends ANetworkRpcService<
     eventLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
     readonly heldCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
+    /** Head reads the lagging chain view answered with its pinned block. */
+    laggedHeadReads = 0;
+    /** Streamed logs above the lagging chain view's block, with their channel. */
+    private readonly heldChainViewLogs: [Log, ChannelId][] = [];
     /** getLogs spans recorded by the current chain-log-query patch. */
     private chainLogQuerySpans: ChainLogQuerySpan[] = [];
     /** Dispatches that reached the failing onDisputeCommitted stub. */
@@ -3253,6 +3263,68 @@ export class StubService extends ANetworkRpcService<
             original as typeof eventSyncService.scheduleLog;
         this.stubOriginals.delete("calldataPostedEvents");
         this.heldCalldataPostedEventKeys.clear();
+        return true;
+    }
+
+    /**
+     * A provider that lags the chain: the head and every `latest` read stay at
+     * the current block, and streamed logs above it are held, until released.
+     * Returns the pinned block.
+     */
+    public async lagChainView(): Promise<number> {
+        const provider = this.sm.stateChannelManagerContract.runner
+            ?.provider as JsonRpcApiProvider;
+        const pinned = await provider.getBlockNumber();
+        const pinnedTag = toQuantity(pinned);
+        const send = provider.send.bind(provider);
+        this.stubOriginals.set("chainViewSend", send);
+        this.laggedHeadReads = 0;
+        provider.send = async (method, params) => {
+            if (method === "eth_blockNumber") {
+                this.laggedHeadReads++;
+                return pinnedTag;
+            }
+            return send(
+                method,
+                (params as unknown[]).map((param) =>
+                    param === "latest" ? pinnedTag : param
+                )
+            );
+        };
+        const eventSyncService = this.sm.eventSyncService;
+        const scheduleStreamedLog =
+            eventSyncService.scheduleStreamedLog.bind(eventSyncService);
+        this.stubOriginals.set("chainViewStream", scheduleStreamedLog);
+        eventSyncService.scheduleStreamedLog = (log, channelId) => {
+            if (log.blockNumber <= pinned)
+                return scheduleStreamedLog(log, channelId);
+            this.heldChainViewLogs.push([log, channelId ?? this.sm.channelId]);
+            return Promise.resolve();
+        };
+        return pinned;
+    }
+
+    /**
+     * End the lag: restore the provider, deliver the held logs and announce
+     * the real head, as a provider catching up does.
+     */
+    public async releaseChainView(): Promise<boolean> {
+        const send = this.stubOriginals.get("chainViewSend") as
+            | JsonRpcApiProvider["send"]
+            | undefined;
+        const scheduleStreamedLog = this.stubOriginals.get(
+            "chainViewStream"
+        ) as EventSyncService["scheduleStreamedLog"] | undefined;
+        if (!send || !scheduleStreamedLog) return false;
+        const provider = this.sm.stateChannelManagerContract.runner
+            ?.provider as JsonRpcApiProvider;
+        provider.send = send;
+        this.sm.eventSyncService.scheduleStreamedLog = scheduleStreamedLog;
+        this.stubOriginals.delete("chainViewSend");
+        this.stubOriginals.delete("chainViewStream");
+        for (const [log, channelId] of this.heldChainViewLogs.splice(0))
+            void scheduleStreamedLog(log, channelId);
+        await provider.emit("block", await provider.getBlockNumber());
         return true;
     }
 

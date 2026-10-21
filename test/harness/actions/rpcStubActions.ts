@@ -618,6 +618,25 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Make this peer's provider lag the chain: its head and `latest` reads
+     * stay at the current block and its streamed logs above it are held.
+     * `release` lets it catch up and announces the real head.
+     */
+    async lagChainView(peerIndex: number): Promise<{
+        pinnedBlock: number;
+        headReads: () => Promise<number>;
+        release: () => Promise<boolean>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        const pinnedBlock = await ctl().stubLagChainView().request();
+        return {
+            pinnedBlock,
+            headReads: () => ctl().getLaggedHeadReads().request(),
+            release: () => ctl().restoreChainView().request()
+        };
+    }
+
     async getHeldDisputeCommittedCount(peerIndex: number): Promise<number> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))

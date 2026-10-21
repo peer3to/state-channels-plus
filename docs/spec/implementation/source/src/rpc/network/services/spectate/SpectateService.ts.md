@@ -10,7 +10,6 @@
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
   Contradicts: a local reduction out-of-gas in `sync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
-  Contradicts: `generateSyncPayload` cuts the latest-fork outbound run at the responder's own anchor while `applySyncResponse` verifies it from the requester's chain read, so a requester whose provider lags rejects and blacklists an honest responder; likewise `applySyncResponse` rejects a served window as "dispute window not on chain" when the requester's provider lags the responder's dispute commit ([`FIND-SYNC-5-7W9TWW`](../../../../../../../audit/open-findings.md#find-sync-5-7w9tww)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
   Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f): honest can't-prove-yet refusal punishes the requester (fault taxonomy pending).
@@ -28,8 +27,8 @@
 
 Requester verification chain
 
-- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles
-- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays
+- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles; a requester chain view behind the responder's that catches up, never catches up, or whose sync service stops during the wait
+- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays; a chain view behind the payload's chain block is waited for up to one agreement window, then the sync fails with no verdict
 
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P1` — forged dispute window
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P2` — altered echo ignored
@@ -138,6 +137,9 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — a chain-final window the chain has not adopted, served with an extra signature on each dispute confirmation, a confirmation of an uncommitted dispute and a latest snapshot with another timestamp: the sync is accepted and none of them is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — the P111 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted and none of the forged inputs is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — the P111 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond first: the sync is accepted and none of the forged inputs is stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a requester whose provider lags a snapshot post the responder has seen: the sync waits until its chain head reaches the payload's chain block, verifies from the moved anchor and accepts, with the responder kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — the requester's provider never reaches the payload's chain block: after one agreement window the sync fails with no verdict, no rejection, and the responder neither blacklisted nor disconnected
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — the requester's sync service stops while the sync waits for its chain head: the sync fails at once with no verdict
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 
