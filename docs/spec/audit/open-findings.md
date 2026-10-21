@@ -1674,7 +1674,7 @@ lag hit served dispute windows: a requester whose provider had not yet seen the 
 commit rejected with "dispute window not on chain". The snapshot case is reproduced in a unit case
 and end to end; the window case passes through the same wait, which precedes every chain read.
 
-**Engineer decision (Luka, 2026-10-21).** One pattern for this race class instead of a fix per check:
+**Engineer decision (Luke, 2026-10-21).** One pattern for this race class instead of a fix per check:
 the payload names the chain block it was built against, and the requester judges only once its own
 chain view has reached that block. Rejected: the requester sending its anchor in the request (the
 server's local diamond keeps no history, so serving as of an older anchor needs server-side chain
