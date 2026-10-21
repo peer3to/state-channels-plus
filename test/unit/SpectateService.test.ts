@@ -551,6 +551,24 @@ describe("Unit: SpectateService", function () {
             expect(r.rejections).to.deep.equal([]);
             expect(r.responderBlacklisted).to.equal(false);
             expect(r.connected).to.equal(true);
+            expect(r.requesterSnapshotHash).to.equal(r.anchorHash);
+            // the wait ran out its agreement window, no earlier exit
+            expect(r.elapsedMs).to.be.at.least(r.agreementTimeMs - 250);
+            expect(r.elapsedMs).to.be.lessThan(
+                r.agreementTimeMs +
+                    TestSession.getHarness().event.protocolEventTimeoutMs()
+            );
+        });
+
+        it("responder's own provider lags the logs another node streamed into its local diamond → the payload names the streamed block, the lagging requester waits for it and accepts; responder kept", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "duringWait", responderHeadLags: true }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.connected).to.equal(true);
         });
 
         it("requester's sync service stops while it waits for its chain head → not synced at once with no verdict, before the agreement window ends", async function () {

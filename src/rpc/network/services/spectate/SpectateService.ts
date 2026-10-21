@@ -1055,9 +1055,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             latestFinalizedEncodedState,
             outboundMessageBlocksUpToLatestGenesis,
             outboundMessageBlocksOfTheLatestFork,
-            // read after every chain read above: the payload reflects no
+            // read after every chain read above, and covering logs a faster
+            // node streamed into the local diamond: the payload reflects no
             // chain state past it
-            chainBlock: await stateManager.eventSyncService.readChainHead()
+            chainBlock:
+                await stateManager.eventSyncService.readViewBlock(channelId)
         };
         this.logger.debug(`Generated syncpayload`, syncPayload);
         return syncPayload;

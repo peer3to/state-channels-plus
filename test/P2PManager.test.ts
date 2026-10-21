@@ -1203,6 +1203,9 @@ describe("P2PManager", function () {
 // ethers' refusal of an eth_call on the runtime's closed chain provider
 const CLOSED_PROVIDER_CHAIN_READ =
     /^provider destroyed; cancelled request \(operation="eth_call", code=UNSUPPORTED_OPERATION,/;
+// the same refusal of the head read that applying a sync response starts with
+const CLOSED_PROVIDER_HEAD_READ =
+    /^provider destroyed; cancelled request \(operation="eth_blockNumber", code=UNSUPPORTED_OPERATION,/;
 
 describe("P2PManager handshake chain failures", function () {
     it("reports a failed participant read after an OPENED handshake to the runtime's top-level error handling, with no connection hook", async function () {
@@ -1221,7 +1224,7 @@ describe("P2PManager handshake chain failures", function () {
 
         expect(result.hostErrors).to.have.length(1);
         expect(result.hostErrors[0].message).to.match(
-            CLOSED_PROVIDER_CHAIN_READ
+            CLOSED_PROVIDER_HEAD_READ
         );
         expect(result.hookCount).to.equal(0);
         expect(result.aborted).to.equal(false);

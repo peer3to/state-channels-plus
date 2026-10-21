@@ -565,21 +565,38 @@ export default class EventSyncService {
     }
 
     /**
+     * The highest chain block this node's view of the channel reflects: its
+     * provider's head, or a later block whose logs a faster node streamed.
+     */
+    public async readViewBlock(channelId: ChannelId): Promise<BlockNumber> {
+        const head = await this.readChainHead();
+        const scheduled = [
+            ...this.getBlockStates(toChannelKey(channelId)).keys()
+        ];
+        const processed =
+            this.storage.eventSync.getLatestProcessedBlock(channelId);
+        return Math.max(head, processed ?? head, ...scheduled);
+    }
+
+    /**
      * Resolves true once this node's provider reports `blockNumber` or a later
      * head, false when `timeoutMs` passes or `signal` aborts first. A failed
-     * head read rejects.
+     * head read rejects. The head is read at the start and at each announced
+     * block, so a provider that catches up without a new block is seen at the
+     * next one.
      */
     public async waitForChainHead(
         blockNumber: BlockNumber,
         timeoutMs: number,
         signal: AbortSignal
     ): Promise<boolean> {
+        if (signal.aborted) return false;
         const provider = this.getProvider();
         let onBlock = () => {};
         let onAbort = () => {};
         let timer: ReturnType<typeof setTimeout> | undefined;
-        // subscribed before the first read: a block mined in between still
-        // triggers a read
+        // subscribed before the first read, so a block announced in between
+        // triggers another read
         const reached = new Promise<boolean>((resolve, reject) => {
             const check = () =>
                 this.readChainHead().then(
@@ -593,11 +610,13 @@ export default class EventSyncService {
             void provider.on("block", onBlock).then(check, reject);
         });
         try {
-            return signal.aborted ? false : await reached;
+            return await reached;
         } finally {
             clearTimeout(timer);
             signal.removeEventListener("abort", onAbort);
             void provider.off("block", onBlock);
+            // a head read still in flight after the wait ended decides nothing
+            reached.catch(() => undefined);
         }
     }
 

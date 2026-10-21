@@ -3332,15 +3332,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /** Pin this peer's chain view at the current block. Returns that block. */
-    public stubLagChainView(): Promise<number> {
-        return this.service.lagChainView();
+    public stubLagChainView(holdLogs: boolean): Promise<number> {
+        return this.service.lagChainView(holdLogs);
     }
 
     public getLaggedHeadReads(): number {
         return this.service.laggedHeadReads;
     }
 
-    public restoreChainView(): Promise<boolean> {
+    public getChainHeadWaitsEntered(): number {
+        return this.service.chainHeadWaitsEntered;
+    }
+
+    public restoreChainView(): boolean {
         return this.service.releaseChainView();
     }
 

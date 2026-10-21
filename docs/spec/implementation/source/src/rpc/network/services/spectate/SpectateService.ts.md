@@ -140,6 +140,7 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a requester whose provider lags a snapshot post the responder has seen: the sync waits until its chain head reaches the payload's chain block, verifies from the moved anchor and accepts, with the responder kept
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — the requester's provider never reaches the payload's chain block: after one agreement window the sync fails with no verdict, no rejection, and the responder neither blacklisted nor disconnected
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — the requester's sync service stops while the sync waits for its chain head: the sync fails at once with no verdict
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117` — the responder's own provider lags logs another node streamed into its local diamond: the payload names the streamed block, the lagging requester waits for it and accepts, with the responder kept
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

@@ -11,18 +11,23 @@ import { expect } from "chai";
  * peer's provider is pinned at the current block, then the held exit post of
  * the second leaver lands: the chain anchor moves to the second exit, which
  * the first remaining peer (the responder) observes and the pinned requester
- * does not. `via`: "apply" applies the responder's payload for its latest
- * height, "sync" runs the requester's real `sync` RPC to the responder.
- * `release`: "duringWait" lets the requester's provider catch up once its
- * sync is waiting on the responder's chain block, "never" keeps it pinned,
- * "dispose" keeps it pinned and stops the requester's sync service during the
- * wait. `waitEndedMs`: from the stop to the sync's result.
+ * does not. `responderHeadLags`: the responder's provider is pinned at the
+ * same block while another node keeps streaming its logs, so its local
+ * diamond holds the moved anchor while its head is behind it. `via`: "apply"
+ * applies the responder's payload for its latest height, "sync" runs the
+ * requester's real `sync` RPC to the responder. `release`: "duringWait" lets
+ * the requester's provider catch up once its sync is waiting on the chain
+ * block and mines a real block, "never" keeps it pinned, "dispose" keeps it
+ * pinned and stops the requester's sync service during the wait.
+ * `elapsedMs`: from the apply call to its result; `waitEndedMs`: from the
+ * stop to the result.
  */
 export async function applySyncFromChainAheadResponder(
     h: MathPeerTestHarness,
     options: {
         release: "duringWait" | "never" | "dispose";
         via?: "apply" | "sync";
+        responderHeadLags?: boolean;
     }
 ) {
     const { forkId, anchor, remaining, heldPost } =
@@ -30,6 +35,9 @@ export async function applySyncFromChainAheadResponder(
     const responder = h.getPeer(remaining[0]);
     const requester = h.getPeer(remaining[1]);
     const lag = await h.rpcStub.lagChainView(requester.index);
+    const responderLag = options.responderHeadLags
+        ? await h.rpcStub.lagChainView(responder.index, { holdLogs: false })
+        : undefined;
     try {
         expect(await heldPost.release()).to.equal(null);
         const moved = await chainSnapshot(h);
@@ -62,7 +70,7 @@ export async function applySyncFromChainAheadResponder(
         const stub = h.control(requester).stub;
         await stub.recordSyncRejections().request();
         try {
-            const headReadsBefore = await lag.headReads();
+            const appliedAt = Date.now();
             const applying =
                 options.via === "sync"
                     ? h
@@ -88,14 +96,18 @@ export async function applySyncFromChainAheadResponder(
                           });
             let stoppedAt: number | undefined;
             if (options.release !== "never") {
-                // the sync is waiting once its pinned head was read
+                // the sync is in its wait once it entered it and read the
+                // pinned head there
                 await waitFor(
-                    async () => (await lag.headReads()) > headReadsBefore,
+                    async () =>
+                        (await lag.chainHeadWaitsEntered()) > 0 &&
+                        (await lag.headReads()) > 0,
                     h.event.protocolEventTimeoutMs()
                 );
-                if (options.release === "duringWait")
+                if (options.release === "duringWait") {
                     expect(await lag.release()).to.equal(true);
-                else {
+                    await h.rpcStub.mineTransferBlock();
+                } else {
                     stoppedAt = Date.now();
                     await h.execOnHost(requester, async (sm) => {
                         sm.p2pManager.localRpc.spectateService.dispose();
@@ -103,8 +115,7 @@ export async function applySyncFromChainAheadResponder(
                 }
             }
             const accepted = await applying;
-            const waitEndedMs =
-                stoppedAt === undefined ? undefined : Date.now() - stoppedAt;
+            const resolvedAt = Date.now();
             return {
                 accepted,
                 rejections: await stub
@@ -121,8 +132,13 @@ export async function applySyncFromChainAheadResponder(
                 requesterSnapshotHash: (
                     await h.query.getLocalStateSnapshot(requester)
                 ).hash,
+                anchorHash: anchor.hash,
                 chainSnapshotHash: moved.hash,
-                waitEndedMs,
+                elapsedMs: resolvedAt - appliedAt,
+                waitEndedMs:
+                    stoppedAt === undefined
+                        ? undefined
+                        : resolvedAt - stoppedAt,
                 agreementTimeMs: await h.execOnHost(
                     requester,
                     async (sm) => sm.timeConfig.agreementTime * 1000
@@ -133,5 +149,6 @@ export async function applySyncFromChainAheadResponder(
         }
     } finally {
         await lag.release();
+        await responderLag?.release();
     }
 }

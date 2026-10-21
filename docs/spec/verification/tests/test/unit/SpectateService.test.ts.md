@@ -20,13 +20,17 @@ Six inbound cases stage the disputed window so that its reduce applies a top-up 
 
 Five cases check a window's other reduction inputs on the same staging. A window the requester reduces locally, served with an extra signature by a non-participant on every dispute confirmation, is accepted and none of those signatures is stored. In the chain-final, reduction-after-finality-read and concurrent cases, the payload carries an extra signature by a non-participant on every dispute confirmation, a confirmation of a dispute the chain never committed and a latest snapshot with another timestamp; the sync is accepted, and the requester's storage holds none of the extra signatures, no confirmation for the uncommitted dispute and no snapshot under the forged hash. In the last one the requester's whole dispute-log handler is held, so it handles none of the window's dispute logs; it syncs peer 0's genuine payload, stores none of the window's confirmations and moves to the reduced fork. Recovering the window's disputes afterwards returns every committed dispute from the chain's logs: the dispute handler skips the fork the requester left and never reads its audit predicate, and the recovery stores the chain's copy of each confirmation.
 
-Three cases pin the requester's provider at the current block (its head and every `latest` read stay
+Four cases pin the requester's provider at the current block (its head and every `latest` read stay
 there and its streamed logs above it are held), then land a held exit snapshot post that moves the
 chain anchor, which the responder observes. In the first the provider catches up once the sync is
-waiting on the payload's chain block; the sync verifies the outbound run from the moved anchor and
+waiting on the payload's chain block and a real block is mined; the sync verifies the outbound run from the moved anchor and
 accepts, with the responder kept. In the second the provider stays pinned; after one agreement window
 the sync fails with no rejection recorded, and the responder is neither blacklisted nor disconnected.
-In the third the requester's sync service stops while the sync waits; the sync fails with no
+The second also checks that the wait ran out its whole agreement window and that the requester
+kept its old anchor. In the third the responder's provider is pinned too while another node keeps
+streaming its logs, so its local diamond holds the moved anchor ahead of its head; the payload names
+the streamed block and the requester waits for it, then accepts. In the fourth the requester's sync
+service stops while the sync waits; the sync fails with no
 rejection well before the agreement window ends.
 One `applySyncResponse` case stubs the requester's local diamond so the unfinalized blocks of an honest payload start with a block whose bytes do not decode; the sync returns false and records only the "block confirmation rejected" reason, so neither the pipeline log nor the pipeline throws.
 
@@ -85,6 +89,7 @@ blacklist.
 - `on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P34
 - `requester's provider behind the responder's after a snapshot post → the sync waits until its chain head reaches the payload's chain block, then verifies from the moved anchor and accepts; responder kept`: INV-SYNC-2-AT3RXE.T1.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
 - `requester's provider stays behind the payload's chain block for one agreement window → not synced with no verdict: no rejection, responder neither blacklisted nor cut`: INV-SYNC-3-A7A2ED.T1.P34, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115
+- `responder's own provider lags the logs another node streamed into its local diamond → the payload names the streamed block, the lagging requester waits for it and accepts; responder kept`: INV-SYNC-2-AT3RXE.T1.P5, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P117
 - `requester's sync service stops while it waits for its chain head → not synced at once with no verdict, before the agreement window ends`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116
 - `a milestone prepended wholly below the on-chain anchor carrying a snapshot above it → sync accepted, neither its block nor the snapshot is stored`: none
 - `milestone snapshot at the requester's own finalized point altered → accepted from that point, the altered snapshot is not stored`: none

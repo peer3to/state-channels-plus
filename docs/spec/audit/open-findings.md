@@ -1671,7 +1671,8 @@ while the requester verified the run from the anchor its own provider returned
 just after a snapshot post) held an older anchor, no served block linked to it, and the requester
 rejected the honest server with "latest-fork outbound blocks invalid" and blacklisted it. The same
 lag hit served dispute windows: a requester whose provider had not yet seen the responder's dispute
-commit rejected with "dispute window not on chain". Reproduced in a unit case and end to end.
+commit rejected with "dispute window not on chain". The snapshot case is reproduced in a unit case
+and end to end; the window case passes through the same wait, which precedes every chain read.
 
 **Engineer decision (Luka, 2026-10-21).** One pattern for this race class instead of a fix per check:
 the payload names the chain block it was built against, and the requester judges only once its own
@@ -1681,7 +1682,8 @@ reads, and a requester that has not seen a dispute has nothing to send for the w
 wait is bounded by one `agreementTime`; a view still behind then is no verdict and no blacklist,
 because a lagging provider and a server naming a future block look the same.
 
-**Fix:** `generateSyncPayload` sets `chainBlock` to its chain head, read after its last chain read.
+**Fix:** `generateSyncPayload` sets `chainBlock` to its chain head read after its last chain read,
+or a later block whose logs another RPC node already streamed into its local diamond.
 `applySyncResponse` first waits (`EventSyncService.waitForChainHead`) until its own chain head
 reaches `chainBlock`, for at most one agreement window, then runs every chain-derived check; a view
 that does not get there returns not synced with no verdict. A server behind the requester was
@@ -1689,7 +1691,9 @@ already handled by the existing paths. Regressions:
 [`INV-SYNC-2-AT3RXE.T1.P4`](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe.t1.p4),
 [`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34).
 Residual: a Byzantine responder naming a future block delays one request by up to one agreement
-window. The same race class (a judgment against chain state made from a view behind the evidence)
+window. The requester re-reads its head only at announced blocks (no polling), so a provider that
+catches up without a new block, or a read node lagging the node that announced, is seen at the next
+block; with none inside one agreement window the sync ends with no verdict. The same race class (a judgment against chain state made from a view behind the evidence)
 exists outside sync and is not addressed here.
 
 <a id="find-stipend-1-9ysnwb"></a>

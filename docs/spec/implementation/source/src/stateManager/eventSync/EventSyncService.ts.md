@@ -11,6 +11,8 @@
   Partial: a trusted endpoint can hold the completed-block watermark without end by failing every catch-up `eth_getLogs` or head request while its reopened socket stays open; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
 - [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../../../../../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
   Partial: every listed endpoint is trusted; logs are not cross-checked, so a forged log is processed and moves the watermark past real events; accepted limit ([`FIND-RPC-1-E5ZHAR`](../../../../../audit/open-findings.md#find-rpc-1-e5zhar)).
+- [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
+- [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
 - [`REQ-IX-7-A004VZ` (Chain observation)](../../../../../specification/interactions.md#req-ix-7-a004vz)
 - [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
 - [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
@@ -84,13 +86,15 @@ Ordering and recovery
 
 Waiting for the chain head
 
-- Setup: A head already at the block, a block mined during the wait, an abort before it arrives, and a failing head read
-- Oracle: Resolves true once the provider's head reaches the block, false on timeout or abort, and rejects with a failed head read's error
+- Setup: A head already at the block, a provider that catches up during the wait before and after a mined block, a block that never arrives within the timeout, an abort during the wait and before the call, and a failing head read
+- Oracle: Resolves true once the provider's head reaches the block, read at the start and at each announced block; false on timeout or abort; rejects with a failed head read's error; leaves no block listener behind
 
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P1` — the head is already at the block: true without a new block
-- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P2` — the block is mined during the wait: true
-- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P3` — aborted before the block arrives: false
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P2` — the provider catches up during the wait: still waiting until the next mined block, then true
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P3` — aborted during the wait: false
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P4` — the head read fails: rejects with its error
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P5` — the block does not arrive within the timeout: false after it
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P6` — aborted before the call: false with no head read
 
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 

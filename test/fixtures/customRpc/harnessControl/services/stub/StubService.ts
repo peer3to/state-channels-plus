@@ -101,6 +101,7 @@ type InboundMessageLogKey = string;
 export type StubKey =
     | "chainViewSend"
     | "chainViewStream"
+    | "chainViewWait"
     | "proofWalkHold"
     | "auditingDataBuild"
     | "disputeKillMulticall"
@@ -753,6 +754,8 @@ export class StubService extends ANetworkRpcService<
     readonly heldCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
     /** Head reads the lagging chain view answered with its pinned block. */
     laggedHeadReads = 0;
+    /** `waitForChainHead` calls entered while the chain view lags. */
+    chainHeadWaitsEntered = 0;
     /** Streamed logs above the lagging chain view's block, with their channel. */
     private readonly heldChainViewLogs: [Log, ChannelId][] = [];
     /** getLogs spans recorded by the current chain-log-query patch. */
@@ -3268,17 +3271,18 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * A provider that lags the chain: the head and every `latest` read stay at
-     * the current block, and streamed logs above it are held, until released.
-     * Returns the pinned block.
+     * the current block until released. `holdLogs`: streamed logs above that
+     * block are held too, as when every node lags; otherwise another node
+     * keeps streaming them. Returns the pinned block.
      */
-    public async lagChainView(): Promise<number> {
-        const provider = this.sm.stateChannelManagerContract.runner
-            ?.provider as JsonRpcApiProvider;
+    public async lagChainView(holdLogs: boolean): Promise<number> {
+        const provider = this.jsonRpcChainProvider;
         const pinned = await provider.getBlockNumber();
         const pinnedTag = toQuantity(pinned);
         const send = provider.send.bind(provider);
         this.stubOriginals.set("chainViewSend", send);
         this.laggedHeadReads = 0;
+        this.chainHeadWaitsEntered = 0;
         provider.send = async (method, params) => {
             if (method === "eth_blockNumber") {
                 this.laggedHeadReads++;
@@ -3292,39 +3296,57 @@ export class StubService extends ANetworkRpcService<
             );
         };
         const eventSyncService = this.sm.eventSyncService;
-        const scheduleStreamedLog =
-            eventSyncService.scheduleStreamedLog.bind(eventSyncService);
-        this.stubOriginals.set("chainViewStream", scheduleStreamedLog);
-        eventSyncService.scheduleStreamedLog = (log, channelId) => {
-            if (log.blockNumber <= pinned)
-                return scheduleStreamedLog(log, channelId);
-            this.heldChainViewLogs.push([log, channelId ?? this.sm.channelId]);
-            return Promise.resolve();
+        // record-only: counts the waits, forwards each unchanged
+        const waitForChainHead =
+            eventSyncService.waitForChainHead.bind(eventSyncService);
+        this.stubOriginals.set("chainViewWait", waitForChainHead);
+        eventSyncService.waitForChainHead = (...args) => {
+            this.chainHeadWaitsEntered++;
+            return waitForChainHead(...args);
         };
+        if (holdLogs) {
+            const scheduleStreamedLog =
+                eventSyncService.scheduleStreamedLog.bind(eventSyncService);
+            this.stubOriginals.set("chainViewStream", scheduleStreamedLog);
+            eventSyncService.scheduleStreamedLog = (log, channelId) => {
+                if (log.blockNumber <= pinned)
+                    return scheduleStreamedLog(log, channelId);
+                this.heldChainViewLogs.push([
+                    log,
+                    channelId ?? this.sm.channelId
+                ]);
+                return Promise.resolve();
+            };
+        }
         return pinned;
     }
 
     /**
-     * End the lag: restore the provider, deliver the held logs and announce
-     * the real head, as a provider catching up does.
+     * End the lag: restore the provider and deliver the held logs. Nothing is
+     * announced; a waiting sync sees the real head at the next mined block.
      */
-    public async releaseChainView(): Promise<boolean> {
+    public releaseChainView(): boolean {
         const send = this.stubOriginals.get("chainViewSend") as
             | JsonRpcApiProvider["send"]
             | undefined;
+        const waitForChainHead = this.stubOriginals.get("chainViewWait") as
+            | EventSyncService["waitForChainHead"]
+            | undefined;
+        if (!send || !waitForChainHead) return false;
+        const eventSyncService = this.sm.eventSyncService;
+        this.jsonRpcChainProvider.send = send;
+        eventSyncService.waitForChainHead = waitForChainHead;
+        this.stubOriginals.delete("chainViewSend");
+        this.stubOriginals.delete("chainViewWait");
         const scheduleStreamedLog = this.stubOriginals.get(
             "chainViewStream"
         ) as EventSyncService["scheduleStreamedLog"] | undefined;
-        if (!send || !scheduleStreamedLog) return false;
-        const provider = this.sm.stateChannelManagerContract.runner
-            ?.provider as JsonRpcApiProvider;
-        provider.send = send;
-        this.sm.eventSyncService.scheduleStreamedLog = scheduleStreamedLog;
-        this.stubOriginals.delete("chainViewSend");
-        this.stubOriginals.delete("chainViewStream");
-        for (const [log, channelId] of this.heldChainViewLogs.splice(0))
-            void scheduleStreamedLog(log, channelId);
-        await provider.emit("block", await provider.getBlockNumber());
+        if (scheduleStreamedLog) {
+            eventSyncService.scheduleStreamedLog = scheduleStreamedLog;
+            this.stubOriginals.delete("chainViewStream");
+            for (const [log, channelId] of this.heldChainViewLogs.splice(0))
+                void scheduleStreamedLog(log, channelId);
+        }
         return true;
     }
 
@@ -4184,11 +4206,9 @@ export class StubService extends ANetworkRpcService<
      * block, so the error is read back from the read-only transaction trace.
      */
     async recordMinedOpeningRejection(transactionHash: string): Promise<void> {
-        const provider = this.chainProvider;
+        const provider = this.jsonRpcChainProvider;
         const receipt = await provider.waitForTransaction(transactionHash);
         if (!receipt || receipt.status !== 0) return;
-        if (!(provider instanceof JsonRpcApiProvider))
-            throw new Error("Expected a JSON-RPC chain provider");
         const trace: { returnValue: string } = await provider.send(
             "debug_traceTransaction",
             [
@@ -4211,6 +4231,13 @@ export class StubService extends ANetworkRpcService<
     get chainProvider() {
         const provider = this.sm.stateChannelManagerContract.runner?.provider;
         if (!provider) throw new Error("Expected a chain provider");
+        return provider;
+    }
+
+    get jsonRpcChainProvider() {
+        const provider = this.chainProvider;
+        if (!(provider instanceof JsonRpcApiProvider))
+            throw new Error("Expected a JSON-RPC chain provider");
         return provider;
     }
 
