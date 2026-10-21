@@ -615,8 +615,6 @@ export default class EventSyncService {
             clearTimeout(timer);
             signal.removeEventListener("abort", onAbort);
             void provider.off("block", onBlock);
-            // a head read still in flight after the wait ended decides nothing
-            reached.catch(() => undefined);
         }
     }
 
