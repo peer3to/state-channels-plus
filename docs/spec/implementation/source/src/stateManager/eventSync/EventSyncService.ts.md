@@ -86,8 +86,8 @@ Ordering and recovery
 
 Waiting for the chain head
 
-- Setup: A head already at the block, a provider that catches up during the wait before and after a mined block, a block that never arrives within the timeout, an abort during the wait and before the call, and a failing head read
-- Oracle: Resolves true once the provider's head reaches the block, read at the start and at each announced block; false on timeout or abort; rejects with a failed head read's error; leaves no block listener behind
+- Setup: A head already at the block, a provider that catches up during the wait before and after a mined block, a block that never arrives within the timeout, an abort during the wait and before the call, a failing head read, and a head read that never settles
+- Oracle: Resolves true once the provider's head reaches the block, read at the start and at each announced block; false on timeout or abort, also while a head read hangs; rejects with a failed head read's error; leaves no block listener behind
 
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P1` — the head is already at the block: true without a new block
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P2` — the provider catches up during the wait: still waiting until the next mined block, then true
@@ -95,6 +95,7 @@ Waiting for the chain head
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P4` — the head read fails: rejects with its error
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P5` — the block does not arrive within the timeout: false after it
 - [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P6` — aborted before the call: false with no head read
+- [x] `UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6.P7` — a head read never settles: false at the timeout and at the abort
 
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 

@@ -573,8 +573,8 @@ export default class EventSyncService {
 
     /**
      * Resolves true once this node's provider reports `blockNumber` or a later
-     * head, false when `timeoutMs` passes or `signal` aborts first. A failed
-     * head read rejects. The head is read at the start and at each announced
+     * head, false when `timeoutMs` passes or `signal` aborts first, also while
+     * a head read hangs. A failed head read rejects. The head is read at the start and at each announced
      * block, so a provider that catches up without a new block is seen at the
      * next one.
      */
@@ -584,24 +584,38 @@ export default class EventSyncService {
         signal: AbortSignal
     ): Promise<boolean> {
         const provider = this.getProvider();
-        const deadline = Date.now() + timeoutMs;
+        let done = false;
+        let stop = () => {};
+        // resolves on the deadline or the abort; a pending head read cannot delay it
+        const stopped = new Promise<undefined>((resolve) => {
+            stop = () => {
+                done = true;
+                resolve(undefined);
+            };
+        });
+        const timer = setTimeout(stop, timeoutMs);
         let nextBlock = () => {};
         const wake = () => nextBlock();
-        signal.addEventListener("abort", wake);
+        signal.addEventListener("abort", stop);
         await provider.on("block", wake);
         try {
-            while (!signal.aborted && Date.now() < deadline) {
+            while (!done && !signal.aborted) {
                 // armed before the read: a block announced during it wakes the loop
                 const woken = new Promise<void>(
                     (resolve) => (nextBlock = resolve)
                 );
-                if ((await provider.getBlockNumber()) >= blockNumber)
-                    return true;
-                await settleBy(woken, deadline);
+                const read = provider.getBlockNumber();
+                // the read can outlive the wait
+                read.catch(() => {});
+                const head = await Promise.race([read, stopped]);
+                if (head === undefined) return false;
+                if (head >= blockNumber) return true;
+                await Promise.race([woken, stopped]);
             }
             return false;
         } finally {
-            signal.removeEventListener("abort", wake);
+            clearTimeout(timer);
+            signal.removeEventListener("abort", stop);
             void provider.off("block", wake);
         }
     }

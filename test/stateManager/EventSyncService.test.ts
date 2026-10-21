@@ -739,6 +739,50 @@ describe("EventSyncService", function () {
             expect(r.error).to.equal("head read failed");
             expect(r.listenersAfter).to.equal(r.listenersBefore);
         });
+
+        it("a head read that never settles → false at the timeout and at the abort, no block listener left", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
+                const provider =
+                    sm.stateChannelManagerContract.runner!.provider!;
+                const listenersBefore = await provider.listenerCount("block");
+                const original = provider.getBlockNumber.bind(provider);
+                provider.getBlockNumber = () => new Promise<number>(() => {});
+                try {
+                    const timedOutAt = Date.now();
+                    const timedOut = await sm.eventSyncService.waitForChainHead(
+                        1,
+                        200,
+                        new AbortController().signal
+                    );
+                    const timeoutElapsedMs = Date.now() - timedOutAt;
+                    const abort = new AbortController();
+                    setTimeout(() => abort.abort(), 200);
+                    const abortedAt = Date.now();
+                    const aborted = await sm.eventSyncService.waitForChainHead(
+                        1,
+                        60_000,
+                        abort.signal
+                    );
+                    return {
+                        timedOut,
+                        timeoutElapsedMs,
+                        aborted,
+                        abortElapsedMs: Date.now() - abortedAt,
+                        listenersBefore,
+                        listenersAfter: await provider.listenerCount("block")
+                    };
+                } finally {
+                    provider.getBlockNumber = original;
+                }
+            });
+            expect(r.timedOut).to.equal(false);
+            expect(r.timeoutElapsedMs).to.be.within(190, 5_000);
+            expect(r.aborted).to.equal(false);
+            expect(r.abortElapsedMs).to.be.within(190, 5_000);
+            expect(r.listenersAfter).to.equal(r.listenersBefore);
+        });
     });
 
     describe("scheduleStreamedLog", function () {
