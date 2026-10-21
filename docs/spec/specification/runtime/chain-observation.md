@@ -92,7 +92,12 @@ progress marker is dropped: its block is fully processed.
 - An endpoint delivers a block's events in order on one connection.
 - A connection that drops in the middle of one block's events can leave part of that block unread until
   a later recovery query; the inclusive re-read covers the progress-marker block itself.
-- Undoing the effects of a removed event is out of scope.
+- **Chain finality.** Every event, receipt and read an endpoint returns is treated as final: an
+  included transaction is acted on at its first inclusion, the progress marker is a block number
+  without a block hash, and an event a reorganization removes is ignored, its effects not undone.
+  This is a known-wrong simplification on any chain that can reorganize, kept for now because every
+  chain-facing decision (genesis install, joins, disputes, reductions, slashing, exits) relies on it.
+  Lifting it is a cross-cutting change, not a local fix; see Future Work.
 - Recovery queries that deliberately read below the progress marker are not stream deliveries and are
   not subject to the below-marker drop.
 
@@ -134,3 +139,7 @@ until the read succeeds or the re-reading endpoint's connection ends.
 
 _Non-normative._ Verify one endpoint's events against another before they advance the progress
 marker, and mark endpoints that answer with errors as unhealthy.
+
+_Non-normative._ Lift the chain-finality assumption: either act only on finalized chain data, or
+track the progress marker by block hash and roll back every effect of a removed event (local diamond
+state, storage, the progress marker and any decision taken from it) together.

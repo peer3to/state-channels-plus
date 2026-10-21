@@ -246,6 +246,12 @@ surface the security review must cover. See [runtime/sdk.md](../specification/ru
 [security/open-security-review.md](../audit/security-assessment.md). This supersedes the
 event-ordering item of [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr).
 
+The reorg half (cursor, rollback) is pending on the chain-finality assumption
+([chain finality](../specification/runtime/chain-observation.md#assumptions-and-constraints),
+engineer decision 2026-10-21); what lifting it must revisit is listed under
+[`FIND-EVENTS-1-3JF8FM`](../audit/open-findings.md#find-events-1-3jf8fm). The event-ordering half
+does not depend on finality and stays open.
+
 <a id="oq-35-e5rrdf"></a>
 
 ## OQ-35-E5RRDF — Handshake channel/identity binding (relay MITM)
