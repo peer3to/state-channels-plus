@@ -559,23 +559,16 @@ export default class EventSyncService {
         );
     }
 
-    /** The chain head block this node's provider reports. */
-    public async readChainHead(): Promise<BlockNumber> {
-        return await this.getProvider().getBlockNumber();
-    }
-
     /**
      * The highest chain block this node's view of the channel reflects: its
      * provider's head, or a later block whose logs a faster node streamed.
      */
     public async readViewBlock(channelId: ChannelId): Promise<BlockNumber> {
-        const head = await this.readChainHead();
-        const scheduled = [
+        return Math.max(
+            await this.getProvider().getBlockNumber(),
+            this.storage.eventSync.getLatestProcessedBlock(channelId) ?? 0,
             ...this.getBlockStates(toChannelKey(channelId)).keys()
-        ];
-        const processed =
-            this.storage.eventSync.getLatestProcessedBlock(channelId);
-        return Math.max(head, processed ?? head, ...scheduled);
+        );
     }
 
     /**
@@ -590,31 +583,26 @@ export default class EventSyncService {
         timeoutMs: number,
         signal: AbortSignal
     ): Promise<boolean> {
-        if (signal.aborted) return false;
         const provider = this.getProvider();
-        let onBlock = () => {};
-        let onAbort = () => {};
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        // subscribed before the first read, so a block announced in between
-        // triggers another read
-        const reached = new Promise<boolean>((resolve, reject) => {
-            const check = () =>
-                this.readChainHead().then(
-                    (head) => head >= blockNumber && resolve(true),
-                    reject
-                );
-            onBlock = () => void check();
-            onAbort = () => resolve(false);
-            timer = setTimeout(() => resolve(false), timeoutMs);
-            signal.addEventListener("abort", onAbort);
-            void provider.on("block", onBlock).then(check, reject);
-        });
+        const deadline = Date.now() + timeoutMs;
+        let nextBlock = () => {};
+        const wake = () => nextBlock();
+        signal.addEventListener("abort", wake);
+        await provider.on("block", wake);
         try {
-            return await reached;
+            while (!signal.aborted && Date.now() < deadline) {
+                // armed before the read: a block announced during it wakes the loop
+                const woken = new Promise<void>(
+                    (resolve) => (nextBlock = resolve)
+                );
+                if ((await provider.getBlockNumber()) >= blockNumber)
+                    return true;
+                await settleBy(woken, deadline);
+            }
+            return false;
         } finally {
-            clearTimeout(timer);
-            signal.removeEventListener("abort", onAbort);
-            void provider.off("block", onBlock);
+            signal.removeEventListener("abort", wake);
+            void provider.off("block", wake);
         }
     }
 

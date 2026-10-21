@@ -572,7 +572,7 @@ describe("EventSyncService", function () {
                 const provider =
                     sm.stateChannelManagerContract.runner!.provider!;
                 const listenersBefore = await provider.listenerCount("block");
-                const head = await sm.eventSyncService.readChainHead();
+                const head = await provider.getBlockNumber();
                 const reached = await sm.eventSyncService.waitForChainHead(
                     head,
                     60_000,
@@ -632,7 +632,7 @@ describe("EventSyncService", function () {
                 const provider =
                     sm.stateChannelManagerContract.runner!.provider!;
                 const listenersBefore = await provider.listenerCount("block");
-                const head = await sm.eventSyncService.readChainHead();
+                const head = await provider.getBlockNumber();
                 const startedAt = Date.now();
                 const reached = await sm.eventSyncService.waitForChainHead(
                     head + 1_000,
@@ -658,7 +658,7 @@ describe("EventSyncService", function () {
                 const provider =
                     sm.stateChannelManagerContract.runner!.provider!;
                 const listenersBefore = await provider.listenerCount("block");
-                const head = await sm.eventSyncService.readChainHead();
+                const head = await provider.getBlockNumber();
                 const abort = new AbortController();
                 setTimeout(() => abort.abort(), 200);
                 const reached = await sm.eventSyncService.waitForChainHead(
