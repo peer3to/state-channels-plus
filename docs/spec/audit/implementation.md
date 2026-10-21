@@ -839,7 +839,8 @@ canonical and has no `removed`-log handling or block-hash confirmation. That is 
 well-behaved node and for the local runner after the fork fix, and it is the same assumption a real
 chain breaks on a reorg. Recorded as
 [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm) for a specification decision; no
-code change made here. Decided 2026-10-21: chain finality is a recorded, known-wrong assumption, and
+code change made here. (As of 2026-09-09; a `removed` log is now logged and ignored, its effects
+not undone.) Decided 2026-10-21: chain finality is a recorded, known-wrong assumption, and
 the finding is pending on it.
 
 ## Estimate margin instead of a search — 2026-09-09

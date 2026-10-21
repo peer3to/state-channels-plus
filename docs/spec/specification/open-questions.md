@@ -228,7 +228,8 @@ stubbed; and the first inbound block's height is not bound to the lower snapshot
 Additional implementation gaps: the SDK promotes itself to `PENDING_PARTICIPANT`
 **before** the join transaction is even sent (never waiting for a canonical chain event; a
 dropped transaction leaves the node pending — candidate rule: stage locally, promote on the
-canonical event, roll back on reorg); and the spectate path **blacklists a peer for any request
+canonical event, roll back on reorg; the roll-back-on-reorg part is pending on the chain-finality
+assumption, [chain finality](runtime/chain-observation.md#assumptions-and-constraints)); and the spectate path **blacklists a peer for any request
 failure**, including plain timeouts and transport errors — conflating unavailability with
 Byzantine behavior, contrary to the fault taxonomy in
 [security/trust-model.md](./security/trust-model.md).

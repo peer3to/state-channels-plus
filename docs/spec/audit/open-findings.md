@@ -2011,8 +2011,9 @@ assumption is known to be wrong on any chain that can reorganize and must be lif
 this entry is the single place that lists what lifting it must revisit (below).
 [EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 applies chain logs delivered by the provider subscription as canonical: a `ChannelOpened` log
-installs the genesis, and no path re-checks that the log's block is still on the chain or handles a
-`removed` log. A node that delivers logs for a block it later drops (hardhat's pending-block
+installs the genesis, and no path re-checks that the log's block is still on the chain; a later
+`removed` delivery is logged and ignored (`EventSyncService.scheduleLog`), so the installed genesis
+stays. A node that delivers logs for a block it later drops (hardhat's pending-block
 simulation did this on the shared test node until the peer3 fork muted it; a real chain does it on a
 reorg) leaves the node on a genesis fork the chain never stored, which breaks spectator
 synchronisation and every dispute audit that follows.
