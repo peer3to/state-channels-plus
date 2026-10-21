@@ -2020,7 +2020,7 @@ synchronisation and every dispute audit that follows.
 
 The observed instance was a node defect (hardhat) and is fixed there.
 
-**Engineer decision (Luka, 2026-10-21).** Finality is assumed throughout the code base, so a fix
+**Engineer decision (Luke, 2026-10-21).** Finality is assumed throughout the code base, so a fix
 for this one log would not make the node reorg-safe; lifting the assumption is a larger rewrite
 than this finding. Record the assumption, acknowledge it is wrong, and park every reorg-dependent
 item on it instead of closing or deleting them.
