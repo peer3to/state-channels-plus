@@ -184,6 +184,12 @@ async function stageObserverSyncedFromRemovedResponder(h: MathPeerTestHarness) {
             honestPeerIndices: survivors,
             assertMaliciousRemoved: false
         });
+        // the leaver installs the successor genesis on its own; until then its
+        // next-writer answer is the old fork's and the harness could pick it
+        await waitFor(
+            async () => (await h.peerForkIds([leaver]))[0] === newForkId,
+            h.event.protocolEventTimeoutMs()
+        );
         await h.transition.advanceState({ count: 2, waitForPeers: survivors });
         expect(
             await h.scenario.finalizeReductionOnChainOnly(1, forkId)
