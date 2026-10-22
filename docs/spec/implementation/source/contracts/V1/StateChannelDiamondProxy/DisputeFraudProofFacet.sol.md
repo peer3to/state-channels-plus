@@ -14,7 +14,6 @@
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
-  Missing: `applyDisputeFraudProofs` has no proof type that kills a dispute whose final point regresses the inbound height of a proved final point ([`FIND-DISPUTE-6-E2YJ9X`](../../../../../audit/open-findings.md#find-dispute-6-e2yj9x)).
 - [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
 - [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
@@ -240,3 +239,13 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P211` — a `TimeoutCalldataPosted` proof whose inbound block skips a height is invalid and slashes its submitter
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P212` — a `TimeoutCalldataPosted` proof whose inbound message the state machine rejects reverts `ErrorDisputeStateMachineInboundProcessingFailed` with no verdict and no slash
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P213` — a `TimeoutCalldataPosted` proof whose posted block consumes a join of a new participant commits to a snapshot admitting the joiner and kills the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P214` — `DisputeFinalPointRegression`: a side chain from the anchor passes a later joiner's final point with an inbound head below the joiner's JOIN; the joiner's regression counter kills it, slashes its disputer, and the reduction keeps the joiner's final history.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P215` — `DisputeFinalPointRegression`: the side chain's snapshot claims a large inbound height next to its real, lower inbound head; the counter reads the chain's stored height and kills.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P216` — `DisputeFinalPointRegression`: the side chain's snapshot names an inbound head the chain does not hold (pruned or never posted); it reads 0 and the counter kills.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P217` — `DisputeFinalPointRegression`: the side chain's first hop lies below the final point and is no regression; its second hop above it is, and the counter naming it kills.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P218` — `DisputeFinalPointRegression`: a milestone above the final point on the same inbound head is no regression; the counter is rejected and costs its submitter.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P219` — `DisputeFinalPointRegression`: a milestone at the final point's height is no regression; the counter is rejected.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P220` — `DisputeFinalPointRegression`: a supplied snapshot the milestone's first block does not commit is no evidence; the counter is rejected.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P221` — `DisputeFinalPointRegression`: a milestone index outside the dispute's proof is no evidence; the counter is rejected.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P222` — `DisputeFinalPointRegression`: a final proof whose hops reach the final point but then fail (a later hop misses the seated joiner's signature) does not walk; the counter is rejected.
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P223` — `DisputeFinalPointRegression` end to end: the seated joiner's node kills the colluders' side chain on chain and only its submitter is slashed

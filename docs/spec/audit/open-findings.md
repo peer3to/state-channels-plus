@@ -1956,7 +1956,7 @@ estimation and inclusion latency under the expected load.
 
 ### FIND-DISPUTE-6-E2YJ9X
 
-**Defect:** _Open (2026-10-20)._ A competing history can bypass a later joiner, and no kill removes it.
+**Defect:** _Resolved (2026-10-22)._ A competing history could bypass a later joiner, and no kill removed it.
 The chain anchor is 50 with participants A to E. A later joiner L posts a JOIN on chain. The honest
 history X consumes that JOIN in the join hop at 60, signed by A to E and L, and reaches the
 threshold-final point F = 100, where L has won 30 from A. A to E build a side chain Y from the
@@ -1969,33 +1969,35 @@ holds no block at F's height, so `DisputeConflictsWithFinalState` cannot be buil
 longest chain and rolls back L's final outcomes on X. L's deposit is carried, because the reduction
 consumes the pending JOIN.
 
-**Proposed direction:** A `DisputeFinalPointRegression` kill, proposed in the review of
-[PR #560](https://github.com/peer3to/state-channels-plus/pull/560). F = 100 is final with inbound
-height 2, while Y's final point G = 1000' is above F with inbound height 1, so Y's final point
-regresses the inbound height of a proved final point. The kill does not exist in the contracts yet.
-Its proof carries three fields, and it kills dispute D when all of these hold:
+**Fix:** the `DisputeFinalPointRegression` kill, proposed in the review of
+[PR #560](https://github.com/peer3to/state-channels-plus/pull/560) and taken as designed (engineer
+decision, Luke, 2026-10-22). F = 100 is final with inbound height 2, while Y's final point G = 1000'
+is above F with inbound height 1, so Y's final point regresses the inbound height of a proved final
+point. Its proof carries three fields, and it kills dispute D when all of these hold:
 
 - `finalProof` walks F from the chain's start and proves it threshold-final, as
   `DisputeConflictsWithFinalState` does. F may be the on-chain anchor.
-- `milestoneIndex` selects one of D's milestones whose first block G lies strictly above the
-  on-chain anchor, so G is final in a valid walk. A milestone that holds the anchor, a block below
-  the anchor and a tail block are never accepted.
+- `milestoneIndex` selects one of D's milestones; G is its first block. G must lie above F, and F is
+  at or above the on-chain anchor, so a milestone that holds the anchor, a block below the anchor
+  and a tail block are never accepted.
 - `gSnapshot` is the preimage of G's `stateSnapshotHash`, checked by `keccak256`.
 - `F.blockHeight < G.transactionCnt`, and the stored inbound height of F is greater than that of G.
   Each height is read from `inboundMessageBlockMap` for the snapshot's
   `latestInboundMessageBlockHash`, never from the snapshot's own height field: a colluding side can
-  sign a real hash next to a false, larger height.
+  sign a real hash next to a false, larger height. A head the chain no longer holds (the anchor's
+  head and below are pruned when the anchor is posted) or never held reads 0.
 
-On one history the inbound height never goes down, so the kill never fires there.
+On one history the inbound height never goes down, so the kill never fires there. Y cannot dodge it
+by omitting its auditing data: its upload names the chain's inbound head, so L is in Y's historic
+threshold set, Y's hop is not final over it, and omission is killed by
+`DisputeLastMilestoneNotFinalAndNoAuditingData`. An honest auditor builds the kill from the dispute's
+milestone snapshots and its own final point below G, and stores it only when the chain's check agrees
+([`REQ-FP-7-4DD0D7.T10`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t10)).
 
-**Evidence:** `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory` in
+**Evidence:**
 [DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
-builds the case with a proposed proof struct and fails on its last assertion today. It is skipped
-(`vm.skip(true)`) until the kill lands.
-
-**Exit:** Implement the `DisputeFinalPointRegression` kill, replace the test's proposed struct and
-proof-type slot with the real ones, remove the skip, and the test passes. Then add its requirement
-and test mapping in the specification and verification layers.
+kills the finding's side chain and keeps L's final history in the reduction, with kill and control
+cases.
 
 <a id="find-events-1-3jf8fm"></a>
 

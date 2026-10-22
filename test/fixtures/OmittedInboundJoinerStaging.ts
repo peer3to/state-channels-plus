@@ -7,6 +7,7 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Address, ForkId, Hash } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { localDiamondAbi } from "@/utils/localDiamond";
+import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
 import type {
     BlockStruct,
     MessageBlockStruct,
@@ -302,7 +303,6 @@ export async function postOmittedInboundJoinerDispute(
                     { blockConfirmations: [hopBlock.blockConfirmationStruct] }
                 ]
             };
-            dispute.input.latestStateSnapshotHash = forgedSnapshot.hash;
             auditingData.milestoneSnapshots = [forgedSnapshot.toStruct()];
             if (anchorBundle) {
                 // the run holding the anchor proves no hop: its snapshot entry is not read
@@ -318,35 +318,278 @@ export async function postOmittedInboundJoinerDispute(
                     forgedSnapshot.toStruct()
                 );
             }
-            auditingData.latestStateSnapshot = forgedSnapshot.toStruct();
-            auditingData.latestFinalizedStateStateMachineState =
-                history.hopSource.encodedState;
             // the forged latest state already consumed the dispute's inbound head
-            auditingData.inboundMessageBlocks = [];
-            dispute.postedAuditingData = true;
-            dispute.input.disputeAuditingDataHash = hash(
-                Codec.encode(auditingData, Type.DisputeAuditingData)
-            );
-            const output = await computeDisputeOutputSnapshotData(
+            const outputParticipants = await commitPostedLatestState(
                 h,
                 history.aliceIndex,
-                dispute.input,
-                forgedSnapshot.toStruct(),
-                history.hopSource.encodedState,
-                auditingData.inboundMessageBlocks
+                { dispute, auditingData },
+                {
+                    latest: forgedSnapshot,
+                    encodedState: history.hopSource.encodedState,
+                    inboundMessageBlocks: []
+                }
             );
-            dispute.outputSnapshotDataHash = hash(
-                Codec.encode(output, Type.SnapshotData)
-            );
-            posted = {
-                auditingData,
-                hopBlock,
-                outputParticipants: [...output.participants] as Address[]
-            };
+            posted = { auditingData, hopBlock, outputParticipants };
         }
     );
     if (!posted) throw new Error("The forged dispute was not built");
     return { dispute, ...posted };
+}
+
+/**
+ * FIND-DISPUTE-6. Alice and Bob post the chain anchor; Charlie then syncs and
+ * joins, the honest history consumes his JOIN and seats him, and it is final
+ * past the join block with his signature. Alice and Bob start no disputes and
+ * send no kills, so only Charlie can counter their dispute. Timeout checks
+ * are suppressed.
+ */
+export type SeatedJoinerHistory = {
+    forkId: ForkId;
+    aliceIndex: number;
+    bobIndex: number;
+    charlieIndex: number;
+    /** the chain anchor, below Charlie's JOIN */
+    anchor: StateSnapshot;
+    /** Charlie's local final point, whose inbound head is his JOIN */
+    charlieFinal: StateSnapshot;
+};
+
+/** The colluders' one-hop dispute, constructed with its posted auditing data. */
+export type JoinerBypassDispute = {
+    dispute: DisputeStruct;
+    auditingData: DisputeAuditingDataStruct;
+    /** the hop: the block above Alice's head, committing `hopSnapshot` */
+    hopBlock: Block;
+    hopSnapshot: StateSnapshot;
+};
+
+export async function stageSeatedJoinerHistory(
+    h: MathPeerTestHarness
+): Promise<SeatedJoinerHistory> {
+    const charlie = await h.scenario.spectatorPromotedViaJoinChannelWait({
+        initialPeers: 2,
+        // the harness baseline timing: Charlie's kill must land in the kill period
+        timeConfig: {},
+        postAnchorBeforeJoin: true
+    });
+    const forkId = h.activeForkId!;
+    for (const index of [ALICE_INDEX, BOB_INDEX, charlie.index])
+        await h.rpcStub.suppressTimeoutCheck(index);
+    await h.dispute.suppressDisputeInitiation([ALICE_INDEX, BOB_INDEX]);
+    await h.rpcStub.suppressDisputeKill(ALICE_INDEX);
+    await h.rpcStub.suppressDisputeKill(BOB_INDEX);
+
+    const anchor = StateSnapshot.from(
+        await h.channelManager.getStateSnapshot(h.channelId)
+    );
+    const charlieQuery = h.control(charlie).query;
+    const finalHeight = await readLocalFinalizedHeight(
+        h,
+        charlie.index,
+        forkId
+    );
+    const final =
+        finalHeight === null
+            ? null
+            : await charlieQuery
+                  .getStateSnapshotStructAt(forkId, finalHeight)
+                  .request();
+    if (!final) throw new Error("Charlie holds no final point");
+    return {
+        forkId,
+        aliceIndex: ALICE_INDEX,
+        bobIndex: BOB_INDEX,
+        charlieIndex: charlie.index,
+        anchor,
+        charlieFinal: StateSnapshot.from(
+            Codec.decode(final.encodedSnapshot, Type.StateSnapshot)
+        )
+    };
+}
+
+/**
+ * Alice's self-removal dispute with posted auditing data whose proof is one
+ * threshold hop from the chain anchor to the block above her head. By
+ * default the hop commits the anchor state at that height, signed by Alice
+ * and Bob only: its inbound head stays the anchor's, below Charlie's JOIN, so
+ * its walk needs no signature of his, and the posted inbound run carries the
+ * JOIN up to the dispute's inbound head. With `consumeJoin` it commits
+ * Alice's head state (Charlie seated, JOIN consumed) at that height instead,
+ * signed by all three. Constructed, not uploaded.
+ */
+export async function constructJoinerBypassDispute(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory,
+    options: { consumeJoin?: boolean } = {}
+): Promise<JoinerBypassDispute> {
+    await h
+        .control(h.getPeer(history.aliceIndex))
+        .dispute.setForceExit(true)
+        .request();
+    const { dispute, auditingData } = await h.dispute.fetchConstructedDispute(
+        history.aliceIndex,
+        history.forkId
+    );
+    const hop = await forgeJoinerBypassHop(
+        h,
+        history,
+        { dispute, auditingData },
+        options.consumeJoin ?? false
+    );
+    return { dispute, auditingData, ...hop };
+}
+
+/** {@link constructJoinerBypassDispute}'s default hop, uploaded by Alice. */
+export async function postJoinerBypassDispute(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory
+): Promise<JoinerBypassDispute> {
+    h.contextApi.markMaliciousPeer({ maliciousPeerIndex: history.bobIndex });
+    await h
+        .control(h.getPeer(history.aliceIndex))
+        .dispute.setForceExit(true)
+        .request();
+    let forged: Omit<JoinerBypassDispute, "dispute"> | undefined;
+    const { dispute } = await h.tamper.postTamperedDispute(
+        history.aliceIndex,
+        async (dispute, _disputeConfirmation, auditingData) => {
+            if (!auditingData) throw new Error("expected auditing data");
+            const hop = await forgeJoinerBypassHop(
+                h,
+                history,
+                { dispute, auditingData },
+                false
+            );
+            forged = { auditingData, ...hop };
+        }
+    );
+    if (!forged) throw new Error("The forged dispute was not built");
+    return { dispute, ...forged };
+}
+
+async function forgeJoinerBypassHop(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory,
+    constructed: {
+        dispute: DisputeStruct;
+        auditingData: DisputeAuditingDataStruct;
+    },
+    consumeJoin: boolean
+): Promise<{ hopBlock: Block; hopSnapshot: StateSnapshot }> {
+    const [alice, bob, charlie] = [
+        history.aliceIndex,
+        history.bobIndex,
+        history.charlieIndex
+    ].map((index) => h.getPeer(index));
+    const query = h.control(alice).query;
+    const head = await query.getLatestBlockInfo(history.forkId).request();
+    if (!head) throw new Error("Alice holds no block");
+    const headBlock = Codec.decode(head.encodedBlock, Type.Block);
+    const headSnapshot = await query
+        .getStateSnapshotStructByHash(head.stateSnapshotHash as Hash)
+        .request();
+    if (!headSnapshot) throw new Error("Alice lacks her head snapshot");
+    const source = consumeJoin
+        ? StateSnapshot.from(
+              Codec.decode(headSnapshot.encodedSnapshot, Type.StateSnapshot)
+          )
+        : history.anchor;
+    const encodedState = await query
+        .getStateMachineState(source.stateMachineStateHash)
+        .request();
+    if (!encodedState) throw new Error("Alice lacks the hop's state");
+
+    const height = Number(headBlock.transaction.header.transactionCnt) + 1;
+    const timestamp = headBlock.transaction.header.timestamp;
+    const hopSnapshot = StateSnapshot.from({
+        ...source.toStruct(),
+        blockHeight: height,
+        timestamp
+    });
+    const hopBlock = await Block.fromBlockStruct(
+        {
+            ...headBlock,
+            transaction: {
+                ...headBlock.transaction,
+                header: {
+                    ...headBlock.transaction.header,
+                    participant: alice.address,
+                    transactionCnt: height
+                }
+            },
+            previousBlockHash: head.hash,
+            stateSnapshotHash: hopSnapshot.hash
+        },
+        alice.signer
+    );
+    hopBlock.expandSignatures(
+        await Promise.all(
+            (consumeJoin ? [bob, charlie] : [bob]).map((peer) =>
+                hopBlock.sign(peer.signer)
+            )
+        )
+    );
+
+    const join = await query
+        .getInboundMessageBlock(
+            history.charlieFinal.latestInboundMessageBlockHash
+        )
+        .request();
+    if (!join) throw new Error("Alice lacks Charlie's JOIN");
+    const { dispute, auditingData } = constructed;
+    dispute.input.stateProof = {
+        milestones: [{ blockConfirmations: [hopBlock.blockConfirmationStruct] }]
+    };
+    auditingData.milestoneSnapshots = [hopSnapshot.toStruct()];
+    await commitPostedLatestState(h, alice.index, constructed, {
+        latest: hopSnapshot,
+        encodedState,
+        inboundMessageBlocks: consumeJoin
+            ? []
+            : [Codec.decode(join.encodedMessageBlock, Type.MessageBlock)]
+    });
+    return { hopBlock, hopSnapshot };
+}
+
+/**
+ * Post `latest` as the dispute's latest state with its application state and
+ * the inbound run above its inbound head, commit the data and recompute the
+ * dispute output, as the disputer's own constructor does. Returns the
+ * output's participants.
+ */
+async function commitPostedLatestState(
+    h: MathPeerTestHarness,
+    disputerIndex: number,
+    {
+        dispute,
+        auditingData
+    }: { dispute: DisputeStruct; auditingData: DisputeAuditingDataStruct },
+    posted: {
+        latest: StateSnapshot;
+        encodedState: string;
+        inboundMessageBlocks: MessageBlockStruct[];
+    }
+): Promise<Address[]> {
+    dispute.input.latestStateSnapshotHash = posted.latest.hash;
+    auditingData.latestStateSnapshot = posted.latest.toStruct();
+    auditingData.latestFinalizedStateStateMachineState = posted.encodedState;
+    auditingData.inboundMessageBlocks = posted.inboundMessageBlocks;
+    dispute.postedAuditingData = true;
+    dispute.input.disputeAuditingDataHash = hash(
+        Codec.encode(auditingData, Type.DisputeAuditingData)
+    );
+    const output = await computeDisputeOutputSnapshotData(
+        h,
+        disputerIndex,
+        dispute.input,
+        posted.latest.toStruct(),
+        posted.encodedState,
+        posted.inboundMessageBlocks
+    );
+    dispute.outputSnapshotDataHash = hash(
+        Codec.encode(output, Type.SnapshotData)
+    );
+    return [...output.participants] as Address[];
 }
 
 /**

@@ -253,6 +253,12 @@ export const DisputeConflictsWithFinalStateProofEthersType = `tuple(
     uint256 blockIndex
 )`;
 
+export const DisputeFinalPointRegressionProofEthersType = `tuple(
+    ${ProofWalkInputEthersType} finalProof,
+    uint256 milestoneIndex,
+    ${StateSnapshotEthersType} gSnapshot
+)`;
+
 export const DisputeInvalidOutboundRunProofEthersType = `tuple(
     ${DisputeAuditingDataEthersType} auditingData
 )`;

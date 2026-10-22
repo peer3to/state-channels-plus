@@ -2,48 +2,27 @@ pragma solidity ^0.8.8;
 
 import {StateProofStaging} from "../harness/StateProofStaging.sol";
 import {MathState} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
-import {DisputeConflictsWithFinalState} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
+import {
+    DisputeConflictsWithFinalState,
+    DisputeFinalPointRegression
+} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/DisputeTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
-/// The proof proposed in FIND-DISPUTE-6-E2YJ9X (docs/spec/audit/open-findings.md). It does not exist in the contracts
-/// yet; replace it with the real struct when `DisputeFinalPointRegression` lands.
-struct ProposedDisputeFinalPointRegression {
-    ProofWalkInput finalProof;
-    uint256 milestoneIndex;
-    StateSnapshot gSnapshot;
-}
-
-/// `DisputeFraudProof` with its type as a raw number: the same ABI encoding, so the test can name a proof type the
-/// enum does not have yet
-struct RawDisputeFraudProof {
-    uint8 proofType;
-    address participant;
-    Dispute dispute;
-    bytes encodedProof;
-}
-
-/// The side-chain bypass of a later joiner. The chain anchor is 50 {A, B, C, D, E}. L posts a JOIN on chain. The honest
-/// history X consumes it in the join hop at 60 (signed by A to E and L) and reaches the threshold-final point F = 100,
-/// where L has won 30 from A. A to E build the side chain Y from the anchor: one hop to 1000' signed by A to E alone,
-/// whose inbound head stays below L's JOIN. Y's walk counts the joiners inside its own inbound interval only, so L is
-/// never required. L disputes with X, A disputes with Y, both in one window.
-///
-/// Today no kill removes Y: its proof walks valid from the anchor and it holds no block at F's height, so
-/// `DisputeConflictsWithFinalState` cannot be built. `reduce` then picks Y by longest chain, and L's final outcomes on
-/// X are rolled back (its deposit is carried, because the reduction consumes the pending JOIN). FIND-DISPUTE-6-E2YJ9X
-/// proposes `DisputeFinalPointRegression`: F = 100 is final with inbound height 2, Y's final point G = 1000' is above F
-/// with inbound height 1. The test fails today on the last assertion and passes once that kill exists.
-// test naming: test_<case>_<scenario>
+/// The side-chain bypass of a later joiner (FIND-DISPUTE-6-E2YJ9X). The chain anchor is 50 {A, B, C, D, E}. L posts
+/// a JOIN on chain. The honest history X consumes it in the join hop at 60 (signed by A to E and L) and reaches the
+/// threshold-final point F = 100, where L has won 30 from A. A to E build the side chain Y from the anchor: one hop to
+/// 1000' signed by A to E alone, whose inbound head stays below L's JOIN. Y's walk counts the joiners inside its own
+/// inbound interval only, so L is never required, and Y holds no block at F's height for
+/// `DisputeConflictsWithFinalState`. `DisputeFinalPointRegression` kills Y: F = 100 is final with inbound height 2,
+/// Y's final point G = 1000' is above F with inbound height 1. Controls that do not kill: G above F on the same inbound
+/// head, G at F's height, a snapshot G does not commit, a milestone index out of range, and a final proof that does
+/// not walk.
 contract DisputeFinalPointRegressionTest is StateProofStaging {
     uint256 internal constant ERIN_KEY = 0xE121;
     uint256 internal constant JOINER_KEY = 0x10E1;
-    /// the slot the proposed kill takes when appended to `DisputeFraudProofType` (today's last,
-    /// DisputeInvalidOutboundRun, is 21); replace with `DisputeFraudProofType.DisputeFinalPointRegression` when it
-    /// lands
-    uint8 internal constant FINAL_POINT_REGRESSION_TYPE = 22;
 
     address internal erin = vm.addr(ERIN_KEY);
     address internal joiner = vm.addr(JOINER_KEY);
@@ -65,9 +44,6 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
     }
 
     function test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory() public {
-        // Skipped until the `DisputeFinalPointRegression` kill lands (FIND-DISPUTE-6-E2YJ9X,
-        // docs/spec/audit/open-findings.md).
-        vm.skip(true);
         // ---- the honest history X: the join hop at 60, then F = 100 where L won 30 from A ----
         (StateSnapshot memory joinHop,) = _mathSnapshot(60, _joinedSet(), _balances(100, 100, 50), joinInboundHash, 2);
         (StateSnapshot memory finalPoint,) =
@@ -123,40 +99,177 @@ contract DisputeFinalPointRegressionTest is StateProofStaging {
         assertEq(next.balances[5], 50, "premise: L holds its bare deposit, not its final 80 on X");
 
         // the defense: L, online in the kill period, proves F = 100 final (inbound 2) and Y's final point
-        // G = 1000' above it (inbound 1). Today the proof type does not exist and the call reverts.
-        _submitFinalPointRegression(side, honestProof, sideFinal);
+        // G = 1000' above it (inbound 1)
+        _applyRegression(side, _regressionProof(honestProof, 0, sideFinal));
+        assertEq(harness.commitmentCount(CHANNEL, forkId), 1, "Y killed, X stays");
+        assertTrue(harness.isSlashed(CHANNEL, alice), "Y's disputer slashed");
+        assertFalse(harness.isSlashed(CHANNEL, joiner), "L keeps its seat");
 
         // the property: reduce over the disputes the kill period leaves keeps the joiner's final history
-        Dispute[] memory survivors = harness.commitmentCount(CHANNEL, forkId) == 2 ? both : _only(honest);
         assertEq(
-            harness.reduce(survivors).latestBlock.transaction.header.transactionCnt,
+            harness.reduce(_only(honest)).latestBlock.transaction.header.transactionCnt,
             100,
             "side chain Y wins reduce: L's final outcomes 60-100 on X are rolled back"
         );
     }
 
-    // ---- the proposed kill ----
+    function test_K2_inflatedInboundHeightFieldInGSnapshotStillKills() public {
+        // Y's G claims inbound height 99 next to the real hash of the opening inbound block
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 99);
+        Dispute memory side = _sideDispute(_one(_hopRun(sideFinal, 1, _anchorKeys())), _entries(sideFinal), sideFinal);
+        _commit(side);
+        _applyRegression(side, _regressionProof(_honestFinalProof(), 0, sideFinal));
+        _assertRegressionKilled(side);
+    }
 
-    /// L submits the proposed `DisputeFinalPointRegression` against `dispute` with F from `finalProof` and G as the
-    /// first block of the dispute's milestone 0, whose snapshot is `gSnapshot`
-    function _submitFinalPointRegression(
-        Dispute memory dispute,
-        ProofWalkInput memory finalProof,
-        StateSnapshot memory gSnapshot
-    ) internal {
-        RawDisputeFraudProof[] memory proofs = new RawDisputeFraudProof[](1);
-        proofs[0] = RawDisputeFraudProof({
-            proofType: FINAL_POINT_REGRESSION_TYPE,
-            participant: dispute.input.disputer,
-            dispute: dispute,
-            encodedProof: abi.encode(
-                ProposedDisputeFinalPointRegression({finalProof: finalProof, milestoneIndex: 0, gSnapshot: gSnapshot})
-            )
-        });
-        vm.prank(joiner);
-        (bool applied,) =
-            address(harness).call(abi.encodeWithSelector(harness.applyDisputeFraudProofs.selector, proofs));
-        if (!applied) emit log("DisputeFinalPointRegression is not a DisputeFraudProofType yet: the kill reverted");
+    function test_K3_gInboundHeadTheChainDoesNotHoldKills() public {
+        // the anchor's own head is pruned when the anchor is posted; a head the chain never held reads the same
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), keccak256("pruned head"), 1);
+        Dispute memory side = _sideDispute(_one(_hopRun(sideFinal, 1, _anchorKeys())), _entries(sideFinal), sideFinal);
+        _commit(side);
+        _applyRegression(side, _regressionProof(_honestFinalProof(), 0, sideFinal));
+        _assertRegressionKilled(side);
+    }
+
+    function test_K4_regressionAtASecondHopMilestoneKills() public {
+        // Y hops to 80' (below F, no regression there), then to 1000'
+        (StateSnapshot memory low,) = _mathSnapshot(80, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(
+            _two(_hopRun(low, 1, _anchorKeys()), _hopRun(sideFinal, 1, _anchorKeys())),
+            _entries(low, sideFinal),
+            sideFinal
+        );
+        _commit(side);
+        assertFalse(
+            _diamond().isDisputeFinalPointRegression(side, _regression(_honestFinalProof(), 0, low)),
+            "premise: a milestone below F is no regression"
+        );
+        _applyRegression(side, _regressionProof(_honestFinalProof(), 1, sideFinal));
+        _assertRegressionKilled(side);
+    }
+
+    function test_N1_gAboveFOnTheSameInboundHeadDoesNotKill() public {
+        // a later final point that consumed L's JOIN too: the inbound height did not go down
+        (StateSnapshot memory later,) = _mathSnapshot(1000, _joinedSet(), _balances(70, 100, 80), joinInboundHash, 2);
+        Dispute memory dispute = _sideDispute(_one(_hopRun(later, 1, _joinedKeys())), _entries(later), later);
+        _commit(dispute);
+        _applyRegression(dispute, _regressionProof(_honestFinalProof(), 0, later));
+        _assertRegressionRejected(dispute);
+    }
+
+    function test_N2_gAtTheFinalHeightDoesNotKill() public {
+        // a block at F's height is the conflict kill's case, not a regression
+        (StateSnapshot memory atF,) = _mathSnapshot(100, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(_one(_hopRun(atF, 1, _anchorKeys())), _entries(atF), atF);
+        _commit(side);
+        _applyRegression(side, _regressionProof(_honestFinalProof(), 0, atF));
+        _assertRegressionRejected(side);
+    }
+
+    function test_N3_snapshotTheBlockDoesNotCommitDoesNotKill() public {
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(_one(_hopRun(sideFinal, 1, _anchorKeys())), _entries(sideFinal), sideFinal);
+        _commit(side);
+        StateSnapshot memory other = sideFinal;
+        other.timestamp += 1;
+        _applyRegression(side, _regressionProof(_honestFinalProof(), 0, other));
+        _assertRegressionRejected(side);
+    }
+
+    function test_N4_milestoneIndexOutOfRangeDoesNotKill() public {
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(_one(_hopRun(sideFinal, 1, _anchorKeys())), _entries(sideFinal), sideFinal);
+        _commit(side);
+        _applyRegression(side, _regressionProof(_honestFinalProof(), 1, sideFinal));
+        _assertRegressionRejected(side);
+    }
+
+    function test_N5_finalProofThatDoesNotWalkDoesNotKill() public {
+        (StateSnapshot memory sideFinal,) =
+            _mathSnapshot(1000, _anchorSet(), _balances(100, 100, 0), openingInboundHash, 1);
+        Dispute memory side = _sideDispute(_one(_hopRun(sideFinal, 1, _anchorKeys())), _entries(sideFinal), sideFinal);
+        _commit(side);
+        // X's real hops to F, then a hop to 150 signed by A to E alone: L is seated, so the walk fails there
+        (StateSnapshot memory joinHop, StateSnapshot memory finalPoint) = _honestSnapshots();
+        (StateSnapshot memory unsignedHop,) =
+            _mathSnapshot(150, _joinedSet(), _balances(70, 100, 80), joinInboundHash, 2);
+        MilestoneProof[] memory milestones = new MilestoneProof[](3);
+        milestones[0] = _hopRun(joinHop, 1, _joinedKeys());
+        milestones[1] = _hopRun(finalPoint, 1, _joinedKeys());
+        milestones[2] = _hopRun(unsignedHop, 1, _anchorKeys());
+        ProofWalkInput memory broken = _finalProof(forkId, milestones, _entries(joinHop, finalPoint, unsignedHop));
+        assertFalse(_diamond().verifyMilestones(broken).valid, "premise: the final proof does not walk");
+        _applyRegression(side, _regressionProof(broken, 0, sideFinal));
+        _assertRegressionRejected(side);
+    }
+
+    // ---- the kill ----
+
+    function _regression(ProofWalkInput memory finalProof, uint256 milestoneIndex, StateSnapshot memory gSnapshot)
+        internal
+        pure
+        returns (DisputeFinalPointRegression memory)
+    {
+        return
+            DisputeFinalPointRegression({finalProof: finalProof, milestoneIndex: milestoneIndex, gSnapshot: gSnapshot});
+    }
+
+    function _regressionProof(ProofWalkInput memory finalProof, uint256 milestoneIndex, StateSnapshot memory gSnapshot)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(_regression(finalProof, milestoneIndex, gSnapshot));
+    }
+
+    /// L submits the regression allegation against `dispute`
+    function _applyRegression(Dispute memory dispute, bytes memory encodedProof) internal {
+        _applyBy(joiner, dispute, DisputeFraudProofType.DisputeFinalPointRegression, encodedProof);
+    }
+
+    /// the allegation held: the dispute is killed and its disputer slashed, the challenger L keeps its seat
+    function _assertRegressionKilled(Dispute memory dispute) internal view {
+        assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 0, "dispute killed");
+        assertTrue(harness.isSlashed(CHANNEL, dispute.input.disputer), "disputer slashed");
+        assertFalse(harness.isSlashed(CHANNEL, joiner), "challenger keeps its seat");
+    }
+
+    /// the allegation failed: the dispute stays, its submitter is not punished, the challenger L pays
+    function _assertRegressionRejected(Dispute memory dispute) internal view {
+        assertEq(harness.commitmentCount(CHANNEL, dispute.input.forkId), 1, "dispute stays committed");
+        assertFalse(harness.isSlashed(CHANNEL, dispute.input.disputer), "dispute submitter not punished");
+        assertTrue(harness.isSlashed(CHANNEL, joiner), "the unsupported allegation costs the challenger");
+    }
+
+    /// X's join hop at 60 and its final point F = 100, where L won 30 from A
+    function _honestSnapshots() internal view returns (StateSnapshot memory joinHop, StateSnapshot memory finalPoint) {
+        (joinHop,) = _mathSnapshot(60, _joinedSet(), _balances(100, 100, 50), joinInboundHash, 2);
+        (finalPoint,) = _mathSnapshot(100, _joinedSet(), _balances(70, 100, 80), joinInboundHash, 2);
+    }
+
+    /// L's final proof of F = 100 along X, signed by A to E and L
+    function _honestFinalProof() internal view returns (ProofWalkInput memory) {
+        (StateSnapshot memory joinHop, StateSnapshot memory finalPoint) = _honestSnapshots();
+        return _finalProof(
+            forkId,
+            _two(_hopRun(joinHop, 1, _joinedKeys()), _hopRun(finalPoint, 1, _joinedKeys())),
+            _entries(joinHop, finalPoint)
+        );
+    }
+
+    /// A's dispute posting its auditing data
+    function _sideDispute(
+        MilestoneProof[] memory milestones,
+        StateSnapshot[] memory snapshots,
+        StateSnapshot memory latest
+    ) internal view returns (Dispute memory dispute) {
+        (dispute,) = _postedDisputeBy(alice, milestones, snapshots, latest);
     }
 
     // ---- staging ----

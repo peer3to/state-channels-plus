@@ -110,7 +110,10 @@ export default class DisputeValidationService {
             return this.rejectStateProof(dispute, evidence, data);
 
         // a conflict with this peer's final history needs no replay state
-        if (await this.tryCreateConflictsWithFinalStateProof(dispute))
+        if (
+            (await this.tryCreateConflictsWithFinalStateProof(dispute)) ||
+            (await this.tryCreateFinalPointRegressionProof(dispute, evidence))
+        )
             return false;
 
         const walk = await this.verifyAndReplay(dispute, evidence, data);
@@ -211,6 +214,69 @@ export default class DisputeValidationService {
         return false;
     }
 
+    /**
+     * A milestone of the dispute starts at a block G above this peer's final
+     * history that this peer does not hold, and G's snapshot consumed fewer
+     * inbound blocks than this peer's final point below G: the dispute's
+     * history skipped inbound the final history consumed, so it never needed
+     * the signature of a joiner the final history counted. The final point
+     * offered is the highest one below G. The chain reads both inbound
+     * heights itself; the proof is stored only when it agrees.
+     */
+    private async tryCreateFinalPointRegressionProof(
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
+    ): Promise<boolean> {
+        const { forkId, stateProof } = dispute.input;
+        const finalized =
+            await this.agreementManager.getLocalFinalizedSnapshot(forkId);
+        if (!finalized) return false;
+        for (const [
+            milestoneIndex,
+            milestone
+        ] of stateProof.milestones.entries()) {
+            const gSnapshot = evidence.milestoneSnapshots[milestoneIndex];
+            const first = milestone.blockConfirmations[0];
+            const g = first && Block.tryFromBlockConfirmation(first);
+            // a block of this peer's own history is no regression
+            if (
+                !gSnapshot ||
+                !g ||
+                g.forkId !== forkId ||
+                this.storage.blocks.getBlock(forkId, g.height)
+                    ?.stateSnapshotHash === g.stateSnapshotHash
+            )
+                continue;
+            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
+                forkId,
+                Math.min(finalized.blockHeight, g.height - 1)
+            );
+            if (!finalProof) continue;
+            const proof = { finalProof, milestoneIndex, gSnapshot };
+            if (
+                !(await this.stateChannelManagerContract.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                ))
+            )
+                continue;
+            this.logger.warn(
+                "Dispute proof holds a final point above this peer's final state with fewer inbound blocks",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    finalized: LoggerUtils.getSnapshotMetadata(finalized),
+                    milestoneIndex
+                }
+            );
+            this.disputeFraudProofService.createDisputeFinalPointRegression(
+                dispute,
+                proof
+            );
+            return true;
+        }
+        return false;
+    }
+
     /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
     public isBlockChallengeEligible(
         dispute: DisputeStruct,
@@ -248,7 +314,13 @@ export default class DisputeValidationService {
                 continue;
             }
             // Another audit may have finalized conflicting history while this walk awaited its verifier.
-            if (await this.tryCreateConflictsWithFinalStateProof(dispute))
+            if (
+                (await this.tryCreateConflictsWithFinalStateProof(dispute)) ||
+                (await this.tryCreateFinalPointRegressionProof(
+                    dispute,
+                    evidence
+                ))
+            )
                 return false;
             const outcome = await this.replayLastMilestoneTail(
                 dispute,
@@ -274,7 +346,13 @@ export default class DisputeValidationService {
                         outboundRun,
                         data
                     ) &&
-                    (await this.tryCreateConflictsWithFinalStateProof(dispute))
+                    ((await this.tryCreateConflictsWithFinalStateProof(
+                        dispute
+                    )) ||
+                        (await this.tryCreateFinalPointRegressionProof(
+                            dispute,
+                            evidence
+                        )))
                 )
                     return false;
                 return walk;

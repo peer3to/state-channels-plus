@@ -75,6 +75,7 @@ by the wrapper declaration here and owns `UNIT-TEST-BLOCK-MODEL-1-037DM6.P30`.
 - `round-trips TimeoutSupersededByFinalState fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P59
 - `round-trips DisputeConflictsWithFinalState fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P60
 - `round-trips DisputeInvalidOutboundRun fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P61
+- `round-trips DisputeFinalPointRegression fraud proof`: UNIT-TEST-CODEC-1-HFAA3B.P62
 - `decodes a primitive EVM return value without object conversion`: UNIT-TEST-CODEC-1-HFAA3B.P47
 - `decodes a dynamic EVM array without object conversion`: UNIT-TEST-CODEC-1-HFAA3B.P48
 - `decodes a named EVM tuple to an object by default`: UNIT-TEST-CODEC-1-HFAA3B.P49

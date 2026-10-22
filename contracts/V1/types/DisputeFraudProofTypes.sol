@@ -25,7 +25,8 @@ contract DisputeFraudProofTypes {
         DisputeStateProofBelowOnChainAnchor memory v,
         TimeoutSupersededByFinalState memory w,
         DisputeConflictsWithFinalState memory x,
-        DisputeInvalidOutboundRun memory y
+        DisputeInvalidOutboundRun memory y,
+        DisputeFinalPointRegression memory z
     ) {}
 }
 
@@ -116,6 +117,16 @@ struct DisputeConflictsWithFinalState {
     ProofWalkInput finalProof;
     uint256 milestoneIndex;
     uint256 blockIndex;
+}
+
+// A threshold-final state F of the dispute's fork (`finalProof`, walked from the chain's start) and the first block G
+// of the dispute's milestone `milestoneIndex`, whose snapshot is `gSnapshot`: G is above F but its snapshot consumed
+// fewer inbound blocks than F's. On one history the inbound height never goes down, so the dispute's history skipped
+// inbound that the final history consumed.
+struct DisputeFinalPointRegression {
+    ProofWalkInput finalProof;
+    uint256 milestoneIndex;
+    StateSnapshot gSnapshot;
 }
 
 // The block-specific wrappers locate the challenged block at `blockIndex` counted from the start of the last

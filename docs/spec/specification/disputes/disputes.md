@@ -391,6 +391,12 @@ incomplete-information attacks into evidence against the attacker:
   ([`INV-DIS-7-9GGZSD`](disputes.md#inv-dis-7-9ggzsd)), making the cross-history comparison moot. Comparing raw
   `transactionCnt`/`blockHeight` values is therefore sound: candidates either lie on one chain,
   where the comparison is meaningful, or their conflict is slashable double-sign evidence.
+  A threshold hop shows only its last block, so a divergent history can hide where it split. Its
+  divergence from a proved final point is still a kill: a block at the final point's height that
+  commits another snapshot (`DisputeConflictsWithFinalState`), or a milestone above the final point
+  whose snapshot consumed fewer inbound blocks (`DisputeFinalPointRegression`), which is how a
+  history that skips a later joiner's JOIN shows
+  ([fraud-proofs.md §3](./fraud-proofs.md)).
 - **Evidence availability needs no finer definition.** Evidence changes an already-proposed
   timeout only through the two existing mechanisms — the slash set consumed at reduction time, or
   killing the dispute during the kill period — and that is intended. Non-slash inputs leak

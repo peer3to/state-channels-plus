@@ -16,6 +16,10 @@ import {
     stageBlindPendingAuditor
 } from "@test/fixtures/DisputeAuditStaging";
 import {
+    constructJoinerBypassDispute,
+    stageSeatedJoinerHistory
+} from "@test/fixtures/OmittedInboundJoinerStaging";
+import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
 } from "@test/harness";
@@ -1059,6 +1063,87 @@ describe("Unit: DisputeValidationService", function () {
                 DisputeFraudProofType.DisputeNotLatestState
             );
             expect(second.disputeFraudProofCount).to.equal(1);
+        });
+    });
+
+    describe("final point regression", function () {
+        it("milestones[0] = hop from the chain anchor above seated Charlie's final point, signed without him, inbound head below his JOIN -> false + DisputeFinalPointRegression, which the chain accepts", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const { dispute, auditingData, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history);
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeFinalPointRegression
+            );
+            expect(Number(proof.milestoneIndex)).to.equal(0);
+            expect(StateSnapshot.from(proof.gSnapshot).hash).to.equal(
+                hopSnapshot.hash
+            );
+            expect(
+                await h.channelManager.isDisputeFinalPointRegression.staticCall(
+                    dispute,
+                    proof
+                )
+            ).to.equal(true);
+        });
+
+        it("the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> the chain finds no regression, no DisputeFinalPointRegression", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            const { dispute, auditingData, hopBlock, hopSnapshot } =
+                await constructJoinerBypassDispute(h, history, {
+                    consumeJoin: true
+                });
+            expect(hopBlock.height).to.be.greaterThan(
+                history.charlieFinal.blockHeight
+            );
+            expect(hopSnapshot.latestInboundMessageBlockHash).to.equal(
+                history.charlieFinal.latestInboundMessageBlockHash
+            );
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.storedProof).to.equal(undefined);
+            expect(run.disputeFraudProofCount).to.equal(0);
+        });
+
+        it("untampered dispute over seated Charlie's history -> true, no proof", async function () {
+            const h = TestSession.getHarness();
+            const history = await stageSeatedJoinerHistory(h);
+            await h
+                .control(h.getPeer(history.aliceIndex))
+                .dispute.setForceExit(true)
+                .request();
+            const { dispute } = await h.dispute.fetchConstructedDispute(
+                history.aliceIndex
+            );
+
+            const run = await h.dispute.auditDispute(
+                history.charlieIndex,
+                dispute
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.storedProof).to.equal(undefined);
+            expect(run.disputeFraudProofCount).to.equal(0);
         });
     });
 

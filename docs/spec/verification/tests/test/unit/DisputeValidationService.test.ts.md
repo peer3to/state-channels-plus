@@ -17,6 +17,11 @@ One audit case stubs the auditor's local diamond so the unfinalized part of an h
 
 Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
 
+The final-point regression cases seat a joiner whose JOIN the honest history consumes and finalizes,
+then audit a hop from the chain anchor above the joiner's final point: without the JOIN it stores
+`DisputeFinalPointRegression`, on the JOIN's inbound head the chain check finds none, and an
+untampered dispute over the seated history builds none.
+
 ## Tests
 
 - `dispute.input.latestInboundMessageBlockHash = random -> false + DisputeInboundHashNotInChain`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P1
@@ -67,5 +72,8 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `timeout dispute audited before the window reaches the local chain view -> throw`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P53
 - `a replay holds the state mutex with the predecessor state installed while the timeout audit peeks the next writer -> the audit settles under the hold and judges the disputed state, true, no TimeoutParticipantNotNext`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129, UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P5
 - `fork advances while the audit is parked at getOnChainSlashedParticipants -> false + DisputeNotLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P54
+- `milestones[0] = hop from the chain anchor above seated Charlie's final point, signed without him, inbound head below his JOIN -> false + DisputeFinalPointRegression, which the chain accepts`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135
+- `the same hop committing Charlie's seated head state (inbound head = his JOIN), signed by all three -> the chain finds no regression, no DisputeFinalPointRegression`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136
+- `untampered dispute over seated Charlie's history -> true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137
 
 The previous-block signature test captures block 2’s next writer before opening the dispute window. It must not read the mutable VM’s current writer concurrently with a subscribed audit’s temporary replay state. The empty, timed-out-signer and wrong-signer signature variants retain their exact TimeoutTooEarly oracles and the unchanged authored/calldata timing bounds.

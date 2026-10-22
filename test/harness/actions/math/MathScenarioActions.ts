@@ -740,6 +740,8 @@ export class MathScenarioActions extends ScenarioActions {
         initialTransitions?: number;
         postPromotionTransitions?: number;
         timeConfig?: HarnessOptions["timeConfig"];
+        /** post the latest final state as the chain anchor before the join */
+        postAnchorBeforeJoin?: boolean;
     }): Promise<TestPeer> {
         const initialPeers = options?.initialPeers ?? 2;
         const initialTransitions = options?.initialTransitions ?? 2;
@@ -768,9 +770,16 @@ export class MathScenarioActions extends ScenarioActions {
                 (_, index) => index
             ),
             minimumBlocks: initialTransitions,
-            maximumBlocks: initialTransitions + 16
+            maximumBlocks: initialTransitions + 16,
+            waitForFinalization: options?.postAnchorBeforeJoin
         });
         await this.harness.assert.sync.peersInSyncWait();
+        // an unconsumed JOIN on chain blocks a snapshot update: the anchor goes first
+        if (
+            options?.postAnchorBeforeJoin &&
+            !(await this.harness.transition.postSnapshotWait())
+        )
+            throw new Error("No finalized snapshot to anchor on chain");
 
         // Handlers attached at once: the join promise is never unobserved.
         const join: { isSettled: boolean; failure?: { error: unknown } } = {

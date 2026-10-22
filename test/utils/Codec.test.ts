@@ -487,6 +487,13 @@ describe("Codec", function () {
         expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
     });
 
+    it("round-trips DisputeFinalPointRegression fraud proof", function () {
+        const value = codecValues.disputeFinalPointRegressionProof();
+        const type = DisputeFraudProofType.DisputeFinalPointRegression;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
     it("decodes a primitive EVM return value without object conversion", function () {
         const returnValue = ethers.AbiCoder.defaultAbiCoder().encode(
             ["uint256"],
@@ -809,6 +816,10 @@ describe("Codec", function () {
             [
                 codecValues.disputeInvalidOutboundRunProof(),
                 DisputeFraudProofType.DisputeInvalidOutboundRun
+            ],
+            [
+                codecValues.disputeFinalPointRegressionProof(),
+                DisputeFraudProofType.DisputeFinalPointRegression
             ]
         ];
         const testedTypes = new Set(cases.map(([, type]) => type));

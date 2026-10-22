@@ -150,6 +150,10 @@ Finality arrives by exactly one of three routes:
   uploads are admitted only when anchored exactly at the chain's inbound head
   ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)). Unlike the off-chain threshold, this set has an
   on-chain anchor that bounds it.
+- A hop's set counts only the joiners inside its own inbound interval, so a hop that stays below a JOIN
+  never needs that joiner. Across the proofs of one window this is bounded by the final-point regression
+  counter: a hop above another history's proved final point that consumed fewer inbound blocks is killed
+  ([fraud-proofs.md §3](../disputes/fraud-proofs.md)).
 
 Sub-unanimous thresholds are not supported anywhere in the protocol definition.
 

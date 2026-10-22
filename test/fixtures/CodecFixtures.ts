@@ -209,6 +209,11 @@ export const codecValues = {
     }),
     disputeInvalidOutboundRunProof: () => ({
         auditingData: auditingData()
+    }),
+    disputeFinalPointRegressionProof: () => ({
+        finalProof: codecValues.proofWalkInput(),
+        milestoneIndex: 1n,
+        gSnapshot: snapshot()
     })
 };
 

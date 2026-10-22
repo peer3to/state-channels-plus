@@ -100,6 +100,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return _handleDisputeConflictsWithFinalState;
         }
         if (proofType == DisputeFraudProofType.DisputeInvalidOutboundRun) return _handleDisputeInvalidOutboundRun;
+        if (proofType == DisputeFraudProofType.DisputeFinalPointRegression) {
+            return _handleDisputeFinalPointRegression;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -303,6 +306,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         DisputeInvalidOutboundRun memory proof = abi.decode(encodedFraudProof, (DisputeInvalidOutboundRun));
         return _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isDisputeOutboundRunInvalid, (dispute, proof)));
+    }
+
+    function _handleDisputeFinalPointRegression(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeFinalPointRegression memory proof = abi.decode(encodedFraudProof, (DisputeFinalPointRegression));
+        return
+            _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isDisputeFinalPointRegression, (dispute, proof)));
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)

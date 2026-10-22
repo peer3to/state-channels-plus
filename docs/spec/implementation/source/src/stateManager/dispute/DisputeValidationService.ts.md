@@ -152,6 +152,9 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P132` — Participants already holding the real final block audit a conflicting forged-balance head: final conflict kills the forged dispute, its submitter is slashed, and the channel resolves
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P133` — The local outbound-run verdict calls an honest posted run invalid while the chain anchor stays where the audit read it: the chain refuses the counter, the audit throws naming the refusal, stores no counter and does not judge the run again.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P134` — A dispute whose last block, signed only by its disputer, commits a forged latest state with its outbound head at an overflowing block: the replay stores `DisputeInvalidBlockInStateProofApplyFraudProof`, the outbound run is never judged, and the audit returns false without throwing.
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P135` — A hop from the chain anchor above a seated joiner's final point, signed without the joiner, whose inbound head is below the joiner's JOIN: the audit stores `DisputeFinalPointRegression` (that milestone, its committed snapshot), which the chain accepts, and returns false.
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P136` — The same hop committing the seated head state on the JOIN's inbound head, signed by all: the chain finds no regression and the audit stores no proof.
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P137` — An untampered dispute over the seated history: its blocks are this peer's own, no regression proof is built.
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D
 

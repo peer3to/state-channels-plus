@@ -52,6 +52,8 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
+                // the LocalDiamond mirror is local-only and exempt from EIP-3860 as from EIP-170
+                allowUnlimitedInitCodeSize: true,
                 customPrecompiles: request.customPrecompiles.map(
                     ({ address, module, exportName, options }) => ({
                         address,

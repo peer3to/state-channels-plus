@@ -182,6 +182,33 @@ contract StateProofFacet is StateChannelCommon {
             && conflicting.stateSnapshotHash != keccak256(abi.encode(finalPoint));
     }
 
+    /**
+     * The first block G of the dispute's milestone `milestoneIndex` is above a threshold-final state F of the same fork
+     * (`proof.finalProof`), and `proof.gSnapshot`, the snapshot G commits, consumed fewer inbound blocks than F's: G's
+     * history skipped inbound the final history consumed, so it never needed the signature of a joiner F counted. Both
+     * inbound heights are the chain's stored ones, never a snapshot's height field; a hash the chain no longer holds
+     * (the anchor's head and below are pruned) or never held reads 0. G is above F and F is at or above the anchor, so
+     * a milestone holding the anchor, or below it, is never accepted.
+     */
+    function isDisputeFinalPointRegression(Dispute memory dispute, DisputeFinalPointRegression memory proof)
+        public
+        view
+        returns (bool)
+    {
+        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (!isFinal || proof.milestoneIndex >= milestones.length) return false;
+        MilestoneProof memory milestone = milestones[proof.milestoneIndex];
+        if (milestone.blockConfirmations.length == 0) return false;
+        // the final proof is on the dispute's channel and fork
+        (bool decoded, Block memory g) = _tryDecodeRequiredBlock(proof.finalProof, milestone, 0);
+        mapping(bytes32 => MessageBlock) storage inbound = inboundMessageBlockMap[dispute.input.channelId];
+        return decoded && g.transaction.header.transactionCnt > finalPoint.blockHeight
+            && g.stateSnapshotHash == keccak256(abi.encode(proof.gSnapshot))
+            && inbound[proof.gSnapshot.snapshotData.latestInboundMessageBlockHash].blockHeight
+                < inbound[finalPoint.snapshotData.latestInboundMessageBlockHash].blockHeight;
+    }
+
     /// The final point of `finalProof` walked from the chain's start, when the proof is on the dispute's channel and
     /// fork, walks, and ends above the fork genesis (no block commits the genesis).
     function _finalPointOf(Dispute memory dispute, ProofWalkInput memory finalProof)
