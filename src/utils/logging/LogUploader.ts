@@ -13,6 +13,7 @@ import {
 import { LogStore } from "./logStore";
 import { config as globalConfig } from "../config";
 import { abortableSleep, retry } from "../retry";
+import { settleBy } from "../settleBy";
 import axios from "axios";
 import { ethers } from "ethers";
 
@@ -50,6 +51,13 @@ export abstract class LogUploader {
     /** the running POST, and at most one queued behind it */
     private activeUpload?: Promise<LogUploadOutcome>;
     private queuedUpload?: Promise<LogUploadOutcome>;
+    /**
+     * How long an ending thread waits for the running and the queued upload: the latest deadline
+     * of the abort flushes that asked for it or that it overlaps, endless (up to the thread's own
+     * bound) once a request outside any running flush did.
+     */
+    private activeDeadlineMs = Infinity;
+    private queuedDeadlineMs = Infinity;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -73,6 +81,31 @@ export abstract class LogUploader {
         for (const uploader of LogUploader.busyUploaders) {
             uploader.cancel.abort();
         }
+    }
+
+    /**
+     * Waits for every upload of this realm still running or queued, at most `timeoutMs`, and
+     * never past the deadline of the abort flush an upload is part of (that flush already
+     * waited for it). A thread that ends right after an error (a dispose) would otherwise
+     * cancel the upload that error started, during its jitter wait.
+     */
+    public static async settleRealmUploads(timeoutMs: number): Promise<void> {
+        await Promise.all(
+            [...LogUploader.busyUploaders].map((uploader) =>
+                uploader.settle(timeoutMs)
+            )
+        );
+    }
+
+    private async settle(timeoutMs: number): Promise<void> {
+        const [upload, deadlineMs] = this.queuedUpload
+            ? [this.queuedUpload, this.queuedDeadlineMs]
+            : [this.activeUpload, this.activeDeadlineMs];
+        if (!upload) return;
+        await settleBy(
+            upload.catch(() => undefined),
+            Math.min(Date.now() + timeoutMs, deadlineMs)
+        );
     }
 
     setLogger(logger: Logger) {
@@ -132,16 +165,37 @@ export abstract class LogUploader {
         return Math.floor(Math.random() * maxMs);
     }
 
-    /** One active upload and at most one follow-up; callers await only local work. */
-    public uploadLogs(): Promise<LogUploadOutcome> {
-        if (this.queuedUpload) return this.queuedUpload;
+    /**
+     * One active upload and at most one follow-up; callers await only local work.
+     * `flushDeadlineMs`: the abort flush this upload is part of, if any.
+     */
+    public uploadLogs(flushDeadlineMs?: number): Promise<LogUploadOutcome> {
+        // A request while an abort flush's upload is pending is bounded by that flush: the
+        // abort's disposal ends the threads at its deadline.
+        const pendingDeadlineMs = this.queuedUpload
+            ? this.queuedDeadlineMs
+            : this.activeUpload
+              ? this.activeDeadlineMs
+              : Infinity;
+        const deadlineMs =
+            flushDeadlineMs ??
+            (pendingDeadlineMs > Date.now() ? pendingDeadlineMs : Infinity);
+        if (this.queuedUpload) {
+            this.queuedDeadlineMs = Math.max(this.queuedDeadlineMs, deadlineMs);
+            return this.queuedUpload;
+        }
         LogUploader.busyUploaders.add(this);
-        if (!this.activeUpload) return this.startUpload();
+        if (!this.activeUpload) {
+            this.activeDeadlineMs = deadlineMs;
+            return this.startUpload();
+        }
 
+        this.queuedDeadlineMs = deadlineMs;
         const queued = this.activeUpload
             .catch(() => undefined)
             .then(() => {
                 this.queuedUpload = undefined;
+                this.activeDeadlineMs = this.queuedDeadlineMs;
                 return this.startUpload();
             });
         this.queuedUpload = queued;

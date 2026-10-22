@@ -176,6 +176,39 @@ export async function assertVmThreadEndCancelsHeldUpload(): Promise<void> {
 }
 
 /**
+ * A runtime disposed right after an error: the error's upload reaches the VM worker, still in its
+ * jitter wait when disposal ends that thread. The ending thread sends it first, so the VM
+ * worker's logs reach the receiver.
+ */
+export async function assertDisposeAfterErrorUploadsVmLogs(): Promise<void> {
+    const receiver = await startLogReceiver();
+    try {
+        await startPeersUploadingTo(receiver, {
+            RUN_SDK_IN_THREAD: false,
+            VM_DEDICATED_THREAD: true,
+            // Far longer than the disposal: a thread end that cancels the upload loses it.
+            CRASH_LOG_UPLOAD_JITTER_MAX_MS: 5_000
+        });
+        const peer = MathTestSession.getHarness().getPeer(0);
+        // Only uploads the error starts count: startup may have sent VM logs already.
+        const startupRequests = receiver.requests.length;
+
+        inlineHostFor(peer.p2pInstance).rootLogger.error(
+            "hit right before the dispose"
+        );
+        await peer.p2pInstance.dispose();
+
+        await waitFor(() =>
+            receiver.requests
+                .slice(startupRequests)
+                .some((request) => isVmUploadOf(request, peer.address))
+        );
+    } finally {
+        await receiver.close();
+    }
+}
+
+/**
  * An SDK host in a worker thread aborts while the receiver holds the host's
  * own abort-line upload: the client closes only after that upload is
  * answered, its abort line, the main thread's logs and its VM worker's logs

@@ -134,6 +134,179 @@ describe("LogUploader delta uploads", function () {
         expect(receiver!.requests).to.have.length(0);
     });
 
+    // The tests log at info and upload explicitly: an error line starts an upload of its own.
+    it("lets an upload in its jitter wait post before its thread ends", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            jitterMaxMs: 300
+        });
+        logger.info("hit during dispose");
+        const running = logUploader.uploadLogs();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("an ending thread waits for its running upload no longer than its bound", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("held");
+        try {
+            const running = logUploader.uploadLogs();
+            await receiver!.waitForRequests(1);
+            const endingAtMs = Date.now();
+
+            await LogUploader.settleRealmUploads(200);
+            LogUploader.cancelRealmUploads();
+
+            expect(Date.now() - endingAtMs).to.be.below(1_000);
+            expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("an ending thread waits no longer for an upload of an abort flush whose deadline passed", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // Well above the assertion: only the passed deadline ends the wait in time.
+            jitterMaxMs: 5_000
+        });
+        logger.info("left for the cancel");
+        const running = logUploader.uploadLogs(Date.now() - 1);
+        const endingAtMs = Date.now();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(Date.now() - endingAtMs).to.be.below(500);
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+    });
+
+    it("an ending thread waits again for a later upload once an abort flush's upload finished", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            jitterMaxMs: 300
+        });
+        logger.info("flushed");
+        expect(await logUploader.uploadLogs(Date.now() + 5_000)).to.deep.equal({
+            ok: true,
+            entries: 1
+        });
+        logger.info("hit during dispose, after the flush");
+        const running = logUploader.uploadLogs();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(2);
+    });
+
+    it("an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            jitterMaxMs: 300
+        });
+        logger.info("flushed");
+        const flushed = logUploader.uploadLogs(Date.now() - 1);
+        logger.info("hit during dispose, behind the flush");
+        const queued = logUploader.uploadLogs();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        // Nothing was cancelled: both lines arrived, whichever upload read the second one.
+        expect((await flushed).ok).to.equal(true);
+        expect((await queued).ok).to.equal(true);
+        expect(
+            receiver!.requests.flatMap((_request, index) =>
+                messagesOf(receiver!, index)
+            )
+        ).to.deep.equal(["flushed", "hit during dispose, behind the flush"]);
+    });
+
+    it("an ending thread waits for an upload queued during a running abort flush only until that flush's deadline", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("flushed");
+        try {
+            // Far enough ahead that the held POST is reached before it passes.
+            const flushDeadlineMs = Date.now() + 2_000;
+            const flushed = logUploader.uploadLogs(flushDeadlineMs);
+            await receiver!.waitForRequests(1);
+            logger.info("hit during the abort");
+            const queued = logUploader.uploadLogs();
+
+            await LogUploader.settleRealmUploads(10_000);
+            LogUploader.cancelRealmUploads();
+
+            // Waited for the flush's deadline, and no longer.
+            expect(Date.now()).to.be.at.least(flushDeadlineMs - 50);
+            expect(Date.now() - flushDeadlineMs).to.be.below(1_000);
+            expect(await flushed).to.deep.equal({ ok: false, entries: 0 });
+            expect(await queued).to.deep.equal({ ok: false, entries: 0 });
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("an ending thread waits for a request during an abort flush queued behind an earlier upload only until that flush's deadline", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("before the abort");
+        try {
+            const earlier = logUploader.uploadLogs();
+            await receiver!.waitForRequests(1);
+            logger.info("flushed");
+            const flushDeadlineMs = Date.now() + 2_000;
+            const flushed = logUploader.uploadLogs(flushDeadlineMs);
+            logger.info("hit during the abort");
+            const during = logUploader.uploadLogs();
+
+            await LogUploader.settleRealmUploads(10_000);
+            LogUploader.cancelRealmUploads();
+
+            expect(Date.now()).to.be.at.least(flushDeadlineMs - 50);
+            expect(Date.now() - flushDeadlineMs).to.be.below(1_000);
+            expect(await earlier).to.deep.equal({ ok: false, entries: 0 });
+            expect(await flushed).to.deep.equal({ ok: false, entries: 0 });
+            expect(await during).to.deep.equal({ ok: false, entries: 0 });
+        } finally {
+            held.resolve();
+        }
+    });
+
     it("ends an upload in its retry delay when its thread ends, without the retry", async function () {
         await receiver!.close();
         receiver = await startLogReceiver({

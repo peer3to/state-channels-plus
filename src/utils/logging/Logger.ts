@@ -132,8 +132,8 @@ export abstract class Logger {
             updateContext: (context) => {
                 Object.assign(this.sharedContext, context);
             },
-            upload: () =>
-                this.logUploader?.uploadLogs() ??
+            upload: (flushDeadlineMs) =>
+                this.logUploader?.uploadLogs(flushDeadlineMs) ??
                 Promise.resolve({ ok: true, entries: 0 }),
             detach: () => {
                 this.sharedResources.loggerService = undefined;

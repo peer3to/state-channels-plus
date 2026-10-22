@@ -500,8 +500,12 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
     });
 }
 
-/** The worker thread ends: it cancels its uploads still running, then closes its handles. */
-function closeWorkerThread(): void | Promise<void> {
+/**
+ * The worker thread ends: it lets its uploads still running finish within the flush bound,
+ * cancels the rest, then closes its handles.
+ */
+async function closeWorkerThread(): Promise<void> {
+    await LogUploader.settleRealmUploads(config.CRASH_LOG_FLUSH_MS);
     LogUploader.cancelRealmUploads();
-    return closeRootWorker();
+    await closeRootWorker();
 }

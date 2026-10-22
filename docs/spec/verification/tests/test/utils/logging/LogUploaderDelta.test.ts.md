@@ -21,6 +21,13 @@ an upload requested while one is in flight resolves only after its own POST; and
 - `ends an upload still running when its thread ends, without a retry or its queued follow-up`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P15
 - `ends an upload in its jitter wait when its thread ends, before it posts`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P16
 - `ends an upload in its retry delay when its thread ends, without the retry`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P17
+- `lets an upload in its jitter wait post before its thread ends`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P18
+- `an ending thread waits for its running upload no longer than its bound`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P19
+- `an ending thread waits no longer for an upload of an abort flush whose deadline passed`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P20
+- `an ending thread waits again for a later upload once an abort flush's upload finished`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P21
+- `an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P22
+- `an ending thread waits for an upload queued during a running abort flush only until that flush's deadline`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P23
+- `an ending thread waits for a request during an abort flush queued behind an earlier upload only until that flush's deadline`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P24
 - `re-sends the delta after a failed upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P5, REQ-LOG-5-ST6S0G.T1.P2
 - `files an upload under the identity current after the jitter`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P13
 - `sends threadName and the sequence range`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P6, REQ-LOG-4-W5XR7Q.T1.P1

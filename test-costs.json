@@ -3902,9 +3902,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-AnchorCountersAndChallengeBoundary.test.ts|E2E: dispute validation / anchor counters and block-challenge boundary E18: block zero with the genesis anchor and with its own snapshot as the anchor E18: block zero's resulting snapshot as the anchor protects zero: a forged transaction in block zero gets no block-specific challenge, no kill, the submitter is not slashed": {
-      "durationMs": 38833,
-      "avgCores": 0.639,
-      "peakRssGb": 1.016,
+      "durationMs": 32249,
+      "avgCores": 0.848,
+      "peakRssGb": 1.28,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-AnchorCountersAndChallengeBoundary.test.ts|E2E: dispute validation / anchor counters and block-challenge boundary E18: block zero with the genesis anchor and with its own snapshot as the anchor E18: genesis anchor, threshold-final block zero with a forged transaction re-signed by every participant → zero stays everyone-final and eligible: an invalid-transition challenge at index 0 kills the dispute on chain, a challenge at the ineligible index 2 is rejected; only the submitter and the rejected challenger are slashed": {
@@ -14287,6 +14287,12 @@
       "peakRssGb": 0.792,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort cancels a VM worker's held upload when the worker ends, so the client closes without the drain timeout": {
+      "durationMs": 11483,
+      "avgCores": 0.571,
+      "peakRssGb": 0.599,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort cancels session-owned timeout work": {
       "durationMs": 11304,
       "avgCores": 0.936,
@@ -14309,6 +14315,12 @@
       "durationMs": 11089,
       "avgCores": 0.694,
       "peakRssGb": 0.904,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort sends the VM worker's upload an error started right before a dispose, before the worker ends": {
+      "durationMs": 13120,
+      "avgCores": 0.534,
+      "peakRssGb": 0.597,
       "measurementReason": null
     },
     "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort stops host work before provider destruction and final listener removal": {
@@ -22981,6 +22993,42 @@
       "peakRssGb": 0.401,
       "measurementReason": null
     },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits again for a later upload once an abort flush's upload finished": {
+      "durationMs": 665,
+      "avgCores": 0.556,
+      "peakRssGb": 0.099,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for a request during an abort flush queued behind an earlier upload only until that flush's deadline": {
+      "durationMs": 2544,
+      "avgCores": 0.256,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed": {
+      "durationMs": 527,
+      "avgCores": 0.702,
+      "peakRssGb": 0.107,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload queued during a running abort flush only until that flush's deadline": {
+      "durationMs": 2526,
+      "avgCores": 0.277,
+      "peakRssGb": 0.144,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for its running upload no longer than its bound": {
+      "durationMs": 749,
+      "avgCores": 0.841,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits no longer for an upload of an abort flush whose deadline passed": {
+      "durationMs": 470,
+      "avgCores": 0.766,
+      "peakRssGb": 0.11,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an idle store resolves without paying the jitter": {
       "durationMs": 5231,
       "avgCores": 0.382,
@@ -23021,6 +23069,12 @@
       "durationMs": 4147,
       "avgCores": 0.651,
       "peakRssGb": 0.251,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads lets an upload in its jitter wait post before its thread ends": {
+      "durationMs": 546,
+      "avgCores": 0.659,
+      "peakRssGb": 0.098,
       "measurementReason": null
     },
     "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads re-sends the delta after a failed upload": {

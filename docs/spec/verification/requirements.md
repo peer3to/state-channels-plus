@@ -669,7 +669,7 @@ Specification cases tested: 4/6. Untested: T1.P2, T1.P6.
 Specification cases tested: 0/4.
 
 [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1)
-Specification cases tested: 0/3.
+Specification cases tested: 1/4. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 Specification cases tested: 15/18. Untested: T1.P11, T1.P16, T1.P17.
