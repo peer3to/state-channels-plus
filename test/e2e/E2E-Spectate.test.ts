@@ -877,7 +877,7 @@ describe("E2E: Spectate Service", function () {
             );
         });
 
-        it("the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer's reduction defers instead of aborting and it catches up on the newest fork", async function () {
+        it("the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer's reduction defers instead of aborting, and once the chain records the result it and the reconnected leaver install the newest fork by sync while nobody authors on it", async function () {
             await assertObserverBehindReducedHeadRecoversFromIdleDispute(
                 TestSession.getHarness()
             );

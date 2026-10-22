@@ -7,6 +7,7 @@
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
 - [`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)
 - [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
+- [`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../../../../../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-SDK-ARCH-5-AAM7YK` (Chain submissions survive concurrent inclusion)](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk)
@@ -15,8 +16,8 @@
 
 Attempt discipline
 
-- Setup: Race concurrent reducers; drop events then recover; fail the provider; supersede with a final dispute; hold the fork adoption post while the successor is disputed, a later reduction becomes final, or a leaver's post of a reduced fork with no participant closes the channel; drop a leaving member to SYNCED during its install
-- Oracle: Convergence classified; unsynchronized windows never reduce; a reducer behind the reduced head defers, never aborts; provider failure fatal; supersession stands down; a settled adoption refusal is neither retried nor reported; a member that left during its install sends no reduction
+- Setup: Race concurrent reducers; drop events then recover; stage a spectator cut off before the window's reduced head, before and after the chain records the window's result, with the recorded reducer, only another peer, or no peer connected; fail the provider; supersede with a final dispute; hold the fork adoption post while the successor is disputed, a later reduction becomes final, or a leaver's post of a reduced fork with no participant closes the channel; drop a leaving member to SYNCED during its install
+- Oracle: Convergence classified; unsynchronized windows never reduce; a reducer behind the reduced head defers, never aborts, retries while the chain has no result, and once it has one installs the successor by one sync (reducer first, else a connected peer) with no further attempt; provider failure fatal; supersession stands down; a settled adoption refusal is neither retried nor reported; a member that left during its install sends no reduction
 
 - [ ] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P1` — concurrent convergence
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2` — event recovery before reduce
@@ -37,5 +38,9 @@ Attempt discipline
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P21` — an adopt-only post prepared against the successor and sent after a later reduction of the successor became final reverts with `RaceConditionSnapshotUpdateNotLatestFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P22` — an adopt-only post prepared against the successor and sent after the successor's dispute opened reverts with `RaceConditionSnapshotUpdateDisputedFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P23` — an adopt-only post of a reduced fork with no participant, prepared and held at its send while a leaver's post of that fork closes the channel, reverts with `RaceConditionGenesisTimestampNotAvailable`; the refusal is settled: no detached failure and no retry
-- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24` — a spectator behind the window's reduced head defers its reduction and reschedules it after `chainFallbackTime`; it keeps its status and does not abort
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24` — a spectator behind the window's reduced head, while the chain records no result for the window, defers its reduction and reschedules it after `chainFallbackTime`; it keeps its status and does not abort
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P25` — another reducer's committed reduction while this spectator does not hold the reduced head is not challenged and does not throw
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P26` — behind the reduced head after the chain records the result, with every survivor connected: one attempt syncs the successor from the recorded reducer, installs it and schedules no further attempt
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P27` — behind the reduced head after the chain records the result, with only a peer other than the reducer connected: the attempt syncs the successor from that peer
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P28` — behind the reduced head after the chain records the result, with no peer connected: the attempt syncs nothing, keeps the fork and reschedules after `chainFallbackTime`
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P29` — an unreadable dispute window while the chain records no result defers without aborting or answering with a fresh dispute, and the attempt after the window becomes readable reduces

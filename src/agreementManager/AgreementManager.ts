@@ -606,6 +606,7 @@ class AgreementManager {
             LoggerUtils.getReducedOutputMetadata(reducedOutput)
         );
         let reducedLatestStateSnapshot: StateSnapshot | undefined;
+        let reducedLatestEncodedStateMachineState: Bytes | undefined;
         if (
             !reducedOutput.latestBlock ||
             reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
@@ -617,32 +618,43 @@ class AgreementManager {
                 throw new Error(`No genesis snapshot found for fork ${forkId}`);
             }
             reducedLatestStateSnapshot = genesisSnapshot;
+            reducedLatestEncodedStateMachineState =
+                this.storage.stateMachineStates.getStateMachineState(
+                    genesisSnapshot.stateMachineStateHash
+                );
+            if (!reducedLatestEncodedStateMachineState)
+                throw new Error(
+                    "Missing latestEncodedState for reducedOutput in storage for syncing"
+                );
         } else {
             // Normal case - use the block's state snapshot
             reducedLatestStateSnapshot =
                 this.storage.stateSnapshots.getStateSnapshotByHash(
                     reducedOutput.latestBlock.stateSnapshotHash
                 );
-        }
-
-        // Get the corresponding stateMachineState
-        const reducedLatestEncodedStateMachineState =
-            reducedLatestStateSnapshot &&
-            this.storage.stateMachineStates.getStateMachineState(
-                reducedLatestStateSnapshot.stateMachineStateHash
-            );
-        // a node behind the reduced head never received its snapshot or state
-        // -> no reduce data yet, and the caller retries or follows the chain
-        if (
-            !reducedLatestStateSnapshot ||
-            !reducedLatestEncodedStateMachineState
-        ) {
-            this.logger.warn("No reduce data: reduced head state not held", {
-                forkId,
-                reducedOutput:
-                    LoggerUtils.getReducedOutputMetadata(reducedOutput)
-            });
-            return undefined;
+            // Get the corresponding stateMachineState
+            reducedLatestEncodedStateMachineState =
+                reducedLatestStateSnapshot &&
+                this.storage.stateMachineStates.getStateMachineState(
+                    reducedLatestStateSnapshot.stateMachineStateHash
+                );
+            // a node behind a non-genesis reduced head never received its
+            // snapshot or state -> no reduce data yet, and the caller retries
+            // or follows the chain
+            if (
+                !reducedLatestStateSnapshot ||
+                !reducedLatestEncodedStateMachineState
+            ) {
+                this.logger.warn(
+                    "No reduce data: reduced head state not held",
+                    {
+                        forkId,
+                        reducedOutput:
+                            LoggerUtils.getReducedOutputMetadata(reducedOutput)
+                    }
+                );
+                return undefined;
+            }
         }
 
         // the run the chain applied in its reduce. we cannot invent blocks whose

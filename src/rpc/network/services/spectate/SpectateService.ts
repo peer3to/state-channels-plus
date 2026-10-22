@@ -54,6 +54,9 @@ export interface SyncOutcome {
     unsettledForkId?: ForkId;
 }
 
+/** This responder cannot prove the target yet: its own records lag, the request is not at fault. */
+export class SyncProofNotReadyError extends Error {}
+
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
@@ -763,7 +766,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
     /**
      * Generate payload to prove the latest possible snapshot
-     * (but don't send it on-chain - send it to the spectator)
+     * (but don't send it on-chain - send it to the spectator). `undefined`:
+     * the request asks for a target this responder cannot prove. Throws
+     * `SyncProofNotReadyError` when this responder is not ready to prove it
+     * yet (it does not hold a disputed window's records or reduced head).
      */
     public async generateSyncPayload(
         channelId: ChannelId,
@@ -831,7 +837,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     "generateSyncPayload - dispute window unavailable",
                     { channelId, forkId: currentForkId }
                 );
-                return undefined;
+                throw new SyncProofNotReadyError("dispute window unavailable");
             }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -850,14 +856,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     currentWindowDisputes
                 );
             if (!computation) {
-                // we cannot rebuild the run this window's reduce consumed, so we
-                // cannot prove the tip -> refuse to serve rather than serve a
-                // proof we could not build
+                // we hold neither the reduced head nor the run this window's
+                // reduce consumed, so we cannot prove the tip -> refuse to
+                // serve rather than serve a proof we could not build
                 this.logger.warn(
                     "generateSyncPayload - reduce data unavailable for a disputed window",
                     { channelId, forkId: currentForkId }
                 );
-                return undefined;
+                throw new SyncProofNotReadyError(
+                    "reduce data unavailable for a disputed window"
+                );
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;

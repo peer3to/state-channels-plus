@@ -12,7 +12,7 @@ replay index and genesis final snapshot. Other cases cover membership changes, m
 unknown forks, concurrent construction, and inbound recovery for reduction. Skipped declarations
 record inputs unavailable through the public surface; they are not passing evidence.
 
-The reduced-head case reads reduce data on a spectator that never received the window's reduced head: it returns unavailable, not a throw.
+The reduced-head case reads reduce data on a spectator that never received the window's reduced head: it returns unavailable, not a throw. The snapshot-without-state variant is skipped: only a verified proof hop is stored without its state, and no staging makes such a hop the window's reduced head.
 
 ## Tests
 
@@ -49,3 +49,4 @@ The reduced-head case reads reduce data on a spectator that never received the w
 - `recoverable reduce run → the full applied run`: none
 - `reduce-to-genesis → getReduceData resolves the genesis snapshot`: none
 - `reduced head the node never received → undefined, not a throw`: UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P4
+- `reduced head snapshot held without its state → undefined, not a throw (needs a synced proof hop that is the reduced head)`: none

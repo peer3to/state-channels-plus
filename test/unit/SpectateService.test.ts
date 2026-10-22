@@ -242,6 +242,84 @@ describe("Unit: SpectateService", function () {
                 await restore();
             }
         });
+        // a responder behind a disputed window's reduced head cannot prove the
+        // tip yet: the request fails, but the requester asked for nothing
+        // unprovable, so neither side excludes the other
+        it("responder behind a disputed window's reduced head → the request fails, neither peer blacklists the other, and the requester then syncs from a survivor", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, spectatorIndex, survivors, recover } =
+                await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
+            const responder = h.getPeer(spectatorIndex);
+            // the chain records no result: the responder stays behind and
+            // its own reduction never syncs past the window
+            const reduceHolds = await Promise.all(
+                h.peers
+                    .filter((peer) => peer.index !== spectatorIndex)
+                    .map((peer) =>
+                        h.rpcStub.holdReductionAttempt(peer.index, "submit")
+                    )
+            );
+            const [requesterIndex, survivorIndex] = survivors as [
+                number,
+                number
+            ];
+            const requester = h.getPeer(requesterIndex);
+            await h.network.restorePairDiscovery(
+                spectatorIndex,
+                requesterIndex
+            );
+            const connected = () =>
+                h
+                    .control(requester)
+                    .query.isConnectedTo(responder.address)
+                    .request();
+            await waitFor(connected, h.event.protocolEventTimeoutMs());
+            // premise - the responder holds no reduced head for the window
+            expect(
+                await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() })
+            ).to.equal(null);
+
+            const synced = await h
+                .control(requester)
+                .spectate.sync(responder.address, forkId, 0)
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+
+            expect(synced).to.equal(false);
+            expect(
+                await h
+                    .control(responder)
+                    .query.isBlacklisted(requester.address)
+                    .request(),
+                "the responder blacklisted the requester"
+            ).to.equal(false);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
+            // a retry-tier close: the pair reconnects
+            await waitFor(connected, h.event.protocolEventTimeoutMs());
+
+            // a survivor proves the same target once the chain reduces
+            await Promise.all(reduceHolds.map((hold) => hold.release()));
+            expect(
+                await h
+                    .control(requester)
+                    .spectate.sync(h.getPeer(survivorIndex).address, forkId, 0)
+                    .request({
+                        timeoutMs: h.event.protocolEventTimeoutMs() * 2
+                    })
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(h.getPeer(survivorIndex).address)
+                    .request()
+            ).to.equal(false);
+            await recover();
+        });
     });
 
     describe("applySyncResponse", function () {
@@ -1589,20 +1667,54 @@ describe("Unit: SpectateService", function () {
             await restoreEvents(false);
         });
 
-        // no test: "reduce data unavailable -> refuse to serve" needs the
-        // responder's local diamond inbound head above its inbound storage
-        // (computeReductionLocally takes the reduced inbound head from the
-        // mirror, getReduceData walks storage) while it still holds every
-        // dispute of the window. `rpcStub.holdInboundMessageStorage` produces
-        // the split, but every dispute of the window names that inbound head,
-        // so a participant responder's own audit fails on the same missing run
-        // before it stores the dispute: its window read refuses first
-        // ("dispute window unavailable", the case below). A spectator persists
-        // disputes without auditing; staging one that follows the disputed
-        // window with a held inbound write is not in the harness yet. The
-        // undefined outcome itself is pinned by
-        // "Unit: AgreementManager ... unrecoverable reduce run -> undefined".
-        it.skip("reduce data unavailable for a disputed window → payload refused (needs a mirror ahead of storage)", function () {});
+        // a spectator cut off before the participants' last block follows the
+        // dispute from chain events only: its window is readable, but it never
+        // received the reduced head, so it has no reduce data to prove with
+        it("reduce data unavailable for a disputed window → payload refused, no throw", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, spectatorIndex, recover } =
+                await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
+            const spectator = h.getPeer(spectatorIndex);
+
+            // premise - the window is readable and reduces above the spectator
+            const reducedHeight = await h.query.reducedHeadHeight(
+                forkId,
+                spectatorIndex
+            );
+            const spectatorHeight = await h
+                .control(spectator)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(reducedHeight).to.not.equal(null);
+            expect(reducedHeight).to.be.greaterThan(Number(spectatorHeight));
+
+            let threw = "";
+            let syncResult: unknown = "unset";
+            try {
+                syncResult = await h
+                    .control(spectator)
+                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+            } catch (e) {
+                threw = e instanceof Error ? e.message : String(e);
+            }
+
+            expect(
+                threw,
+                "generateSyncPayload must refuse, not throw"
+            ).to.equal("");
+            expect(
+                syncResult,
+                "a window we cannot reduce must not be served as a proof"
+            ).to.be.null;
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.deep.equal([]);
+            await recover();
+        });
 
         // the sibling gap that IS stageable: the window's own disputes are
         // on-chain but unreadable locally. we must not serve a proof we could

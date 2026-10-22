@@ -46,15 +46,20 @@ treated the mined resend as mined.
 
 The settled-adoption cases stage a reducible disputed fork that only peer 0 reduces, with every timeout check suppressed. Peer 0's multicalls are recorded and its adopt-only post is parked at its send after it was prepared against the successor fork; peer 0's reduction timers are held again so it never reduces the successor. A successor participant other than peer 0 and the next writer broadcasts an invalid block, and the honest participants open the successor's dispute window. The disputed-fork case releases the post at once. The not-latest-fork case first lets another honest participant reduce the successor and waits until that reduction's challenge period expired, so the parked post targets an older fork the chain reaches on its way to the later one. Each case asserts the real revert name from the released send, settles detached work with no error, finds no `adoptReducedFork-*` retry scheduled and exactly one adopt-only post recorded, and reads the chain snapshot still on the source fork.
 
-Two cases stage a spectator behind a dispute window's reduced head (it held only an earlier block while the participants disputed a later one): its own reduction attempt defers and reschedules without aborting, and another reducer's committed reduction is not challenged. Each ends with the spectator recovering onto the survivors' fork.
+Five cases stage a spectator behind a dispute window's reduced head (it held only an earlier block while the participants disputed a later one). With every participant's reduce held at its chain write, so the chain records no result, its own attempt defers and reschedules one `chainFallbackTime` later without aborting. Another reducer's committed reduction is not challenged. Three cases hold the slashed offender's reduce so a survivor is the recorded reducer, wait until the chain records the survivors' reduction, suppress the survivors' timeout checks, hold every reduction entry point of the spectator (its `reduction-*` timers, snapshot and reduced-result handlers) while recording its scheduled tasks and sync calls, then drive one attempt by hand: with every survivor reconnected it syncs once, from the recorded reducer, installs the chain's reduced fork and records no further `reduction-<fork>` task; with only the other survivor reconnected it syncs from that peer; with no peer connected it syncs nothing, keeps the fork and reschedules after `chainFallbackTime`. Each ends with the spectator recovering onto the survivors' fork.
+
+The unreadable-window deferral holds the other participants' reduce at its chain write too, so the chain has no result and the deferral retries instead of syncing past the window.
 
 ## Tests
 
 - `no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes`: none
 - `someone else's reduction while the run is unavailable → not challenged, no throw`: none
-- `reduced head the peer never received → the attempt reschedules, the peer keeps its status`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24
+- `reduced head the peer never received → the attempt reschedules, the peer keeps its status`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24, REQ-DVP-2-RG8QR3.T1.P3
+- `reduced head not held, the chain records the window's result and the reducer is connected → one attempt syncs onto the successor from the reducer and reschedules nothing`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P26, REQ-DVP-2-RG8QR3.T1.P4
+- `reduced head not held, the chain records the window's result and only a non-reducer is connected → one attempt syncs onto the successor from that peer`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P27, REQ-DVP-2-RG8QR3.T1.P5
+- `reduced head not held, the chain records the window's result and no peer is connected → the attempt syncs nothing and reschedules after chainFallbackTime`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P28, REQ-DVP-2-RG8QR3.T1.P6
 - `someone else's reduction while the reduced head is not held → not challenged, no throw`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P25
-- `unreadable dispute window → the attempt defers instead of aborting`: none
+- `unreadable dispute window → the attempt defers instead of aborting`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P29
 - `a re-dispatched dispute log that fails → the attempt rejects with that failure`: none
 - `unreadable dispute window → the reduction is not challenged`: none
 - `the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17

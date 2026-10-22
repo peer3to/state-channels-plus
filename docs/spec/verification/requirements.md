@@ -417,7 +417,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 6/6.
 
 [`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)
-Specification cases tested: 1/2. Untested: T1.P1.
+Specification cases tested: 6/7. Untested: T1.P1.
 
 [`REQ-DVP-3-CFFAW1` (Incorrect reductions are challenged in time)](../specification/disputes/dispute-processing.md#req-dvp-3-cffaw1)
 Specification cases tested: 0/1.
@@ -918,7 +918,7 @@ Specification cases tested: 79/79.
 Specification cases tested: 45/45.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
-Specification cases tested: 2/3. Untested: T1.P1.
+Specification cases tested: 3/3.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.

@@ -50,14 +50,17 @@ export async function assertObserverRecoversFromRemovedResponder(
  * The same genesis-only observer, but the survivors stay idle: the next
  * writer times out and the survivors dispute the reduced fork, whose window
  * reduces to a head the observer never received. The observer's own
- * reduction must defer instead of aborting, and it reaches the survivors
- * once they author on the newest fork.
+ * reduction must defer instead of aborting, and once the chain records the
+ * window's result it installs the successor by one sync, while the survivors
+ * author nothing on it. The reconnected leaver, behind too, follows the same
+ * way.
  */
 export async function assertObserverBehindReducedHeadRecoversFromIdleDispute(
     h: MathPeerTestHarness
 ): Promise<void> {
     const staging = await stageObserverSyncedFromRemovedResponder(h);
-    const { observer, survivors, newForkId, channelId } = staging;
+    const { observer, survivors, newForkId, channelId, leaverIndex } = staging;
+    const leaver = h.getPeer(leaverIndex);
     let released = false;
     try {
         // the reduced fork's reduction must land this time
@@ -71,28 +74,12 @@ export async function assertObserverBehindReducedHeadRecoversFromIdleDispute(
             peersIndices: [...survivors, observer.index],
             expectedCount: 1
         });
-        const reducedHeight = await h.execOnHost(
-            h.getPeer(survivors[0]!),
-            async (sm, args) => {
-                const disputes =
-                    await sm.reductionManager.getSyncedForkDisputes(
-                        args.forkId
-                    );
-                if (!disputes)
-                    throw new Error(
-                        "expected a locally readable dispute window"
-                    );
-                const reducedOutput =
-                    await sm.stateChannelManagerContract.reduce.staticCall(
-                        disputes
-                    );
-                return Number(
-                    reducedOutput.latestBlock.transaction.header.transactionCnt
-                );
-            },
-            { forkId: newForkId },
-            { timeoutMs: h.event.hostExecTimeoutMs() }
+        const reducedHeight = await h.query.reducedHeadHeight(
+            newForkId,
+            survivors[0]!
         );
+        expect(reducedHeight, "dispute window not readable").to.not.equal(null);
+        const scheduled = await h.rpcStub.recordScheduledTasks(observer.index);
         await waitFor(
             async () =>
                 (await h.query.killPeriod(newForkId, observer.index)).isExpired,
@@ -112,26 +99,57 @@ export async function assertObserverBehindReducedHeadRecoversFromIdleDispute(
             honestPeerIndices: survivors,
             assertMaliciousRemoved: false
         });
+        // the successor stays idle: no block, and no timeout dispute on it
+        for (const index of survivors)
+            await h.rpcStub.suppressTimeoutCheck(index);
+        // the survivors install locally and submit detached
+        await waitFor(
+            async () =>
+                (await h.query.reducedForkOnChain(newForkId)) === latestForkId,
+            h.event.protocolEventTimeoutMs()
+        );
+        const tasksAtChainResult = (await scheduled.tasks()).length;
+
         // the isolated leaver is behind the reduced head too -> it follows
-        // once reconnected, and authoring keeps the slot from timing out again
-        await h.network.restorePeerDiscovery([staging.leaverIndex]);
-        const heightOf = async (index: number) =>
-            Number(
-                (await h
+        // once reconnected
+        await h.control(leaver).stub.recordSyncReductionWindows().request();
+        await h.network.restorePeerDiscovery([leaverIndex]);
+        await waitFor(
+            async () =>
+                (
+                    await h.peerForkIds([h.getPeer(observer.index), leaver])
+                ).every((forkId) => forkId === latestForkId),
+            h.event.protocolEventTimeoutMs() * 2
+        );
+        // at most the attempt already in flight when the result landed
+        // reschedules; the next one syncs instead of polling again
+        const retries = (await scheduled.tasks())
+            .slice(tasksAtChainResult)
+            .filter((task) => task.taskName === `reduction-${newForkId}`);
+        expect(retries.length, JSON.stringify(retries)).to.be.at.most(1);
+        await scheduled.restore();
+        for (const index of [...survivors, observer.index, leaverIndex]) {
+            expect(
+                await h
                     .control(h.getPeer(index))
                     .query.getLatestBlockHeight(latestForkId)
-                    .request()) ?? -1
-            );
-        await h.transition.keepAuthoringUntil({
-            until: async () =>
-                (await heightOf(observer.index)) > 0 &&
-                (await heightOf(observer.index)) ===
-                    (await heightOf(survivors[0]!)) &&
-                (await h.peerForkIds([h.getPeer(staging.leaverIndex)]))[0] ===
-                    latestForkId,
-            waitForPeers: survivors,
-            maximumBlocks: 10
-        });
+                    .request(),
+                `peer ${index} holds a block of the idle successor`
+            ).to.equal(null);
+        }
+        const leaverSyncs = await h
+            .control(leaver)
+            .stub.getSyncReductionWindows()
+            .request();
+        await h.control(leaver).stub.restoreSyncReductionWindows().request();
+        // still connected to the observer, it may ask it before a survivor
+        expect(
+            leaverSyncs.some(
+                (entry) => entry.synced && entry.latestForkId === latestForkId
+            ),
+            JSON.stringify(leaverSyncs)
+        ).to.equal(true);
+        expect(runtimeIsClosed(leaver.p2pInstance)).to.equal(false);
         await assertObserverCaughtUp(
             h,
             { ...staging, observerIndex: observer.index },

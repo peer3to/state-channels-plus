@@ -64,6 +64,10 @@ participation.
   ([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)): an opened local channel and a peer
   resolved as a dispute-eligible participant. Every other lifecycle state keeps the authenticated
   session engaged without starting this sync.
+- Reduction catch-up is a separate trigger owned by the reduction, not by session engagement: a node
+  behind a dispute window's reduced head syncs the successor fork once the chain records the
+  window's result, from the recorded reducer or another connected peer
+  ([`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../disputes/dispute-processing.md#req-dvp-2-rg8qr3)).
 - **Responder.** Any authenticated peer asked to prove; serving requires only the ability to prove
   the target from its own stores and chain view.
 
@@ -211,7 +215,8 @@ to its queue owner without disposing a synchronized observer.
 | Path      | Failure                                                                  | Outcome                                                                                                                                                                                                                                              |
 | --------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Responder | Malformed target                                                         | Refuse before expensive work; consequence per ingress rules.                                                                                                                                                                                         |
-| Responder | Cannot prove target (lagging, unknown fork, above-latest height)         | Explicit refusal; an honest can't-prove-yet request never permanently excludes the requester ([`REQ-SPC-3-AZBKR1`](synchronization.md#req-spc-3-azbkr1)).                                                                                            |
+| Responder | Not ready to prove target yet (lagging behind a disputed window)         | Fails the request without excluding the requester ([`REQ-SPC-3-AZBKR1`](synchronization.md#req-spc-3-azbkr1)).                                                                                                                                       |
+| Responder | Cannot prove target (unknown fork, above-latest height)                  | Explicit refusal; consequence per ingress rules. An honest can't-prove-yet request never permanently excludes the requester ([`REQ-SPC-3-AZBKR1`](synchronization.md#req-spc-3-azbkr1)).                                                             |
 | Responder | Own initial load in flight (uncommitted)                                 | Answers once its own initial load settles; a failed load fails the request and the responder aborts on its own ([`REQ-SPC-3-AZBKR1`](synchronization.md#req-spc-3-azbkr1)).                                                                          |
 | Requester | Transport failure, timeout, or refusal                                   | Sync fails; the selected peer takes a counted close under [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j): honest peers observe the same reality within agreementTime, but silence or refusal is not proof, so no verdict is recorded below the bound. |
 | Requester | Any verification failure (steps 1–11, 13–14)                             | Abort: full stop for a fresh spectator, peer cut for a recovering participant; the failed payload is Byzantine evidence against the responder.                                                                                                       |
@@ -279,7 +284,9 @@ successful result covering the same channel and fork at a sufficient height; oth
 request after the first completes. The in-flight claim is released on every outcome.
 
 **<a id="req-spc-3-azbkr1"></a>`REQ-SPC-3-AZBKR1` — No permanent exclusion for can't-prove-yet.** A responder
-that honestly cannot yet prove a requested target MUST NOT permanently exclude the requester. An
+that honestly cannot yet prove a requested target MUST NOT permanently exclude the requester. A
+responder that does not yet hold a disputed window's committed records or the head that window
+reduces to is not ready: it fails the request without excluding the requester. An
 uncommitted responder (its own initial load in flight) answers once that load settles: success
 answers normally; failure fails the request, and the responder aborts on its own.
 

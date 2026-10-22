@@ -104,9 +104,9 @@ export class MathScenarioActions extends ScenarioActions {
 
     /**
      * A committed dispute whose window reduces to a head a synced spectator
-     * never received: the spectator is cut off after its sync, the
-     * participants author one more block, then an invalid block opens the
-     * dispute. The spectator follows the dispute from chain events only.
+     * never received: the spectator syncs while the participants author, is
+     * cut off, the participants author one more block, then an invalid block
+     * opens the dispute. The spectator follows the dispute from chain events only.
      * `recover` reconnects it and keeps the survivors authoring until it is
      * on their fork, which settles its deferred reduction.
      */
@@ -115,9 +115,13 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig: INBOUND_GAP_TIME_CONFIG
         });
         const participants = this.harness.peers.map((peer) => peer.index);
-        // no transition is scheduled while the spectator syncs
-        const spectatorIndex = (await this.harness.join.addSpectatorWait())
-            .index;
+        const spectatorIndex = (
+            await this.harness.join.addSpectatorAuthoring({
+                authoringPeerIndices: participants,
+                minimumBlocks: 1,
+                maximumBlocks: 20
+            })
+        ).peer.index;
         await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
         await this.harness.transition.advanceState({
             count: 1,
@@ -163,7 +167,7 @@ export class MathScenarioActions extends ScenarioActions {
                 maximumBlocks: 10
             });
         };
-        return { forkId, spectatorIndex, disputerIndex, recover };
+        return { forkId, spectatorIndex, disputerIndex, survivors, recover };
     }
 
     /**

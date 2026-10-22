@@ -16,7 +16,9 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
      * is mutual-cooperation: a request must be answerable with a valid proof. A
      * missing peer address, or a target we can't prove (bad/above-latest height,
      * unknown fork), disconnects and blacklists the requester and throws, so its
-     * `.request(...)` rejects and it blacklists us in turn. A responder whose
+     * `.request(...)` rejects and it blacklists us in turn. A responder not
+     * ready to prove the target yet (`SyncProofNotReadyError`) fails the
+     * request without blacklisting the requester. A responder whose
      * initial sync is in flight (OPENED) answers once it settles; a failed
      * initial sync fails the request (the responder aborts on its own).
      */

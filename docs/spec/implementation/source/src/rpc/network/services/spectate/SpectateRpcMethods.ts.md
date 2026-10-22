@@ -13,8 +13,8 @@
 
 Endpoint contract
 
-- Setup: Provable and unprovable requests; a responder whose own initial sync is in flight, already failed, or not started before its initial-sync deadline; a requester whose one-window probe times out while the responder waits
-- Oracle: Payload returned encoded; unprovable applies the documented consequence; an in-flight own initial sync delays the answer until it settles; a failed own initial sync refuses the request; a timed-out requester records only a retry-tier close and no blacklist on either side
+- Setup: Provable and unprovable requests; a responder behind a disputed window's reduced head; a responder whose own initial sync is in flight, already failed, or not started before its initial-sync deadline; a requester whose one-window probe times out while the responder waits
+- Oracle: Payload returned encoded; unprovable applies the documented consequence; a responder not ready to prove the target fails the request without blacklisting the requester; an in-flight own initial sync delays the answer until it settles; a failed own initial sync refuses the request; a timed-out requester records only a retry-tier close and no blacklist on either side
 
 - [x] `UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P1` — provable path
 - [x] `UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P2` — unprovable consequence
@@ -24,3 +24,4 @@ Endpoint contract
 - [x] `UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P6` — own initial sync in flight past the requester's one-window timeout: the requester records only a retry-tier close, neither side blacklists the other, and the late answer has no effect on the requester
 - [x] `UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P7` — own initial sync already failed when the request enters: refused at once with the own-sync failure
 - [x] `UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P8` — opened responder with no participant handshake: the request waits and is refused when the initial-sync deadline fires
+- [x] `UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P9` — responder behind a disputed window's reduced head: the request fails, the requester only strikes the responder, neither side blacklists the other and the pair reconnects; the requester then syncs the target from another peer

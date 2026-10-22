@@ -7,6 +7,7 @@ import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
+import { addressesEqual } from "@/utils/address";
 import { errorMessage } from "@/utils/errorMessage";
 import {
     type ContractErrorName,
@@ -18,7 +19,7 @@ import {
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { TransactionResponse } from "ethers";
+import { TransactionResponse, ZeroHash } from "ethers";
 
 type KillPeriodObservation = {
     windowExists: boolean;
@@ -174,20 +175,9 @@ export default class ReductionExecutor {
 
         const disputes = await this.getSyncedForkDisputes(forkId);
         if (this.isStale(forkId)) return;
-        if (!disputes) {
-            // the window's disputes are on-chain but not locally readable yet ->
-            // retry, never abort: the peer would lose its turns and be slashed
-            this.logger.warn("Reduction deferred: dispute window unavailable", {
-                forkId
-            });
-            this.stateManager.reductionManager.schedule(
-                forkId,
-                Clock.getTimeInSeconds() +
-                    this.stateManager.timeConfig.chainFallbackTime,
-                true
-            );
-            return;
-        }
+        // the window's disputes are on-chain but not locally readable yet
+        if (!disputes)
+            return this.deferReduction(forkId, "dispute window unavailable");
         if (this.isStale(forkId)) return;
         const freshExpiry =
             await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
@@ -229,20 +219,10 @@ export default class ReductionExecutor {
             disputes
         );
         if (this.isStale(forkId)) return;
-        if (!candidate) {
-            // this node cannot back the chain's reduced head yet (its state or inbound run) -> retry,
-            // never abort: the peer would lose its turns and be slashed for it
-            this.logger.warn("Reduction deferred: reduce data unavailable", {
-                forkId
-            });
-            this.stateManager.reductionManager.schedule(
-                forkId,
-                Clock.getTimeInSeconds() +
-                    this.stateManager.timeConfig.chainFallbackTime,
-                true
-            );
-            return;
-        }
+        // this node cannot back the chain's reduced head yet (its state or
+        // inbound run)
+        if (!candidate)
+            return this.deferReduction(forkId, "reduce data unavailable");
         if (this.isStale(forkId)) return;
         const submission = await this.prepareSubmission(candidate);
         if (this.isStale(forkId)) return;
@@ -545,6 +525,51 @@ export default class ReductionExecutor {
             disputer: finalDispute.input.disputer
         });
         return "superseded";
+    }
+
+    /**
+     * This node cannot reduce `forkId`'s window yet; it never aborts for it:
+     * the peer would lose its turns and be slashed. Once the chain records the
+     * window's result nothing is left to reduce here, so the successor is
+     * installed by one sync, from the reducer when connected, else from any
+     * connected peer. Otherwise, or when that sync fails, the attempt retries
+     * after `chainFallbackTime`.
+     */
+    private async deferReduction(
+        forkId: ForkId,
+        reason: string
+    ): Promise<void> {
+        this.logger.warn(`Reduction deferred: ${reason}`, { forkId });
+        const { channelId } = this.stateManager;
+        const { reducedForkId, reducer } =
+            await this.stateManager.stateChannelManagerContract.getReducedResult(
+                channelId,
+                forkId
+            );
+        if (this.isStale(forkId)) return;
+        if (reducedForkId !== ZeroHash) {
+            const p2pManager = this.stateManager.p2pManager;
+            const connected = [...p2pManager.getConnectedPeers()];
+            const peer =
+                connected.find((address) => addressesEqual(address, reducer)) ??
+                connected[0];
+            if (
+                peer &&
+                (await p2pManager.localRpc.spectateService.sync(
+                    peer,
+                    channelId,
+                    reducedForkId as ForkId
+                ))
+            )
+                return;
+            if (this.isStale(forkId)) return;
+        }
+        this.stateManager.reductionManager.schedule(
+            forkId,
+            Clock.getTimeInSeconds() +
+                this.stateManager.timeConfig.chainFallbackTime,
+            true
+        );
     }
 
     /** The reduced fork the chain records for `forkId`, or the zero hash. */
