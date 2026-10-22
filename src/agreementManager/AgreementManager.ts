@@ -605,7 +605,7 @@ class AgreementManager {
             "ReduceOutput",
             LoggerUtils.getReducedOutputMetadata(reducedOutput)
         );
-        let reducedLatestStateSnapshot: StateSnapshot;
+        let reducedLatestStateSnapshot: StateSnapshot | undefined;
         if (
             !reducedOutput.latestBlock ||
             reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
@@ -619,26 +619,31 @@ class AgreementManager {
             reducedLatestStateSnapshot = genesisSnapshot;
         } else {
             // Normal case - use the block's state snapshot
-            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
-                reducedOutput.latestBlock.stateSnapshotHash
-            );
-            if (!snapshot) {
-                throw new Error(
-                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
+            reducedLatestStateSnapshot =
+                this.storage.stateSnapshots.getStateSnapshotByHash(
+                    reducedOutput.latestBlock.stateSnapshotHash
                 );
-            }
-            reducedLatestStateSnapshot = snapshot;
         }
 
         // Get the corresponding stateMachineState
         const reducedLatestEncodedStateMachineState =
+            reducedLatestStateSnapshot &&
             this.storage.stateMachineStates.getStateMachineState(
                 reducedLatestStateSnapshot.stateMachineStateHash
             );
-        if (!reducedLatestEncodedStateMachineState)
-            throw new Error(
-                "Missing latestEncodedState for reducedOutput in storage for syncing"
-            );
+        // a node behind the reduced head never received its snapshot or state
+        // -> no reduce data yet, and the caller retries or follows the chain
+        if (
+            !reducedLatestStateSnapshot ||
+            !reducedLatestEncodedStateMachineState
+        ) {
+            this.logger.warn("No reduce data: reduced head state not held", {
+                forkId,
+                reducedOutput:
+                    LoggerUtils.getReducedOutputMetadata(reducedOutput)
+            });
+            return undefined;
+        }
 
         // the run the chain applied in its reduce. we cannot invent blocks whose
         // log never reached us -> no reduce data yet, and the caller retries

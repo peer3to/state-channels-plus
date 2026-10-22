@@ -230,7 +230,7 @@ export default class ReductionExecutor {
         );
         if (this.isStale(forkId)) return;
         if (!candidate) {
-            // our inbound view cannot back the chain's reduced head yet -> retry,
+            // this node cannot back the chain's reduced head yet (its state or inbound run) -> retry,
             // never abort: the peer would lose its turns and be slashed for it
             this.logger.warn("Reduction deferred: reduce data unavailable", {
                 forkId

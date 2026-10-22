@@ -12,6 +12,8 @@ replay index and genesis final snapshot. Other cases cover membership changes, m
 unknown forks, concurrent construction, and inbound recovery for reduction. Skipped declarations
 record inputs unavailable through the public surface; they are not passing evidence.
 
+The reduced-head case reads reduce data on a spectator that never received the window's reduced head: it returns unavailable, not a throw.
+
 ## Tests
 
 - `malformed participant address`: none
@@ -46,3 +48,4 @@ record inputs unavailable through the public surface; they are not passing evide
 - `unrecoverable reduce run → undefined, not a throw`: none
 - `recoverable reduce run → the full applied run`: none
 - `reduce-to-genesis → getReduceData resolves the genesis snapshot`: none
+- `reduced head the node never received → undefined, not a throw`: UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P4

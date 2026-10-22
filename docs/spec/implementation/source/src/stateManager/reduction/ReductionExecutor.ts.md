@@ -16,7 +16,7 @@
 Attempt discipline
 
 - Setup: Race concurrent reducers; drop events then recover; fail the provider; supersede with a final dispute; hold the fork adoption post while the successor is disputed, a later reduction becomes final, or a leaver's post of a reduced fork with no participant closes the channel; drop a leaving member to SYNCED during its install
-- Oracle: Convergence classified; unsynchronized windows never reduce; provider failure fatal; supersession stands down; a settled adoption refusal is neither retried nor reported; a member that left during its install sends no reduction
+- Oracle: Convergence classified; unsynchronized windows never reduce; a reducer behind the reduced head defers, never aborts; provider failure fatal; supersession stands down; a settled adoption refusal is neither retried nor reported; a member that left during its install sends no reduction
 
 - [ ] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P1` — concurrent convergence
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2` — event recovery before reduce
@@ -37,3 +37,5 @@ Attempt discipline
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P21` — an adopt-only post prepared against the successor and sent after a later reduction of the successor became final reverts with `RaceConditionSnapshotUpdateNotLatestFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P22` — an adopt-only post prepared against the successor and sent after the successor's dispute opened reverts with `RaceConditionSnapshotUpdateDisputedFork`; the refusal is settled: no detached failure, no retry, no further adoption post, and the chain snapshot stays where it was
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P23` — an adopt-only post of a reduced fork with no participant, prepared and held at its send while a leaver's post of that fork closes the channel, reverts with `RaceConditionGenesisTimestampNotAvailable`; the refusal is settled: no detached failure and no retry
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24` — a spectator behind the window's reduced head defers its reduction and reschedules it after `chainFallbackTime`; it keeps its status and does not abort
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P25` — another reducer's committed reduction while this spectator does not hold the reduced head is not challenged and does not throw

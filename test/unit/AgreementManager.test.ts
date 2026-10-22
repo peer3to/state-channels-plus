@@ -854,6 +854,58 @@ describe("Unit: AgreementManager", function () {
         // disputes.
         it.skip("hostile reducedOutput / dispute commitment", function () {});
 
+        /** reduce.staticCall over the window, then getReduceData for it. */
+        const readReduceData = (
+            h: ReturnType<typeof TestSession.getHarness>,
+            peerIndex: number,
+            forkId: ForkId
+        ) =>
+            h.execOnHost(
+                h.getPeer(peerIndex),
+                async (sm, args) => {
+                    const disputes =
+                        await sm.reductionManager.getSyncedForkDisputes(
+                            args.forkId
+                        );
+                    if (!disputes) {
+                        throw new Error(
+                            "expected a locally readable dispute window"
+                        );
+                    }
+                    const reducedOutput =
+                        await sm.stateChannelManagerContract.reduce.staticCall(
+                            disputes
+                        );
+                    let threw = "";
+                    let blockCount: number | null = null;
+                    try {
+                        const reduceData =
+                            await sm.agreementManager.getReduceData(
+                                args.forkId,
+                                reducedOutput
+                            );
+                        blockCount = reduceData
+                            ? reduceData.inboundMessageBlocks.length
+                            : null;
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        threw,
+                        blockCount,
+                        disputeCount: disputes.length,
+                        reducedHeight: Number(
+                            reducedOutput.latestBlock.transaction.header
+                                .transactionCnt
+                        )
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
         // no test for a populated window: getForkDisputes /
         // getForkDisputeConfirmations sit on the reduce path, so the dispute
         // E2E suite (test/e2e/dispute) covers the happy path transitively - a
@@ -906,57 +958,29 @@ describe("Unit: AgreementManager", function () {
             expect(r.bogusDisputeCount).to.equal(0);
         });
 
+        it("reduced head the node never received → undefined, not a throw", async function () {
+            const h = TestSession.getHarness();
+            // a spectator cut off before the participants' last block: the
+            // window reduces to that block, whose snapshot it never stored
+            const { forkId, spectatorIndex, recover } =
+                await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
+
+            const r = await readReduceData(h, spectatorIndex, forkId);
+            const localHeight = await h
+                .control(h.getPeer(spectatorIndex))
+                .query.getLatestBlockHeight(forkId)
+                .request();
+
+            // premise - the reduced head is above everything the node holds
+            expect(r.reducedHeight).to.be.greaterThan(Number(localHeight));
+            expect(r.threw).to.equal("");
+            expect(r.blockCount).to.equal(null);
+            await recover();
+        });
+
         // the reduce applies the chain's inbound run, which a peer whose
         // InboundMessagesProcessed log never landed cannot walk
         describe("inbound run the reduce applied", function () {
-            /** reduce.staticCall over the window, then getReduceData for it. */
-            const readReduceData = (
-                h: ReturnType<typeof TestSession.getHarness>,
-                peerIndex: number,
-                forkId: ForkId
-            ) =>
-                h.execOnHost(
-                    h.getPeer(peerIndex),
-                    async (sm, args) => {
-                        const disputes =
-                            await sm.reductionManager.getSyncedForkDisputes(
-                                args.forkId
-                            );
-                        if (!disputes) {
-                            throw new Error(
-                                "expected a locally readable dispute window"
-                            );
-                        }
-                        const reducedOutput =
-                            await sm.stateChannelManagerContract.reduce.staticCall(
-                                disputes
-                            );
-                        let threw = "";
-                        let blockCount: number | null = null;
-                        try {
-                            const reduceData =
-                                await sm.agreementManager.getReduceData(
-                                    args.forkId,
-                                    reducedOutput
-                                );
-                            blockCount = reduceData
-                                ? reduceData.inboundMessageBlocks.length
-                                : null;
-                        } catch (e) {
-                            threw = e instanceof Error ? e.message : String(e);
-                        }
-                        return {
-                            threw,
-                            blockCount,
-                            disputeCount: disputes.length
-                        };
-                    },
-                    { forkId },
-                    {
-                        timeoutMs: h.event.hostExecTimeoutMs()
-                    }
-                );
-
             it("unrecoverable reduce run → undefined, not a throw", async function () {
                 const h = TestSession.getHarness();
                 // a spectator: it does not audit, so it holds the window

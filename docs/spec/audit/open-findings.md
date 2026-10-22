@@ -2125,6 +2125,32 @@ drops an unparseable environment value, contrary to
 **Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
 `createConfig` and reject an unparseable or out-of-range value.
 
+<a id="find-reduce-behind-1-s07637"></a>
+
+### FIND-REDUCE-BEHIND-1-S07637
+
+**Defect:** _Resolved (2026-10-22)._ A node whose local head is behind a dispute window's reduced head
+aborted instead of catching up. A new observer accepted a valid successor-genesis-only proof while
+the survivors were two blocks ahead on that fork. After its initial sync it starts no catch-up of its
+own: a handshake with a participant starts no sync once the initial sync ran, so it waits for the
+next live block. The table went quiet, the survivors timed out the writer at block 3 and disputed
+the reduced fork. The observer's own reduction of that window named a head block it never received,
+`AgreementManager.getReduceData` threw "Missing latestStateSnapshot for reducedOutput in storage for
+syncing", and `ReductionManager` treated the throw as fatal and aborted the runtime. Seen once, in a
+run of the removed-responder staging that let the writer slot go idle; not yet reproduced on purpose.
+Whether other lagging peers hit the same path is unverified.
+
+**Fix:** `getReduceData` treats a reduced head whose snapshot or state the node does not hold like an
+unavailable inbound run: no reduce data yet. Its callers already handle that: the executor
+reschedules after `chainFallbackTime`, someone else's reduction is not challenged, and a sync
+responder refuses to serve the window. The observer reaches the successor fork by syncing once a
+block of it arrives ([`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)).
+Seated participants are not affected: their audit stores the replayed head before they reduce.
+
+**Residual:** a non-participant that cannot build the pre-committed genesis of a threshold-final
+dispute still fails closed in the dispute-committed handler, as the spec states; the same
+sync recovery would work there. Left for an engineer decision.
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>
@@ -2144,7 +2170,13 @@ Keep their generated evidence cells as `none — gap`. Close a permutation only 
 
 ### FIND-SYNC-1-JWY1C8 — Recovery from a removed sync responder lacks verification
 
-Status: open verification gap. A removed peer can still appear in a held chain snapshot and serve a valid successor-genesis-only proof while surviving participants have advanced. The new observer's subsequent catch-up is not covered by the finalized-window calldata test, which deliberately selects surviving honest responders. Luka approved treating this recovery workflow separately.
+Status: _Resolved (2026-10-22)._ The removed-responder test in
+[E2E-Spectate](../verification/tests/test/e2e/E2E-Spectate.test.ts.md) owns the permutation: the new
+observer recovers to the survivors' state from the next live block's sender, without an abort or a
+blacklist. A dispute on the reduced fork while the observer still holds only the successor genesis
+aborts it; that is [`FIND-REDUCE-BEHIND-1-S07637`](open-findings.md#find-reduce-behind-1-s07637).
+
+Original gap: A removed peer can still appear in a held chain snapshot and serve a valid successor-genesis-only proof while surviving participants have advanced. The new observer's subsequent catch-up is not covered by the finalized-window calldata test, which deliberately selects surviving honest responders. Luka approved treating this recovery workflow separately.
 
 Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.
 

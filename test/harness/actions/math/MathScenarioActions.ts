@@ -103,6 +103,70 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     /**
+     * A committed dispute whose window reduces to a head a synced spectator
+     * never received: the spectator is cut off after its sync, the
+     * participants author one more block, then an invalid block opens the
+     * dispute. The spectator follows the dispute from chain events only.
+     * `recover` reconnects it and keeps the survivors authoring until it is
+     * on their fork, which settles its deferred reduction.
+     */
+    async stageSpectatedDisputeAboveSpectatorHead() {
+        await this.harness.lifecycle.start(3, 1, {
+            timeConfig: INBOUND_GAP_TIME_CONFIG
+        });
+        const participants = this.harness.peers.map((peer) => peer.index);
+        // no transition is scheduled while the spectator syncs
+        const spectatorIndex = (await this.harness.join.addSpectatorWait())
+            .index;
+        await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
+        await this.harness.transition.advanceState({
+            count: 1,
+            waitForPeers: participants
+        });
+        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
+            .index;
+        const disputerIndex = participants.find(
+            (index) => index !== offenderIndex
+        )!;
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            offenderIndex
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [disputerIndex],
+            expectedCount: 1
+        });
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: [spectatorIndex],
+            expectedCount: 1
+        });
+        const forkId = this.harness.activeForkId!;
+        const survivors = participants.filter(
+            (index) => index !== offenderIndex
+        );
+        const recover = async () => {
+            await this.harness.network.restorePeerDiscovery([spectatorIndex]);
+            await this.harness.dispute.resolveDisputeWait({
+                forkId,
+                honestPeerIndices: survivors
+            });
+            const peersOnOneFork = async () => {
+                const forkIds = await this.harness.peerForkIds(
+                    [spectatorIndex, ...survivors].map((index) =>
+                        this.harness.getPeer(index)
+                    )
+                );
+                return forkIds.every((id) => id === forkIds[0]);
+            };
+            await this.harness.transition.keepAuthoringUntil({
+                until: peersOnOneFork,
+                waitForPeers: survivors,
+                maximumBlocks: 10
+            });
+        };
+        return { forkId, spectatorIndex, disputerIndex, recover };
+    }
+
+    /**
      * 3 peers, two finalized transitions, then a top-up of an existing
      * participant: block turns and the final-by-everyone head stay intact, so
      * disputes take the settled path, and the chain's inbound head ends up above
