@@ -417,7 +417,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 6/6.
 
 [`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)
-Specification cases tested: 6/7. Untested: T1.P1.
+Specification cases tested: 8/9. Untested: T1.P1.
 
 [`REQ-DVP-3-CFFAW1` (Incorrect reductions are challenged in time)](../specification/disputes/dispute-processing.md#req-dvp-3-cffaw1)
 Specification cases tested: 0/1.

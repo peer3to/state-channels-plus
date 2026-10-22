@@ -2155,8 +2155,10 @@ Whether other lagging peers hit the same path is unverified.
 **Fix:** `getReduceData` treats a reduced head whose snapshot or state the node does not hold like an
 unavailable inbound run: no reduce data yet. Its callers handle that without aborting. The executor
 retries after `chainFallbackTime` while the chain has no result for the window; once the chain
-records it, the executor installs the successor by one sync, from the recorded reducer when it is
-connected, else from a connected peer, and schedules no further attempt. Someone else's reduction is
+records it, the executor syncs the latest state once, naming no fork, from the recorded reducer when
+it is connected, else from a connected peer, and schedules no further attempt once that leaves it on a
+later fork; a pinned request could be refused, with a blacklist, by a peer whose chain already moved
+past the successor. Someone else's reduction is
 not challenged. A sync responder in this state fails the request without blacklisting the requester
 (`SyncProofNotReadyError`), so a lagging peer that is asked to sync does not cut off the peer that asked
 ([`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)). A non-participant that

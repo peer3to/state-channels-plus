@@ -3,6 +3,7 @@ import { ForkId } from "@/types/types";
 import { addressesEqual } from "@/utils";
 import { hash as randomHash } from "@test/factory";
 import {
+    reduceSuccessorOnChain,
     stageBehindSpectatorAfterChainReduction,
     tryReduceAfterKillPeriod
 } from "@test/fixtures/DeferredReductionStaging";
@@ -353,6 +354,166 @@ describe("Unit: ReductionExecutor", function () {
             await scheduled.restore();
             await release();
             await recover();
+        });
+
+        it("reduced head not held, the chain records the window's result and only a peer that cannot move the node is connected → the attempt keeps the fork and reschedules after chainFallbackTime, nobody blacklists", async function () {
+            const h = TestSession.getHarness();
+            // a second spectator cut off at the same head: it holds the
+            // window but not its reduced head, so it cannot prove the latest
+            const {
+                forkId,
+                spectatorIndex,
+                spectatorIndices,
+                release,
+                scheduled,
+                recover
+            } = await stageBehindSpectatorAfterChainReduction(h, {
+                spectators: 2
+            });
+            const spectator = h.getPeer(spectatorIndex);
+            const otherIndex = spectatorIndices[1]!;
+            const other = h.getPeer(otherIndex);
+            const otherRace = await h.rpcStub.holdReductionRace(otherIndex);
+            // premise - the other spectator refuses a sync as not ready
+            let notReady = "";
+            try {
+                await h
+                    .control(other)
+                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+            } catch (e) {
+                notReady = e instanceof Error ? e.message : String(e);
+            }
+            expect(notReady, "refuses as not ready").to.include(
+                "reduce data unavailable for a disputed window"
+            );
+            await h.network.restorePairDiscovery(spectatorIndex, otherIndex);
+            await waitFor(
+                async () =>
+                    await h
+                        .control(spectator)
+                        .query.isConnectedTo(other.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            const syncsBefore =
+                await h.rpcStub.spectateSyncCallCount(spectatorIndex);
+            const tasksBefore = (await scheduled.tasks()).length;
+
+            const outcome = await tryReduceAfterKillPeriod(
+                h,
+                spectatorIndex,
+                forkId
+            );
+
+            expect(outcome.threw).to.equal("");
+            expect(outcome.forkIdAfter).to.equal(forkId);
+            const targets = await h.rpcStub.spectateSyncTargetsWait(
+                spectatorIndex,
+                syncsBefore + 1
+            );
+            expect(
+                addressesEqual(targets[targets.length - 1]!, other.address),
+                JSON.stringify(targets)
+            ).to.equal(true);
+            const retryMs =
+                resolveTestTimeConfig(h.options.timeConfig).chainFallbackTime *
+                1000;
+            const tasks = (await scheduled.tasks()).slice(tasksBefore);
+            expect(
+                tasks.some(
+                    (task) =>
+                        task.taskName === `reduction-${forkId}` &&
+                        task.delayMs >= retryMs - 1000 &&
+                        task.delayMs <= retryMs
+                ),
+                JSON.stringify(tasks)
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.isBlacklisted(other.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(other)
+                    .query.isBlacklisted(spectator.address)
+                    .request()
+            ).to.equal(false);
+            expect(runtimeIsClosed(spectator.p2pInstance)).to.equal(false);
+            expect(
+                await h.control(spectator).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            await scheduled.restore();
+            await otherRace.release();
+            await release();
+            await recover();
+        });
+
+        it("reduced head not held, a second reduction moved the chain snapshot past the window's successor and a survivor is connected → one attempt syncs onto the newest fork, nobody blacklists, no further attempt", async function () {
+            const h = TestSession.getHarness();
+            // four participants: two reductions leave two on the newest fork
+            const staged = await stageBehindSpectatorAfterChainReduction(h, {
+                participantCount: 4
+            });
+            const { forkId, spectatorIndex, release, scheduled } = staged;
+            const spectator = h.getPeer(spectatorIndex);
+            const { newestForkId, remaining } = await reduceSuccessorOnChain(
+                h,
+                staged
+            );
+            // premise - the spectator is still on the window's fork
+            expect(
+                await h.control(spectator).query.getForkId().request()
+            ).to.equal(forkId);
+            const survivor = h.getPeer(remaining[0]!);
+            await h.network.restorePairDiscovery(
+                spectatorIndex,
+                survivor.index
+            );
+            await waitFor(
+                async () =>
+                    await h
+                        .control(spectator)
+                        .query.isConnectedTo(survivor.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            const reductionTasks = async () =>
+                (await scheduled.tasks()).filter(
+                    (task) => task.taskName === `reduction-${forkId}`
+                ).length;
+            const tasksBefore = await reductionTasks();
+
+            const outcome = await tryReduceAfterKillPeriod(
+                h,
+                spectatorIndex,
+                forkId
+            );
+
+            expect(outcome.threw).to.equal("");
+            expect(outcome.forkIdAfter).to.equal(newestForkId);
+            expect(await reductionTasks(), "no further attempt").to.equal(
+                tasksBefore
+            );
+            expect(
+                await h
+                    .control(survivor)
+                    .query.isBlacklisted(spectator.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.isBlacklisted(survivor.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h.control(spectator).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            await scheduled.restore();
+            await release();
         });
 
         it("someone else's reduction while the reduced head is not held → not challenged, no throw", async function () {

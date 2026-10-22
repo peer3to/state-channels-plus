@@ -275,12 +275,18 @@ describe("Unit: SpectateService", function () {
                     .request();
             await waitFor(connected, h.event.protocolEventTimeoutMs());
             // premise - the responder holds no reduced head for the window
-            expect(
+            let notReady = "";
+            try {
                 await h
                     .control(responder)
                     .spectate.generateSyncPayload(h.channelId!, forkId, 0)
-                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() })
-            ).to.equal(null);
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+            } catch (e) {
+                notReady = e instanceof Error ? e.message : String(e);
+            }
+            expect(notReady, "refuses as not ready").to.include(
+                "reduce data unavailable for a disputed window"
+            );
 
             const synced = await h
                 .control(requester)
@@ -1670,7 +1676,7 @@ describe("Unit: SpectateService", function () {
         // a spectator cut off before the participants' last block follows the
         // dispute from chain events only: its window is readable, but it never
         // received the reduced head, so it has no reduce data to prove with
-        it("reduce data unavailable for a disputed window → payload refused, no throw", async function () {
+        it("reduce data unavailable for a disputed window → payload refused as not ready", async function () {
             const h = TestSession.getHarness();
             const { forkId, spectatorIndex, recover } =
                 await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
@@ -1688,7 +1694,7 @@ describe("Unit: SpectateService", function () {
             expect(reducedHeight).to.not.equal(null);
             expect(reducedHeight).to.be.greaterThan(Number(spectatorHeight));
 
-            let threw = "";
+            let refusal = "";
             let syncResult: unknown = "unset";
             try {
                 syncResult = await h
@@ -1696,17 +1702,14 @@ describe("Unit: SpectateService", function () {
                     .spectate.generateSyncPayload(h.channelId!, forkId, 0)
                     .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } catch (e) {
-                threw = e instanceof Error ? e.message : String(e);
+                refusal = e instanceof Error ? e.message : String(e);
             }
 
-            expect(
-                threw,
-                "generateSyncPayload must refuse, not throw"
-            ).to.equal("");
-            expect(
-                syncResult,
-                "a window we cannot reduce must not be served as a proof"
-            ).to.be.null;
+            expect(refusal, "refuses as not ready").to.include(
+                "reduce data unavailable for a disputed window"
+            );
+            // a window we cannot reduce must not be served as a proof
+            expect(syncResult).to.equal("unset");
             expect(
                 await h
                     .control(spectator)
@@ -1718,9 +1721,9 @@ describe("Unit: SpectateService", function () {
 
         // the sibling gap that IS stageable: the window's own disputes are
         // on-chain but unreadable locally. we must not serve a proof we could
-        // not build - and must not throw either, which is what the old
-        // "Disputes unavailable after event recovery" did
-        it("dispute window unavailable → payload refused, no throw", async function () {
+        // not build - the refusal is not-ready, not the old generic
+        // "Disputes unavailable after event recovery" failure
+        it("dispute window unavailable → payload refused as not ready", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const { forkId, race, restoreEvents } =
@@ -1732,7 +1735,7 @@ describe("Unit: SpectateService", function () {
 
             // blinded recovery: the missing dispute can never be recovered
             const blinded = await h.rpcStub.hideChainLogs(observerIndex);
-            let threw = "";
+            let refusal = "";
             let syncResult: unknown = "unset";
             try {
                 syncResult = await h
@@ -1740,18 +1743,15 @@ describe("Unit: SpectateService", function () {
                     .spectate.generateSyncPayload(h.channelId!, forkId, 0)
                     .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } catch (e) {
-                threw = e instanceof Error ? e.message : String(e);
+                refusal = e instanceof Error ? e.message : String(e);
             }
             await blinded.restore();
 
-            expect(
-                threw,
-                "generateSyncPayload must refuse, not throw"
-            ).to.equal("");
-            expect(
-                syncResult,
-                "a window we cannot read must not be served as a proof"
-            ).to.be.null;
+            expect(refusal, "refuses as not ready").to.include(
+                "dispute window unavailable"
+            );
+            // a window we cannot read must not be served as a proof
+            expect(syncResult).to.equal("unset");
             expect(
                 await h
                     .control(h.getPeer(observerIndex))

@@ -530,10 +530,10 @@ export default class ReductionExecutor {
     /**
      * This node cannot reduce `forkId`'s window yet; it never aborts for it:
      * the peer would lose its turns and be slashed. Once the chain records the
-     * window's result nothing is left to reduce here, so the successor is
-     * installed by one sync, from the reducer when connected, else from any
-     * connected peer. Otherwise, or when that sync fails, the attempt retries
-     * after `chainFallbackTime`.
+     * window's result nothing is left to reduce here, so the node syncs the
+     * latest state once, from the reducer when connected, else from any
+     * connected peer. Otherwise, or when that sync leaves the node on
+     * `forkId`, the attempt retries after `chainFallbackTime`.
      */
     private async deferReduction(
         forkId: ForkId,
@@ -553,15 +553,10 @@ export default class ReductionExecutor {
             const peer =
                 connected.find((address) => addressesEqual(address, reducer)) ??
                 connected[0];
-            if (
-                peer &&
-                (await p2pManager.localRpc.spectateService.sync(
-                    peer,
-                    channelId,
-                    reducedForkId as ForkId
-                ))
-            )
-                return;
+            // the latest state, not `reducedForkId`: a responder whose chain
+            // snapshot moved past that fork can no longer prove it
+            if (peer)
+                await p2pManager.localRpc.spectateService.sync(peer, channelId);
             if (this.isStale(forkId)) return;
         }
         this.stateManager.reductionManager.schedule(

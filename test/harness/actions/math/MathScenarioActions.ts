@@ -108,21 +108,31 @@ export class MathScenarioActions extends ScenarioActions {
      * cut off, the participants author one more block, then an invalid block
      * opens the dispute. The spectator follows the dispute from chain events only.
      * `recover` reconnects it and keeps the survivors authoring until it is
-     * on their fork, which settles its deferred reduction.
+     * on their fork, which settles its deferred reduction. `spectators` such
+     * spectators are staged together; `spectatorIndex` is the first.
      */
-    async stageSpectatedDisputeAboveSpectatorHead() {
-        await this.harness.lifecycle.start(3, 1, {
+    async stageSpectatedDisputeAboveSpectatorHead({
+        participantCount = 3,
+        spectators = 1
+    } = {}) {
+        await this.harness.lifecycle.start(participantCount, 1, {
             timeConfig: INBOUND_GAP_TIME_CONFIG
         });
         const participants = this.harness.peers.map((peer) => peer.index);
-        const spectatorIndex = (
-            await this.harness.join.addSpectatorAuthoring({
-                authoringPeerIndices: participants,
-                minimumBlocks: 1,
-                maximumBlocks: 20
-            })
-        ).peer.index;
-        await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
+        const spectatorIndices: number[] = [];
+        while (spectatorIndices.length < spectators)
+            spectatorIndices.push(
+                (
+                    await this.harness.join.addSpectatorAuthoring({
+                        authoringPeerIndices: participants,
+                        minimumBlocks: 1,
+                        maximumBlocks: 20
+                    })
+                ).peer.index
+            );
+        for (const index of spectatorIndices)
+            await this.harness.network.blacklistAndDisconnectPeer(index);
+        const spectatorIndex = spectatorIndices[0]!;
         await this.harness.transition.advanceState({
             count: 1,
             waitForPeers: participants
@@ -140,7 +150,7 @@ export class MathScenarioActions extends ScenarioActions {
             expectedCount: 1
         });
         await this.harness.assert.dispute.committedWait({
-            peersIndices: [spectatorIndex],
+            peersIndices: spectatorIndices,
             expectedCount: 1
         });
         const forkId = this.harness.activeForkId!;
@@ -148,14 +158,14 @@ export class MathScenarioActions extends ScenarioActions {
             (index) => index !== offenderIndex
         );
         const recover = async () => {
-            await this.harness.network.restorePeerDiscovery([spectatorIndex]);
+            await this.harness.network.restorePeerDiscovery(spectatorIndices);
             await this.harness.dispute.resolveDisputeWait({
                 forkId,
                 honestPeerIndices: survivors
             });
             const peersOnOneFork = async () => {
                 const forkIds = await this.harness.peerForkIds(
-                    [spectatorIndex, ...survivors].map((index) =>
+                    [...spectatorIndices, ...survivors].map((index) =>
                         this.harness.getPeer(index)
                     )
                 );
@@ -167,7 +177,14 @@ export class MathScenarioActions extends ScenarioActions {
                 maximumBlocks: 10
             });
         };
-        return { forkId, spectatorIndex, disputerIndex, survivors, recover };
+        return {
+            forkId,
+            spectatorIndex,
+            spectatorIndices,
+            disputerIndex,
+            survivors,
+            recover
+        };
     }
 
     /**

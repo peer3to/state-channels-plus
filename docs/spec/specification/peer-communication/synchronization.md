@@ -65,8 +65,8 @@ participation.
   resolved as a dispute-eligible participant. Every other lifecycle state keeps the authenticated
   session engaged without starting this sync.
 - Reduction catch-up is a separate trigger owned by the reduction, not by session engagement: a node
-  behind a dispute window's reduced head syncs the successor fork once the chain records the
-  window's result, from the recorded reducer or another connected peer
+  behind a dispute window's reduced head syncs the latest state, naming no fork, once the chain
+  records the window's result, from the recorded reducer or another connected peer
   ([`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../disputes/dispute-processing.md#req-dvp-2-rg8qr3)).
 - **Responder.** Any authenticated peer asked to prove; serving requires only the ability to prove
   the target from its own stores and chain view.

@@ -2,7 +2,6 @@
 import type { SpectateControlService } from "./SpectateControlService";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
-import { SyncProofNotReadyError } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ChannelId, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -28,19 +27,20 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /** Generate a sync payload, returned encoded (or null if not provable). */
+    /**
+     * Generate a sync payload, returned encoded (or null if not provable). A
+     * responder not ready yet rejects with its `SyncProofNotReadyError`.
+     */
     public async generateSyncPayload(
         channelId: ChannelId,
         forkId: ForkId,
         blockHeight: number
     ): Promise<{ encodedSyncPayload: string } | null> {
-        // a responder not ready yet refuses like an unprovable target here
-        const payload = await this.service.spectate
-            .generateSyncPayload(channelId, forkId, blockHeight)
-            .catch((error: unknown) => {
-                if (error instanceof SyncProofNotReadyError) return undefined;
-                throw error;
-            });
+        const payload = await this.service.spectate.generateSyncPayload(
+            channelId,
+            forkId,
+            blockHeight
+        );
         // `Codec.encode` returns an ABI hex string (serializable across the port).
         return payload
             ? {
