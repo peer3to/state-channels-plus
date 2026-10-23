@@ -871,22 +871,22 @@ a live chain.
 
 ### FIND-LEAVE-4-WDH0XC
 
-**Defect:** _Open (2026-09-15)._ The terminal-leave watchdog fallback still rejects the leave on
-`RaceConditionDisputeEvidencePeriodExpired`. `LeaveChannelService.armWatchdog`
-(src/stateManager/membership/LeaveChannelService.ts:236-247) starts the self-removal dispute
-directly after `LEAVE_CHANNEL_WATCHDOG_MS`; when the chain refuses it because the window already
-holds commitments and its evidence period ended, `fail` rejects the operation, as
-[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
-and
+**Defect:** _Resolved (2026-10-11)._ PR #541 removed the leave operation and its `fail` path:
+`LeaveChannelService.onWatchdog` awaits `DisputeManager.dispute`, which logs
+`RaceConditionDisputeEvidencePeriodExpired` as a lost evidence race, rolls its marker back and
+returns the refusal instead of throwing, so the exit stays open for that window's reduction, as the
+rewritten
+[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10),
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)
-specify. The window still reduces, so the same settlement argument that resolved
-[`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq) applies; this path predates the
-disputed-fork refusal and was left out of that change. Code-traced, not executed.
+and
+[`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8)
+specify. Original finding: the
+terminal-leave watchdog's self-removal dispute, refused on chain because the window already held
+commitments and its evidence period ended, rejected the leave although the window still reduced.
 
-**Proposed direction:** Follow-up: treat the watchdog fallback's evidence-expired refusal as
-awaiting settlement, like the authored exit fallback, and rewrite
-[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
-and `CX6QH9.P14` with it.
+**Proposed direction:** None — fixed. The runtime-port cases inject the refusal at the watchdog's
+dispute send: one keeps the leave pending with no error, the other settles it through the window's
+reduction and `onLeftChannel`. No test stages the refusal on a live chain for the leave path.
 
 <a id="find-leave-2-yvr0tt"></a>
 

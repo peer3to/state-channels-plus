@@ -102,8 +102,7 @@ class DisputeManager {
      * inbound run and disputes again; `refusedInboundHead` is that head, so a
      * retry refused at the same head made no progress and is fatal. Without
      * an error, `lostEvidenceRace` is the refusal of an upload whose evidence
-     * period had already closed: a no-op here, which a caller with its own
-     * policy for it (a leave) can read.
+     * period had already closed: a no-op, reported to the caller.
      */
     public async dispute(
         forkId: ForkId,
