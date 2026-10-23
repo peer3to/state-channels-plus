@@ -1025,7 +1025,7 @@ describe("Unit: SpectateService", function () {
             await restoreEvents(false);
         });
 
-        // no test: "reduce data unavailable -> refuse to serve" needs the
+        // no test: "reduce data unavailable -> the request fails" needs the
         // responder's local diamond inbound head above its inbound storage
         // (computeReductionLocally takes the reduced inbound head from the
         // mirror, getReduceData walks storage) while it still holds every
@@ -1038,13 +1038,13 @@ describe("Unit: SpectateService", function () {
         // window with a held inbound write is not in the harness yet. The
         // undefined outcome itself is pinned by
         // "Unit: AgreementManager ... unrecoverable reduce run -> undefined".
-        it.skip("reduce data unavailable for a disputed window → payload refused (needs a mirror ahead of storage)", function () {});
+        it.skip("reduce data unavailable for a disputed window → the request fails, the requester is not blacklisted (needs a mirror ahead of storage)", function () {});
 
         // the sibling gap that IS stageable: the window's own disputes are
-        // on-chain but unreadable locally. we must not serve a proof we could
-        // not build - and must not throw either, which is what the old
-        // "Disputes unavailable after event recovery" did
-        it("dispute window unavailable → payload refused, no throw", async function () {
+        // on-chain but unreadable locally. the responder must not serve a
+        // proof it could not build, and its own lag is no verdict on the
+        // requester -> the request fails, nobody is blacklisted
+        it("dispute window unavailable → the request fails, the requester is not blacklisted", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const { forkId, race, restoreEvents } =
@@ -1053,32 +1053,45 @@ describe("Unit: SpectateService", function () {
                     maliciousPeerIndex: 2,
                     passFirst: true
                 });
+            const responder = h.getPeer(observerIndex);
+            const requester = h.getPeer(1);
 
             // blinded recovery: the missing dispute can never be recovered
             const blinded = await h.rpcStub.hideChainLogs(observerIndex);
-            let threw = "";
-            let syncResult: unknown = "unset";
+            let accepted: boolean;
             try {
-                syncResult = await h
-                    .control(h.getPeer(observerIndex))
-                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
-                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-            } catch (e) {
-                threw = e instanceof Error ? e.message : String(e);
+                accepted = await h.execOnHost(
+                    requester,
+                    async (sm, args) =>
+                        sm.p2pManager.localRpc.spectateService.sync(
+                            args.responder,
+                            sm.channelId,
+                            args.forkId,
+                            0
+                        ),
+                    { responder: responder.address, forkId }
+                );
+            } finally {
+                await blinded.restore();
             }
-            await blinded.restore();
 
-            expect(
-                threw,
-                "generateSyncPayload must refuse, not throw"
-            ).to.equal("");
-            expect(
-                syncResult,
-                "a window we cannot read must not be served as a proof"
-            ).to.be.null;
+            expect(accepted, "a window we cannot read must not be served").to.be
+                .false;
             expect(
                 await h
-                    .control(h.getPeer(observerIndex))
+                    .control(responder)
+                    .query.isBlacklisted(requester.address)
+                    .request(),
+                "the responder's own lag must not blacklist the requester"
+            ).to.equal(false);
+            // the failed request is one counted close on the requester's side
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
+            expect(
+                await h
+                    .control(responder)
                     .query.getDisputeFraudProofTypes()
                     .request()
             ).to.deep.equal([]);

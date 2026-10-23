@@ -771,8 +771,8 @@ a local outage during those requests costs the peer one retry, not its identity.
 returns the accepting verdict instead of the rejecting one, so a local fault drops the copy and
 keeps the sender's session; only its explicit verdicts reject the sender (failed authentication
 through the validation strategy, a wrong-channel network copy, and a sender still absent after an
-eligibility sync that itself completed — a sync that fails on this node's own infrastructure ends
-intake without that verdict). Rethrowing was rejected: on the fire-and-forget gossip path it would
+eligibility sync that succeeded — a failed sync ends intake without that verdict, see
+[`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)). Rethrowing was rejected: on the fire-and-forget gossip path it would
 make the RPC layer drop the sender's session for our own failure. Regression:
 `a local disputed-fork check failure during ingest does not blacklist the honest sender`
 ([`REQ-GOSSIP-2-9PMMNH.T2.P1`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh.t2.p1)).
@@ -794,9 +794,53 @@ timeout and transport-failure liability, retained by the owner on 2026-09-07 und
 that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
 a measured universal execution bound.
 
+_Scope note (2026-10-23):_ narrowed. A responder whose own view lags a disputed window (the window's
+disputes, or the inbound run its reduce consumed, not yet locally readable) now fails the request
+with an error reply instead of returning no payload, so it no longer blacklists the requester; the
+requester takes its ordinary counted close. **Engineer decision (Luke, 2026-10-23):** a blacklist
+needs a failed check on the peer's own data; the responder's own lag is not one. A target the
+responder cannot prove for another reason (a requested fork other than the derived latest, an
+above-latest height) keeps the existing punishment rule.
+
 **Proposed direction:** The weaponizable initial-readiness case is closed. The remaining
 exact-recovery classification is accepted by the current protocol and must stay visible in security
 review.
+
+<a id="find-bqm-3-182x91"></a>
+
+### FIND-BQM-3-182X91
+
+**Defect:** _Resolved (2026-10-23)._ A failed eligibility sync blacklisted an honest joiner.
+[`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+ignored what the intake-gate `sync` returned and blacklisted an absent sender whenever its cached
+eligibility was still not `ELIGIBLE`. A new joiner whose gossip reached a peer that had not yet
+applied its insertion, and which answered the admission sync slower than the sync timeout, took the
+sync's counted close and then a permanent blacklist for the same timeout.
+
+**Resolution:** Intake keeps the sync result and blacklists only when the sync succeeded and the
+sender is still not eligible. A failed sync carries its own consequence: an invalid payload already
+excluded the sender, and a failed request already took a counted close. **Engineer decision (Luke,
+2026-10-23):** a blacklist needs a failed check on the peer's own data; our own failure drops the
+copy and keeps the peer, and the counted close bounds a really silent peer
+([`REQ-GOSSIP-4-J5Z4DF.T1.P29`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p29),
+[`REQ-GOSSIP-4-J5Z4DF.T1.P47`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p47)).
+
+<a id="find-dack-1-7c03s9"></a>
+
+### FIND-DACK-1-7C03S9
+
+**Defect:** _Resolved (2026-10-23)._ A dispute acknowledgment on a lagging chain view blacklisted an
+honest disputer.
+[`IsForkDisputedRpcMethods.onDisputeAcknowledgmentRequest`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
+judged the requester by the responder's own chain view (local diamond, then its provider). The
+requester asks only after it has seen the dispute event, so a responder whose provider lags
+blacklisted an honest disputer; at a two-player table that cut the pair off.
+
+**Resolution:** A request for a fork the responder does not see as disputed now takes a counted close
+of the requester, the same bound the requester side already applies to a refusing responder. A
+duplicate request stays a protocol violation and still blacklists. **Engineer decision (Luke,
+2026-10-23)**, as in [`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)
+([`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../specification/peer-communication/dispute-acknowledgment.md#req-ifd-2-13862z)).
 
 <a id="def-11-jn8n6h"></a>
 

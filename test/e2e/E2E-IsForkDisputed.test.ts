@@ -66,6 +66,12 @@ describe("E2E: Is Fork Disputed", function () {
                 peerIndex: 0,
                 expectedFinalCount: 0
             });
+            expect(
+                await h
+                    .control(h.getPeer(0))
+                    .query.isBlacklisted(h.getPeer(2).address)
+                    .request()
+            ).to.equal(true);
         });
 
         it("should strike non-responding peers after acknowledgment timeout and let them reconnect", async function () {
@@ -114,14 +120,20 @@ describe("E2E: Is Fork Disputed", function () {
             });
         });
 
-        it("should disconnect peer requesting acknowledgment of non-disputed fork", async function () {
+        it("a request for a fork the responder does not yet see as disputed closes with a counted retry, not a blacklist", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
             h.event.resetEventSpies();
+            // the responder cannot tell a fork its own chain view lags on
+            // from one that is not disputed at all
             await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 1,
                 expectedFinalCount: 1
+            });
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.getPeer(1),
+                target: h.getPeer(0)
             });
         });
 

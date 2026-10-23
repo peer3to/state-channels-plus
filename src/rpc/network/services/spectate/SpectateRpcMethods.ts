@@ -18,7 +18,9 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
      * unknown fork), disconnects and blacklists the requester and throws, so its
      * `.request(...)` rejects and it blacklists us in turn. A responder whose
      * initial sync is in flight (OPENED) answers once it settles; a failed
-     * initial sync fails the request (the responder aborts on its own).
+     * initial sync fails the request (the responder aborts on its own). A
+     * target our own lagging state can't prove yet fails the request with no
+     * verdict on the requester.
      */
     public async onSpectateRequest(
         syncRequest: SyncRequest

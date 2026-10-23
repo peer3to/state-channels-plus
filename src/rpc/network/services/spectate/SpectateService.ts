@@ -694,13 +694,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!currentWindowCommitments) {
                 // the window's disputes are on-chain but not locally readable
-                // yet, so we cannot prove the tip -> refuse to serve rather
-                // than serve a proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - dispute window unavailable",
-                    { channelId, forkId: currentForkId }
+                // yet, so we cannot prove the tip -> fail the request; our lag
+                // is no verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - dispute window unavailable for fork ${currentForkId}`
                 );
-                return undefined;
             }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -720,13 +718,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!computation) {
                 // we cannot rebuild the run this window's reduce consumed, so we
-                // cannot prove the tip -> refuse to serve rather than serve a
-                // proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - reduce data unavailable for a disputed window",
-                    { channelId, forkId: currentForkId }
+                // cannot prove the tip -> fail the request; our lag is no
+                // verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - reduce data unavailable for disputed fork ${currentForkId}`
                 );
-                return undefined;
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;

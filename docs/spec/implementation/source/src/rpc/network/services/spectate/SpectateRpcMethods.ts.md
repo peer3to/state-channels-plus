@@ -5,7 +5,7 @@
 ## Requirements
 
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
-  Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f) refusal penalty.
+  Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f) `onSpectateRequest` blacklists the requester when `generateSyncPayload` returns no payload; its own-lag refusals throw and fail the request without a verdict.
 - [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)
 - [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../../../../../../../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 

@@ -342,12 +342,21 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
             (await h.control(observer).stub.getAdmissionObservation().request())
                 .networkEntries
         ).to.equal(0);
+        // a valid sync that leaves the sender absent is a verdict; a failed
+        // request is only the counted close the sync already made
         expect(
             await h
                 .control(observer)
                 .query.isBlacklisted(outsider.address)
                 .request()
-        ).to.equal(true);
+        ).to.equal(mode !== "failure");
+        if (mode === "failure")
+            expect(
+                await h
+                    .control(observer)
+                    .query.getStrikes(outsider.address)
+                    .request()
+            ).to.equal(1);
         expect(
             await h
                 .control(observer)

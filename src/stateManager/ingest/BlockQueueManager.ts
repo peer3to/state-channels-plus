@@ -127,13 +127,17 @@ export default class BlockQueueManager {
                     );
                 if (eligibility !== SourceEligibility.ELIGIBLE) {
                     if (eligibility === SourceEligibility.ABSENT) {
-                        await this.stateManager.p2pManager.localRpc.spectateService.sync(
-                            options.senderAddress,
-                            block.channelId,
-                            block.forkId,
-                            block.height
-                        );
+                        // a failed sync already rejected bad data or counted
+                        // the failed request -> no verdict here
+                        const synced =
+                            await this.stateManager.p2pManager.localRpc.spectateService.sync(
+                                options.senderAddress,
+                                block.channelId,
+                                block.forkId,
+                                block.height
+                            );
                         if (
+                            synced &&
                             this.stateManager.membershipService.getCachedSourceEligibility(
                                 options.senderAddress
                             ) !== SourceEligibility.ELIGIBLE

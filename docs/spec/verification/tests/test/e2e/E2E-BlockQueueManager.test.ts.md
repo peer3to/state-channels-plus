@@ -49,7 +49,7 @@ and hold no queued entry for it.
 
 - `known slashes reject network contributions even when slash log recovery fails`: none
 - `an existing sync handles an unknown-source copy without another wire request`: REQ-GOSSIP-4-J5Z4DF.T1.P30, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P24, REQ-GOSSIP-4-J5Z4DF.T1.P36
-- `failed ingress sync blacklists its sender without queueing the triggering block`: REQ-GOSSIP-4-J5Z4DF.T1.P29, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P25
+- `failed ingress sync ends intake with a counted close of its sender, no blacklist and no queued triggering block`: REQ-GOSSIP-4-J5Z4DF.T1.P29, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P25, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P58
 - `a real slash rejects the next supplier copy without changing held honest work`: REQ-GOSSIP-4-J5Z4DF.T1.P4, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P3
 - `stored network copies are bounded before each ordinary merge`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P22
 - `one supplier's valid signature variants cannot spend another participant's allowance`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P6, REQ-ID-5-GW1ZEY.T1.P18
