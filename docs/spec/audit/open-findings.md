@@ -775,7 +775,9 @@ exclusion approved under
 is outside this finding; other availability or local-fault blacklist paths stay open except sync
 timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption
 that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
-a measured universal execution bound.
+a measured universal execution bound. A responder behind a dispute window's reduced head (reduce
+data not held) refuses the sync and blacklists the requester for the session
+([`FIND-REDUCE-BEHIND-1-S07637`](open-findings.md#find-reduce-behind-1-s07637)).
 
 **Proposed direction:** The weaponizable initial-readiness case is closed. The remaining
 exact-recovery classification is accepted by the current protocol and must stay visible in security
@@ -2142,7 +2144,9 @@ Whether other lagging peers hit the same path is unverified.
 
 **Fix:** `getReduceData` treats a non-genesis reduced head whose snapshot or state the node does not
 hold like an unavailable inbound run: no reduce data yet, never a throw. Someone else's reduction is
-not challenged and a sync responder refuses to serve the window. At its own reduction a
+not challenged and a sync responder refuses to serve the window. That refusal blacklists the
+requester for the session, as [`DEF-10-199C7F`](open-findings.md#def-10-199c7f) accepts; a follow-up makes
+the responder's own-lag refusals fail the request without a blacklist. At its own reduction a
 non-participant without reduce data aborts cleanly; a committed participant retries after
 `chainFallbackTime` ([`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)).
 
@@ -2167,7 +2171,7 @@ Keep their generated evidence cells as `none — gap`. Close a permutation only 
 
 <a id="find-sync-1-jwy1c8"></a>
 
-### FIND-SYNC-1-JWY1C8 — Recovery from a removed sync responder lacks verification
+### FIND-SYNC-1-JWY1C8 — Recovery from a removed sync responder
 
 Status: _Resolved (2026-10-22)._ The removed-responder test in
 [E2E-Spectate](../verification/tests/test/e2e/E2E-Spectate.test.ts.md) owns the permutation: the new
@@ -2178,7 +2182,7 @@ makes it abort cleanly at its reduction, as decided in
 
 Original gap: A removed peer can still appear in a held chain snapshot and serve a valid successor-genesis-only proof while surviving participants have advanced. The new observer's subsequent catch-up is not covered by the finalized-window calldata test, which deliberately selects surviving honest responders. Luka approved treating this recovery workflow separately.
 
-Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.
+Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. The E2E-Spectate declaration "a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting" owns this permutation.
 
 <a id="find-log-1-659qd2"></a>
 

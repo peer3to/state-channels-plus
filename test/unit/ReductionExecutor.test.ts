@@ -11,6 +11,7 @@ import {
     stageHeldSuccessorAdoption
 } from "@test/fixtures/SettledAdoptionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
@@ -129,12 +130,62 @@ describe("Unit: ReductionExecutor", function () {
             });
         });
 
-        // no test: a committed participant behind the reduced head
-        // reschedules after chainFallbackTime instead of aborting. no staging
-        // puts a committed participant behind a window's reduced head; that
-        // offline participant is the watchtower assumption's case.
-        // missing input: a participant cut off before the reduced head
-        it.skip("reduced head a participant never received → the attempt reschedules after chainFallbackTime, the participant keeps its status", function () {});
+        it("inbound run unavailable on a participant → the attempt reschedules after chainFallbackTime, the participant keeps its status", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3, { timeConfig: INBOUND_GAP_TIME_CONFIG });
+            await h.lifecycle.openChannel();
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+            // a participant that neither writes the invalid block nor disputes it
+            const offenderIndex = (await h.query.getNextPeerToWrite()).index;
+            const laggingIndex = h.peers
+                .map((peer) => peer.index)
+                .find((index) => index !== offenderIndex)!;
+            // its InboundMessagesProcessed handler is held, so recovery
+            // cannot heal the run either
+            await h.rpcStub.holdInboundMessageEvents(laggingIndex);
+            await h.rpcStub.holdReductionRace(laggingIndex);
+            // its audit of the window would throw on the unavailable run
+            // (fatal) -> record the audit; its own dispute is not under test
+            const audits = await h.rpcStub.recordDisputeAudits(laggingIndex);
+            await h.dispute.suppressDisputeInitiation([laggingIndex]);
+            const { forkId } =
+                await h.scenario.stageCommittedDisputeOverInboundGap({
+                    laggingIndex
+                });
+            await h.assert.dispute.committedWait({
+                peersIndices: [laggingIndex],
+                expectedCount: 1
+            });
+            expect(await audits.auditCount()).to.be.greaterThan(0);
+            const scheduled =
+                await h.rpcStub.recordScheduledTasks(laggingIndex);
+
+            const outcome = await tryReduceAfterKillPeriod(
+                h,
+                laggingIndex,
+                forkId
+            );
+
+            expect(outcome).to.deep.equal({
+                threw: "",
+                forkIdAfter: forkId,
+                statusAfter: Status.PARTICIPATING
+            });
+            // the retry lands chainFallbackTime out (whole seconds: a clock
+            // tick between the reads shaves one)
+            const delays = (await scheduled.tasks())
+                .filter((task) => task.taskName === `reduction-${forkId}`)
+                .map((task) => task.delayMs);
+            const fallbackMs = INBOUND_GAP_TIME_CONFIG.chainFallbackTime * 1000;
+            expect(delays.at(-1)).to.be.within(fallbackMs - 1000, fallbackMs);
+            expect(
+                runtimeIsClosed(h.getPeer(laggingIndex).p2pInstance)
+            ).to.equal(false);
+        });
 
         it("someone else's reduction while the reduced head is not held → not challenged, no throw", async function () {
             const h = TestSession.getHarness();

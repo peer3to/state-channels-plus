@@ -1450,6 +1450,24 @@ export class RpcStubActions<
         );
     }
 
+    /**
+     * Record a peer's dispute audits instead of running them: each counts and
+     * answers valid, so the window persists without the audit's replay.
+     */
+    async recordDisputeAudits(peerIndex: number): Promise<{
+        auditCount: () => Promise<number>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubRecordDisputeAudits().request();
+        return {
+            auditCount: () => ctl().getRecordedDisputeAuditCount().request(),
+            restore: async () => {
+                await ctl().restoreDisputeAudits().request();
+            }
+        };
+    }
+
     async suppressDisputeKill(peerIndex: number): Promise<{
         skippedCount: () => Promise<number>;
         /** The first skipped kill also marks the proof as stored. */

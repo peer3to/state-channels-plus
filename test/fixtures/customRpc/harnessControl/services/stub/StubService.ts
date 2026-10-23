@@ -130,6 +130,7 @@ export type StubKey =
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
+    | "disputeAudits"
     | "reducedCommitEvents"
     | "reduce"
     | "reductionSimulation"
@@ -799,6 +800,8 @@ export class StubService extends ANetworkRpcService<
     replayGasReadHold?: DisputeSubmissionHold;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
+    // dispute audits recorded (not run) by stubRecordDisputeAudits
+    recordedDisputeAuditCount = 0;
     // full state-proof builds counted by stubCountStateProofBuilds
     stateProofBuildCount = 0;
     // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
