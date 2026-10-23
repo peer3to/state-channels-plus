@@ -560,6 +560,67 @@ export default class EventSyncService {
     }
 
     /**
+     * The highest chain block this node's view of the channel reflects: its
+     * provider's head, or a later block whose logs a faster node streamed.
+     */
+    public async readViewBlock(channelId: ChannelId): Promise<BlockNumber> {
+        return Math.max(
+            await this.getProvider().getBlockNumber(),
+            this.storage.eventSync.getLatestProcessedBlock(channelId) ?? 0,
+            ...this.getBlockStates(toChannelKey(channelId)).keys()
+        );
+    }
+
+    /**
+     * Resolves true once this node's provider reports `blockNumber` or a later
+     * head, false when `timeoutMs` passes or `signal` aborts first, also while
+     * a head read hangs. A failed head read rejects. The head is read at the start and at each announced
+     * block, so a provider that catches up without a new block is seen at the
+     * next one.
+     */
+    public async waitForChainHead(
+        blockNumber: BlockNumber,
+        timeoutMs: number,
+        signal: AbortSignal
+    ): Promise<boolean> {
+        const provider = this.getProvider();
+        let done = false;
+        let stop = () => {};
+        // resolves on the deadline or the abort; a pending head read cannot delay it
+        const stopped = new Promise<undefined>((resolve) => {
+            stop = () => {
+                done = true;
+                resolve(undefined);
+            };
+        });
+        const timer = setTimeout(stop, timeoutMs);
+        let nextBlock = () => {};
+        const wake = () => nextBlock();
+        signal.addEventListener("abort", stop);
+        await provider.on("block", wake);
+        try {
+            while (!done && !signal.aborted) {
+                // armed before the read: a block announced during it wakes the loop
+                const woken = new Promise<void>(
+                    (resolve) => (nextBlock = resolve)
+                );
+                const read = provider.getBlockNumber();
+                // the read can outlive the wait
+                read.catch(() => {});
+                const head = await Promise.race([read, stopped]);
+                if (head === undefined) return false;
+                if (head >= blockNumber) return true;
+                await Promise.race([woken, stopped]);
+            }
+            return false;
+        } finally {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", stop);
+            void provider.off("block", wake);
+        }
+    }
+
+    /**
      * Recover the InboundMessagesProcessed logs of the run (lowerBlockHash,
      * upperBlockHash] up to `head`. The run, or `undefined` when the gap
      * survives recovery.

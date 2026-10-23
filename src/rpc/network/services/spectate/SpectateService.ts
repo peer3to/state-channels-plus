@@ -263,7 +263,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return not synced. The caller
      * owns the lifecycle consequence of a failed sync. A disposed runtime
-     * returns not synced with no verdict on the peer; so does a served window
+     * returns not synced with no verdict on the peer; so does a chain view that
+     * does not reach the payload's `chainBlock` within one agreement window,
+     * a served window
      * the chain has not reduced that this peer cannot reduce locally, or
      * (latest mode) an unreduced window on the final fork, naming the fork in
      * `unsettledForkId`.
@@ -285,6 +287,24 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         } catch (e) {
             this.logger.warn(e);
             return this.rejectSync(peerAddress, "payload undecodable");
+        }
+        // every check below reads the chain: judge only once this node's chain
+        // view has reached the server's. a view still behind it after one
+        // agreement window is no verdict - a lagging provider and a server
+        // naming a future block look the same
+        const stateManager = this.p2pManager.stateManager;
+        const reachedServerView =
+            await stateManager.eventSyncService.waitForChainHead(
+                Number(syncPayload.chainBlock),
+                stateManager.timeConfig.agreementTime * 1000,
+                this.disposal.signal
+            );
+        if (!reachedServerView) {
+            this.logger.warn(
+                "applySyncResponse - chain view behind the server's, no verdict",
+                { peerAddress, chainBlock: String(syncPayload.chainBlock) }
+            );
+            return { synced: false };
         }
         {
             this.logger.debug(`Sync payload received`, { syncPayload });
@@ -326,7 +346,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from un-finalized blocks
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
-            const stateManager = this.p2pManager.stateManager;
             const diamondStateMachine = stateManager.diamondStateMachine;
 
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
@@ -1007,7 +1026,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         }
 
         // the run above the local diamond's anchor when it is on this fork:
-        // the requester's chain anchor is not behind it, and nothing below it
+        // the requester judges only once its chain head reaches `chainBlock`,
+        // so its chain anchor is not behind this one, and nothing below it
         // is kept. An anchor at or above the final point leaves nothing.
         const outboundStart =
             currentOnChainSnapshot.forkID === forkId
@@ -1034,7 +1054,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             milestoneSnapshots,
             latestFinalizedEncodedState,
             outboundMessageBlocksUpToLatestGenesis,
-            outboundMessageBlocksOfTheLatestFork
+            outboundMessageBlocksOfTheLatestFork,
+            // read after every chain read above, and covering logs a faster
+            // node streamed into the local diamond: the payload reflects no
+            // chain state past it
+            chainBlock:
+                await stateManager.eventSyncService.readViewBlock(channelId)
         };
         this.logger.debug(`Generated syncpayload`, syncPayload);
         return syncPayload;

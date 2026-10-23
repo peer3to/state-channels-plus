@@ -1595,8 +1595,8 @@ participant's source probe inside an open kill period.
 cannot recompute locally fails the sync with no verdict and no close. A served window the requester's own chain view does not hold stays a
 verification failure, now "dispute window not on chain": the requester fetches the served windows
 from its chain view into its local diamond before the check, so only a lagging provider can make an
-honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
-tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
+honest window absent, and the requester now waits for its view to reach the payload's chain block
+first ([`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)). The responder keeps serving open windows: a refusal makes `onSpectateRequest`
 blacklist the requester instead
 ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
 `SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
@@ -1663,30 +1663,38 @@ Regressions:
 
 ### FIND-SYNC-5-7W9TWW
 
-**Defect:** _Open (2026-10-09), engineer decision: tracked, not fixed in PR #526._ The sync server
-cuts the latest-fork outbound run at its own local-diamond anchor (`generateSyncPayload` in
-[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
-serves only the outbound blocks above `currentOnChainSnapshot`), while the requester verifies the
-run from the anchor it read from its own provider (`applySyncResponse`). A requester whose provider
-lags the server's (for example one block behind just after a snapshot post) holds an older anchor
-head; no served block links to it, so the run does not verify, the requester calls `rejectSync`
-("latest-fork outbound blocks invalid") and blacklists an honest peer. A retry succeeds once its
-provider catches up. The same lag hits served dispute windows: a requester whose provider has not
-yet seen the responder's dispute commit cannot fetch the served window into its local diamond, so
-step 2.2 rejects with "dispute window not on chain" and blacklists the honest responder. The code assumes the requester's anchor is not behind the server's; nothing
-enforces it and no test covers a lagging requester. Related:
-[`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe),
-[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
-Provider lag is a general concern for the fast local checks, so this needs an overall protocol
-decision. Code-traced, not executed.
+**Defect:** _Resolved (2026-10-21)._ The sync server cut the latest-fork outbound run at its own
+local-diamond anchor (`generateSyncPayload` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)),
+while the requester verified the run from the anchor its own provider returned
+(`applySyncResponse`). A requester whose provider lagged the server's (for example one block behind
+just after a snapshot post) held an older anchor, no served block linked to it, and the requester
+rejected the honest server with "latest-fork outbound blocks invalid" and blacklisted it. The same
+lag hit served dispute windows: a requester whose provider had not yet seen the responder's dispute
+commit rejected with "dispute window not on chain". The snapshot case is reproduced in a unit case
+and end to end; the window case passes through the same wait, which precedes every chain read.
 
-**Proposed direction:** Decide the provider-lag rule for fast local checks first. Candidate fixes:
-the requester sends its anchor in `SyncRequest` and the server cuts there; the server serves the run
-from the fork genesis; or the requester re-reads its chain anchor once and rechecks before it
-rejects the peer. Confirm with a unit case where the requester's `getStateSnapshot` returns the
-previous anchor while the server's local diamond holds the newer one: the sync is accepted or
-retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
-commit, and the sync is retried or accepted, not rejected.
+**Engineer decision (Luke, 2026-10-21).** One pattern for this race class instead of a fix per check:
+the payload names the chain block it was built against, and the requester judges only once its own
+chain view has reached that block. Rejected: the requester sending its anchor in the request (the
+server's local diamond keeps no history, so serving as of an older anchor needs server-side chain
+reads, and a requester that has not seen a dispute has nothing to send for the window case). The
+wait is bounded by one `agreementTime`; a view still behind then is no verdict and no blacklist,
+because a lagging provider and a server naming a future block look the same.
+
+**Fix:** `generateSyncPayload` sets `chainBlock` to its chain head read after its last chain read,
+or a later block whose logs another RPC node already streamed into its local diamond.
+`applySyncResponse` first waits (`EventSyncService.waitForChainHead`) until its own chain head
+reaches `chainBlock`, for at most one agreement window, then runs every chain-derived check; a view
+that does not get there returns not synced with no verdict. A server behind the requester was
+already handled by the existing paths. Regressions:
+[`INV-SYNC-2-AT3RXE.T1.P4`](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe.t1.p4),
+[`INV-SYNC-3-A7A2ED.T1.P34`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p34).
+Residual: a Byzantine responder naming a future block delays one request by up to one agreement
+window. The requester re-reads its head only at announced blocks (no polling), so a provider that
+catches up without a new block, or a read node lagging the node that announced, is seen at the next
+block; with none inside one agreement window the sync ends with no verdict. The same race class (a judgment against chain state made from a view behind the evidence)
+exists outside sync and is not addressed here.
 
 <a id="find-stipend-1-9ysnwb"></a>
 

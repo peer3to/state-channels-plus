@@ -9,6 +9,7 @@ import {
     countJoinSignatureRequests,
     waitForHeldJoins
 } from "@test/fixtures/JoinSnapshotRetryStaging";
+import { applySyncFromChainAheadResponder } from "@test/fixtures/LaggingChainViewSyncStaging";
 import { assertTwoSourceProbeKeepsLocalState } from "@test/fixtures/MonotonicSyncInstallStaging";
 import {
     assertOffChainPromotion,
@@ -727,6 +728,19 @@ describe("E2E: Spectate Service", function () {
             // posts nothing; the peers' adoption post moves the chain
             // snapshot to the reduced fork once the reduction is final
             await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+        });
+    });
+
+    describe("Requester chain view behind the responder's", function () {
+        it("participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept", async function () {
+            const r = await applySyncFromChainAheadResponder(
+                TestSession.getHarness(),
+                { release: "duringWait", via: "sync" }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.responderBlacklisted).to.equal(false);
+            expect(r.connected).to.equal(true);
         });
     });
 
