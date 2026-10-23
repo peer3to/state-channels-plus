@@ -738,12 +738,10 @@ because the evidence period already expired lost the race to another participant
 that refusal is a no-op, with or without a kill in front of it
 ([dispute processing](disputes/dispute-processing.md), [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
-A leaver's self-removal upload can lose the same race, and today the leave outcome depends on the
-path that sent it (recorded 2026-10-08, no behavior change). When the leave's exit-post fallback
-ends in a self-removal dispute that loses the race, the leave still settles: the committed window's
-reduction removes the leaver. When the leave starts the self-removal dispute directly as its fallback,
-either bound to a block or from the leave watchdog, the lost race fails the leave. Whether both paths
-should settle the leave is part of this decision.
+A leaver's self-removal upload can lose the same race. Since 2026-10-11 the leave's own
+fallback is the leave watchdog's dispute, and its lost race leaves the leave waiting for the committed window's reduction, which
+removes the leaver or restarts the exit on the successor fork
+([`FIND-LEAVE-4-WDH0XC`](../audit/open-findings.md#find-leave-4-wdh0xc), resolved).
 
 Owner: [dispute processing](disputes/dispute-processing.md), the kill-and-dispute and replacement rules.
 Requested engineer decision: whether the node should do more after a lost race. Examples: rebuild
