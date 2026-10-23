@@ -3362,6 +3362,39 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /**
+     * Record-only: count this peer's dispute audits instead of running them.
+     * Each answers valid, so the window persists without the audit's replay.
+     */
+    public stubRecordDisputeAudits(): boolean {
+        const validation = this.service.sm.disputeValidationService;
+        if (!this.service.stubOriginals.has("disputeAudits"))
+            this.service.stubOriginals.set(
+                "disputeAudits",
+                validation.validateDispute.bind(validation)
+            );
+        this.service.recordedDisputeAuditCount = 0;
+        validation.validateDispute = (async () => {
+            this.service.recordedDisputeAuditCount += 1;
+            return true;
+        }) as typeof validation.validateDispute;
+        return true;
+    }
+
+    public getRecordedDisputeAuditCount(): number {
+        return this.service.recordedDisputeAuditCount;
+    }
+
+    public restoreDisputeAudits(): boolean {
+        const validation = this.service.sm.disputeValidationService;
+        const original = this.service.stubOriginals.get("disputeAudits");
+        if (original === undefined) return false;
+        validation.validateDispute =
+            original as typeof validation.validateDispute;
+        this.service.stubOriginals.delete("disputeAudits");
+        return true;
+    }
+
     /** Fail the next final-dispute output preparation, then restore immediately. */
     public stubFailNextFinalDisputePreparation(): boolean {
         const agreementManager = this.service.sm.agreementManager;

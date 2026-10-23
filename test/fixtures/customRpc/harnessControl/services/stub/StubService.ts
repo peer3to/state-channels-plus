@@ -130,6 +130,7 @@ export type StubKey =
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
+    | "disputeAudits"
     | "reducedCommitEvents"
     | "reduce"
     | "reductionSimulation"
@@ -551,6 +552,10 @@ export class StubService extends ANetworkRpcService<
     private restoreSyncInstall?: () => void;
     private restoreSyncReductionRecorder?: () => void;
     private syncReductionWindows: {
+        responder: string;
+        latestForkId: ForkId;
+        milestoneCount: number;
+        synced: boolean;
         suppliedForks: ForkId[];
         reductionForks: ForkId[];
     }[] = [];
@@ -795,6 +800,8 @@ export class StubService extends ANetworkRpcService<
     replayGasReadHold?: DisputeSubmissionHold;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
+    // dispute audits recorded (not run) by stubRecordDisputeAudits
+    recordedDisputeAuditCount = 0;
     // full state-proof builds counted by stubCountStateProofBuilds
     stateProofBuildCount = 0;
     // replayGasLimit block reads rejected by stubFailReplayGasBlockRead
@@ -2245,10 +2252,10 @@ export class StubService extends ANetworkRpcService<
             syncRequest,
             encodedSyncPayload
         ) => {
-            const suppliedForks = Codec.decode(
-                encodedSyncPayload,
-                Type.SyncPayload
-            ).disputeWindows.map((window) => window.forkId);
+            const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
+            const suppliedForks = payload.disputeWindows.map(
+                (window) => window.forkId
+            );
             const reductionForks: ForkId[] = [];
             for (const forkId of suppliedForks) {
                 if (
@@ -2259,8 +2266,21 @@ export class StubService extends ANetworkRpcService<
                 )
                     reductionForks.push(forkId);
             }
-            this.syncReductionWindows.push({ suppliedForks, reductionForks });
-            return await original(peerAddress, syncRequest, encodedSyncPayload);
+            const outcome = await original(
+                peerAddress,
+                syncRequest,
+                encodedSyncPayload
+            );
+            this.syncReductionWindows.push({
+                responder: peerAddress,
+                latestForkId: payload.latestForkGenesisSnapshot
+                    .forkId as ForkId,
+                milestoneCount: payload.stateProof.milestones.length,
+                synced: outcome.synced,
+                suppliedForks,
+                reductionForks
+            });
+            return outcome;
         };
     }
 

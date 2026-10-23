@@ -68,7 +68,8 @@ export class MathScenarioActions extends ScenarioActions {
      * not audit, so the spectator persists the window and schedules its
      * reduction while the inbound run that reduction applies stays
      * unavailable until release. A participant cannot stage this: its audit
-     * of the same window throws on the unavailable run.
+     * of the same window throws on the unavailable run. The spectator's
+     * reduction entry points are held, so only a hand-driven attempt runs.
      */
     async stageSpectatedDisputeOverHeldInboundGap() {
         await this.harness.setup(3, {
@@ -85,6 +86,7 @@ export class MathScenarioActions extends ScenarioActions {
             .index;
         const held =
             await this.harness.rpcStub.holdInboundMessageEvents(spectatorIndex);
+        await this.harness.rpcStub.holdReductionRace(spectatorIndex);
         // the invalid block below would reach the spectator by gossip, and a
         // spectator drops the feed on it (abort) -> it would never see the
         // dispute. it follows the dispute from chain events only
@@ -100,6 +102,54 @@ export class MathScenarioActions extends ScenarioActions {
             expectedCount: 1
         });
         return { forkId, held, spectatorIndex, disputerIndex };
+    }
+
+    /**
+     * A committed dispute whose window reduces to a head a synced spectator
+     * never received: the spectator syncs while the participants author, is
+     * cut off, the participants author one more block, then an invalid block
+     * opens the dispute. The spectator follows the dispute from chain events only.
+     * Its reduction entry points are held, so only a hand-driven attempt runs.
+     */
+    async stageSpectatedDisputeAboveSpectatorHead() {
+        await this.harness.lifecycle.start(3, 1, {
+            timeConfig: INBOUND_GAP_TIME_CONFIG
+        });
+        const participants = this.harness.peers.map((peer) => peer.index);
+        const spectatorIndex = (
+            await this.harness.join.addSpectatorAuthoring({
+                authoringPeerIndices: participants,
+                minimumBlocks: 1,
+                maximumBlocks: 20
+            })
+        ).peer.index;
+        await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
+        await this.harness.rpcStub.holdReductionRace(spectatorIndex);
+        await this.harness.transition.advanceState({
+            count: 1,
+            waitForPeers: participants
+        });
+        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
+            .index;
+        const disputerIndex = participants.find(
+            (index) => index !== offenderIndex
+        )!;
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            offenderIndex
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [disputerIndex],
+            expectedCount: 1
+        });
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: [spectatorIndex],
+            expectedCount: 1
+        });
+        return {
+            forkId: this.harness.activeForkId!,
+            spectatorIndex,
+            disputerIndex
+        };
     }
 
     /**
