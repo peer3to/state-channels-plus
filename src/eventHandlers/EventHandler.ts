@@ -538,35 +538,7 @@ export class EventHandler {
         if (isFinal) {
             this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
             let genesis: ReductionGenesis;
-            // the confirmation is already stored, so the ordinary reduce path
-            // picks the window up with this dispute in it and derives the same
-            // result; it defers too until this node can back it
-            const deferToReduction = (reason: string) => {
-                this.logger.warn(`Final dispute genesis deferred: ${reason}`, {
-                    channelId,
-                    forkId,
-                    dispute: disputeMeta
-                });
-                this.stateManager.reductionManager.schedule(
-                    forkId,
-                    Number(disputeCreationTimestamp) +
-                        this.stateManager.timeConfig.chainFallbackTime,
-                    true
-                );
-            };
             try {
-                // a node behind the dispute's latest block never received it
-                const latestBlock =
-                    this.stateManager.agreementManager.getLatestBlockFromStateProof(
-                        dispute.input.stateProof
-                    );
-                if (
-                    latestBlock &&
-                    !this.storage.stateSnapshots.getStateSnapshotByHash(
-                        latestBlock.stateSnapshotHash
-                    )
-                )
-                    return deferToReduction("latest state not held");
                 const latestSnapshot =
                     this.stateManager.agreementManager.getLatestSnapshotFromStateProof(
                         dispute.input.stateProof,
@@ -580,20 +552,31 @@ export class EventHandler {
                         latestSnapshot.timestamp,
                         channelId
                     ));
-                // cannot read the final dispute's inbound run yet
-                if (!inboundMessageBlocks)
-                    return deferToReduction("inbound run unavailable");
+                if (!inboundMessageBlocks) {
+                    // cannot read the final dispute's inbound run yet. the
+                    // confirmation is already stored, so the ordinary reduce
+                    // path picks the window up with this dispute in it and
+                    // derives the same result
+                    this.logger.warn(
+                        "Final dispute genesis deferred: inbound run unavailable",
+                        { channelId, forkId, dispute: disputeMeta }
+                    );
+                    this.stateManager.reductionManager.schedule(
+                        forkId,
+                        Number(disputeCreationTimestamp) +
+                            this.stateManager.timeConfig.chainFallbackTime,
+                        true
+                    );
+                    return;
+                }
                 const latestStateMachineState =
                     this.storage.stateMachineStates.getStateMachineState(
                         latestSnapshot.stateMachineStateHash as Hash
                     );
                 if (!latestStateMachineState) {
-                    // a node on this fork always holds its genesis state
-                    if (!latestBlock)
-                        throw new Error(
-                            `StateMachineState not available for latest snapshot hash: ${latestSnapshot.stateMachineStateHash}`
-                        );
-                    return deferToReduction("latest state not held");
+                    throw new Error(
+                        `StateMachineState not available for latest snapshot hash: ${latestSnapshot.stateMachineStateHash}`
+                    );
                 }
 
                 const outputSnapshotData =

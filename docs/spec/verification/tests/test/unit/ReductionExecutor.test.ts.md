@@ -18,10 +18,6 @@ of throwing, that every commitment is stored afterwards, and — the substantive
 events arrived; the released peers then complete the reduction for real. The other planned
 executor permutations (concurrent convergence, empty-window escalation, supersession, provider
 failure) are not exercised here and remain with the dispute e2e flows or unassigned.
-The `no reduce data` reschedule case stages the lagging peer as peer 1: the staging's invalid block comes from the
-next writer (peer 2), which the reduction slashes, so the lagging peer must be a different participant. Before
-plan 30 the case passed with peer 2 as the lagging peer only because its aborted runtime kept reducing after
-disposal.
 The case where someone else's reduction meets an unavailable run stages the lagging peer as a synced
 spectator: a participant's audit of the window throws on the unavailable run, so only a spectator reaches
 the reduction check with it missing. It is not challenged, while a participant that holds the run
@@ -46,22 +42,16 @@ treated the mined resend as mined.
 
 The settled-adoption cases stage a reducible disputed fork that only peer 0 reduces, with every timeout check suppressed. Peer 0's multicalls are recorded and its adopt-only post is parked at its send after it was prepared against the successor fork; peer 0's reduction timers are held again so it never reduces the successor. A successor participant other than peer 0 and the next writer broadcasts an invalid block, and the honest participants open the successor's dispute window. The disputed-fork case releases the post at once. The not-latest-fork case first lets another honest participant reduce the successor and waits until that reduction's challenge period expired, so the parked post targets an older fork the chain reaches on its way to the later one. Each case asserts the real revert name from the released send, settles detached work with no error, finds no `adoptReducedFork-*` retry scheduled and exactly one adopt-only post recorded, and reads the chain snapshot still on the source fork.
 
-Seven cases stage a spectator behind a dispute window's reduced head (it held only an earlier block while the participants disputed a later one). With every participant's reduce held at its chain write, so the chain records no result, its own attempt defers and reschedules one `chainFallbackTime` later without aborting. Another reducer's committed reduction is not challenged. Five cases hold the slashed offender's reduce so a survivor is the recorded reducer, wait until the chain records the survivors' reduction, suppress the survivors' timeout checks, hold every reduction entry point of the spectator (its `reduction-*` timers, snapshot and reduced-result handlers) while recording its scheduled tasks and sync calls, then drive one attempt by hand. The sync requests the latest state, naming no fork: with every survivor reconnected it syncs once, from the recorded reducer, installs the chain's reduced fork and records no further `reduction-<fork>` task; with only the other survivor reconnected it syncs from that peer; with no peer connected it syncs nothing, keeps the fork and reschedules after `chainFallbackTime`. With only a second spectator staged behind the same head reconnected (its own reduction entry points held), the sync is refused as not ready: the attempt keeps the fork, reschedules after `chainFallbackTime`, neither spectator blacklists the other and the driven one stays SYNCED. Each of these ends with the spectators recovering onto the survivors' fork. The last case stages four participants: after the first reduction the three survivors install the successor, author one block on it and dispute it, and the case waits until the chain records the second reduction and its snapshot is on the newest fork, so a pinned request for the first successor would be refused as unprovable. With one remaining survivor reconnected, one attempt installs the newest fork, neither side blacklists the other and no further `reduction-<fork>` task is recorded.
-
-The unreadable-window deferral holds the other participants' reduce at its chain write too, so the chain has no result and the deferral retries instead of syncing past the window.
+Two cases hand-drive the reduction of a synced spectator without reduce data, with its own reduction entry points held: one cut off before the window's reduced head, one whose applied inbound run is unavailable. Each attempt returns without a throw, leaves the spectator OPENED and its runtime closes, while the participants still reduce. Another reducer's committed reduction is not challenged by such a spectator. No staging puts a committed participant behind the reduced head, so its reschedule is a skipped declaration.
 
 ## Tests
 
-- `no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes`: none
+- `inbound run unavailable on a spectator → the attempt aborts it cleanly without a throw, and the participants still reduce`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24
 - `someone else's reduction while the run is unavailable → not challenged, no throw`: none
-- `reduced head the peer never received → the attempt reschedules, the peer keeps its status`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24, REQ-DVP-2-RG8QR3.T1.P3
-- `reduced head not held, the chain records the window's result and the reducer is connected → one attempt syncs onto the successor from the reducer and reschedules nothing`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P26, REQ-DVP-2-RG8QR3.T1.P4
-- `reduced head not held, the chain records the window's result and only a non-reducer is connected → one attempt syncs onto the successor from that peer`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P27, REQ-DVP-2-RG8QR3.T1.P5
-- `reduced head not held, the chain records the window's result and no peer is connected → the attempt syncs nothing and reschedules after chainFallbackTime`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P28, REQ-DVP-2-RG8QR3.T1.P6
-- `reduced head not held, the chain records the window's result and only a peer that cannot move the node is connected → the attempt keeps the fork and reschedules after chainFallbackTime, nobody blacklists`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P30, REQ-DVP-2-RG8QR3.T1.P8
-- `reduced head not held, a second reduction moved the chain snapshot past the window's successor and a survivor is connected → one attempt syncs onto the newest fork, nobody blacklists, no further attempt`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P31, REQ-DVP-2-RG8QR3.T1.P9
+- `reduced head the spectator never received → the attempt aborts it cleanly without a throw, and the participants still reduce`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24
+- `reduced head a participant never received → the attempt reschedules after chainFallbackTime, the participant keeps its status`: none
 - `someone else's reduction while the reduced head is not held → not challenged, no throw`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P25
-- `unreadable dispute window → the attempt defers instead of aborting`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P29
+- `unreadable dispute window → the attempt defers instead of aborting`: none
 - `a re-dispatched dispute log that fails → the attempt rejects with that failure`: none
 - `unreadable dispute window → the reduction is not challenged`: none
 - `the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17

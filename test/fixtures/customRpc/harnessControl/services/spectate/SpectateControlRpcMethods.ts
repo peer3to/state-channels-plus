@@ -27,10 +27,7 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /**
-     * Generate a sync payload, returned encoded (or null if not provable). A
-     * responder not ready yet rejects with its `SyncProofNotReadyError`.
-     */
+    /** Generate a sync payload, returned encoded (or null if not provable). */
     public async generateSyncPayload(
         channelId: ChannelId,
         forkId: ForkId,

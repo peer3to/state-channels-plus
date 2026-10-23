@@ -910,7 +910,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             // a spectator cut off before the participants' last block: the
             // window reduces to that block, whose snapshot it never stored
-            const { forkId, spectatorIndex, recover } =
+            const { forkId, spectatorIndex } =
                 await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
 
             const r = await h.query.reduceData(forkId, spectatorIndex);
@@ -923,7 +923,6 @@ describe("Unit: AgreementManager", function () {
             expect(r.reducedHeight).to.be.greaterThan(Number(localHeight));
             expect(r.threw).to.equal("");
             expect(r.blockCount).to.equal(null);
-            await recover();
         });
 
         // no test: the missing-state half of the guard needs a reduced head

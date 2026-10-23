@@ -1,6 +1,6 @@
-import { Status } from "@/types";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 // only participants and pending participants audit a committed dispute
@@ -63,7 +63,8 @@ describe("Unit: EventHandler committed dispute on a spectator", function () {
             observerReads.local.reads + observerReads.chain.reads
         ).to.be.greaterThan(0);
     });
-    it("a spectator behind a threshold-final dispute's latest block defers its genesis instead of aborting, stays SYNCED and reaches the dispute's output fork", async function () {
+
+    it("a spectator behind a threshold-final dispute's latest block aborts cleanly, and the participants reach the dispute's output fork", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
@@ -107,31 +108,16 @@ describe("Unit: EventHandler committed dispute on a spectator", function () {
             maliciousPeerIndex,
             finalAuthorPeerIndex: honest[honest.length - 1]!
         });
-        // the hook fires after the spectator's handler completed
-        await h.assert.dispute.committedWait({
-            peersIndices: [spectatorIndex],
-            expectedCount: 1
-        });
-        expect(runtimeIsClosed(spectator.p2pInstance)).to.equal(false);
-        expect(await h.control(spectator).query.getStatus().request()).to.equal(
-            Status.SYNCED
+        await waitFor(
+            () => runtimeIsClosed(spectator.p2pInstance),
+            h.event.protocolEventTimeoutMs() * 2
         );
-        expect((await h.peerForkIds([spectator]))[0]).to.equal(forkId);
-
-        await h.dispute.resolveFinalDispute(staged, {
+        // the participants reach the dispute's output fork. not
+        // resolveFinalDispute: its cleanup restores the closed spectator too
+        await h.assert.sync.forkChangedWait({
+            originalForkId: forkId,
+            expectedForkId: staged.finalResolution.forkId,
             honestPeerIndices: honest
         });
-        const outputForkId = staged.finalResolution.forkId;
-        await h.network.restorePeerDiscovery([spectatorIndex]);
-        await h.transition.keepAuthoringUntil({
-            until: async () =>
-                (await h.peerForkIds([spectator]))[0] === outputForkId,
-            waitForPeers: honest,
-            maximumBlocks: 10
-        });
-        expect(runtimeIsClosed(spectator.p2pInstance)).to.equal(false);
-        expect(await h.control(spectator).query.getStatus().request()).to.equal(
-            Status.SYNCED
-        );
     });
 });

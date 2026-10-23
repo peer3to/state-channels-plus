@@ -20,7 +20,7 @@ import {
     stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
 import {
-    assertObserverBehindReducedHeadRecoversFromIdleDispute,
+    assertBehindObserverAbortsOnIdleDispute,
     assertObserverRecoversFromRemovedResponder
 } from "@test/fixtures/RemovedSyncResponderStaging";
 import {
@@ -877,8 +877,8 @@ describe("E2E: Spectate Service", function () {
             );
         });
 
-        it("the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer's reduction defers instead of aborting, and once the chain records the result it and the reconnected leaver install the newest fork by sync while nobody authors on it", async function () {
-            await assertObserverBehindReducedHeadRecoversFromIdleDispute(
+        it("the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer, a non-participant behind the reduced head, aborts cleanly at its reduction, nobody blacklists it and the survivors resolve the dispute", async function () {
+            await assertBehindObserverAbortsOnIdleDispute(
                 TestSession.getHarness()
             );
         });
