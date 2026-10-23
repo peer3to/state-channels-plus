@@ -51,6 +51,8 @@ export type Config = {
     CRASH_LOG_UPLOAD_COALESCE_MS: number;
     // upper bound of the random per-upload jitter that spreads realms apart
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: number;
+    // longest wait of a log flush (an aborting runtime's, before it disposes) for its realms' uploads.
+    CRASH_LOG_FLUSH_MS: number;
 };
 
 /** Default lifetime of a prepared join authorization, in chain seconds. */
@@ -84,7 +86,8 @@ const DEFAULT_CONFIG: Config = {
     CRASH_LOG_API_TOKEN: "",
     CRASH_LOG_MAX_SIZE_MB: 10,
     CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
-    CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000
+    CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000,
+    CRASH_LOG_FLUSH_MS: 15_000
 };
 
 /**

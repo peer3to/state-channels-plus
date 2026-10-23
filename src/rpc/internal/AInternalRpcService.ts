@@ -40,7 +40,8 @@ export abstract class AInternalRpcService<TMethods extends object> {
             reply: (response) => {
                 try {
                     // The transport reports uncaught dispatch failures to the owning root.
-                    sender.sendRpcResponse(response);
+                    // A requester whose connection closed already rejected its request.
+                    if (!sender.isClosed) sender.sendRpcResponse(response);
                 } finally {
                     // Disposal must finish even when the parent cannot receive its reply.
                     this.afterResponse(rpc, sender);

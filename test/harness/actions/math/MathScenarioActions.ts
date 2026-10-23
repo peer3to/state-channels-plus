@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status, TimeConfig } from "@/types";
 import { ForkId, Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
@@ -14,7 +15,10 @@ import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { MathPeerTestHarness } from "test-harness";
 
-type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
+type MathTestPeer = TestPeer<
+    P2pRuntimeHostRoot<HarnessControlRpc>,
+    MathStateMachine
+>;
 
 /** Kill period for the shared invalid-dispute staging, in seconds. */
 const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
@@ -442,7 +446,7 @@ export class MathScenarioActions extends ScenarioActions {
         forkId: ForkId;
         spammer: MathTestPeer;
         killer: MathTestPeer;
-        spectator: TestPeer<HarnessControlRpc> | undefined;
+        spectator: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>> | undefined;
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;
@@ -1098,6 +1102,39 @@ export class MathScenarioActions extends ScenarioActions {
         });
 
         return { forkId, race, restoreEvents };
+    }
+
+    /**
+     * A final dispute whose DisputeCommitted log reached the observer, with
+     * its handling held in flight until the observer's next dispute log
+     * query has answered: the window's one commitment is missing from the
+     * observer's storage while its log's handling is scheduled. The
+     * observer's reduction entry points stay held until disposal: the final
+     * dispute's DisputeReducedResultCommitted log would otherwise start a
+     * reduction whose window recovery releases the hold first.
+     */
+    async finalDisputeWithInFlightCommit(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+    }) {
+        const { observerIndex, maliciousPeerIndex } = options;
+        const h = this.harness;
+        await this.preDisputeSetup({ peerCount: 4 });
+        await h.rpcStub.holdReductionRace(observerIndex);
+        const held =
+            await h.rpcStub.holdDisputeCommittedHandlingUntilLogQuery(
+                observerIndex
+            );
+        try {
+            const { forkId } = await h.dispute.submitFinalDispute({
+                maliciousPeerIndex
+            });
+            await held.waitUntilHeld();
+            return { forkId, held };
+        } catch (error) {
+            await held.release();
+            throw error;
+        }
     }
 
     async activeChannelWithDispute(options: {

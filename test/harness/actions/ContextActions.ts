@@ -1,14 +1,20 @@
+// @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
 import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Codec, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class ContextActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private _logger: Logger
     ) {}
 

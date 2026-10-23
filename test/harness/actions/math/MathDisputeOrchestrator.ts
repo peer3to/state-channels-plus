@@ -1,3 +1,5 @@
+// @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId } from "@/types/types";
 
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -45,7 +47,9 @@ export class MathDisputeOrchestrator extends DisputeOrchestrator {
         honestPeerIndices: number[];
         disputesCommittedTimeoutMs?: number;
         forkSettleTimeoutMs?: number;
-    }): Promise<CreateAndResolveDisputeResult<HarnessControlRpc>> {
+    }): Promise<
+        CreateAndResolveDisputeResult<P2pRuntimeHostRoot<HarnessControlRpc>>
+    > {
         const forkId = this.harness.activeForkId;
         if (!forkId) throw new Error("Expected an active successor fork");
 

@@ -131,6 +131,31 @@ describe("Holepunch topic lookup", function () {
 
         expect(result.lookupsBeforeFlush).to.deep.equal([]);
         expect(result.lookupsAfterFlush).to.deep.equal([topicA]);
+        expect(
+            result.debugTimings.map((timing) => timing.message)
+        ).to.deep.equal([
+            "Holepunch topic announced",
+            "Holepunch topic lookup finished"
+        ]);
+        for (const timing of result.debugTimings)
+            expect(timing.sinceJoinMs).to.be.a("number");
+    });
+
+    it("keeps the announce timing of a duplicate join after leaving once", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchAnnounceLookup("duplicate-left-once")
+            .request();
+
+        expect(result.lookupsAfterFlush).to.deep.equal([topicA]);
+        expect(
+            result.debugTimings.map((timing) => timing.message)
+        ).to.deep.equal([
+            "Holepunch topic announced",
+            "Holepunch topic lookup finished"
+        ]);
+        for (const timing of result.debugTimings)
+            expect(timing.sinceJoinMs).to.be.a("number");
     });
 
     it("does not look up a topic left before its announce completes", async function () {
@@ -193,5 +218,33 @@ describe("Holepunch topic lookup", function () {
         expect(result.lookupsAfterFlush).to.deep.equal([topicA]);
         expect(result.debugs).to.include("Holepunch topic lookup failed");
         expect(result.warningsAndErrors).to.deep.equal([]);
+    });
+});
+
+describe("Holepunch connection attempts", function () {
+    let fixture: P2PManagerFixture;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("logs one attempt per dial and keeps other update listeners on a shared swarm", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchConnectionAttempts()
+            .request();
+
+        expect(result.attemptLogsAfterUpdateWithoutDial).to.equal(0);
+        expect(result.attemptLogsAfterOneDial).to.equal(1);
+        expect(result.attemptLogsAfterUpdateWithoutDialAgain).to.equal(1);
+        expect(result.attemptLogsAfterTwoDials).to.equal(3);
+        expect(result.foreignUpdateCalls).to.equal(5);
+        expect(result.updateListenersWhileJoined).to.equal(2);
+        expect(result.updateListenersAfterDispose).to.equal(1);
     });
 });

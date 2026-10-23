@@ -24,17 +24,49 @@ type HookArgs<T> = {
 };
 
 /**
+ * The events an application's runtime code emits under the `application`
+ * kind: event name → argument tuple. Every argument must be
+ * structured-cloneable to cross the runtime port. Declare the map as a
+ * `type` alias: an interface has no index signature and does not satisfy it.
+ */
+export type ApplicationEventMap = Record<string, unknown[]>;
+
+/**
  * Every event kind the bus carries, each with its own name→args-tuple map.
  * Adding a new kind is one new entry here; the wire payload, bridge, and
  * subscription API need no other change.
  */
-export type BusEventMaps = {
+export type BusEventMaps<
+    TApplicationEvents extends ApplicationEventMap = Record<never, never>
+> = {
     p2pEventHooks: VoidHookArgs<P2pEventHooks>;
     eventHandler: HookArgs<EventHandlerHooks>;
     contractEvents: Record<string, unknown[]>;
+    application: TApplicationEvents;
 };
 
 export type BusKind = keyof BusEventMaps;
+
+/**
+ * Producer arguments: the declared tuple for an `application` event, any
+ * array for the SDK-owned kinds.
+ */
+type EmitArgs<
+    TApplicationEvents extends ApplicationEventMap,
+    K extends BusKind,
+    N extends string
+> = K extends "application"
+    ? TApplicationEvents[N & keyof TApplicationEvents]
+    : unknown[];
+
+/** The argument tuple of one event of one kind. */
+type BusEventArgs<
+    TApplicationEvents extends ApplicationEventMap,
+    K extends BusKind,
+    N extends keyof BusEventMaps<TApplicationEvents>[K]
+> = BusEventMaps<TApplicationEvents>[K][N] extends readonly unknown[]
+    ? BusEventMaps<TApplicationEvents>[K][N]
+    : never;
 
 type AnyListener = (...args: any[]) => void;
 type KindListener = (eventName: string, args: unknown[]) => void;
@@ -71,7 +103,9 @@ function getEventKey(kind: BusKind, eventName: string): EventKey {
  * error-propagating bridge tap (host-only; forwards over the port, and its
  * failure returns to the producer instead of being swallowed).
  */
-export class EventBus {
+export class EventBus<
+    TApplicationEvents extends ApplicationEventMap = Record<never, never>
+> {
     /** Consumer subscriptions to one exact event (`on(kind, name, fn)`). */
     private readonly named = new Map<EventKey, Set<AnyListener>>();
     /** Consumer subscriptions to every event of a kind (`onKind(kind, fn)`). */
@@ -97,14 +131,13 @@ export class EventBus {
     }
 
     /** Subscribe to one event of one kind; returns an unsubscribe function. */
-    on<K extends BusKind, N extends keyof BusEventMaps[K] & string>(
+    on<
+        K extends BusKind,
+        N extends keyof BusEventMaps<TApplicationEvents>[K] & string
+    >(
         kind: K,
         eventName: N,
-        listener: (
-            ...args: BusEventMaps[K][N] extends readonly unknown[]
-                ? BusEventMaps[K][N]
-                : never
-        ) => void
+        listener: (...args: BusEventArgs<TApplicationEvents, K, N>) => void
     ): () => void {
         const key = getEventKey(kind, eventName);
         let set = this.named.get(key);
@@ -120,6 +153,38 @@ export class EventBus {
         return () => {
             capturedSet.delete(listener as AnyListener);
         };
+    }
+
+    /**
+     * The args of the first `eventName` that passes `filter`, then
+     * unsubscribes. Resolves undefined once `signal` aborts first.
+     */
+    next<
+        K extends BusKind,
+        N extends keyof BusEventMaps<TApplicationEvents>[K] & string
+    >(
+        kind: K,
+        eventName: N,
+        filter: (
+            ...args: BusEventArgs<TApplicationEvents, K, N>
+        ) => boolean = () => true,
+        signal?: AbortSignal
+    ): Promise<BusEventArgs<TApplicationEvents, K, N> | undefined> {
+        return new Promise((resolve) => {
+            if (signal?.aborted) return resolve(undefined);
+            const end = (
+                args: BusEventArgs<TApplicationEvents, K, N> | undefined
+            ) => {
+                unsubscribe();
+                signal?.removeEventListener("abort", onAbort);
+                resolve(args);
+            };
+            const onAbort = () => end(undefined);
+            const unsubscribe = this.on(kind, eventName, (...args) => {
+                if (filter(...args)) end(args);
+            });
+            signal?.addEventListener("abort", onAbort);
+        });
     }
 
     /**
@@ -172,8 +237,15 @@ export class EventBus {
         this.bridgeTap = tap;
     }
 
-    /** Untyped producer entry; typed consumers subscribe via `on`/`onKind`. */
-    emit(kind: BusKind, eventName: string, args: unknown[]): void {
+    /**
+     * Producer entry. `application` events are checked against the declared
+     * map; the SDK-owned kinds take any name and arguments.
+     */
+    emit<K extends BusKind, N extends string>(
+        kind: K,
+        eventName: N,
+        args: EmitArgs<TApplicationEvents, K, N>
+    ): void {
         const named = this.named.get(getEventKey(kind, eventName));
         if (named) {
             for (const listener of [...named]) {

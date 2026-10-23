@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: support fixture for the mapped RpcHandler integration cases; it is not an evidence unit
 
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -14,10 +15,16 @@ const PING_PONG_MANIFEST = path.resolve(
 );
 
 export class RpcHandlerFixture {
-    public harness: PeerTestHarness<PingPongRpc, MathStateMachine>;
+    public harness: PeerTestHarness<
+        P2pRuntimeHostRoot<PingPongRpc>,
+        MathStateMachine
+    >;
 
     constructor() {
-        this.harness = new PeerTestHarness<PingPongRpc, MathStateMachine>({
+        this.harness = new PeerTestHarness<
+            P2pRuntimeHostRoot<PingPongRpc>,
+            MathStateMachine
+        >({
             deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
         });
     }
@@ -35,9 +42,7 @@ export class RpcHandlerFixture {
     }
 
     public control(peerIndex: number): RemoteRpcProxyType<PingPongRpc> {
-        return this.harness.control(
-            this.harness.getPeer(peerIndex)
-        ) as unknown as RemoteRpcProxyType<PingPongRpc>;
+        return this.harness.getPeer(peerIndex).p2pInstance.hostRpc;
     }
 
     public address(peerIndex: number) {

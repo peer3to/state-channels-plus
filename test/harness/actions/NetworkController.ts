@@ -1,8 +1,12 @@
 // @spec-test-coverage-ignore: shared lobby transport actions exercised by owning mapped E2E declarations
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { compareAddresses } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Codec, Logger, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 /**
@@ -14,10 +18,11 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
  * operation. Channel and lobby joins remain self-contained SDK operations.
  */
 export class NetworkController<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 

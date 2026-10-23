@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared worker-runtime setup for HandshakeCompletedGuard tests
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -8,7 +9,7 @@ import path from "node:path";
 
 export class HandshakeCompletedGuardFixture {
     private readonly harness = new PeerTestHarness<
-        PingPongRpc,
+        P2pRuntimeHostRoot<PingPongRpc>,
         MathStateMachine
     >({ deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT });
 
@@ -29,8 +30,6 @@ export class HandshakeCompletedGuardFixture {
     }
 
     public control(): RemoteRpcProxyType<PingPongRpc> {
-        return this.harness.control(
-            this.harness.getPeer(0)
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        return this.harness.getPeer(0).p2pInstance.hostRpc;
     }
 }

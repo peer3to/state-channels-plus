@@ -26,6 +26,7 @@ import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import { assertLogQueryMaxBlocks, config } from "@/utils/config";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { settleBy } from "@/utils/settleBy";
 import { StateChannelManagerInterface } from "@typechain-types";
 import type { ChannelBalanceStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import {
@@ -166,13 +167,10 @@ export default class EventSyncService {
     }
 
     async waitForScheduled(timeoutMs: number): Promise<void> {
-        const pending = Promise.allSettled([...this.eventPromises.values()]);
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        const timedOut = new Promise<void>((resolve) => {
-            timeout = setTimeout(resolve, timeoutMs);
-        });
-        await Promise.race([pending.then(() => undefined), timedOut]);
-        if (timeout) clearTimeout(timeout);
+        await settleBy(
+            Promise.allSettled([...this.eventPromises.values()]),
+            Date.now() + timeoutMs
+        );
     }
 
     getSubscriptionFilter(channelId: ChannelId): Filter {
@@ -217,9 +215,7 @@ export default class EventSyncService {
             );
             return Promise.resolve();
         }
-        // the block hash keeps a log re-mined in another block after a reorg
-        // apart from the log it replaces
-        const eventKey = `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
+        const eventKey = this.getEventKey(log);
         const existing = this.eventPromises.get(eventKey);
         if (existing) return existing;
         this.logger.info(
@@ -402,9 +398,9 @@ export default class EventSyncService {
         );
         if (missing.size > 0) {
             // we cannot invent a dispute whose log never reached us -> the
-            // window is not locally readable yet, and the caller retries. never
-            // a throw: a throw here reaches `abort()` through
-            // `getSyncedForkDisputes`
+            // window is not locally readable yet, and the caller retries. a
+            // log that never reached us is never a throw: a throw here
+            // reaches `abort()` through `getSyncedForkDisputes`
             this.logger.warn("Disputes unavailable after event recovery", {
                 channelId,
                 disputeWindow: LoggerUtils.getDisputeWindowMetadata({
@@ -661,7 +657,8 @@ export default class EventSyncService {
 
     /**
      * Recover the dispute logs of the fork's window whose dispute local
-     * storage lacks. The commitments still missing after recovery.
+     * storage lacks. The commitments still missing after recovery. A joined
+     * log that failed while its dispute is still missing throws its failure.
      */
     private async recoverWindowDisputes(
         channelId: ChannelId,
@@ -678,25 +675,61 @@ export default class EventSyncService {
             window.latest.blockNumber,
             window.span
         )) {
-            await this.scheduleRecoveredLogs(
-                channelId,
-                logs.filter((log) => {
-                    const args = this.parseLog(log)?.args;
-                    return (
-                        args &&
-                        missing.has(
-                            hash(
-                                args.disputeConfirmation.signedDispute
-                                    .encodedDispute
-                            ).toLowerCase()
-                        )
+            const recovered = logs.flatMap((log) => {
+                const args = this.parseLog(log)?.args;
+                if (!args) return [];
+                const commitment = hash(
+                    args.disputeConfirmation.signedDispute.encodedDispute
+                ).toLowerCase();
+                return missing.has(commitment)
+                    ? [{ log, commitment, args }]
+                    : [];
+            });
+            const joinedFailures: {
+                commitment: NormalizedDisputeCommitment;
+                error: unknown;
+            }[] = [];
+            await Promise.all(
+                recovered.map(({ log, commitment }) => {
+                    const handling = this.eventPromises.get(
+                        this.getEventKey(log)
                     );
+                    // a log in flight or already failed is joined: its
+                    // failure is fatal only while its dispute stays missing.
+                    // a log that stored its dispute, then failed, leaves the
+                    // window readable
+                    return handling
+                        ? handling.catch((error: unknown) => {
+                              joinedFailures.push({ commitment, error });
+                          })
+                        : this.scheduleLog(log, channelId);
                 })
             );
+            missing = this.getMissingDisputes(commitments);
+            const fatal = joinedFailures.find(({ commitment }) =>
+                missing.has(commitment)
+            );
+            if (fatal) throw fatal.error;
+            // a handler that stored no dispute (a fork this node left, or a
+            // dispute its audit rejected) leaves the chain's copy to back
+            // this window's readers
+            for (const { commitment, args } of recovered) {
+                if (missing.has(commitment))
+                    this.storage.disputes.storeDisputeConfirmation(
+                        args.disputeConfirmation
+                    );
+            }
             missing = this.getMissingDisputes(commitments);
             if (missing.size === 0) break;
         }
         return missing;
+    }
+
+    /** The key one contract log is scheduled under. */
+    private getEventKey(log: Log): string {
+        // the block hash keeps a log re-mined in another block after a reorg
+        // apart from the log it replaces
+        return `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
     }
 
     /** Commitments of the window whose dispute local storage still lacks. */

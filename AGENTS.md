@@ -364,7 +364,7 @@ limit, so it implements only what needs its own storage and composition (`open`,
 { ... }` structural shapes that re-state an existing type. Reach the real type
   instead: type the entry point so the concrete type flows through. E.g. a
   harness-control `*Service`/`*RpcMethods` should declare its `p2pManager` as
-  `P2PManager<HarnessControlRpc>` (via the `ANetworkRpcService`/`ANetworkRpcMethods`
+  `P2PManager<HarnessControlRpcShape>` (via the `ANetworkRpcService`/`ANetworkRpcMethods`
   `TP2PManager` param) — then `localRpc`/`remoteRpc` are fully typed (the SDK's
   own services included) with no casts. Generic helpers should be generic over
   their args (e.g. `execOnHost<T, A>(…, args: A)`) so call sites are checked

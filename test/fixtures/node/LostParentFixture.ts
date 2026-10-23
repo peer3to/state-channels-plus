@@ -42,7 +42,15 @@ export async function assertWorkerParentLoss(
             setup.scm,
             setup.deployedStateMachine,
             setup.deployStateMachine,
-            setup.setupOptions,
+            {
+                ...setup.setupOptions,
+                // Log collection off: an abort then does not flush, so its disposal
+                // does not wait for this parent while it blocks its thread.
+                config: {
+                    ...setup.setupOptions.config,
+                    CRASH_LOG_UPLOAD_ENDPOINT: ""
+                }
+            },
             {
                 workerUrl: require.resolve("./LostParentHostEntry"),
                 workerData: {
@@ -75,6 +83,8 @@ export async function assertWorkerParentLoss(
                 if (instance instanceof Error) throw instance;
                 const host = client.p2pRuntimeHostRemoteRoot!;
                 if (mode === "abort" || mode === "parent-dispose") {
+                    // Observes the real frames, so a flush the host sent would show here.
+                    const control = RuntimeRpcControl.attachTo(host);
                     const requested =
                         mode === "parent-dispose" ? host.dispose() : undefined;
                     // Let RemoteRoot post its request before this parent blocks.
@@ -90,6 +100,18 @@ export async function assertWorkerParentLoss(
                     await requested;
                     await waitFor(() => exited);
                     expect(errors).to.have.length(0);
+                    // With log collection off the abort asked no thread to flush. The port
+                    // delivers every frame the host posted before its close.
+                    await waitFor(() =>
+                        control.events.some(
+                            (event) => event.direction === "close"
+                        )
+                    );
+                    expect(
+                        control.events.filter(
+                            (event) => event.method === "flush"
+                        )
+                    ).to.deep.equal([]);
                 } else if (mode === "closed-parent") {
                     const failures: Error[] = [];
                     const fail = host.fail.bind(host);

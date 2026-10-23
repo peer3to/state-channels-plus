@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared math transition actions exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { DetachedPromises } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -22,7 +23,7 @@ type ParticipantLeaveOptions = TransitionOptions & {
 };
 
 export class MathTransitionActions extends TransitionActions<
-    HarnessControlRpc,
+    P2pRuntimeHostRoot<HarnessControlRpc>,
     MathStateMachine
 > {
     constructor(

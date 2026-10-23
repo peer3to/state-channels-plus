@@ -264,7 +264,8 @@ export function lastMilestoneFirstBlockSigners(
 
 /**
  * Wait until `auditorIndex` stored the dispute's confirmation: a committed
- * participant stores it only after its audit returned valid.
+ * participant stores it after its audit returned valid, or when a window
+ * read recovers the chain's copy of a dispute its handler left unstored.
  */
 export async function waitUntilAuditAccepted(
     h: MathPeerTestHarness,

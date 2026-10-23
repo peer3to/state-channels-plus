@@ -46,8 +46,8 @@ class LostParentHostRoot extends P2pRuntimeHostRoot {
                         send(rpc, transfer);
                     };
                     channel.onmessage = (event) => {
-                        if ((event as MessageEvent).data === "abort")
-                            manager.abort();
+                        if ((event as MessageEvent).data !== "abort") return;
+                        manager.abort();
                     };
                     return;
                 }

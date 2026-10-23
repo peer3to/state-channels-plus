@@ -1,9 +1,10 @@
 // @spec-test-coverage-ignore: shared initial-sync staging exercised by mapped P2PManager declarations
 
 import { clientRootFor } from "./RuntimeRootObservation";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import type HarnessControlRpc from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { HarnessControlRpcShape } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
@@ -14,10 +15,10 @@ import { expect } from "chai";
 
 /** Keep the participants authoring through a fresh observer's spawn and test body. */
 export async function withFreshInitialSyncObserver<
-    TCustomRpc extends HarnessControlRpc
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
-    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
-    run: (observer: TestPeer<TCustomRpc, MathStateMachine>) => Promise<void>
+    h: PeerTestHarness<THost, MathStateMachine>,
+    run: (observer: TestPeer<THost, MathStateMachine>) => Promise<void>
 ): Promise<void> {
     await h.lifecycle.openChannelForParticipants([0, 1]);
     await h.network.joinSelectedKey([0, 1], String(h.channelId));
@@ -52,14 +53,12 @@ export async function withFreshInitialSyncObserver<
  * must close afterwards.
  */
 export async function assertObserverConnectSettlesFalseOnAbort<
-    TCustomRpc extends HarnessControlRpc
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
-    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    h: PeerTestHarness<THost, MathStateMachine>,
     options: {
         settledWithinMs: number;
-        stage?: (
-            observer: TestPeer<TCustomRpc, MathStateMachine>
-        ) => Promise<void>;
+        stage?: (observer: TestPeer<THost, MathStateMachine>) => Promise<void>;
     }
 ): Promise<void> {
     await h.lifecycle.openChannelForParticipants([0, 1]);
@@ -90,9 +89,9 @@ export async function assertObserverConnectSettlesFalseOnAbort<
  * settles `false` on the abort and the late result changes nothing.
  */
 export async function assertLateSyncResultAfterAbortChangesNothing<
-    TCustomRpc extends HarnessControlRpc
+    THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>
 >(
-    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    h: PeerTestHarness<THost, MathStateMachine>,
     lateResult: "success" | "failure"
 ): Promise<void> {
     await withFreshInitialSyncObserver(h, async (observer) => {

@@ -15,8 +15,8 @@
 
 Collector unanimity
 
-- Setup: Collect with responsive/silent/erroring/wrong-signer/unreachable members and deadline pressure
-- Oracle: Only full unanimity assembles; every failure mode fails whole; requests never outlive the join deadline; an unreachable-member failure names every threshold member with no transport
+- Setup: Collect with responsive/silent/erroring/wrong-signer/unreachable members, one member whose handshake completes inside the reachability grace, and deadline pressure
+- Oracle: Only full unanimity assembles; every failure mode fails whole; requests never outlive the join deadline; an unreachable-member failure names every threshold member with no transport; a member reachable within the grace joins the unanimous set; a handshake that leaves another member unreachable does not end the grace
 
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P1` — unanimous success
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P2` — single silent member
@@ -31,6 +31,8 @@ Collector unanimity
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P11` — returned snapshot and fork pins equal the collector's current chain view
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P13` — with `JOIN_CHANNEL_DEADLINE_SECONDS` configured, a prepared first-join confirmation carries `deadlineTimestamp` equal to the chain time read during preparation plus that lifetime
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P14` — a snapshot post that lands after the collector pinned the snapshot and before any countersigner reads its view leaves the collection unanimous; the returned pin is still the collector's
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P15` — a threshold member whose handshake completes while the collector waits through the reachability grace: the collection waits, then assembles every countersignature
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P16` — a handshake during the reachability grace that leaves another threshold member unreachable: the collection keeps waiting and requests no signature until that member is reachable
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ
 

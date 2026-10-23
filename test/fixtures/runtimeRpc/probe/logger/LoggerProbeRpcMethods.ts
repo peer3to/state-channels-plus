@@ -27,7 +27,7 @@ export class LoggerProbeRpcMethods extends AInternalRpcMethods<LoggerProbeServic
     public clearRealm(): void {
         this.service.clearRealm();
     }
-    public flush(reason: string) {
+    public gossipUpload(reason: string) {
         return this.service.logger.upload(reason);
     }
     public own() {
@@ -58,9 +58,9 @@ export class LoggerProbeRpcMethods extends AInternalRpcMethods<LoggerProbeServic
             child.loggerProbe.clearRealm().request()
         );
     }
-    public childFlush(reason: string) {
+    public childGossipUpload(reason: string) {
         return this.service.visitChild((child) =>
-            child.loggerProbe.flush(reason).request()
+            child.loggerProbe.gossipUpload(reason).request()
         );
     }
     public childOwn() {

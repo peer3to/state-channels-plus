@@ -48,6 +48,27 @@ export async function createLocalDhtNetwork(
     };
 }
 
+/**
+ * Holds the announcements of the DHT `node`: each announce request still
+ * stores the record on the remote node, so peers can find and dial this node,
+ * but its reply is held, so a pool flushing an announcement through `node`
+ * stays in the flush until the returned release runs.
+ */
+export function holdAnnouncementReplies(node: unknown): () => void {
+    const dht = node as {
+        _requestAnnounce: (...args: unknown[]) => Promise<unknown>;
+    };
+    const requestAnnounce = dht._requestAnnounce;
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    dht._requestAnnounce = async (...args: unknown[]) => {
+        const reply = await requestAnnounce.apply(dht, args);
+        await released;
+        return reply;
+    };
+    return release;
+}
+
 export async function createSocketPair(): Promise<{
     client: net.Socket;
     server: net.Socket;

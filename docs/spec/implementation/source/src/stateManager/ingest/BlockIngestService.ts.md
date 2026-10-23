@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
 - [`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)
 - [`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
@@ -40,3 +41,12 @@ Carried inbound run storage
 
 - [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P1` — a committed block's carried inbound run, anchored at the previous snapshot's inbound hash, moves the store tip with the snapshot when that hash is the store's tip
 - [x] `UNIT-TEST-BLOCK-INGEST-2-8ZE5Z8.P2` — a committed block's carried inbound run whose anchor is not the store's tip, first unheld and then held above a gap, is persisted each time and sets no tip
+
+## UNIT-TEST-BLOCK-INGEST-3-V70TFY
+
+Stopped runtime
+
+- Setup: Park a valid confirmation on the held state mutex, abort the runtime for real, then free the mutex
+- Oracle: The ingest returns true without judging or storing the block: no hook fires and the height is unchanged
+
+- [x] `UNIT-TEST-BLOCK-INGEST-3-V70TFY.P1` — a valid block parked on the state mutex when the runtime aborts returns true, fires no deviation hook and is not stored

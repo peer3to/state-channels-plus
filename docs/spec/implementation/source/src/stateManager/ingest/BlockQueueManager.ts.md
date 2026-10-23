@@ -18,6 +18,7 @@
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
 
 ## UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2
 

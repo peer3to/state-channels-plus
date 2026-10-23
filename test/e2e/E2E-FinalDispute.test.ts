@@ -96,17 +96,22 @@ describe("E2E: final dispute resolution", function () {
         const staged = await h.dispute.submitFinalDispute({
             maliciousPeerIndex
         });
-        await h.dispute.resolveFinalDispute(staged);
-
-        // Author only once every honest peer installed the reduced fork and
-        // the honest mesh is back in sync; on a loaded farm the reconnect
-        // after reduction takes longer than the first write's sync wait.
+        // The leaver can be the reduced fork's first writer: it exits and
+        // disposes as soon as it installs that fork, so the resolution reads
+        // only the peers that stay; the leaver is checked through its events.
         const honest = h.getActiveHonestPeers().map((peer) => peer.index);
         const remaining = honest.filter((index) => index !== leaver.index);
+        await h.dispute.resolveFinalDispute(staged, {
+            departingPeerIndices: [leaver.index]
+        });
+
+        // Author only once every remaining peer installed the reduced fork
+        // and the mesh is back in sync; on a loaded farm the reconnect after
+        // reduction takes longer than the first write's sync wait.
         await h.assert.dispute.reductionCompletedWait({
             sourceForkId: staged.forkId,
             reducedForkId: staged.finalResolution.forkId,
-            peerIndices: honest
+            peerIndices: remaining
         });
         // The leaver may take its exit turn the moment the reduced fork is
         // installed, so the sync check covers the peers that keep authoring.
@@ -163,7 +168,7 @@ describe("E2E: final dispute resolution", function () {
                 }
                 await h.transition.peerWrite({
                     peer: next.index,
-                    waitForPeers: honest
+                    waitForPeers: remaining
                 });
                 return exitPromise !== undefined;
             },

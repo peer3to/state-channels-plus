@@ -35,6 +35,7 @@
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+- [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 
 ## UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE
 
@@ -47,6 +48,7 @@ Full root abort
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2` — Worker abort closes the host and executor endpoints, rejects late queries and preserves a sibling SDK
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3` — Abort cancels a scheduled task before its due time, drops status to OPENED and disconnects peers
 - [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Stopping retains the live provider listener; root disposal then destroys the provider, removes listeners and permits repeated disposal
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P5` — Abort of an inline host with a dedicated VM worker uploads the abort log line and the VM worker's logs before disposal ends the worker, the flush is the last step of `stop()`, after the producers stop, so a host timeout task due during the flush never runs, and an upload that never answers holds disposal no longer than the abort flush bound
 
 ## UNIT-TEST-STATE-MANAGER-1-GFPTJF
 

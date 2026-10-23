@@ -109,7 +109,7 @@ responder's `inboundMessageBlocksAppliedInReduce`. All relevant inbound blocks a
 the `InboundMessagesProcessed` events and the event-sync log recovery deliver them. Why does sync
 receive them from the responder at all? Reading them from the chain would make this input trustless
 and remove the edge cases that [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)
-fixed and [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf) still tracks.
+and [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf) fixed.
 
 Alternatives: keep the field, where the local `reduceAndFinalize` takes it as input and only a
 window that this sync reduces stores it (the current rule); or take a window's inbound blocks from

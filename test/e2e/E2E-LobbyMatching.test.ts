@@ -788,6 +788,28 @@ describe("E2E: lobby matching", function () {
                 h.event.protocolEventTimeoutMs(),
                 200
             );
+            // The replacement joins the connection set the commitment
+            // promoted, not only the handoff.
+            for (const [index, peer] of h.peers.entries()) {
+                expect(
+                    await h.execOnHost(
+                        peer,
+                        (stateManager, args) => {
+                            const transport =
+                                stateManager.p2pManager.profileManager.getTransportByEvmAddress(
+                                    args.peerAddress
+                                );
+                            return (
+                                !!transport &&
+                                stateManager.p2pManager.openConnections.includes(
+                                    transport
+                                )
+                            );
+                        },
+                        { peerAddress: h.peers[1 - index].address }
+                    )
+                ).to.equal(true);
+            }
             expect(
                 await Promise.all([
                     h
@@ -851,6 +873,120 @@ describe("E2E: lobby matching", function () {
         } finally {
             await Promise.all(releaseMatched.map((release) => release()));
             await h.network.leaveLobby([0, 1], topic);
+        }
+    });
+
+    it("promotes the committed peer into the connection set at commitment and drops it when the negotiation fails", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-promotion-at-commitment");
+        const connectedPeers = async () =>
+            (
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .query.getConnectedPeerAddresses()
+                            .request()
+                    )
+                )
+            ).map((addresses) => [...new Set(addresses)]);
+        const release = await h.network.joinLobbyHeldAtHandoff([0, 1], topic);
+        try {
+            // Negotiation has not started and no channel exists: the
+            // broadcast set already holds the committed peer.
+            expect(await connectedPeers()).to.deep.equal([
+                [h.peers[1].address],
+                [h.peers[0].address]
+            ]);
+            expect(
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([ethers.ZeroHash, ethers.ZeroHash]);
+
+            // The left joins end on the failed negotiation without a
+            // rematch, and the release closes the promoted transports.
+            expect(
+                await h.network.leaveLobbyAtHeldHandoff([0, 1], topic, release)
+            ).to.deep.equal([true, true]);
+            await TestSession.settleDetached();
+            expect(await connectedPeers()).to.deep.equal([[], []]);
+        } finally {
+            await release();
+        }
+    });
+
+    it("delivers block #0 of a lobby-opened channel over P2P before the lobby session ends", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-first-block-over-p2p");
+        // The open is reported but `completeLobby` waits: the channel runs
+        // on the connection set the commitment built.
+        const releases = await Promise.all(
+            [0, 1].map((index) => h.rpcStub.holdLobbyCompletion(index))
+        );
+        try {
+            await h.network.joinLobby([0, 1], topic);
+            await waitFor(
+                async () => {
+                    const statuses = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getStatus().request()
+                        )
+                    );
+                    return statuses.every(
+                        (status) => status === Status.PARTICIPATING
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+
+            // The lobby session has not ended: `completeLobby` is held.
+            expect(
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.getLobbyAvailability()
+                                .request()
+                        )
+                    )
+                ).every(({ topic }) => topic !== undefined)
+            ).to.equal(true);
+
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.blockHeight({ expectedHeight: 0 });
+            // A block that only reached the peer through the chain fallback
+            // had its author post calldata first.
+            expect(
+                h.peers.map(
+                    (peer) => peer.eventSpies.onPostingCalldata?.callCount
+                )
+            ).to.deep.equal([0, 0]);
+            expect(
+                await Promise.all(releases.map((release) => release()))
+            ).to.deep.equal([1, 1]);
+            // The released joins complete the lobby and end the session.
+            await TestSession.settleDetached();
+            expect(
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.getLobbyAvailability()
+                                .request()
+                        )
+                    )
+                ).map(({ topic }) => topic)
+            ).to.deep.equal([undefined, undefined]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
         }
     });
 

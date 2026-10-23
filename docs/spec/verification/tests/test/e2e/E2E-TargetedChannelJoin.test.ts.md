@@ -5,7 +5,7 @@ Exercises: [targeted-channel-join.md](../../../../specification/peer-communicati
 
 ## Overview
 
-The suite contains 31 direct literal cases. It drives unopened preflight, targeted matching, opening,
+The suite contains 33 direct literal cases. It drives unopened preflight, targeted matching, opening,
 authoritative-open handoff, exact-channel sync, requested membership, cancellation, matcher-only timeout,
 explicit retry, caller-owned initial synchronization failure, transport preservation, and host-local policy.
 Every full connect reaches its production success, failure, or disposal boundary before detached settlement.
@@ -24,7 +24,7 @@ component suite's retry case through the same public API and carries no ID.
 | Test group | Specification coverage |
 | Option and result cases 1–10 | `REQ-TJOIN-1-5VGR1F`, `REQ-TJOIN-2-MFWADG` |
 | Open-race, timeout, and cancellation cases 11–21 | `REQ-TJOIN-3-DCZKS6`, `REQ-TJOIN-4-SDPZJW` |
-| Retry, deferral, failure phase, handoff, and policy cases 22–31 | `REQ-TJOIN-5-Q795M7`, `INV-TJOIN-1-R3K75D` |
+| Retry, deferral, failure phase, handoff, and policy cases 22–33 | `REQ-TJOIN-5-Q795M7`, `INV-TJOIN-1-R3K75D` |
 
 ## Tests
 
@@ -52,6 +52,7 @@ component suite's retry case through the same public API and carries no ID.
 - `pre-sync refusal returns false without starting sync`: REQ-TJOIN-5-Q795M7.T1.P12
 - `matching cancellation settles false only before acceptance`: REQ-TJOIN-1-5VGR1F.T1.P6
 - `preserves the target listener after unsigned targeted negotiation failure`: REQ-TJOIN-5-Q795M7.T1.P1
+- `releases the promoted peer when targeted negotiation throws after commitment`: REQ-TJOIN-5-Q795M7.T1.P26
 - `starts a fresh same-ID targeted attempt only after another explicit call`: none
 - `initial sync accepts a response in the second agreement window`: REQ-TJOIN-3-DCZKS6.T1.P12
 - `initial requester expiry aborts and disposes without retry`: REQ-TJOIN-5-Q795M7.T1.P9

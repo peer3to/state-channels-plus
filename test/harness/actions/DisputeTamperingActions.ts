@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared tampering staging exercised by mapped dispute-validation cases
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type StateManager from "@/stateManager/StateManager";
 import {
     DisputeFraudProofType,
@@ -17,7 +18,10 @@ import {
 } from "@/utils";
 import type { DisputeFraudStruct } from "@/utils/Codec";
 import { blockStructWithTransactionHeader } from "@test/factory";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type {
@@ -172,10 +176,11 @@ DISPUTE_TAMPER_STRATEGY_BY_FN.set(
 );
 
 export class DisputeTamperingActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 

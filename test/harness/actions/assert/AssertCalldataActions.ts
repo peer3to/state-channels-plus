@@ -1,10 +1,16 @@
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+// @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertCalldataActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     noCalldataPosted(): void {
         const totalPosted = this.harness.peers.reduce((sum, peer) => {

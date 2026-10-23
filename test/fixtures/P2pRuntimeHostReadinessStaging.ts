@@ -8,21 +8,23 @@ import {
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { HostRootManifest } from "@/rpc/internal/roots/resolveHostRootManifest";
 import { setupObservedP2pRuntime as setupP2pRuntime } from "@test/fixtures/node/ObservedP2pSetup";
 import { expect } from "chai";
 
-export async function checkPreDeploymentRequest(
-    request: (
-        connection: RuntimeConnection<P2pRuntimeHostRoot>
-    ) => Promise<unknown>,
-    succeeds = false
+export async function checkPreDeploymentRequest<
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
+>(
+    request: (connection: RuntimeConnection<THost>) => Promise<unknown>,
+    succeeds = false,
+    hostRootManifest?: HostRootManifest<THost>
 ): Promise<void> {
     await startRuntimeTransportModesFixture();
     const setup = await prepareRuntimeSetup({
         runSdkInThread: false,
         vmDedicatedThread: false
     });
-    let connection: RuntimeConnection<P2pRuntimeHostRoot>;
+    let connection: RuntimeConnection<THost>;
     let checked = false;
     try {
         const instance = await setupP2pRuntime(
@@ -50,12 +52,12 @@ export async function checkPreDeploymentRequest(
                 }
                 return setup.deployStateMachine(signer);
             },
-            setup.setupOptions,
+            { ...setup.setupOptions, hostRootManifest },
             {
                 onRuntimeRoot: (root) => {
                     if (root instanceof P2pRuntimeClientRoot) {
                         connection = [...root.connections.values()][0]
-                            .rpc as RuntimeConnection<P2pRuntimeHostRoot>;
+                            .rpc as RuntimeConnection<THost>;
                     }
                 }
             }

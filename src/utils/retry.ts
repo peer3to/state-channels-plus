@@ -12,6 +12,8 @@ export interface RetryConfig {
     backoffFactor?: number;
     /** Optional callback function to run before each retry */
     onRetry?: (attempt: number, error: any) => void;
+    /** Once aborted, no further attempt starts and a pending delay ends at once */
+    signal?: AbortSignal;
 }
 
 /**
@@ -49,7 +51,8 @@ export async function retry<T>(
         delayMs = 0,
         useExponentialBackoff = false,
         backoffFactor = 2,
-        onRetry
+        onRetry,
+        signal
     } = config;
 
     let lastError: any;
@@ -60,8 +63,8 @@ export async function retry<T>(
         } catch (error) {
             lastError = error;
 
-            // If this was the last attempt, don't prepare for retry
-            if (attempt === maxRetries) {
+            // If this was the last attempt, or the work was canceled, don't prepare for retry
+            if (attempt === maxRetries || signal?.aborted) {
                 break;
             }
 
@@ -76,10 +79,30 @@ export async function retry<T>(
                     ? delayMs * Math.pow(backoffFactor, attempt)
                     : delayMs;
 
-                await new Promise((resolve) => setTimeout(resolve, delay));
+                await abortableSleep(delay, signal);
+                if (signal?.aborted) break;
             }
         }
     }
 
     throw lastError;
+}
+
+/** A sleep that ends early when `signal` aborts. */
+export function abortableSleep(
+    ms: number,
+    signal?: AbortSignal
+): Promise<void> {
+    return new Promise((resolve) => {
+        if (signal?.aborted) return resolve();
+        const onAbort = () => {
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+        }, ms);
+        signal?.addEventListener("abort", onAbort, { once: true });
+    });
 }

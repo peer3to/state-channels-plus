@@ -52,3 +52,4 @@ docs/spec/generated/
 
 /extensions
 /.cache/test-costs.json
+.DS_Store

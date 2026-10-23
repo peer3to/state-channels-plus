@@ -2,6 +2,7 @@ import GasUsageTable, { type GasUsageRow } from "./GasUsageTable";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
+import { settleBy } from "@/utils/settleBy";
 import {
     ethers,
     type TransactionReceipt,
@@ -54,17 +55,7 @@ class GasUsageRecorder {
             await settled;
             return;
         }
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-            await Promise.race([
-                settled,
-                new Promise<void>((resolve) => {
-                    timer = setTimeout(resolve, timeoutMs);
-                })
-            ]);
-        } finally {
-            if (timer !== undefined) clearTimeout(timer);
-        }
+        await settleBy(settled, Date.now() + timeoutMs);
     }
 
     /** The unsettled rows; a reader wanting freshness uses `settledSnapshot`. */

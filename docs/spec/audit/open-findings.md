@@ -236,6 +236,9 @@ That classifier accepts the same prefix which [ContractExecutor](../../../src/ev
 uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
 The [local gas grant](../../../src/evm/contractExecutor/ContractExecutor.ts#L43) is finite and funds each whole call;
 its transition replay requirement does not establish a bound on all reduction work, proof checks and state restoration.
+A local failure on a window the chain has not reduced is no verdict since
+[`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa); the verdict on a reduced window
+and the gas bound stay open.
 The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
@@ -492,7 +495,7 @@ list. The genuine blocks arrive through chain events and chain-log recovery. The
 a window whose disputes name another fork or channel, which let the local reduce return early and
 the sync adopt an unchecked successor fork
 ([`INV-SYNC-1-XCQZ28.T1.P15`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p15)).
-Residual limit: [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
+The other reduction inputs followed under [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
 pending. Mapped regressions:
 [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11),
 [`INV-SYNC-1-XCQZ28.T1.P14`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p14).
@@ -502,7 +505,11 @@ pending. Mapped regressions:
 ### FIND-SECURITY-6-884TAJ
 
 **Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state.
+trusted walk now chooses canonical final state. The same unverified timestamp can also arrive as
+the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
+reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
+`genesisSnapshotByForkId` (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
 
 **Proposed direction and handoff:**
 [Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
@@ -636,6 +643,14 @@ the accepted frame rate until the general rate limit lands; no state grows. The 
 cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
 until rate limiting; a crafted payload that throws there is not demonstrated.
 
+<a id="find-inbound-gas-1-2bz8de"></a>
+
+### FIND-INBOUND-GAS-1-2BZ8DE
+
+**Defect:** _Open (2026-10-16, engineer: requirement decided, implementation deferred)._ [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b) allows inbound consumption in a transition to fail only by running out of gas, and then the transition must carry fewer pending inbound blocks and be retried. Nothing implements that retry. [`BlockProductionService.playTransaction`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md) carries the whole pending run (`getPendingInboundMessageBlocks`) with no size bound. [`SnapshotAssemblyService.assembleFromTransaction`](../implementation/source/src/stateManager/block/SnapshotAssemblyService.ts.md) applies every message of that run and throws `Failed to process inbound message` on any refusal; it does not tell an out-of-gas failure apart from a refusal. On chain, `_applyInboundMessages` reverts with `ErrorDisputeStateMachineInboundProcessingFailed`. So a pending run whose consumption exceeds the gas budget fails every transition that carries it. The author's transition throws on each turn (the VM is restored, so the author keeps its turn) until a participant timeout ends the turn. A refusal of a chain-accepted message is non-conforming state-machine behavior under the same requirement; it was observed on a live poker table (2026-10-16), where the state machine rejected a JOIN.
+
+**Proposed direction:** When inbound consumption runs out of gas, retry the transition with a shorter prefix of the pending run, and leave the rest pending for a later transition. Validators already accept any prefix that chains from the previous snapshot tip ([`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)). Define the gas budget for inbound consumption and how an out-of-gas failure is told apart from a refusal; a refusal stays a non-conforming state machine. Cover it with [`REQ-SM-12-J6QD9B.T1.P5`](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b.t1.p5) and [`REQ-SM-12-J6QD9B.T1.P6`](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b.t1.p6). Deferred by Luka on 2026-10-16.
+
 <a id="def-1-92ntag"></a>
 
 ### DEF-1-92NTAG
@@ -717,8 +732,10 @@ transaction receipt before setting `PENDING_PARTICIPANT`; a reverted uncommitted
 disposes rather than leaving false pending state. Later block inclusion promotes pending to
 participating but does not gate the completed connect result.
 
-**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg,
-forced-inclusion, and later exit policy remain under their existing settlement owners.
+**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg is
+pending on the chain-finality assumption
+([`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm)); forced-inclusion and later exit
+policy remain under their existing settlement owners.
 
 <a id="def-7-pk564b"></a>
 
@@ -888,22 +905,22 @@ a live chain.
 
 ### FIND-LEAVE-4-WDH0XC
 
-**Defect:** _Open (2026-09-15)._ The terminal-leave watchdog fallback still rejects the leave on
-`RaceConditionDisputeEvidencePeriodExpired`. `LeaveChannelService.armWatchdog`
-(src/stateManager/membership/LeaveChannelService.ts:236-247) starts the self-removal dispute
-directly after `LEAVE_CHANNEL_WATCHDOG_MS`; when the chain refuses it because the window already
-holds commitments and its evidence period ended, `fail` rejects the operation, as
-[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
-and
+**Defect:** _Resolved (2026-10-11)._ PR #541 removed the leave operation and its `fail` path:
+`LeaveChannelService.onWatchdog` awaits `DisputeManager.dispute`, which logs
+`RaceConditionDisputeEvidencePeriodExpired` as a lost evidence race, rolls its marker back and
+returns the refusal instead of throwing, so the exit stays open for that window's reduction, as the
+rewritten
+[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10),
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)
-specify. The window still reduces, so the same settlement argument that resolved
-[`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq) applies; this path predates the
-disputed-fork refusal and was left out of that change. Code-traced, not executed.
+and
+[`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8)
+specify. Original finding: the
+terminal-leave watchdog's self-removal dispute, refused on chain because the window already held
+commitments and its evidence period ended, rejected the leave although the window still reduced.
 
-**Proposed direction:** Follow-up: treat the watchdog fallback's evidence-expired refusal as
-awaiting settlement, like the authored exit fallback, and rewrite
-[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
-and `CX6QH9.P14` with it.
+**Proposed direction:** None — fixed. The runtime-port cases inject the refusal at the watchdog's
+dispute send: one keeps the leave pending with no error, the other settles it through the window's
+reduction and `onLeftChannel`. No test stages the refusal on a live chain for the leave path.
 
 <a id="find-leave-2-yvr0tt"></a>
 
@@ -1092,7 +1109,8 @@ log: [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm),
 committed block (`BlockIngestService` → `storeVerifiedRun`), and the inbound list of a window this
 node reduced itself during sync (`SpectateService`) — the last two are checked before they are
 stored; no `src/` code reads the outbound tip. The equal-height (`>=`) case matters only on a reorg
-and stays with [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
+and is pending on the chain-finality assumption under
+[`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
 exact extension with forward catch-up and a snapshot-anchor seed (broke U113/U114); `DisputeBuilder`
 reading the chain head; a non-extending store triggering `recoverInboundRun`; another
 late-subscriber seed. Each rebuilds what the height tip already provides and adds machinery to
@@ -1582,62 +1600,99 @@ All-skipped walk success alone is not evidence of a valid newer adoption.
 
 ### FIND-SYNC-2-VV16K8
 
-**Defect:** A spectating sync cuts an honest responder when a dispute lands on the tip fork
-mid-sync. `generateSyncPayload` stops its walk at a fork `isForkDisputed` reports undisputed
-(src/rpc/network/services/spectate/SpectateService.ts:684-688). The requester later re-reads the
-dispute window for the payload's final fork in step 2.8.1 (:384-393) and rejects with "latest fork
-is disputed" when one now exists; `rejectSync` (:1160-1166) disconnects and blacklists the
-responder. A dispute committed between the two reads is a chain change the responder did not cause,
-yet the [failure outcomes](../specification/peer-communication/synchronization.md#failure-outcomes)
-table treats every verification failure as Byzantine evidence against the responder. Same class as
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp); it also bears on the agreementTime assumption the
-owner retained under [`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n). Code-traced, not executed.
+**Defect:** _Resolved (2026-10-16)._ A spectating sync cut an honest responder when a dispute
+landed on the tip fork mid-sync: `generateSyncPayload` stopped its walk at a fork the chain then
+reported undisputed, the requester re-read the final fork's window in step 2.8.1 of
+`applySyncResponse` and rejected with "latest fork is disputed", and `rejectSync` blacklisted the
+responder for a chain change it did not cause.
 
-**Proposed direction:** Classify a dispute window that appears on the final fork after the payload
-was served as a retryable race: fail the sync without penalizing the responder and re-request.
+**Fix:** step 2.8.1 reads the final fork's window from the chain. A window the chain has not reduced
+fails the sync with no verdict, and the sync waits for the reduction and asks the same peer again;
+served, it would fail step 2.2 the same way, so omitting it gains a responder nothing. A reduced
+window missing from the payload stays a verification failure ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+That verdict does not separate omission from staleness: an honest payload served before the dispute
+and verified after the reduction is still blacklisted, the stale-response case left open in
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
+Regressions: [`REQ-SYNC-4-AWHFPA.T1.P3`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p3),
+[`REQ-SYNC-4-AWHFPA.T1.P4`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p4), [`REQ-SYNC-4-AWHFPA.T1.P17`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p17).
 
 <a id="find-sync-3-hpyce2"></a>
 
 ### FIND-SYNC-3-HPYCE2
 
-**Defect:** A responder whose tip fork has an open kill period serves a payload every honest
-requester rejects. `generateSyncPayload` walks and locally reduces every disputed fork without
-checking kill-period expiry (src/rpc/network/services/spectate/SpectateService.ts:610-690). Step 2.2
-of `applySyncResponse` (:255-266) requires each served window to be expired in the requester's local
-diamond, and otherwise rejects with "kill period not expired" and blacklists the responder through
-`rejectSync` (:1160-1166). This is not a timing race: it holds for the whole kill period. The
-local-diamond read also reports `windowExists = false` when the requester has not yet processed the
-dispute event, which is a local condition. Same class as
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp). Code-traced, not executed.
+**Defect:** _Resolved (2026-10-16)._ For the whole kill period of a dispute, every honest requester
+cut an honest responder: `generateSyncPayload` walks every disputed fork without a kill-period
+check, and step 2.2 of `applySyncResponse` rejected an unexpired window with "kill period not
+expired" and blacklisted the responder through `rejectSync`. Reproduced end to end with a
+participant's source probe inside an open kill period.
 
-**Proposed direction:** Align the responder's walk with the requester's expiry check: never serve a
-window whose kill period is open, and never blacklist a responder for an unexpired or locally
-unknown window.
+**Fix:** step 2.2 splits the two cases. A window the chain has not reduced that the requester
+cannot recompute locally fails the sync with no verdict and no close. A served window the requester's own chain view does not hold stays a
+verification failure, now "dispute window not on chain": the requester fetches the served windows
+from its chain view into its local diamond before the check, so only a lagging provider can make an
+honest window absent, which is [`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)'s
+tracked class. The responder keeps serving open windows: a refusal makes `onSpectateRequest`
+blacklist the requester instead
+([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)).
+`SpectateService.sync` then waits for the chain to record the window's reduction and asks the same
+peer again, so the initial load does not abort and a queue probe still judges a junk supplier that
+answers through the unreduced window; the runtime's stop ends the wait. Regressions:
+[`REQ-SYNC-4-AWHFPA.T1.P1`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p1),
+[`REQ-SYNC-4-AWHFPA.T1.P2`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p2),
+[`REQ-SYNC-4-AWHFPA.T1.P6`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p6),
+[`REQ-SYNC-4-AWHFPA.T1.P5`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p5),
+[`REQ-SYNC-4-AWHFPA.T1.P7`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p7),
+[`REQ-SYNC-4-AWHFPA.T1.P8`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p8), [`REQ-SYNC-4-AWHFPA.T1.P10`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p10), [`REQ-SYNC-4-AWHFPA.T1.P11`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p11), [`REQ-SYNC-4-AWHFPA.T1.P12`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p12), [`REQ-SYNC-4-AWHFPA.T1.P13`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p13), [`REQ-SYNC-4-AWHFPA.T1.P14`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p14), [`REQ-SYNC-4-AWHFPA.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p18), [`REQ-SYNC-4-AWHFPA.T1.P19`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p19), [`REQ-SYNC-4-AWHFPA.T1.P20`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p20), [`REQ-SYNC-4-AWHFPA.T1.P21`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p21), [`REQ-SYNC-4-AWHFPA.T1.P22`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p22).
+
+<a id="find-sync-6-89ratm"></a>
+
+### FIND-SYNC-6-89RATM
+
+**Defect:** _Resolved (2026-10-16)._ A fresh joiner blacklisted an honest responder and aborted when
+it synced across a dispute window whose kill period was over but which the chain had not reduced
+yet. The local diamond seeds the channel's inbound head only from the live `ChannelOpened` and
+`InboundMessagesProcessed` logs, so a runtime that subscribed later holds a zero inbound head. Its
+local recomputation of the served window then derived a zero inbound head, the served inbound list
+failed `ErrorDisputeInboundMessageBlocksInvalid`, and `applySyncResponse` rejected the payload as
+"served reduction reverts". The chain's own reduction usually lands within seconds of the kill
+period's end, which hid it; the PR's earlier retry at that moment reproduced it in most runs.
+Seeding the local channel balance from the chain was not chosen: the late-subscriber seed family
+was rejected before ([`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf)).
+
+**Fix:** a local recomputation that reverts on a window the chain has not reduced is no verdict; the
+sync waits for the chain's reduction, after which the recomputation returns the chain's result and
+nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)). Regressions: [`REQ-SYNC-4-AWHFPA.T1.P9`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p9), [`REQ-SYNC-4-AWHFPA.T1.P15`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p15), [`REQ-SYNC-4-AWHFPA.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p16).
 
 <a id="find-sync-4-kgp4kf"></a>
 
 ### FIND-SYNC-4-KGP4KF
 
-**Defect:** _Open (2026-10-05), engineer decision: tracked, not fixed with
-[`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)._ A sync window whose reduction
-the requester did not execute itself still persists the responder's unchecked
-`disputeConfirmations`, and in some cases its `latestStateSnapshot`. A window chain-final at the
-finality read skips `reduceAndFinalize`; persistence then skips its snapshot, state and inbound list
-(`chainFinalForkIds`) but still stores its confirmations. A window reduced on chain after that read,
-or already reduced in the local EVM, makes `reduceAndFinalize` return early before it checks either
-input, and persistence stores both. `persistSyncPayload` stores each confirmation through
-`storeDisputeConfirmation`, which merges the given signatures into an existing record, and stores
-the snapshot
-([SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md),
-src/rpc/network/services/spectate/SpectateService.ts:1042-1052). A genesis-shaped snapshot there
-would land in `genesisSnapshotByForkId` with an unverified timestamp, the same class as
-[`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) through another field.
-Pre-existing; code-traced, not executed. No signature or penalty consequence is shown yet.
+**Defect:** _Resolved (2026-10-20)._ A sync window whose reduction the requester did not execute
+itself persisted the responder's unchecked `disputeConfirmations`, and in some cases its
+`latestStateSnapshot`. A window chain-final at the finality read skipped `reduceAndFinalize` but
+still stored its confirmations; a window reduced on chain after that read, or already reduced in
+the local EVM, made `reduceAndFinalize` return early before it checked either input, and both were
+stored. A dispute's commitment pins only its encoded dispute, so a responder could add signatures
+to a genuine confirmation, store a confirmation of a dispute the chain never committed, or replace
+the window snapshot (a genesis-shaped one would land in `genesisSnapshotByForkId` with an
+unverified timestamp). The requester treated a stored confirmation as present and never recovered
+the genuine one from the chain, and it served the forged signatures to its own sync requesters. No
+signature or penalty consequence was shown.
 
-**Proposed direction:** Apply the inbound rule to these fields too: persist a window's reduction
-inputs only when this sync's own reduction checked them, or validate them against chain data first.
-Confirm with a unit test that serves a chain-final window with an extra signature on a dispute
-confirmation, then checks the stored confirmation and any later forwarding of it.
+**Fix:** `persistSyncPayload` never stores a window's dispute confirmations, since no reduction
+checks their signatures, and stores a window's latest snapshot, state and inbound blocks only for a
+window this sync reduced itself. Disputes are recovered from the chain's dispute logs when a reader
+needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy of any
+dispute its handler left unstored (a fork the node already left, or a dispute its audit rejected), so
+a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
+Residual: until the chain adopts a window reduced on chain after the finality read, the requester
+lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
+window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
+that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+Regressions:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
+[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
+[`INV-SYNC-1-XCQZ28.T1.P20`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p20).
 
 <a id="find-sync-5-7w9tww"></a>
 
@@ -1651,7 +1706,9 @@ run from the anchor it read from its own provider (`applySyncResponse`). A reque
 lags the server's (for example one block behind just after a snapshot post) holds an older anchor
 head; no served block links to it, so the run does not verify, the requester calls `rejectSync`
 ("latest-fork outbound blocks invalid") and blacklists an honest peer. A retry succeeds once its
-provider catches up. The code assumes the requester's anchor is not behind the server's; nothing
+provider catches up. The same lag hits served dispute windows: a requester whose provider has not
+yet seen the responder's dispute commit cannot fetch the served window into its local diamond, so
+step 2.2 rejects with "dispute window not on chain" and blacklists the honest responder. The code assumes the requester's anchor is not behind the server's; nothing
 enforces it and no test covers a lagging requester. Related:
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe),
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
@@ -1663,7 +1720,8 @@ the requester sends its anchor in `SyncRequest` and the server cuts there; the s
 from the fork genesis; or the requester re-reads its chain anchor once and rechecks before it
 rejects the peer. Confirm with a unit case where the requester's `getStateSnapshot` returns the
 previous anchor while the server's local diamond holds the newer one: the sync is accepted or
-retried, not rejected.
+retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
+commit, and the sync is retried or accepted, not rejected.
 
 <a id="find-stipend-1-9ysnwb"></a>
 
@@ -1929,23 +1987,95 @@ shorten the pipeline when the remaining kill period is too short for the measure
 sizing.** Give guidance that sizes `evidenceTime` against the measured audit, construction,
 estimation and inclusion latency under the expected load.
 
+<a id="find-dispute-6-e2yj9x"></a>
+
+### FIND-DISPUTE-6-E2YJ9X
+
+**Defect:** _Open (2026-10-20)._ A competing history can bypass a later joiner, and no kill removes it.
+The chain anchor is 50 with participants A to E. A later joiner L posts a JOIN on chain. The honest
+history X consumes that JOIN in the join hop at 60, signed by A to E and L, and reaches the
+threshold-final point F = 100, where L has won 30 from A. A to E build a side chain Y from the
+anchor: one hop to 1000', signed by A to E alone, whose inbound head stays below L's JOIN. Y's walk
+counts only the joiners inside its own inbound interval, so L's signature is never required
+([`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../specification/protocol-model/finality.md#req-fin-7-rtzwqz)).
+L disputes with X and A disputes with Y in one window. Y's proof walks valid from the anchor, and Y
+holds no block at F's height, so `DisputeConflictsWithFinalState` cannot be built against it
+([`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)). `reduce` then picks Y by
+longest chain and rolls back L's final outcomes on X. L's deposit is carried, because the reduction
+consumes the pending JOIN.
+
+**Proposed direction:** A `DisputeFinalPointRegression` kill, proposed in the review of
+[PR #560](https://github.com/peer3to/state-channels-plus/pull/560). F = 100 is final with inbound
+height 2, while Y's final point G = 1000' is above F with inbound height 1, so Y's final point
+regresses the inbound height of a proved final point. The kill does not exist in the contracts yet.
+Its proof carries three fields, and it kills dispute D when all of these hold:
+
+- `finalProof` walks F from the chain's start and proves it threshold-final, as
+  `DisputeConflictsWithFinalState` does. F may be the on-chain anchor.
+- `milestoneIndex` selects one of D's milestones whose first block G lies strictly above the
+  on-chain anchor, so G is final in a valid walk. A milestone that holds the anchor, a block below
+  the anchor and a tail block are never accepted.
+- `gSnapshot` is the preimage of G's `stateSnapshotHash`, checked by `keccak256`.
+- `F.blockHeight < G.transactionCnt`, and the stored inbound height of F is greater than that of G.
+  Each height is read from `inboundMessageBlockMap` for the snapshot's
+  `latestInboundMessageBlockHash`, never from the snapshot's own height field: a colluding side can
+  sign a real hash next to a false, larger height.
+
+On one history the inbound height never goes down, so the kill never fires there.
+
+**Evidence:** `test_K1_sideChainBypassingALaterJoinerLosesTheReductionToTheJoinersFinalHistory` in
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+builds the case with a proposed proof struct and fails on its last assertion today. It is skipped
+(`vm.skip(true)`) until the kill lands.
+
+**Exit:** Implement the `DisputeFinalPointRegression` kill, replace the test's proposed struct and
+proof-type slot with the real ones, remove the skip, and the test passes. Then add its requirement
+and test mapping in the specification and verification layers.
+
 <a id="find-events-1-3jf8fm"></a>
 
 ### FIND-EVENTS-1-3JF8FM
 
-**Defect:** **Open (2026-09-09), design question.**
+**Defect:** **Pending on the chain-finality assumption (2026-10-21, engineer decision).** Not
+fixed and not closed: the whole code base treats chain data as final
+([chain finality](../specification/runtime/chain-observation.md#assumptions-and-constraints)), so this defect cannot occur under that assumption. The
+assumption is known to be wrong on any chain that can reorganize and must be lifted at some point;
+this entry is the single place that lists what lifting it must revisit (below).
 [EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 applies chain logs delivered by the provider subscription as canonical: a `ChannelOpened` log
-installs the genesis, and no path re-checks that the log's block is still on the chain or handles a
-`removed` log. A node that delivers logs for a block it later drops (hardhat's pending-block
+installs the genesis, and no path re-checks that the log's block is still on the chain; a later
+`removed` delivery is logged and ignored (`EventSyncService.scheduleLog`), so the installed genesis
+stays. A node that delivers logs for a block it later drops (hardhat's pending-block
 simulation did this on the shared test node until the peer3 fork muted it; a real chain does it on a
 reorg) leaves the node on a genesis fork the chain never stored, which breaks spectator
 synchronisation and every dispute audit that follows.
 
-**Proposed direction:** Decide the specification: either require the event path to confirm
-canonicality before acting (compare the log's block hash with `eth_getBlockByNumber`, or handle
-`removed`), or record the assumption that the node's log feed is canonical as an explicit trust
-boundary. The observed instance was a node defect and is fixed there.
+The observed instance was a node defect (hardhat) and is fixed there.
+
+**Engineer decision (Luke, 2026-10-21).** Finality is assumed throughout the code base, so a fix
+for this one log would not make the node reorg-safe; lifting the assumption is a larger rewrite
+than this finding. Record the assumption, acknowledge it is wrong, and park every reorg-dependent
+item on it instead of closing or deleting them.
+
+**Lifting the assumption must revisit:**
+
+- this finding: a removed `ChannelOpened` log leaves the installed genesis in place;
+- the reorg half of [`OQ-30-2G0Q5M` (Chain-reorg handling and canonical event ordering)](../implementation/open-questions.md#oq-30-2g0q5m): the
+  progress marker is a bare block number, with no block hash and no rollback of a removed event's
+  effects (local diamond, storage, marker, decisions taken from them);
+- the equal-height inbound tip case of
+  [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf), which only matters on a reorg;
+- [`DEF-6-B4ZN7S`](open-findings.md#def-6-b4zn7s): a pending participant is set from a single
+  receipt;
+- every transaction wait acts on first inclusion (default one confirmation), and chain reads use
+  `latest`, never `safe` or `finalized` (clock, pinned membership read, nonce handling, catch-up
+  head);
+- the event key carries the block hash, the only reorg-aware piece: a log mined again in another
+  block is handled as a new log;
+- the runtime clock is synced once per session and never corrects for a reorganization
+  ([`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe));
+- the join candidate rule "promote on the canonical event, roll back on reorg" in
+  [`OQ-10-04YNC4` (Spectate/join failure-point details)](../specification/open-questions.md#oq-10-04ync4) has no rollback to call.
 
 <a id="find-mirror-1-yecyeq"></a>
 

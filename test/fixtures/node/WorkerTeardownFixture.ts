@@ -19,7 +19,8 @@ import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot"
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { expect } from "chai";
 
-const DRAIN_WARNING = "Root worker did not drain its loop and exited itself";
+export const DRAIN_WARNING =
+    "Root worker did not drain its loop and exited itself";
 
 /**
  * Sets up a worker SDK from the teardown host entry with `fault`, disposes the
