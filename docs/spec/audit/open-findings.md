@@ -706,8 +706,10 @@ transaction receipt before setting `PENDING_PARTICIPANT`; a reverted uncommitted
 disposes rather than leaving false pending state. Later block inclusion promotes pending to
 participating but does not gate the completed connect result.
 
-**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg,
-forced-inclusion, and later exit policy remain under their existing settlement owners.
+**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg is
+pending on the chain-finality assumption
+([`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm)); forced-inclusion and later exit
+policy remain under their existing settlement owners.
 
 <a id="def-7-pk564b"></a>
 
@@ -1075,7 +1077,8 @@ log: [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm),
 committed block (`BlockIngestService` → `storeVerifiedRun`), and the inbound list of a window this
 node reduced itself during sync (`SpectateService`) — the last two are checked before they are
 stored; no `src/` code reads the outbound tip. The equal-height (`>=`) case matters only on a reorg
-and stays with [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
+and is pending on the chain-finality assumption under
+[`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
 exact extension with forward catch-up and a snapshot-anchor seed (broke U113/U114); `DisputeBuilder`
 reading the chain head; a non-extending store triggering `recoverInboundRun`; another
 late-subscriber seed. Each rebuilds what the height tip already provides and adds machinery to
@@ -2001,19 +2004,46 @@ and test mapping in the specification and verification layers.
 
 ### FIND-EVENTS-1-3JF8FM
 
-**Defect:** **Open (2026-09-09), design question.**
+**Defect:** **Pending on the chain-finality assumption (2026-10-21, engineer decision).** Not
+fixed and not closed: the whole code base treats chain data as final
+([chain finality](../specification/runtime/chain-observation.md#assumptions-and-constraints)), so this defect cannot occur under that assumption. The
+assumption is known to be wrong on any chain that can reorganize and must be lifted at some point;
+this entry is the single place that lists what lifting it must revisit (below).
 [EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 applies chain logs delivered by the provider subscription as canonical: a `ChannelOpened` log
-installs the genesis, and no path re-checks that the log's block is still on the chain or handles a
-`removed` log. A node that delivers logs for a block it later drops (hardhat's pending-block
+installs the genesis, and no path re-checks that the log's block is still on the chain; a later
+`removed` delivery is logged and ignored (`EventSyncService.scheduleLog`), so the installed genesis
+stays. A node that delivers logs for a block it later drops (hardhat's pending-block
 simulation did this on the shared test node until the peer3 fork muted it; a real chain does it on a
 reorg) leaves the node on a genesis fork the chain never stored, which breaks spectator
 synchronisation and every dispute audit that follows.
 
-**Proposed direction:** Decide the specification: either require the event path to confirm
-canonicality before acting (compare the log's block hash with `eth_getBlockByNumber`, or handle
-`removed`), or record the assumption that the node's log feed is canonical as an explicit trust
-boundary. The observed instance was a node defect and is fixed there.
+The observed instance was a node defect (hardhat) and is fixed there.
+
+**Engineer decision (Luke, 2026-10-21).** Finality is assumed throughout the code base, so a fix
+for this one log would not make the node reorg-safe; lifting the assumption is a larger rewrite
+than this finding. Record the assumption, acknowledge it is wrong, and park every reorg-dependent
+item on it instead of closing or deleting them.
+
+**Lifting the assumption must revisit:**
+
+- this finding: a removed `ChannelOpened` log leaves the installed genesis in place;
+- the reorg half of [`OQ-30-2G0Q5M` (Chain-reorg handling and canonical event ordering)](../implementation/open-questions.md#oq-30-2g0q5m): the
+  progress marker is a bare block number, with no block hash and no rollback of a removed event's
+  effects (local diamond, storage, marker, decisions taken from them);
+- the equal-height inbound tip case of
+  [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf), which only matters on a reorg;
+- [`DEF-6-B4ZN7S`](open-findings.md#def-6-b4zn7s): a pending participant is set from a single
+  receipt;
+- every transaction wait acts on first inclusion (default one confirmation), and chain reads use
+  `latest`, never `safe` or `finalized` (clock, pinned membership read, nonce handling, catch-up
+  head);
+- the event key carries the block hash, the only reorg-aware piece: a log mined again in another
+  block is handled as a new log;
+- the runtime clock is synced once per session and never corrects for a reorganization
+  ([`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe));
+- the join candidate rule "promote on the canonical event, roll back on reorg" in
+  [`OQ-10-04YNC4` (Spectate/join failure-point details)](../specification/open-questions.md#oq-10-04ync4) has no rollback to call.
 
 <a id="find-mirror-1-yecyeq"></a>
 

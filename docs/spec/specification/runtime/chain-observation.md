@@ -92,7 +92,14 @@ progress marker is dropped: its block is fully processed.
 - An endpoint delivers a block's events in order on one connection.
 - A connection that drops in the middle of one block's events can leave part of that block unread until
   a later recovery query; the inclusive re-read covers the progress-marker block itself.
-- Undoing the effects of a removed event is out of scope.
+- **Chain finality.** This document's refinement of trust-model assumption A1
+  ([../security/trust-model.md](../security/trust-model.md)): every event, receipt and read an
+  endpoint returns is treated as final. An included transaction is acted on at its first inclusion,
+  reads use the chain head, the progress marker is a block number without a block hash, and an event
+  a reorganization removes is logged and ignored, its effects not undone. This is a known-wrong
+  simplification on any chain that can reorganize, kept for now because every chain-facing decision
+  (genesis install, joins, disputes, reductions, slashing, exits) relies on it. Lifting it is a
+  cross-cutting change, not a local fix; see Future Work.
 - Recovery queries that deliberately read below the progress marker are not stream deliveries and are
   not subject to the below-marker drop.
 
@@ -111,8 +118,11 @@ progress marker so that honest events below it are dropped; cross-endpoint verif
 scope. A re-read's hold on the progress marker ends when its endpoint's connection ends or when the
 first connected endpoint has read its remaining windows, so an endpoint that vanishes during its
 re-read, or stays connected and fails every read, cannot hold the marker; only the first connected
-endpoint, which every request already depends on, can. Residual risks: a reorganization's removed
-events stay applied, a mid-block drop can delay part of a block until recovery, a transaction lost with
+endpoint, which every request already depends on, can. Residual risks, all from the chain-finality assumption: a reorganization's removed events stay applied, a
+transaction acted on at its first inclusion can be reorganized out while the local state built on
+its receipt stays, a head read can return state a reorganization later reverts, and an event in a
+replacement block below the progress marker is dropped by the below-marker rule. Other residual
+risks: a mid-block drop can delay part of a block until recovery, a transaction lost with
 its endpoint leaves a nonce gap, and while the first connected endpoint keeps failing a re-read's
 windows (a range limit below the configured maximum, a rate limit, a pruned node) or stays behind the
 reconnected endpoint's head, or while the connected reconnected endpoint keeps failing its head
@@ -134,3 +144,9 @@ until the read succeeds or the re-reading endpoint's connection ends.
 
 _Non-normative._ Verify one endpoint's events against another before they advance the progress
 marker, and mark endpoints that answer with errors as unhealthy.
+
+_Non-normative._ Lift the chain-finality assumption for events, receipts and reads alike: either act
+only on finalized chain data, or track the progress marker by block hash and roll back every effect
+of a removed event (local diamond state, storage, the progress marker and any decision taken from
+it) together, combined with taking receipt- and read-based decisions only at `finalized` (or
+re-checking the including block hash before relying on them).
