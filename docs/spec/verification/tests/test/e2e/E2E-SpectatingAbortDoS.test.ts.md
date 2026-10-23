@@ -27,7 +27,7 @@ The pending-participant victim case keeps a spawn-only attacker (`addSpectator`)
 
 - `cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P1
 - `cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running`: none
-- `cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running`: REQ-GOSSIP-4-J5Z4DF.T1.P29
+- `cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running`: REQ-GOSSIP-4-J5Z4DF.T1.P49
 - `cuts both an eligible relayer and the outsider author while the victim keeps spectating`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P7, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P9, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P21
-- `cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED`: REQ-GOSSIP-4-J5Z4DF.T1.P29
-- `cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute`: REQ-GOSSIP-4-J5Z4DF.T1.P29
+- `cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED`: REQ-GOSSIP-4-J5Z4DF.T1.P50
+- `cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute`: REQ-GOSSIP-4-J5Z4DF.T1.P51
