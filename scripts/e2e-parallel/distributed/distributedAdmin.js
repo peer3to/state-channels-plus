@@ -180,13 +180,7 @@ async function runAdmin(options, dependencies = {}) {
         options.keyPair || loadOrchestratorKeyPair(options.stateDir);
     const poolSecret = options.poolSecret || process.env.SCP_TEST_POOL_SECRET;
     const keys = derivePoolKeys(poolSecret);
-    const pool = await createPool({
-        announceTopics: [keys.orchestratorTopic],
-        lookupTopics: [keys.workerTopic],
-        dht: dependencies.dht,
-        keyPair,
-        refreshIntervalMs: DISCOVERY_REFRESH_MS
-    });
+    let pool;
     const workers = new Map();
     const outcomes = new Map();
     let discoveryEnded = false;
@@ -242,9 +236,13 @@ async function runAdmin(options, dependencies = {}) {
         );
     }, options.discoveryTimeoutMs);
 
-    pool.onConnection(async (stream, info) => {
+    // served from the pool's creation on: a worker that connects while the
+    // pool still flushes its announcement must get its hello before the
+    // worker's authentication timeout
+    const onConnection = async (stream, info) => {
         const workerId = info?.publicKey?.toString("hex");
         const peer = new ProtocolPeer(stream);
+        let authenticated = false;
         if (discoveryEnded) {
             peer.close("distributed admin discovery window ended");
             return;
@@ -264,7 +262,7 @@ async function runAdmin(options, dependencies = {}) {
             await authenticateClient(
                 peer,
                 keys.authKey,
-                { local: pool.publicKey, remote: info.publicKey },
+                { local: keyPair.publicKey, remote: info.publicKey },
                 DISCOVERY_AUTH_TIMEOUT_MS
             );
             const ready = await waitForMessage(
@@ -280,6 +278,7 @@ async function runAdmin(options, dependencies = {}) {
                 capabilities: ready.header.capabilities
             };
             workers.set(workerId, worker);
+            authenticated = true;
             peer.on("message", (message) => {
                 if (message.kind === "HEARTBEAT") {
                     peer.send("HEARTBEAT").catch(() => {});
@@ -340,7 +339,9 @@ async function runAdmin(options, dependencies = {}) {
             if (options.worker) finish(null, outcome);
             else peer.close("distributed admin operation completed");
         } catch (error) {
-            const isUnauthenticated = !workers.has(workerId);
+            // this stream's own state: a duplicate stream that dies after
+            // another stream authenticated the worker is still churn
+            const isUnauthenticated = !authenticated;
             const droppedBeforeAuthentication =
                 isUnauthenticated && isDiscoveryAuthenticationFailure(error);
             // A bulk command reports a worker that never reconnects as not
@@ -359,6 +360,7 @@ async function runAdmin(options, dependencies = {}) {
             }
             const retryingReverseDial =
                 isUnauthenticated &&
+                pool !== undefined &&
                 (await pool.yieldFailedOutgoingDial(stream, info, error));
             if (retryingReverseDial) {
                 peer.close(
@@ -394,13 +396,21 @@ async function runAdmin(options, dependencies = {}) {
                 finishBulkAuthorization();
             }
         }
-    });
+    };
 
     try {
+        pool = await createPool({
+            announceTopics: [keys.orchestratorTopic],
+            lookupTopics: [keys.workerTopic],
+            dht: dependencies.dht,
+            keyPair,
+            refreshIntervalMs: DISCOVERY_REFRESH_MS,
+            onConnection
+        });
         return await result;
     } finally {
         clearTimeout(timer);
-        await pool.close();
+        await pool?.close();
     }
 }
 

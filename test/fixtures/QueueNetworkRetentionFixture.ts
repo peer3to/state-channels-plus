@@ -5,6 +5,8 @@ import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { Codec, Type } from "@/utils";
+import { reduceWindowOnChain } from "@test/fixtures/PinnedSyncStaging";
+import { stageUnreducedWindowPayload } from "@test/fixtures/QueueDrainStaging";
 import { MathTestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
@@ -393,6 +395,86 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
                 .control(outsider)
                 .stub.restoreSpectateStaleProof()
                 .request();
+        await h.control(observer).stub.restoreAdmissionObservation().request();
+    }
+}
+
+/**
+ * A synced spectator, absent from the channel's membership, gossips peer 0 a
+ * block on the successor fork of a dispute window no participant reduces,
+ * and answers peer 0's sync with peer 1's real payload, which proves that
+ * fork only through the unreduced window. Returns peer 0's intake state once
+ * the kill period has ended with the window still unreduced, and after
+ * peer 1 reduces it.
+ */
+export async function stageAbsentGossipAcrossUnreducedWindow() {
+    const h = MathTestSession.getHarness();
+    await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
+    const { peer: outsider } = await h.join.addSpectatorAuthoring({
+        authoringPeerIndices: [0, 1],
+        minimumBlocks: 2,
+        maximumBlocks: 20
+    });
+    await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+    const observer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    const encodedBlock = await stageUnreducedWindowPayload(h, outsider.index);
+    const intake = async () => {
+        const observation = await h
+            .control(observer)
+            .stub.getAdmissionObservation()
+            .request();
+        return {
+            completedIntakes: observation.completedIntakes,
+            completedSyncs: observation.completedSyncs,
+            outsiderRequests: await h
+                .control(outsider)
+                .stub.getSpectateRequestCount()
+                .request(),
+            outsiderBlacklisted: await h
+                .control(observer)
+                .query.isBlacklisted(outsider.address)
+                .request(),
+            eligibility: await h
+                .control(observer)
+                .query.getSourceEligibility(outsider.address)
+                .request()
+        };
+    };
+    await h
+        .control(observer)
+        .stub.observeAdmission({ source: outsider.address })
+        .request();
+    try {
+        expect(
+            await h
+                .control(observer)
+                .query.getSourceEligibility(outsider.address)
+                .request()
+        ).to.equal(SourceEligibility.ABSENT);
+        await h
+            .control(outsider)
+            .byzantine.sendBlockConfirmation(encodedBlock, observer.address)
+            .request();
+        await waitFor(
+            async () => (await intake()).outsiderRequests === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        await waitFor(
+            async () => (await h.query.killPeriod(forkId)).isExpired,
+            h.event.protocolEventTimeoutMs() * 2
+        );
+        const whileUnreduced = {
+            reducedForkId: await h.query.reducedForkOnChain(forkId),
+            ...(await intake())
+        };
+        await reduceWindowOnChain(h, 1, forkId);
+        await waitFor(
+            async () => (await intake()).completedIntakes === 1,
+            h.event.protocolEventTimeoutMs()
+        );
+        return { whileUnreduced, afterReduction: await intake() };
+    } finally {
         await h.control(observer).stub.restoreAdmissionObservation().request();
     }
 }

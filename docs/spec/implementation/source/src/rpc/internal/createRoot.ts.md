@@ -6,9 +6,11 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../../../../../specification/runtime/execution.md#req-runtime-7-a2var0)
 - [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)

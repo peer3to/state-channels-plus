@@ -23,7 +23,11 @@ The participant turns an ordinary instance of the application's contract into an
 contract: calling it executes the state machine off-chain between peers, with the chain as fallback
 arbiter. The application drives and observes the participant only through the returned surface: the
 enshrined contract, a channel signer and a chain signer that forward to the runtime, one event surface,
-typed remote calls to its own or another peer's runtime, error observation, quiescence, and disposal.
+typed remote calls to its own or another peer's runtime, a typed connection to its own runtime host root
+(including the internal services of the application's host root extension), error observation,
+quiescence, and disposal. The event surface carries the application events the application declares
+once on its network root, typed by that declaration
+([`REQ-RPC-9-8FFE6S` (Application host root)](../peer-communication/rpc.md#req-rpc-9-8ffe6s)).
 
 The public discovery operations are `joinLobby(topic, options?)` and `leaveLobby(topic)`. The separate
 fixed-target operations are `connectToChannel(channelId, options?)` and
@@ -81,7 +85,9 @@ mutating disposed state.
 **<a id="req-sdk-arch-3-whtdwx"></a>`REQ-SDK-ARCH-3-WHTDWX` — Event fidelity.** Public events MUST describe committed participant state transitions,
 not speculative intermediate work, and MUST preserve causally significant ordering. A failing event
 consumer MUST NOT block other consumers or fail the committed transition, and a transition's application
-contract events are emitted before the next turn begins.
+contract events are emitted before the next turn begins. Application events declared by the
+application's network root reach the client's event surface with the declared argument types, in
+emission order.
 
 **<a id="req-sdk-arch-4-gtn7qn"></a>`REQ-SDK-ARCH-4-GTN7QN` — Execution isolation.** Temporary validation, replay, and query work MUST NOT mutate the
 live application state or durable protocol state unless the owning operation commits successfully.

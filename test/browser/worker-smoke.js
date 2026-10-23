@@ -177,6 +177,31 @@ globalThis.runBrowserLoggerThreadLabelSmoke = async () => {
     });
 };
 
+// The WASM a fresh worker creates while importing one package entry.
+globalThis.runInternalRootWasmBrowserSmoke = async () => {
+    const probe = (entry) =>
+        new Promise((resolve, reject) => {
+            const worker = new Worker(
+                new URL("./internal-root-wasm-probe.js", import.meta.url),
+                { type: "module" }
+            );
+            worker.onmessage = ({ data }) => {
+                worker.terminate();
+                if (data.error) reject(new Error(data.error));
+                else resolve(data);
+            };
+            worker.onerror = (event) => {
+                worker.terminate();
+                reject(new Error(event.message || "probe worker failed"));
+            };
+            worker.postMessage(entry);
+        });
+    return {
+        internalRoot: await probe("internal-root"),
+        relay: await probe("relay")
+    };
+};
+
 // Parentless browser worker roots created from this page: one whose class
 // checks the page's config before the root is built, and two logger-probe
 // roots that read the thread name their entry started them with.

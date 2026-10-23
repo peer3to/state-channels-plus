@@ -67,7 +67,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         NetworkTransport,
         () => void
     >();
-    /** Selected transports promoted for negotiation and closed on retry. */
+    /**
+     * Selected transports, promoted into the connection set at commitment and
+     * closed on retry.
+     */
     private readonly handedOffTransports = new Set<NetworkTransport>();
     /** Selected profile that may add replacement transports during handoff. */
     private handedOffPeerAddress?: Address;
@@ -193,16 +196,13 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         return true;
     }
 
-    /** Ends topic membership after negotiation has reached an opened channel. */
+    /**
+     * Ends the lobby session after negotiation has reached an opened channel;
+     * the handed-off transports stay connected.
+     */
     public async completeLobby(topic: string): Promise<void> {
         const normalizedTopic = this.validateTopic(topic);
         if (normalizedTopic !== this.activeTopic || this.matchResolve) return;
-        if (this.handedOffPeerAddress) {
-            this.p2pManager.promoteLobbyConnections(
-                this.handedOffTransports,
-                this.handedOffPeerAddress
-            );
-        }
         await this.cleanup({ preserveHandedOffTransports: true });
     }
 
@@ -307,6 +307,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         ) {
             if (this.handedOffTransports.has(transport)) return;
             this.handedOffTransports.add(transport);
+            this.p2pManager.promoteLobbyConnections(
+                [transport],
+                handedOffPeerAddress
+            );
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
@@ -877,6 +881,14 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
                 nonSelectedTransports.push(transport);
             }
         }
+        // Promote at commitment, not at completion: the opening's genesis
+        // starts turn #0 before negotiation reports the open, and the first
+        // block must already reach the peer. Every failure path closes these
+        // transports, which also removes them from the connection set.
+        this.p2pManager.promoteLobbyConnections(
+            this.handedOffTransports,
+            peerAddress
+        );
         // Leave the lobby topic before cutting the non-selected transports.
         // Closing a transport does not stop discovery, so a loser cut while
         // the topic is still joined is re-dialled for the whole negotiation.

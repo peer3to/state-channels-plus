@@ -93,6 +93,9 @@ export default class BlockIngestService {
 
         try {
             await sm.mutex.lock({ taskName: "onBlockConfirmation" });
+            // a stopped runtime's VM may be dirty (a failed restore aborts);
+            // not a peer fault
+            if (sm.isDisposed) return true;
 
             strategy =
                 options?.validationStrategy ||
@@ -391,7 +394,7 @@ export default class BlockIngestService {
             // validation aborts and thrown errors alike — must revert it before
             // the mutex frees the next task to run against the dirty state.
             if (stateBeforeTransitionValidation !== undefined) {
-                await this.restoreStateAfterFailedValidation(
+                await sm.snapshotAssemblyService.restoreState(
                     stateBeforeTransitionValidation,
                     restoreReason,
                     block
@@ -430,41 +433,5 @@ export default class BlockIngestService {
             ...meta
         });
         return strategy.interpretFinalValidationResult(validationResult);
-    }
-
-    private async restoreStateAfterFailedValidation(
-        encodedState: Bytes,
-        reason: string,
-        block?: Block
-    ): Promise<void> {
-        try {
-            await this.stateManager.diamondStateMachine.setState(encodedState);
-            this.logger.debug(
-                "onBlockConfirmation - restored local state after failed validation",
-                {
-                    reason,
-                    block: block
-                        ? LoggerUtils.getBlockMetadata(
-                              block,
-                              this.stateManager.storage
-                          )
-                        : undefined
-                }
-            );
-        } catch (error) {
-            this.logger.error(
-                "onBlockConfirmation - failed to restore local state after failed validation",
-                {
-                    reason,
-                    block: block
-                        ? LoggerUtils.getBlockMetadata(
-                              block,
-                              this.stateManager.storage
-                          )
-                        : undefined,
-                    error
-                }
-            );
-        }
     }
 }

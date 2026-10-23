@@ -131,6 +131,8 @@ class StateManager<
     readonly leaveChannelService: LeaveChannelService;
     private disposalPromise?: Promise<void>;
     private stoppingPromise?: Promise<void>;
+    /** An abort's flush of every reachable realm's logs, which disposal waits for. */
+    private abortFlush?: Promise<void>;
 
     constructor(
         signer: HostNonceManager,
@@ -320,6 +322,11 @@ class StateManager<
             channelId: this.channelId,
             status: Status[this.status]
         });
+        // Disposal ends the workers, and with them the logs of why it aborted:
+        // every reachable realm uploads its logs first, within their bound. The
+        // flush starts now, before an onAbort hook can dispose anything;
+        // disposal waits for it as the last step of the producers' stop.
+        this.abortFlush = this.logger.flushLogs();
         this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
         // The disposal is not detached domain work: the root settles what
@@ -384,7 +391,11 @@ class StateManager<
             // dependencies disappear: a queued entry mid-execution still
             // needs the EVM executor and p2p below. The drain is bounded by
             // the timeout manager's dispose wait.
-            () => this.timeoutManager.dispose()
+            () => this.timeoutManager.dispose(),
+            // An abort's log flush, already running: disposal ends the
+            // workers only after it (it never fails; each realm reports its
+            // own flush failures).
+            () => this.abortFlush
         );
         return this.stoppingPromise;
     }

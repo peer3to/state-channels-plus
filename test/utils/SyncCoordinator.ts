@@ -1,15 +1,19 @@
 // @spec-test-coverage-ignore: shared sync-wait utility exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { TestPeer } from "@test/harness/core/types";
 
 /** Resolves a peer's typed harness-control RPC proxy (the harness's `control`). */
-type ControlFn<TCustomRpc extends HarnessControlRpc> = (
-    peer: TestPeer<TCustomRpc>
-) => RemoteRpcProxyType<HarnessControlRpc>;
+type ControlFn<THost extends P2pRuntimeHostRoot<HarnessControlRpcShape>> = (
+    peer: TestPeer<THost>
+) => RemoteRpcProxyType<HarnessControlRpcShape>;
 
 export type WaitForPeersToSyncOptions = {
     timeoutMs?: number;
@@ -23,17 +27,18 @@ export type WaitForPeersToSyncOptions = {
  * behind the runtime port).
  */
 export class SyncCoordinator<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     private logger: Logger;
     private eventBarrier: EventBarrier;
-    private control: ControlFn<TCustomRpc>;
+    private control: ControlFn<THost>;
     private defaultTimeoutMs: number;
 
     constructor(
         logger: Logger,
         eventBarrier: EventBarrier,
-        control: ControlFn<TCustomRpc>,
+        control: ControlFn<THost>,
         defaultTimeoutMs: number
     ) {
         this.logger = logger.child({ component: "SyncCoordinator" });
@@ -42,7 +47,7 @@ export class SyncCoordinator<
         this.defaultTimeoutMs = defaultTimeoutMs;
     }
 
-    private loadTips(peers: TestPeer<TCustomRpc>[], forkId: ForkId) {
+    private loadTips(peers: TestPeer<THost>[], forkId: ForkId) {
         return Promise.all(
             peers.map((peer) =>
                 this.control(peer).query.getSyncTip(forkId).request()
@@ -58,7 +63,7 @@ export class SyncCoordinator<
      * its state lands a beat later, so the tip alone is not "in sync".
      */
     public async waitForPeersToSync(
-        peers: TestPeer<TCustomRpc>[],
+        peers: TestPeer<THost>[],
         forkId: ForkId,
         options?: WaitForPeersToSyncOptions
     ): Promise<void> {

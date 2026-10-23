@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncPayload } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -38,6 +39,49 @@ export function appendForgedInboundSuccessor(payload: SyncPayload): void {
         previousBlockHash: inboundMessageBlockHash(tip),
         blockHeight: BigInt(tip.blockHeight) + 1n
     });
+}
+
+const FORGED_SIGNATURE = new ethers.Wallet(
+    ethers.id("forged window signer")
+).signingKey.sign(ethers.id("forged window confirmation")).serialized;
+
+/** Append a signature no participant made to every window confirmation. */
+export function forgeWindowConfirmationSignatures(payload: SyncPayload): void {
+    for (const confirmation of payload.disputeWindows[0].disputeConfirmations)
+        confirmation.signatures = [
+            ...confirmation.signatures,
+            FORGED_SIGNATURE
+        ];
+}
+
+/**
+ * Forge the window's reduction inputs that a local reduction would check:
+ * add a signature by a non-participant to every dispute confirmation, add a
+ * confirmation of a dispute the chain never committed, and move the window
+ * snapshot's timestamp.
+ */
+export function forgeWindowReductionInputs(payload: SyncPayload): void {
+    forgeWindowConfirmationSignatures(payload);
+    const window = payload.disputeWindows[0];
+    const { signedDispute } = window.disputeConfirmations[0];
+    const dispute = Codec.decode(signedDispute.encodedDispute, Type.Dispute);
+    window.disputeConfirmations.push({
+        signedDispute: {
+            ...signedDispute,
+            encodedDispute: Codec.encode(
+                {
+                    ...dispute,
+                    outputSnapshotDataHash: ethers.id("uncommitted dispute")
+                },
+                Type.Dispute
+            )
+        },
+        signatures: [FORGED_SIGNATURE]
+    });
+    window.latestStateSnapshot = {
+        ...window.latestStateSnapshot,
+        timestamp: BigInt(window.latestStateSnapshot.timestamp) + 1n
+    };
 }
 
 /**
@@ -244,11 +288,42 @@ async function stageAndApplyDisputeWindowInboundSync(
                     .getInboundMessageBlock(blockHash)
                     .request()
             ).to.equal(null);
+    const servedConfirmations = payload.disputeWindows[0].disputeConfirmations;
+    const servedDisputeHashes = servedConfirmations.map(
+        (confirmation) =>
+            hash(confirmation.signedDispute.encodedDispute) as Hash
+    );
+    // hex signatures the responder served on the window's confirmations
+    const servedSignatures = new Set(
+        servedConfirmations.flatMap((confirmation) =>
+            confirmation.signatures.map(String)
+        )
+    );
+    const servedWindowSnapshotHash = StateSnapshot.from(
+        payload.disputeWindows[0].latestStateSnapshot
+    ).hash;
     options.mutate(payload);
     const appliedInboundHashes =
         payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.map(
             inboundMessageBlockHash
         );
+    const appliedConfirmations = payload.disputeWindows[0].disputeConfirmations;
+    const appliedDisputeHashes = appliedConfirmations.map(
+        (confirmation) =>
+            hash(confirmation.signedDispute.encodedDispute) as Hash
+    );
+    const unservedSignatures = [
+        ...new Set(
+            appliedConfirmations.flatMap((confirmation) =>
+                confirmation.signatures
+                    .map(String)
+                    .filter((signature) => !servedSignatures.has(signature))
+            )
+        )
+    ];
+    const appliedWindowSnapshotHash = StateSnapshot.from(
+        payload.disputeWindows[0].latestStateSnapshot
+    ).hash;
 
     if (options.reduction === "chainBeforeSync")
         expect(
@@ -279,14 +354,14 @@ async function stageAndApplyDisputeWindowInboundSync(
         );
     const encodedPayload = Codec.encode(payload, Type.SyncPayload) as string;
     await requesterStub.recordSyncRejections().request();
-    let accepted: boolean;
+    let outcome: SyncOutcome;
     let rejections: string[];
     try {
         if (
             options.reduction === "local" ||
             options.reduction === "chainBeforeSync"
         )
-            accepted = await applyPayload(encodedPayload);
+            outcome = await applyPayload(encodedPayload);
         else {
             await requesterStub
                 .holdSyncWindowPersistence(
@@ -312,13 +387,15 @@ async function stageAndApplyDisputeWindowInboundSync(
                     ).to.equal(true);
                 else
                     expect(
-                        await applyPayload(
-                            response.encodedSyncPayload as string
-                        )
+                        (
+                            await applyPayload(
+                                response.encodedSyncPayload as string
+                            )
+                        ).synced
                     ).to.equal(true);
             } finally {
                 await requesterStub.releaseSyncWindowPersistence().request();
-                accepted = await pending;
+                outcome = await pending;
             }
         }
         rejections = await requesterStub
@@ -344,9 +421,26 @@ async function stageAndApplyDisputeWindowInboundSync(
                 .request()
         )
             storedInboundHashes.push(blockHash);
+    const storedConfirmationSignatures = await h.execOnHost(
+        requester,
+        async (sm, args) =>
+            args.disputeHashes.map((disputeHash) => {
+                const confirmation =
+                    sm.storage.disputes.getDisputeConfirmation(disputeHash);
+                return confirmation
+                    ? confirmation.signatures.map(String)
+                    : null;
+            }),
+        { disputeHashes: appliedDisputeHashes }
+    );
+    // hex signatures the requester holds on the applied confirmations
+    const storedSignatures = new Set(
+        storedConfirmationSignatures.flatMap((signatures) => signatures ?? [])
+    );
 
     return {
-        accepted,
+        accepted: outcome.synced,
+        unsettledForkId: outcome.unsettledForkId,
         rejections,
         responderBlacklisted: await requesterControl.query
             .isBlacklisted(responder.address)
@@ -360,6 +454,30 @@ async function stageAndApplyDisputeWindowInboundSync(
         servedInboundHashes,
         appliedInboundHashes,
         storedInboundHashes,
+        // applied disputes the responder did not serve, held after the sync
+        storedUnservedDisputeHashes: appliedDisputeHashes.filter(
+            (disputeHash, index) =>
+                !servedDisputeHashes.includes(disputeHash) &&
+                storedConfirmationSignatures[index] !== null
+        ),
+        // served disputes held after the sync
+        storedServedDisputeHashes: appliedDisputeHashes.filter(
+            (disputeHash, index) =>
+                servedDisputeHashes.includes(disputeHash) &&
+                storedConfirmationSignatures[index] !== null
+        ),
+        servedDisputeHashes,
+        // applied signatures the responder did not serve, held after the sync
+        storedUnservedSignatures: unservedSignatures.filter((signature) =>
+            storedSignatures.has(signature)
+        ),
+        unservedSignatures,
+        servedWindowSnapshotHash,
+        appliedWindowSnapshotHash,
+        appliedWindowSnapshotStored:
+            (await requesterControl.query
+                .getStateSnapshotStructByHash(appliedWindowSnapshotHash)
+                .request()) !== null,
         inboundHeadBefore,
         inboundHeadAfter: await requesterControl.query
             .getLatestInboundMessageHash()
@@ -523,6 +641,131 @@ export async function assertSyncedParticipantNeverSignsInjectedInbound(
         ).to.equal(responderHead);
     }
     expect(responderHead).to.equal(genuineTopUpHash);
+}
+
+/**
+ * Peer 2, a participant kept out of the window's dispute logs, syncs a
+ * chain-final but unadopted window whose reduction inputs a byzantine
+ * responder forged (`forgeWindowReductionInputs`). Peer 3 then fetches the
+ * window from peer 2: peer 2 serves the window's genuine confirmations,
+ * recovered from the chain's dispute logs, and none of the forged ones.
+ */
+export async function assertSyncedParticipantServesOnlyGenuineWindowInputs(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const r = await stageAndApplyDisputeWindowInboundSync(h, {
+        reduction: "chainBeforeSync",
+        requesterInboundHold: "chainEvent",
+        mutate: forgeWindowReductionInputs
+    });
+    expect(r.rejections).to.deep.equal([]);
+    expect(r.accepted).to.equal(true);
+    expect(r.storedUnservedSignatures).to.deep.equal([]);
+    expect(r.storedUnservedDisputeHashes).to.deep.equal([]);
+    await r.releaseHolds(true);
+    // premise: peer 2 handled none of the window's dispute logs, so the sync
+    // was its only source of the window's confirmations
+    expect(
+        h.event.getEventCallCount(REQUESTER_INDEX, "onDisputeCommitted")
+    ).to.equal(0);
+
+    const response = await h.execOnHost(
+        h.getPeer(3),
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        {
+            source: h.getPeer(REQUESTER_INDEX).address,
+            forkId: r.sourceForkId
+        }
+    );
+    const served = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    expect(served.disputeWindows.map((window) => window.forkId)).to.deep.equal([
+        r.sourceForkId
+    ]);
+    const [window] = served.disputeWindows;
+    expect(window.reducedForkId).to.equal(r.reducedForkId);
+    expect(
+        window.disputeConfirmations.map((confirmation) =>
+            hash(confirmation.signedDispute.encodedDispute)
+        )
+    ).to.have.members(r.servedDisputeHashes);
+    const servedSignatures = window.disputeConfirmations.flatMap(
+        (confirmation) => confirmation.signatures.map(String)
+    );
+    expect(r.unservedSignatures.length).to.be.greaterThan(0);
+    for (const signature of r.unservedSignatures)
+        expect(servedSignatures).to.not.include(signature);
+}
+
+/**
+ * Peer 2, kept out of the window's dispute logs, syncs peer 0's genuine
+ * payload for a chain-final but unadopted window and moves to its reduced
+ * fork, so the source fork's dispute logs are no longer relevant to it. The
+ * sync stores none of the window's confirmations. Peer 2 then recovers the
+ * window's disputes from the chain's logs. Reports the recovered
+ * commitments, the served dispute hashes peer 2 then holds, and peer 2's
+ * audit reads during the recovery.
+ */
+export async function recoverWindowDisputesAfterSyncPastFork(
+    h: MathPeerTestHarness
+) {
+    const r = await stageAndApplyDisputeWindowInboundSync(h, {
+        reduction: "chainBeforeSync",
+        requesterInboundHold: "chainEvent",
+        mutate: () => {}
+    });
+    await r.releaseHolds(false);
+    const requester = h.getPeer(REQUESTER_INDEX);
+    const disputeLogsHandledDuringSync = h.event.getEventCallCount(
+        REQUESTER_INDEX,
+        "onDisputeCommitted"
+    );
+    // the audit's first chain-backed check (DisputeValidationService)
+    const audit = await h.mirror.observe(
+        REQUESTER_INDEX,
+        "isDisputeInboundHashValid"
+    );
+    const recoveredCommitments = await h.execOnHost(
+        requester,
+        async (sm, args) => {
+            const commitments =
+                await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                    sm.channelId,
+                    args.forkId
+                );
+            return commitments ? commitments.map(String) : null;
+        },
+        { forkId: r.sourceForkId }
+    );
+    const auditReads = await audit.observation();
+    await audit.restore();
+    const heldDisputeHashes: Hash[] = [];
+    for (const disputeHash of r.servedDisputeHashes)
+        if (
+            await h
+                .control(requester)
+                .query.hasDisputeConfirmation(disputeHash)
+                .request()
+        )
+            heldDisputeHashes.push(disputeHash);
+    return {
+        accepted: r.accepted,
+        rejections: r.rejections,
+        sourceForkId: r.sourceForkId,
+        reducedForkId: r.reducedForkId,
+        requesterForkId: r.requesterForkId,
+        storedServedDisputeHashesAfterSync: r.storedServedDisputeHashes,
+        servedDisputeHashes: r.servedDisputeHashes,
+        disputeLogsHandledDuringSync,
+        recoveredCommitments,
+        heldDisputeHashes,
+        auditReads: auditReads.local.reads + auditReads.chain.reads
+    };
 }
 
 /**

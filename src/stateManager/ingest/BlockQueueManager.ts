@@ -534,8 +534,10 @@ export default class BlockQueueManager {
                 return;
             }
             // Unknown fork (not disputed, no local genesis for it): ask the
-            // suppliers to prove it once; a failed sync punishes them, and so
-            // does a proven lineage that does not carry the block. This is
+            // suppliers to prove it once; a sync rejected for invalid evidence
+            // punishes them (one that meets a dispute window the chain has not
+            // reduced waits for that reduction first), and so does a proven
+            // lineage that does not carry the block. This is
             // separate expiry recovery after source admission at ingress.
             this.logger.verbose(
                 "queueTimeout - unknown fork, requesting sync from suppliers",
@@ -729,7 +731,9 @@ export default class BlockQueueManager {
     /**
      * Ask every attributed source and the author to prove the block's
      * lineage, once each. A probe whose payload fails validation excludes the
-     * peer inside `sync`; a failed request is the sync's counted close. A
+     * peer inside `sync`; a failed request is the sync's counted close; one
+     * that meets a dispute window the chain has not reduced waits inside
+     * `sync` for that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
      * peer supplied junk: it is excluded here. Probes are owned work that
      * `dispose` waits for.
@@ -747,7 +751,8 @@ export default class BlockQueueManager {
         const block = entry.block;
         // Sync waits for an in-flight request and proves this target before
         // returning success; an invalid proof excludes the peer, a failed
-        // request is a counted close.
+        // request is a counted close, an unreduced dispute window is waited
+        // out first.
         const synced =
             await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,

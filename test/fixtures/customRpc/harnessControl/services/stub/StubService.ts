@@ -2,7 +2,7 @@
 import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
 import { Block } from "@/models";
@@ -112,6 +112,7 @@ export type StubKey =
     | "undecodableUnfinalizedBlock"
     | "invalidBlockStructurePredicate"
     | "pendingInboundInclusion"
+    | "inboundMessageRefusal"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
     | "heldSpectateCreateRpcMethods"
@@ -169,9 +170,12 @@ export type StubKey =
     | "chainLogQueries"
     | "onChainSlashesRead"
     | "disputeCommittedHandler"
+    | "disputeCommittedHandling"
+    | "disputeLogQueries"
     | "lobbyCreateRpcMethods"
     | "negotiationCreateRpcMethods"
     | "matchedNegotiation"
+    | "lobbyCompletion"
     | "failMatchedNegotiation"
     | "setChannelId"
     | "eventListenerRemoval"
@@ -378,6 +382,22 @@ export type DisputeSubmissionHold = {
     held: number;
 };
 
+/** What a local state restore did once the runtime had started stopping. */
+export type StopDuringAssemblyRecord = {
+    /** Local state writes made after the stop started. */
+    restoreAttempts: number;
+    /** Error logs of the snapshot assembly after the stop started. */
+    restoreErrors: string[];
+};
+
+/** What `stubFailNextRestoreAndHoldAbort` saw until its abort is released. */
+export type FailedRestoreRecord = {
+    /** Error logs of the snapshot assembly. */
+    restoreErrors: string[];
+    /** Runtime aborts held so far. */
+    heldAborts: number;
+};
+
 /** A state-mutex hold that keeps an earlier state on the shared state machine. */
 export type StateMutexStateHold = {
     /** Next writer of the state the hold installed. */
@@ -493,14 +513,14 @@ export type DoubleSignatureLogEntry = {
  * here rather than failing silently at runtime. Originals are held per service
  * instance so they survive across RPC method invocations.
  *
- * `p2pManager` is typed as `P2PManager<HarnessControlRpc>`, so `localRpc` (the
+ * `p2pManager` is typed as `P2PManager<HarnessControlRpcShape>`, so `localRpc` (the
  * SDK's own services included) is fully typed. Prefer targeting real members
  * directly; private internals use explicit local structural host types at the
  * stub site.
  */
 export class StubService extends ANetworkRpcService<
     StubRpcMethods,
-    P2PManager<HarnessControlRpc>
+    P2PManager<HarnessControlRpcShape>
 > {
     private nextSignatureHold?: HeldRpcReply;
     private restoreNextSignature?: () => void;
@@ -510,6 +530,12 @@ export class StubService extends ANetworkRpcService<
     private restoreSyncRejections?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
+    /** Record of `stubRefuseInboundAndStartStop`, once installed. */
+    public stopDuringAssembly?: StopDuringAssemblyRecord;
+    /** Record of `stubFailNextRestoreAndHoldAbort`, once installed. */
+    public failedRestore?: FailedRestoreRecord;
+    /** The real runtime abort that `stubFailNextRestoreAndHoldAbort` held. */
+    public heldAbort?: () => void;
     /** Number of finality predicates in each recorded provider call. */
     private finalityReadWidths: number[] = [];
     /**
@@ -729,6 +755,8 @@ export class StubService extends ANetworkRpcService<
     completeWithGenesisOutcome?: DetachedCallOutcome;
     /** State-manager mutex held by the stub until released. */
     stateMutexGate?: StubGate;
+    /** The runtime disposal that `stubHoldRuntimeDisposal` holds. */
+    runtimeDisposalGate?: StubGate;
     /** How many distinct inbound logs may be dropped (undefined = all). */
     eventLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
@@ -737,6 +765,8 @@ export class StubService extends ANetworkRpcService<
     private chainLogQuerySpans: ChainLogQuerySpan[] = [];
     /** Dispatches that reached the failing onDisputeCommitted stub. */
     private failedDisputeCommittedCalls = 0;
+    /** Dispute-log handlings held in flight until a dispute log query answered. */
+    disputeCommittedHandlingGate?: StubGate;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Whether the dispute-event hold stub should pass its first new log. */
@@ -812,6 +842,7 @@ export class StubService extends ANetworkRpcService<
     private heldLobbyReply?: HeldRpcReply;
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
+    private heldLobbyCompletion?: HeldRpcReply;
     private heldSetChannelId?: HeldRpcReply;
     private heldEventListenerRemoval?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
@@ -929,7 +960,7 @@ export class StubService extends ANetworkRpcService<
         this.restoreSlashRecovery = undefined;
     }
 
-    constructor(p2pManager: P2PManager<HarnessControlRpc>) {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
             p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
@@ -1408,6 +1439,37 @@ export class StubService extends ANetworkRpcService<
 
     public getHeldMatchedNegotiationCount(): number {
         return this.heldMatchedNegotiation?.entered ?? 0;
+    }
+
+    /**
+     * Holds `completeLobby` after negotiation reported the open: the channel
+     * runs while the lobby session has not ended yet.
+     */
+    public holdLobbyCompletion(): void {
+        this.releaseLobbyCompletion();
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const original = service.completeLobby.bind(service);
+        this.stubOriginals.set("lobbyCompletion", original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldLobbyCompletion = hold;
+        service.completeLobby = async (topic: string) => {
+            hold.entered += 1;
+            await hold.gate;
+            return original(topic);
+        };
+    }
+
+    public releaseLobbyCompletion(): number {
+        const entered = this.heldLobbyCompletion?.entered ?? 0;
+        this.heldLobbyCompletion?.release();
+        const original = this.stubOriginals.get("lobbyCompletion");
+        if (original) {
+            this.p2pManager.localRpc.lobbyMatchingService.completeLobby =
+                original as (topic: string) => Promise<void>;
+            this.stubOriginals.delete("lobbyCompletion");
+        }
+        this.heldLobbyCompletion = undefined;
+        return entered;
     }
 
     public failNextMatchedNegotiation(): void {
@@ -2342,7 +2404,8 @@ export class StubService extends ANetworkRpcService<
     public stubFailChainReads(
         method:
             | "getBlockCallDataCommitment"
-            | "getDisputeWindowCreationTimestamp",
+            | "getDisputeWindowCreationTimestamp"
+            | "getReducedResult",
         times: number
     ): void {
         const contract =
@@ -2534,14 +2597,6 @@ export class StubService extends ANetworkRpcService<
 
     public getHeldHandshakeCount(): number {
         return this.heldHandshakeTransports.length;
-    }
-
-    /** Held transports whose remote peer already acknowledged this peer. */
-    public getAckedHeldHandshakeCount(): number {
-        const service = this.p2pManager.localRpc.initHandshakeService;
-        return this.heldHandshakeTransports.filter((transport) =>
-            service.didReceiveAck(transport)
-        ).length;
     }
 
     public releaseInitHandshakes(): void {
@@ -4348,6 +4403,68 @@ export class StubService extends ANetworkRpcService<
         this.sm.eventHandler.onDisputeCommitted =
             original as typeof this.sm.eventHandler.onDisputeCommitted;
         this.stubOriginals.delete("disputeCommittedHandler");
+        return true;
+    }
+
+    /**
+     * Hold `onDisputeCommitted` until this peer's next chain log query for
+     * dispute logs has answered: a dispute log dispatched meanwhile stays in
+     * flight, so a recovery query finds its handling scheduled and joins it.
+     * The held handlings then run the real handler.
+     */
+    holdDisputeCommittedHandlingUntilLogQuery(): void {
+        const eventHandler = this.sm.eventHandler;
+        const provider = this.chainProvider;
+        if (!this.stubOriginals.has("disputeCommittedHandling")) {
+            this.stubOriginals.set(
+                "disputeCommittedHandling",
+                eventHandler.onDisputeCommitted.bind(eventHandler)
+            );
+            this.stubOriginals.set(
+                "disputeLogQueries",
+                provider.getLogs.bind(provider)
+            );
+        }
+        const handle = this.stubOriginals.get(
+            "disputeCommittedHandling"
+        ) as typeof eventHandler.onDisputeCommitted;
+        const getLogs = this.stubOriginals.get(
+            "disputeLogQueries"
+        ) as typeof provider.getLogs;
+        const disputeTopic =
+            this.sm.stateChannelManagerContract.interface.getEvent(
+                "DisputeCommitted"
+            ).topicHash;
+        const gate = this.createGate();
+        this.disputeCommittedHandlingGate = gate;
+        eventHandler.onDisputeCommitted = async (...args) => {
+            gate.entered += 1;
+            await gate.gate;
+            return handle(...args);
+        };
+        provider.getLogs = (async (filter) => {
+            const logs = await getLogs(filter);
+            if (filter.topics?.flat().includes(disputeTopic)) {
+                // a macrotask later: the querying recovery has run on this
+                // answer and joined the held handlings by then
+                setTimeout(() => this.releaseDisputeCommittedHandling(), 0);
+            }
+            return logs;
+        }) as typeof provider.getLogs;
+    }
+
+    /** Restore the handler and the log queries, and run the held handlings. */
+    releaseDisputeCommittedHandling(): boolean {
+        const handle = this.stubOriginals.get("disputeCommittedHandling");
+        if (handle === undefined) return false;
+        this.sm.eventHandler.onDisputeCommitted =
+            handle as typeof this.sm.eventHandler.onDisputeCommitted;
+        this.chainProvider.getLogs = this.stubOriginals.get(
+            "disputeLogQueries"
+        ) as typeof this.chainProvider.getLogs;
+        this.stubOriginals.delete("disputeCommittedHandling");
+        this.stubOriginals.delete("disputeLogQueries");
+        this.disputeCommittedHandlingGate?.release();
         return true;
     }
 

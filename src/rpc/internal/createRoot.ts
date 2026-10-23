@@ -8,6 +8,7 @@ import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import { config } from "@/utils/config";
 import type { Logger, SharedLoggerContext } from "@/utils/logging/Logger";
+import { LogUploader } from "@/utils/logging/LogUploader";
 import { runCleanup } from "@/utils/runCleanup";
 import { createTransferableChannel } from "@platform/p2pRuntimeChannel";
 import {
@@ -389,7 +390,7 @@ export function rootStartContext(
         handlerExecutionContext,
         attached,
         sameRealm = mode === "inline",
-        close = mode === "worker" ? closeRootWorker : () => {}
+        close = mode === "worker" ? closeWorkerThread : () => {}
     }: {
         logger?: Logger;
         handlerExecutionContext?: HostHandlerExecutionContext;
@@ -436,10 +437,18 @@ export function rootStartContext(
     };
 }
 
-/** Worker entries explicitly select the root to initialize. */
+/**
+ * Worker entries explicitly select the root to initialize. `resolveRoot`
+ * picks a subclass of `entry` from the bootstrap payload instead.
+ */
 export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
     entry: RootConstructor<TRoot, TArgs, TLocal>,
-    options?: { threadName?: string }
+    options?: {
+        threadName?: string;
+        resolveRoot?: (
+            payload: TArgs
+        ) => Promise<RootConstructor<TRoot, TArgs, TLocal>>;
+    }
 ): void {
     // every log line of this worker names it; unnamed it logs as "main"
     if (options?.threadName) globalThis.threadName = options.threadName;
@@ -460,7 +469,9 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         });
         try {
             const context = rootStartContext(port, "worker");
-            const root = new entry(message.payload, undefined, context);
+            const rootClass =
+                (await options?.resolveRoot?.(message.payload)) ?? entry;
+            const root = new rootClass(message.payload, undefined, context);
             receivingRoot = root;
             await context.initialize(root);
         } catch (error) {
@@ -483,8 +494,14 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             } finally {
                 receivingRoot?.closeConnections();
                 port.close();
-                await closeRootWorker();
+                await closeWorkerThread();
             }
         }
     });
+}
+
+/** The worker thread ends: it cancels its uploads still running, then closes its handles. */
+function closeWorkerThread(): void | Promise<void> {
+    LogUploader.cancelRealmUploads();
+    return closeRootWorker();
 }

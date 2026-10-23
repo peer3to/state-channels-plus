@@ -674,6 +674,74 @@ describe("distributed isolated environment", function () {
         }
     });
 
+    it("discards an orphan whose container is gone after a host restart, and allocates its key again", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        class RestartedHostBackend extends TestIsolatedRuntimeBackend {
+            async stop() {
+                throw new Error(
+                    "docker failed (1): Error response from daemon: No such container: peer3-test-gone"
+                );
+            }
+            isMissingRuntime(error: Error) {
+                return /No such container/.test(error.message);
+            }
+        }
+        const backend = new RestartedHostBackend();
+        const allocation = {
+            environmentKey: "6".repeat(64),
+            orchestratorPublicKey: "e".repeat(64),
+            profile
+        };
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await firstManager.allocate(allocation);
+            firstManager.markClean(environment);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+
+            expect(
+                fs.existsSync(restarted.metadataPath(allocation.environmentKey))
+            ).to.equal(false);
+            const reallocated = await restarted.allocate(allocation);
+            expect(reallocated.allocation.environmentKey).to.equal(
+                allocation.environmentKey
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recognises Docker's missing-container failure", function () {
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async () => ({
+                stdout: Buffer.alloc(0),
+                stderr: Buffer.alloc(0)
+            })
+        });
+        expect({
+            missing: backend.isMissingRuntime(
+                new Error(
+                    "docker failed (1): Error response from daemon: No such container: peer3-test-gone"
+                )
+            ),
+            timeout: backend.isMissingRuntime(
+                new Error("stop confirmation timed out")
+            )
+        }).to.deep.equal({ missing: true, timeout: false });
+    });
+
     it("builds a hardened Docker create request without host mounts or Docker control", async function () {
         const calls: Array<{
             command: string;

@@ -1,8 +1,16 @@
 export { PeerTestHarness } from "./test/fixtures/PeerTestHarness";
 export { MathPeerTestHarness } from "./test/fixtures/MathPeerTestHarness";
-// The default TCustomRpc for PeerTestHarness — exported so external consumers
-// can name it when subclassing with a custom state machine.
-export { HarnessControlRpc } from "./test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+// The harness-control surface: `withHarnessControl(AppRpc)` adds the control
+// services to an application's own custom RPC; `HarnessControlRpc` is the
+// SDK's own network root with them (the default host root's application).
+// PeerTestHarness is typed by the host root, constrained to
+// `P2pRuntimeHostRoot<HarnessControlRpcShape>`.
+export {
+    HarnessControlRpc,
+    withHarnessControl,
+    type HarnessControlRpcShape,
+    type HarnessControlServices
+} from "./test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 export * from "./test/harness/core/types";
 export { ScenarioActions } from "./test/harness/actions/ScenarioActions";
 export { TestSession } from "./test/harness/session/TestSession";

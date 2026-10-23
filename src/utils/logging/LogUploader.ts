@@ -1,4 +1,3 @@
-import { sleep } from "..";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
@@ -13,7 +12,7 @@ import {
 } from "./Logger";
 import { LogStore } from "./logStore";
 import { config as globalConfig } from "../config";
-import { retry } from "../retry";
+import { abortableSleep, retry } from "../retry";
 import axios from "axios";
 import { ethers } from "ethers";
 
@@ -36,6 +35,11 @@ export type LogUploaderConfig = {
 };
 
 export abstract class LogUploader {
+    /** This realm's uploaders with an upload running or queued, so a thread that ends finds them. */
+    private static readonly busyUploaders = new Set<LogUploader>();
+
+    /** Aborted once its thread ended: every upload of this uploader, a queued one too, ends at once. */
+    private readonly cancel = new AbortController();
     protected logger?: Logger;
     private destroyed = false;
     /** highest seq a 2xx acknowledged; -1 = nothing yet */
@@ -56,6 +60,18 @@ export abstract class LogUploader {
     ) {
         if (attachErrorListener && this.isEnabled()) {
             this.attachListeners();
+        }
+    }
+
+    /**
+     * Cancels every upload of this realm still running or queued; those uploaders start no
+     * further upload. A worker thread calls it as it ends: an open upload, its retry
+     * delay or its jitter wait keeps the loop alive after disposal, past an abort's flush
+     * bound. A realm whose thread lives on keeps its uploads running after disposal.
+     */
+    public static cancelRealmUploads(): void {
+        for (const uploader of LogUploader.busyUploaders) {
+            uploader.cancel.abort();
         }
     }
 
@@ -119,6 +135,7 @@ export abstract class LogUploader {
     /** One active upload and at most one follow-up; callers await only local work. */
     public uploadLogs(): Promise<LogUploadOutcome> {
         if (this.queuedUpload) return this.queuedUpload;
+        LogUploader.busyUploaders.add(this);
         if (!this.activeUpload) return this.startUpload();
 
         const queued = this.activeUpload
@@ -134,6 +151,8 @@ export abstract class LogUploader {
     private startUpload(): Promise<LogUploadOutcome> {
         const running = this.postDelta().finally(() => {
             if (this.activeUpload === running) this.activeUpload = undefined;
+            if (!this.activeUpload && !this.queuedUpload)
+                LogUploader.busyUploaders.delete(this);
         });
         this.activeUpload = running;
         return running;
@@ -162,6 +181,7 @@ export abstract class LogUploader {
     }
 
     private async postDelta(): Promise<LogUploadOutcome> {
+        const { signal } = this.cancel;
         let rawLogsSize;
         let compressedLogsSize;
         const uploadStartedAt = Date.now();
@@ -179,7 +199,8 @@ export abstract class LogUploader {
                 return { ok: true, entries: 0 };
             }
 
-            await sleep(this.getJitterMs());
+            await abortableSleep(this.getJitterMs(), signal);
+            if (signal.aborted) return { ok: false, entries: 0 };
 
             // identity and delta are read together, after the sleep: a channel
             // or peer set during it files this batch, instead of the batch
@@ -210,7 +231,7 @@ export abstract class LogUploader {
                 `Log uploading started. uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
             );
             const response = await retry(
-                async () =>
+                () =>
                     axios.post(
                         this.config.uploadEndpoint,
                         {
@@ -225,12 +246,15 @@ export abstract class LogUploader {
                         {
                             headers,
                             timeout: 10_000,
+                            signal,
                             ...this.getAxiosOptions()
                         }
                     ),
                 {
                     maxRetries: 1,
                     delayMs: 1000,
+                    // A canceled upload is not retried.
+                    signal,
                     onRetry: (attempt, error) => {
                         const { code, status } = getAxiosRetrySummary(error);
                         const networkSnapshot = this.getSyncNetworkSnapshot(
@@ -255,6 +279,8 @@ export abstract class LogUploader {
             this.lastUploadedKey = uploadKey;
             return { ok: true, entries: entries.length };
         } catch (uploadError) {
+            // Canceled as its thread ends: no diagnostics, which would start new network work.
+            if (signal.aborted) return { ok: false, entries: 0 };
             sanitizeAxiosErrorForLogging(uploadError);
 
             const {

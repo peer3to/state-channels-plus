@@ -15,7 +15,7 @@ Specification cases tested: 0/2.
 Specification cases tested: 4/4.
 
 [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
-Specification cases tested: 4/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
+Specification cases tested: 8/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8.
 
 [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
 Specification cases tested: 8/8.
@@ -156,7 +156,7 @@ Specification cases tested: 0/19.
 Specification cases tested: 1/1.
 
 [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
-Specification cases tested: 9/17. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
+Specification cases tested: 12/20. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
 
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
 Specification cases tested: 3/4. Untested: T1.P2.
@@ -192,7 +192,7 @@ Specification cases tested: 2/6. Untested: T1.P1, T1.P3, T1.P4, T1.P5.
 Specification cases tested: 7/9. Untested: T1.P1, T1.P3.
 
 [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)
-Specification cases tested: 16/18. Untested: T1.P6, T1.P11.
+Specification cases tested: 17/19. Untested: T1.P6, T1.P11.
 
 [`REQ-AUTH-6-E7SSH3` (Initiator verification and bidirectional clock compatibility)](../specification/peer-communication/handshake.md#req-auth-6-e7ssh3)
 Specification cases tested: 4/12. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
@@ -618,7 +618,7 @@ Specification cases tested: 36/36.
 Specification cases tested: 4/4.
 
 [`REQ-LOBBY-2-TSWRV6` (Authenticated admission)](../specification/peer-communication/lobby-matching.md#req-lobby-2-tswrv6)
-Specification cases tested: 6/6.
+Specification cases tested: 7/7.
 
 [`REQ-LOBBY-3-Q9WY40` (Convergent roles)](../specification/peer-communication/lobby-matching.md#req-lobby-3-q9wy40)
 Specification cases tested: 5/5.
@@ -670,6 +670,9 @@ Specification cases tested: 0/4.
 
 [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1)
 Specification cases tested: 0/3.
+
+[`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)
+Specification cases tested: 15/18. Untested: T1.P11, T1.P16, T1.P17.
 
 [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 Specification cases tested: 1/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T2.P2.
@@ -771,10 +774,13 @@ Specification cases tested: 3/11. Untested: T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T
 Specification cases tested: 11/11.
 
 [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
-Specification cases tested: 25/25.
+Specification cases tested: 12/12.
 
 [`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../specification/peer-communication/rpc.md#req-rpc-8-44xecf)
 Specification cases tested: 0/3.
+
+[`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
+Specification cases tested: 16/16.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.
@@ -792,7 +798,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 80/84. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 81/85. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
@@ -875,6 +881,9 @@ Specification cases tested: 8/8.
 [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
 Specification cases tested: 18/18.
 
+[`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
+Specification cases tested: 1/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
+
 [`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)
 Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
 
@@ -938,6 +947,9 @@ Specification cases tested: 1/3. Untested: T1.P1, T1.P3.
 [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 Specification cases tested: 0/3.
 
+[`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+Specification cases tested: 22/22.
+
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.
 
@@ -966,7 +978,7 @@ Specification cases tested: 14/14.
 Specification cases tested: 3/4. Untested: T1.P2.
 
 [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
-Specification cases tested: 22/22.
+Specification cases tested: 23/23.
 
 [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
 Specification cases tested: 5/5.

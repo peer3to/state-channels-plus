@@ -1,14 +1,19 @@
 // @spec-test-coverage-ignore: shared snapshot assertions exercised by the mapped test declarations that call them
 import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId } from "@/types";
 import { Codec, DetachedPromises, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertSnapshotActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     async onChainSnapshotOnFork(options?: {
         expectedForkId?: string;

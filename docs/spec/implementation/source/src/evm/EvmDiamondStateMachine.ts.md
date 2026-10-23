@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)

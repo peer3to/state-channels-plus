@@ -2,6 +2,7 @@
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
@@ -504,7 +505,7 @@ export async function stageRefusedKillAndDispute(
  */
 export type SlowAuditorPastEvidencePeriod = {
     forkId: ForkId;
-    slow: TestPeer<HarnessControlRpc, MathStateMachine>;
+    slow: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>, MathStateMachine>;
     /** Lone kills the slow auditor sent. */
     slowKills: { applies: () => Promise<RecordedFraudProofApply[]> };
     slowSubmissions: DisputeSubmissionRecording;
@@ -2108,6 +2109,9 @@ export async function constructTimeoutOfCalldataPostedBlock(
         .control(h.getPeer(staged.windowOpenerIndex))
         .dispute.setForceExit(true)
         .request();
+    // the opened window would make the disputer dispute on its own and use
+    // up the planted timeout before it is constructed
+    await h.dispute.suppressDisputeInitiation([staged.disputerIndex]);
     await h.tamper.postTamperedDispute(staged.windowOpenerIndex, () => {}, {
         markMalicious: false
     });
@@ -2120,6 +2124,9 @@ export async function constructTimeoutOfCalldataPostedBlock(
         .request();
     expect(Number(dispute.input.timeout.blockHeight)).to.equal(
         options.blocksBefore
+    );
+    expect(dispute.input.timeout.participant).to.equal(
+        staged.calldataAuthor.address
     );
     expect(dispute.postedAuditingData).to.equal(false);
     const previousBlock =

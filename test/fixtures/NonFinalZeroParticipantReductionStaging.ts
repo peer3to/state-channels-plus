@@ -86,8 +86,7 @@ async function stageTwoLeaverSelfRemovals(h: MathPeerTestHarness) {
             return window.evidence.disputeCommitments.length === 2;
         }, h.event.protocolEventTimeoutMs());
         expect(
-            (await h.channelManager.getReducedResult(h.channelId, forkId))
-                .reducedForkId,
+            await h.query.reducedForkOnChain(forkId),
             "premise: no self-removal dispute is final"
         ).to.equal(ZeroHash);
         return {
@@ -155,8 +154,7 @@ async function reduceWithAdoptionParked(
     await waitOutKillPeriod(h, staged.forkId);
     await staged.adoption.waitUntilHeld();
     expect(
-        (await h.channelManager.getReducedResult(h.channelId, staged.forkId))
-            .reducedForkId,
+        await h.query.reducedForkOnChain(staged.forkId),
         "premise: the reduce landed"
     ).to.not.equal(ZeroHash);
 }
@@ -293,12 +291,7 @@ export async function stageCommitCheckQueuedBehindLeaverPost(
         await reducerAttempts.release();
         await waitFor(
             async () =>
-                (
-                    await h.channelManager.getReducedResult(
-                        h.channelId,
-                        staged.forkId
-                    )
-                ).reducedForkId !== ZeroHash,
+                (await h.query.reducedForkOnChain(staged.forkId)) !== ZeroHash,
             h.event.protocolEventTimeoutMs()
         );
         // the commit check runs while the install-time post is parked

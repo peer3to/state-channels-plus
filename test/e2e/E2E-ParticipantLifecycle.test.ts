@@ -555,12 +555,7 @@ describe("E2E: Participant Lifecycle", function () {
                     Status.PARTICIPATING
                 );
                 const reducedForkId = String(
-                    (
-                        await h.channelManager.getReducedResult(
-                            h.channelId,
-                            forkId
-                        )
-                    ).reducedForkId
+                    await h.query.reducedForkOnChain(forkId)
                 );
                 expect(reducedForkId).to.not.equal(forkId);
                 expect(

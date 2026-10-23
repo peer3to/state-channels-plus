@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: harness storage assertions; executable evidence belongs to the calling test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId, Hash } from "@/types";
 import {
     DisputeFraudProofType,
@@ -7,13 +8,17 @@ import {
     toSolidityFraudProofType
 } from "@/types/sol-enums";
 import { DetachedPromises } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import PeerTestHarness from "@test/fixtures/PeerTestHarness";
 
 export class AssertStorageActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
-    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
 
     async honestPeersStoredBlockAndState(
         height: number,

@@ -1,3 +1,4 @@
+import { LogUploader } from "@/utils/logging/LogUploader";
 import {
     messagesOf,
     createUploaderFixture,
@@ -5,7 +6,7 @@ import {
     startLogReceiver,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
-import { deferred } from "@test/fixtures/node/LoggerServiceFixture";
+import { deferred } from "@test/utils/deferred";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -80,6 +81,85 @@ describe("LogUploader delta uploads", function () {
         const outcome = await logUploader.uploadLogs();
 
         expect(outcome).to.deep.equal({ ok: true, entries: 0 });
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("ends an upload still running when its thread ends, without a retry or its queued follow-up", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("held");
+        try {
+            const running = logUploader.uploadLogs();
+            await receiver!.waitForRequests(1);
+            logger.info("queued");
+            // Queued behind the running upload: it must not start once the thread ended.
+            const queued = logUploader.uploadLogs();
+            const endedAtMs = Date.now();
+
+            LogUploader.cancelRealmUploads();
+
+            expect(await running).to.deep.equal({ ok: false, entries: 0 });
+            expect(await queued).to.deep.equal({ ok: false, entries: 0 });
+            expect(Date.now() - endedAtMs).to.be.below(500);
+            // No retry and no follow-up after the cancel.
+            expect(receiver!.requests).to.have.length(1);
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("ends an upload in its jitter wait when its thread ends, before it posts", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // Well above the assertion: only a cancel ends the wait in time.
+            jitterMaxMs: 5_000
+        });
+        logger.info("never posted");
+        const running = logUploader.uploadLogs();
+        const endedAtMs = Date.now();
+
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        expect(Date.now() - endedAtMs).to.be.below(500);
+        expect(receiver!.requests).to.have.length(0);
+    });
+
+    it("ends an upload in its retry delay when its thread ends, without the retry", async function () {
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: (_received, index) => (index === 0 ? 500 : 200)
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("refused once");
+        // onRetry reads the network snapshot just before the 1 s delay starts.
+        const inDelay = deferred();
+        const snapshot =
+            logUploader["getSyncNetworkSnapshot"].bind(logUploader);
+        logUploader["getSyncNetworkSnapshot"] = (endpoint, uploadError) => {
+            inDelay.resolve();
+            return snapshot(endpoint, uploadError);
+        };
+        const running = logUploader.uploadLogs();
+        await inDelay.promise;
+        const endedAtMs = Date.now();
+
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        expect(Date.now() - endedAtMs).to.be.below(500);
+        // The refused POST only: the retry never starts.
         expect(receiver!.requests).to.have.length(1);
     });
 

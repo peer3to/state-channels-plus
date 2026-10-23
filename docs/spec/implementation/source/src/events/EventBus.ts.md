@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
 - [`REQ-SDK-ARCH-3-WHTDWX` (Event fidelity)](../../../../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 
@@ -20,8 +21,8 @@ Generic application-hook forwarding
 
 Dispatch and subscription lifecycle
 
-- Setup: Drive named, kind-wide, owned, removed, failing, and dispatch-mutating listeners through `emit` and `clear`
-- Oracle: Kinds remain isolated; delivery uses snapshot order; consumer cleanup cannot remove runtime wiring or newly registered listeners
+- Setup: Drive named, kind-wide, owned, removed, failing, and dispatch-mutating listeners through `emit` and `clear`; await `next` with a filter, with a signal aborted during the wait, and with one aborted before it
+- Oracle: Kinds remain isolated; delivery uses snapshot order; consumer cleanup cannot remove runtime wiring or newly registered listeners; `next` resolves the first accepted event's args or undefined on abort, and no later event reaches its filter or later abort changes it
 
 - [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P1` — event-kind and name isolation
 - [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P2` — clear removes consumers but preserves owned listeners and bridge
@@ -30,6 +31,10 @@ Dispatch and subscription lifecycle
 - [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P5` — listener failure isolation and reporting
 - [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P6` — listener mutation uses a dispatch snapshot
 - [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P7` — named then kind-wide then bridge order, with bridge failure propagated last
+- [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P8` — `next` resolves the first event its filter accepts, then unsubscribes
+- [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P9` — `next` resolves undefined when its signal aborts during the wait, then unsubscribes
+- [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P11` — `next` resolved by an event removes its abort listener; a later abort changes nothing
+- [x] `UNIT-TEST-EVENT-BUS-2-ZYTNAA.P10` — `next` with an already aborted signal resolves undefined without subscribing
 
 ## UNIT-TEST-EVENT-BUS-3-1TMAXP
 

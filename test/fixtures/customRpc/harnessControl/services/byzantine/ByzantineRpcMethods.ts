@@ -3,7 +3,8 @@
 import type {
     ByzantineService,
     LobbyRawMethod,
-    NegotiationRawMethod
+    NegotiationRawMethod,
+    RawRequestOutcome
 } from "./ByzantineService";
 import { __doubleSignatureListenerCount } from "@/cache";
 import Clock from "@/Clock";
@@ -260,6 +261,20 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
         return this.service.sendRawRpc(
             targetEvmAddress,
             "lobbyMatchingService",
+            method,
+            params
+        );
+    }
+
+    public requestRawRpc(
+        targetEvmAddress: string,
+        service: string,
+        method: string,
+        params: Rpc["params"]
+    ): Promise<RawRequestOutcome> {
+        return this.service.requestRawRpc(
+            targetEvmAddress,
+            service,
             method,
             params
         );

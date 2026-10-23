@@ -1,11 +1,14 @@
 // @spec-test-coverage-ignore: harness helper restored to its existing readiness ordering
 import { NetworkController } from "../NetworkController";
 import Clock from "@/Clock";
-import { TimeConfig } from "@/types";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { ForkId } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { Logger, sleep } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { HarnessOptions } from "@test/harness/core/types";
@@ -17,10 +20,11 @@ import { BytesLike } from "ethers";
  * Handles channel-related operations: open channel and bootstrap.
  */
 export class LifecycleActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        protected harness: PeerTestHarness<TCustomRpc>,
+        protected harness: PeerTestHarness<THost>,
         protected logger: Logger
     ) {}
 
@@ -31,7 +35,7 @@ export class LifecycleActions<
     async start(
         numPeers: number,
         transitionCount: number = 0,
-        options?: HarnessOptions & {
+        options?: HarnessOptions<THost> & {
             waitForFinalization?: boolean;
         }
     ): Promise<ForkId> {

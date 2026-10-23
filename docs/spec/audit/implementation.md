@@ -3,6 +3,24 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Authoring rollback after a refused inbound message — 2026-10-16
+
+Observed 2026-10-16 on a live poker table: a player's `playTransaction` applied its action to the local VM, then the
+pending inbound JOIN in the same transition was refused by the state machine, and the call threw without restoring
+the VM. The local turn moved with no block stored, so every later action of that player failed as not its turn. The
+[BlockProductionService report](../implementation/source/src/stateManager/block/BlockProductionService.ts.md) now
+restores the VM on every exit that does not commit the block, through the one restore owner in
+[SnapshotAssemblyService](../implementation/source/src/stateManager/block/SnapshotAssemblyService.ts.md) that block
+ingest already used. Evidence:
+[`UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md#unit-test-block-production-1-5ed0eb), which fails without the restore. Luka
+decided that inbound consumption must succeed:
+[`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b) requires a state machine to
+process every chain-accepted inbound message, and the only allowed failure, running out of gas with a retry on fewer
+inbound blocks, is deferred in
+[`FIND-INBOUND-GAS-1-2BZ8DE`](open-findings.md#find-inbound-gas-1-2bz8de). The poker state machine's refusal of that
+JOIN is fixed in poker-contracts. The full SDK gate passed on 2026-10-16
+(`yarn test:parallel:distributed --test-parallel-script --test-browser`, 3848/3848).
+
 ## PR #553 review corrections — 2026-10-15
 
 A leave that ends in a non-final self-removal reduction that leaves no participant has two posters of the reduced
@@ -552,6 +570,8 @@ Executor monitoring and logger ownership now belong to ContractExecutorRoot. The
 
 The engineer replaced acknowledged global flushes with best-effort generation gossip. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) owns its attached store map and one scalar index; [Logger](../implementation/source/src/utils/logging/Logger.ts.md) owns local uploading and one optional service reference in sharedResources. Common roots create logging before startup. Equal/older generations are suppressed even after the window; invalid indexes are rejected. Remote delivery is not claimed by a local promise. Late entries can wait for another generation under the accepted timing assumption. Existing HTTP retries and secret-field encoding remain with the uploader.
 
+Since 2026-10-20 one bounded, acknowledged flush exists again, on the abort path only: an aborting runtime asks every reachable thread to upload now and then disposes as in any other abort; the disposal stops the producers and then waits for all of the uploads, until one deadline shared by every thread in the flush (the abort time plus the configured bound), before it ends any thread ([`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)). The engineer chose this because disposal ends the worker threads and lost every worker log of a real dispute. At the deadline each thread only stops waiting. A worker thread that ends cancels every upload of its realm still running, whoever started it, before its loop drains, so an open request or its retry cannot keep the worker alive past its end. Logger disposal cancels nothing, so the main thread and inline realms keep their uploads running after disposal. Ordinary gossip still never waits for acknowledgments.
+
 The obsolete folded-summary finding no longer describes the current contract. Source and test changes require engineer re-verification; no approval register was changed.
 
 The application-defined cloneability limit is tracked as [`OQ-AUDIT-RUNTIME-1-3P2PTW` (Application module cloneability)](open-questions.md#oq-audit-runtime-1-3p2ptw).
@@ -819,7 +839,9 @@ canonical and has no `removed`-log handling or block-hash confirmation. That is 
 well-behaved node and for the local runner after the fork fix, and it is the same assumption a real
 chain breaks on a reorg. Recorded as
 [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm) for a specification decision; no
-code change made here.
+code change made here. (As of 2026-09-09; a `removed` log is now logged and ignored, its effects
+not undone.) Decided 2026-10-21: chain finality is a recorded, known-wrong assumption, and
+the finding is pending on it.
 
 ## Estimate margin instead of a search — 2026-09-09
 
@@ -966,7 +988,7 @@ late opening-hook failure cannot clear its replacement.
 
 ## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
 
-Conformance: [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md) implements the host-only part of [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) with an always-failing check, a normal-return
+Conformance: `LocalOnlyGuard` (removed 2026-10-16 by the application host root) implemented the host-only part of [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) with an always-failing check, a normal-return
 failure handler that delegates to `P2PManager.disconnectConnection` with `DisconnectPolicy.BLACKLIST`,
 and a `WeakSet`-scoped override of `AGuard.suppressesFailureResponse`; it is exported from the guard
 barrel and the public entry. For [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59), the host passes `{ owner: this }` through `StateManager` and
@@ -975,7 +997,7 @@ precompile factories, `createRoot` supports parentless workers with a per-creati
 `ContractExecutorService` owns admission and drain with all three endpoints delegating to it and
 `ContractExecutorRoot` running the drain as its disposal preparation. Node `.ts` worker preloads now
 resolve from the SDK package. File reports, the guards and internal-RPC inventories, and the runtime
-view record these; new component families are [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8),
+view record these; new component families are the local-only guard family (removed 2026-10-16),
 [`UNIT-TEST-EVM-FACTORY-1-002C8D`](../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb), and
 [`UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-34-517jax); the root-creation family replaced its parentless-rejection
 permutation with six parentless-worker permutations. No contradiction is demonstrated. The executor
@@ -997,7 +1019,7 @@ the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source
 The earlier record said an unidentified transport's "handle is barred". That was wrong:
 `ProfileManager.blacklistPeer(transport)` does nothing when the transport has no profile, so a transport
 with neither a profile nor a proven address is only closed and nothing is barred, which is what
-[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) states. The [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md) and
+[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) states. The `LocalOnlyGuard` (since removed) and
 [P2PManager](../implementation/source/src/P2PManager.ts.md) reports now say so, matching the corrected comment in
 `P2PManager.disconnectConnection`. Parentless workers now also document that a worker thread that exits
 unexpectedly leaves its hidden parent live until the handle is disposed, which then releases it

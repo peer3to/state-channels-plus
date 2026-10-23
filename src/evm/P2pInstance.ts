@@ -2,8 +2,13 @@ import type ClientChainSigner from "./signer/ClientChainSigner";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type { EventBus } from "@/events/EventBus";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import type { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
-import MainRpcService from "@/rpc/network/MainRpcService";
+import type {
+    ApplicationOf,
+    HostEventsOf,
+    P2pRuntimeHostRoot
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type StateManager from "@/stateManager/StateManager";
 import { DetachedPromises, Logger } from "@/utils";
@@ -12,7 +17,7 @@ import { AStateMachine } from "@typechain-types";
 
 export default class P2pInstance<
     T extends AStateMachine,
-    TCustomRpc extends MainRpcService = MainRpcService
+    THost extends P2pRuntimeHostRoot = P2pRuntimeHostRoot
 > {
     p2pContractInstance: T;
     p2pSigner: ClientP2pSigner;
@@ -27,16 +32,24 @@ export default class P2pInstance<
      * peer (and, for request/response methods, the reply is returned across the
      * port).
      */
-    hostRpc: RemoteRpcProxyType<TCustomRpc>;
+    hostRpc: RemoteRpcProxyType<ApplicationOf<THost>>;
+
+    /**
+     * Typed connection to this peer's host root: its internal services,
+     * including those an application's host root subclass adds. Calls run in
+     * the runtime and are unreachable from any network transport.
+     */
+    readonly host: RuntimeConnection<THost>;
 
     /**
      * Client event surface: `events.on(kind, eventName, listener)` for
-     * p2p hooks, contract events, and mirrored `EventHandler` events — the
-     * same bus shape the worker realm exposes on `stateManager.events`.
+     * p2p hooks, contract events, mirrored `EventHandler` events, and the
+     * host root's declared `application` events — the same bus shape the
+     * worker realm exposes on `stateManager.events`.
      */
-    readonly events: EventBus;
+    readonly events: EventBus<HostEventsOf<THost>>;
 
-    private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot;
+    private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot<THost>;
     private disposal?: Promise<void>;
     private isLeaveRequested = false;
 
@@ -62,14 +75,14 @@ export default class P2pInstance<
     }
 
     constructor(
-        client: P2pRuntimeClientRoot,
+        client: P2pRuntimeClientRoot<THost>,
         application: {
             contract: T;
             signer: ClientP2pSigner;
             chainSigner: ClientChainSigner;
             stateChannelManagerContract: StateChannelManagerInterface;
             logger: Logger;
-            hostRpc: RemoteRpcProxyType<TCustomRpc>;
+            hostRpc: RemoteRpcProxyType<ApplicationOf<THost>>;
         }
     ) {
         this.p2pRuntimeClientRoot = client;
@@ -79,6 +92,7 @@ export default class P2pInstance<
         this.stateChannelManagerContract =
             application.stateChannelManagerContract;
         this.logger = application.logger;
+        this.host = client.p2pRuntimeHostRemoteRoot!.rpc;
         this.events = client.events;
         this.hostRpc = application.hostRpc;
         client.onClosed(() => {
@@ -160,7 +174,7 @@ export default class P2pInstance<
      * Direct state manager access is intentionally disabled for all modes.
      * Runtime interaction must happen through message-port RPC boundaries.
      */
-    public getStateManager(): StateManager<TCustomRpc> {
+    public getStateManager(): StateManager<ApplicationOf<THost>> {
         throw new Error(
             "getStateManager() is disabled; use runtime RPC over the message port"
         );

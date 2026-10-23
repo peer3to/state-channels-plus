@@ -7,10 +7,15 @@ import type Rpc from "@/rpc/Rpc";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ForkId, Hash } from "@/types/types";
 import { getChecksumAddress } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import { ethers } from "ethers";
 
 export type LobbyRawMethod = "advertise" | "pick" | "commit";
 export type NegotiationRawMethod = "exchangeTerms" | "openProposal" | "abort";
+/** How a raw request settled: the reply, or the rejection's message. */
+export type RawRequestOutcome =
+    | { ok: true; result: unknown }
+    | { ok: false; error: string };
 
 /**
  * Byzantine block-submission faults exposed to the test harness.
@@ -64,13 +69,45 @@ export class ByzantineService extends ANetworkRpcService<ByzantineRpcMethods> {
         method: LobbyRawMethod | NegotiationRawMethod,
         params: Rpc["params"]
     ): boolean {
+        this.requireTransport(targetEvmAddress).send({
+            service,
+            method,
+            params
+        });
+        return true;
+    }
+
+    /**
+     * Sends a request for any service and method name over the real
+     * transport, as a peer that names an endpoint its target may not serve;
+     * resolves with how the request settled.
+     */
+    public async requestRawRpc(
+        targetEvmAddress: string,
+        service: string,
+        method: string,
+        params: Rpc["params"]
+    ): Promise<RawRequestOutcome> {
+        try {
+            return {
+                ok: true,
+                result: await this.p2pManager.rpcRouter.sendRpcRequest(
+                    { service, method, params },
+                    this.requireTransport(targetEvmAddress)
+                )
+            };
+        } catch (error) {
+            return { ok: false, error: errorMessage(error) };
+        }
+    }
+
+    private requireTransport(targetEvmAddress: string): NetworkTransport {
         const transport =
             this.p2pManager.profileManager.getTransportByEvmAddress(
                 getChecksumAddress(targetEvmAddress)
             );
         if (!transport) throw new Error("Target peer is not connected");
-        transport.send({ service, method, params });
-        return true;
+        return transport;
     }
 }
 

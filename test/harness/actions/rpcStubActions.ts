@@ -1,8 +1,12 @@
 // @spec-test-coverage-ignore: restorable timing controls exercised by mapped lobby and negotiation tests
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Logger } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     EvidenceComparisonFault,
     HeldEvidenceComparisonRelease,
@@ -26,7 +30,9 @@ import type {
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
-    SnapshotPostHoldPoint
+    SnapshotPostHoldPoint,
+    StopDuringAssemblyRecord,
+    FailedRestoreRecord
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -96,10 +102,11 @@ export type ConstructDisputeHold = {
  * behavior selected here.
  */
 export class RpcStubActions<
-    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
 > {
     constructor(
-        private harness: PeerTestHarness<TCustomRpc>,
+        private harness: PeerTestHarness<THost>,
         private logger: Logger
     ) {}
 
@@ -216,6 +223,24 @@ export class RpcStubActions<
         };
     }
 
+    /** Tasks parked on this peer's state mutex behind its current holder. */
+    async getStateMutexWaitingCount(peerIndex: number): Promise<number> {
+        return await this.peerStub(peerIndex)
+            .getStateMutexWaitingCount()
+            .request();
+    }
+
+    /**
+     * Hold the runtime disposal a real abort starts on this peer, so its
+     * control RPC stays reachable after the abort. Returns the release.
+     */
+    async holdRuntimeDisposal(peerIndex: number): Promise<() => Promise<void>> {
+        await this.peerStub(peerIndex).stubHoldRuntimeDisposal().request();
+        return async () => {
+            await this.peerStub(peerIndex).releaseRuntimeDisposal().request();
+        };
+    }
+
     /** Hold the peer's state-manager mutex until released. */
     async holdStateMutex(peerIndex: number): Promise<StateMutexHold> {
         const ctl = () => this.peerStub(peerIndex);
@@ -279,6 +304,19 @@ export class RpcStubActions<
             await this.harness
                 .control(peer)
                 .stub.releaseMatchedNegotiation()
+                .request();
+    }
+
+    /** Holds the peer's `completeLobby` after the open; the returned call releases it. */
+    async holdLobbyCompletion(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.holdLobbyCompletion().request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseLobbyCompletion()
                 .request();
     }
 
@@ -587,6 +625,86 @@ export class RpcStubActions<
             .request();
     }
 
+    /**
+     * Make this peer's state machine refuse every inbound message. Returns an
+     * async teardown that restores the real processing.
+     */
+    async refuseInboundMessages(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRefuseInboundMessages()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreInboundMessageProcessing()
+                .request();
+        };
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message and start
+     * the runtime's stop while it refuses. Returns a reader of what local
+     * state restores did once the stop had started.
+     */
+    async refuseInboundAndStartStop(
+        peerIndex: number
+    ): Promise<() => Promise<StopDuringAssemblyRecord | null>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRefuseInboundAndStartStop()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.getStopDuringAssembly()
+                .request();
+    }
+
+    /**
+     * Make this peer's next `leaveChannelService.onBlockCommitted` throw once:
+     * a post-commit step fails after the block is stored. One-shot by design.
+     */
+    async throwOnceAfterBlockCommit(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.stubThrowOnceFromLeaveOnBlockCommitted()
+            .request();
+    }
+
+    /**
+     * Fail this peer's next local state restore and hold the runtime abort it
+     * triggers. `read` returns what the snapshot assembly logged and how many
+     * aborts are held; `releaseAbort` lets the held abort run.
+     */
+    async failNextRestoreAndHoldAbort(peerIndex: number): Promise<{
+        read: () => Promise<FailedRestoreRecord | null>;
+        releaseAbort: () => Promise<void>;
+    }> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubFailNextRestoreAndHoldAbort()
+            .request();
+        return {
+            read: async () =>
+                await this.harness
+                    .control(peer)
+                    .stub.getFailedRestore()
+                    .request(),
+            releaseAbort: async () => {
+                await this.harness
+                    .control(peer)
+                    .stub.releaseHeldAbort()
+                    .request();
+            }
+        };
+    }
+
     async failNextFinalDisputePreparation(
         peerIndex: number
     ): Promise<() => Promise<void>> {
@@ -790,6 +908,40 @@ export class RpcStubActions<
                     .request(),
             restore: async () => {
                 await ctl().restoreDisputeCommittedHandler().request();
+            }
+        };
+    }
+
+    /**
+     * Hold a peer's onDisputeCommitted until its next chain log query for
+     * dispute logs has answered: a dispute log streamed meanwhile stays in
+     * flight, so a window recovery finds its handling scheduled and joins it.
+     * The held handlings then run the real handler.
+     */
+    async holdDisputeCommittedHandlingUntilLogQuery(
+        peerIndex: number
+    ): Promise<{
+        /** Wait until a dispute log's handling is held in flight. */
+        waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        /** Run the held handlings now, if no log query released them yet. */
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldDisputeCommittedHandlingUntilLogQuery().request();
+        this.logger.debug(`Holding onDisputeCommitted on peer ${peerIndex}`);
+        return {
+            waitUntilHeld: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) =>
+                waitFor(
+                    async () =>
+                        (await ctl()
+                            .getHeldDisputeCommittedHandlingCount()
+                            .request()) > 0,
+                    timeoutMs
+                ),
+            release: async () => {
+                await ctl().releaseDisputeCommittedHandling().request();
             }
         };
     }
