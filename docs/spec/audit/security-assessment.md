@@ -331,8 +331,9 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ## Accepted PR 472 fixes after the SDK refactor
 
-The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
-unrecognized-upload-failure and expired-evidence outcomes have explicit runtime-port declarations. The configured
+A failed self-removal dispute start from the terminal-leave watchdog is fatal for the runtime, and a watchdog dispute
+that loses the evidence race waits for the window's reduction (engineer decision 2026-10-10). Both outcomes have
+explicit runtime-port declarations. The configured
 production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
 This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
