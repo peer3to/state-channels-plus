@@ -127,13 +127,17 @@ export default class BlockQueueManager {
                     );
                 if (eligibility !== SourceEligibility.ELIGIBLE) {
                     if (eligibility === SourceEligibility.ABSENT) {
-                        await this.stateManager.p2pManager.localRpc.spectateService.sync(
-                            options.senderAddress,
-                            block.channelId,
-                            block.forkId,
-                            block.height
-                        );
+                        // a failed sync already rejected bad data or counted
+                        // the failed request -> no verdict here
+                        const synced =
+                            await this.stateManager.p2pManager.localRpc.spectateService.sync(
+                                options.senderAddress,
+                                block.channelId,
+                                block.forkId,
+                                block.height
+                            );
                         if (
+                            synced &&
                             this.stateManager.membershipService.getCachedSourceEligibility(
                                 options.senderAddress
                             ) !== SourceEligibility.ELIGIBLE
@@ -726,9 +730,10 @@ export default class BlockQueueManager {
 
     /**
      * Ask every attributed source and the author to prove the block's
-     * lineage, once each. A probe rejected for invalid evidence excludes the
-     * peer inside `sync`; one that meets a dispute window the chain has not
-     * reduced waits inside `sync` for that reduction and is judged after it. A
+     * lineage, once each. A probe whose payload fails validation excludes the
+     * peer inside `sync`; a failed request is the sync's counted close; one
+     * that meets a dispute window the chain has not reduced waits inside
+     * `sync` for that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
      * peer supplied junk: it is excluded here. Probes are owned work that
      * `dispose` waits for.
@@ -745,8 +750,9 @@ export default class BlockQueueManager {
     ): Promise<void> {
         const block = entry.block;
         // Sync waits for an in-flight request and proves this target before
-        // returning success; an invalid proof excludes the peer, an unreduced
-        // dispute window is waited out first.
+        // returning success; an invalid proof excludes the peer, a failed
+        // request is a counted close, an unreduced dispute window is waited
+        // out first.
         const synced =
             await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,

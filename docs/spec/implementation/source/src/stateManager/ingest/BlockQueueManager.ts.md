@@ -49,7 +49,7 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P25` — forged author is rejected before sender refresh or retention
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28` — a failed unknown copy preserves the existing honest contribution
 - [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P32` — clear a disputed gossip queue while an audit replay is held; replay persists the snapshot and reduction completes
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34` — sync with no sender transport ends intake without queueing the block
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34` — sync with no sender transport ends intake with the sync's counted close, no blacklist, without queueing the block
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36` — sync succeeds but the sender is still absent: blacklisted with no queue entry
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37` — stopping the manager clears a future queued block and cancels its timeout
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38` — a queued entry that merged a gossip copy with the chain-committed copy is executed in the chain-committed context: the gossip source is cut and the chain-only consequence still runs
@@ -72,3 +72,5 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P55` — a kill-period read failure inside intake is never a rejecting verdict; the copy is not queued
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56` — an eligibility-refresh failure inside intake is never a rejecting verdict; the copy is not queued
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57` — an intake-gate sync application failure is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P58` — an intake-gate sync whose request fails: the sync's counted close only, the sender is not blacklisted and the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59` — an intake-gate sync whose payload fails validation: the sync blacklists the sender and the copy is not queued

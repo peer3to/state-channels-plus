@@ -528,7 +528,7 @@ Specification cases tested: 5/11. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T
 Specification cases tested: 7/10. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
-Specification cases tested: 32/33. Untested: T1.P37.
+Specification cases tested: 37/38. Untested: T1.P37.
 
 [`REQ-GOSSIP-5-2EQ7P6` (Live gossip waits for the initial sync)](../specification/peer-communication/block-gossip.md#req-gossip-5-2eq7p6)
 Specification cases tested: 5/5.
@@ -918,7 +918,7 @@ Specification cases tested: 79/79.
 Specification cases tested: 45/45.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
-Specification cases tested: 2/3. Untested: T1.P1.
+Specification cases tested: 3/4. Untested: T1.P1.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.

@@ -13,7 +13,7 @@
   Contradicts: `generateSyncPayload` cuts the latest-fork outbound run at the responder's own anchor while `applySyncResponse` verifies it from the requester's chain read, so a requester whose provider lags rejects and blacklists an honest responder; likewise `applySyncResponse` rejects a served window as "dispute window not on chain" when the requester's provider lags the responder's dispute commit ([`FIND-SYNC-5-7W9TWW`](../../../../../../../audit/open-findings.md#find-sync-5-7w9tww)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
-  Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f): honest can't-prove-yet refusal punishes the requester (fault taxonomy pending).
+  Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f): `generateSyncPayload` returns no payload for a requested fork other than the derived latest or an above-latest height, and the caller punishes the requester even when the request is honest (fault taxonomy pending); its own-lag refusals throw and carry no verdict.
 - [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
 - [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 - [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
@@ -144,15 +144,15 @@ Requester verification chain
 Responder proving
 
 - Setup: Request latest/pinned/height-0/above-latest/unknown-fork targets from varied local states
-- Oracle: Pinned forks or verified successors proven; unrelated or unavailable targets refused; malformed height rejected pre-walk; same-fork payload omits cross-fork evidence; refusal consequence documents [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f)
+- Oracle: Pinned forks or verified successors proven; unrelated targets refused; a responder whose own view lags a disputed window fails the request without a verdict on the requester; malformed height rejected pre-walk; same-fork payload omits cross-fork evidence; refusal consequence documents [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f)
 
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P1` — latest-target success
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P2` — height-0 pin
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P3` — above-latest refused
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P4` — unknown fork refused
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P5` — malformed height cheap-rejected
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6` — lagging-responder refusal (documents [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f))
+- [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6` — a responder whose disputed window is not yet locally readable: the request fails with an error reply and neither side blacklists the other
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7` — pinned-target success
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8` — same-fork payload emits an empty pre-genesis outbound segment while preserving the latest-fork outbound proof
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9` — a recovered dispute window identifies a successor whose genesis is not installed; proof serving uses the computed genesis before installation
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the responder refuses to serve, without throwing
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the request fails with an error reply and the requester is not blacklisted

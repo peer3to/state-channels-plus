@@ -825,13 +825,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!currentWindowCommitments) {
                 // the window's disputes are on-chain but not locally readable
-                // yet, so we cannot prove the tip -> refuse to serve rather
-                // than serve a proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - dispute window unavailable",
-                    { channelId, forkId: currentForkId }
+                // yet, so we cannot prove the tip -> fail the request; our lag
+                // is no verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - dispute window unavailable for fork ${currentForkId}`
                 );
-                return undefined;
             }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -851,13 +849,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!computation) {
                 // we cannot rebuild the run this window's reduce consumed, so we
-                // cannot prove the tip -> refuse to serve rather than serve a
-                // proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - reduce data unavailable for a disputed window",
-                    { channelId, forkId: currentForkId }
+                // cannot prove the tip -> fail the request; our lag is no
+                // verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - reduce data unavailable for disputed fork ${currentForkId}`
                 );
-                return undefined;
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;
@@ -912,10 +908,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId) {
             // The requested fork isn't the tip we derive from our own reductions,
             // so we can't prove it. Return undefined → the caller cuts the
-            // requester and the requester cuts us (mutual). A sync requester only
-            // ever asks peers expected to prove the target - the block's own
-            // suppliers/author for the block's fork, or a participant for the
-            // latest - so a peer that can't prove it failed to cooperate.
+            // requester; the requester counts a close against us. A sync
+            // requester only ever asks peers expected to prove the target - the
+            // block's own suppliers/author for the block's fork, or a
+            // participant for the latest - so a peer that can't prove it failed
+            // to cooperate.
             this.logger.debug(
                 `generateSyncPayload - requested fork ${forkId} is not the derived latest fork ${currentForkId}`
             );

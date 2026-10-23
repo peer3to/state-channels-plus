@@ -39,7 +39,7 @@ describe("E2E: BlockQueueManager", function () {
     it("an existing sync handles an unknown-source copy without another wire request", async () => {
         await assertOutsiderProofDoesNotAdmitCopy("busy");
     });
-    it("failed ingress sync blacklists its sender without queueing the triggering block", async () => {
+    it("failed ingress sync ends intake with a counted close of its sender, no blacklist and no queued triggering block", async () => {
         await assertOutsiderProofDoesNotAdmitCopy("failure");
     });
     it("a real slash rejects the next supplier copy without changing held honest work", async () => {
