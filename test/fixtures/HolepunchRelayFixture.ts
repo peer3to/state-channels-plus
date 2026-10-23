@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: typed WebSocket boundary for HolepunchRelay component tests
 
 import HolepunchRelay from "@/HolepunchRelay";
-import { createLogger } from "@/utils";
+import { type Logger, createLogger } from "@/utils";
 import sinon from "sinon";
 
 type WebSocketListener = (event: unknown) => void;
@@ -69,6 +69,8 @@ export class HolepunchRelayFixture {
     private webSocketDescriptor?: PropertyDescriptor;
     private clock?: sinon.SinonFakeTimers;
     private updateCount = 0;
+    private relay?: HolepunchRelay;
+    private logger?: Logger;
 
     public setup(randomValues: number[] = [0]): void {
         this.clock = this.sandbox.useFakeTimers();
@@ -91,13 +93,24 @@ export class HolepunchRelayFixture {
     }
 
     public init(urls: string[]): void {
-        HolepunchRelay.init(
+        this.logger = createLogger(
+            {},
+            {},
+            { level: "error", attachErrorListener: false }
+        );
+        this.relay = HolepunchRelay.init(
             urls,
             () => {
                 this.updateCount += 1;
             },
-            createLogger({}, {}, { level: "error", attachErrorListener: false })
+            this.logger
         );
+    }
+
+    /** Disposes the relay, then its logger, as a runtime's disposal does. */
+    public disposeRuntime(): void {
+        this.relay?.dispose();
+        this.logger?.dispose();
     }
 
     public reset(randomValues: number[]): void {
@@ -140,6 +153,8 @@ export class HolepunchRelayFixture {
         this.webSocketDescriptor = undefined;
         this.clock = undefined;
         this.updateCount = 0;
+        this.relay = undefined;
+        this.logger = undefined;
         RecordingWebSocket.instances = [];
     }
 }

@@ -80,6 +80,12 @@ export class RelayerPool {
         );
     }
 
+    /** Cancels the scheduled retry. */
+    dispose(): void {
+        clearTimeout(this.pendingRetry);
+        this.pendingRetry = undefined;
+    }
+
     private scheduleRetryAfterExhaustion(retry: () => void): void {
         const cappedBackoffMs = Math.min(
             BACKOFF_BASE_MS * 2 ** this.backoffAttempt,

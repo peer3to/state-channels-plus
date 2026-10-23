@@ -36,6 +36,8 @@ staying shared; the worker loads that module by manifest, and the probe's `readC
 - `without a manifest the default host root starts inline`: REQ-RPC-9-8FFE6S.T1.P4, UNIT-TEST-RESOLVE-HOST-ROOT-1-AS1DZ3.P2
 - `a manifest whose export is not a class rejects setup in a worker`: REQ-RPC-9-8FFE6S.T1.P5, UNIT-TEST-HOST-ROOT-ENTRY-1-T7VY0Q.P3
 - `a manifest whose export is not a class rejects setup inline`: REQ-RPC-9-8FFE6S.T1.P6, UNIT-TEST-RESOLVE-HOST-ROOT-1-AS1DZ3.P3
+- `a failed build answers the setup without waiting out the reply drain in a worker`: REQ-RPC-9-8FFE6S.T1.P17
+- `a failed build answers the setup without waiting out the reply drain inline`: REQ-RPC-9-8FFE6S.T1.P18
 - `rejects with the service error's name, message and code in a worker`: REQ-RPC-9-8FFE6S.T1.P7
 - `rejects with the service error's name, message and code inline`: REQ-RPC-9-8FFE6S.T1.P8
 - `rejects a service call before the runtime is built`: REQ-RPC-9-8FFE6S.T1.P9

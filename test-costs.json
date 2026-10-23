@@ -4765,16 +4765,16 @@
       "peakRssGb": 0.797,
       "measurementReason": null
     },
-    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime": {
-      "durationMs": 13741,
-      "avgCores": 0.314,
-      "peakRssGb": 0.487,
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime": {
+      "durationMs": 14285,
+      "avgCores": 0.106,
+      "peakRssGb": 0.225,
       "measurementReason": null
     },
-    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime": {
-      "durationMs": 12159,
-      "avgCores": 0.238,
-      "peakRssGb": 0.327,
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness, ends the inline executor it started, and closes the runtime": {
+      "durationMs": 14017,
+      "avgCores": 0.111,
+      "peakRssGb": 0.247,
       "measurementReason": null
     },
     "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas an inline executor runs a transition whose replay requirement exceeds the default call gas": {
@@ -5723,6 +5723,12 @@
       "durationMs": 3313,
       "avgCores": 0.89,
       "peakRssGb": 0.315,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/LocalContractExecutorSigner.test.ts|LocalContractExecutorSigner deploys through the local EVM with no chain request, numbering its local transactions": {
+      "durationMs": 790,
+      "avgCores": 1.127,
+      "peakRssGb": 0.176,
       "measurementReason": null
     },
     "hardhat|test/evm/P2pRuntimeClientRoot.test.ts|P2pRuntimeClientRoot cleans owned inline executor endpoints after domain disposal fails": {
@@ -7345,6 +7351,18 @@
       "peakRssGb": 0.578,
       "measurementReason": null
     },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a failed build answers the setup without waiting out the reply drain in a worker": {
+      "durationMs": 10574,
+      "avgCores": 0.257,
+      "peakRssGb": 0.309,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a failed build answers the setup without waiting out the reply drain inline": {
+      "durationMs": 10156,
+      "avgCores": 0.147,
+      "peakRssGb": 0.213,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a host root loaded by manifest serves its own internal service in a worker": {
       "durationMs": 12255,
       "avgCores": 0.279,
@@ -8579,6 +8597,18 @@
       "durationMs": 2591,
       "avgCores": 1.015,
       "peakRssGb": 0.18,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/WorkerMonitorStart.test.ts|Worker root event-loop monitor start starts a worker root's monitor before its start with EVENT_LOOP_MONITOR_STARTUP": {
+      "durationMs": 483,
+      "avgCores": 0.766,
+      "peakRssGb": 0.102,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/WorkerMonitorStart.test.ts|Worker root event-loop monitor start starts a worker root's monitor once its start is done by default": {
+      "durationMs": 512,
+      "avgCores": 0.645,
+      "peakRssGb": 0.098,
       "measurementReason": null
     },
     "hardhat|test/rpc/guards/DeferredAdmissionGuard.test.ts|DeferredAdmissionGuard passes ready work, replays one FIFO queue, and separates rejection from expiry": {
@@ -22055,6 +22085,12 @@
       "durationMs": 1468,
       "avgCores": 0.484,
       "peakRssGb": 0.16,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay a relay socket closing after disposal neither logs nor reconnects": {
+      "durationMs": 2094,
+      "avgCores": 0.879,
+      "peakRssGb": 0.243,
       "measurementReason": null
     },
     "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay deduplicates error and close events from one socket": {

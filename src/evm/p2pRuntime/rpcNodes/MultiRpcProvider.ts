@@ -79,6 +79,12 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private reconnects = true;
     /** Whether this outage of every node was already warned about. */
     private allNodesDownWarned = false;
+    /** Requests sent so far; a slow setup's step timings count them. */
+    private sentRequestCount = 0;
+
+    get requestCount(): number {
+        return this.sentRequestCount;
+    }
 
     constructor(nodes: readonly RpcNodeProvider[], logger: Logger) {
         // cacheTimeout -1: ethers keeps a failed answer for 250 ms and would
@@ -118,6 +124,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     ): Promise<Array<JsonRpcResult | JsonRpcError>> {
         // batchMaxCount is 1, so the request queue never batches
         const requests = Array.isArray(payload) ? payload : [payload];
+        this.sentRequestCount += requests.length;
         return Promise.all(requests.map((request) => this.forward(request)));
     }
 

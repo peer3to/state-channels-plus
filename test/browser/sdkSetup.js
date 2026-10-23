@@ -295,19 +295,27 @@ export async function createBrowserSdkExecutor(options = {}) {
                 onRuntimeRoot: options.onRuntimeRoot,
                 hostContext: {
                     createContractExecutor: async (factoryOptions, owner) => {
-                        if (options.clockAdjustmentSeconds !== undefined) {
-                            shiftedClock = new TestClockProvider(
-                                stack.provider,
-                                options.clockAdjustmentSeconds -
-                                    Clock.getClockAdjustmentSeconds()
-                            );
-                            await Clock.init(shiftedClock);
-                            // The sync keeps any offset within one average
-                            // block time, so the adjustment the executor
-                            // receives can differ from the requested one.
-                            clockAdjustmentSeconds =
-                                Clock.getClockAdjustmentSeconds();
-                        }
+                        // Shifted once the host's own Clock runs: the executor
+                        // reads the adjustment after its configuration.
+                        const configuration =
+                            options.clockAdjustmentSeconds === undefined
+                                ? factoryOptions.configuration
+                                : factoryOptions.configuration.then(
+                                      async (executorConfiguration) => {
+                                          shiftedClock = new TestClockProvider(
+                                              stack.provider,
+                                              options.clockAdjustmentSeconds -
+                                                  Clock.getClockAdjustmentSeconds()
+                                          );
+                                          await Clock.init(shiftedClock);
+                                          // The sync keeps any offset within one average
+                                          // block time, so the adjustment the executor
+                                          // receives can differ from the requested one.
+                                          clockAdjustmentSeconds =
+                                              Clock.getClockAdjustmentSeconds();
+                                          return executorConfiguration;
+                                      }
+                                  );
                         const NativeWorker = globalThis.Worker;
                         if (options.dependencies?.workerUrl) {
                             globalThis.Worker = class extends NativeWorker {
@@ -331,17 +339,18 @@ export async function createBrowserSdkExecutor(options = {}) {
                                 }
                             };
                         }
+                        // The executor is the host's first child: its handler is in
+                        // place before it starts, so its earliest error is reported.
+                        if (options.dependencies?.onDetachedError)
+                            RootCreationControl.reportNextChildErrors(
+                                owner,
+                                options.dependencies.onDetachedError
+                            );
                         try {
                             executor = await createContractExecutor(
-                                factoryOptions,
+                                { ...factoryOptions, configuration },
                                 owner
                             );
-                            if (options.dependencies?.onDetachedError)
-                                [...owner.children]
-                                    .at(-1)
-                                    .onError(
-                                        options.dependencies.onDetachedError
-                                    );
                         } finally {
                             globalThis.Worker = NativeWorker;
                         }

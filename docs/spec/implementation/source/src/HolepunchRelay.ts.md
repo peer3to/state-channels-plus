@@ -11,7 +11,7 @@
 Relay wrapper connection lifecycle
 
 - Setup: Initialize the public wrapper over a typed WebSocket boundary and drive socket open, error, and close events through the real DHT/Hyperswarm construction
-- Oracle: Empty configuration stays idle; failures reconnect through pool exhaustion; success resets selection; paired events schedule once
+- Oracle: Empty configuration stays idle; failures reconnect through pool exhaustion; success resets selection; paired events schedule once; after disposal a socket event neither logs nor reconnects
 
 - [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P1` — empty configuration no-op
 - [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P2` — close reconnect
@@ -19,3 +19,4 @@ Relay wrapper connection lifecycle
 - [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P4` — single-relay retry loop
 - [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P5` — success resets exclusions
 - [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P6` — paired error/close deduplication
+- [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P7` — disposal detaches the socket and cancels the pending retry

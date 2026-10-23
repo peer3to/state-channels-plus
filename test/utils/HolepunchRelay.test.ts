@@ -87,6 +87,20 @@ describe("HolepunchRelay", function () {
         ]);
     });
 
+    it("a relay socket closing after disposal neither logs nor reconnects", function () {
+        fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
+        const socket = fixture.latestSocket();
+        socket.emitError();
+
+        fixture.disposeRuntime();
+        // A log through the disposed logger would throw out of this close.
+        socket.emitClose();
+        fixture.tick(30_000);
+
+        expect(fixture.sockets()).to.deep.equal([socket]);
+        expect(socket.readyState).to.equal(3);
+    });
+
     it("deduplicates error and close events from one socket", function () {
         fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
         const failedSocket = fixture.latestSocket();

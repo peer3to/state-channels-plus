@@ -13,6 +13,7 @@ class HolepunchRelay {
     swarm: any;
     logger: Logger;
     private relayerPool: RelayerPool;
+    private socket?: WebSocket;
 
     private static instance: HolepunchRelay;
 
@@ -20,13 +21,14 @@ class HolepunchRelay {
         relayerUrls: string[],
         updateCallback: Function,
         logger: Logger
-    ) {
+    ): HolepunchRelay {
         HolepunchRelay.instance = new HolepunchRelay(
             relayerUrls,
             updateCallback,
             logger
         );
         HolepunchRelay.instance.connectToRelayer();
+        return HolepunchRelay.instance;
     }
     public static getInstance(): HolepunchRelay {
         if (!HolepunchRelay.instance)
@@ -35,6 +37,20 @@ class HolepunchRelay {
     }
     public getSwarm(): any {
         return this.swarm;
+    }
+
+    /**
+     * Stops reconnecting and detaches the socket's handlers before closing it:
+     * the socket closes after its runtime's logger is disposed, and a handler
+     * left attached would log through that logger and reconnect.
+     */
+    public dispose(): void {
+        this.relayerPool.dispose();
+        if (!this.socket) return;
+        this.socket.onopen = null;
+        this.socket.onclose = null;
+        this.socket.onerror = null;
+        this.socket.close();
     }
 
     private connectToRelayer(): void {
@@ -50,6 +66,7 @@ class HolepunchRelay {
         if (!relayerUrl) return;
         try {
             const ws = new WebSocket(relayerUrl);
+            this.socket = ws;
             const dht = new DHT(new Stream(true, ws));
             this.swarm = new Hyperswarm({
                 dht: dht

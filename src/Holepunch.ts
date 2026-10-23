@@ -19,6 +19,8 @@ class Holepunch {
     /** Bound once, so `off` removes only this listener from a shared swarm. */
     private readonly onSwarmUpdate = () => this.logConnectionAttempts();
     private readonly isBrowserRuntime: boolean;
+    /** The browser relay this instance started; absent in Node. */
+    private relay?: HolepunchRelay;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
 
@@ -38,7 +40,7 @@ class Holepunch {
                 this.swarm = (globalThis as any).Hyperswarm || swarm;
                 this.setupSwarm();
             };
-            HolepunchRelay.init(
+            this.relay = HolepunchRelay.init(
                 relayerUrls,
                 relayerUpdateCallback,
                 this.p2pManager.logger
@@ -53,6 +55,8 @@ class Holepunch {
 
     //Mark resources for garbage collection
     public async dispose() {
+        // First: destroying the swarm closes the relay socket.
+        this.relay?.dispose();
         this.leaveTopics();
         this.swarm?.off("update", this.onSwarmUpdate);
         if (typeof this.swarm?.destroy === "function") {

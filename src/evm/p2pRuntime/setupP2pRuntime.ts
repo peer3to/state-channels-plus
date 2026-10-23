@@ -22,6 +22,7 @@ import type { Logger } from "@/utils";
 import { createConfig } from "@/utils/config";
 import type { Config } from "@/utils/config";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { StepTimer } from "@/utils/StepTimer";
 import type {
     StateChannelManagerInterface,
     AStateMachine as AStateMachineContract
@@ -112,6 +113,8 @@ export async function setupP2pRuntime<
 
     let root: P2pRuntimeClientRoot<THost> | undefined;
     let instance: P2pInstance<T, THost> | undefined;
+    // The runtime logs its own steps; these are the client's view of them.
+    const steps = new StepTimer();
     try {
         // Client description of the app contract (rebuilt by the client).
         const stateMachine: SerializedContract = {
@@ -151,6 +154,7 @@ export async function setupP2pRuntime<
             )
         };
 
+        steps.mark("payload");
         root = await createRoot(P2pRuntimeClientRoot<THost>, {
             args: {
                 payload,
@@ -160,6 +164,7 @@ export async function setupP2pRuntime<
             handlerExecutionContext: options?.handlerExecutionContext,
             local: dependencies
         });
+        steps.mark("runtimeStart");
         // The SDK's own services, which every host root subclass inherits.
         const remote = root.p2pRuntimeHostRemoteRoot!
             .rpc as RuntimeConnection<P2pRuntimeHostRoot>;
@@ -207,14 +212,20 @@ export async function setupP2pRuntime<
         // They must be separate so dispute replay never clobbers live state.
         const localStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
+        steps.mark("localStateMachineDeploy");
         const diamondStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
+        steps.mark("diamondStateMachineDeploy");
+        // Each deploy step's time against its transactions' round trips to the runtime.
+        logger.debug("Local state machine deploys", deployBridgeSigner.sent);
         await remote.sdkSetup
             .deployComplete(
                 localStateMachineAddress.toString(),
                 diamondStateMachineAddress.toString()
             )
             .request();
+        steps.mark("runtimeBuild");
+        steps.log(logger, "Runtime setup steps");
         // On the main thread the surfaced WebRTC bridge port has no further
         // worker nesting to bubble up to, so wire it to the local
         // RTCPeerConnection here; inside a worker it stays on

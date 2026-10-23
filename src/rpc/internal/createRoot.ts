@@ -264,7 +264,10 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         return remoteRoot;
     }
     const { localPort, transferablePort } = createTransferableChannel();
+    const creatingAtMs = Date.now();
     let worker: RootWorker | undefined;
+    // When the worker was asked for, and how long `new Worker` blocked the caller.
+    let spawn: { spawnedAt: number; spawnCallMs: number } | undefined;
     let localRoot: AInternalRpcRoot | undefined;
     let starting: Promise<void> | undefined;
     let finishing: Promise<void> | undefined;
@@ -318,12 +321,14 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             if (!options.workerUrl)
                 throw new Error("Worker roots require an explicit workerUrl");
             // The parent's logger receives the worker's drain-timeout warning.
+            const spawnedAt = Date.now();
             worker = createRootWorker(
                 options.workerUrl,
                 failed,
                 parent.rootLogger,
                 entry.name
             );
+            spawn = { spawnedAt, spawnCallMs: Date.now() - spawnedAt };
             worker.postMessage(
                 {
                     type: "connect",
@@ -358,6 +363,23 @@ async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
                 .catch(failed);
         }
         await childRemoteRoot.awaitReady();
+        // A setup that runs past its bound lists which roots became ready, and when.
+        const entryFile = String(options.workerUrl ?? "")
+            .split("/")
+            .pop()
+            ?.split("?")[0];
+        parent.rootLogger.debug("Child root ready", {
+            root: entry.name,
+            mode: options.mode,
+            readyMs: Date.now() - creatingAtMs,
+            // The worker's "Root worker started" names its own start (timeOrigin): the gap
+            // from spawnedAt to it is the browser starting the thread.
+            ...spawn,
+            // A worker's own entry script is fetched in its parent's timeline.
+            entryFetch: entryFile
+                ? fetchedFiles().filter(({ file }) => file === entryFile)
+                : []
+        });
     } catch (error) {
         childRemoteRoot.closeWithReason(
             error instanceof Error ? error : new Error(String(error))
@@ -452,7 +474,10 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
 ): void {
     // every log line of this worker names it; unnamed it logs as "main"
     if (options?.threadName) globalThis.threadName = options.threadName;
+    // A worker's clock starts at its creation: this is its bundle's download and evaluation.
+    const loadedMs = globalThis.performance.now();
     onRootBootstrap<TArgs>(async (message) => {
+        const bootstrapMs = globalThis.performance.now();
         const port = adaptTransferredPort(message.port);
         let receivingRoot: AInternalRpcRoot | undefined;
         // Same policy as the sdk worker: an error outside a request is reported to
@@ -472,8 +497,21 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             const rootClass =
                 (await options?.resolveRoot?.(message.payload)) ?? entry;
             const root = new rootClass(message.payload, undefined, context);
+            const constructedMs = globalThis.performance.now();
             receivingRoot = root;
             await context.initialize(root);
+            // Where a slow worker startup goes: its bundle, its parent's bootstrap, its own start,
+            // and each file it fetched (from the worker's creation; 0 bytes = from cache).
+            root.logger.attachedLogger.debug("Root worker started", {
+                root: entry.name,
+                // Epoch ms of this thread's start; its parent logs when it asked for it.
+                timeOrigin: Math.round(globalThis.performance.timeOrigin),
+                loadedMs: Math.round(loadedMs),
+                bootstrapMs: Math.round(bootstrapMs),
+                constructedMs: Math.round(constructedMs),
+                startedMs: Math.round(globalThis.performance.now()),
+                fetched: fetchedFiles()
+            });
         } catch (error) {
             try {
                 port.post({
@@ -498,6 +536,25 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             }
         }
     });
+}
+
+/** The scripts and WebAssembly this thread fetched, with their times from its creation. */
+function fetchedFiles(): {
+    file: string;
+    startMs: number;
+    endMs: number;
+    kB: number;
+}[] {
+    const entries = (globalThis.performance?.getEntriesByType?.("resource") ??
+        []) as PerformanceResourceTiming[];
+    return entries
+        .filter((entry) => /\.(m?js|wasm)(\?|$)/.test(entry.name))
+        .map((entry) => ({
+            file: entry.name.split("/").pop()?.split("?")[0] ?? entry.name,
+            startMs: Math.round(entry.startTime),
+            endMs: Math.round(entry.responseEnd),
+            kB: Math.round(entry.transferSize / 1024)
+        }));
 }
 
 /**

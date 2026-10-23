@@ -780,7 +780,7 @@ Specification cases tested: 12/12.
 Specification cases tested: 0/3.
 
 [`REQ-RPC-9-8FFE6S` (Application host root)](../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
-Specification cases tested: 16/16.
+Specification cases tested: 18/18.
 
 [`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../specification/runtime/execution.md#req-run-2-gbcz5b)
 Specification cases tested: 0/1.

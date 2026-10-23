@@ -30,6 +30,11 @@ export type Config = {
     // enables the ##E2E_TIMING## diagnostics the parallel runner parses
     // (per-thread delay peaks, worker boot times). Tests set 1.
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
+    // With the monitor enabled: true starts a worker root's monitor before its
+    // own start, so the start's load shows too. False (the default, and what
+    // tests use) starts it once the root is ready, so a loaded test machine's
+    // slow startups do not trip the threshold.
+    EVENT_LOOP_MONITOR_STARTUP: boolean;
     // Max entries in the per-thread signer-recovery cache (message+signature ->
     // address). Bounds memory; evicts oldest past this.
     SIGNER_RECOVERY_CACHE_MAX: number;
@@ -77,6 +82,7 @@ const DEFAULT_CONFIG: Config = {
     VM_DEDICATED_THREAD: false,
     RUN_SDK_IN_THREAD: false,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
+    EVENT_LOOP_MONITOR_STARTUP: false,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
     LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     JOIN_CHANNEL_DEADLINE_SECONDS: DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS,

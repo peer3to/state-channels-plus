@@ -16,3 +16,4 @@ DHT, stream, Hyperswarm, and `RelayerPool` construction.
 - `keeps retrying one configured relay`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P4
 - `resets failed-relay exclusions after a successful connection`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P5
 - `deduplicates error and close events from one socket`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P6
+- `a relay socket closing after disposal neither logs nor reconnects`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P7
