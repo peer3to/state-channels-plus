@@ -208,8 +208,15 @@ export default class BlockQueueManager {
 
             return true;
         } catch (error) {
+            // A throw here is a local fault (e.g. an unavailable chain
+            // provider or a failed local-diamond read), not a verdict on
+            // the sender: `false` would blacklist an honest gossiper for
+            // our own infrastructure failure, and rethrowing would make
+            // the RPC layer drop its session. Log it, drop the copy and
+            // keep the connection; gossip redundancy redelivers. Only
+            // the explicit verdicts above reject the sender.
             this.logger.error(`Error ingesting block confirmation:`, { error });
-            return false;
+            return true;
         }
     }
 

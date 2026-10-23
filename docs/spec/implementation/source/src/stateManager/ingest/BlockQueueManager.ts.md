@@ -11,6 +11,8 @@
 - [`REQ-BLOCK-PIPE-9-QA66GT` (Dead-fork containment)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
+  Contradicts: `ingestBlockConfirmation`'s catch swallows local faults (logs, drops the copy, returns the accepting verdict) instead of failing, though this requirement's refresh failure is fatal and sdk.md requires unexpected errors to surface — accepted under the loose-policy decision (engineer, 2026-10-16): local intake failures are tolerated and nobody is blacklisted for them; the general rate limit is the spam bound, [`FIND-RUNTIME-2-4B0D0Q`](../../../../../audit/open-findings.md#find-runtime-2-4b0d0q)
+- [`REQ-GOSSIP-2-9PMMNH` (Verdict-mapped consequences)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
@@ -66,3 +68,7 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P51` — a dispute-replay entry at an empty height below the next height is not past: validation reaches the dispute strategy's linkage guard
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P52` — a queued entry whose height a compact sync left empty below the next height is dropped at queue expiry: no queued execution, no `sync` call, no queue entry or stored block, no cut source, no fraud proof
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P53` — a dequeued entry handed to `restoreQueuedEntry` after a compact sync left its height empty below the next height is settled as past: processed, not queued again, no new queue timeout
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P54` — a disputed-fork check failure inside intake is never a rejecting verdict for network or calldata origins; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P55` — a kill-period read failure inside intake is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56` — an eligibility-refresh failure inside intake is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57` — an intake-gate sync application failure is never a rejecting verdict; the copy is not queued
