@@ -1058,23 +1058,26 @@ describe("Unit: SpectateService", function () {
 
             // blinded recovery: the missing dispute can never be recovered
             const blinded = await h.rpcStub.hideChainLogs(observerIndex);
+            let refusal = "";
             let accepted: boolean;
             try {
-                accepted = await h.execOnHost(
-                    requester,
-                    async (sm, args) =>
-                        sm.p2pManager.localRpc.spectateService.sync(
-                            args.responder,
-                            sm.channelId,
-                            args.forkId,
-                            0
-                        ),
-                    { responder: responder.address, forkId }
-                );
+                // the responder's own refusal names the unreadable window
+                await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() })
+                    .catch((e: unknown) => {
+                        refusal = e instanceof Error ? e.message : String(e);
+                    });
+                accepted = await h
+                    .control(requester)
+                    .spectate.sync(responder.address, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } finally {
                 await blinded.restore();
             }
 
+            expect(refusal).to.contain("dispute window unavailable for fork");
             expect(accepted, "a window we cannot read must not be served").to.be
                 .false;
             expect(

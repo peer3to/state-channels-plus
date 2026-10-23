@@ -777,10 +777,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId) {
             // The requested fork isn't the tip we derive from our own reductions,
             // so we can't prove it. Return undefined → the caller cuts the
-            // requester and the requester cuts us (mutual). A sync requester only
-            // ever asks peers expected to prove the target - the block's own
-            // suppliers/author for the block's fork, or a participant for the
-            // latest - so a peer that can't prove it failed to cooperate.
+            // requester; the requester counts a close against us. A sync
+            // requester only ever asks peers expected to prove the target - the
+            // block's own suppliers/author for the block's fork, or a
+            // participant for the latest - so a peer that can't prove it failed
+            // to cooperate.
             this.logger.debug(
                 `generateSyncPayload - requested fork ${forkId} is not the derived latest fork ${currentForkId}`
             );

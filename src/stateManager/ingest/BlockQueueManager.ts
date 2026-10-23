@@ -728,7 +728,8 @@ export default class BlockQueueManager {
 
     /**
      * Ask every attributed source and the author to prove the block's
-     * lineage, once each. A failed probe excludes the peer inside `sync`. A
+     * lineage, once each. A probe whose payload fails validation excludes the
+     * peer inside `sync`; a failed request is the sync's counted close. A
      * probe that succeeds without that lineage carrying the block proves the
      * peer supplied junk: it is excluded here. Probes are owned work that
      * `dispose` waits for.
@@ -745,7 +746,8 @@ export default class BlockQueueManager {
     ): Promise<void> {
         const block = entry.block;
         // Sync waits for an in-flight request and proves this target before
-        // returning success; a failed proof excludes the peer.
+        // returning success; an invalid proof excludes the peer, a failed
+        // request is a counted close.
         const synced =
             await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,

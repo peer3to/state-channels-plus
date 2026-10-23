@@ -66,5 +66,5 @@ Two install cases stage a reducible disputed fork and sync an observer onto the 
 - `window already reduced locally by a concurrent sync, with a fabricated inbound successor → accepted, only the concurrent sync's genuine inbound blocks stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P96
 - `committed dispute missing locally → recovers before generating the payload`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9
 - `reduce data unavailable for a disputed window → the request fails, the requester is not blacklisted (needs a mirror ahead of storage)`: none
-- `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P1
+- `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P4
 - `all dispute events suppressed → recovers and proves the successor fork`: none

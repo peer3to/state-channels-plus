@@ -211,7 +211,7 @@ export async function assertStoredMalformedNetworkCopy() {
 }
 
 export async function assertOutsiderProofDoesNotAdmitCopy(
-    mode: "success" | "busy" | "failure" = "success"
+    mode: "success" | "busy" | "failure" | "invalid" = "success"
 ) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
@@ -245,6 +245,10 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
         .control(observer)
         .stub.observeAdmission({ source: outsider.address })
         .request();
+    // the outsider answers with bytes that are no sync payload -> the sync
+    // itself rejects the sender's data
+    if (mode === "invalid")
+        await h.control(outsider).stub.stubSpectatePayload("0x1234").request();
     await h.control(outsider).stub.holdSpectateResponses().request();
     const ordinarySync =
         mode === "busy"
@@ -323,7 +327,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
                 ).completedIntakes === 1
         );
         if (ordinarySync) await ordinarySync;
-        if (mode === "success")
+        if (mode === "success" || mode === "invalid")
             expect(
                 (
                     await h
@@ -331,7 +335,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
                         .stub.getAdmissionObservation()
                         .request()
                 ).successfulSyncs
-            ).to.equal(1);
+            ).to.equal(mode === "success" ? 1 : 0);
         expect(
             await h
                 .control(observer)
@@ -342,8 +346,9 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
             (await h.control(observer).stub.getAdmissionObservation().request())
                 .networkEntries
         ).to.equal(0);
-        // a valid sync that leaves the sender absent is a verdict; a failed
-        // request is only the counted close the sync already made
+        // a valid sync that leaves the sender absent is a verdict, and so is
+        // an invalid payload; a failed request is only the counted close the
+        // sync already made
         expect(
             await h
                 .control(observer)
@@ -383,6 +388,11 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
     } finally {
         await h.control(outsider).stub.releaseSpectateResponses().request();
         await ordinarySync;
+        if (mode === "invalid")
+            await h
+                .control(outsider)
+                .stub.restoreSpectateStaleProof()
+                .request();
         await h.control(observer).stub.restoreAdmissionObservation().request();
     }
 }

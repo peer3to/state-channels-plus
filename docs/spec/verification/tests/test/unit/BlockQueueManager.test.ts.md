@@ -71,6 +71,7 @@ again.
 - `a fork recovery scheduled or firing after stop began never runs`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46
 - `a queue timeout firing after stop began starts no source probe`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43
 - `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
+- `an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59, REQ-GOSSIP-4-J5Z4DF.T1.P48
 - `a drain that dequeues a stored copy still drains the queued next block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47
 - `an oversized verified eligibility cache does not expand the N-source allowance`: REQ-QSTORE-2-VYWJAQ.T1.P39, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P14
 - `an explicit validation strategy stays outside the queued storage clone boundary`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P16

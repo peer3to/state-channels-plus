@@ -122,7 +122,7 @@ export class RPCActions<
     async sendFakeDisputeRequest(options: {
         fromPeer: number;
         toPeer: number;
-    }): Promise<void> {
+    }): Promise<ForkId> {
         const { fromPeer, toPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
         const fromAddress = this.harness.getPeer(fromPeer).address;
@@ -136,6 +136,7 @@ export class RPCActions<
                 fakeForkId
             )
             .request();
+        return fakeForkId;
     }
 
     async simulateBuildOnDisputedFork(options: {

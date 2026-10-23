@@ -126,7 +126,10 @@ describe("E2E: Is Fork Disputed", function () {
             h.event.resetEventSpies();
             // the responder cannot tell a fork its own chain view lags on
             // from one that is not disputed at all
-            await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
+            const fakeForkId = await h.rpc.sendFakeDisputeRequest({
+                fromPeer: 0,
+                toPeer: 1
+            });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 1,
                 expectedFinalCount: 1
@@ -135,6 +138,16 @@ describe("E2E: Is Fork Disputed", function () {
                 observer: h.getPeer(1),
                 target: h.getPeer(0)
             });
+            // nothing recorded -> a later real request is no duplicate
+            expect(
+                await h
+                    .control(h.getPeer(1))
+                    .handshake.didIAcknowledgeDisputedFork(
+                        h.getPeer(0).address,
+                        fakeForkId
+                    )
+                    .request()
+            ).to.equal(false);
         });
 
         it("should run stubbed RPC method via createRPCMethods wrapper", async function () {

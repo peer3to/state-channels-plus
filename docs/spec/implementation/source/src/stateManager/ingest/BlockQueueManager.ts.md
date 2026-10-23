@@ -72,3 +72,4 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56` — an eligibility-refresh failure inside intake is never a rejecting verdict; the copy is not queued
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57` — an intake-gate sync application failure is never a rejecting verdict; the copy is not queued
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P58` — an intake-gate sync whose request fails: the sync's counted close only, the sender is not blacklisted and the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59` — an intake-gate sync whose payload fails validation: the sync blacklists the sender and the copy is not queued

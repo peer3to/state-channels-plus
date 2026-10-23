@@ -311,6 +311,10 @@ describe("Unit: BlockQueueManager", () => {
         await assertOutsiderProofDoesNotAdmitCopy("success");
     });
 
+    it("an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("invalid");
+    });
+
     it("an oversized verified eligibility cache does not expand the N-source allowance", async () => {
         const f = new QueueIntakeFixture();
         await f.start();
