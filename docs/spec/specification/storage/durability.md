@@ -62,7 +62,10 @@ half-apply.
 can still require it: the relevant windows (dispute, kill, challenge, contest) are expired, the
 on-chain snapshot has advanced past it, and no synchronization or watchtower duty the node has
 accepted still depends on it. Pruning MUST NOT remove evidence needed to contest within any window
-that is still open or can still be opened against retained state.
+that is still open or can still be opened against retained state. The pruning that the stored state
+proof permits is specified in [proof-store.md](./proof-store.md): its first phase prunes only below
+the on-chain snapshot within this requirement, and pruning above the on-chain snapshot is open
+under [`OQ-SPEC-PROOFSTORE-2-V4N7VH` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-v4n7vh).
 
 **<a id="req-stor-5-t6eqsa"></a>`REQ-STOR-5-T6EQSA` — Isolation, integrity, and versioned encoding.** Stores are keyed by channel and fork;
 one channel's data can neither shadow nor corrupt another's. Corruption MUST be detected and fail

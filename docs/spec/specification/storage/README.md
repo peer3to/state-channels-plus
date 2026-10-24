@@ -16,7 +16,8 @@ strength, never observable semantics.
 - **Owned state.** All locally stored protocol data, organized as modules with disjoint key spaces:
   the block store, the pre-execution queue, message-block stores (one inbound, one outbound),
   snapshot and state-machine-state stores, participant-set change points, dispute and fraud-proof
-  evidence, block-calldata records, timeout candidates, and progress/intent markers.
+  evidence, block-calldata records, timeout candidates, progress/intent markers, and the stored
+  state proof of the active fork.
 - **Public inputs.** Store, merge, and update operations from every producing system; every write
   carries data already validated by its producer to the degree the module's contract states —
   storage itself validates keys and merge rules, never protocol semantics.
@@ -26,9 +27,9 @@ strength, never observable semantics.
 - **Calls.** Nothing — storage is a leaf. It performs no chain reads, no peer communication, and no
   state-machine execution.
 - **Called by.** Block progression (blocks, queue, snapshots, states); settlement (message blocks,
-  progress markers); disputes (dispute/fraud-proof evidence, timeouts, calldata); peer communication
-  (attribution written through queue intake, sync served from stores); runtime (recovery reads
-  everything back at restart).
+  progress markers); disputes (dispute/fraud-proof evidence, timeouts, calldata, the stored state
+  proof); peer communication (attribution written through queue intake, sync served from stores);
+  runtime (recovery reads everything back at restart).
 - **Trust and availability assumptions.** Stored data is only as trustworthy as its producer's
   validation; read-back re-enters validation per [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](durability.md#req-stor-3-4rjger). The medium is
   currently process-lifetime memory: durability across restart is **not yet provided**, and every
@@ -72,6 +73,7 @@ what is specific to that module: its key space, data model, merge/update rules, 
 | [dispute-evidence.md](./dispute-evidence.md) | Dispute store, fraud-proof store, dispute-fraud-proof store | Dispute confirmations with signature merge, disputed-fork and own-dispute flags, content-addressed proofs and their indexes. |
 | [calldata-and-timeouts.md](./calldata-and-timeouts.md) | Block-calldata store, timeout store | Calldata records keyed by fork/height/author with exact-hash matching; newest timeout candidate per fork. |
 | [progress-markers.md](./progress-markers.md) | Event-sync and force-exit markers, force-join record | Monotone chain-observation progress and local intent flags that survive across protocol phases. |
+| [proof-store.md](./proof-store.md) | State proof store (draft) | One stored state proof per active fork: seeding, extension, construction above the stored prefix, re-rooting on anchor advance, reset on fork change, and the block pruning it permits in two phases. |
 
 ## Interaction contracts
 

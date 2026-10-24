@@ -75,5 +75,7 @@ Equivocation evidence handling lives with block processing, not here.
 
 ## Future Work
 
-_Non-normative._ Per-fork pruning hooks once obligation-bounded retention ([`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](durability.md#req-stor-4-mf6ft6)) gets a
-concrete pruning policy.
+_Non-normative._ Per-fork pruning hooks for the pruning of [proof-store.md](./proof-store.md),
+within obligation-bounded retention ([`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](durability.md#req-stor-4-mf6ft6)). Pruning gaps above the on-chain
+snapshot would end the history contiguity that [`REQ-BLKSTORE-3-S9V2KC`](blocks.md#req-blkstore-3-s9v2kc) relies on
+([`OQ-SPEC-PROOFSTORE-2-V4N7VH` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-v4n7vh)).

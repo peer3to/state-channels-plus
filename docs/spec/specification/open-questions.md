@@ -48,6 +48,18 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-OPEN-1-12RH7A`](open-questions.md#oq-spec-open-1-12rh7a)                       | Whether the base-layer open operation must reject opening terms whose deadline has passed                                                                   | Security review        | [enforcement/admission-and-funds.md](./enforcement/admission-and-funds.md), [settlement/lifecycle.md](./settlement/lifecycle.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md) | Resolved                          |
 | [`OQ-SPEC-OPEN-2-YQTTTB`](open-questions.md#oq-spec-open-2-yqtttb)                       | Minimum time an opening proposal's deadline must leave before the higher peer signs and submits                                                             | Security review        | [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)                                                                                                                                   | Resolved                          |
 | [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216) | Future spectator relaying                                                                                                                                   | Plan                   | Current queue admission and optional promotion                                                                                                                                                                             | Future; non-blocking              |
+| [`OQ-SPEC-PROOFSTORE-1-SW4ZGT`](open-questions.md#oq-spec-proofstore-1-sw4zgt)           | Retention rule for pruning below the on-chain snapshot                                                                                                      | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-2-V4N7VH`](open-questions.md#oq-spec-proofstore-2-v4n7vh)           | Pruning above the anchor and lost exact-height checks                                                                                                       | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md), [disputes/fraud-proofs.md](./disputes/fraud-proofs.md)                                                               | Open                              |
+| [`OQ-SPEC-PROOFSTORE-3-F9HWYC`](open-questions.md#oq-spec-proofstore-3-f9hwyc)           | Which membership hops the stored proof keeps                                                                                                                | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md), [storage/participant-changes.md](./storage/participant-changes.md)                                             | Open                              |
+| [`OQ-SPEC-PROOFSTORE-4-DZSGJP`](open-questions.md#oq-spec-proofstore-4-dzsgjp)           | Merging a received or longer proof into the stored proof                                                                                                    | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Open                              |
+| [`OQ-SPEC-PROOFSTORE-5-W48ZR6`](open-questions.md#oq-spec-proofstore-5-w48zr6)           | Old-fork data after a fork change                                                                                                                           | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-6-X70EWK`](open-questions.md#oq-spec-proofstore-6-x70ewk)           | Full-state retention                                                                                                                                        | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [storage/snapshots-and-states.md](./storage/snapshots-and-states.md)                                                                                                   | Open                              |
+| [`OQ-SPEC-PROOFSTORE-7-TJW3H8`](open-questions.md#oq-spec-proofstore-7-tjw3h8)           | Extending the stored proof on demand or by vote tracking                                                                                                    | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [protocol-model/finality.md](./protocol-model/finality.md)                                                                                                             | Open                              |
+| [`OQ-SPEC-PROOFSTORE-8-QR7WWQ`](open-questions.md#oq-spec-proofstore-8-qr7wwq)           | Re-rooting and base-layer finality of the adoption                                                                                                          | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [enforcement/local-mirror.md](./enforcement/local-mirror.md)                                                                                                           | Open                              |
+| [`OQ-SPEC-PROOFSTORE-9-53J8GE`](open-questions.md#oq-spec-proofstore-9-53j8ge)           | Restart durability of the stored proof                                                                                                                      | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-10-ETB3H1`](open-questions.md#oq-spec-proofstore-10-etb3h1)         | Snapshot updates that bound the stored proof                                                                                                                | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [enforcement/snapshot-adoption.md](./enforcement/snapshot-adoption.md)                                                                                                 | Open                              |
+| [`OQ-SPEC-PROOFSTORE-11-J7D4H1`](open-questions.md#oq-spec-proofstore-11-j7d4h1)         | Missing-evidence policy with pruned storage                                                                                                                 | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Open                              |
+| [`OQ-SPEC-PROOFSTORE-12-BDFC1J`](open-questions.md#oq-spec-proofstore-12-bdfc1j)         | Ordering of stored-proof writers and readers                                                                                                                | Specification analysis | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                     | Open                              |
 
 ## Register assumptions and constraints
 
@@ -767,3 +779,360 @@ top-up only; (3) also allow a top-up without countersignatures from the other pa
 (3) needs a bound on the inbound message queue, because unsigned top-ups could flood it. Requested
 engineer decision: which alternative the protocol uses. Until then, a top-up keeps the pin and the
 countersignatures. This blocks a cheaper top-up path, not the current behavior.
+
+<a id="oq-spec-proofstore-1-sw4zgt"></a>
+
+## OQ-SPEC-PROOFSTORE-1-SW4ZGT — Retention rule for pruning below the on-chain snapshot
+
+Raised 2026-10-17. The first phase of the stored state proof prunes only below the mirrored chain
+anchor, and only inside [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6) as written ([`REQ-PROOFSTORE-8-XWEMTJ` (Pruning below the on-chain snapshot)](storage/proof-store.md#req-proofstore-8-xwemtj)). That
+requirement names conditions — the windows expired, the on-chain snapshot past the data, no
+accepted synchronization or watchtower duty — but no concrete rule: which windows count, what pins
+data, when the check runs, and what must be stored first. Below the anchor, stale claims meet the
+anchor itself (`DisputeStateProofBelowOnChainAnchor`, `TimeoutSupersededByFinalState`). Block
+fraud proofs have no window, so pruning gives up those whose evidence lay only in pruned blocks,
+for example an old double sign. A timeout claim against a fully signed block needs that exact
+block for `TimeoutThreshold` unless the anchor already supersedes the claim.
+
+Readers still reach below the anchor. Every synchronization payload carries the fork genesis
+snapshot, its encoded state, and the outbound message-block range from the on-chain tip to the fork
+genesis, so the first phase keeps them. The participant union of the anchor block reads the snapshot
+of the block below it ([`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)). When the anchor block removes a member,
+pruning the block below it leaves that union with the anchor's own set. A late valid confirmation
+of the anchor block by the removed member then reads as a signature from outside the union, which
+the live pipeline strips while disconnecting its suppliers. [`INV-PROOFSTORE-2-NT5FD6` (Absence is never evidence)](storage/proof-store.md#inv-proofstore-2-nt5fd6) forbids
+that punishment; what happens to the signature is open.
+
+Owner: [state proof store](storage/proof-store.md). Affected: [durability](storage/durability.md),
+[snapshot and state stores](storage/snapshots-and-states.md),
+[fraud proofs](disputes/fraud-proofs.md), the watchtower data needs of [`OQ-44-3Y5MD7`](open-questions.md#oq-44-3y5md7), and the
+evidence retention of [`OQ-SPEC-SP-RECOVERY-1-N85P7T`](open-questions.md#oq-spec-sp-recovery-1-n85p7t). Alternatives for the rule: (1) a retention floor at the
+finalized on-chain snapshot height; prune only after the dispute window is closed; store the
+snapshot durably before pruning; prune only below a watermark equal to the lower of the snapshot
+height and the lowest height that the node's own signatures still reference; (2) prune at each
+anchor advance once no dispute, kill, challenge, or contest window is open on the fork and no
+accepted synchronization or watchtower duty pins the range; (3) prune only after a configured
+margin, either a delay or a number of later anchor advances; (4) prune nothing below the anchor
+until the stored proof survives restart ([`OQ-SPEC-PROOFSTORE-9-53J8GE`](open-questions.md#oq-spec-proofstore-9-53j8ge)). Alternatives for the anchor
+block's union, which combine with any rule: (a) keep the snapshot of the block below the anchor
+block while the anchor block is held; (b) keep the anchor block's participant union with the stored
+proof; (c) merge no late confirmation into a block at or below the anchor; (d) drop such a
+signature as unverifiable input, without punishment. Alternatives for the blocks of a run that
+re-rooting drops from the stored proof ([`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](storage/proof-store.md#req-proofstore-6-38g1kc)), including support that only the
+stored proof held, such as a block that conflicts with the adopted block at the anchor height and
+is evidence of a double sign by its author, which also combine with any rule: (e) keep all of them
+under the chosen rule, like block history below the anchor; (f) keep only the blocks that conflict
+with an adopted block under the chosen rule, and let the rest go at the next prune. Requested
+engineer decision: the rule, its pins, how the anchor block's union survives pruning, and how long
+the blocks of a dropped run stay. This blocks first-phase pruning, not the
+stored proof itself.
+
+<a id="oq-spec-proofstore-2-v4n7vh"></a>
+
+## OQ-SPEC-PROOFSTORE-2-V4N7VH — Pruning above the anchor and lost exact-height checks
+
+Raised 2026-10-17. The second phase prunes ordinary blocks above the chain anchor that no milestone
+run of the stored proof needs ([`REQ-PROOFSTORE-9-CZTA0N` (Pruning between proven parts of the stored proof)](storage/proof-store.md#req-proofstore-9-czta0n)). With anchor 50, a kept run [60, 61],
+and final point 75, blocks 62–74 lie between two proven runs and would go while the chain anchor is
+still 50. Blocks 51–59 lie between the anchor and the first kept run; whether that range is a
+prunable gap too is part of this question. [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6) forbids both as written, because the
+on-chain snapshot has not advanced past those blocks. Gaps also end the history contiguity that
+[`REQ-BLKSTORE-3-S9V2KC` (Tip tracking and bounded traversal)](storage/blocks.md#req-blkstore-3-s9v2kc) and [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](storage/snapshots-and-states.md#req-snapstore-2-q7e6tq) rely on; [`FIND-STORAGE-3-GYR34M`](../audit/open-findings.md#find-storage-3-gyr34m) keeps a
+tripwire on that premise.
+
+These checks read a block at an exact height and lose their input at a pruned height:
+
+- the final-state conflict counter (`DisputeConflictsWithFinalState`) needs a verified final point
+  at exactly the disputed block's height;
+- the not-latest-state counter (`DisputeNotLatestState`) scans above the dispute height for the
+  disputer's own newer signature;
+- the timeout audit needs the exact block with direct full signatures (`TimeoutThreshold`) and the
+  block before it with its on-chain timestamp;
+- same-coordinate conflict and double-sign detection (`BlockDoubleSign`) need the stored block at
+  that height;
+- late signatures merge only into a stored block, so a pruned block gains no votes;
+- invalid-transition fraud proofs, including those embedded in a dispute counter, need the
+  predecessor block, its snapshot, and its full state;
+- the participant union at a kept block reads the snapshot of the block below it, so pruning the
+  block just below a kept run or the newest milestone, such as 59 below the hop at 60, judges a late
+  confirmation from a member that block removes against the resulting set alone.
+
+Owner: [state proof store](storage/proof-store.md) and [durability](storage/durability.md).
+Affected: [block store](storage/blocks.md), [snapshot and state stores](storage/snapshots-and-states.md),
+[fraud proofs](disputes/fraud-proofs.md), [dispute processing](disputes/dispute-processing.md)
+([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)), and [block processing](block-progression/block-processing.md)
+([`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](block-progression/block-processing.md#req-block-pipe-1-ss24d1), [`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](block-progression/block-processing.md#req-block-pipe-4-cf52j6)). Alternatives: (1) amend
+[`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6) to allow pruning between independently proven milestone runs of the stored proof once
+no open window or accepted duty needs the block, and accept that each listed check is unavailable
+at pruned heights, with the proof tiers and the chain deciding instead; (2) as (1), but keep a
+compact record per pruned height (block hash, snapshot commitment, signer set) and name the checks
+it keeps; (3) as (1), but keep every block that carries the node's own signature or that an open
+window can still reference; (4) no pruning above the anchor, with growth bounded only by snapshot
+updates ([`OQ-SPEC-PROOFSTORE-10-ETB3H1`](open-questions.md#oq-spec-proofstore-10-etb3h1)). Each of (1) to (3) also sets its lower boundary: (i) only gaps
+between two proven runs, so 51–59 stays; (ii) also the range between the anchor and the first proven
+run. Requested engineer decision: whether the second phase happens, the new wording of
+[`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6), whether the range above the anchor and below the first proven run is
+prunable, and for each listed check whether it may be lost, must be kept, or changes form. This
+blocks the second phase, not the first.
+
+<a id="oq-spec-proofstore-3-f9hwyc"></a>
+
+## OQ-SPEC-PROOFSTORE-3-F9HWYC — Which membership hops the stored proof keeps
+
+Raised 2026-10-17. Construction keeps the required finalized membership changes after the anchor
+([`REQ-SP-8-9ZCCEJ`](disputes/state-proofs.md#req-sp-8-9zccej)), and the stored proof keeps them as milestones ([`REQ-PROOFSTORE-3-QDXNH9` (Extension keeps earlier evidence)](storage/proof-store.md#req-proofstore-3-qdxnh9)). A
+milestone is judged from the last final snapshot before it, and its threshold is the union of the
+previous set, the resulting set, and the joiners consumed in its inbound interval
+([`REQ-SP-3-SP1JG4`](disputes/state-proofs.md#req-sp-3-sp1jg4)). A later milestone can therefore be proved final without an earlier join's hop
+when every member of that union signs it: if all six participants sign 75, [75] alone proves 75
+final from anchor 50, with F in its union. It does not prove 60 final: nothing in that proof links
+60 to 75, and its final point is 75. A proof that must end at 60, such as the final-state conflict
+counter at that height, still needs the hop at 60, as does a proof ending between 60 and 75 whose
+run lacks the union across the join
+([`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](storage/proof-store.md#req-proofstore-4-zfcwnb)). A participant that left in between does not sign later blocks
+in normal operation, so its departure needs its own hop. A join and exit in one transition leaves
+the endpoint sets unchanged, so no change point records it ([`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](storage/participant-changes.md#req-pscstore-1-7bdtev)); the joiner still
+belongs to the next hop's union through the consumed inbound interval.
+
+Two choices are separate. Hop selection decides which hops extension appends. Removing a hop that
+is already kept is a different change: [`REQ-PROOFSTORE-3-QDXNH9` (Extension keeps earlier evidence)](storage/proof-store.md#req-proofstore-3-qdxnh9) forbids it on a newer final point,
+and admits replacement evidence only when it proves the same first block.
+
+Owner: [state proof store](storage/proof-store.md). Affected: [state proofs](disputes/state-proofs.md),
+[participant change points](storage/participant-changes.md), and proof size ([`OQ-32-5NDD24`](open-questions.md#oq-32-5ndd24)).
+Alternatives for hop selection: (1) one kept milestone per recorded change point; (2) only the hops
+that verification of the latest final point needs: extension does not append a hop that a later
+final milestone found by the same extension covers, which depends on how extension runs
+([`OQ-SPEC-PROOFSTORE-7-TJW3H8`](open-questions.md#oq-spec-proofstore-7-tjw3h8)); (3) as (1), and also record a join and exit in one transition as a change
+point. A further alternative removes a kept hop once a later kept milestone covers its union; it
+amends the retention rule of [`REQ-PROOFSTORE-3-QDXNH9` (Extension keeps earlier evidence)](storage/proof-store.md#req-proofstore-3-qdxnh9). Both (2) and removal give up proofs ending
+exactly at the hop's height and at later heights whose runs lack the union across it. Requested
+engineer decision: which hops the stored proof appends, whether a kept hop may ever be removed while
+the anchor is below it, whether a join and exit in one transition is a hop point, and whether
+change points stay the source of hops once the stored proof exists. This blocks hop selection in
+the extension rule, not the form of the stored proof.
+
+<a id="oq-spec-proofstore-4-dzsgjp"></a>
+
+## OQ-SPEC-PROOFSTORE-4-DZSGJP — Merging a received or longer proof into the stored proof
+
+Raised 2026-10-17. A node with a stored proof can receive, for the same fork: the same proof again;
+a proof with a later final point; a proof from an earlier or a later anchor; different valid
+evidence for a kept hop; support that differs from its own history at a height; and proofs verified
+in dispute audit. The intent is to keep the longest observed proof, but no rule defines "longest"
+for storage. Dispute reduction selects the longest valid proved history among submitted views
+([`INV-SP-6-GNW74H`](disputes/state-proofs.md#inv-sp-6-gnw74h), [`INV-FIN-8-G6V1M1`](protocol-model/finality.md#inv-fin-8-g6v1m1)); that rule does not define how a stored proof changes.
+
+Some of these inputs can raise the final point record above the active head, for example a proof
+verified in dispute audit whose final point the node has not executed. Construction of the latest
+proof searches only above the record
+([`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](storage/proof-store.md#req-proofstore-4-zfcwnb)), so a read at a requested head below the record has no
+defined result.
+
+Owner: [state proof store](storage/proof-store.md) ([`REQ-PROOFSTORE-2-99RRXK` (Seeding from a verified proof)](storage/proof-store.md#req-proofstore-2-99rrxk)). Affected:
+[state proofs](disputes/state-proofs.md) ([`REQ-SP-10-JMVHTB`](disputes/state-proofs.md#req-sp-10-jmvhtb)),
+[synchronization](peer-communication/synchronization.md),
+[dispute processing](disputes/dispute-processing.md), and the audit finding
+[`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../audit/open-findings.md#find-proof-persistence-1-hyc9ds), whose follow-up direction keeps retained evidence apart from
+executed history. Alternatives, some of which combine: (1) keep the stored prefix and add only hops
+and final points above it; (2) replace the stored proof with a received proof whose final point is
+higher; (3) merge per hop, keeping for each hop evidence that alone proves it, either the shortest
+run or the run with the most required signers; (4) keep proofs verified in dispute audit outside
+the stored proof, as dispute evidence only. "Longest" can mean the highest final point, the highest
+claimed state, or the most kept hops. For a record above the active head: (5) the record never
+rises above the active head, and such evidence stays outside the stored proof until the head
+reaches it; (6) the record may rise above it, and a read below the record returns a projection that
+ends at or below the requested head; (7) the record may rise above it, and every read returns the
+record's proof. Requested engineer decision: the merge rule, the meaning of "longest", where audit
+proofs go, and whether the record may lie above the active head, with what a read below it returns.
+This blocks seeding a node that already holds a stored proof, not the first seed.
+
+<a id="oq-spec-proofstore-5-w48zr6"></a>
+
+## OQ-SPEC-PROOFSTORE-5-W48ZR6 — Old-fork data after a fork change
+
+Raised 2026-10-17. On a fork change the node discards the old fork's stored proof
+([`REQ-PROOFSTORE-7-T0EBMX` (Reset on fork change)](storage/proof-store.md#req-proofstore-7-t0ebmx)). Other old-fork data still has readers. The synchronization responder
+walks the dispute windows from the on-chain snapshot's fork to the target fork, and a pinned
+old-fork request is answered through a verified successor ([`REQ-SYNC-1-T2589H` (Minimum-target proving)](peer-communication/synchronization.md#req-sync-1-t2589h)). Reducers and
+challengers read windows until their challenge period ends ([`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](disputes/dispute-processing.md#req-dvp-2-rg8qr3),
+[`REQ-DVP-3-CFFAW1` (Incorrect reductions are challenged in time)](disputes/dispute-processing.md#req-dvp-3-cffaw1)). Dead-fork handling uses acknowledgment records ([`REQ-DACK-3-J4Z33Y` (Knowledge-gated consequences)](peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)). Old-fork
+blocks can also be audit evidence.
+
+Owner: [state proof store](storage/proof-store.md). Affected:
+[synchronization](peer-communication/synchronization.md),
+[dispute acknowledgment](peer-communication/dispute-acknowledgment.md),
+[dispute processing](disputes/dispute-processing.md), and the implementation question
+[`OQ-IMPL-ACK-PRUNE-1-VT05KB` (Pruning dispute-acknowledgment records)](../implementation/open-questions.md#oq-impl-ack-prune-1-vt05kb). Alternatives: (1) keep all old-fork data until the chain adopts a
+snapshot on a successor fork; (2) keep only lineage records (each window's committed disputes and
+reduction) and the evidence for open windows, and prune old-fork blocks once the fork's windows
+close; (3) keep old-fork data for a fixed number of later fork changes or a fixed time. Requested
+engineer decision: which old-fork records stay and which event ends them. This blocks old-fork
+pruning, not the reset of the stored proof.
+
+<a id="oq-spec-proofstore-6-x70ewk"></a>
+
+## OQ-SPEC-PROOFSTORE-6-X70EWK — Full-state retention
+
+Raised 2026-10-17. A node can hold the full application state of every committed block. Readers
+need full states at specific points: the latest proved final point, for synchronization and for
+[`REQ-SP-10-JMVHTB`](disputes/state-proofs.md#req-sp-10-jmvhtb); the replay base of a dispute audit; the auditing data at the last milestone's
+first block of the node's own dispute; reduction input; and the predecessor state of an
+invalid-transition fraud proof. Every alternative except (1) below removes full states above the
+on-chain snapshot, so it also needs the [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6) change of
+[`OQ-SPEC-PROOFSTORE-2-V4N7VH`](open-questions.md#oq-spec-proofstore-2-v4n7vh).
+
+Owner: [state proof store](storage/proof-store.md) ([`REQ-PROOFSTORE-8-XWEMTJ` (Pruning below the on-chain snapshot)](storage/proof-store.md#req-proofstore-8-xwemtj)). Affected:
+[snapshot and state stores](storage/snapshots-and-states.md), [durability](storage/durability.md),
+[fraud proofs](disputes/fraud-proofs.md), and [dispute processing](disputes/dispute-processing.md).
+Alternatives: (1) keep the full state of every block; (2) keep it only at the final point, in the
+tail, and at the first blocks of kept milestones; (3) keep it only at the final point and in the
+tail, and recompute others by replay forward from an earlier kept state; (4) as (2) or (3), plus
+the states that an open window pins. Replay in (3) needs every block and every inbound message
+block between the kept state and the target. A later kept state is no replay base for an earlier
+one, and a milestone proves finality, not the transitions it skips. Synchronization does not carry
+history between kept runs, and second-phase pruning removes it
+([`REQ-PROOFSTORE-9-CZTA0N` (Pruning between proven parts of the stored proof)](storage/proof-store.md#req-proofstore-9-czta0n)), so (3) also chooses one of: keep contiguous history wherever a
+state may be recomputed, which excludes gap pruning there; fetch the missing history from another
+source; or accept that states in those ranges are unavailable, with the outcome of
+[`OQ-SPEC-PROOFSTORE-11-J7D4H1`](open-questions.md#oq-spec-proofstore-11-j7d4h1) for the dispute-audit replay base, reduction input, and invalid-transition fraud
+proofs. Requested engineer decision: which full states the node keeps, and for (3), its replay
+source. This blocks full-state pruning, not block pruning below the anchor.
+
+<a id="oq-spec-proofstore-7-tjw3h8"></a>
+
+## OQ-SPEC-PROOFSTORE-7-TJW3H8 — Extending the stored proof on demand or by vote tracking
+
+Raised 2026-10-17. The stored proof grows when a membership hop or a later point becomes final
+([`REQ-PROOFSTORE-3-QDXNH9` (Extension keeps earlier evidence)](storage/proof-store.md#req-proofstore-3-qdxnh9)). Finality counts direct and indirect votes ([`REQ-FIN-3-9P9J4Q`](protocol-model/finality.md#req-fin-3-9p9j4q))
+against the hop's union ([`REQ-SP-3-SP1JG4`](disputes/state-proofs.md#req-sp-3-sp1jg4)). An on-demand build adds search work at read time and
+leaves the stored proof behind between reads. Incremental tracking moves that work to commit time;
+it must count indirect votes and consumed joiners, so a direct-only signal that one block carries
+every signer is not enough.
+
+Owner: [state proof store](storage/proof-store.md). Affected: [finality](protocol-model/finality.md)
+and [block processing](block-progression/block-processing.md). Alternatives: (1) on demand: a build
+that searches above the stored prefix finds newly final hops and appends them; (2) incremental:
+each committed block and each merged signature updates the vote count of every open hop, and a hop
+is appended when its union is complete; (3) incremental tracking, with the on-demand build as a
+fallback. Requested engineer decision: when the stored proof is extended. This blocks the
+extension trigger, not what is appended.
+
+<a id="oq-spec-proofstore-8-qr7wwq"></a>
+
+## OQ-SPEC-PROOFSTORE-8-QR7WWQ — Re-rooting and base-layer finality of the adoption
+
+Raised 2026-10-17. The stored proof re-roots when the mirrored chain anchor advances
+([`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](storage/proof-store.md#req-proofstore-6-38g1kc)), and below-anchor pruning follows the same anchor
+([`REQ-PROOFSTORE-8-XWEMTJ` (Pruning below the on-chain snapshot)](storage/proof-store.md#req-proofstore-8-xwemtj)). If a base-layer reorganization removes an adoption after the node
+re-rooted on it, the dropped prefix is gone and the stored proof starts at an anchor the chain no
+longer holds. The system assumes a live, final base chain
+([system assumptions](README.md#system-assumptions-and-constraints)), but no rule says when an
+observed adoption counts as final for this purpose.
+
+Owner: [state proof store](storage/proof-store.md). Affected: [local mirror](enforcement/local-mirror.md),
+[snapshot adoption](enforcement/snapshot-adoption.md), and [`OQ-SPEC-PROOFSTORE-1-SW4ZGT`](open-questions.md#oq-spec-proofstore-1-sw4zgt).
+Alternatives: (1) re-root on observation; (2) re-root only after the adoption reaches a
+confirmation depth or base-layer finality; (3) re-root on observation, but keep the dropped prefix
+and below-anchor data until the adoption is final. Requested engineer decision: when an adoption
+may re-root the stored proof and allow pruning. This blocks the re-root trigger, not the re-root
+rule.
+
+<a id="oq-spec-proofstore-9-53j8ge"></a>
+
+## OQ-SPEC-PROOFSTORE-9-53J8GE — Restart durability of the stored proof
+
+Raised 2026-10-17. No rule says whether the stored proof belongs to the durable set
+([`REQ-STOR-1-D4XE73` (Complete durable set)](storage/durability.md#req-stor-1-d4xe73)); the restart and recovery procedure is the implementation question
+[`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb). The stored proof can be rebuilt from other stores only where all of its
+evidence also exists outside it. That holds for a node that executed every block above the anchor
+and holds no support from received proofs. It does not hold, even in the first phase, for support,
+which exists only in the stored proof ([`INV-PROOFSTORE-1-5KG1NX` (Proof support stays evidence)](storage/proof-store.md#inv-proofstore-1-5kg1nx)), or for a node seeded by
+synchronization, which can lack history between its kept runs
+([`REQ-SP-10-JMVHTB.T4.P8`](disputes/state-proofs.md#req-sp-10-jmvhtb.t4.p8)). After second-phase pruning it holds for no node with gaps: the stored
+proof is then the only copy of its kept runs and their support.
+
+Owner: [state proof store](storage/proof-store.md). Affected: [durability](storage/durability.md).
+Alternatives: (1) the stored proof is part of the durable set and commits with the operation that
+changes it ([`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s)); (2) the stored proof is durable wherever it holds the only copy
+of some evidence, and a rebuildable copy elsewhere; (3) a restarted node seeds the stored proof again
+through synchronization from a peer. Requested engineer decision: whether the stored proof must
+survive a restart, and which of its contents must. This blocks a restart guarantee for the stored
+proof and the start of the second phase, not the first phase.
+
+<a id="oq-spec-proofstore-10-etb3h1"></a>
+
+## OQ-SPEC-PROOFSTORE-10-ETB3H1 — Snapshot updates that bound the stored proof
+
+Raised 2026-10-17. Kept milestones accumulate between anchor advances, and only a same-fork
+snapshot update re-roots the stored proof and lets its older parts go ([`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](storage/proof-store.md#req-proofstore-6-38g1kc)).
+No size or count trigger for a snapshot update is specified. Any trigger also needs a rule for who
+submits and pays, and a target that meets the snapshot rules: a newer threshold-final first block
+([`REQ-SP-5-MTE4RV`](disputes/state-proofs.md#req-sp-5-mte4rv)), the inbound-consumption gate ([`REQ-ENFSNAP-3-VD9T8A` (Inbound-consumption gate)](enforcement/snapshot-adoption.md#req-enfsnap-3-vd9t8a)), and an undisputed fork
+([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)).
+
+Owner: [state proof store](storage/proof-store.md). Affected:
+[snapshot adoption](enforcement/snapshot-adoption.md), [lifecycle](settlement/lifecycle.md), and
+the proof size bounds of [`OQ-32-5NDD24`](open-questions.md#oq-32-5ndd24). Alternatives: (1) no automatic policy; (2) post an update
+once the stored proof exceeds a number of kept milestones or a byte size; (3) post an update after
+each finalized membership change; (4) post an update at a time interval. Requested engineer
+decision: the policy, its limit, and who submits. This blocks a bound on stored-proof size, not the
+stored proof.
+
+<a id="oq-spec-proofstore-11-j7d4h1"></a>
+
+## OQ-SPEC-PROOFSTORE-11-J7D4H1 — Missing-evidence policy with pruned storage
+
+Raised 2026-10-17. Missing signatures can lower the proved final point and leave a valid tail
+([`REQ-SP-8-9ZCCEJ`](disputes/state-proofs.md#req-sp-8-9zccej)). Unavailable required evidence or state is fatal ([`REQ-SP-9-RNXP56`](disputes/state-proofs.md#req-sp-9-rnxp56),
+[`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48), [`REQ-DA-1-NVV85Z`](security/data-availability.md#req-da-1-nvv85z)). Pruning makes more data absent.
+[`INV-PROOFSTORE-2-NT5FD6` (Absence is never evidence)](storage/proof-store.md#inv-proofstore-2-nt5fd6) forbids reading absence as fraud evidence; it does not say what a reader
+does instead. The audit finding [`FIND-SECURITY-3-REDPJW`](../audit/open-findings.md#find-security-3-redpjw) shows the cost of the opposite reading on
+chain, where absent pruned inbound history is treated as forged. The question arises in the first
+phase too, without pruning: a node seeded by synchronization can lack history between the anchor
+and its first kept run, or between kept runs, so an exact-height read there finds nothing
+([`REQ-PROOFSTORE-5-VNQGDG` (One proof source for every reader)](storage/proof-store.md#req-proofstore-5-vnqgdg)).
+
+Owner: [state proof store](storage/proof-store.md). Affected: [state proofs](disputes/state-proofs.md),
+[dispute processing](disputes/dispute-processing.md), and
+[data availability](security/data-availability.md). Alternatives: (1) required evidence stays fatal
+when absent, and optional checks are skipped; (2) fetch absent data from peers or from posted
+calldata ([`REQ-DA-1-NVV85Z`](security/data-availability.md#req-da-1-nvv85z)) before failing; (3) give every reader of prunable data an explicit
+outcome: fail, skip its check, or lower its result. Requested engineer decision: the outcome for
+each reader that can meet pruned or never-held data. This blocks the second phase and any pruning
+that can reach a reader's input, not the stored proof. It also sets the outcome of exact-height
+reads over history that a synchronized node never held.
+
+<a id="oq-spec-proofstore-12-bdfc1j"></a>
+
+## OQ-SPEC-PROOFSTORE-12-BDFC1J — Ordering of stored-proof writers and readers
+
+Raised 2026-10-17. Several operations change the stored proof or the data it names: seeding from a
+verified proof ([`REQ-PROOFSTORE-2-99RRXK` (Seeding from a verified proof)](storage/proof-store.md#req-proofstore-2-99rrxk)), extension and late signature merges
+([`REQ-PROOFSTORE-3-QDXNH9` (Extension keeps earlier evidence)](storage/proof-store.md#req-proofstore-3-qdxnh9)), re-rooting on anchor advance
+([`REQ-PROOFSTORE-6-38G1KC` (Re-rooting on anchor advance)](storage/proof-store.md#req-proofstore-6-38g1kc)), reset on fork change ([`REQ-PROOFSTORE-7-T0EBMX` (Reset on fork change)](storage/proof-store.md#req-proofstore-7-t0ebmx)), and
+pruning ([`REQ-PROOFSTORE-8-XWEMTJ` (Pruning below the on-chain snapshot)](storage/proof-store.md#req-proofstore-8-xwemtj), [`REQ-PROOFSTORE-9-CZTA0N` (Pruning between proven parts of the stored proof)](storage/proof-store.md#req-proofstore-9-czta0n)). Proof reads
+([`REQ-PROOFSTORE-4-ZFCWNB` (Construction above the stored prefix)](storage/proof-store.md#req-proofstore-4-zfcwnb), [`REQ-PROOFSTORE-5-VNQGDG` (One proof source for every reader)](storage/proof-store.md#req-proofstore-5-vnqgdg)) and seed verification take
+time and can run while any of these happens. A seed becomes visible with the atomic install of
+synchronization, and an install that aborts late restores the prior state
+([synchronization](peer-communication/synchronization.md#requester-algorithm-verification-before-effect),
+step 12). Anchor advances reach the node on a separate path through the local mirror.
+
+Fixed outcomes already bound the result: every proof the node yields verifies from its anchor
+([`REQ-PROOFSTORE-1-G11DH7` (One stored proof per active fork)](storage/proof-store.md#req-proofstore-1-g11dh7)), nothing from an old fork's stored proof enters a new one
+([`REQ-PROOFSTORE-7-T0EBMX` (Reset on fork change)](storage/proof-store.md#req-proofstore-7-t0ebmx)), and absent data is never evidence ([`INV-PROOFSTORE-2-NT5FD6` (Absence is never evidence)](storage/proof-store.md#inv-proofstore-2-nt5fd6)). What
+is not specified is which operation publishes each change to the stored proof and the data it
+names, how work computed against an older fork, anchor, or record is detected and what happens to
+it, and what keeps a running read's inputs from being pruned.
+
+Owner: [state proof store](storage/proof-store.md). Affected: [durability](storage/durability.md)
+([`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s)), [synchronization](peer-communication/synchronization.md), and
+[local mirror](enforcement/local-mirror.md). Alternatives, some of which combine: (1) one order per
+channel: every writer and every proof read runs in sequence, so no work sees a later change;
+(2) versioned publication: each change advances a version made of fork, anchor, and record, and
+work computed against an older version is discarded and recomputed, or revalidated before it
+publishes; (3) read pins: a running read pins the data it uses, and pruning skips pinned data until
+the read ends; (4) deferred pruning: pruning runs only while no read or seed is in flight. Requested
+engineer decision: the publishing operation for each writer, how stale work is detected and
+handled, and how reads are protected from pruning. This blocks concurrent operation of the stored
+proof, not its single-operation rules.

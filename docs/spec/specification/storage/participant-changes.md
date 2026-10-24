@@ -55,4 +55,6 @@ secrecy — completeness is the security property.
 
 ## Future Work
 
-_Non-normative._ None currently.
+_Non-normative._ Whether change points stay the source of membership hops once the stored state
+proof exists ([proof-store.md](./proof-store.md)), and whether a join and exit in one transition
+records a change point, is [`OQ-SPEC-PROOFSTORE-3-F9HWYC` (Which membership hops the stored proof keeps)](../open-questions.md#oq-spec-proofstore-3-f9hwyc).
