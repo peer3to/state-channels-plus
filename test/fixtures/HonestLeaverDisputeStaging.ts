@@ -71,6 +71,7 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
     );
     // the chain snapshot below every payout of the leaver's exit
     const chainBefore = await chainSnapshot(h);
+    const withdrawalsBefore = await chainTotalWithdrawals(h);
     await h.transition.participantLeaveStateTransition({
         leaverIndex: leaver.index,
         waitForPeers: others
@@ -82,7 +83,8 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
         leaverReduction,
         send,
         rebuild,
-        chainBefore
+        chainBefore,
+        withdrawalsBefore
     };
 }
 
@@ -106,14 +108,22 @@ async function latestOutboundExitAmounts(
     return amounts.map((amount) => BigInt(amount));
 }
 
+// the channel's withdrawals the chain has applied
+async function chainTotalWithdrawals(h: MathPeerTestHarness): Promise<bigint> {
+    const balance = await h.channelManager.getChannelBalance(h.channelId);
+    return BigInt(balance.totalWithdrawals.amount);
+}
+
 // the exit amounts the chain paid to `participant` since `chainBefore`: the
 // observer's outbound blocks between the two chain snapshots, which the chain
-// verifies against both snapshots' outbound heads
+// verifies against both snapshots' outbound heads, and whose payouts match the
+// chain's applied withdrawals since `withdrawalsBefore`
 async function chainExitAmounts(
     h: MathPeerTestHarness,
     observerIndex: number,
     participant: string,
-    chainBefore: StateSnapshot
+    chainBefore: StateSnapshot,
+    withdrawalsBefore: bigint
 ): Promise<bigint[]> {
     const chainAfter = await chainSnapshot(h);
     const paid = (
@@ -139,6 +149,14 @@ async function chainExitAmounts(
         ),
         "the outbound blocks the chain applied"
     ).to.equal(true);
+    expect(
+        (await chainTotalWithdrawals(h)) - withdrawalsBefore,
+        "the chain paid every message of those blocks"
+    ).to.equal(
+        paid
+            .flatMap((block) => block.messages)
+            .reduce((sum, message) => sum + BigInt(message.balance.amount), 0n)
+    );
     return paid.flatMap((block) =>
         block.messages
             .filter(
@@ -205,7 +223,8 @@ async function stageKillPeriodSelfRemoval(h: MathPeerTestHarness) {
         leaverReduction,
         send,
         rebuild,
-        chainBefore
+        chainBefore,
+        withdrawalsBefore
     } = await stageHeldLeaverExitPost(h);
     let reductionReleased = false;
     // the reduced state's terminal abort may already have removed the host
@@ -267,6 +286,7 @@ async function stageKillPeriodSelfRemoval(h: MathPeerTestHarness) {
             snapshotBeforeRelease: snapshotBeforeRelease!,
             exitAmounts,
             chainBefore,
+            withdrawalsBefore,
             releaseReduction
         };
     } catch (error) {
@@ -406,7 +426,8 @@ export async function assertHonestLeaverExitPaidOnce(
                 h,
                 honest[0]!,
                 leaver.address,
-                staged.chainBefore
+                staged.chainBefore,
+                staged.withdrawalsBefore
             )
         ).to.deep.equal(staged.exitAmounts);
         // deposits still equal withdrawals plus the state balance
