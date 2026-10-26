@@ -653,10 +653,12 @@ substitutes.
 inbound message block in memory and never persisted it. Now the production `open` stores that block
 through `_appendInboundMessages` → `_persistInboundMessageBlock`, which emits
 `InboundMessagesProcessed`; the SDK dispatches it and `LocalDiamond.onInboundMessagesProcessed`
-persists the same block, while `onChannelOpened` only records the genesis snapshot and copies its
-inbound head, height and deposit total.
+persists the same block. `onChannelOpened` records the genesis snapshot and its balance fields but
+stores no inbound block.
 
-**Proposed direction:** None — fixed.
+**Proposed direction:** None — fixed; covered by
+`test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`
+([`UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3`](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#unit-test-local-diamond-1-pje47m)).
 
 <a id="def-4-qb3kqm"></a>
 
