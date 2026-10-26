@@ -129,20 +129,13 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         vm.recordLogs();
         deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, participantPrivateKeys, amounts, true));
         Vm.Log[] memory logs = vm.getRecordedLogs();
-
-        bool foundInbound;
-        bool foundOpened;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length < 2 || logs[i].topics[1] != GENESIS_CHANNEL_ID) continue;
-            if (logs[i].topics[0] == StateChannelManagerEvents.InboundMessagesProcessed.selector) {
-                genesisBlock = abi.decode(logs[i].data, (MessageBlock));
-                foundInbound = true;
-            } else if (logs[i].topics[0] == StateChannelManagerEvents.ChannelOpened.selector) {
-                (genesisSnapshot, genesisState) = abi.decode(logs[i].data, (StateSnapshot, bytes));
-                foundOpened = true;
-            }
-        }
-        assertTrue(foundInbound && foundOpened, "open did not emit its genesis logs");
+        genesisBlock = abi.decode(
+            _logData(logs, StateChannelManagerEvents.InboundMessagesProcessed.selector, GENESIS_CHANNEL_ID),
+            (MessageBlock)
+        );
+        (genesisSnapshot, genesisState) = abi.decode(
+            _logData(logs, StateChannelManagerEvents.ChannelOpened.selector, GENESIS_CHANNEL_ID), (StateSnapshot, bytes)
+        );
     }
 
     function _inboundBlock(bytes32 previousBlockHash, uint256 blockHeight, uint256 totalDeposits)
