@@ -694,7 +694,8 @@ only the tasks whose runner, and every runner their test file requires, its
 protocol knows. A host outside that range is rejected
 before test execution with an update or rebase instruction. A worker host and
 its isolated guest must still match exactly, since both run the host's own
-checkout.
+checkout. A host starts its slot chains from that checkout too: protocol 16
+hosts run them on the pinned anvil, older hosts on `hardhat node`.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate
