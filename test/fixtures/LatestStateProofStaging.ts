@@ -27,11 +27,11 @@ export async function constructDisputeWithLatestStateProof(
             await latestStateProof;
             // record-only: count the builds construction makes itself
             const agreementManager = sm.agreementManager;
-            const buildStateProof = agreementManager.buildStateProof;
+            const tryBuildStateProof = agreementManager.tryBuildStateProof;
             let builds = 0;
-            agreementManager.buildStateProof = (...buildArgs) => {
+            agreementManager.tryBuildStateProof = (...buildArgs) => {
                 builds++;
-                return buildStateProof.apply(agreementManager, buildArgs);
+                return tryBuildStateProof.apply(agreementManager, buildArgs);
             };
             try {
                 const { dispute, auditingData } =
@@ -55,7 +55,7 @@ export async function constructDisputeWithLatestStateProof(
                     ));
                 return { builds, verified };
             } finally {
-                agreementManager.buildStateProof = buildStateProof;
+                agreementManager.tryBuildStateProof = tryBuildStateProof;
             }
         },
         { blocksBehind },

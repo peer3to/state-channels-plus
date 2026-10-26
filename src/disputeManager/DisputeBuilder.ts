@@ -160,7 +160,7 @@ export default class DisputeBuilder {
         const builtStateProof =
             latestStateProof?.blockHeight === inputs.latestBlockHeight
                 ? latestStateProof
-                : await this.agreementManager.buildStateProof(
+                : await this.agreementManager.tryBuildStateProof(
                       forkId,
                       inputs.latestBlockHeight
                   );
@@ -192,17 +192,10 @@ export default class DisputeBuilder {
                 `reconstructAuditingData - no stored snapshot ${input.latestStateSnapshotHash}`
             );
         // the genesis has the empty proof
-        const height = latestStateSnapshot.isGenesis
-            ? -1
-            : latestStateSnapshot.blockHeight;
         const built = await this.agreementManager.buildStateProof(
             forkId,
-            height
+            latestStateSnapshot.isGenesis ? -1 : latestStateSnapshot.blockHeight
         );
-        if (!built)
-            throw new Error(
-                `Cannot build a state proof for fork ${forkId} at height ${height}: below its anchor`
-            );
         return this.buildAuditingData(
             forkId,
             built,

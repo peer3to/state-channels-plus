@@ -462,10 +462,6 @@ export default class SnapshotUpdateService {
                     latestBlockHeight,
                     { finalizedOnly: true }
                 );
-            if (!built)
-                throw new Error(
-                    `Cannot build a state proof for fork ${forkId} at height ${latestBlockHeight}: below its anchor`
-                );
             const latestSnapshot = built.finalizedSnapshot;
             const milestoneProofs = built.stateProof.milestones;
             const milestoneSnapshots = built.evidence.milestoneSnapshots.map(

@@ -24,20 +24,21 @@ return is weakened to a status check: the dispute starts on the disposed runtime
 The window after that check is closed too. An exit snapshot that lands while the self-removal dispute is
 built moves the leaver's anchor past its latest block; in the
 [AgreementManager report](../implementation/source/src/agreementManager/AgreementManager.ts.md)
-`buildStateProof` now returns no proof below the anchor (this view is behind the chain), as its siblings
-`tryBuildFinalProofAt` and `computeLocalFinalizedSnapshot` already did, and in the
+the sibling `tryBuildStateProof` returns no proof below the anchor (this view is behind the chain), as
+`tryBuildFinalProofAt` and `computeLocalFinalizedSnapshot` already did, and `buildStateProof` delegates to it and
+keeps the one "below its anchor at height …" throw. In the
 [DisputeManager report](../implementation/source/src/disputeManager/DisputeManager.ts.md) `dispute` treats a
 construction with no proof as a no-op like `ErrorCantParticipateInDispute`: marker rolled back, info log, no
-upload. Only the dispute path gets the no-op: `reconstructAuditingData`, `buildFinalProof`, the snapshot
-update and spectate serve keep throwing the same "below its anchor" error at their call sites; the audit's
+upload. Only `DisputeBuilder.constructDispute` calls `tryBuildStateProof`: `reconstructAuditingData`,
+`buildFinalProof`, the snapshot update and spectate serve keep calling `buildStateProof` and its throw; the audit's
 early proof build in `EventHandler` still resolves any failed build to undefined, as
 [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P23`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w) requires. Evidence:
 [`REQ-LIF-10-QR8NQ9.T1.P37`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p37) with
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (the watchdog's check finds the exit pending, the
 construction is parked, the exit snapshot lands, then it is released),
 [`UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P55`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-1-sqv6zd) and
-[`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d). Restoring the throw makes the first two fail with
-"below its anchor". [`FIND-LEAVE-5-7071C7`](open-findings.md#find-leave-5-7071c7) is resolved.
+[`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d). Switching `constructDispute` back to `buildStateProof`
+makes the first two fail with "below its anchor". [`FIND-LEAVE-5-7071C7`](open-findings.md#find-leave-5-7071c7) is resolved.
 
 ## Authoring rollback after a refused inbound message — 2026-10-16
 

@@ -404,15 +404,10 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             latestStateSnapshot.latestInboundMessageBlockHash,
             latestStateSnapshot.latestInboundMessageBlockHeight
         );
-        const built = await this.agreementManager.buildStateProof(
+        const { stateProof } = await this.agreementManager.buildStateProof(
             forkId,
             blockHeight
         );
-        if (!built)
-            throw new Error(
-                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor`
-            );
-        const { stateProof } = built;
         const auditingData = await this.disputeManager[
             "disputeBuilder"
         ].reconstructAuditingData({

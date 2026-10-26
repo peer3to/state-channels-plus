@@ -982,10 +982,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         const built = hasInstalledGenesis
             ? await agreementManager.buildStateProof(forkId, targetBlockHeight)
             : undefined;
-        if (hasInstalledGenesis && !built)
-            throw new Error(
-                `Cannot build a state proof for fork ${forkId} at height ${targetBlockHeight}: below its anchor`
-            );
         const latestStateProof: StateProofStruct = built?.stateProof ?? {
             milestones: []
         };
