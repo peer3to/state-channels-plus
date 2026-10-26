@@ -11,6 +11,7 @@ import { expect } from "chai";
 import { spawn } from "child_process";
 import { HDNodeWallet } from "ethers";
 import fs from "fs";
+import { ethers, network } from "hardhat";
 import { once } from "node:events";
 import os from "os";
 import path from "path";
@@ -104,6 +105,19 @@ async function expectStopped(url: string) {
     expect(refusal).to.be.instanceOf(Error);
 }
 
+/** Waits until nothing answers at `url`: its chain process is gone. */
+async function expectStoppedSoon(url: string) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+            await call(url)("eth_chainId");
+        } catch {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`${url} still answers`);
+}
+
 /** Runs the launcher as `yarn infra:hardhat-node` does and waits for its bound-port line. */
 async function launchStandalone(env: NodeJS.ProcessEnv) {
     const child = spawn(process.execPath, [path.join(repoRoot(), LAUNCHER)], {
@@ -138,7 +152,7 @@ async function launchStandalone(env: NodeJS.ProcessEnv) {
         child.kill("SIGTERM");
         await exited;
     };
-    return { url, rpc: call(url), stop };
+    return { url, rpc: call(url), stop, child };
 }
 
 describe("e2e parallel test chain", function () {
@@ -310,15 +324,71 @@ describe("e2e parallel test chain", function () {
         fs.rmSync(logDir, { recursive: true, force: true });
     });
 
-    it("starting a node with no anvil on PATH rejects with the launcher's report", async function () {
+    it("starting a node with no anvil on PATH rejects naming the missing anvil", async function () {
         let failure: Error | undefined;
         try {
             await startHardhatNode({ port: 0, env: { PATH: "" } });
         } catch (error) {
             failure = error as Error;
         }
-        expect(failure?.message).to.include("exited with code 1 before ready");
+        expect(failure?.message).to.include("hardhat node cannot start");
         expect(failure?.message).to.include("Failed to start anvil");
+    });
+
+    it("a node's anvil exits when the process that started it is SIGKILLed", async function () {
+        const owner = spawn(
+            process.execPath,
+            [
+                "-e",
+                `require(${JSON.stringify(
+                    path.join(repoRoot(), "test/utils/nodeInfra.js")
+                )}).startHardhatNode({ port: 0 }).then((node) => console.log(node.url))`
+            ],
+            { cwd: repoRoot(), stdio: ["ignore", "pipe", "inherit"] }
+        );
+        const url = await new Promise<string>((resolve, reject) => {
+            owner.stdout.once("data", (chunk: Buffer) =>
+                resolve(chunk.toString().trim())
+            );
+            owner.once("exit", (code) =>
+                reject(new Error(`owner exited with ${code}`))
+            );
+        });
+        expect(await call(url)("eth_chainId")).to.equal("0x7a69");
+        owner.kill("SIGKILL");
+        await expectStoppedSoon(url);
+    });
+
+    it("the infra:hardhat-node launcher's anvil exits when the launcher is SIGKILLed", async function () {
+        const node = await launchStandalone({});
+        node.child.kill("SIGKILL");
+        await expectStoppedSoon(node.url);
+    });
+
+    it("hardhat's in-process network runs on a private anvil that serves prestateTracer diffMode", async function () {
+        const [sender, recipient] = await ethers.getSigners();
+        const before = await ethers.provider.getBalance(recipient.address);
+        const sent = await sender.sendTransaction({
+            to: recipient.address,
+            value: 1n
+        });
+        const receipt = (await sent.wait())!;
+        const diff: StateDiff = await network.provider.send(
+            "debug_traceTransaction",
+            [sent.hash, DIFF_TRACE]
+        );
+        expectRecipientDiff(diff, {
+            hash: sent.hash,
+            receipt: {
+                blockNumber: `0x${receipt.blockNumber.toString(16)}`,
+                status: "0x1",
+                contractAddress: ""
+            },
+            recipient: recipient.address,
+            before,
+            after: await ethers.provider.getBalance(recipient.address)
+        });
+        expect(network.name).to.equal("hardhat");
     });
 
     it("the browser runtime server's node interval-mines and stops when the server closes", async function () {

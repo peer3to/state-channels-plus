@@ -49,7 +49,7 @@ const profile = {
     targetLoad: 0.8
 };
 
-const LAUNCHER = "scripts/infra/start-hardhat-node.js";
+const CHAIN_MODULE = "scripts/infra/anvilNode.js";
 
 describe("distributed isolated environment", function () {
     it("packages the worker, workspace receiver, and test-infrastructure entry as trusted glue", function () {
@@ -62,17 +62,18 @@ describe("distributed isolated environment", function () {
         expect(paths).to.include("test/utils/nodeInfra.js");
         expect(paths).to.include("scripts/infra/local-discovery-registry.js");
         expect(
-            manifest.find((entry: { path: string }) => entry.path === LAUNCHER)
-                ?.sha256
+            manifest.find(
+                (entry: { path: string }) => entry.path === CHAIN_MODULE
+            )?.sha256
         ).to.equal(
             crypto
                 .createHash("sha256")
-                .update(fs.readFileSync(path.join(repoRoot(), LAUNCHER)))
+                .update(fs.readFileSync(path.join(repoRoot(), CHAIN_MODULE)))
                 .digest("hex")
         );
     });
 
-    it("ships the chain launcher in the trusted runner archive and verifies its bytes", async function () {
+    it("ships the test chain module in the trusted runner archive and verifies its bytes", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "trusted-runner-"));
         const inputs: Buffer[] = [];
         const backend = new DockerBackend({
@@ -99,14 +100,16 @@ describe("distributed isolated environment", function () {
         });
         try {
             await backend.refreshTrustedRunner({ container: "retained" });
-            const shipped = fs.readFileSync(path.join(root, LAUNCHER));
+            const shipped = fs.readFileSync(path.join(root, CHAIN_MODULE));
             const manifest = JSON.parse(inputs[1].toString());
             expect(
-                shipped.equals(fs.readFileSync(path.join(repoRoot(), LAUNCHER)))
+                shipped.equals(
+                    fs.readFileSync(path.join(repoRoot(), CHAIN_MODULE))
+                )
             ).to.equal(true);
             expect(
                 manifest.find(
-                    (entry: { path: string }) => entry.path === LAUNCHER
+                    (entry: { path: string }) => entry.path === CHAIN_MODULE
                 ).sha256
             ).to.equal(
                 crypto.createHash("sha256").update(shipped).digest("hex")

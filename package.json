@@ -192,6 +192,7 @@
     "scripts/test-e2e-parallel.js",
     "scripts/infra",
     "test/utils/nodeInfra.js",
+    "test/utils/inProcessAnvil.ts",
     "test/utils/nodeInfra.d.ts",
     "test/browser/chromiumLaunch.js",
     "test/browser/localDiscoveryRelayHub.mjs"

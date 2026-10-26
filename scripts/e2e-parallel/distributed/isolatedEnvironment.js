@@ -81,9 +81,9 @@ function trustedRunnerManifest(trustedRoot) {
         {
             source: path.join(
                 trustedRoot,
-                "scripts/infra/start-hardhat-node.js"
+                "scripts/infra/anvilNode.js"
             ),
-            destination: "scripts/infra/start-hardhat-node.js"
+            destination: "scripts/infra/anvilNode.js"
         }
     ];
     const visit = (source, destination) => {
@@ -540,7 +540,7 @@ class DockerBackend {
             "-",
             "scripts/e2e-parallel",
             "scripts/infra/local-discovery-registry.js",
-            "scripts/infra/start-hardhat-node.js",
+            "scripts/infra/anvilNode.js",
             "test/utils/nodeInfra.js"
         ]);
         await this.run(

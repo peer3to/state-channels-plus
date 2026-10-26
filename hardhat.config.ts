@@ -4,6 +4,10 @@ import "@nomicfoundation/hardhat-foundry";
 import { TASK_TEST } from "hardhat/builtin-tasks/task-names";
 import "./tasks/browserTest";
 import "./tasks/forgeTest";
+import {
+    IN_PROCESS_NETWORK,
+    useAnvilForInProcessNetwork
+} from "./test/utils/inProcessAnvil";
 
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
@@ -72,6 +76,15 @@ const config: HardhatUserConfig = {
                     ? { auto: false, interval: 1000 }
                     : { auto: true }
         },
+        // Not a network to select: the in-process `hardhat` network runs on a
+        // private anvil (test/utils/inProcessAnvil.ts), which takes its HTTP
+        // and gas settings from here and its own url. anvil signs for its
+        // unlocked accounts, as EDR did, so nonces stay node-assigned.
+        [IN_PROCESS_NETWORK]: {
+            url: "http://127.0.0.1:0",
+            accounts: "remote",
+            timeout: 600_000
+        },
         localhost: {
             // Env-driven so the worker-mode e2e run can point hardhat's deploy
             // network, the worker's PROVIDER_URL, and the external node at one URL.
@@ -127,17 +140,9 @@ task(TASK_TEST)
         if (taskArgs.excludeTags) {
             process.env.LOG_EXCLUDE_TAGS = taskArgs.excludeTags;
         }
-        // the base task reads the in-process network's stack-trace failure
-        // count after mocha -> on a network no test touched that builds a whole
-        // EDR provider (~1 s) just to read 0
-        const provider = hre.network.provider;
-        const send = provider.send.bind(provider);
-        provider.send = (method, params) =>
-            method === "hardhat_getStackTraceFailuresCount" &&
-            (provider as unknown as { provider?: unknown }).provider ===
-                undefined
-                ? Promise.resolve(0)
-                : send(method, params);
+        // Every test chain is anvil, the in-process network included. Only
+        // tests: `hardhat node` (still what pool hosts start) needs EDR.
+        useAnvilForInProcessNetwork(hre);
         return runSuper(taskArgs);
     });
 

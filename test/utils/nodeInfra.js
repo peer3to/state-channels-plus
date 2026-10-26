@@ -24,12 +24,9 @@ const DISCOVERY_SCRIPT = path.join(
     "infra",
     "local-discovery-registry.js"
 );
-// The trusted launcher, never PROJECT_ROOT's copy: the project is untrusted.
-const HARDHAT_NODE_SCRIPT = path.join(
-    PACKAGE_ROOT,
-    "scripts",
-    "infra",
-    "start-hardhat-node.js"
+// The trusted copy, never PROJECT_ROOT's: the project is untrusted.
+const { ANVIL_BIN, ANVIL_WATCHDOG, anvilArgs, pinnedAnvilMismatch } = require(
+    path.join(PACKAGE_ROOT, "scripts", "infra", "anvilNode.js")
 );
 
 // ---------------------------------------------------------------------------
@@ -131,9 +128,8 @@ function pipeLogs(child, logPath) {
     return logStream;
 }
 
-// Extra node flags for the infra processes (chain node, discovery registry),
-// e.g. TEST_INFRA_NODE_FLAGS="--cpu-prof --cpu-prof-dir=/tmp/prof" to profile
-// the launcher the tests hit. Empty by default.
+// Extra node flags for the discovery registry, e.g.
+// TEST_INFRA_NODE_FLAGS="--cpu-prof --cpu-prof-dir=/tmp/prof". Empty by default.
 function infraNodeFlags() {
     const flags = process.env.TEST_INFRA_NODE_FLAGS;
     return flags ? flags.split(" ").filter(Boolean) : [];
@@ -144,13 +140,23 @@ const NODE_STARTUP_BUDGET_MS = 30000;
 const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
 const BOUND_PORT_RE = /Listening on 127\.0\.0\.1:(\d+)\r?\n/;
 
+// The pinned-anvil check, once per PATH: it runs `anvil --version`.
+const anvilChecks = new Map();
+function anvilRefusal(env) {
+    if (!anvilChecks.has(env.PATH)) {
+        anvilChecks.set(env.PATH, pinnedAnvilMismatch(PROJECT_ROOT, env));
+    }
+    return anvilChecks.get(env.PATH);
+}
+
 /**
- * Spawn the test chain through scripts/infra/start-hardhat-node.js (Anvil on
- * `port`, or one it binds itself on 0), wait for its bound-port line and for
- * its RPC to answer, and return `{ proc, url, stop, exited, logClosed }`. The
+ * Spawn the test chain, the pinned anvil (scripts/infra/anvilNode.js), on
+ * `port` or one it binds itself on 0; wait for its bound-port line and for its
+ * RPC to answer, and return `{ proc, url, stop, exited, logClosed }`. The
  * chain binds port 0 itself: a port reserved and released first can be taken
  * by another process before the chain binds it. Inherits process.env so the
- * launcher's e2e mining / chain id apply.
+ * e2e mining / chain id apply. anvil runs under ANVIL_WATCHDOG, so it dies
+ * with this process however this process dies.
  */
 async function startHardhatNode({
     port,
@@ -158,19 +164,21 @@ async function startHardhatNode({
     label = "hardhat node",
     env = {}
 } = {}) {
-    const nodePort = port ?? 0;
+    const nodeEnv = {
+        ...process.env,
+        ...env,
+        HARDHAT_NODE_HOST: "127.0.0.1",
+        HARDHAT_NODE_PORT: String(port ?? 0)
+    };
+    const refusal = anvilRefusal(nodeEnv);
+    if (refusal) throw new Error(`${label} cannot start: ${refusal}`);
     const proc = spawn(
-        process.execPath,
-        [...infraNodeFlags(), HARDHAT_NODE_SCRIPT],
+        "/bin/sh",
+        ["-c", ANVIL_WATCHDOG, "sh", ANVIL_BIN, ...anvilArgs(nodeEnv)],
         {
             cwd: PROJECT_ROOT,
-            env: {
-                ...process.env,
-                ...env,
-                HARDHAT_NODE_HOST: "127.0.0.1",
-                HARDHAT_NODE_PORT: String(nodePort)
-            },
-            stdio: ["ignore", "pipe", "pipe"]
+            env: nodeEnv,
+            stdio: ["pipe", "pipe", "pipe"]
         }
     );
     let resolveExit;
