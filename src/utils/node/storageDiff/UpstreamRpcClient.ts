@@ -18,17 +18,21 @@ export class UpstreamRequestError extends Error {}
 /** The upstream did not answer a request in time. */
 export class UpstreamTimeoutError extends Error {}
 
+/** The connection could not be opened, or it is gone. */
+export class UpstreamLostError extends Error {}
+
 export type UpstreamHandlers = {
     /** A `newHeads` notification arrived. */
     onHead: () => void;
-    /** The socket is gone or sent garbage; the client is closed. */
+    /** The socket is gone or sent garbage; the client is closed for good. */
     onLost: (error: Error) => void;
 };
 
 /**
  * JSON-RPC 2.0 client of the trusted upstream node over one WebSocket. A lost
- * socket or a malformed message is fatal; an error answer or a timeout
- * rejects only its own request.
+ * socket or a malformed message ends the client and rejects every pending
+ * request with `UpstreamLostError`; an error answer or a timeout rejects only
+ * its own request.
  */
 export class UpstreamRpcClient {
     private readonly socket: WebSocket;
@@ -42,10 +46,8 @@ export class UpstreamRpcClient {
         this.socket = socket;
         this.handlers = handlers;
         socket.on("message", (data) => this.onMessage(data.toString()));
-        socket.on("error", (error) => this.lose(error));
-        socket.on("close", () =>
-            this.lose(new Error("Upstream connection closed"))
-        );
+        socket.on("error", (error) => this.lose(error.message));
+        socket.on("close", () => this.lose("Upstream connection closed"));
     }
 
     static async connect(
@@ -63,7 +65,9 @@ export class UpstreamRpcClient {
             });
         } catch (error) {
             socket.terminate();
-            throw error;
+            throw new UpstreamLostError(
+                error instanceof Error ? error.message : String(error)
+            );
         }
         return new UpstreamRpcClient(socket, handlers);
     }
@@ -79,7 +83,9 @@ export class UpstreamRpcClient {
     request(method: string, params: unknown[]): Promise<unknown> {
         return new Promise((resolve, reject) => {
             if (this.closed || this.socket.readyState !== WebSocket.OPEN) {
-                return reject(new Error("Upstream connection is not open"));
+                return reject(
+                    new UpstreamLostError("Upstream connection is not open")
+                );
             }
             const id = ++this.nextRequestId;
             const timer = setTimeout(() => {
@@ -91,7 +97,7 @@ export class UpstreamRpcClient {
             this.pending.set(id, { resolve, reject, timer });
             this.socket.send(
                 JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-                (error) => error && this.lose(error)
+                (error) => error && this.lose(error.message)
             );
         });
     }
@@ -108,10 +114,11 @@ export class UpstreamRpcClient {
         this.socket.terminate();
     }
 
-    private lose(error: Error): void {
+    private lose(reason: string): void {
         if (this.closed) return;
-        this.close(error);
-        this.handlers.onLost(error);
+        const lost = new UpstreamLostError(reason);
+        this.close(lost);
+        this.handlers.onLost(lost);
     }
 
     private onMessage(raw: string): void {
@@ -149,9 +156,7 @@ export class UpstreamRpcClient {
                 throw new Error("Malformed upstream response");
             }
         } catch (error) {
-            this.lose(
-                error instanceof Error ? error : new Error(String(error))
-            );
+            this.lose(error instanceof Error ? error.message : String(error));
         }
     }
 }

@@ -83,7 +83,13 @@ Reconciliation, subscriptions and catch-up share one queue, so a catch-up
 answered after a block was committed always includes it.
 
 A peer whose send buffer passes 16 MiB is disconnected rather than allowed to
-miss records; it recovers with catch-up within the retention window. The check
+miss records; it recovers with catch-up within the retention window. Before
+the cut the service queues one notification,
+`{"jsonrpc":"2.0","method":"scp_disconnect","params":{"reason":"send-buffer-overflow","bufferedBytes":n,"limitBytes":n}}`,
+pushes nothing more, and closes the socket with code `1008` and reason
+`send-buffer-overflow`. The notice sits behind the backlog: a peer that resumes
+reading gets every queued record, then the notice, then the close. A peer that
+has not drained within 10 seconds is dropped without the close handshake. The check
 runs when a block is published and counts the socket's whole send buffer,
 including a catch-up reply the peer has not yet drained. A reply of that size
 can therefore be cut by the next block; request a narrower window (a later
@@ -92,11 +98,19 @@ can therefore be cut by the next block; request a narrower window (a later
 ### Failure policy and trust
 
 A block that changes while it is being traced, an upstream error answer and a
-10 second request timeout are retried: the service re-resolves the best head
-up to 3 more times, waiting 250 ms, then 500 ms, then 1 s. Anything else is
-**fatal**: a lost socket, a malformed response, a per-transaction tracer error,
-or a failure that outlasts the retries. The service then closes its peers and
-exits nonzero; it does not reconnect or invent an empty diff. Run it under a
+10 second request timeout are retried, both while loading the initial history
+and while following the head: the service re-resolves the best head up to 3
+more times, waiting 250 ms, then 500 ms, then 1 s.
+
+A lost upstream socket (or one that sends a malformed message) is reconnected
+up to 5 times, waiting 200 ms and doubling, and the head subscription is
+opened again. The service then reconciles from its last canonical record, the
+same way it handles a gap or a reorg, so subscribers see a continuous chain or
+a replacement branch. Startup uses the same policy for its first connection.
+
+Anything else is **fatal**: a per-transaction tracer error, a malformed block
+or trace, or a failure that outlasts its retries. The service then closes its
+peers and exits nonzero; it never invents an empty diff. Run it under a
 supervisor that restarts it; consumers then catch up within the new window.
 Errors name the upstream by scheme and host only, never its credentials.
 

@@ -7,7 +7,8 @@ import {
     StorageDiffRpcError,
     storageWord,
     VALUE_SLOT,
-    withStorageDiffSession
+    withStorageDiffSession,
+    withStorageDiffUpstream
 } from "../../fixtures/node/StorageDiffService.fixture";
 import {
     INVALID_PARAMS,
@@ -15,7 +16,12 @@ import {
     PRUNED_ERROR_CODE,
     ZERO_WORD
 } from "@/utils/node/storageDiff/blockStorageDiff";
-import { RECONCILE_RETRY_LIMIT } from "@/utils/node/storageDiff/StorageDiffService";
+import {
+    RECONCILE_RETRY_LIMIT,
+    SEND_BUFFER_OVERFLOW,
+    SEND_BUFFER_OVERFLOW_CLOSE_CODE,
+    UPSTREAM_RECONNECT_LIMIT
+} from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
 import { toQuantity } from "ethers";
 
@@ -259,16 +265,6 @@ describe("StorageDiffService", function () {
         });
     });
 
-    it("fails the service when the upstream node goes away", async function () {
-        await withStorageDiffSession(async ({ relay, service }) => {
-            relay.disconnect();
-
-            const failure = await rejectionOf(service.closed);
-
-            expect(failure).to.be.instanceOf(Error);
-        });
-    });
-
     it("stops pushing to a subscription once scp_unsubscribe returns true", async function () {
         await withStorageDiffSession(async ({ client, service, signer }) => {
             const storage = await deployNumberStorage(signer);
@@ -403,5 +399,126 @@ describe("StorageDiffService", function () {
                 METHOD_NOT_FOUND
             );
         });
+    });
+
+    it("retries a transient upstream failure while loading the initial history and starts", async function () {
+        await withStorageDiffUpstream(async ({ relay, signer, start }) => {
+            relay.failNext("eth_getBlockByNumber", 1);
+
+            const service = await start();
+
+            const client = await StorageDiffClient.connect(service.url);
+            try {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([address]);
+                const receipt = await setValue(storage, 1n);
+                const record = await client.recordAt(
+                    subscription,
+                    receipt.blockNumber
+                );
+                expect(record.post[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(1n)
+                });
+            } finally {
+                client.close();
+            }
+        });
+    });
+
+    it("fails to start once the initial history load exhausts its retries", async function () {
+        await withStorageDiffUpstream(async ({ relay, start }) => {
+            relay.failNext("eth_getBlockByNumber", RECONCILE_RETRY_LIMIT + 1);
+
+            const failure = await rejectionOf(start());
+
+            expect(failure).to.be.instanceOf(Error);
+            expect(relay.requestCount("eth_getBlockByNumber")).to.equal(
+                RECONCILE_RETRY_LIMIT + 1
+            );
+        });
+    });
+
+    it("reconnects a lost upstream and pushes the blocks mined while it was away in chain order", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const storage = await deployNumberStorage(signer);
+            const address = await recordKey(storage);
+            const subscription = await client.subscribe([address]);
+            const before = await setValue(storage, 1n);
+            const last = await client.recordAt(
+                subscription,
+                before.blockNumber
+            );
+
+            relay.refuseConnections(true);
+            relay.disconnect();
+            await setValue(storage, 2n);
+            await setValue(storage, 3n);
+            relay.refuseConnections(false);
+
+            const second = await client.nextRecord(subscription);
+            const third = await client.nextRecord(subscription);
+            expect(second.parentHash).to.equal(last.hash);
+            expect(third.parentHash).to.equal(second.hash);
+            expect([
+                second.post[address].storage,
+                third.post[address].storage
+            ]).to.deep.equal([
+                { [VALUE_SLOT]: storageWord(2n) },
+                { [VALUE_SLOT]: storageWord(3n) }
+            ]);
+        });
+    });
+
+    it("fails the service once the reconnect retries are exhausted", async function () {
+        await withStorageDiffSession(async ({ relay, service }) => {
+            const connectionsBefore = relay.connectionCount;
+
+            relay.refuseConnections(true);
+            relay.disconnect();
+            const failure = await rejectionOf(service.closed);
+
+            expect(failure).to.be.instanceOf(Error);
+            expect(relay.connectionCount - connectionsBefore).to.equal(
+                UPSTREAM_RECONNECT_LIMIT + 1
+            );
+        });
+    });
+
+    it("tells a lagging subscriber why with scp_disconnect before closing its socket", async function () {
+        const limitBytes = 64 * 1024;
+        await withStorageDiffSession(
+            async ({ client, provider, service }) => {
+                const lagging = await StorageDiffClient.connect(service.url);
+                try {
+                    await Promise.all(
+                        Array.from({ length: 1000 }, () =>
+                            lagging.subscribe([])
+                        )
+                    );
+                    const witness = await client.subscribe([]);
+                    lagging.pause();
+
+                    await provider.send("anvil_mine", [200]);
+                    const head = await provider.getBlockNumber();
+                    await client.recordAt(witness, head);
+                    lagging.resume();
+
+                    const closedBy = await lagging.closedBy();
+                    expect(lagging.notices()).to.have.length(1);
+                    expect(lagging.notices()[0]).to.include({
+                        reason: SEND_BUFFER_OVERFLOW,
+                        limitBytes
+                    });
+                    expect(closedBy).to.deep.equal({
+                        code: SEND_BUFFER_OVERFLOW_CLOSE_CODE,
+                        reason: SEND_BUFFER_OVERFLOW
+                    });
+                } finally {
+                    lagging.close();
+                }
+            },
+            { maxPeerBufferedBytes: limitBytes }
+        );
     });
 });

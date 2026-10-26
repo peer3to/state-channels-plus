@@ -63,9 +63,17 @@ export class StorageDiffClient {
         SubscriptionId,
         Waiter<BlockStorageDiff>
     >();
+    // `scp_disconnect` notification params, in arrival order.
+    private readonly disconnectNotices: unknown[] = [];
+    private readonly socketClosed: Promise<{ code: number; reason: string }>;
 
     private constructor(socket: WebSocket) {
         this.socket = socket;
+        this.socketClosed = new Promise((resolve) =>
+            socket.once("close", (code, reason) =>
+                resolve({ code, reason: reason.toString() })
+            )
+        );
         socket.on("message", (data) => this.onMessage(data.toString()));
     }
 
@@ -143,12 +151,35 @@ export class StorageDiffClient {
         }
     }
 
+    /** Stops reading from the socket, so the service's sends pile up. */
+    pause(): void {
+        this.socket.pause();
+    }
+
+    resume(): void {
+        this.socket.resume();
+    }
+
+    /** Resolves with the close code and reason once the socket closes. */
+    closedBy(): Promise<{ code: number; reason: string }> {
+        return this.socketClosed;
+    }
+
+    /** `scp_disconnect` notices received so far. */
+    notices(): unknown[] {
+        return [...this.disconnectNotices];
+    }
+
     close(): void {
         this.socket.terminate();
     }
 
     private onMessage(raw: string): void {
         const message = JSON.parse(raw);
+        if (message.method === "scp_disconnect") {
+            this.disconnectNotices.push(message.params);
+            return;
+        }
         if (message.method === "scp_subscription") {
             const { subscription, result } = message.params;
             const waiter = this.recordWaiters.get(subscription);
@@ -178,22 +209,33 @@ export class StorageDiffClient {
     }
 }
 
-export type StorageDiffSession = {
+export type StorageDiffServiceSettings = {
+    retention?: number;
+    maxPeerBufferedBytes?: number;
+};
+
+export type StorageDiffUpstream = {
     provider: JsonRpcProvider;
     /** Sits between the service and the node, for upstream faults. */
     relay: UpstreamRelay;
+    signer: JsonRpcSigner;
+    /** Starts a service on the relay; it is closed in `finally`. */
+    start: (
+        settings?: StorageDiffServiceSettings
+    ) => Promise<StorageDiffService>;
+};
+
+export type StorageDiffSession = Omit<StorageDiffUpstream, "start"> & {
     service: StorageDiffService;
     client: StorageDiffClient;
-    signer: JsonRpcSigner;
 };
 
 /**
- * Runs `use` with a private node, a service following it through a relay and
- * a connected client; all of them end in `finally`.
+ * Runs `use` with a private node and a relay to it; services started through
+ * `start` and the relay end in `finally`.
  */
-export async function withStorageDiffSession<T>(
-    use: (session: StorageDiffSession) => Promise<T>,
-    options: { retention?: number } = {}
+export async function withStorageDiffUpstream<T>(
+    use: (upstream: StorageDiffUpstream) => Promise<T>
 ): Promise<T> {
     return await withIsolatedHardhatNode(async (provider) => {
         // anvil mines on submit: poll receipts often, not every 4 s
@@ -202,22 +244,45 @@ export async function withStorageDiffSession<T>(
         const relay = await UpstreamRelay.start(
             provider._getConnection().url.replace(/^http/, "ws")
         );
-        let service: StorageDiffService | undefined;
-        let client: StorageDiffClient | undefined;
+        const services: StorageDiffService[] = [];
         try {
-            service = await StorageDiffService.start({
-                upstreamUrl: relay.url,
-                port: 0,
-                retention: options.retention,
-                logger: createLogger({}, { component: "StorageDiffService" })
-            });
-            client = await StorageDiffClient.connect(service.url);
             const signer = await provider.getSigner(0);
-            return await use({ provider, relay, service, client, signer });
+            const start = async (settings: StorageDiffServiceSettings = {}) => {
+                const service = await StorageDiffService.start({
+                    upstreamUrl: relay.url,
+                    port: 0,
+                    ...settings,
+                    logger: createLogger(
+                        {},
+                        { component: "StorageDiffService" }
+                    )
+                });
+                services.push(service);
+                return service;
+            };
+            return await use({ provider, relay, signer, start });
         } finally {
-            client?.close();
-            await service?.close();
+            for (const service of services) await service.close();
             await relay.close();
+        }
+    });
+}
+
+/**
+ * Runs `use` with a private node, a service following it through a relay and
+ * a connected client; all of them end in `finally`.
+ */
+export async function withStorageDiffSession<T>(
+    use: (session: StorageDiffSession) => Promise<T>,
+    settings: StorageDiffServiceSettings = {}
+): Promise<T> {
+    return await withStorageDiffUpstream(async ({ start, ...upstream }) => {
+        const service = await start(settings);
+        const client = await StorageDiffClient.connect(service.url);
+        try {
+            return await use({ ...upstream, service, client });
+        } finally {
+            client.close();
         }
     });
 }

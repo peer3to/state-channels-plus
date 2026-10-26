@@ -19,6 +19,7 @@ import {
 } from "./blockStorageDiff";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
 import {
+    UpstreamLostError,
     UpstreamRequestError,
     UpstreamRpcClient,
     UpstreamTimeoutError
@@ -32,9 +33,19 @@ export const DEFAULT_RETENTION_BLOCKS = 128;
 export const RECONCILE_RETRY_LIMIT = 3;
 /** Delay before the first retry; each further retry doubles it. */
 export const RECONCILE_RETRY_BACKOFF_MS = 250;
+/** Reconnects to a lost upstream before the service fails. */
+export const UPSTREAM_RECONNECT_LIMIT = 5;
+/** Delay before the first reconnect; each further one doubles it. */
+export const UPSTREAM_RECONNECT_BACKOFF_MS = 200;
+export const DEFAULT_MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
+/** `scp_disconnect` reason for a peer cut for falling behind. */
+export const SEND_BUFFER_OVERFLOW = "send-buffer-overflow";
+/** WebSocket close code for that cut: policy violation. */
+export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
 
 const MAX_PEER_PAYLOAD_BYTES = 1024 * 1024;
-const MAX_PEER_BUFFERED_BYTES = 16 * 1024 * 1024;
+/** How long a cut peer gets to drain the notice before the socket drops. */
+const PEER_CLOSE_GRACE_MS = 10_000;
 const DEFAULT_PORT = 19778;
 const TRACE_OPTIONS = {
     tracer: "prestateTracer",
@@ -56,6 +67,8 @@ export interface StorageDiffServiceOptions {
     port?: number;
     /** Canonical blocks kept for catch-up; an integer of at least 1. */
     retention?: number;
+    /** A peer whose unsent bytes pass this is told why and cut. */
+    maxPeerBufferedBytes?: number;
     logger: Logger;
 }
 
@@ -64,6 +77,8 @@ export interface StorageDiffPeer {
     socket: WebSocket;
     subscriptions: Map<SubscriptionId, AccountAddress[]>;
     nextSubscription: number;
+    /** Cut for falling behind; gets nothing more. */
+    closing: boolean;
 }
 
 /** The upstream chain moved while a reconciliation read it. */
@@ -97,8 +112,9 @@ const noAncestor = () => new Error("Upstream chain shares no ancestor");
  * `scp_subscribeContractStorage` pushes future records,
  * `scp_getContractStorageDiffs` replays retained ones and `scp_unsubscribe`
  * ends a subscription. A reorg or an upstream error answer or timeout during
- * reconciliation is retried; a lost upstream socket, or a failure that
- * outlasts the retries, is fatal: a supervisor restarts the process and
+ * startup or reconciliation is retried, and a lost upstream socket is
+ * reconnected, then reconciled from the last canonical record. A failure that
+ * outlasts its retries is fatal: a supervisor restarts the process and
  * consumers catch up.
  *
  * Batch requests are refused as invalid requests. There is no authentication:
@@ -114,6 +130,7 @@ export class StorageDiffService {
     private readonly host: string;
     private readonly port: number;
     private readonly retention: number;
+    private readonly maxPeerBufferedBytes: number;
     private readonly peers = new Map<WebSocket, StorageDiffPeer>();
     private readonly stopping = new AbortController();
     private upstream?: UpstreamRpcClient;
@@ -125,6 +142,7 @@ export class StorageDiffService {
     private ready = false;
     private wakePending = false;
     private wakeQueued = false;
+    private reconnecting = false;
     private shutdown?: Promise<void>;
     private settleClosed!: {
         resolve: () => void;
@@ -141,6 +159,8 @@ export class StorageDiffService {
         this.host = options.host ?? "127.0.0.1";
         this.port = options.port ?? DEFAULT_PORT;
         this.retention = options.retention ?? DEFAULT_RETENTION_BLOCKS;
+        this.maxPeerBufferedBytes =
+            options.maxPeerBufferedBytes ?? DEFAULT_MAX_PEER_BUFFERED_BYTES;
         this.closed = new Promise<void>((resolve, reject) => {
             this.settleClosed = { resolve, reject };
         });
@@ -174,6 +194,10 @@ export class StorageDiffService {
         const port = options.port ?? DEFAULT_PORT;
         if (!Number.isInteger(port) || port < 0 || port > 65535) {
             throw new Error("port must be an integer between 0 and 65535");
+        }
+        const limit = options.maxPeerBufferedBytes;
+        if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+            throw new Error("maxPeerBufferedBytes must be a positive integer");
         }
         const service = new StorageDiffService(options, upstreamEndpoint);
         await service.open();
@@ -237,24 +261,11 @@ export class StorageDiffService {
 
     private async open(): Promise<void> {
         try {
-            this.upstream = await UpstreamRpcClient.connect(this.upstreamUrl, {
-                onHead: () => this.wake(),
-                onLost: (error) => this.fail(error)
-            });
-            await this.upstream.subscribeHeads();
-            // Newest first by parent hashes, then traced oldest first.
-            const headers = [await this.fetchHeader("latest")];
-            while (
-                headers.length < this.retention &&
-                headers[headers.length - 1].number > 0n
-            ) {
-                headers.push(
-                    await this.fetchHeader(
-                        headers[headers.length - 1].parentHash
-                    )
-                );
-            }
-            this.canonical = await this.stage(headers.reverse());
+            await this.connectUpstream();
+            this.canonical = await this.retryTransient(
+                () => this.loadHistory(),
+                "Retrying the initial history load"
+            );
             await this.listen();
         } catch (error) {
             const failure = new Error(this.sanitize(describeError(error)));
@@ -263,6 +274,76 @@ export class StorageDiffService {
         }
         this.ready = true;
         if (this.wakePending) this.wake();
+    }
+
+    /** The last `retention` canonical blocks, oldest first. */
+    private async loadHistory(): Promise<BlockStorageDiff[]> {
+        // Newest first by parent hashes, then traced oldest first.
+        const headers = [await this.fetchHeader("latest")];
+        while (
+            headers.length < this.retention &&
+            headers[headers.length - 1].number > 0n
+        ) {
+            headers.push(
+                await this.fetchHeader(headers[headers.length - 1].parentHash)
+            );
+        }
+        return await this.stage(headers.reverse());
+    }
+
+    /** Opens the upstream and its head subscription, with bounded retries. */
+    private async connectUpstream(): Promise<void> {
+        const client = await retry(
+            async () => {
+                const attempt = await UpstreamRpcClient.connect(
+                    this.upstreamUrl,
+                    {
+                        onHead: () => this.wake(),
+                        onLost: () => this.reconnect()
+                    }
+                );
+                try {
+                    await attempt.subscribeHeads();
+                } catch (error) {
+                    attempt.close(new UpstreamLostError("Subscription failed"));
+                    throw error;
+                }
+                return attempt;
+            },
+            {
+                maxRetries: UPSTREAM_RECONNECT_LIMIT,
+                delayMs: UPSTREAM_RECONNECT_BACKOFF_MS,
+                useExponentialBackoff: true,
+                signal: this.stopping.signal,
+                shouldRetry: (error) =>
+                    error instanceof UpstreamLostError || isTransient(error),
+                onRetry: (attempt, error) =>
+                    this.logger.warn("Retrying the upstream connection", {
+                        attempt,
+                        reason: this.sanitize(describeError(error))
+                    })
+            }
+        );
+        if (this.stopping.signal.aborted) {
+            client.close(new Error("StorageDiffService closed"));
+            throw new Error("StorageDiffService closed");
+        }
+        this.upstream = client;
+    }
+
+    /** Replaces a lost upstream, then reconciles from the last record. */
+    private reconnect(): void {
+        if (this.reconnecting || this.stopping.signal.aborted) return;
+        this.reconnecting = true;
+        this.upstream = undefined;
+        this.logger.warn("Upstream connection lost; reconnecting");
+        this.connectUpstream().then(
+            () => {
+                this.reconnecting = false;
+                this.wake();
+            },
+            (error) => this.fail(error)
+        );
     }
 
     private async listen(): Promise<void> {
@@ -284,7 +365,8 @@ export class StorageDiffService {
         const peer: StorageDiffPeer = {
             socket,
             subscriptions: new Map(),
-            nextSubscription: 0
+            nextSubscription: 0,
+            closing: false
         };
         const methods = new StorageDiffRpcMethods(this, peer);
         this.peers.set(socket, peer);
@@ -362,7 +444,9 @@ export class StorageDiffService {
 
     private request(method: string, params: unknown[]): Promise<unknown> {
         if (!this.upstream) {
-            return Promise.reject(new Error("Upstream connection is not open"));
+            return Promise.reject(
+                new UpstreamLostError("Upstream connection is not open")
+            );
         }
         return this.upstream.request(method, params);
     }
@@ -430,6 +514,7 @@ export class StorageDiffService {
 
     private publish(record: BlockStorageDiff): void {
         for (const [socket, peer] of this.peers) {
+            if (peer.closing) continue;
             for (const [subscription, addresses] of peer.subscriptions) {
                 this.send(socket, {
                     jsonrpc: "2.0",
@@ -443,10 +528,28 @@ export class StorageDiffService {
             // The limit applies to the socket's aggregate buffered bytes, so a
             // catch-up reply the peer has not drained counts as well.
             // A peer that cannot keep up recovers with catch-up, not lost records.
-            if (socket.bufferedAmount > MAX_PEER_BUFFERED_BYTES) {
-                socket.terminate();
+            if (socket.bufferedAmount > this.maxPeerBufferedBytes) {
+                this.dropLagging(peer);
             }
         }
+    }
+
+    /** Tells a peer it fell behind, then closes once the notice drains. */
+    private dropLagging(peer: StorageDiffPeer): void {
+        const { socket } = peer;
+        peer.closing = true;
+        this.send(socket, {
+            jsonrpc: "2.0",
+            method: "scp_disconnect",
+            params: {
+                reason: SEND_BUFFER_OVERFLOW,
+                bufferedBytes: socket.bufferedAmount,
+                limitBytes: this.maxPeerBufferedBytes
+            }
+        });
+        socket.close(SEND_BUFFER_OVERFLOW_CLOSE_CODE, SEND_BUFFER_OVERFLOW);
+        const grace = setTimeout(() => socket.terminate(), PEER_CLOSE_GRACE_MS);
+        socket.once("close", () => clearTimeout(grace));
     }
 
     /** Moves the canonical history to the upstream's current best head. */
@@ -499,16 +602,19 @@ export class StorageDiffService {
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
     }
 
-    /** Re-resolves the head after a transient failure, with backoff. */
-    private async reconcileWithRetry(): Promise<void> {
-        await retry(() => this.reconcileHead(), {
+    /** Runs `job` again after a transient failure, with backoff. */
+    private async retryTransient<T>(
+        job: () => Promise<T>,
+        message: string
+    ): Promise<T> {
+        return await retry(job, {
             maxRetries: RECONCILE_RETRY_LIMIT,
             delayMs: RECONCILE_RETRY_BACKOFF_MS,
             useExponentialBackoff: true,
             signal: this.stopping.signal,
             shouldRetry: isTransient,
             onRetry: (attempt, error) =>
-                this.logger.warn("Retrying head reconciliation", {
+                this.logger.warn(message, {
                     attempt,
                     reason: this.sanitize(describeError(error))
                 })
@@ -524,8 +630,15 @@ export class StorageDiffService {
         this.wakeQueued = true;
         this.enqueue(async () => {
             this.wakeQueued = false;
-            await this.reconcileWithRetry();
-        }).catch((error) => this.fail(error));
+            await this.retryTransient(
+                () => this.reconcileHead(),
+                "Retrying head reconciliation"
+            );
+        }).catch((error) => {
+            // A lost upstream is reconnected; the reconnect wakes again.
+            if (error instanceof UpstreamLostError) return;
+            this.fail(error);
+        });
     }
 
     // The upstream URL can carry credentials: nothing may echo it.

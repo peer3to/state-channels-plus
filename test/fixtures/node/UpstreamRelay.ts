@@ -37,6 +37,8 @@ export class UpstreamRelay {
     private readonly sockets = new Set<WebSocket>();
     // Requests seen per method, held or failed ones included.
     private readonly seen = new Map<UpstreamMethod, number>();
+    private connections = 0;
+    private refusing = false;
     private hold?: Hold;
     private failing?: { method: UpstreamMethod; remaining: number };
 
@@ -62,6 +64,16 @@ export class UpstreamRelay {
     /** How many `method` requests reached the relay. */
     requestCount(method: UpstreamMethod): number {
         return this.seen.get(method) ?? 0;
+    }
+
+    /** Connections the service opened, refused ones included. */
+    get connectionCount(): number {
+        return this.connections;
+    }
+
+    /** While set, every new connection is cut as soon as it opens. */
+    refuseConnections(refuse: boolean): void {
+        this.refusing = refuse;
     }
 
     /** Holds the next `method` request whose first param is `firstParam`. */
@@ -97,6 +109,11 @@ export class UpstreamRelay {
     }
 
     private relay(client: WebSocket): void {
+        this.connections++;
+        if (this.refusing) {
+            client.terminate();
+            return;
+        }
         const upstream = new WebSocket(this.target);
         this.sockets.add(client);
         this.sockets.add(upstream);
