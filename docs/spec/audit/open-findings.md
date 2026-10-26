@@ -629,7 +629,7 @@ tests are the regression suite.
 
 ### DEF-1-92NTAG
 
-**Defect:** _Not a defect (2026-10-26)._ `open()` still takes parallel `participants` and
+**Defect:** _Withdrawn (2026-10-26)._ Not a defect: `open()` still takes parallel `participants` and
 `balances` arrays without a length or zero-address check
 ([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)),
 but no input harms anyone beyond the submitter's gas. Fewer balances than participants reads out of
@@ -1214,7 +1214,7 @@ the `try` that owns runtime teardown; its `catch` disposes the instance, or the 
 instance exists yet, before rethrowing (906316b0f). Was: the two deploys ran outside that `try`, so
 a deploy rejection left the partly built runtime running for the life of the process.
 
-**Proposed direction:** No further change.
+**Proposed direction:** No further change. Regression: [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md), first- and second-deployment failure cases.
 
 <a id="find-gas-1-m26tmb"></a>
 
