@@ -1643,8 +1643,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public recordChainMembershipReads(): boolean {
-        this.service.recordChainMembershipReads();
+    public recordChainMembershipReads(hold = false): boolean {
+        this.service.recordChainMembershipReads(hold);
         return true;
     }
 

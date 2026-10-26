@@ -490,6 +490,63 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
+        it("U72: a leave watchdog that expires after the remaining participants' exit snapshot moved the leaver's local anchor past its latest block, while its membership check still reads the chain, starts no self-removal dispute; the check settles the leave once with no runtime error", async function () {
+            const h = TestSession.getHarness();
+            const {
+                leaver,
+                remainingPeerIndices,
+                disputes,
+                includeInboundAgain,
+                expireWatchdog
+            } = await stageInboundBlockedExit(h, { holdWatchdog: true });
+            const hostErrors = recordHostErrors(leaver);
+            const logs = await recordLeaveChannelLogs(h, leaver);
+            // blind to gossip: the leaver stays behind the posted snapshot
+            const restoreConfirmations =
+                await h.rpcStub.dropNetworkConfirmations(leaver.index);
+            const membershipReads = h.control(leaver).stub;
+            await membershipReads.recordChainMembershipReads(true).request();
+            try {
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices,
+                    waitForFinalization: true
+                });
+                await h.transition.postSnapshot({ peerIndex: 0 });
+                // the posted exit is the leaver's anchor; its check is parked
+                await waitFor(
+                    async () =>
+                        !(
+                            await h.query.getLocalStateSnapshot(leaver)
+                        ).snapshotData.participants.some((participant) =>
+                            addressesEqual(String(participant), leaver.address)
+                        ) &&
+                        (await membershipReads
+                            .getChainMembershipReadCount()
+                            .request()) > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+
+                await expireWatchdog();
+                await membershipReads.restoreChainMembershipReads().request();
+                await h.event.waitUntilLeftChannel(leaver.index);
+                await TestSession.settleDetached();
+                expect(
+                    (await logs.entries()).map((entry) => entry.message)
+                ).to.not.include("Starting the leave's self-removal dispute");
+                expect(await disputes.submissions()).to.deep.equal([]);
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(1);
+                expect(hostErrors.errors).to.deep.equal([]);
+            } finally {
+                await membershipReads.restoreChainMembershipReads().request();
+                await restoreConfirmations();
+                await logs.restore();
+                hostErrors.remove();
+            }
+        });
+
         it("U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it", async function () {
             const h = TestSession.getHarness();
             const { leaver, remainingPeerIndices, includeInboundAgain } =

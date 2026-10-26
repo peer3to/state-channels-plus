@@ -2142,18 +2142,23 @@ export class StubService extends ANetworkRpcService<
         this.restoreFinalityReads = undefined;
     }
 
-    public recordChainMembershipReads(): void {
+    // `hold` parks each read until the restore
+    public recordChainMembershipReads(hold = false): void {
         const contract = this.sm.stateChannelManagerContract;
         const original = contract.getParticipants;
+        const held: (() => void)[] = [];
         this.chainMembershipReadCount = 0;
         this.restoreChainMembership = () => {
             Reflect.set(contract, "getParticipants", original);
+            for (const release of held.splice(0)) release();
         };
         Reflect.set(
             contract,
             "getParticipants",
-            (...args: Parameters<typeof original>) => {
+            async (...args: Parameters<typeof original>) => {
                 this.chainMembershipReadCount += 1;
+                if (hold)
+                    await new Promise<void>((resolve) => held.push(resolve));
                 return original(...args);
             }
         );

@@ -869,6 +869,26 @@ send: the signed exit settles through a committed self-removal and resolves with
 from the reduced state; the unsigned exit stays awaiting settlement. No test stages the exact gap on
 a live chain.
 
+<a id="find-leave-5-7071c7"></a>
+
+### FIND-LEAVE-5-7071C7
+
+**Defect:** _Resolved (2026-10-26)._ A leave watchdog that expired after the remaining
+participants' snapshot with the exit landed, but before the leaver's membership check observed it,
+started the self-removal dispute anyway. The snapshot event moves the local diamond's anchor first;
+the check that drops the leaver runs after the handler and reads the chain. A leaver behind that
+snapshot then failed to build its proof (`AgreementManager.buildStateProof`: below its anchor), and
+the dispute error was fatal for the runtime although the leave settled, against the watchdog bound
+of [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+`LeaveChannelService.onWatchdog` now runs the membership check before it disputes: a settled exit
+ends there and starts no dispute
+([`REQ-LIF-10-QR8NQ9.T1.P36`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p36),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)).
+
+**Proposed direction:** Residual: an exit snapshot that lands after the watchdog's check read the
+chain, while the dispute is being built, still fails the build for a leaver behind it. That is the
+general case of a dispute built below the local anchor, not specific to the leave.
+
 <a id="find-leave-4-wdh0xc"></a>
 
 ### FIND-LEAVE-4-WDH0XC
