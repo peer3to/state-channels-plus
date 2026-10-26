@@ -32,19 +32,19 @@
 Opening and calldata posting
 
 - Setup: Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits, terms at and past their opening deadline, a duplicate open after the deadline; post calldata within/after the window, as non-author, and twice
-- Oracle: Only valid unanimous opens within their deadline store genesis; posting guards enforce author/no-overwrite/deadline; [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) cases documented
+- Oracle: Only valid unanimous opens within their deadline store genesis; posting guards enforce author/no-overwrite/deadline; fewer balances than participants or an `address(0)` participant reverts the open ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1` — valid open
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P2` — duplicate channel id
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P3` — short threshold
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4` — atomic deposits open
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P5` — non-author post revert
-- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P6` — [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length mismatch (documents finding)
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P6` — fewer balances than participants reverts the open ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P7` — zero channel id
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P8` — partial-deposit open
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P9` — overwrite post revert
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P10` — post-deadline post revert
-- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P11` — [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) zero-address (documents finding)
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P11` — an `address(0)` participant fails the unanimous signature check ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12` — duplicate participants rejected
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13` — partial-deposit open revert carries the count of SUCCESSFUL joins, not the submitted participant count
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P14` — overwrite post revert carries the fork id, transaction count, posting participant and the stored commitment
