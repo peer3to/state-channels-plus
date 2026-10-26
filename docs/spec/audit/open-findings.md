@@ -629,10 +629,17 @@ tests are the regression suite.
 
 ### DEF-1-92NTAG
 
-**Defect:** `open()` does not check `participants.length == balances.length` (out-of-bounds or
-silently ignored extras) and accepts `address(0)` participants.
+**Defect:** _Withdrawn (2026-10-26)._ Not a defect: `open()` still takes parallel `participants` and
+`balances` arrays without a length or zero-address check
+([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)),
+but no input harms anyone beyond the submitter's gas. Fewer balances than participants reads out of
+bounds and reverts the whole open. Extra balances are never read, and every listed participant signs
+the same `encodedOpenChannel` (unanimous `verifyThresholdSigned`), so each join uses the balance its
+participant signed. An `address(0)` participant can never sign: OpenZeppelin `ECDSA.recover` reverts
+rather than return `address(0)`, so the unanimous check fails. Was: the missing checks were read as
+out-of-bounds or silently ignored extras and an accepted `address(0)` participant.
 
-**Proposed direction:** Add explicit length and nonzero-address requires.
+**Proposed direction:** No change.
 
 <a id="def-2-shqr0a"></a>
 
@@ -1122,18 +1129,16 @@ invariant tripwire. Spec-noted in
 
 ### FIND-STORAGE-4-MFD7RZ
 
-**Defect:** `FraudProofStorage` violates the first-write-wins clause of
-[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm):
-`storeFraudProof` overwrites unconditionally (src/storage/FraudProofStorage.ts:22) and appends to
-the participant index (:25-28), so re-storing the same `encodedProof` with a different `participant`
-field (the key hashes `encodedProof` only, :19) both replaces the stored proof and strands a stale
-index entry. `DisputeFraudProofStorage` complies (:26-29). No live impact today — current producers
-derive `participant` from the proof content — so this is a spec-letter violation and a latent
-producer-bug trap, not an active defect.
+**Defect:** _Resolved (2026-09-02)._ `FraudProofStorage.storeFraudProof` now returns the existing
+hash when the `encodedProof` hash is already stored, before writing the proof or the participant
+index (src/storage/FraudProofStorage.ts, ca92f7f18), so it is first-write-wins and the participant
+index holds exactly the stored proofs, satisfying
+[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm).
+Was: a re-store of the same `encodedProof` with a different `participant` replaced the stored proof
+and left a stale participant index entry.
 
-**Proposed direction:** Decided (engineer review): the spec is the intent — make `FraudProofStorage`
-first-write-wins and keep the participant index exactly consistent with the stored set. Closes when
-that lands.
+**Proposed direction:** Covered by
+[`REQ-DSTORE-3-ZNXSTM.T1.P3`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p3).
 
 <a id="find-storage-5-t301z1"></a>
 
@@ -1203,16 +1208,13 @@ caller.
 
 ### FIND-RUNTIME-1-GAPY72
 
-**Defect:** `p2pSetup` deploys the two local state machines _outside_ the `try` that owns runtime
-teardown (the two `deployStateMachine` calls in `src/evm/EvmDiamondStateMachine.ts`). A rejection
-there leaves whatever `startP2pRuntimeHost` had already built running for the life of the process.
-Narrow by construction: every failure raised _inside_ that `try` is already covered, because
-`startP2pRuntimeHost` runs `disposeRuntime()` before rethrowing and a readiness failure disposes
-through the `deployComplete` handler. Not introduced by the cross-thread log work.
+**Defect:** _Resolved (2026-09-13)._ `setupP2pRuntime` (src/evm/p2pRuntime/setupP2pRuntime.ts, the
+construction behind `p2pSetup`) now runs both `deployStateMachine` calls and `deployComplete` inside
+the `try` that owns runtime teardown; its `catch` disposes the instance, or the client root when no
+instance exists yet, before rethrowing (906316b0f). Was: the two deploys ran outside that `try`, so
+a deploy rejection left the partly built runtime running for the life of the process.
 
-**Proposed direction:** Move the two deploys inside the `try`, or wrap them so a rejection tears the
-partly built runtime down before it propagates. Then add an E2E that forces a deploy failure and
-asserts a later crash-log round reaches the same number of stores as before the attempt.
+**Proposed direction:** No further change. Regression: [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md), first- and second-deployment failure cases.
 
 <a id="find-gas-1-m26tmb"></a>
 
