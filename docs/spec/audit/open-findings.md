@@ -638,12 +638,13 @@ silently ignored extras) and accepts `address(0)` participants.
 
 ### DEF-2-SHQR0A
 
-**Defect:** `OutboundMessagesProcessed` is emitted by
+**Defect:** _Resolved (2026-10-26)._ Not a defect for the SDK: `WithdrawalsUpdated` carries the
+final total in the same transaction, emitted by
 [`StateSnapshotFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
-but absent from the SDK's dispatched-event set — local withdrawal accounting can go stale.
+even with no outbound blocks, and the SDK dispatches it; the unused `OutboundMessagesProcessed`
+event was removed. Engineer decision (Luke, 2026-10-26).
 
-**Proposed direction:** Dispatch it idempotently, or document that `WithdrawalsUpdated` fully
-substitutes.
+**Proposed direction:** No further action.
 
 <a id="def-3-1xwq30"></a>
 
