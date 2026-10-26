@@ -8,8 +8,9 @@ import "./tasks/forgeTest";
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
 
-// Keep in sync with test/harness/core/slotAccounts.ts (SLOT_STRIDE) and the
-// pool cap in scripts/e2e-parallel/shared/constants.js (ACCOUNT_POOL_SIZE).
+// Keep in sync with test/harness/core/slotAccounts.ts (SLOT_STRIDE), the
+// pool cap in scripts/e2e-parallel/shared/constants.js (ACCOUNT_POOL_SIZE) and
+// the test chain's launcher, scripts/infra/start-hardhat-node.js (MNEMONIC).
 const SLOT_STRIDE = 10;
 const ACCOUNT_POOL_SIZE = 400;
 const HARDHAT_MNEMONIC =

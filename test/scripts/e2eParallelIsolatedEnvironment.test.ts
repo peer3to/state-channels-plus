@@ -49,6 +49,8 @@ const profile = {
     targetLoad: 0.8
 };
 
+const LAUNCHER = "scripts/infra/start-hardhat-node.js";
+
 describe("distributed isolated environment", function () {
     it("packages the worker, workspace receiver, and test-infrastructure entry as trusted glue", function () {
         const manifest = trustedRunnerManifest(repoRoot());
@@ -59,6 +61,59 @@ describe("distributed isolated environment", function () {
         expect(paths).to.include("scripts/e2e-parallel/distributed/worker.js");
         expect(paths).to.include("test/utils/nodeInfra.js");
         expect(paths).to.include("scripts/infra/local-discovery-registry.js");
+        expect(
+            manifest.find((entry: { path: string }) => entry.path === LAUNCHER)
+                ?.sha256
+        ).to.equal(
+            crypto
+                .createHash("sha256")
+                .update(fs.readFileSync(path.join(repoRoot(), LAUNCHER)))
+                .digest("hex")
+        );
+    });
+
+    it("ships the chain launcher in the trusted runner archive and verifies its bytes", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "trusted-runner-"));
+        const inputs: Buffer[] = [];
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async (
+                command: string,
+                args: string[],
+                options: { input?: Buffer }
+            ) => {
+                if (command === "tar") return runProcess(command, args);
+                if (options.input) {
+                    inputs.push(options.input);
+                    if (args.includes("tar")) {
+                        const unpacked = spawnSync(
+                            "tar",
+                            ["-xf", "-", "-C", root],
+                            { input: options.input }
+                        );
+                        expect(unpacked.status).to.equal(0);
+                    }
+                }
+                return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+            }
+        });
+        try {
+            await backend.refreshTrustedRunner({ container: "retained" });
+            const shipped = fs.readFileSync(path.join(root, LAUNCHER));
+            const manifest = JSON.parse(inputs[1].toString());
+            expect(
+                shipped.equals(fs.readFileSync(path.join(repoRoot(), LAUNCHER)))
+            ).to.equal(true);
+            expect(
+                manifest.find(
+                    (entry: { path: string }) => entry.path === LAUNCHER
+                ).sha256
+            ).to.equal(
+                crypto.createHash("sha256").update(shipped).digest("hex")
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("starts, stops, and restarts one retained identity environment", async function () {

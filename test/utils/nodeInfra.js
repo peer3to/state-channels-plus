@@ -18,21 +18,18 @@ const discoveryScriptFrom = (root) =>
 const PACKAGE_ROOT = fs.existsSync(discoveryScriptFrom(runtimeRoot))
     ? runtimeRoot
     : path.join(runtimeRoot, "..");
-const { resolveProjectHardhatCli } = require(
-    path.join(
-        PACKAGE_ROOT,
-        "scripts",
-        "e2e-parallel",
-        "shared",
-        "projectModules"
-    )
-);
-const HARDHAT_CLI = resolveProjectHardhatCli(PROJECT_ROOT);
 const DISCOVERY_SCRIPT = path.join(
     PACKAGE_ROOT,
     "scripts",
     "infra",
     "local-discovery-registry.js"
+);
+// The trusted launcher, never PROJECT_ROOT's copy: the project is untrusted.
+const HARDHAT_NODE_SCRIPT = path.join(
+    PACKAGE_ROOT,
+    "scripts",
+    "infra",
+    "start-hardhat-node.js"
 );
 
 // ---------------------------------------------------------------------------
@@ -78,29 +75,48 @@ async function startDhtBootstrapper(host, { port, attempts = 20 } = {}) {
     }
 }
 
-/** Poll a node's RPC endpoint until it responds or the timeout expires. */
-async function waitForHardhatNode(url, timeoutMs = 30000) {
+/** One eth_blockNumber probe: true only when the node answers with a result. */
+function probeRpc(url) {
+    return new Promise((resolve) => {
+        const req = http.request(
+            url,
+            {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                timeout: 3000
+            },
+            (res) => {
+                let data = "";
+                res.on("data", (d) => (data += d));
+                res.on("end", () => {
+                    try {
+                        resolve(/^0x[0-9a-f]+$/i.test(JSON.parse(data).result));
+                    } catch {
+                        resolve(false);
+                    }
+                });
+                res.on("error", () => resolve(false));
+            }
+        );
+        req.on("timeout", () => req.destroy());
+        req.on("error", () => resolve(false));
+        req.write(
+            '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
+        );
+        req.end();
+    });
+}
+
+/** Poll a node's RPC endpoint until it answers JSON-RPC or the timeout expires. */
+async function waitForHardhatNode(
+    url,
+    timeoutMs = 30000,
+    cancelled = () => false
+) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-        const ready = await new Promise((resolve) => {
-            const req = http.request(
-                url,
-                {
-                    method: "POST",
-                    headers: { "content-type": "application/json" }
-                },
-                (res) => {
-                    res.resume();
-                    resolve(true);
-                }
-            );
-            req.on("error", () => resolve(false));
-            req.write(
-                '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
-            );
-            req.end();
-        });
-        if (ready) return;
+        if (cancelled()) return;
+        if (await probeRpc(url)) return;
         await new Promise((r) => setTimeout(r, 250));
     }
     throw new Error(`Hardhat node not ready at ${url} within ${timeoutMs}ms`);
@@ -115,40 +131,45 @@ function pipeLogs(child, logPath) {
     return logStream;
 }
 
-/**
- * Spawn `hardhat node` (on `port` or a free one), wait until its RPC is ready,
- * and return `{ proc, url, stop }`. Inherits process.env so hardhat.config's
- * e2e mining / gas-limit / accounts apply.
- */
-// Extra node flags for the infra processes (hardhat node, discovery registry),
+// Extra node flags for the infra processes (chain node, discovery registry),
 // e.g. TEST_INFRA_NODE_FLAGS="--cpu-prof --cpu-prof-dir=/tmp/prof" to profile
-// the chain the tests hit. Empty by default.
+// the launcher the tests hit. Empty by default.
 function infraNodeFlags() {
     const flags = process.env.TEST_INFRA_NODE_FLAGS;
     return flags ? flags.split(" ").filter(Boolean) : [];
 }
 
+const NODE_STARTUP_BUDGET_MS = 30000;
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+const BOUND_PORT_RE = /Listening on 127\.0\.0\.1:(\d+)\r?\n/;
+
+/**
+ * Spawn the test chain through scripts/infra/start-hardhat-node.js (Anvil on
+ * `port`, or one it binds itself on 0), wait for its bound-port line and for
+ * its RPC to answer, and return `{ proc, url, stop, exited, logClosed }`. The
+ * chain binds port 0 itself: a port reserved and released first can be taken
+ * by another process before the chain binds it. Inherits process.env so the
+ * launcher's e2e mining / chain id apply.
+ */
 async function startHardhatNode({
     port,
     logPath,
     label = "hardhat node",
     env = {}
 } = {}) {
-    const nodePort = port ?? (await getFreePort());
+    const nodePort = port ?? 0;
     const proc = spawn(
         process.execPath,
-        [
-            ...infraNodeFlags(),
-            HARDHAT_CLI,
-            "node",
-            "--hostname",
-            "127.0.0.1",
-            "--port",
-            String(nodePort)
-        ],
+        [...infraNodeFlags(), HARDHAT_NODE_SCRIPT],
         {
             cwd: PROJECT_ROOT,
-            env: { ...process.env, ...env },
+            env: {
+                ...process.env,
+                ...env,
+                HARDHAT_NODE_HOST: "127.0.0.1",
+                HARDHAT_NODE_PORT: String(nodePort)
+            },
             stdio: ["ignore", "pipe", "pipe"]
         }
     );
@@ -165,41 +186,74 @@ async function startHardhatNode({
           })
         : Promise.resolve();
     proc.once("close", () => logStream?.end());
-    const url = `http://127.0.0.1:${nodePort}`;
     const stop = () => {
         if (!proc.killed) proc.kill("SIGTERM");
     };
 
     return new Promise((resolve, reject) => {
         let settled = false;
-        proc.on("exit", (code) => {
-            if (!settled) {
-                settled = true;
-                reject(
-                    new Error(`${label} exited with code ${code} before ready`)
-                );
-            }
-        });
-        proc.on("error", (err) => {
-            logStream?.end();
-            if (!settled) {
-                settled = true;
-                reject(err);
-            }
-        });
-        waitForHardhatNode(url).then(
+        let output = "";
+        const settle = (finish) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            proc.off("exit", onExit);
+            proc.stdout.off("data", onData);
+            proc.stderr.off("data", onData);
+            // keep draining the chain's log so its pipes never fill
+            proc.stdout.resume();
+            proc.stderr.resume();
+            finish();
+        };
+        const fail = (error) =>
+            settle(() => {
+                stop();
+                reject(error);
+            });
+        const timer = setTimeout(
             () =>
-                settled ||
-                ((settled = true),
-                resolve({ proc, url, stop, exited, logClosed })),
-            (err) => {
-                if (!settled) {
-                    settled = true;
-                    stop();
-                    reject(err);
-                }
-            }
+                fail(
+                    new Error(
+                        `${label} did not become ready within ${NODE_STARTUP_BUDGET_MS}ms:\n${output}`
+                    )
+                ),
+            NODE_STARTUP_BUDGET_MS
         );
+        const onExit = (code) =>
+            settle(() =>
+                reject(
+                    new Error(
+                        `${label} exited with code ${code} before ready:\n${output}`
+                    )
+                )
+            );
+        // stays attached: a late child error must not become an uncaught one
+        const onError = (err) => {
+            logStream?.end();
+            settle(() => reject(err));
+        };
+        const onData = (chunk) => {
+            if (settled || bound) return;
+            output += chunk.toString().replace(ANSI_RE, "");
+            const match = BOUND_PORT_RE.exec(output);
+            if (!match) return;
+            const boundPort = Number(match[1]);
+            if (!(boundPort >= 1 && boundPort <= 65535)) return;
+            bound = true;
+            const url = `http://127.0.0.1:${boundPort}`;
+            waitForHardhatNode(url, NODE_STARTUP_BUDGET_MS, () => settled).then(
+                () =>
+                    settle(() =>
+                        resolve({ proc, url, stop, exited, logClosed })
+                    ),
+                fail
+            );
+        };
+        let bound = false;
+        proc.on("exit", onExit);
+        proc.on("error", onError);
+        proc.stdout.on("data", onData);
+        proc.stderr.on("data", onData);
     });
 }
 
