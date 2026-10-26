@@ -32,7 +32,19 @@ const INVALID_PARAMS = -32602;
 const INTERNAL_ERROR = -32603;
 const PARSE_ERROR = -32700;
 
-export type StorageSlots = Record<string, string>;
+/** Lower-case `0x`-prefixed 20-byte account address. */
+export type AccountAddress = string;
+/** 32-byte storage key, `0x` + 64 lower-case hex digits. */
+export type StorageSlot = string;
+/** 32-byte storage value, `0x` + 64 lower-case hex digits. */
+export type StorageWord = string;
+/** Subscription id handed to a peer by `scp_subscribeContractStorage`. */
+type SubscriptionId = string;
+/** JSON-RPC id of a request this service sent upstream. */
+type UpstreamRequestId = number;
+type RpcMethodName = string;
+
+export type StorageSlots = Record<StorageSlot, StorageWord>;
 
 /** One account's balance, nonce, code and storage; absent fields are untouched. */
 export interface AccountDiff {
@@ -42,7 +54,7 @@ export interface AccountDiff {
     storage?: StorageSlots;
 }
 
-export type AccountDiffs = Record<string, AccountDiff>;
+export type AccountDiffs = Record<AccountAddress, AccountDiff>;
 
 export interface BlockStorageDiff {
     number: string;
@@ -78,7 +90,7 @@ interface BlockHeader {
 }
 
 interface Peer {
-    subscriptions: Map<string, string[]>;
+    subscriptions: Map<SubscriptionId, AccountAddress[]>;
     nextSubscription: number;
 }
 
@@ -176,7 +188,7 @@ export function mergeTransactionDiffs(entries: unknown): {
     const pre: AccountDiffs = {};
     const post: AccountDiffs = {};
     // Accounts first seen in a post-only entry did not exist before the block.
-    const created = new Set<string>();
+    const created = new Set<AccountAddress>();
     for (const entry of entries) {
         if (!isObject(entry) || entry.error !== undefined) {
             throw new Error("Upstream trace reported a transaction failure");
@@ -257,7 +269,7 @@ function cloneAccount(account: AccountDiff): AccountDiff {
 /** The record restricted to `addresses` (lower-case); never shares state. */
 export function filterRecord(
     record: BlockStorageDiff,
-    addresses: string[]
+    addresses: AccountAddress[]
 ): BlockStorageDiff {
     const selectedPre: AccountDiffs = {};
     const selectedPost: AccountDiffs = {};
@@ -299,13 +311,13 @@ function parseHeader(value: unknown): BlockHeader {
     };
 }
 
-function parseAddresses(value: unknown): string[] {
+function parseAddresses(value: unknown): AccountAddress[] {
     if (!Array.isArray(value)) {
         throw invalidParams(
             "addresses must be an array of 20-byte hex addresses"
         );
     }
-    const addresses = new Set<string>();
+    const addresses = new Set<AccountAddress>();
     for (const address of value) {
         if (typeof address !== "string" || !ADDRESS.test(address)) {
             throw invalidParams("Invalid address");
@@ -389,7 +401,7 @@ export async function startStorageDiffService(
     let nextRequestId = 0;
     const peers = new Map<WebSocket, Peer>();
     const pending = new Map<
-        number,
+        UpstreamRequestId,
         {
             resolve: (value: unknown) => void;
             reject: (error: Error) => void;
@@ -430,7 +442,8 @@ export async function startStorageDiffService(
         void teardown(new Error(sanitize(describeError(error))));
     }
 
-    // lean: one serialized reconciliation queue; parallel tracing requires ordered branch commit.
+    // One serialized queue: reconciliation commits branches in order, and
+    // subscriptions and catch-up reads see a consistent canonical history.
     let queueTail: Promise<unknown> = Promise.resolve();
     function enqueue<T>(job: () => Promise<T>): Promise<T> {
         const run = queueTail.then(job);
@@ -666,8 +679,10 @@ export async function startStorageDiffService(
             const head = BigInt(canonical[canonical.length - 1].number);
             if (fromBlock > head) return [];
             if (fromBlock < BigInt(canonical[0].number)) {
-                // prettier-ignore
-                throw Object.assign(new Error("Requested block has been pruned"), { code: PRUNED_ERROR_CODE });
+                throw rpcError(
+                    PRUNED_ERROR_CODE,
+                    "Requested block has been pruned"
+                );
             }
             const records = canonical.filter(
                 (record) => BigInt(record.number) >= fromBlock
@@ -677,7 +692,7 @@ export async function startStorageDiffService(
     }
 
     const methods = new Map<
-        string,
+        RpcMethodName,
         (socket: WebSocket, params: unknown[]) => Promise<unknown>
     >([
         ["scp_subscribeContractStorage", subscribeContractStorage],
