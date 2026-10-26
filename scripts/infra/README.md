@@ -13,7 +13,7 @@
 ## Storage diff service
 
 A standalone, node-only service
-([StorageDiffService.ts](../../src/utils/node/StorageDiffService.ts)) that
+([StorageDiffService.ts](../../src/utils/node/storageDiff/StorageDiffService.ts)) that
 follows the best head of one Ethereum upstream, traces each new block once, and
 serves which storage slots changed over JSON-RPC 2.0 on a WebSocket. It is not
 exported from the SDK.
@@ -47,6 +47,9 @@ block with no transactions gets empty maps and no trace.
   `{"jsonrpc":"2.0","method":"scp_subscription","params":{"subscription":id,"result":record}}`.
   A socket may hold many subscriptions; closing it drops them all. A new
   subscription gets **future commits only**: use catch-up for history.
+- `scp_unsubscribe` with params `[subscriptionId]` returns `true` and stops
+  that subscription's pushes at once, or `false` for an id this socket does
+  not hold. The socket's other subscriptions are unaffected.
 - `scp_getContractStorageDiffs` with params `[addresses, fromBlock]` returns the
   retained canonical records from `fromBlock` (a non-negative integer or a
   canonical hex quantity) up to the head, inclusive and ascending. A
@@ -88,10 +91,12 @@ can therefore be cut by the next block; request a narrower window (a later
 
 ### Failure policy and trust
 
-Any upstream failure is **fatal**: a lost socket, a 10 second request timeout,
-an RPC or per-transaction tracer error, a malformed response, or a block that
-changes while it is being traced. The service closes its peers and exits
-nonzero; it does not reconnect, retry, or invent an empty diff. Run it under a
+A block that changes while it is being traced, an upstream error answer and a
+10 second request timeout are retried: the service re-resolves the best head
+up to 3 more times, waiting 250 ms, then 500 ms, then 1 s. Anything else is
+**fatal**: a lost socket, a malformed response, a per-transaction tracer error,
+or a failure that outlasts the retries. The service then closes its peers and
+exits nonzero; it does not reconnect or invent an empty diff. Run it under a
 supervisor that restarts it; consumers then catch up within the new window.
 Errors name the upstream by scheme and host only, never its credentials.
 

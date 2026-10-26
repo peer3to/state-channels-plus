@@ -11,8 +11,9 @@ process.env.TS_NODE_PROJECT ||= path.join(
 );
 require("ts-node/register");
 const {
-    startStorageDiffService
-} = require("../../src/utils/node/StorageDiffService");
+    StorageDiffService
+} = require("../../src/utils/node/storageDiff/StorageDiffService");
+const { createLogger } = require("../../src/utils/logging/node/createLogger");
 
 function parseCount(name, value) {
     if (!/^\d+$/.test(value)) {
@@ -35,8 +36,9 @@ async function main() {
     if (!values.upstream) {
         throw new Error("--upstream <ws://... | wss://...> is required");
     }
-    const service = await startStorageDiffService({
+    const service = await StorageDiffService.start({
         upstreamUrl: values.upstream,
+        logger: createLogger({}, { component: "StorageDiffService" }),
         ...(values.host !== undefined && { host: values.host }),
         ...(values.port !== undefined && {
             port: parseCount("port", values.port)

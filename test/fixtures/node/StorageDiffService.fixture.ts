@@ -1,23 +1,24 @@
 // @spec-test-coverage-ignore: storage diff service staging; executable evidence belongs to its calling test declarations
-import {
-    withIsolatedAnvilNode,
-    type IsolatedAnvilNode
-} from "./IsolatedAnvilNode";
-import {
-    startStorageDiffService,
-    type AccountAddress,
-    type BlockStorageDiff,
-    type StorageDiffServiceHandle
-} from "@/utils/node/StorageDiffService";
+import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
+import { UpstreamRelay } from "./UpstreamRelay";
+import { createLogger } from "@/utils";
+import type {
+    AccountAddress,
+    BlockStorageDiff,
+    SubscriptionId
+} from "@/utils/node/storageDiff/blockStorageDiff";
+import { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import {
     SimpleNumberStorage__factory,
     type SimpleNumberStorage
 } from "@typechain-types";
-import { toBeHex, type JsonRpcSigner, type TransactionReceipt } from "ethers";
+import {
+    toBeHex,
+    type JsonRpcProvider,
+    type JsonRpcSigner,
+    type TransactionReceipt
+} from "ethers";
 import WebSocket from "ws";
-
-/** JSON-RPC 2.0 "Invalid params". */
-export const INVALID_PARAMS = -32602;
 
 /** `SimpleNumberStorage.value` lives in storage slot 0. */
 export const VALUE_SLOT = toBeHex(0, 32);
@@ -45,8 +46,6 @@ export class StorageDiffRpcError extends Error {
 }
 
 type Waiter<T> = (value: T) => void;
-/** Subscription id as the service named it. */
-type SubscriptionId = string;
 /** JSON-RPC id of a request this client sent. */
 type ClientRequestId = number;
 
@@ -96,6 +95,17 @@ export class StorageDiffClient {
         if (typeof id !== "string") throw new Error("Malformed subscription");
         this.records.set(id, this.records.get(id) ?? []);
         return id;
+    }
+
+    async unsubscribe(subscription: SubscriptionId): Promise<boolean> {
+        return (await this.request("scp_unsubscribe", [
+            subscription
+        ])) as boolean;
+    }
+
+    /** Records pushed to `subscription` and not read yet, oldest first. */
+    unread(subscription: SubscriptionId): BlockStorageDiff[] {
+        return [...(this.records.get(subscription) ?? [])];
     }
 
     async getDiffs(
@@ -169,34 +179,45 @@ export class StorageDiffClient {
 }
 
 export type StorageDiffSession = {
-    node: IsolatedAnvilNode;
-    service: StorageDiffServiceHandle;
+    provider: JsonRpcProvider;
+    /** Sits between the service and the node, for upstream faults. */
+    relay: UpstreamRelay;
+    service: StorageDiffService;
     client: StorageDiffClient;
     signer: JsonRpcSigner;
 };
 
 /**
- * Runs `use` with a private anvil, a service following it and a connected
- * client; all three end in `finally`.
+ * Runs `use` with a private node, a service following it through a relay and
+ * a connected client; all of them end in `finally`.
  */
 export async function withStorageDiffSession<T>(
     use: (session: StorageDiffSession) => Promise<T>,
     options: { retention?: number } = {}
 ): Promise<T> {
-    return await withIsolatedAnvilNode(async (node) => {
-        const service = await startStorageDiffService({
-            upstreamUrl: node.wsUrl,
-            port: 0,
-            retention: options.retention
-        });
+    return await withIsolatedHardhatNode(async (provider) => {
+        // anvil mines on submit: poll receipts often, not every 4 s
+        provider.pollingInterval = 50;
+        // anvil serves WebSocket subscriptions on its HTTP port
+        const relay = await UpstreamRelay.start(
+            provider._getConnection().url.replace(/^http/, "ws")
+        );
+        let service: StorageDiffService | undefined;
         let client: StorageDiffClient | undefined;
         try {
+            service = await StorageDiffService.start({
+                upstreamUrl: relay.url,
+                port: 0,
+                retention: options.retention,
+                logger: createLogger({}, { component: "StorageDiffService" })
+            });
             client = await StorageDiffClient.connect(service.url);
-            const signer = await node.provider.getSigner(0);
-            return await use({ node, service, client, signer });
+            const signer = await provider.getSigner(0);
+            return await use({ provider, relay, service, client, signer });
         } finally {
             client?.close();
-            await service.close();
+            await service?.close();
+            await relay.close();
         }
     });
 }
