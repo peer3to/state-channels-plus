@@ -649,10 +649,14 @@ substitutes.
 
 ### DEF-3-1XWQ30
 
-**Defect:** `LocalDiamond.onChannelOpened` builds the genesis inbound message block in memory and
-never persists it — the local mirror diverges from the production `open` path.
+**Defect:** _Resolved (2026-08-23, PR #451)._ `LocalDiamond.onChannelOpened` once built the genesis
+inbound message block in memory and never persisted it. Now the production `open` stores that block
+through `_appendInboundMessages` → `_persistInboundMessageBlock`, which emits
+`InboundMessagesProcessed`; the SDK dispatches it and `LocalDiamond.onInboundMessagesProcessed`
+persists the same block, while `onChannelOpened` only records the genesis snapshot and copies its
+inbound head, height and deposit total.
 
-**Proposed direction:** Persist it (or delete the dead code deliberately).
+**Proposed direction:** None — fixed.
 
 <a id="def-4-qb3kqm"></a>
 
