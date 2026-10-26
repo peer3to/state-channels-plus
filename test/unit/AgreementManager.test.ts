@@ -232,7 +232,7 @@ describe("Unit: AgreementManager", function () {
             expect(r.thrownMessage).to.match(/Fork not found/);
         });
 
-        it("proof requested below the on-chain anchor (a leave the exits' snapshot covers) → buildStateProof throws, no proof from history below the anchor", async function () {
+        it("proof requested below the on-chain anchor (a leave the exits' snapshot covers) → buildStateProof returns undefined, no proof from history below the anchor", async function () {
             const h = TestSession.getHarness();
             await h.scenario.setupTwoLeaversAcrossMilestones();
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
@@ -249,24 +249,19 @@ describe("Unit: AgreementManager", function () {
             // staging sanity: the leaves sit below the posted exit snapshot
             expect(changeHeights[0]).to.be.lessThan(anchorHeight);
 
+            // this view is behind the chain at that height -> no proof
             const r = await h.execOnHost(
                 h.getPeer(0),
-                async (sm, args) => {
-                    let thrownMessage = "";
-                    try {
-                        await sm.agreementManager.buildStateProof(
+                async (sm, args) => ({
+                    isBuilt:
+                        (await sm.agreementManager.buildStateProof(
                             args.forkId,
                             args.requestedHeight
-                        );
-                    } catch (e) {
-                        thrownMessage =
-                            e instanceof Error ? e.message : String(e);
-                    }
-                    return { thrownMessage };
-                },
+                        )) !== undefined
+                }),
                 { forkId, requestedHeight: changeHeights[0] }
             );
-            expect(r.thrownMessage).to.match(/below its anchor/);
+            expect(r.isBuilt).to.equal(false);
         });
 
         it("proof requested below a participant join → tops out at the requested height", async function () {

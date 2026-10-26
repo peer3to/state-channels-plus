@@ -157,6 +157,14 @@ class DisputeManager {
                 expectedSlashes: killProof ? [killProof.participant] : [],
                 latestStateProof: options?.latestStateProof
             });
+            if (!constructed) {
+                this.storage.disputes.storeDisputedFork(forkId, false);
+                this.logger.info(
+                    "no dispute: this view is behind the chain's anchor",
+                    { forkId, channelId: this.channelId }
+                );
+                return {};
+            }
             const {
                 dispute,
                 disputeConfirmation,
@@ -563,6 +571,8 @@ class DisputeManager {
      * This peer's dispute of `forkId` from its active view: the proof
      * through its latest block (persistence-only replay never moves it).
      * `expectedSlashes` are slashes a kill in the same multicall lands first.
+     * undefined when the latest block is below the anchor: this view is
+     * behind the chain.
      */
     public constructDispute(
         forkId: ForkId,
@@ -570,7 +580,7 @@ class DisputeManager {
             expectedSlashes?: Address[];
             latestStateProof?: Promise<BuiltStateProof | undefined>;
         }
-    ): Promise<ConstructDisputeResult> {
+    ): Promise<ConstructDisputeResult | undefined> {
         return this.disputeBuilder.constructDispute(forkId, options);
     }
 

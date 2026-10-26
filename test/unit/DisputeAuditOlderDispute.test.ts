@@ -367,7 +367,9 @@ describe("Unit: DisputeValidationService data availability and older disputes", 
                 h.getPeer(auditor.index),
                 async (sm, args) => {
                     const { dispute: ownDispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     return (
                         sm.agreementManager.getLatestBlockFromStateProof(
                             ownDispute.input.stateProof

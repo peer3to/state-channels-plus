@@ -85,6 +85,10 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
             blockHeight ??
             Math.max(0, this.storage.blocks.getLatestBlockHeight(forkId));
         const built = await agreementManager.buildStateProof(forkId, height);
+        if (!built)
+            throw new Error(
+                `Cannot build a state proof for fork ${forkId} at height ${height}: below its anchor`
+            );
         const proof = built.stateProof;
 
         const chainWalk = await agreementManager.walkFromChainAnchor(

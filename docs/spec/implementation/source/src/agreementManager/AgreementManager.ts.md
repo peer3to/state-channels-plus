@@ -89,6 +89,7 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63` — Exact construction at an exit height retains the departing and remaining union signatures through a later linked block, verifies on chain at exactly that height without moving the view, and returns no proof after the sole required later confirmation is removed
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — A proof requested below the mirrored anchor returns no proof: this view is behind the chain, and no proof is built from history below the anchor
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

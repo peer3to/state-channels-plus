@@ -404,10 +404,15 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             latestStateSnapshot.latestInboundMessageBlockHash,
             latestStateSnapshot.latestInboundMessageBlockHeight
         );
-        const { stateProof } = await this.agreementManager.buildStateProof(
+        const built = await this.agreementManager.buildStateProof(
             forkId,
             blockHeight
         );
+        if (!built)
+            throw new Error(
+                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor`
+            );
+        const { stateProof } = built;
         const auditingData = await this.disputeManager[
             "disputeBuilder"
         ].reconstructAuditingData({
@@ -495,6 +500,7 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         this.originalConstructDispute = original;
         dm.constructDispute = async (forkId, options) => {
             const result = await original(forkId, options);
+            if (!result) return result;
             // Expose the upload's auditing data so `truncateStateProofToHeight`
             // can keep it in sync after mutating the state proof.
             this.pendingAuditingData = result.auditingData;

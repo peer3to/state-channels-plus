@@ -884,10 +884,17 @@ of [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../specification/peer-communi
 ends there and starts no dispute
 ([`REQ-LIF-10-QR8NQ9.T1.P36`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p36),
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)).
+An exit snapshot that lands after that check, while the dispute is built, leaves the leaver's latest
+block below its anchor: `AgreementManager.buildStateProof` returns no proof for a view behind the
+chain, and `DisputeManager.dispute` treats that as it treats `ErrorCantParticipateInDispute` (marker
+rolled back, no upload), while the check the snapshot requested settles the leave
+([`REQ-LIF-10-QR8NQ9.T1.P37`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p37),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9),
+[`UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P55`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-1-sqv6zd),
+[`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d)).
 
-**Proposed direction:** Residual: an exit snapshot that lands after the watchdog's check read the
-chain, while the dispute is being built, still fails the build for a leaver behind it. That is the
-general case of a dispute built below the local anchor, not specific to the leave.
+**Proposed direction:** None — fixed. With the throw for a proof below the anchor restored, the
+build-race and behind-view cases fail with "below its anchor".
 
 <a id="find-leave-4-wdh0xc"></a>
 

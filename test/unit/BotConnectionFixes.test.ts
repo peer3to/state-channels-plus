@@ -518,14 +518,15 @@ describe("Unit: bot-connection fixes", function () {
                     async () =>
                         !(
                             await h.query.getLocalStateSnapshot(leaver)
-                        ).snapshotData.participants.some((participant) =>
-                            addressesEqual(String(participant), leaver.address)
-                        ) &&
+                        ).snapshotData.participants.includes(leaver.address) &&
                         (await membershipReads
                             .getChainMembershipReadCount()
                             .request()) > 0,
                     h.event.protocolEventTimeoutMs()
                 );
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(0);
 
                 await expireWatchdog();
                 await membershipReads.restoreChainMembershipReads().request();
@@ -544,6 +545,169 @@ describe("Unit: bot-connection fixes", function () {
                 await restoreConfirmations();
                 await logs.restore();
                 hostErrors.remove();
+            }
+        });
+
+        it("U72: a leave watchdog whose membership check finds the exit pending starts the self-removal dispute; the remaining participants' exit snapshot moves the leaver's local anchor past its latest block while that dispute is built, so the dispute is a no-op: no submission, the dispute marker rolls back, one onLeftChannel and no runtime error", async function () {
+            const h = TestSession.getHarness();
+            const {
+                leaver,
+                remainingPeerIndices,
+                disputes,
+                includeInboundAgain,
+                expireWatchdog
+            } = await stageInboundBlockedExit(h, { holdWatchdog: true });
+            const forkId = h.activeForkId!;
+            const hostErrors = recordHostErrors(leaver);
+            const logs = await recordLeaveChannelLogs(h, leaver);
+            // blind to gossip: the leaver stays behind the posted snapshot
+            const restoreConfirmations =
+                await h.rpcStub.dropNetworkConfirmations(leaver.index);
+            const build = await h.rpcStub.holdConstructDisputeAtStateProof(
+                leaver.index,
+                forkId
+            );
+            try {
+                // the chain still seats the leaver -> the check leaves the exit pending
+                await expireWatchdog();
+                await build.waitUntilParked();
+                expect(
+                    (await logs.entries()).map((entry) => entry.message)
+                ).to.include("Starting the leave's self-removal dispute");
+
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices,
+                    waitForFinalization: true
+                });
+                await h.transition.postSnapshot({ peerIndex: 0 });
+                // the posted exit is the leaver's anchor and settles the leave
+                await h.event.waitUntilLeftChannel(leaver.index);
+                expect(
+                    (await h.query.getLocalStateSnapshot(leaver)).snapshotData
+                        .participants
+                ).to.not.include(leaver.address);
+
+                await build.release();
+                await h.rpcStub.waitUntilDisputeMutexIdle(leaver.index);
+                await TestSession.settleDetached();
+                expect(await disputes.submissions()).to.deep.equal([]);
+                expect(
+                    await h.execOnHost(
+                        leaver,
+                        (sm, args) =>
+                            sm.storage.disputes.didIDispute(args.forkId),
+                        { forkId }
+                    )
+                ).to.equal(false);
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(1);
+                expect(hostErrors.errors).to.deep.equal([]);
+            } finally {
+                await build.release();
+                await restoreConfirmations();
+                await logs.restore();
+                hostErrors.remove();
+            }
+        });
+
+        it("U72: a leave watchdog that expires after the chain dropped the leaver, while the leaver has not received the exit snapshot's chain events, runs its own membership check: the check settles the leave with no self-removal dispute and no runtime error", async function () {
+            const h = TestSession.getHarness();
+            const {
+                leaver,
+                remainingPeerIndices,
+                disputes,
+                includeInboundAgain,
+                expireWatchdog
+            } = await stageInboundBlockedExit(h, { holdWatchdog: true });
+            const hostErrors = recordHostErrors(leaver);
+            const logs = await recordLeaveChannelLogs(h, leaver);
+            // blind to gossip: the leaver stays behind the posted snapshot
+            const restoreConfirmations =
+                await h.rpcStub.dropNetworkConfirmations(leaver.index);
+            // event-intake lag: no chain event requests a membership check
+            const listener = h.control(leaver).validation;
+            await listener.clearChannelListener().request();
+            try {
+                await includeInboundAgain();
+                await h.transition.advanceState({
+                    waitForPeers: remainingPeerIndices,
+                    waitForFinalization: true
+                });
+                await h.transition.postSnapshot({ peerIndex: 0 });
+                expect(
+                    await h.channelManager.getParticipants(h.channelId)
+                ).to.not.include(leaver.address);
+                // the leave is still pending and the local mirror still seats the leaver
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(0);
+                expect(
+                    (await h.query.getLocalStateSnapshot(leaver)).snapshotData
+                        .participants
+                ).to.include(leaver.address);
+
+                await expireWatchdog();
+                await h.event.waitUntilLeftChannel(leaver.index);
+                await listener.restoreChannelListener().request();
+                await TestSession.settleDetached();
+                expect(
+                    (await logs.entries()).map((entry) => entry.message)
+                ).to.not.include("Starting the leave's self-removal dispute");
+                expect(await disputes.submissions()).to.deep.equal([]);
+                expect(
+                    h.event.getEventCallCount(leaver.index, "onLeftChannel")
+                ).to.equal(1);
+                expect(hostErrors.errors).to.deep.equal([]);
+            } finally {
+                await listener.restoreChannelListener().request();
+                await restoreConfirmations();
+                await logs.restore();
+                hostErrors.remove();
+            }
+        });
+
+        it("U72: disposing a leaver while its expired leave watchdog's own membership check reads the chain starts no self-removal dispute and raises no runtime error", async function () {
+            const h = TestSession.getHarness();
+            const { leaver, expireWatchdog } = await stageInboundBlockedExit(
+                h,
+                { holdWatchdog: true, inlineSdk: true }
+            );
+            await recordLeaveChannelLogs(h, leaver);
+            const endpoint = runtimeEndpointFor(leaver.p2pInstance);
+            endpoint.stub.recordChainMembershipReads(true);
+            try {
+                expect(endpoint.stub.getChainMembershipReadCount()).to.equal(0);
+                await expireWatchdog();
+                // the watchdog's own check is parked on its chain read
+                await waitFor(
+                    () => endpoint.stub.getChainMembershipReadCount() > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const leaveLogs = Reflect.get(
+                    endpoint.sm.leaveChannelService,
+                    "logger"
+                );
+                // disposal ends the exit before the check resumes
+                const disposal = endpoint.sm.dispose();
+                endpoint.stub.restoreChainMembershipReads();
+                await disposal;
+                h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+                await TestSession.settleDetached();
+                expect(
+                    (
+                        Reflect.get(leaveLogs, "recordedLeaveLogs") as {
+                            message: string;
+                        }[]
+                    ).map((entry) => entry.message)
+                ).to.not.include("Starting the leave's self-removal dispute");
+                expect(
+                    endpoint.stub.getRecordedDisputeSubmissions().submissions
+                ).to.deep.equal([]);
+            } finally {
+                endpoint.stub.restoreChainMembershipReads();
+                endpoint.stub.restoreDisputeSubmissions();
             }
         });
 

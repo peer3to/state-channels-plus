@@ -69,7 +69,7 @@ export function decodeConfirmation(encoded: string): BlockConfirmationStruct {
 /**
  * `buildStateProof(forkId, height, { finalizedOnly })` on the peer's host and
  * the chain tier's walk of the result. `thrown` carries a construction error;
- * nothing else is returned then.
+ * nothing else is returned then. Both are null below the anchor.
  */
 export async function tryBuildProofView(
     h: MathPeerTestHarness,
@@ -93,7 +93,7 @@ export async function tryBuildProofView(
                 forkId: String(snapshot.forkID),
                 stateHash: String(snapshot.snapshotData.stateMachineStateHash)
             });
-            let built: BuiltStateProof;
+            let built: BuiltStateProof | undefined;
             try {
                 built = await am.buildStateProof(forkId, height, {
                     finalizedOnly: args.finalizedOnly ?? false
@@ -105,6 +105,7 @@ export async function tryBuildProofView(
                     view: null
                 };
             }
+            if (!built) return { thrown: null, view: null };
             const chain = await am.walkFromChainAnchor(
                 forkId,
                 built.stateProof,

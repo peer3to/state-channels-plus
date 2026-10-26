@@ -153,6 +153,10 @@ export async function constructProof(
                 sm.storage.blocks.getLatestBlockHeight(forkId);
             try {
                 const built = await am.buildStateProof(forkId, height);
+                if (!built)
+                    throw new Error(
+                        `Cannot build a state proof for fork ${forkId} at height ${height}: below its anchor`
+                    );
                 const chain =
                     await sm.stateChannelManagerContract.verifyMilestones.staticCall(
                         {

@@ -873,9 +873,9 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
-        const { dispute } = await this.sm.disputeManager.constructDispute(
+        const { dispute } = (await this.sm.disputeManager.constructDispute(
             this.sm.forkId
-        );
+        ))!;
         const strategy = this.createDisputeValidationStrategy(dispute);
         const matrix: DisputeStrategyResultMatrix = {};
         for (const result of [
@@ -917,9 +917,9 @@ export class ValidationProbeService extends ANetworkRpcService<
             const heightBefore = sm.storage.blocks.getNextBlockHeight(
                 sm.forkId
             );
-            const { dispute } = await sm.disputeManager.constructDispute(
+            const { dispute } = (await sm.disputeManager.constructDispute(
                 sm.forkId
-            );
+            ))!;
             let committed = false;
             await sm.blockCommitService.success(
                 block,
@@ -1065,9 +1065,9 @@ export class ValidationProbeService extends ANetworkRpcService<
         if (strategyName === "calldata")
             strategy = sm.calldataCommittedStrategy;
         if (strategyName === "dispute") {
-            const { dispute } = await sm.disputeManager.constructDispute(
+            const { dispute } = (await sm.disputeManager.constructDispute(
                 sm.forkId
-            );
+            ))!;
             strategy = this.createDisputeValidationStrategy(
                 dispute,
                 entry.block
@@ -1098,9 +1098,9 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
-        const { dispute } = await this.sm.disputeManager.constructDispute(
+        const { dispute } = (await this.sm.disputeManager.constructDispute(
             this.sm.forkId
-        );
+        ))!;
         const latestBlock = this.sm.storage.blocks.getLatestBlock(
             this.sm.forkId
         );

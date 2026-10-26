@@ -161,19 +161,17 @@ class AgreementManager {
      * block (block 0 at the genesis). `blockHeight` -1 is the empty proof
      * (the genesis). `finalizedOnly` drops the tail (a snapshot update proves
      * the final point only). Missing or unlinked required material throws:
-     * an incomplete proof is never returned.
+     * an incomplete proof is never returned. undefined when `blockHeight` is
+     * below the anchor: this view is behind the chain.
      */
     public async buildStateProof(
         forkId: ForkId,
         blockHeight: BlockHeight,
         options?: { finalizedOnly?: boolean }
-    ): Promise<BuiltStateProof> {
+    ): Promise<BuiltStateProof | undefined> {
         const start = await this.getConstructionStart(forkId);
         const startHeight = this.getStartHeight(start);
-        if (blockHeight !== -1 && blockHeight < startHeight)
-            throw new Error(
-                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
-            );
+        if (blockHeight !== -1 && blockHeight < startHeight) return undefined;
         const milestones =
             blockHeight === -1
                 ? []
@@ -268,6 +266,10 @@ class AgreementManager {
         const built = await this.buildStateProof(forkId, blockHeight, {
             finalizedOnly: true
         });
+        if (!built)
+            throw new Error(
+                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor`
+            );
         return {
             finalProof: this.toWalkInput(
                 forkId,

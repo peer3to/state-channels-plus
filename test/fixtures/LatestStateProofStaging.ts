@@ -35,9 +35,9 @@ export async function constructDisputeWithLatestStateProof(
             };
             try {
                 const { dispute, auditingData } =
-                    await sm.disputeManager.constructDispute(forkId, {
+                    (await sm.disputeManager.constructDispute(forkId, {
                         latestStateProof
-                    });
+                    }))!;
                 const chain = sm.stateChannelManagerContract;
                 const walk = await chain.verifyMilestones.staticCall({
                     channelId: dispute.input.channelId,
