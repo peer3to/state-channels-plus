@@ -5,7 +5,6 @@
 ## Requirements
 
 - [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
-  Contradicts: `getPreviousBlockOrSnapshot`/`getPreviousRelevantTimestamp` throw on an absent predecessor (non-null assertions) instead of returning explicit absence. Decided as a documented precondition; see [`FIND-STORAGE-3-GYR34M`](../../../../audit/open-findings.md#find-storage-3-gyr34m).
 - [`REQ-IX-9-AV56NR` (Storage fidelity)](../../../../specification/interactions.md#req-ix-9-av56nr)
 - [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
@@ -26,7 +25,7 @@ Derived reads join explicitly and fail explicitly
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P2` — missing block at coordinates
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P3` — negative-height genesis resolution
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P4` — membership-change union with explicit resulting hash
-- [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P5` — getPreviousBlockOrSnapshot absent predecessor (documents the contradiction)
+- [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P5` — getPreviousBlockOrSnapshot absent predecessor returns neither block nor snapshot
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P6` — genesis machine-state full join
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P7` — previous-snapshot full join
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P8` — participants-union full join
@@ -36,7 +35,6 @@ Derived reads join explicitly and fail explicitly
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P12` — missing genesis snapshot
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P13` — missing machine state for genesis hash
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P14` — membership-change union without explicit resulting hash
-- [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P15` — getPreviousRelevantTimestamp absent predecessor (documents the contradiction)
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P16` — stored lookup equals direct computation with the same snapshots
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P17` — unions overlapping snapshots and canonicalizes addresses without storing a result
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P18` — preserves both sides of disjoint membership changes

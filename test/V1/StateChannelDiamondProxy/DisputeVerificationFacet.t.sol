@@ -1856,6 +1856,67 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
     }
 
+    function test_reduceAndFinalize_committedSetPlusExtraDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, address(0xA1));
+        Dispute memory extra = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+
+        // every committed dispute is present, plus one that was never committed
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = committed;
+        disputes[1] = extra;
+
+        bytes32[] memory expectedCommittedHashes = new bytes32[](1);
+        expectedCommittedHashes[0] = keccak256(abi.encode(committed));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](2);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(committed));
+        expectedSubmittedHashes[1] = keccak256(abi.encode(extra));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
+    function test_reduceAndFinalize_committedSetMissingOneDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory first = _structurallyInvalidDispute(FORK_ID, address(0xA1));
+        Dispute memory second = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(first, block.timestamp);
+        harness.seedDispute(second, block.timestamp);
+        assertEq(harness.commitmentCount(CHANNEL_ID, FORK_ID), 2);
+
+        // one committed dispute and nothing else -> the second commitment is left out
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = first;
+
+        bytes32[] memory expectedCommittedHashes = new bytes32[](2);
+        expectedCommittedHashes[0] = keccak256(abi.encode(first));
+        expectedCommittedHashes[1] = keccak256(abi.encode(second));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](1);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(first));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
     function test_challengeDisputeReduction_extraSubmittedDisputeRevertsCarryingBothCommitmentSets() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         address challenger = address(0xA1);

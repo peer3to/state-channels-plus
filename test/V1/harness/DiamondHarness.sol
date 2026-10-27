@@ -2,6 +2,7 @@
 pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
@@ -233,5 +234,14 @@ abstract contract DiamondHarness is Test {
         for (uint256 i = 1; i < pks.length; i++) {
             confirmation.signatures[i - 1] = _sign(pks[i], encodedBlock);
         }
+    }
+
+    /// The data of the first recorded log of `selector` indexed by `channelId`.
+    function _logData(Vm.Log[] memory logs, bytes32 selector, bytes32 channelId) internal pure returns (bytes memory) {
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length < 2 || logs[i].topics[0] != selector || logs[i].topics[1] != channelId) continue;
+            return logs[i].data;
+        }
+        revert("channel log not recorded");
     }
 }

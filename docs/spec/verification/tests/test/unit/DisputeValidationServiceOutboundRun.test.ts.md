@@ -11,7 +11,7 @@ marks its data posted, edits the posted outbound run, recommits the auditing-dat
 other remaining peer through the host-side audit entry. A truncated run and a run with a forged message balance
 each return false with exactly one stored `DisputeInvalidOutboundRun`, and the chain's
 `isDisputeOutboundRunInvalid` accepts the stored proof. The honest case prepends the anchor's own block (read
-from the chain's applied outbound events) as a run built at a lower anchor, and first deletes both blocks from
+from the auditor's store, its hash equal to the chain anchor's outbound head) as a run built at a lower anchor, and first deletes both blocks from
 the auditor's store: the audit returns true, the anchor's block stays absent, and the auditor's stored range from
 the anchor head to the latest head is the one block above the anchor, which the chain's
 `verifyOutboundMessageBlocks` accepts from the anchor's snapshot data to the latest state's — the check a

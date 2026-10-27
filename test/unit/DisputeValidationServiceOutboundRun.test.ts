@@ -78,30 +78,28 @@ describe("Unit: DisputeValidationService outbound run", function () {
             staged.auditingData.latestStateSnapshot
         );
         const latestHead = String(latest.latestOutboundMessageBlockHash);
-        // the anchor's own block, as the chain applied it
-        const applied = await h.channelManager.queryFilter(
-            h.channelManager.filters.OutboundMessagesProcessed(h.channelId)
+        const auditor = h.getPeer(staged.auditorIndex);
+        const auditorQuery = h.control(auditor).query;
+        // the anchor's own block, as the auditor stored it before the removal
+        const encodedAnchorBlock = await auditorQuery
+            .getOutboundMessageBlock(anchorHead)
+            .request();
+        expect(encodedAnchorBlock, "the anchor's outbound block").to.not.equal(
+            null
         );
-        const anchorBlock = applied
-            .map((log) =>
-                Codec.decode(
-                    Codec.encode(log.args.messageBlock, Type.MessageBlock),
-                    Type.MessageBlock
-                )
-            )
-            .find(
-                (block) =>
-                    hash(Codec.encode(block, Type.MessageBlock)) === anchorHead
-            );
-        expect(anchorBlock, "the anchor's outbound block").to.not.equal(
-            undefined
+        const anchorBlock = Codec.decode(
+            encodedAnchorBlock!.encodedMessageBlock,
+            Type.MessageBlock
+        );
+        // it is the block the chain anchor's outbound head commits to
+        expect(hash(Codec.encode(anchorBlock, Type.MessageBlock))).to.equal(
+            anchorHead
         );
         staged.auditingData.outboundMessageBlocks = [
-            anchorBlock!,
+            anchorBlock,
             ...staged.auditingData.outboundMessageBlocks
         ];
         staged.commit();
-        const auditor = h.getPeer(staged.auditorIndex);
         await h.execOnHost(
             auditor,
             (sm, a) => {
@@ -122,7 +120,6 @@ describe("Unit: DisputeValidationService outbound run", function () {
         );
         expect(run).to.include({ outcome: "returned", isValid: true });
         expect(run.disputeFraudProofCount).to.equal(0);
-        const auditorQuery = h.control(auditor).query;
         expect(
             await auditorQuery.getOutboundMessageBlock(anchorHead).request()
         ).to.equal(null);
