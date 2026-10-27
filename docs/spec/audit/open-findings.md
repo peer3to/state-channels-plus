@@ -843,11 +843,11 @@ _Resolution (2026-10-27):_ the remaining refusals that still blacklist the reque
 above the responder's latest height and a fork other than its derived latest fork. No honest request
 reaches either. A pinned request goes only to the peers that sent or signed that block, and a peer
 stores a block before it gossips or relays it, so the target height is always held. A request for a
-non-current fork came from the queue's expiry probe, which asked a block's author about an unknown
-fork; a later snapshot clears an old fork's dispute record on chain, so a participant could replay a
-genuine old block to a node that synced afterwards and have its honest author blacklist that node.
-The probe now runs for an unknown fork only while the node's own fork is disputed; otherwise the block
-is dropped and its senders take a counted close
+non-current fork came from the queue's expiry probe, which also asked a block's author about an
+unknown fork; a later snapshot clears an old fork's dispute record on chain, so a participant could
+replay a genuine old block to a node that synced afterwards and have its honest author blacklist that
+node. The probe now asks only the peers that sent the block, never its author. A sender stored the
+block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
 ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
 [`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
 [`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).

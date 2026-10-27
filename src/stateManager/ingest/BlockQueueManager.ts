@@ -1,12 +1,10 @@
 import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import Clock from "@/Clock";
-import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
     BlockOrigin,
-    getSourcePeersAndAuthor,
     getSourcePeers,
     getSignatureSuppliers,
     type QueueBlockOptions,
@@ -534,38 +532,8 @@ export default class BlockQueueManager {
                 );
                 return;
             }
-            // An honest successor fork exists only once our own fork is
-            // disputed. Otherwise the block is stale or junk: a later snapshot
-            // clears an old fork's dispute record on chain, so its genuine
-            // author cannot prove it and would cut us for asking. Drop it and
-            // strike the peers that sent it, not its author.
-            const sm = this.stateManager;
-            if (
-                !(await sm.validationService.isDisputedFork(
-                    sm.forkId,
-                    sm.channelId
-                ))
-            ) {
-                this.logger.verbose(
-                    "queueTimeout - unknown fork while our fork is not disputed, striking its senders",
-                    {
-                        expectedForkId: String(sm.forkId),
-                        block: LoggerUtils.getBlockMetadata(
-                            entry.block,
-                            sm.storage
-                        )
-                    }
-                );
-                for (const peer of getSourcePeers(entry)) {
-                    sm.p2pManager.disconnectConnection(
-                        peer,
-                        DisconnectPolicy.allowRetry()
-                    );
-                }
-                return;
-            }
-            // Unknown fork while our own fork is disputed (a successor we have
-            // not installed yet): ask the suppliers to prove it once; a sync rejected for invalid evidence
+            // Unknown fork (not disputed, no local genesis for it): ask the
+            // senders to prove it once; a sync rejected for invalid evidence
             // punishes them (one that meets a dispute window the chain has not
             // reduced waits for that reduction first), and so does a proven
             // lineage that does not carry the block. This is
@@ -760,9 +728,11 @@ export default class BlockQueueManager {
     }
 
     /**
-     * Ask every attributed source and the author to prove the block's
-     * lineage, once each. A probe whose payload fails validation excludes the
-     * peer inside `sync`; a failed request is the sync's counted close; one
+     * Ask every attributed source to prove the block's lineage, once each.
+     * Never the author: a peer stores a block before it sends it, so an
+     * honest source can always prove it, while an old block replayed to us
+     * would make its honest author cut us for asking. A probe whose payload
+     * fails validation excludes the peer inside `sync`; a failed request is the sync's counted close; one
      * that meets a dispute window the chain has not reduced waits inside
      * `sync` for that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
@@ -770,7 +740,7 @@ export default class BlockQueueManager {
      * `dispose` waits for.
      */
     private probeSources(entry: QueuedBlockEntry): void {
-        for (const peer of getSourcePeersAndAuthor(entry)) {
+        for (const peer of getSourcePeers(entry)) {
             this.track(() => this.probeSource(peer, entry));
         }
     }

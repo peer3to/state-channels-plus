@@ -1542,7 +1542,7 @@ describe("E2E: BlockQueueManager", function () {
             }
         });
 
-        it("queues an unknown-fork block without an arrival sync; at expiry, with its own fork not disputed, the observer strikes the sender and asks nobody", async function () {
+        it("queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier", async function () {
             const h = TestSession.getHarness();
             const timeConfig = {
                 p2pTime: 3,
@@ -1587,7 +1587,7 @@ describe("E2E: BlockQueueManager", function () {
             });
 
             // Queued unscheduled: the pipeline never ran, and there is NO
-            // arrival-time sync.
+            // arrival-time sync - the queue timeout is the sole sync probe now.
             expect(
                 await h
                     .control(observer)
@@ -1607,16 +1607,16 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.be.null;
 
-            // The observer's fork is not disputed, so no honest successor fork
-            // exists: `queueTimeout` removes the block and strikes its sender
-            // (one counted close, no verdict) without a sync, so once the strike
+            // The consequence arrives through the sync flow, not the queue: the
+            // supplier cannot prove the fork, so the failed sync closes the
+            // connection with one strike and no verdict. `queueTimeout` removes
+            // the block before it issues that sync probe, so once the strike
             // lands the eviction has already happened - asserted synchronously
             // below.
             await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
                 target: author
             });
-            expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(0);
             expect(
                 await h
                     .control(observer)
@@ -1638,8 +1638,8 @@ describe("E2E: BlockQueueManager", function () {
             await restoreReduce();
         });
 
-        // Supplier != author, so the recorded targets separate them: the timeout
-        // asks everyone the entry is attributed to, not just the sender.
+        // Supplier != author, so the recorded probes separate them: the timeout
+        // asks the sender, never the author.
         it("a queue timeout accepts a proved successor fork without excluding the supplier or author", async function () {
             const h = TestSession.getHarness();
             let queuedHash = "";
@@ -1683,7 +1683,7 @@ describe("E2E: BlockQueueManager", function () {
                                         .control(observer)
                                         .stub.getQueueProbeObservation()
                                         .request()
-                                ).entered === 2
+                                ).entered === 1
                         );
                     }
                 });
@@ -1721,7 +1721,7 @@ describe("E2E: BlockQueueManager", function () {
                                 .control(observer)
                                 .stub.getQueueProbeObservation()
                                 .request()
-                        ).completed === 2
+                        ).completed === 1
                 );
                 expect(
                     (
@@ -1730,7 +1730,7 @@ describe("E2E: BlockQueueManager", function () {
                             .stub.getQueueProbeObservation()
                             .request()
                     ).succeeded
-                ).to.equal(2);
+                ).to.equal(1);
                 expect(
                     await h.control(observer).query.getForkId().request()
                 ).to.equal(successor);
@@ -1765,7 +1765,59 @@ describe("E2E: BlockQueueManager", function () {
             }
         });
 
-        it("unknown fork while the observer's fork is not disputed: the supplier is struck and the author is left alone", async function () {
+        it("unknown-fork timeout asks only the sender to sync, never the author", async function () {
+            const h = TestSession.getHarness();
+            const timeConfig = {
+                p2pTime: 3,
+                agreementTime: 4,
+                chainFallbackTime: 30,
+                evidenceTime: 8
+            };
+            await h.lifecycle.start(3, 0, { timeConfig });
+
+            const observer = h.getPeer(0);
+            const author = h.getPeer(1);
+            const supplier = h.getPeer(2);
+
+            const restoreSync = await h.rpcStub.recordSpectateSync(0, {
+                forward: false
+            });
+
+            const { bogusBlock, blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request()
+            ).to.equal(true);
+
+            // the record stub releases this once the queue timeout has asked -
+            // a signal, not a poll. The timeout starts every probe in one pass,
+            // so an author probe would already be recorded beside it
+            expect(
+                await h.rpcStub.spectateSyncTargetsWait(
+                    0,
+                    1,
+                    (timeConfig.agreementTime + 20) * 1000
+                )
+            ).to.deep.equal([supplier.address]);
+            expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(1);
+
+            await restoreSync();
+        });
+
+        it("unknown fork: only the sender is asked and cut; the author keeps the observer", async function () {
             const h = TestSession.getHarness();
             const timeConfig = {
                 p2pTime: 3,
@@ -1782,8 +1834,12 @@ describe("E2E: BlockQueueManager", function () {
                 .control(observer)
                 .query.getForkId()
                 .request();
+            const observerStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
 
-            const { bogusBlock, blockConfirmation } =
+            const { blockConfirmation } =
                 await h.byzantine.craftBogusForkBlockZero(author.index);
             await h.transition.ingestBlockConfirmationWait({
                 peerIndex: observer.index,
@@ -1796,8 +1852,8 @@ describe("E2E: BlockQueueManager", function () {
                 waitForProcessed: false
             });
 
-            // no honest successor of an undisputed fork exists: the sender
-            // takes one counted close, the author never sent it
+            // The sender cannot prove the fork: its failed sync probe is one
+            // strike, not a verdict. The author is never asked.
             await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
                 target: supplier
@@ -1815,17 +1871,14 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.equal(false);
             expect(
-                await h
-                    .control(observer)
-                    .query.isBlockQueued(bogusBlock.hash)
-                    .request()
-            ).to.equal(false);
-            expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(originalForkId);
+            expect(
+                await h.control(observer).query.getStatus().request()
+            ).to.equal(observerStatus);
         });
 
-        it("a later spectator drops a replayed old-fork block while its own fork is not disputed: it strikes the sender, asks nobody, and its author does not blacklist it", async function () {
+        it("a later spectator asks only the sender of a replayed old-fork block: its genuine author is never asked and does not blacklist the spectator", async function () {
             const h = TestSession.getHarness();
             const { originalForkId, newForkId, honestPeers } =
                 await h.scenario.fourPeersDisputeResolution();
@@ -1897,11 +1950,18 @@ describe("E2E: BlockQueueManager", function () {
                         .query.isBlockQueued(oldBlock!.hash)
                         .request()
             );
-            // the queue timeout strikes the sender: the replayer, not the author
+            // the queue timeout asks the sender, the replayer, and nobody else:
+            // the failed sync is its counted close
+            expect(
+                await h.rpcStub.spectateSyncTargetsWait(spectator.index, 1)
+            ).to.deep.equal([replayer.address]);
             await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer: spectator,
                 target: replayer
             });
+            expect(
+                await h.rpcStub.spectateSyncCallCount(spectator.index)
+            ).to.equal(1);
             expect(
                 await h
                     .control(spectator)
@@ -1909,22 +1969,17 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.equal(false);
             expect(
-                await h.rpcStub.spectateSyncCallCount(spectator.index)
-            ).to.equal(0);
-            expect(
                 await h
                     .control(spectator)
                     .query.getStrikes(author.address)
                     .request()
             ).to.equal(0);
-            for (const peer of [author, replayer]) {
-                expect(
-                    await h
-                        .control(peer)
-                        .query.isBlacklisted(spectator.address)
-                        .request()
-                ).to.equal(false);
-            }
+            expect(
+                await h
+                    .control(author)
+                    .query.isBlacklisted(spectator.address)
+                    .request()
+            ).to.equal(false);
             expect(
                 await h
                     .control(spectator)
