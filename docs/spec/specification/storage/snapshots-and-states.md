@@ -45,7 +45,7 @@ conflicting registration for an existing fork id MUST be refused.
 **<a id="req-snapstore-2-q7e6tq"></a>`REQ-SNAPSTORE-2-Q7E6TQ` — Derived reads fail explicitly.** Coordinate-based reads return nothing when any
 link of the join is absent (no block, no committed snapshot, no stored state). Negative heights
 resolve to fork genesis; the store never fabricates intermediate results to satisfy a join. The
-participant-union read presumes its join links exist — an invariant the pipeline maintains, not
+participant-union read and the previous-timestamp read presume their join links exist — an invariant the pipeline maintains, not
 this store: participants commit history contiguously, and a synced peer persists the state proof's
 finalized anchor blocks before suffix replay, so an absent link is unreachable through any
 designed flow.

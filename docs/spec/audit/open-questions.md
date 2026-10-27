@@ -48,8 +48,8 @@ rejected. The exclusion is a local lobby reputation entry, not on-chain punishme
 states the objective on-chain rule and this local exception separately. Accepted consequence: a partition
 during the handoff excludes two honest peers from each other for the blacklist lifetime. The broader
 availability and local-fault blacklist finding ([`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n),
-[`DEF-9-724SXP`](open-findings.md#def-9-724sxp), [`DEF-10-199C7F`](open-findings.md#def-10-199c7f)) stays open
-for every other path.
+[`DEF-9-724SXP`](open-findings.md#def-9-724sxp), [`DEF-10-199C7F`](open-findings.md#def-10-199c7f),
+[`FIND-RUNTIME-2-4B0D0Q`](open-findings.md#find-runtime-2-4b0d0q)) stays open for every other path.
 
 **Revision (owner, 2026-09-17).** The lobby consequence is no longer an exclusion or a session bar. It
 is the counted close of the disconnect ladder ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)):

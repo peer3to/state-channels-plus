@@ -104,8 +104,10 @@ is now armed before any handle closes, with an unconditional exit. The bots' Web
 is inferred, not confirmed; the leaked referenced timer that then held the loop (likely werift's) is
 not removed and now ends at the drain bound with a warning.
 
-**Status:** Open; medium. Fix implemented, tests pending the lead's gate; recheck the bots for a
-drain warning naming the remaining timer.
+**Status:** _Resolved (2026-10-27)._ The fix is on `dispute` with its tests
+(`RootWorkerDrain.test.ts`, and the second-close and leaked-timer cases in
+`RuntimeLifecycle.test.ts`), and the full gate passes. A disposal now ends within the drain bound
+even when a timer leaks; a leaked timer only adds the drain warning that names it.
 
 ## Distributed test runner pool
 
@@ -613,7 +615,13 @@ tests are the regression suite.
 
 ### FIND-RUNTIME-2-4B0D0Q
 
-**Defect:** _Open (2026-10-15, engineer: deferred — design first)._ Runtime disposal is not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
+**Defect:** _Open (2026-10-15, engineer: deferred — design first)._ Runtime disposal is not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). It also covers the other local-fault blacklist paths handed over from
+[`DEF-10-199C7F`](open-findings.md#def-10-199c7f): the catch around the local balance check in
+[`JoinChannelService`](../implementation/source/src/rpc/network/services/joinChannel/JoinChannelService.ts.md)
+and in [`OpenChannelNegotiationService`](../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md)
+blames the peer for a local EVM failure, and
+[`NetworkRpcRouter`](../implementation/source/src/rpc/router/NetworkRpcRouter.ts.md) blacklists
+the sender when a synchronous handler throws ("RPC dispatch refused"). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
@@ -780,7 +788,7 @@ error.
 
 ### DEF-10-199C7F
 
-**Defect:** _Partially resolved (2026-08-31)._ An `OPENED` responder that has not applied
+**Defect:** _Accepted (2026-10-27); partially resolved 2026-08-31._ An `OPENED` responder that has not applied
 genesis/state now retains one initial-load request per authenticated address behind
 `DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses
 the ordinary payload path. A duplicate from that address is rejected without replacing the first.
@@ -788,12 +796,13 @@ Exact block/fork recovery remains a separate one-window already-synced request a
 target keeps the existing punishment rule. _Scope note (2026-09-02):_ the lobby accepted-lease
 exclusion approved under
 [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
-is outside this finding; other availability or local-fault blacklist paths stay open except sync
-timeout and transport-failure liability, retained by the owner on 2026-09-07 under the assumption
+is outside this finding; other local-fault blacklist paths are tracked under
+[`FIND-RUNTIME-2-4B0D0Q`](open-findings.md#find-runtime-2-4b0d0q); sync timeout and
+transport-failure liability were retained by the owner on 2026-09-07 under the assumption
 that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
 a measured universal execution bound.
 
-**Proposed direction:** The weaponizable initial-readiness case is closed. The remaining
+**Proposed direction:** None. The weaponizable initial-readiness case is closed. The remaining
 exact-recovery classification is accepted by the current protocol and must stay visible in security
 review.
 
@@ -1121,16 +1130,20 @@ deposit; the live SDK collector test proves the collected signer set excludes th
 
 ### FIND-STORAGE-3-GYR34M
 
-**Defect:** `Storage.getPreviousBlockOrSnapshot`/`getPreviousRelevantTimestamp` use non-null
-assertions, so an absent predecessor produces an unclassified throw instead of the explicit absence
+**Defect:** _Resolved (2026-10-27)._ `Storage.getPreviousBlockOrSnapshot` returns explicit absence:
+its non-null assertions are compile-time only, so an absent predecessor comes back with neither
+`block` nor `stateSnapshot` set, and its timeout and dispute-audit callers check for that
+([`ParticipantTimeoutService`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
+[`DisputeValidationService`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
+`getPreviousRelevantTimestamp` presumes the predecessor exists, as
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
-requires ([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
+allows for a read whose join links the pipeline maintains: its one caller,
+[`CalldataPostingService`](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md),
+reads it for a stored block, and participants commit history contiguously. Was: both reads were
+taken to throw an unclassified error on an absent predecessor
+([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
 
-**Proposed direction:** Decided (engineer review): documented precondition — the contiguity
-invariants (participants commit contiguously; sync persists state-proof anchor blocks before replay)
-make an absent predecessor unreachable through any designed flow, and the throw stands as the
-invariant tripwire. Spec-noted in
-[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
+**Proposed direction:** No change.
 
 <a id="find-storage-4-mfd7rz"></a>
 
