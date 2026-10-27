@@ -75,6 +75,11 @@ export class Mirror {
         return this.chain.includedHead;
     }
 
+    /** Calls issued from now on see the chain at least up to block `number`. */
+    requireNumber(number: bigint): void {
+        this.chain.requireNumber(number);
+    }
+
     /** Calls issued from now on see the chain with `block` applied. */
     requireBlock(block: MirrorBlock): void {
         this.chain.requireBlock(block);

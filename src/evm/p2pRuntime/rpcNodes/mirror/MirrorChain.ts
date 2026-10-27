@@ -94,6 +94,8 @@ export class MirrorChain {
     private includedHeadRecord?: IncludedHeadRecord;
     /** Block of the peer's newest own transaction seen mined. */
     private requiredBlock?: ChainBlock;
+    /** Newest block number the nodes announced; reads wait for the head to reach it. */
+    private requiredNumber = 0n;
     private failedAttempts = 0;
     private retryAfterMs = 0;
     private closed = false;
@@ -119,6 +121,15 @@ export class MirrorChain {
 
     isTracked(address: AccountAddress): boolean {
         return this.tracked.has(address);
+    }
+
+    /**
+     * A read issued from now on waits until the head reaches the block
+     * `number` a node announced, so it never answers from before an event
+     * the peer already saw.
+     */
+    requireNumber(number: bigint): void {
+        if (number > this.requiredNumber) this.requiredNumber = number;
     }
 
     /** A read issued from now on waits until the mirror applied `block`. */
@@ -191,7 +202,7 @@ export class MirrorChain {
         const deadline = Date.now() + OWN_TRANSACTION_WAIT_MS;
         for (;;) {
             const required = this.requiredBlock;
-            if (this.closed || !required || this.holds(required)) return;
+            if (this.closed || this.holds(required)) return;
             const remaining = deadline - Date.now();
             if (remaining <= 0) {
                 // the block never reached the mirror: stop holding reads for it
@@ -214,8 +225,10 @@ export class MirrorChain {
      * Whether the mirror's state includes `block`. Not following counts as
      * including it: the read then starts from the node's latest block.
      */
-    private holds(block: ChainBlock): boolean {
-        if (!this.base) return true;
+    private holds(block: ChainBlock | undefined): boolean {
+        if (!this.base || !this.head) return true;
+        if (this.head.number < this.requiredNumber) return false;
+        if (!block) return true;
         return (
             block.number < this.base.number ||
             this.hashAt(block.number) === block.hash
