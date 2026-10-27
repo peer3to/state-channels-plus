@@ -1,4 +1,5 @@
 import {
+    deployEventOnlyEmitter,
     deployLogEmitter,
     deployNumberStorage,
     emitValue,
@@ -34,7 +35,7 @@ describe("StorageDiffService logs", function () {
         });
     });
 
-    it("asks the upstream for logs once per block that touched a subscribed address", async function () {
+    it("asks the upstream for logs once per block whose logs bloom matches a subscribed address", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const emitter = await deployLogEmitter(signer);
             const subscription = await client.subscribe([emitter]);
@@ -47,7 +48,7 @@ describe("StorageDiffService logs", function () {
         });
     });
 
-    it("asks the upstream for no logs of a block that leaves the subscribed addresses untouched or has no transactions", async function () {
+    it("asks the upstream for no logs of a block whose logs bloom matches no subscribed address or that has no transactions", async function () {
         await withStorageDiffSession(
             async ({ client, provider, relay, signer }) => {
                 const emitter = await deployLogEmitter(signer);
@@ -73,7 +74,7 @@ describe("StorageDiffService logs", function () {
         );
     });
 
-    it("asks the upstream for no logs of a block that touched an address nobody subscribed to", async function () {
+    it("asks the upstream for no logs of a block whose only log is from an address nobody subscribed to", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const emitter = await deployLogEmitter(signer);
             const watched = await deployNumberStorage(signer);
@@ -85,6 +86,25 @@ describe("StorageDiffService logs", function () {
             await client.recordAt(subscription, receipt.blockNumber);
 
             expect(relay.requestCount("eth_getLogs")).to.equal(0);
+        });
+    });
+
+    it("attaches the log of a contract call that emits an event and changes no storage", async function () {
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const emitter = await deployEventOnlyEmitter(signer);
+            const subscription = await client.subscribe([emitter]);
+
+            const receipt = await emitValue(signer, emitter, 6n);
+
+            const record = await client.recordAt(
+                subscription,
+                receipt.blockNumber
+            );
+            expect(record.pre).to.deep.equal({});
+            expect(record.post).to.deep.equal({});
+            expect(record.logs.map((log) => log.data)).to.deep.equal([
+                storageWord(6n)
+            ]);
         });
     });
 

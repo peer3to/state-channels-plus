@@ -1,4 +1,5 @@
 import {
+    bloomContains,
     filterRecord,
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -12,7 +13,6 @@ import {
     PRUNED_ERROR_CODE,
     rpcError,
     toQuantity,
-    touchedAddresses,
     type AccountAddress,
     type AccountDiffs,
     type BlockHeader,
@@ -133,7 +133,7 @@ const noAncestor = () => new Error("Upstream chain shares no ancestor");
  * may roll back); the included head, reported by an `AIncludedHeadStrategy`, is
  * the level the chain treats as final. It is pushed as `scp_includedHead` and
  * returned by catch-up. A record carries the logs of the subscribed addresses
- * its trace touched, fetched once per block with `eth_getLogs` by block hash.
+ * its header bloom matches, fetched once per block with `eth_getLogs` by block hash.
  * A reorg or an upstream error answer or timeout during startup or
  * reconciliation is retried, and a lost upstream socket is reconnected (during
  * startup too), then reconciled from the last canonical record. A failure that
@@ -605,6 +605,7 @@ export class StorageDiffService {
                 parentHash: header.parentHash,
                 ...diff,
                 logs: [],
+                logsBloom: header.logsBloom,
                 loggedAddresses: new Set()
             };
             await this.attachLogs(record, this.subscribedAddresses());
@@ -625,18 +626,19 @@ export class StorageDiffService {
     }
 
     /**
-     * Fetches the block's logs of the `addresses` its trace touched and that
-     * it holds none for yet: one `eth_getLogs` by block hash, none when
-     * nothing qualifies.
+     * Fetches the block's logs of the `addresses` its header bloom matches and
+     * that it holds none for yet: one `eth_getLogs` by block hash, none when
+     * nothing matches. The bloom comes with the header the service already
+     * fetched, so the test costs no request.
      */
     private async attachLogs(
         block: StagedBlock,
         addresses: AccountAddress[]
     ): Promise<void> {
-        const touched = touchedAddresses(block);
         const missing = addresses.filter(
             (address) =>
-                touched.has(address) && !block.loggedAddresses.has(address)
+                !block.loggedAddresses.has(address) &&
+                bloomContains(block.logsBloom, address)
         );
         if (missing.length === 0) return;
         const answer = await this.request("eth_getLogs", [

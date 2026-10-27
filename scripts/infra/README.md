@@ -117,13 +117,16 @@ than the head:
 For an address with a subscription, a record carries `logs`: the address's event
 logs of that block, in `logIndex` order, each
 `{address, topics, data, logIndex, transactionIndex, transactionHash}`. The
-service calls `eth_getLogs({blockHash, address})` **only** for a block whose
-trace touched a subscribed address, once per block and address, and not at all
-otherwise. A block staged before anyone subscribed to an address has its logs
-fetched, once, by the first catch-up that asks for that address. A rolled back
-block takes its logs with it; its replacement has its own. An address that
-emits an event without changing state (the tracer does not list it) has no
-logs here.
+service tests each subscribed address against the block header's `logsBloom`
+(standard Ethereum bloom: three bits of `keccak256(address)`), using the header
+it already fetched, so the test costs no request. It calls
+`eth_getLogs({blockHash, address: [matching addresses]})` **only** when at least
+one address matches, once per block and address, and not at all otherwise. A
+bloom match can be a false positive: the call then returns no logs. An address
+that emits an event without changing storage is found the same way. A block
+staged before anyone subscribed to an address has its logs fetched, once, by
+the first catch-up that asks for that address. A rolled back block takes its
+logs with it; its replacement has its own.
 
 ### Reorgs and retention
 

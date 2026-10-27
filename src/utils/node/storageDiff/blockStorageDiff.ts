@@ -3,6 +3,8 @@
  * blocks and traces, folding a block's transaction diffs, filtering a record.
  */
 
+import { getBytes, keccak256 } from "ethers";
+
 export const PRUNED_ERROR_CODE = -32001;
 export const ZERO_WORD = "0x" + "00".repeat(32);
 
@@ -49,13 +51,15 @@ export interface BlockStorageDiff {
     parentHash: string;
     pre: AccountDiffs;
     post: AccountDiffs;
-    /** Logs of the touched addresses the service fetched them for, by logIndex. */
+    /** Logs of the subscribed addresses the service fetched them for, by logIndex. */
     logs: StorageDiffLog[];
 }
 
 /** A retained block: the record plus the addresses whose logs it holds. */
 export interface StagedBlock extends BlockStorageDiff {
-    /** Touched addresses `eth_getLogs` was asked about; an empty answer counts. */
+    /** Header bloom: tells which addresses may have logs in this block. */
+    logsBloom: string;
+    /** Bloom-matching addresses `eth_getLogs` was asked about; an empty answer counts. */
     loggedAddresses: Set<AccountAddress>;
 }
 
@@ -71,11 +75,14 @@ export interface BlockHeader {
     hash: string;
     parentHash: string;
     txCount: number;
+    /** 256-byte header bloom of the block's logs, lower-case hex. */
+    logsBloom: string;
 }
 
 const QUANTITY = /^0x(0|[1-9a-f][0-9a-f]*)$/;
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const LOGS_BLOOM = /^0x[0-9a-fA-F]{512}$/;
 const HEX_DATA = /^0x([0-9a-fA-F]{2})*$/;
 const HEX_WORD = /^0x[0-9a-fA-F]{1,64}$/;
 const HEX_QUANTITY_LOOSE = /^0x[0-9a-fA-F]+$/;
@@ -245,11 +252,18 @@ function cloneAccount(account: AccountDiff): AccountDiff {
         : { ...account };
 }
 
-/** The addresses the block's trace changed. */
-export function touchedAddresses(
-    record: Pick<BlockStorageDiff, "pre" | "post">
-): Set<AccountAddress> {
-    return new Set([...Object.keys(record.pre), ...Object.keys(record.post)]);
+/**
+ * Standard Ethereum bloom membership (yellow paper M3:2048): the three bit
+ * pairs of keccak256(item). False means the item has no log in the block;
+ * true means it may.
+ */
+export function bloomContains(logsBloom: string, item: string): boolean {
+    const hash = getBytes(keccak256(item));
+    const bloom = getBytes(logsBloom);
+    return [0, 2, 4].every((i) => {
+        const bit = ((hash[i] << 8) | hash[i + 1]) & 2047;
+        return (bloom[255 - (bit >> 3)] >> (bit & 7)) & 1;
+    });
 }
 
 /** The record restricted to `addresses` (lower-case); never shares state. */
@@ -321,6 +335,8 @@ export function parseHeader(value: unknown): BlockHeader {
         !HASH.test(value.hash) ||
         typeof value.parentHash !== "string" ||
         !HASH.test(value.parentHash) ||
+        typeof value.logsBloom !== "string" ||
+        !LOGS_BLOOM.test(value.logsBloom) ||
         !Array.isArray(value.transactions)
     ) {
         throw new Error("Malformed block from upstream");
@@ -329,7 +345,8 @@ export function parseHeader(value: unknown): BlockHeader {
         number: BigInt(value.number),
         hash: value.hash.toLowerCase(),
         parentHash: value.parentHash.toLowerCase(),
-        txCount: value.transactions.length
+        txCount: value.transactions.length,
+        logsBloom: value.logsBloom.toLowerCase()
     };
 }
 

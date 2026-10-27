@@ -371,32 +371,54 @@ export async function recordKey(
 /** `ValueSet(uint256)`, the event the log emitter fires. */
 export const VALUE_SET_TOPIC = id("ValueSet(uint256)");
 
-// Runtime: slot 0 = calldata word; LOG1(topic ValueSet, data = that word).
-const LOG_EMITTER_RUNTIME =
-    "600035" + // CALLDATALOAD(0)
-    "80600055" + // DUP1, SSTORE(0, word)
+/** Initcode that copies the runtime after its own 11 bytes and returns it. */
+function deployableCode(runtime: string): string {
+    return (
+        "0x60" +
+        (runtime.length / 2).toString(16).padStart(2, "0") +
+        "80600b6000396000f3" +
+        runtime
+    );
+}
+
+const EMIT_VALUE_SET =
     "600052" + // MSTORE(0, word)
     "7f" +
     VALUE_SET_TOPIC.slice(2) + // PUSH32 topic
     "60206000a1" + // LOG1(offset 0, size 32, topic)
     "00"; // STOP
-// Initcode copies the runtime after its own 11 bytes and returns it.
-const LOG_EMITTER_INITCODE =
-    "0x60" +
-    (LOG_EMITTER_RUNTIME.length / 2).toString(16).padStart(2, "0") +
-    "80600b6000396000f3" +
-    LOG_EMITTER_RUNTIME;
+
+// Runtime: slot 0 = calldata word; LOG1(topic ValueSet, data = that word).
+const LOG_EMITTER_INITCODE = deployableCode(
+    "600035" + // CALLDATALOAD(0)
+        "80600055" + // DUP1, SSTORE(0, word)
+        EMIT_VALUE_SET
+);
+// Runtime: LOG1(topic ValueSet, data = calldata word); no storage write.
+const EVENT_ONLY_INITCODE = deployableCode("600035" + EMIT_VALUE_SET);
 
 /**
  * Deploys a contract that stores its call's 32-byte word in slot 0 and emits
- * `ValueSet(word)`: the one place a test needs a real event with a touched slot.
+ * `ValueSet(word)`: a real event next to a touched slot.
  */
 export async function deployLogEmitter(
     signer: JsonRpcSigner
 ): Promise<AccountAddress> {
-    const response = await signer.sendTransaction({
-        data: LOG_EMITTER_INITCODE
-    });
+    return await deployCode(signer, LOG_EMITTER_INITCODE);
+}
+
+/** Like the log emitter, but it never writes storage: its calls leave no diff. */
+export async function deployEventOnlyEmitter(
+    signer: JsonRpcSigner
+): Promise<AccountAddress> {
+    return await deployCode(signer, EVENT_ONLY_INITCODE);
+}
+
+async function deployCode(
+    signer: JsonRpcSigner,
+    data: string
+): Promise<AccountAddress> {
+    const response = await signer.sendTransaction({ data });
     const receipt = await response.wait();
     if (!receipt?.contractAddress) throw new Error("Emitter not deployed");
     return receipt.contractAddress.toLowerCase();
