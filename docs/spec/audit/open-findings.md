@@ -2168,16 +2168,15 @@ drops an unparseable environment value, contrary to
 
 <a id="find-verify-1-gferdm"></a>
 
-### FIND-VERIFY-1-GFERDM — Four specified behavior families lack exact evidence
+### FIND-VERIFY-1-GFERDM — Specified behavior families lack exact evidence
 
-Status: open verification gap. The implementation links exist, but no declaration currently owns a complete permutation for these families. Adding an implementation link does not close this gap.
+Status: open verification gap, narrowed (2026-10-27). [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) now has exact evidence for every permutation. [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) has it for the valid, invalid, calldata and no-calldata cases. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) has it for the rejected block, discarded queue, unrelated fork, resume and duplicate-commitment cases. Adding an implementation link does not close what remains:
 
-- [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The runtime setup report identifies its platform boundary; its code contribution does not supply the missing test evidence.
-- [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt): no exact declaration currently proves its planned dispute-window invariants in full.
-- [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81): no exact declaration currently owns its complete planned audit invariant.
-- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm): the required pause, queued-work, unrelated-fork, resume, notification and duplicate-event observations have no assigned specification evidence.
+- [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The browser gates run transport, executor, clock and logging scenarios, not the protocol capabilities in a browser host, a mixed browser/Node channel or browser lifecycle suspension. The runtime setup report identifies the platform boundary; its code contribution does not supply the missing test evidence.
+- [`INV-DISPUTE-PIPE-1-BN0K81.T1.P3`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p3) (delivery order) and [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart): every auditor sees the disputes in the chain's single order, and the restart staging rebuilds a runtime as a spectator. No test gives two auditors different delivery orders or restarts an auditor mid-audit.
+- [`REQ-LIF-7-0XZBDM.T1.P5`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) (pause notification with its expected duration): the oracle is unsettled. The specification bounds the pause at about `2 × evidenceTime`, while `EventHandler.handleDisputeCommitted` surfaces `onDisputeStarted(3 × evidenceTime)`. The engineer must settle the expected duration before a test can own this permutation.
 
-Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix; the current source changes do not claim to implement this broader test matrix.
+Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix.
 
 <a id="find-sync-1-jwy1c8"></a>
 

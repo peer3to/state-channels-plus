@@ -45,6 +45,13 @@ spectator by the participants' gossip, which `WaitForSyncStatusGuard` retains (r
 intake) while the sync is held. Once the sync stores the tip, the spectator must apply the gossiped block
 and hold no queued entry for it.
 
+The committed-dispute case holds one observer's reductions and queue timeouts. The leader authors
+its real next block off the wire, so the other participants time it out and commit a dispute
+against the current fork. Before that commitment, the observer queues a future block from the
+leader. After the commitment the queued entry is gone, with its queue timeout still held, so the
+dispute discarded it. The leader's genuine next block, delivered afterwards, is neither queued nor
+stored. The observer's next height and fork stay unchanged.
+
 ## Tests
 
 - `known slashes reject network contributions even when slash log recovery fails`: none
@@ -79,5 +86,6 @@ and hold no queued entry for it.
 - `drains an early reduced-fork block once the fork transition catches up`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P4
 - `missing genesis: no proof to build, sources blacklisted, no dispute`: REQ-BLOCK-PIPE-8-N529VH.T1.P3
 - `present genesis: builds the WrongGenesis proof and disputes the fork`: REQ-BLOCK-PIPE-8-N529VH.T1.P10
+- `a committed dispute discards the queued block and rejects the leader's genuine next block; the head stays put`: REQ-LIF-7-0XZBDM.T1.P1, REQ-LIF-7-0XZBDM.T1.P2
 - `never validates an entry whose fork is not current`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P8
 - `schedules the full window fresh, only the remainder after aging, and nothing at the deadline`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P2

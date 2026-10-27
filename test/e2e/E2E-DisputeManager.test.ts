@@ -63,7 +63,12 @@ describe("E2E: Dispute Manager", function () {
             await h.assert.dispute.initiatedAndCommitedWait({
                 initiatedWithAuditingData: false
             });
-            await h.dispute.resolveDisputeWait({ forkId });
+            const resolved = await h.dispute.resolveDisputeWait({ forkId });
+
+            // every auditor judged the dispute valid and reached the same
+            // successor and survivors
+            await h.assert.storage.honestPeersStoredNoDisputeFraudProofs();
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
 
             // the dispute bundled the offender's fraud proof into its multicall,
             // so applying it slashed them on-chain
@@ -112,6 +117,12 @@ describe("E2E: Dispute Manager", function () {
                         ).to.equal(true);
                     }
                 await h.dispute.resolveDisputeWait({ forkId });
+                // the later commitments on the fork neither restart nor
+                // extend the pause the first one surfaced
+                for (const index of disputers)
+                    expect(
+                        h.event.getEventCallCount(index, "disputeStarted")
+                    ).to.equal(1);
             } finally {
                 await Promise.all(
                     recorders.map((recorder) => recorder.restore())
@@ -241,7 +252,8 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait({ forkId });
+            const resolved = await h.dispute.resolveDisputeWait({ forkId });
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
         });
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
@@ -280,10 +292,11 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({
+            const resolved = await h.dispute.resolveDisputeWait({
                 forkId,
                 syntheticOnChainParticipants: 1
             });
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
         });
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
@@ -300,7 +313,8 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({ forkId });
+            const resolved = await h.dispute.resolveDisputeWait({ forkId });
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
         });
     });
 
