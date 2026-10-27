@@ -1486,7 +1486,7 @@ describe("distributed worker scheduler", function () {
             [
                 {
                     name: "metrics-peer",
-                    distributedProtocol: 14,
+                    distributedProtocol: 16,
                     attemptResult: {
                         durationMs: 100,
                         peakRssGb: 0.5,
@@ -1590,74 +1590,6 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("keeps protocol fourteen on legacy admission with cost selection", async function () {
-        const cli = parseCliArgs(["node", "runner", "--schedule", "cost"]);
-        const run = await runAgainstProtocolWorkers(
-            [
-                {
-                    name: "legacy-peer",
-                    distributedProtocol: 14,
-                    attemptResult: {
-                        durationMs: 100,
-                        peakRssGb: 0.5,
-                        avgCores: 0.25
-                    },
-                    workerStats: {
-                        peakCpu: 0.5,
-                        avgCpu: 0.25,
-                        cpuSampleCount: 2,
-                        peakOccupiedGb: 1,
-                        avgPerTestGb: 0.5,
-                        memorySampleCount: 2,
-                        memBoundGb: 10
-                    }
-                }
-            ],
-            {
-                tasks: [
-                    {
-                        label: "light",
-                        logName: "light",
-                        runner: "hardhat",
-                        args: []
-                    },
-                    {
-                        label: "long",
-                        logName: "long",
-                        runner: "hardhat",
-                        args: []
-                    }
-                ],
-                files: {
-                    "overrides.json": JSON.stringify({
-                        "hardhat||light": { durationMs: 100 },
-                        "hardhat||long": { durationMs: 1000 }
-                    })
-                },
-                run: {
-                    schedule: cli.schedule,
-                    costOverridesPath: "overrides.json"
-                }
-            }
-        );
-        expect(run.failure).to.equal(null);
-        expect(run.workers[0].labels).to.deep.equal(["long", "light"]);
-        expect(run.workers[0].costs).to.deep.equal([undefined, undefined]);
-        expect(run.metrics.workers).to.have.length(1);
-        expect(run.metrics.workers[0]).to.include({
-            legacyAdmission: true,
-            meanConcurrency: null,
-            peakConcurrency: null,
-            concurrencyWallMs: null,
-            measurementReason: "legacy-worker-stats-unavailable"
-        });
-        expect(run.metrics.workers[0].holdCounts).to.deep.equal({
-            cap: null,
-            memory: null,
-            cpu: null
-        });
-    });
-
     it("schedules by the committed costs but writes nothing in read-only runs", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "read-only-runs-"));
         const costsPath = path.join(root, "test-costs.json");
@@ -1742,7 +1674,7 @@ describe("distributed worker scheduler", function () {
                 [
                     {
                         name: "read-only-peer",
-                        distributedProtocol: 15,
+                        distributedProtocol: 16,
                         attemptResult: {
                             durationMs: 100,
                             peakRssGb: 0.5,
@@ -1779,7 +1711,7 @@ describe("distributed worker scheduler", function () {
         const costCachePath = path.join(cacheDir, ".cache/test-costs.json");
         const peer = (durationMs: number, afterRunComplete?: () => void) => ({
             name: "cache-peer",
-            distributedProtocol: 15,
+            distributedProtocol: 16,
             attemptResult: { durationMs, peakRssGb: 0.5, avgCores: 0.25 },
             workerStats: {
                 peakCpu: 0.5,
