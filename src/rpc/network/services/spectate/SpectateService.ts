@@ -910,7 +910,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // so we can't prove it. Return undefined → the caller cuts the
             // requester; the requester counts a close against us. A sync
             // requester only ever asks peers expected to prove the target - the
-            // block's own suppliers/author for the block's fork, or a
+            // peers that sent the block, for the block's fork, or a
             // participant for the latest - so a peer that can't prove it failed
             // to cooperate.
             this.logger.debug(
