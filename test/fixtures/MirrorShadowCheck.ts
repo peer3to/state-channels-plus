@@ -52,6 +52,9 @@ async function nodeOutcome(
     try {
         return `return ${await node.send("eth_call", [tx, toQuantity(number)])}`;
     } catch (error) {
+        // the node is gone (the test is being torn down): nothing to compare
+        if (/ECONNREFUSED|ECONNRESET|socket hang up/.test(String(error)))
+            return "unreachable";
         const data = error as {
             data?: unknown;
             info?: { error?: { data?: unknown } };
@@ -114,7 +117,8 @@ export function installMirrorShadowCheck(
             }
             const mirrorSays = describeOutcome(outcome);
             const nodeSays = await nodeOutcome(node!, request, head.number);
-            if (mirrorSays === nodeSays) counts.matches++;
+            if (nodeSays === "unreachable") counts.unchecked++;
+            else if (mirrorSays === nodeSays) counts.matches++;
             else {
                 counts.mismatches++;
                 const mismatch: ShadowMismatch = {
