@@ -169,6 +169,20 @@ export class MirrorChain {
         await socket?.destroy();
     }
 
+    // Nothing is logged once closed: the owner's logger may be disposed first.
+    private log(
+        level: "warn" | "info",
+        message: string,
+        meta?: Record<string, unknown>
+    ): void {
+        if (this.closed) return;
+        try {
+            this.logger[level](message, meta);
+        } catch {
+            // the logger was disposed with its owner
+        }
+    }
+
     private toBlock(record: BlockStorageDiff): ChainBlock {
         return { number: BigInt(record.number), hash: record.hash };
     }
@@ -231,7 +245,7 @@ export class MirrorChain {
         } catch (error) {
             this.retryAfterMs =
                 Date.now() + getReconnectDelayMs(this.failedAttempts++);
-            this.logger.warn("Mirror cannot follow the storage diff service", {
+            this.log("warn", "Mirror cannot follow the storage diff service", {
                 error
             });
             await this.disconnect();
@@ -284,7 +298,7 @@ export class MirrorChain {
             await this.catchUp(head.number + 1n);
         } catch (error) {
             if (error instanceof MirrorUnavailableError) throw error;
-            this.logger.warn("Mirror cannot track an address", { error });
+            this.log("warn", "Mirror cannot track an address", { error });
             await this.disconnect();
             throw new MirrorUnavailableError(
                 "Storage diff service unavailable"
@@ -305,7 +319,7 @@ export class MirrorChain {
             if (!this.base || this.closed) return;
             await this.apply(record);
         } catch (error) {
-            this.logger.warn("Mirror cannot apply a pushed record", { error });
+            this.log("warn", "Mirror cannot apply a pushed record", { error });
             await this.disconnect();
         } finally {
             this.lock.unlock();
@@ -382,7 +396,8 @@ export class MirrorChain {
             answer = await this.socket!.catchUp([...this.tracked], from);
         } catch (error) {
             if (!(error instanceof StorageDiffPrunedError)) throw error;
-            this.logger.info(
+            this.log(
+                "info",
                 "Mirror fell behind the service's retention; clearing the cache"
             );
             this.clear();
@@ -392,7 +407,8 @@ export class MirrorChain {
         for (const record of answer.records) {
             if (this.hashAt(BigInt(record.number)) === record.hash) continue;
             if (!this.attach(record)) {
-                this.logger.warn(
+                this.log(
+                    "warn",
                     "Mirror cannot place a caught-up record; clearing the cache"
                 );
                 this.clear();
@@ -415,7 +431,7 @@ export class MirrorChain {
         reason: Error
     ): Promise<void> {
         if (this.socket !== socket) return;
-        this.logger.warn("Storage diff service connection lost", {
+        this.log("warn", "Storage diff service connection lost", {
             error: reason
         });
         await this.lock.lock();
