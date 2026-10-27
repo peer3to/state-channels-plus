@@ -1,6 +1,7 @@
 import { sleep } from "@/utils";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import {
+    deployCommitProbe,
     deployMirroredStorage,
     headNumber,
     nodeRequests,
@@ -284,6 +285,20 @@ describe("MirrorRpcProvider", function () {
             expect(await storage.increment.staticCall()).to.equal(6n);
 
             expect(await storage.getValue()).to.equal(5n);
+        });
+    });
+
+    it("keeps a returned sub-call's write out of the frame that reverted it", async function () {
+        await withMirrorSession(async (session) => {
+            const probe = await deployCommitProbe(session.signer);
+
+            const answer = await session.provider.call({ to: probe });
+
+            expect(BigInt(answer)).to.equal(0n);
+            expect(BigInt(await session.chain.call({ to: probe }))).to.equal(
+                0n
+            );
+            expect(nodeRequests(session, "eth_call")).to.have.length(0);
         });
     });
 

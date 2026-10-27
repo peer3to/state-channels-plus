@@ -120,3 +120,75 @@ export function nodeRequests(session: MirrorSession, method: string) {
 export async function headNumber(session: MirrorSession): Promise<number> {
     return Number(await session.chain.send("eth_blockNumber", []));
 }
+
+/** Self-call whose `argsSize` byte calldata dispatches the frame. */
+function selfCall(argsSize: number): string {
+    return (
+        "6000" + // retSize
+        "6000" + // retOffset
+        "60" +
+        argsSize.toString(16).padStart(2, "0") + // argsSize
+        "6000" + // argsOffset
+        "6000" + // value
+        "30" + // ADDRESS
+        "5a" + // GAS
+        "f1" + // CALL
+        "50" // POP
+    );
+}
+
+/**
+ * Runtime of the three-frame probe, told apart by calldata size: empty is the
+ * parent, 1 byte the child, 2 bytes the grandchild. The grandchild writes slot
+ * 0 and returns, the child calls it and reverts, the parent calls the child
+ * and returns slot 0. A state that keeps a returned sub-call's write across
+ * its caller's revert answers 7, a correct one 0.
+ */
+function commitProbeRuntime(): string {
+    const grandchild = "6007" + "6000" + "55" + "00";
+    const child = "5b" + selfCall(2) + "6000" + "6000" + "fd";
+    const parent =
+        "5b" +
+        selfCall(1) +
+        "6000" +
+        "54" +
+        "6000" +
+        "52" +
+        "6020" +
+        "6000" +
+        "f3";
+    const head = (parentAt: number, childAt: number) =>
+        "36" + // CALLDATASIZE
+        "80" + // DUP1
+        "15" + // ISZERO
+        "60" +
+        parentAt.toString(16).padStart(2, "0") +
+        "57" + // JUMPI parent
+        "6001" +
+        "14" + // EQ 1
+        "60" +
+        childAt.toString(16).padStart(2, "0") +
+        "57"; // JUMPI child
+    const headLength = head(0, 0).length / 2;
+    const childAt = headLength + grandchild.length / 2;
+    const parentAt = childAt + child.length / 2;
+    return head(parentAt, childAt) + grandchild + child + parent;
+}
+
+/** Deploys the commit probe and returns its address. */
+export async function deployCommitProbe(
+    signer: JsonRpcSigner
+): Promise<string> {
+    const runtime = commitProbeRuntime();
+    // initcode copies the runtime after its own 11 bytes and returns it
+    const initcode =
+        "0x60" +
+        (runtime.length / 2).toString(16).padStart(2, "0") +
+        "80600b6000396000f3" +
+        runtime;
+    const receipt = await (
+        await signer.sendTransaction({ data: initcode })
+    ).wait();
+    if (!receipt?.contractAddress) throw new Error("Probe not deployed");
+    return receipt.contractAddress;
+}

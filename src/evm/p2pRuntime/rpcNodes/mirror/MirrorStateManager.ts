@@ -113,14 +113,6 @@ export class MirrorStateManager extends RPCStateManager {
         throw new Error("The mirror state manager cannot be copied");
     }
 
-    // Overrides RPCStateManager.commit: also commits the storage cache. The
-    // base commits only the account cache, which leaves a committed
-    // sub-call's storage writes outside the final revert.
-    override async commit(): Promise<void> {
-        await super.commit();
-        this._storageCache.commit();
-    }
-
     // Overrides RPCStateManager.getContractStorage: the call's own writes,
     // then the chain state, then one `eth_getStorageAt` at the head.
     override async getContractStorage(
