@@ -63,7 +63,12 @@ describe("E2E: Dispute Manager", function () {
             await h.assert.dispute.initiatedAndCommitedWait({
                 initiatedWithAuditingData: false
             });
-            await h.dispute.resolveDisputeWait({ forkId });
+            const resolved = await h.dispute.resolveDisputeWait({ forkId });
+
+            // every auditor judged the dispute valid and reached the same
+            // successor and survivors
+            await h.assert.storage.honestPeersStoredNoDisputeFraudProofs();
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
 
             // the dispute bundled the offender's fraud proof into its multicall,
             // so applying it slashed them on-chain
@@ -112,6 +117,19 @@ describe("E2E: Dispute Manager", function () {
                         ).to.equal(true);
                     }
                 await h.dispute.resolveDisputeWait({ forkId });
+                // the first commitment surfaces the pause ceiling of three
+                // chain evidence periods; the later commitments on the fork
+                // neither restart nor extend it
+                const evidenceTime = Number(
+                    await h.channelManager.getEvidenceTime()
+                );
+                for (const index of disputers) {
+                    const started = h.getPeer(index).eventSpies.disputeStarted!;
+                    expect(started.callCount).to.equal(1);
+                    expect(started.firstCall.args).to.deep.equal([
+                        3 * evidenceTime
+                    ]);
+                }
             } finally {
                 await Promise.all(
                     recorders.map((recorder) => recorder.restore())
@@ -241,7 +259,8 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait({ forkId });
+            const resolved = await h.dispute.resolveDisputeWait({ forkId });
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
         });
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
@@ -280,10 +299,11 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({
+            const resolved = await h.dispute.resolveDisputeWait({
                 forkId,
                 syntheticOnChainParticipants: 1
             });
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
         });
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
@@ -292,7 +312,9 @@ describe("E2E: Dispute Manager", function () {
                 timeConfig: { evidenceTime: 6 }
             });
             const forkId = h.activeForkId!;
-            await h.byzantine.tamperedDisputeDoubleFault(1);
+            const dispute = await h.byzantine.tamperedDisputeDoubleFault(1);
+            // settled fork -> the dispute posts no auditing calldata
+            expect(dispute.postedAuditingData).to.equal(false);
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast"
             });
@@ -300,7 +322,8 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({ forkId });
+            const resolved = await h.dispute.resolveDisputeWait({ forkId });
+            await h.assert.dispute.auditorsAgree(resolved.newForkId);
         });
     });
 

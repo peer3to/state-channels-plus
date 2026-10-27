@@ -19,10 +19,15 @@ name a fork with no dispute window return false and leave the window unreduced, 
 checks the disputes' window before the call. An inbound list with an extra fabricated successor
 throws `ErrorDisputeInboundMessageBlocksInvalid` and leaves the window unreduced.
 
+The local diamond runs the same reduction contract code as the chain, so the first three cases are
+also the commitment-exact reduction evidence: the window's committed dispute set reduces and
+records the claimed fork, a matching re-finalize is an idempotent no-op, and a mismatched
+expectation is rejected without replacing the committed result.
+
 ## Tests
 
-- `expired unreduced window with its served inputs → true, the local window records the expected fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P1
-- `window already reduced to the expected fork → false, the local window keeps that fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P2
-- `window already reduced to another fork than expected → throws the expectation mismatch, the local window keeps its fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P3
+- `expired unreduced window with its served inputs → true, the local window records the expected fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P1, INV-ENFDIS-1-1K65DT.T1.P1
+- `window already reduced to the expected fork → false, the local window keeps that fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P2, INV-ENFDIS-1-1K65DT.T1.P4
+- `window already reduced to another fork than expected → throws the expectation mismatch, the local window keeps its fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P3, INV-ENFDIS-1-1K65DT.T1.P7
 - `disputes naming a fork without a dispute window → false, the local window stays unreduced`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P4
 - `inbound list with a fabricated successor → throws the inbound validation revert, the local window stays unreduced`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P5

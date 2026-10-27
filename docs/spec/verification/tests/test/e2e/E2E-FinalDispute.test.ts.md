@@ -8,7 +8,8 @@ The suite stages threshold-final disputes (signed by the full participant set) o
 channel via the harness helpers `submitFinalDispute` / `submitFinalDisputeFromStoredEvidence` and
 resolves them on-chain with `resolveFinalDispute`. It asserts the final-dispute fast path in the
 reduction stack: the exact final output (fork id and genesis timestamp) is installed without
-running `validateDispute`, a queued ordinary reduction task released afterwards is a no-op (no
+running `validateDispute`, a late non-final delivery of the dispute against the source fork, which
+is no longer current, enters no validation and leaves the successor authoring and finalizing blocks, a queued ordinary reduction task released afterwards is a no-op (no
 second `onSetState`; the completed reduction joins the final fork), duplicate completion via
 `awaitReduction` is idempotent, and a peer whose `DisputeCommitted` delivery was withheld still
 lands on the exact final output during reduction. A participant with a pending leave whose turn falls
@@ -25,7 +26,7 @@ exit snapshot lands, with the leaver marked AFK from its exit turn on.
 
 ## Tests
 
-- `threshold-final dispute installs its exact output and can post the next snapshot`: REQ-ENFDIS-1-8CSA6B.T1.P4
+- `threshold-final dispute installs its exact output and can post the next snapshot`: REQ-ENFDIS-1-8CSA6B.T1.P4, REQ-LIF-7-0XZBDM.T1.P3
 - `direct final-dispute reduction re-homes a pending leave onto the reduced fork and settles it once`: REQ-DISPUTE-PIPE-3-PHE3SQ.T1.P19
 - `threshold-final dispute makes a queued reduction timeout a no-op`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P4
 - `duplicate completion is idempotent`: none

@@ -23,7 +23,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 
 ## Tests
 
-- `an honest dispute with nonzero genesis deposits passes the local balance invariant`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D.P3, UNIT-TEST-LOCAL-DIAMOND-2-G8M3VQ.P1, REQ-MIRROR-1-XCY9CB.T2.P1, REQ-MIRROR-2-E9F3TM.T2.P1
+- `an honest dispute with nonzero genesis deposits passes the local balance invariant`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-2-7H4K2D.P3, UNIT-TEST-LOCAL-DIAMOND-2-G8M3VQ.P1, REQ-MIRROR-1-XCY9CB.T2.P1
 - `peer 2 uploads a dispute whose committed snapshot breaks the balance invariant; a pending auditor without a final block at the forged head → DisputeInvalidBalanceInvariant, then the colluders' real-head disputes → DisputeConflictsWithFinalState (forged audited first)`: REQ-DISPUTE-PIPE-5-RZZB48.T4.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P128
 - `the colluders' real-head dispute audited first by the pending auditor, then peer 2's forged-head dispute → the auditor accepts the real head and kills the forged dispute with DisputeConflictsWithFinalState (real audited first)`: REQ-DISPUTE-PIPE-5-RZZB48.T4.P2, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P129
 - `the pending auditor audits the forged-head and two real-head disputes at the same time, the forged walk released first → the forged head is stored, its dispute is killed with DisputeInvalidBalanceInvariant, each real-head dispute with DisputeConflictsWithFinalState, and the channel reduces from the auditor's own dispute`: REQ-DISPUTE-PIPE-5-RZZB48.T4.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P130
