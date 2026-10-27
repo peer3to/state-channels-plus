@@ -3,12 +3,12 @@ import type { MirrorChainUpstream, MirrorHeader } from "./mirror/MirrorChain";
 import { MirrorUnavailableError } from "./mirror/MirrorChain";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
-import { NodeSocketSubscriptions } from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     toQuantity,
+    type ProviderEvent,
     type JsonRpcError,
     type JsonRpcPayload,
     type JsonRpcResult
@@ -218,9 +218,6 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     private readonly mirror?: Mirror;
     /** Hashes of the transactions this provider sent and has not seen mined. */
     private readonly ownTransactions = new Set<string>();
-    /** Node sockets whose block announcements the mirror waits for. */
-    private readonly blockSockets = new NodeSocketSubscriptions();
-    private readonly unwatchNodes: (() => void)[] = [];
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -229,15 +226,6 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     ) {
         super(nodes, logger);
         if (options.storageDiffUrl) {
-            // an event the peer saw at block N must find the mirror at N
-            for (const node of nodes)
-                this.unwatchNodes.push(
-                    node.watchSockets((socket) => {
-                        void this.blockSockets.add(socket, "block", (n) =>
-                            this.mirror?.requireNumber(BigInt(n))
-                        );
-                    })
-                );
             this.mirror = new Mirror({
                 serviceUrl: options.storageDiffUrl,
                 upstream: this.createUpstream(),
@@ -258,10 +246,20 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         return Promise.all(requests.map((request) => this.answer(request)));
     }
 
+    // Overrides AbstractProvider.emit: a block the nodes announced to this
+    // provider's listeners is one the mirror must reach before it answers, so
+    // a read never answers from before an event the peer already saw.
+    override async emit(
+        event: ProviderEvent,
+        ...args: Array<unknown>
+    ): Promise<boolean> {
+        if (event === "block" && typeof args[0] === "number")
+            this.mirror?.requireNumber(BigInt(args[0]));
+        return await super.emit(event, ...args);
+    }
+
     // Overrides MultiRpcProvider.destroy: also closes the mirror.
     override destroy(): void {
-        for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
-        void this.blockSockets.clear();
         void this.mirror?.close();
         super.destroy();
     }

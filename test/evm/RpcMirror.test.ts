@@ -250,6 +250,8 @@ describe("MirrorRpcProvider", function () {
             const { storage, chainStorage } =
                 await deployMirroredStorage(session);
             expect(await storage.getValue()).to.equal(0n);
+            // the runtime listens to blocks; the provider relays what it hears
+            await session.provider.on("block", () => undefined);
             const release =
                 session.service.holdNotifications("scp_subscription");
 
