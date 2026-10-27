@@ -218,25 +218,11 @@ describe("distributed worker scheduler", function () {
         expect(toWireTask(task, root)).not.to.have.property("cost");
         expect(
             toWireTask(task, root, {
-                schedule: "cost",
-                distributedProtocol: 13
-            })
-        ).not.to.have.property("cost");
-        expect(
-            toWireTask(task, root, {
-                schedule: "cost",
-                distributedProtocol: 14
-            })
-        ).not.to.have.property("cost");
-        expect(
-            toWireTask(task, root, {
-                schedule: "fifo",
-                distributedProtocol: 15
+                schedule: "fifo"
             })
         ).not.to.have.property("cost");
         const wire = toWireTask(task, root, {
-            schedule: "cost",
-            distributedProtocol: 15
+            schedule: "cost"
         });
         expect(wire.cost).to.deep.equal({
             cores: 0.3,

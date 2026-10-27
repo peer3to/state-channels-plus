@@ -168,27 +168,6 @@ function computeWorkspaceId({
         .digest("hex");
 }
 
-/**
- * The manifest as offered to a worker host speaking an older accepted
- * protocol. Such a host checks the declared protocol against its own exactly,
- * and the workspace identity follows it so that host keeps a separate cache.
- */
-function manifestForDistributedProtocol(manifest, distributedProtocol) {
-    if (manifest.distributedProtocol === distributedProtocol) return manifest;
-    const derived = {
-        ...manifest,
-        distributedProtocol,
-        workspaceId: computeWorkspaceId({ ...manifest, distributedProtocol })
-    };
-    // The spread drops the non-enumerable local root that keeps the host path
-    // off the wire; the delta upload still reads it on this side.
-    Object.defineProperty(derived, "localWorkspaceRoot", {
-        value: manifest.localWorkspaceRoot,
-        enumerable: false
-    });
-    return derived;
-}
-
 async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
     const repositories = discoverRepositories(projectRoot);
     const repositoryRoots = repositories.map((entry) => entry.root);
@@ -464,6 +443,5 @@ module.exports = {
     buildRuntimeManifest,
     buildRuntimeBundle,
     computeWorkspaceId,
-    manifestForDistributedProtocol,
     buildDeltaBundle
 };

@@ -323,8 +323,7 @@ export const CHROMIUM_MOCHA_TASKS = [1, 2, 3].map((index) => ({
 /**
  * Run the real orchestrator over `tasks` (MIXED_TIER_TASKS by default) against worker hosts that
  * declare the given protocols, on a local DHT. Returns what each worker was
- * offered and ran, the run result or failure, the console warnings, and what
- * the run appended to a GitHub step summary.
+ * offered and ran, the run result or failure, and the console warnings.
  */
 export async function runAgainstProtocolWorkers(
     workers: Array<{
@@ -352,15 +351,12 @@ export async function runAgainstProtocolWorkers(
     const path = require("path");
     const network = await createLocalDhtNetwork();
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "distributed-mixed-"));
-    const summaryPath = path.join(root, "step-summary.md");
-    fs.writeFileSync(summaryPath, "");
     for (const [file, content] of Object.entries(options.files ?? {}))
         fs.writeFileSync(path.join(root, file), content);
     const poolSecret = `mixed-${process.pid}-${Date.now()}`;
     const keys = derivePoolKeys(poolSecret);
     const warnings: string[] = [];
     const originalWarn = console.warn;
-    const originalSummary = process.env.GITHUB_STEP_SUMMARY;
     const started: Array<{
         record: ProtocolWorkerRecord;
         close: () => Promise<void>;
@@ -379,7 +375,6 @@ export async function runAgainstProtocolWorkers(
         console.warn = (...data: unknown[]) => {
             warnings.push(data.map(String).join(" "));
         };
-        process.env.GITHUB_STEP_SUMMARY = summaryPath;
         const manifest = {
             version: 3,
             packageManager: "pnpm",
@@ -429,14 +424,10 @@ export async function runAgainstProtocolWorkers(
                 ? JSON.parse(fs.readFileSync(metricsPath, "utf8"))
                 : null,
             warnings,
-            summary: fs.readFileSync(summaryPath, "utf8") as string,
             workers: started.map((worker) => worker.record)
         };
     } finally {
         console.warn = originalWarn;
-        if (originalSummary === undefined)
-            delete process.env.GITHUB_STEP_SUMMARY;
-        else process.env.GITHUB_STEP_SUMMARY = originalSummary;
         for (const worker of started) await worker.close();
         fs.rmSync(root, { recursive: true, force: true });
         await network.close();

@@ -246,8 +246,7 @@ discards cached environments whose containers were created from another image). 
 arrived with distributed protocol 14, and the orchestrator now leases only
 protocol 16 hosts, so every pool host must be updated together. A Mocha test
 file that launches Chromium carries `// @distributed-requires: browser` in its
-leading comments, and its tests go only to hosts that run the browser tier. A
-task whose attempt was lost with the only host that could run it fails.
+leading comments, and its tests go only to hosts that run the browser tier.
 
 A worker that leaves before it is given a task, whether its lease or workspace
 setup fails, it refuses the requested resources, or its connection closes, is

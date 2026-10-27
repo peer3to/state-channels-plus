@@ -50,11 +50,8 @@ describe("distributed worker protocol pool", function () {
         );
         expect({
             completed: run.result.completed,
-            skipped: run.result.skipped.length,
             failed: run.result.failed.length
-        }).to.deep.equal({ completed: 5, skipped: 0, failed: 0 });
-        expect(run.warnings.join("\n")).to.not.include("Skipping");
-        expect(run.summary).to.equal("");
+        }).to.deep.equal({ completed: 5, failed: 0 });
         // Each host is offered the workspace under the current protocol, yet
         // the manifest keeps the orchestrator's workspace root off the wire.
         expect([hostA.offeredProtocol, hostB.offeredProtocol]).to.deep.equal([
@@ -83,9 +80,8 @@ describe("distributed worker protocol pool", function () {
         );
         expect({
             completed: run.result.completed,
-            skipped: run.result.skipped.length,
             failed: run.result.failed.length
-        }).to.deep.equal({ completed: 8, skipped: 0, failed: 0 });
+        }).to.deep.equal({ completed: 8, failed: 0 });
     });
 
     it("refuses a protocol 15 host in a pool and runs everything on the protocol 16 host", async function () {

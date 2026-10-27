@@ -12,7 +12,6 @@ const {
     DISTRIBUTED_PROTOCOL_VERSION,
     MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     ProtocolPeer,
-    minimumProtocolForTask,
     runnersForDistributedProtocol,
     workerCanRunTask,
     waitForMessage
@@ -25,7 +24,6 @@ const {
     shortConnectionHash
 } = require("./connectionLifecycle");
 const { sendBundle } = require("./artifactTransfer");
-const { manifestForDistributedProtocol } = require("./runtimeBundle");
 const {
     CONCURRENCY_STAT_FIELDS,
     HOLD_REASONS
@@ -138,63 +136,6 @@ function assertCompatibleWorkerProtocol(capabilities) {
     throw new Error(
         `Distributed worker protocol mismatch: orchestrator accepts ${MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL}-${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
     );
-}
-
-/**
- * The warning for tasks no connected worker could run. They are left out of
- * the run rather than failing it; the lines name each task and the protocol a
- * worker host needs to run it.
- */
-function formatSkippedTasksNotice(tasks) {
-    const groups = new Map();
-    for (const task of tasks) {
-        const runner = normalizeTaskRunner(task.runner);
-        const needs = task.requires ?? [];
-        const key = [runner, ...needs].join("+");
-        if (!groups.has(key)) groups.set(key, { runner, needs, tasks: [] });
-        groups.get(key).tasks.push(task);
-    }
-    const lines = [];
-    for (const { runner, needs, tasks: skipped } of groups.values()) {
-        const required = minimumProtocolForTask(skipped[0]);
-        const missing = needs.length ? needs.join(", ") : runner;
-        lines.push(
-            `Skipping ${skipped.length} ${runner} task(s)` +
-                (needs.length ? ` that need ${missing}` : "") +
-                `: no connected worker supports the ${missing} runner` +
-                (required
-                    ? `; a worker host on distributed protocol ${required} or newer runs them.`
-                    : ".")
-        );
-        for (const task of skipped) lines.push(`  - ${task.label}`);
-    }
-    return lines;
-}
-
-/** Print the skip notice, and add it to the GitHub job summary when there is one. */
-function reportSkippedTasks(tasks, env = process.env) {
-    const lines = formatSkippedTasksNotice(tasks);
-    for (const line of lines) console.warn(`WARNING: ${line}`);
-    if (env.GITHUB_STEP_SUMMARY) {
-        fs.appendFileSync(
-            env.GITHUB_STEP_SUMMARY,
-            `> [!WARNING]\n${lines.map((line) => `> ${line}`).join("\n")}\n\n`
-        );
-    }
-    return lines;
-}
-
-/** Report the tasks that failed because their only capable worker was lost. */
-function reportLostTasks(tasks, logDir) {
-    for (const task of tasks) {
-        const reason = task.infrastructureDiagnostics.at(-1);
-        console.error(`FAIL ${task.label}: ${reason}`);
-        logging.annotateFailure(task.label, reason);
-        fs.appendFileSync(
-            logging.getErrorLogPath(logDir, task.logName),
-            `##PARALLEL_RUNNER## ${reason}\n`
-        );
-    }
 }
 
 function promoteAttemptLog(logDir, assignment, worker, code, attempt = {}) {
@@ -690,22 +631,10 @@ async function runDistributed(options) {
     });
 
     let finishing = false;
-    let unservableTimer = null;
 
-    // Drops what no connected worker can run once nothing else is left and no
-    // capable worker connected within the discovery window, then finishes the
-    // run if that was the last work.
+    // Finishes the run once the last work is done.
     function settleRun() {
         if (finishing) return;
-        clearTimeout(unservableTimer);
-        unservableTimer = null;
-        const { skipped, failed, waitMs } = coordinator.settleUnservable(
-            Date.now(),
-            options.discoveryTimeoutMs
-        );
-        if (skipped.length) reportSkippedTasks(skipped);
-        if (failed.length) reportLostTasks(failed, options.logDir);
-        if (waitMs !== null) unservableTimer = setTimeout(settleRun, waitMs);
         if (coordinator.finish().done) {
             queueMicrotask(() => finishRun().catch(completedReject));
         }
@@ -936,10 +865,7 @@ async function runDistributed(options) {
             await sendBundle(
                 worker.peer,
                 options.archivePath,
-                manifestForDistributedProtocol(
-                    options.manifest,
-                    worker.distributedProtocol
-                ),
+                options.manifest,
                 undefined,
                 (need) => {
                     const archiveMb = (need.archiveBytes / 1024 / 1024).toFixed(
@@ -1032,8 +958,7 @@ async function runDistributed(options) {
             const wireAssignment = {
                 ...assignment,
                 task: toWireTask(assignment.task, options.projectRoot, {
-                    schedule: options.schedule,
-                    distributedProtocol: worker.distributedProtocol
+                    schedule: options.schedule
                 })
             };
             const attemptPath = logging.getAttemptLogPath(
@@ -1368,7 +1293,6 @@ async function runDistributed(options) {
         );
     } finally {
         clearTimeout(discoveryTimeout);
-        clearTimeout(unservableTimer);
         clearInterval(discoveryProgress);
         options.signal?.removeEventListener("abort", cancel);
         for (const worker of workers.values()) worker.heartbeat.stop();
@@ -1383,8 +1307,7 @@ async function runDistributed(options) {
             label: worker.label,
             startup: worker.startup,
             stats: coordinator.withBudgetHolds(worker.id, worker.stats),
-            legacyAdmission:
-                options.schedule !== "cost" || worker.distributedProtocol < 15
+            legacyAdmission: options.schedule !== "cost"
         })),
         makespanMs: Date.now() - startedAt,
         startedAt,
@@ -1399,7 +1322,6 @@ async function runDistributed(options) {
     return {
         failed: state.failed,
         completed: state.completed,
-        skipped: state.skipped,
         sumDurationMs: state.sumDurationMs,
         ...resourceStats,
         workers: workerLabels,
@@ -1420,7 +1342,6 @@ module.exports = {
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,
-    formatSkippedTasksNotice,
     formatWorkerDispositions,
     formatWorkerSummary,
     ingestAttemptLogMessage,
@@ -1429,8 +1350,6 @@ module.exports = {
     promoteStarvationAttemptLog,
     recordWorkerFailure,
     recordWorkerRetirement,
-    reportLostTasks,
-    reportSkippedTasks,
     runDistributed,
     validateWorkerStats,
     workerFaultStatus

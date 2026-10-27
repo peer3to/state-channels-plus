@@ -376,19 +376,6 @@ function workerCanRunTask(runners, task) {
     return runnersNeededByTask(task).every((runner) => runners.has(runner));
 }
 
-/** The oldest accepted worker protocol that can run `task`, or null. */
-function minimumProtocolForTask(task) {
-    for (
-        let version = MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL;
-        version <= DISTRIBUTED_PROTOCOL_VERSION;
-        version++
-    ) {
-        const runners = runnersForDistributedProtocol(version);
-        if (runners && workerCanRunTask(runners, task)) return version;
-    }
-    return null;
-}
-
 function waitForMessage(peer, kind, timeoutMs = 10000) {
     const pending = peer.takePending(kind);
     if (pending) return Promise.resolve(pending);
@@ -420,7 +407,6 @@ module.exports = {
     PROTOCOL_VERSION,
     MESSAGE_KINDS,
     ProtocolPeer,
-    minimumProtocolForTask,
     runnersNeededByTask,
     workerCanRunTask,
     runnersForDistributedProtocol,
