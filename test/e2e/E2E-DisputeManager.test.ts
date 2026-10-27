@@ -117,12 +117,19 @@ describe("E2E: Dispute Manager", function () {
                         ).to.equal(true);
                     }
                 await h.dispute.resolveDisputeWait({ forkId });
-                // the later commitments on the fork neither restart nor
-                // extend the pause the first one surfaced
-                for (const index of disputers)
-                    expect(
-                        h.event.getEventCallCount(index, "disputeStarted")
-                    ).to.equal(1);
+                // the first commitment surfaces the pause ceiling of three
+                // chain evidence periods; the later commitments on the fork
+                // neither restart nor extend it
+                const evidenceTime = Number(
+                    await h.channelManager.getEvidenceTime()
+                );
+                for (const index of disputers) {
+                    const started = h.getPeer(index).eventSpies.disputeStarted!;
+                    expect(started.callCount).to.equal(1);
+                    expect(started.firstCall.args).to.deep.equal([
+                        3 * evidenceTime
+                    ]);
+                }
             } finally {
                 await Promise.all(
                     recorders.map((recorder) => recorder.restore())

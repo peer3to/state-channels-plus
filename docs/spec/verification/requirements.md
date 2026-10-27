@@ -42,7 +42,7 @@ Specification cases tested: 1/18. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 0/19.
 
 [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)
-Specification cases tested: 4/6. Untested: T1.P3, T1.P4.
+Specification cases tested: 4/5. Untested: T1.P4.
 
 [`INV-ENFADM-1-H53AQY` (Inbound append is the only membership/value entry)](../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy)
 Specification cases tested: 5/5.
@@ -606,7 +606,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 0/6.
 
 [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
-Specification cases tested: 5/6. Untested: T1.P5.
+Specification cases tested: 6/6.
 
 [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 Specification cases tested: 9/9.

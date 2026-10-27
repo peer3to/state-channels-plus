@@ -209,6 +209,10 @@ handler warns-and-ignores while spectating and, for an active participant, throw
 one reduce attempt. The intended behavior (fetch from untrusted sources, verify against the
 chain anchor, resume) needs an algorithm decision.
 
+Verification deferred on this question (Luke, 2026-10-27):
+[`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (an auditor's restart) waits for persistence, because a
+restarted peer comes back as a fresh spectator and resyncs.
+
 <a id="oq-24-a4xrtb"></a>
 
 ## OQ-24-A4XRTB — `shouldSignBlock` refusal when next-to-write

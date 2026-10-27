@@ -23,7 +23,7 @@ skipped on a known product race. Per-field dispute-input and state-proof audits 
 comparing every active honest auditor: each sits on the resolved successor fork, lists the same
 participants and stored the same dispute fraud proofs, compared by proof type and accused disputer (none for the valid dispute). The double-fault case first checks that its dispute posted no auditing calldata. In the
 racing case, where every honest disputer's dispute is committed on one fork, each disputer surfaced
-`onDisputeStarted` exactly once. After the permutation split, the single-scenario
+`onDisputeStarted` exactly once, with three times the chain's evidence time. After the permutation split, the single-scenario
 dispute-input, kill, and recovery permutations demonstrated here are assigned below; per-predicate
 audit permutations stay with the `test/e2e/disputeValidation/*` suites.
 
@@ -40,7 +40,7 @@ State-only contribution checks use the shared real-audit action, including its e
 - `a state-only contribution without an existing window is refused without a slash`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P19
 - `a state-only contribution after the evidence deadline is refused without a slash`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P20
 - `should reduce invalid state transition disputes and create new fork`: INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9.P1, REQ-DIS-1-XAJ1VA.T1.P1, INV-DISPUTE-PIPE-1-BN0K81.T1.P1
-- `every honest peer racing to dispute the same invalid block lands its dispute`: REQ-SDK-ARCH-5-AAM7YK.T1.P6, REQ-LIF-7-0XZBDM.T1.P6
+- `every honest peer racing to dispute the same invalid block lands its dispute`: REQ-SDK-ARCH-5-AAM7YK.T1.P6, REQ-LIF-7-0XZBDM.T1.P5, REQ-LIF-7-0XZBDM.T1.P6
 - `should post a dispute WITH auditing calldata on a pending-join fork`: none
 - `should post updated state snapshot after fork resolution`: REQ-DIS-9-64WHCD.T1.P1
 - `should dispute a timed-out writer on a pending-join fork with auditing calldata`: none
