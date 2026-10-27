@@ -99,6 +99,9 @@ describe("Unit: SpectateService", function () {
                 const response = await sm.p2pManager.remoteRpc.spectateService
                     .onSpectateRequest(request)
                     .request(source);
+                if (!("encodedSyncPayload" in response)) {
+                    throw new Error("responder still syncing");
+                }
                 return sm.p2pManager.localRpc.spectateService
                     .applySyncResponse(
                         source,

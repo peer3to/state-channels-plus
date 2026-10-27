@@ -17,8 +17,8 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                                                                                                     | Resolved (2026-09-05) |
 | [`OQ-AUDIT-RUNTIME-1-3P2PTW`](open-questions.md#oq-audit-runtime-1-3p2ptw) | Application module cloneability                              | Implementation audit            | [`REQ-RUNTIME-1-RSM6MZ`](../specification/runtime/execution.md#req-runtime-1-rsm6mz), [implementation.md](./implementation.md)                                                                                 | Open                  |
 | [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
-| [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send and subscribe to multiple nodes                         | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
-| [`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0)         | Universal keepalive for idle chain WebSocket connections     | Live poker bots (2026-10-15)    | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                      | Open                  |
+| [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send reads and transactions to multiple nodes                | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
+| [`OQ-AUDIT-RPC-2-4VVAT0`](open-questions.md#oq-audit-rpc-2-4vvat0)         | Universal keepalive for idle chain WebSocket connections     | Live poker bots (2026-10-15)    | [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                      | Resolved (2026-10-26) |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -122,22 +122,37 @@ Evidence and scope: [SpectateService report](../implementation/source/src/rpc/ne
 
 <a id="oq-audit-rpc-1-bqa20a"></a>
 
-## OQ-AUDIT-RPC-1-BQA20A — Send and subscribe to multiple nodes
+## OQ-AUDIT-RPC-1-BQA20A — Send reads and transactions to multiple nodes
 
-Open; not critical now, to consider for production. The current design sends every read and
-transaction to the first connected endpoint and fails over when it drops
+Open; not critical now, to consider for production. Subscriptions already use every node: block
+events and contract-log subscriptions are made on every connected node socket, again on every
+reopened one, and each block and log is delivered once
+([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp),
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)).
+The open part is requests. The current design sends every read and transaction to the first
+connected endpoint and fails over when it drops
 ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)).
-The alternative is to send to several endpoints and subscribe on several at once. Endpoints
-replicate a transaction in the mempool anyway, so sending it to several should not change on-chain
-behavior. It raises the chance of success when the selected endpoint dies: there is no wait to
-recover and reconnect to another endpoint, which could be fatal if it takes long. Every response
-can be deduplicated: treat the endpoints as redundant connections where the first response wins.
+The alternative is to send each request to several endpoints at once. Endpoints replicate a
+transaction in the mempool anyway, so sending it to several should not change on-chain behavior. It
+raises the chance of success when the selected endpoint dies: there is no wait to recover and
+reconnect to another endpoint, which could be fatal if it takes long. Every response can be
+deduplicated: treat the endpoints as redundant connections where the first response wins.
 
 <a id="oq-audit-rpc-2-4vvat0"></a>
 
 ## OQ-AUDIT-RPC-2-4VVAT0 — Universal keepalive for idle chain WebSocket connections
 
-Open. Seen three times in live poker bots (2026-10-15). An application's own ethers
+Resolved (2026-10-26) by alternative (b). The SDK exports `createRpcNodesProvider` (and the type
+`MultiRpcProvider`) from `src/index.ts`: a provider over the same configured endpoints, with the node
+layer's heartbeat, reconnect and failover, and contract-log subscriptions over every node socket
+([`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)). Luka's rule (shared poker client manager plan): every component
+uses the SDK's provider set with the same endpoints as the SDK; failover and when to throw live inside
+that provider; a capability the SDK provider lacks is recorded as an SDK open finding, not worked
+around. The remaining provider limits are [`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3),
+[`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11), [`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5) and
+[`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv). The history below is the context of the question.
+
+Seen three times in live poker bots (2026-10-15). An application's own ethers
 `WebSocketProvider` that stays idle for minutes was dropped on the path to
 `wss://dev.peer3.network/private-testnet-ws/`. The case is the poker client's discovery provider: it is
 idle during play, because the SDK runtime uses its own RPC connections. The first read after a long
@@ -158,9 +173,9 @@ socket and starts a reconnect
 traffic keeps the path busy below a minutes-long idle timeout, and a dropped socket reconnects with
 requests held until then. So the SDK's own connections are not exposed to this drop. The gap is
 only the providers that applications create themselves: `RpcNodeProvider` and `MultiRpcProvider`
-are not exported from `src/index.ts`.
+were not exported from `src/index.ts` then.
 
-Alternatives: (a) every application keeps its own keepalive (the current state); (b) the SDK gives
+Alternatives: (a) every application keeps its own keepalive (the state then); (b) the SDK gives
 applications a provider factory or helper built on its node layer
 (`src/evm/p2pRuntime/rpcNodes`), so every WebSocket an application opens gets the same heartbeat,
 idle detection and reconnect, and the poker client's keepalive is then removed. Blocking effect:

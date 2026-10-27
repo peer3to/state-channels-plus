@@ -1,12 +1,18 @@
 import { getReconnectDelayMs } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import {
     assertBlockEventsComeFromNodeSockets,
+    assertDestroyAfterLogSubscriptionStaysQuiet,
     assertDestroyDuringPendingAttemptStaysQuiet,
     assertFailedLogPageAnsweredForRetry,
     assertFirstNodeErrorAnswerIsFinal,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
     assertInvalidSecretOpensNoNode,
+    assertLogsComeOnceFromNodeSockets,
+    assertLogsFailOverToNextNodeSocket,
+    assertLogsBelowRememberedBlocksNotDelivered,
+    assertLogsResubscribedOnReconnectedNodeSocket,
+    assertLogUnsubscribeLeavesNoRequest,
     assertLogPagesReadInAscendingWindows,
     assertMalformedEndpointRejectsStartupQuietly,
     assertOneWarningPerOutageOfEveryNode,
@@ -25,6 +31,7 @@ import {
     assertReadsFailOverToNextNode,
     assertRefusedNodeKeepsReconnecting,
     assertReopenedSocketHandedToWatchers,
+    assertRpcNodesProviderFailsWithoutReachableNode,
     assertStartupFailsWithoutReachableNode,
     assertStartupWithOneUnreachableNode,
     assertStopReconnectingLeavesNodeDown,
@@ -151,6 +158,30 @@ describe("MultiRpcProvider", () => {
         await assertBlockEventsComeFromNodeSockets();
     });
 
+    it("relays each matching log once from the node sockets", async () => {
+        await assertLogsComeOnceFromNodeSockets();
+    });
+
+    it("keeps relaying logs through the next node socket after the first drops", async () => {
+        await assertLogsFailOverToNextNodeSocket();
+    });
+
+    it("subscribes a reconnected node socket again and relays its logs once", async () => {
+        await assertLogsResubscribedOnReconnectedNodeSocket();
+    });
+
+    it("does not relay a log 128 or more blocks below the highest relayed log", async () => {
+        await assertLogsBelowRememberedBlocksNotDelivered();
+    });
+
+    it("leaves no unhandled rejection when destroyed right after a log subscription", async () => {
+        await assertDestroyAfterLogSubscriptionStaysQuiet();
+    });
+
+    it("unsubscribes every node socket when the last log listener goes", async () => {
+        await assertLogUnsubscribeLeavesNoRequest();
+    });
+
     it("leaves no unhandled rejection when a node socket's unsubscribe is answered after destroy", async () => {
         await assertUnsubscribeAnsweredAfterDestroyStaysQuiet();
     });
@@ -165,6 +196,10 @@ describe("MultiRpcProvider", () => {
 
     it("fails runtime startup when no node is reachable and names every node", async () => {
         await assertStartupFailsWithoutReachableNode();
+    });
+
+    it("rejects the exported chain access startup when no node is reachable and destroys every node", async () => {
+        await assertRpcNodesProviderFailsWithoutReachableNode();
     });
 
     it("starts the runtime chain context without waiting for a silent node", async () => {

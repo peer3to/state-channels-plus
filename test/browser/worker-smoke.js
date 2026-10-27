@@ -255,3 +255,337 @@ globalThis.runWorkerRootBootstrapBrowserSmoke = async () => {
         unnamed: await threadNameOf("UnnamedLoggerProbeRootEntry.ts")
     };
 };
+
+// Browser worker roots whose script cannot run: one 404s, one whose requests
+// the runner aborts (its diagnostic fetch fails too), one fails to parse, one
+// fails to parse and then changes on the server, one throws at top level.
+// Each creation rejects; the page returns the error message and the owner's
+// "Root worker failed" log lines.
+globalThis.runWorkerLoadFailureBrowserSmoke = async () => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const failure = async (workerUrl) => {
+        const store = new LogStore(1024 * 1024, true);
+        const logger = new BrowserLogger(
+            {},
+            {},
+            "verbose",
+            store,
+            { attachErrorListener: false },
+            true
+        );
+        try {
+            const handle = await createRoot(ContractExecutorRoot, {
+                mode: "worker",
+                workerUrl,
+                args: { customPrecompiles: [] },
+                logger
+            });
+            await handle.dispose();
+            return { created: true };
+        } catch (error) {
+            return {
+                message: error.message,
+                logs: store
+                    .getAllLogs()
+                    .filter((entry) => entry.message === "Root worker failed")
+                    .map((entry) => ({
+                        level: entry.level,
+                        meta: entry.meta[0]
+                    }))
+            };
+        } finally {
+            logger.dispose();
+        }
+    };
+    const missingUrl = new URL("./missing-worker-entry.js", import.meta.url)
+        .href;
+    const abortedUrl = new URL("./aborted-worker-entry.js", import.meta.url)
+        .href;
+    const unparsableUrl = new URL(
+        "./unparsable-worker-entry.js",
+        import.meta.url
+    ).href;
+    const changedUrl = new URL("./changed-worker-entry.js", import.meta.url)
+        .href;
+    const throwingUrl = URL.createObjectURL(
+        new Blob(['throw new Error("browser worker top-level throw");'], {
+            type: "text/javascript"
+        })
+    );
+    try {
+        return {
+            missingUrl,
+            missing: await failure(missingUrl),
+            abortedUrl,
+            aborted: await failure(abortedUrl),
+            unparsableUrl,
+            unparsable: await failure(unparsableUrl),
+            changedUrl,
+            changed: await failure(changedUrl),
+            throwingUrl,
+            throwing: await failure(throwingUrl)
+        };
+    } finally {
+        URL.revokeObjectURL(throwingUrl);
+    }
+};
+
+// The worker's upload jitter, pinned: an upload still in this wait is pending
+// when a disposal without the drain terminates the worker, so the marker is
+// lost. Far above the error-to-terminate time, far below the flush bound.
+const DRAIN_UPLOAD_JITTER_MS = 1_000;
+
+// A ready browser worker root writes one error-level line and is disposed at
+// once; its upload, still in its jitter wait, must reach the endpoint first.
+globalThis.runWorkerDrainBrowserSmoke = async (
+    uploadEndpoint,
+    channelId,
+    marker
+) => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { config } = await import("../../src/utils/config.ts");
+    const { LoggerProbeExecutorRoot } = await import(
+        "../fixtures/workerRoot/LoggerProbeExecutorRoot.ts"
+    );
+    const { applyCrashLogConfig } = await import(
+        "../fixtures/logging/crashLogConfig.ts"
+    );
+    const restoreConfig = applyCrashLogConfig({
+        CRASH_LOG_UPLOAD_ENDPOINT: uploadEndpoint
+    });
+    try {
+        const handle = await createRoot(LoggerProbeExecutorRoot, {
+            mode: "worker",
+            workerUrl: new URL(
+                "../fixtures/workerRoot/NamedLoggerProbeRootEntry.ts",
+                import.meta.url
+            ),
+            args: { customPrecompiles: [] }
+        });
+        let disposeMs;
+        try {
+            await handle.rpc.loggerProbe.updateContext({ channelId }).request();
+            await handle.rpc.loggerProbe
+                .pinUploadJitter(DRAIN_UPLOAD_JITTER_MS)
+                .request();
+            await handle.rpc.loggerProbe.error(marker).request();
+        } finally {
+            const startedAt = Date.now();
+            await handle.dispose();
+            disposeMs = Date.now() - startedAt;
+        }
+        return { disposeMs, flushMs: config.CRASH_LOG_FLUSH_MS };
+    } finally {
+        restoreConfig();
+    }
+};
+
+// A browser worker root whose script never starts a root stays not ready;
+// disposing its parent terminates it without the drain wait.
+globalThis.runNotReadyWorkerDisposalBrowserSmoke = async () => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { config } = await import("../../src/utils/config.ts");
+    const idleUrl = URL.createObjectURL(
+        new Blob([""], { type: "text/javascript" })
+    );
+    const parent = await createRoot(ContractExecutorRoot, {
+        args: { customPrecompiles: [] }
+    });
+    try {
+        const creation = createRoot(ContractExecutorRoot, {
+            parent,
+            mode: "worker",
+            workerUrl: idleUrl,
+            args: { customPrecompiles: [] }
+        }).then(
+            () => "ready",
+            (error) => error.message
+        );
+        const startedAt = Date.now();
+        await parent.dispose();
+        return {
+            disposeMs: Date.now() - startedAt,
+            flushMs: config.CRASH_LOG_FLUSH_MS,
+            creation: await creation
+        };
+    } finally {
+        URL.revokeObjectURL(idleUrl);
+    }
+};
+
+// The parent's flush bound for the drain-timeout case. The child keeps the
+// default bound it was bootstrapped with, and its upload waits far longer
+// than the parent's drain, so only the parent's bound can end the disposal.
+const DRAIN_TIMEOUT_FLUSH_MS = 500;
+const DRAIN_TIMEOUT_UPLOAD_JITTER_MS = 10_000;
+
+// A ready browser worker root whose upload outlasts the parent's drain bound:
+// the parent warns and terminates it at that bound. With
+// `warningWriteError`, the warning's log write throws that message; the page
+// returns it as reported uncaught.
+globalThis.runWorkerDrainTimeoutBrowserSmoke = async (
+    uploadEndpoint,
+    channelId,
+    warningWriteError
+) => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { LoggerProbeExecutorRoot } = await import(
+        "../fixtures/workerRoot/LoggerProbeExecutorRoot.ts"
+    );
+    const { applyCrashLogConfig } = await import(
+        "../fixtures/logging/crashLogConfig.ts"
+    );
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const restoreConfig = applyCrashLogConfig({
+        CRASH_LOG_UPLOAD_ENDPOINT: uploadEndpoint
+    });
+    const drainWarning =
+        "Root worker did not close within the log flush bound; terminating it";
+    const store = new LogStore(1024 * 1024, true);
+    if (warningWriteError !== undefined) {
+        const storeEntry = store.store.bind(store);
+        store.store = (entry) => {
+            if (entry.message === drainWarning)
+                throw new Error(warningWriteError);
+            storeEntry(entry);
+        };
+    }
+    const logger = new BrowserLogger(
+        {},
+        {},
+        "verbose",
+        store,
+        { attachErrorListener: false },
+        true
+    );
+    const reported = [];
+    const onReported = (event) => {
+        if (
+            warningWriteError === undefined ||
+            event.error?.message !== warningWriteError
+        )
+            return;
+        event.preventDefault();
+        reported.push(event.error.message);
+    };
+    globalThis.addEventListener("error", onReported);
+    try {
+        const handle = await createRoot(LoggerProbeExecutorRoot, {
+            mode: "worker",
+            workerUrl: new URL(
+                "../fixtures/workerRoot/NamedLoggerProbeRootEntry.ts",
+                import.meta.url
+            ),
+            args: { customPrecompiles: [] },
+            logger
+        });
+        let disposeMs;
+        let restoreFlush = () => {};
+        try {
+            await handle.rpc.loggerProbe.updateContext({ channelId }).request();
+            await handle.rpc.loggerProbe
+                .pinUploadJitter(DRAIN_TIMEOUT_UPLOAD_JITTER_MS)
+                .request();
+            await handle.rpc.loggerProbe
+                .error("browser worker drain timeout line")
+                .request();
+            restoreFlush = applyCrashLogConfig({
+                CRASH_LOG_FLUSH_MS: DRAIN_TIMEOUT_FLUSH_MS
+            });
+        } finally {
+            const startedAt = Date.now();
+            await handle.dispose();
+            disposeMs = Date.now() - startedAt;
+            restoreFlush();
+        }
+        return {
+            disposeMs,
+            flushMs: DRAIN_TIMEOUT_FLUSH_MS,
+            uploadJitterMs: DRAIN_TIMEOUT_UPLOAD_JITTER_MS,
+            warnings: store
+                .getAllLogs()
+                .filter((entry) => entry.message === drainWarning)
+                .map((entry) => ({ level: entry.level, meta: entry.meta[0] })),
+            reported
+        };
+    } finally {
+        globalThis.removeEventListener("error", onReported);
+        logger.dispose();
+        restoreConfig();
+    }
+};
+
+// A browser worker root that throws at top level, owned by a logger whose
+// failure line write throws: the root still fails, and the log call's error
+// is reported as uncaught.
+globalThis.runWorkerFailureLogThrowBrowserSmoke = async () => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const failureLogWriteError = "browser worker failure log write failed";
+    // The store is shared by the logger's children, the root's own logger too.
+    const store = new LogStore(1024 * 1024, true);
+    const storeEntry = store.store.bind(store);
+    store.store = (entry) => {
+        if (entry.message === "Root worker failed")
+            throw new Error(failureLogWriteError);
+        storeEntry(entry);
+    };
+    const logger = new BrowserLogger(
+        {},
+        {},
+        "verbose",
+        store,
+        { attachErrorListener: false },
+        true
+    );
+    const reported = [];
+    const onReported = (event) => {
+        if (event.error?.message !== failureLogWriteError) return;
+        event.preventDefault();
+        reported.push(event.error.message);
+    };
+    globalThis.addEventListener("error", onReported);
+    const throwingUrl = URL.createObjectURL(
+        new Blob(['throw new Error("browser worker top-level throw");'], {
+            type: "text/javascript"
+        })
+    );
+    try {
+        const message = await createRoot(ContractExecutorRoot, {
+            mode: "worker",
+            workerUrl: throwingUrl,
+            args: { customPrecompiles: [] },
+            logger
+        }).then(
+            async (handle) => {
+                await handle.dispose();
+                return "created";
+            },
+            (error) => error.message
+        );
+        return { message, reported, throwingUrl };
+    } finally {
+        globalThis.removeEventListener("error", onReported);
+        URL.revokeObjectURL(throwingUrl);
+        logger.dispose();
+    }
+};

@@ -19,13 +19,15 @@
 - [`REQ-TRUST-5-NDVRW8` (The design targets many SMALL channels, not large ones)](../../../specification/security/trust-model.md#req-trust-5-ndvrw8)
 - [`REQ-SDK-ARCH-7-H64K87` (Open connections are observable)](../../../specification/runtime/sdk.md#req-sdk-arch-7-h64k87)
 - [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+- [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../../../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
+- [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
 
 ## UNIT-TEST-P2P-MANAGER-1-9DNSRZ
 
 Dispatch and correlation
 
-- Setup: Send boundary, malformed, response, service, request, timeout, disconnect, foreign-peer, and transport-retirement inputs through one real runtime
-- Oracle: Exact ingress consequence; each request settles once and releases its registry entry and timer; authenticated-address routing applies only while the request transport remains live
+- Setup: Send boundary, malformed, response, service, request, timeout, disconnect, foreign-peer, and transport-retirement inputs through one real runtime; for the initial sync, hold one or two completed handshakes' participant checks past the initial deadline and end them as participant, not a participant, a rejected read, or on closed transports, and hold the initial sync request unanswered; answer the initial sync request with a still-syncing note from a participant whose own initial sync later succeeds, fails, or outlasts the deadline, with and without a second participant checked while that request runs
+- Oracle: Exact ingress consequence; each request settles once and releases its registry entry and timer; authenticated-address routing applies while any same-peer transport remains live; the initial deadline aborts only once no participant check or sync runs, and a settle cancels it; a still-syncing answer is no failure: no abort, no cut, the next sync goes at once to a participant checked meanwhile, the syncing participant is asked again after half a window, and its first such answer restarts the two-window deadline
 
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P1` — oversize disconnect
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P2` — response/timeout both orders
@@ -51,18 +53,30 @@ Dispatch and correlation
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P22` — exact-limit multibyte frame accepted and first byte over rejected
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P23` — disposal is idempotent
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P24` — throwing close still clears pending state and the connection while retaining peer identity
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P25` — retiring the original transport rejects its pending request
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P25` — retiring the original transport keeps its pending request pending on the replacement, whose reply settles it
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P26` — bulk penalty disconnects and blacklists every peer
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P27` — valid JSON with an invalid envelope disconnects
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P28` — no participant handshake within two agreement windows aborts the uncommitted observer and settles connect as `false`
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P29` — chain genesis before any participant handshake settles the observer connect `true` without a sync request
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P30` — a false sync result arriving after chain genesis synced the runtime is ignored: no abort, status stays `SYNCED`
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31` — abort while the initial wait is armed settles connect `false` once
-- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P32` — the initial deadline elapsing after chain genesis settled the wait leaves the observer `SYNCED`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P32` — chain genesis settling the wait cancels the initial deadline, and a deadline task that still runs after the settle leaves the observer `SYNCED`
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33` — a held sync response released as a success after the abort changes neither status nor disposal
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34` — a held sync response released as a failure after the abort changes neither status nor disposal
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35` — an abort while the discovery join is still in flight settles connect `false` before the join returns
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P36` — an abort during the opened-status chain read that precedes the join still answers the pending connect `false`, delivered before the runtime's disposal closes the port
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P37` — a completed handshake whose participant check is held past the initial deadline holds it: no abort and no sync request until the check answers; the participant answer starts the one sync request and connect settles `true` with the observer `SYNCED`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P38` — a held participant check that answers "not a participant" after the initial deadline elapsed starts no sync; the held deadline fires when the check ends: the observer aborts and connect settles `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P39` — a held participant check that rejects after the initial deadline elapsed logs each rejection at error level, reaches the top-level error handling, and the observer aborts with connect settling `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P40` — with two held participant checks, the first that ends without a sync leaves the deadline held and the observer `OPENED`; the observer aborts once the last ends, and connect settles `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P41` — held participant checks whose transports closed answer participant but start no sync; the last check's end aborts the observer, and connect settles `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P42` — the initial sync request carries the two-window default timeout; a participant that never answers fails it after two windows, not one, and connect settles `false`
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P43` — a participant whose answer is that it is still in its own initial sync is no failure: the observer does not abort or cut it, asks it again later, and settles connect `true` with the observer `SYNCED` once it serves
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P44` — a participant checked while the initial sync request runs starts no second request; when the asked participant answers it is still syncing, the next request goes to the waiting participant at once, before the re-ask, and the observer reaches `SYNCED` without striking or cutting the syncing one
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P45` — a participant that keeps answering it is still syncing does not hold the deadline: the observer aborts at its initial-sync deadline, adopts nothing, and does not cut that participant
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P46` — a still-syncing participant whose own initial sync then fails aborts and disconnects; a re-ask that reaches it fails, so the observer aborts at once, else at its deadline, adopting nothing
+- [ ] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47` — an initial sync request still running when the deadline ends holds it: no abort until the request answers, and the request keeps its own two-window timeout
+- [ ] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P48` — the first still-syncing answer from a participant restarts the two-window deadline; a later answer from the same participant does not
 
 ## UNIT-TEST-P2P-MANAGER-2-HR5HCB
 

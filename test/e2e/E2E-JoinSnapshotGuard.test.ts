@@ -1162,6 +1162,57 @@ describe("E2E: join snapshot guard", function () {
         expect(await countersignedByFirst()).to.equal(1);
     });
 
+    it("two synced spectators whose joins race on one table both end pending when the second's transaction is estimated before the first lands and mined after it: the mined refusal for the widened threshold set is collected again, countersigned by the first, and lands with no abort", async function () {
+        const h = TestSession.getHarness();
+        const first = await h.scenario.syncSpectator();
+        const { peer: second } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 16
+        });
+        await h.assert.sync.peersInSyncWait();
+        const secondSend = await h.rpcStub.holdFirstJoinSendAfterEstimate(
+            second.index
+        );
+        const countersignedByFirst = await countJoinSignatureRequests(h, [
+            first.index
+        ]);
+        const secondJoin = second.p2pInstance.p2pSigner.connectToChannel(
+            h.channelId!,
+            { shouldJoin: true }
+        );
+        // observed below; keeps a failure from being an unhandled rejection meanwhile
+        secondJoin.catch(() => undefined);
+        // the second's transaction is estimated against the founders alone
+        await secondSend.waitUntilHeld();
+
+        // the first lands pending and widens the threshold set
+        expect(
+            await first.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+                shouldJoin: true
+            })
+        ).to.equal(true);
+        expect(
+            await h.channelManager.getOnChainThresholdSet(h.channelId)
+        ).to.include(first.address);
+        // the second's transaction is mined after the first: a failed receipt
+        await secondSend.release();
+
+        expect(await secondJoin).to.equal(true);
+        expect(await countersignedByFirst()).to.equal(1);
+        const pending = await h.channelManager.getPendingParticipants(
+            h.channelId
+        );
+        for (const joiner of [first, second]) {
+            expect(pending).to.include(joiner.address);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(joiner.eventSpies.onAbort?.called ?? false).to.equal(false);
+            expect(joiner.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(0);
+        }
+    });
+
     it("a join refused twice for threshold sets that two joins landing one after another widened is collected again each time and lands on its third submission: each fresh collection asks the newly landed joiners, and no abort", async function () {
         const h = TestSession.getHarness();
         const race = await raceJoinPastTwoLandingJoins(h);

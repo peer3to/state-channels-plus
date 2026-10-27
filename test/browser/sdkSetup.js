@@ -320,9 +320,13 @@ export async function createBrowserSdkExecutor(options = {}) {
                         if (options.dependencies?.workerUrl) {
                             globalThis.Worker = class extends NativeWorker {
                                 constructor(url, workerOptions) {
+                                    // The worker runtime spawns from the absolute URL.
                                     const isExecutor =
-                                        String(url) ===
-                                        String(executorWorkerUrl);
+                                        new URL(url, location.href).href ===
+                                        new URL(
+                                            executorWorkerUrl,
+                                            location.href
+                                        ).href;
                                     super(
                                         isExecutor
                                             ? options.dependencies.workerUrl

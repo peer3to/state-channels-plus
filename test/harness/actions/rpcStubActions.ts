@@ -31,11 +31,18 @@ import type {
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
     SnapshotPostHoldPoint,
+    SpectateSyncSettle,
     StopDuringAssemblyRecord,
     FailedRestoreRecord
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
+
+/** A held join send: wait until it is held, then let it broadcast. */
+export type JoinSendHold = {
+    waitUntilHeld: () => Promise<void>;
+    release: () => Promise<void>;
+};
 
 /** Client handle on one peer's evidence-comparison recorder. */
 export type EvidenceComparisonRecording = {
@@ -66,6 +73,8 @@ export type StateMutexHold = {
 /** Client handle on one peer's held timer tasks. */
 export type HeldScheduledTasks = {
     heldCount: () => Promise<number>;
+    /** Held tasks their owner cancelled; a cancelled task stays held. */
+    cancelledCount: () => Promise<number>;
     release: (runHeld: boolean) => Promise<void>;
     /** Release and run every held task to completion: count and errors. */
     runHeld: () => Promise<{ ran: number; errors: string[] }>;
@@ -143,6 +152,10 @@ export class RpcStubActions<
         return {
             heldCount: async () =>
                 await ctl().getHeldScheduledTaskCount(prefix).request(),
+            cancelledCount: async () =>
+                await ctl()
+                    .getCancelledHeldScheduledTaskCount(prefix)
+                    .request(),
             release: async (runHeld: boolean) => {
                 await ctl()
                     .restoreHeldScheduledTasks(prefix, runHeld)
@@ -413,6 +426,30 @@ export class RpcStubActions<
                 .control(peer)
                 .stub.releaseMembershipReceipt()
                 .request();
+    }
+
+    /**
+     * Holds the peer's first join send between its gas estimate and its
+     * broadcast. Returns a wait until the send is held, and its release.
+     */
+    async holdFirstJoinSendAfterEstimate(
+        peerIndex: number
+    ): Promise<JoinSendHold> {
+        const stub = this.peerStub(peerIndex);
+        await stub.holdFirstJoinSendAfterEstimate().request();
+        return {
+            waitUntilHeld: () =>
+                waitFor(
+                    async () =>
+                        (await stub
+                            .getHeldJoinSendAfterEstimateCount()
+                            .request()) > 0,
+                    this.harness.event.protocolEventTimeoutMs()
+                ),
+            release: async () => {
+                await stub.releaseJoinSendAfterEstimate().request();
+            }
+        };
     }
 
     /** Lets the peer's held membership submissions run and keeps holding later ones. */
@@ -1582,18 +1619,23 @@ export class RpcStubActions<
     }
 
     /**
-     * Count `spectateService.sync` requests on the peer; `forward: false`
+     * Record the peer's `spectateService.requestSync` calls; `forward: false`
      * records without running the real sync (keeps the sync-failure
-     * punishment path quiet during staging). Returns a teardown.
+     * punishment path quiet during staging). With `holdResults`, each
+     * forwarded result is parked after its settle is recorded, until the
+     * returned restore runs.
      */
     async recordSpectateSync(
         peerIndex: number,
-        options: { forward: boolean }
+        options: { forward: boolean; holdResults?: boolean }
     ): Promise<() => Promise<void>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.stubRecordSpectateSync(options.forward)
+            .stub.stubRecordSpectateSync(
+                options.forward,
+                options.holdResults ?? false
+            )
             .request();
         return async () => {
             await this.harness
@@ -1707,6 +1749,16 @@ export class RpcStubActions<
         await this.harness
             .control(this.harness.getPeer(peerIndex))
             .stub.setPeerStatus(status)
+            .request();
+    }
+
+    /** Forwarded syncs of the recorder that settled, timed in the peer's runtime. */
+    async spectateSyncSettles(
+        peerIndex: number
+    ): Promise<SpectateSyncSettle[]> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getSpectateSyncSettles()
             .request();
     }
 

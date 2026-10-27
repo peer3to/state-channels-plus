@@ -7,6 +7,8 @@
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../../../../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
+    - `tryHandleEvmError`: a join or top-up mined after another join landed reverts with no revert data; its replay names the refusal (the join service handles every contract error name), and a replay that passes resubmits it.
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF
 

@@ -35,9 +35,13 @@ export type LogUploaderConfig = {
     jitterMaxMs?: number;
 };
 
+const BUSY_UPLOADERS_KEY: unique symbol = Symbol.for("peer3.busyLogUploaders");
+
 export abstract class LogUploader {
-    /** This realm's uploaders with an upload running or queued, so a thread that ends finds them. */
-    private static readonly busyUploaders = new Set<LogUploader>();
+    /** This realm's uploaders with an upload running or queued; one set for every copy of this module. */
+    private static readonly busyUploaders: Set<LogUploader> = ((
+        globalThis as { [BUSY_UPLOADERS_KEY]?: Set<LogUploader> }
+    )[BUSY_UPLOADERS_KEY] ??= new Set());
 
     /** Aborted once its thread ended: every upload of this uploader, a queued one too, ends at once. */
     private readonly cancel = new AbortController();

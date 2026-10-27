@@ -16,6 +16,7 @@ import {
     expectSyncPayloadAboveRequestedHeightWhileAhead,
     stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
     assertSpectatorRejectedWork
@@ -183,7 +184,7 @@ describe("E2E: Spectate Service", function () {
                     channelId: harness.channelId!.toString()
                 })
                 .request(peer1.address);
-            expect(response.encodedSyncPayload).to.be.a("string");
+            expect(servedSyncPayload(response)).to.be.a("string");
         });
     });
 

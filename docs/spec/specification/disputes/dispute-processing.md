@@ -428,6 +428,10 @@ node's own evidence out of the window. A lost evidence race is a no-op, so the n
 evidence already committed; whether it should do more (for example when a kill emptied the window
 after the evidence end) is open in [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../open-questions.md#oq-spec-evidence-race-1-tknwbj).
 
+A spectator that never executed the reduced latest block has no state snapshot for it, and its reduction
+computation fails; whether it should instead return no result is open in
+[`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](../open-questions.md#oq-spec-reduce-spectator-1-1ywdc5).
+
 ## Verification and test plan
 
 ### Requirement test matrix

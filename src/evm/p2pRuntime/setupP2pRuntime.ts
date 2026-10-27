@@ -23,6 +23,10 @@ import { createConfig } from "@/utils/config";
 import type { Config } from "@/utils/config";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { StepTimer } from "@/utils/StepTimer";
+import {
+    getRuntimeEnvironment,
+    getThreadResources
+} from "@/utils/threadResources";
 import type {
     StateChannelManagerInterface,
     AStateMachine as AStateMachineContract
@@ -226,6 +230,11 @@ export async function setupP2pRuntime<
             .request();
         steps.mark("runtimeBuild");
         steps.log(logger, "Runtime setup steps");
+        // What a browser limits per process, and the device it runs on.
+        logger.debug("Runtime resources", {
+            resources: getThreadResources(),
+            environment: getRuntimeEnvironment()
+        });
         // On the main thread the surfaced WebRTC bridge port has no further
         // worker nesting to bubble up to, so wire it to the local
         // RTCPeerConnection here; inside a worker it stays on

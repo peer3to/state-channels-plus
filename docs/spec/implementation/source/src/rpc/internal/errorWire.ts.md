@@ -21,3 +21,4 @@ Fail-safe codec
 - [x] `UNIT-TEST-ERROR-WIRE-1-ZWGJ00.P4` — restores nested info.error.data as a decodable revert
 - [x] `UNIT-TEST-ERROR-WIRE-1-ZWGJ00.P5` — restores VM return bytes as a decodable revert
 - [x] `UNIT-TEST-ERROR-WIRE-1-ZWGJ00.P6` — preserves the custom error name and originating peer
+- [x] `UNIT-TEST-ERROR-WIRE-1-ZWGJ00.P7` — a WebAssembly failure's `wasmDiagnostics`, taken when it is first serialized, survive `deserializeError`, and a second serialization keeps them instead of taking new ones

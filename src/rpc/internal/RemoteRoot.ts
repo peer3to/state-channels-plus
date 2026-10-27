@@ -3,6 +3,10 @@ import type { SerializedError } from "./errorWire";
 import type InternalTransport from "@/transport/InternalTransport";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { SharedLoggerContext } from "@/utils/logging/Logger";
+import {
+    getErrorWasmDiagnostics,
+    getThreadResources
+} from "@/utils/threadResources";
 
 export function childDisposedError(): Error {
     return new Error("Runtime child disposed");
@@ -51,6 +55,10 @@ export class RemoteRoot<T extends AInternalRpcRoot> {
                     "Worker failed with pending requests",
                     {
                         error,
+                        // Taken in the failed worker, for a WebAssembly failure.
+                        wasm: getErrorWasmDiagnostics(error),
+                        // This thread's workers and WebAssembly.
+                        resources: getThreadResources(),
                         pendingRequests: pending.map(({ rpc, startedAtMs }) =>
                             LoggerUtils.getRpcRequestMetadata(rpc, startedAtMs)
                         )

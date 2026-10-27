@@ -1,8 +1,11 @@
-import SpectateService, { type SyncRequest } from "./SpectateService";
+import SpectateService, {
+    type SpectateResponse,
+    type SyncRequest
+} from "./SpectateService";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { NetworkTransport } from "@/transport";
-import { Bytes, Status } from "@/types";
+import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 
 class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
@@ -17,12 +20,13 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
      * missing peer address, or a target we can't prove (bad/above-latest height,
      * unknown fork), disconnects and blacklists the requester and throws, so its
      * `.request(...)` rejects and it blacklists us in turn. A responder whose
-     * initial sync is in flight (OPENED) answers once it settles; a failed
-     * initial sync fails the request (the responder aborts on its own).
+     * own initial sync has not finished (OPENED) answers `isResponderSyncing`
+     * at once: it has no state to prove yet, and the requester syncs from
+     * another peer.
      */
     public async onSpectateRequest(
         syncRequest: SyncRequest
-    ): Promise<{ encodedSyncPayload: Bytes }> {
+    ): Promise<SpectateResponse> {
         const senderTransport = this.senderTransport;
         const peerAddress = senderTransport.peerAddress;
         if (!peerAddress) {
@@ -35,12 +39,11 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
             );
             throw new Error("onSpectateRequest - missing peer address");
         }
-        const p2pManager = this.service.p2pManager;
-        if (
-            p2pManager.stateManager.status === Status.OPENED &&
-            !(await p2pManager.isInitialSyncSuccessfulWait())
-        ) {
-            throw new Error("onSpectateRequest - own initial sync failed");
+        if (this.service.p2pManager.stateManager.status === Status.OPENED) {
+            this.service.logger.debug(
+                "onSpectateRequest - own initial sync not finished"
+            );
+            return { isResponderSyncing: true };
         }
         // Generate payload to prove the latest possible snapshot
         // (but don't send it on-chain - send it to the spectator)

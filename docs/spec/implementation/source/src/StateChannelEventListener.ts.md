@@ -40,3 +40,4 @@ Mode-specific channel-listener ownership
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P21` — a clear that runs while a select still removes the previous subscription wins: the late select subscribes nothing
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P22` — a select that starts while an older select is still removing live subscriptions wins; the older select subscribes nothing
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P23` — a select started while a clear is still removing live subscriptions keeps its key and subscription
+- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P24` — after stop no log is dispatched, also one a recovery query still running delivers late, so no dispatch needs a dependency the disposal closes next

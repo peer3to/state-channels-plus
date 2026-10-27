@@ -55,17 +55,17 @@ class Holepunch {
 
     //Mark resources for garbage collection
     public async dispose() {
-        // First: destroying the swarm closes the relay socket.
         this.relay?.dispose();
         this.leaveTopics();
         this.swarm?.off("update", this.onSwarmUpdate);
-        if (typeof this.swarm?.destroy === "function") {
-            await Promise.resolve(this.swarm.destroy());
-            return;
-        }
-        if (typeof this.swarm?.close === "function") {
-            await Promise.resolve(this.swarm.close());
-        }
+        const teardown = Promise.resolve(
+            typeof this.swarm?.destroy === "function"
+                ? this.swarm.destroy()
+                : this.swarm?.close?.()
+        );
+        // Browser: the relay is closed, so the teardown never gets its replies.
+        if (this.relay) void teardown.catch(() => undefined);
+        else await teardown;
     }
     public async join(topic: Buffer) {
         this.ensureNodeSwarm();

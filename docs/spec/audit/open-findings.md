@@ -68,23 +68,57 @@ the relay node unannounces without them) or a Hyperswarm change; engineer decisi
 
 ### FIND-SYNC-OBSERVER-1-YF6CJA
 
-**Current defect:** _Resolved (2026-10-12)._ An observer whose first completed handshake on a
+**Current defect:** _Resolved (2026-10-12; fix replaced 2026-10-26)._ An observer whose first completed handshake on a
 channel topic is a participant that is still syncing itself aborts:
 `P2PManager.onHandshakeCompleted` starts the initial sync with the first peer that the chain lists
 as a participant, that peer's `SpectateService` answers "No genesis snapshot found for fork", and
 `syncConnectedParticipant` aborts the runtime. Seen in the local-relay browser gate with three peers
 connecting at once. Relates to
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
-Fix: a responder whose own initial sync is in flight answers once that sync settles and fails the
-request when it fails
-([`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1));
+Fix: a responder whose own initial sync is in flight answers at once that it is not synced yet, and
+the requester does not count that as a failed sync: it syncs from another participant instead, asks
+the syncing one again, and aborts only when no participant serves before its initial-sync deadline. A
+real sync failure still aborts at once
+([`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1),
+[`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag));
 tested by
-[`REQ-SPC-3-AZBKR1.T1.P2`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p2)
+[`REQ-SPC-3-AZBKR1.T1.P4`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p4),
+[`REQ-SPC-3-AZBKR1.T1.P5`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p5),
+[`REQ-SPC-3-AZBKR1.T1.P6`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p6),
+[`REQ-AUTH-5-BQG9AG.T3.P5`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag.t3.p5)
 and
-[`REQ-SPC-3-AZBKR1.T1.P3`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p3).
+[`REQ-AUTH-5-BQG9AG.T3.P6`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag.t3.p6).
 
-**Disposition:** Resolved by the engineer's decision that a responder delays its answer until it is
-synced itself; the requester's selection and no-retry rule stay.
+**Disposition:** Resolved by the engineer's decision (2026-10-26, option a): a peer still in its own
+initial sync answers a sync request at once with "not synced yet" and does not wait; the requester
+syncs from another table member. This replaces the 2026-10-12 decision that a responder delays its
+answer until it is synced itself: a requester that asked such a responder timed out and aborted.
+
+## WebRTC link loss after upgrade
+
+<a id="find-upg-drop-1-ety2ps"></a>
+
+### FIND-UPG-DROP-1-ETY2PS
+
+**Current defect:** After a Holepunch → WebRTC upgrade, the SDK retires the Holepunch transport once
+the upgrade grace period ends (one agreement window, 4 s in that deployment) and keeps no fallback. A
+WebRTC link that drops later (its UDP path is lost) is detected by ICE consent checks only after several
+seconds. During that time the data channel's `readyState` stays `open` and sends are lost, so the link
+swallows requests and replies until ICE reports `disconnected`. Seen between a Mac and an Android phone
+on one LAN: every new link dropped 2–10 s after it opened. Two threshold members' join-signature replies
+were lost this way, and the join failed (the join outcome is now an abort, not a fatal error; see the
+"First-join collection failure aborts instead of escaping" entry in
+[implementation.md](implementation.md)). The Holepunch fallback is banned while the WebRTC
+transport is current and comes back only after it closes
+([`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba),
+[`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)), so
+a silent link has no fallback until ICE reports it; requests sent meanwhile settle only by timeout
+([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../specification/peer-communication/rpc.md#req-rpc-2-szdttm)). The root cause of
+the drops is not proven; it needs a `chrome://webrtc-internals` capture of a dropping link.
+
+**Status:** Open. Engineer decision (Luka, 2026-10-26): record it. Directions, none chosen: (1) keep
+Holepunch longer after the upgrade; (2) fall back to Holepunch when a WebRTC link drops; (3) a keepalive
+that detects a silent link sooner than ICE consent.
 
 ## Runtime host worker teardown
 
@@ -107,6 +141,35 @@ not removed and now ends at the drain bound with a warning.
 **Status:** Open; medium. Fix implemented, tests pending the lead's gate; recheck the bots for a
 drain warning naming the remaining timer.
 
+## Browser WebAssembly failures
+
+<a id="find-runtime-3-nwsn74"></a>
+
+### FIND-RUNTIME-3-NWSN74
+
+**Defect:** _Open (2026-10-26)._ Observed on a phone: a poker page stopped fatally with
+`RuntimeError: unreachable` in the prover's WebAssembly `__wbindgen_malloc`: an allocation in the
+prover's memory failed and the Rust code trapped. The root cause is not proven. The likely cause is
+WebAssembly address space or memory of the browser process: a 64-bit browser reserves about 10 GiB
+of address space for each 32-bit WebAssembly memory, from one pool for the whole renderer process,
+and a 32-bit browser must move a memory to grow it. Real memory pressure on the device and a defect
+in the prover are not ruled out.
+
+The SDK now records what it can
+([threadResources.ts](../implementation/source/src/utils/threadResources.ts.md)): a WebAssembly
+failure carries `wasmDiagnostics` (the thread's live and created instance and memory counts, its
+workers, its JavaScript heap, a one-time memory probe, and the device from client hints), taken in
+the thread that failed and kept across worker hops. These facts have limits: the counts are the
+failing thread's only, never the process total, and other threads and other tabs in the same
+renderer process share the pool unseen; the probe runs once per thread, after the failed
+allocation, and does not repeat that allocation, so a working probe does not rule out an
+out-of-memory failure. Relates to [`REQ-RUN-14-YAHYR4` (Mid-range mobile browser envelope)](../specification/runtime/execution.md#req-run-14-yahyr4)
+and [`OQ-38-EY27T5` (Runtime budgets, scheduling determinism, and test isolation)](../specification/open-questions.md#oq-38-ey27t5).
+
+**Disposition:** Open. Luka decided on 2026-10-26: add these diagnostics only; no change to the slot
+count, self-matching, or the number of instances. Exit: read the diagnostics of the next
+recurrence across all threads in its uploaded logs, then decide the fix.
+
 ## Distributed test runner pool
 
 <a id="find-runner-pool-1-yk1ep9"></a>
@@ -127,6 +190,20 @@ Why the worker did not answer stays unexplained.
 
 **Status:** Open; low, for the unexplained missing `AUTH_CHALLENGE` only. Engineer decision (Luka,
 2026-10-12): left for now; recheck if it recurs on same-version workers.
+
+## Test harness controls
+
+<a id="find-harness-hold-1-9b480c"></a>
+
+### FIND-HARNESS-HOLD-1-9B480C
+
+**Current defect:** The join-signature hold control (`holdJoinSignatureResponses` in the stub
+harness service) is not released when the harness disposes. A test that holds a responder's answers
+and fails before its own release leaves that responder's join-signature handler wrapped and its held
+requests pending. The tests that use it release it in `finally`.
+
+**Status:** Open; low, test harness only. Direction: release every held join-signature answer and
+restore the real handler on harness disposal.
 
 ## Turn notifications during synchronization
 
@@ -764,7 +841,7 @@ error.
 genesis/state now retains one initial-load request per authenticated address behind
 `DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses
 the ordinary payload path. A duplicate from that address is rejected without replacing the first.
-Exact block/fork recovery remains a separate one-window already-synced request and an unprovable
+Exact block/fork recovery remains a separate already-synced request with the same two-window default and an unprovable
 target keeps the existing punishment rule. _Scope note (2026-09-02):_ the lobby accepted-lease
 exclusion approved under
 [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
@@ -883,6 +960,28 @@ disputed-fork refusal and was left out of that change. Code-traced, not executed
 awaiting settlement, like the authored exit fallback, and rewrite
 [`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
 and `CX6QH9.P14` with it.
+
+<a id="find-leave-5-a1xaa4"></a>
+
+### FIND-LEAVE-5-A1XAA4
+
+**Defect:** _Open (2026-10-26), low priority (Luka's decision: record only)._ The leave watchdog can
+start a self-removal dispute after the exit already landed. When the remaining participants post
+the exit snapshot (it drops the leaver) at about the time the watchdog fires,
+`LeaveChannelService.onWatchdog` (src/stateManager/membership/LeaveChannelService.ts) starts the
+dispute before the membership check queued by that snapshot finished. The dispute builds a proof at
+the leaver's tip, which is now below the local diamond anchor the snapshot moved, so
+`AgreementManager.buildStateProof` throws "Cannot build a state proof … below its anchor". The
+watchdog's detached promise makes that a fatal error, although the leave then settles normally
+("Left the channel"). Seen twice in the unit test "U72: a leaver whose exit the remaining
+participants post while it sees no further block settles the leave, and the leave watchdog starts
+no self-removal dispute" (2026-10-10 and 2026-10-26; it passed in the other recorded runs). That
+test also measures the 15 s watchdog budget from after its staging, while the watchdog is armed
+inside staging at `leaveChannel()`.
+
+**Proposed direction:** `onWatchdog` first waits for the pending membership checks and re-reads the
+exit; a landed exit returns with no dispute. Fix the test budget to start at `leaveChannel()`, or
+hold the watchdog and assert it does nothing once the leave settled. Until then the test runs with a 30 s watchdog (Luka's decision, 2026-10-27), so it does not fire as the exit lands.
 
 <a id="find-leave-2-yvr0tt"></a>
 
@@ -1678,6 +1777,27 @@ previous anchor while the server's local diamond holds the newer one: the sync i
 retried, not rejected. Likewise for a window: the requester's provider lags the responder's dispute
 commit, and the sync is retried or accepted, not rejected.
 
+<a id="find-sync-7-sht5k7"></a>
+
+### FIND-SYNC-7-SHT5K7
+
+**Defect:** Open (2026-10-26), revisit later (Luka). The sync requester can blacklist an honest
+responder whose proof met the requested height when it was served. `applySyncResponse` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+rejects a valid proof that ends below the requester's own finalized point ("proof ends below the
+finalized state", step 2.9) and blacklists the responder through `rejectSync`. That point is read when
+the answer is verified, not when the request was sent. When the requester's own finalized point moves
+past the proof while the answer travels and is verified, the honest responder is cut. The check runs
+before `persistSyncPayload` reaches the path that keeps the local state with no verdict because the
+local state already holds the installed point or a later one. The two-agreement-window default of
+`SpectateService.sync` gives a late answer more time to arrive, so this case is reached more often.
+Same class as the stale-response case of
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s);
+related: [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
+Code-traced, not executed.
+
+**Disposition:** Recorded as an open finding; not addressed now. No fix is selected.
+
 <a id="find-stipend-1-9ysnwb"></a>
 
 ### FIND-STIPEND-1-9YSNWB
@@ -2071,8 +2191,74 @@ every waiting request
 ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3),
 [MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)).
 
-**Proposed direction:** None for now. A time limit on waiting requests is a separate design
-decision.
+This also holds for the application chain access the SDK now exports (`createRpcNodesProvider`,
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)): after its
+start it never throws because every endpoint is down; a request waits. Luka's rule (shared poker client
+manager plan, 2026-10-26): every component uses the SDK's provider; the provider decides when to throw,
+and no caller handles provider failures at its call sites; once the provider throws, the failure is
+fatal for the caller. So a full outage is not reported to the application while it lasts.
+
+**Proposed direction:** None for now; revisit later. A time limit on waiting requests, after which the
+provider throws, is a separate design decision.
+
+<a id="find-rpc-4-7h2r11"></a>
+
+### FIND-RPC-4-7H2R11
+
+**Defect:** Known limit (2026-10-26). A contract-log subscription on the application chain access
+([`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8),
+[MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)) relays only what the node sockets deliver live. `RpcNodesLogSubscriber`
+subscribes again on a reopened socket but does not read the logs that node missed while it was
+disconnected. A log emitted while every node was disconnected is never delivered. The runtime's own
+event pipeline has the re-read ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)); this subscription
+does not.
+
+**Disposition:** Recorded, not addressed now; revisit later (Luka, 2026-10-26).
+
+<a id="find-rpc-5-g4wnx5"></a>
+
+### FIND-RPC-5-G4WNX5
+
+**Defect:** Open (2026-10-26). A node that answers `eth_subscribe` with an error on a live socket
+leaves an unhandled rejection: ethers does not handle that answer, and `NodeSocket.send`
+([RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)) settles only an `eth_subscribe` answer that the socket's destroy
+cancelled (that one never settles). No test answers `eth_subscribe` with an error on a live socket.
+Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
+
+**Disposition:** Recorded, not addressed now; revisit later.
+
+<a id="find-rpc-6-cz4gcv"></a>
+
+### FIND-RPC-6-CZ4GCV
+
+**Defect:** Known limit (2026-10-26). `on(filter)` on the application chain access never delivers a
+reorganization removal: `RpcNodesLogSubscriber` relays every socket log as a new log, keyed by block
+hash and log index, and a removed log is not reported as removed. An application that applies logs
+keeps the effect of a log the chain removed. The runtime's own pipeline logs and ignores removals
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)).
+Relates to [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
+
+**Disposition:** Recorded, not addressed now; revisit later.
+
+<a id="find-rpc-7-8jdkbk"></a>
+
+### FIND-RPC-7-8JDKBK
+
+**Defect:** _Resolved (2026-10-26)._ When a peer retired its old transport after a transport upgrade,
+the remote side saw the socket close as unexpected: `NetworkTransport.afterClose` fired
+`onDisconnection` (`isExpected=false`) for the peer address
+([NetworkTransport.ts](../implementation/source/src/transport/NetworkTransport.ts.md)), although the
+peer was still connected over the new transport of the same identity. An application hook that
+treated `onDisconnection` as the peer leaving acted on a peer that did not leave. Now `afterClose`
+fires `onDisconnection` for an unexpected close only when the peer has no other live transport
+(`isPeerStillConnected`); the unexpected close of the last live transport still reports one. Relates
+to [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7).
+
+**Disposition:** Resolved by Luka's decision to fix it now (2026-10-26). Test: `reports no
+disconnection when the remote retires the original transport while the replacement stays live, and
+one when the last transport closes`
+([`UNIT-TEST-ATRANSPORT-1-7DGX9R.P13`](../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r),
+[`REQ-UPG-2-WH7BC7.T1.P6`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7.t1.p6)).
 
 <a id="find-integrator-1-5mf8n9"></a>
 

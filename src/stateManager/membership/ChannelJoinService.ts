@@ -1,6 +1,7 @@
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
+import { JoinCollectionError } from "@/rpc/network/services/joinChannel/JoinCollectionError";
 import type StateManager from "@/stateManager/StateManager";
 import type { JoinRecord, JoinUpdate } from "@/storage/ForceJoinStorage";
 import { Status, timeoutWaitTime } from "@/types";
@@ -9,15 +10,19 @@ import type { BlockHeight, ForkId, Hash } from "@/types/types";
 import { Codec, DetachedPromises, Logger, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import {
+    CONTRACT_ERROR_NAMES,
     type CustomEvmError,
+    type EvmErrorHandlers,
     isProvenSubmissionFailure,
-    tryDecodeCustomError
+    tryDecodeCustomError,
+    tryHandleEvmError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type {
     BalanceStruct,
     JoinChannelConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { ContractTransactionResponse } from "ethers";
 
 /** A join or top-up submission the chain proved failed (see `isProvenSubmissionFailure`). */
 type SubmissionRefusal = { error: unknown; custom: CustomEvmError | null };
@@ -89,6 +94,8 @@ export default class ChannelJoinService {
      * `joinChannel`. A channel already full is neither collected for nor
      * submitted to. A full channel, found here or refused by the chain,
      * aborts the runtime, or leaves it SYNCED with `shouldSpectateWhenFull`.
+     * A confirmation the network does not give (`JoinCollectionError`)
+     * aborts the runtime with nothing submitted; any other failure rejects.
      * A call while a join runs gets that join's promise.
      */
     public collectAndJoinChannel(
@@ -100,13 +107,30 @@ export default class ChannelJoinService {
                 this.onChannelFull(shouldSpectateWhenFull);
                 return false;
             }
-            return this.runJoin(
-                await this.stateManager.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
-                    balance
-                ),
-                shouldSpectateWhenFull
-            );
+            const prepared = await this.collectConfirmation(balance);
+            if (!prepared) {
+                // nothing was submitted, so the caller stays uncommitted
+                this.stateManager.abort();
+                return false;
+            }
+            return this.runJoin(prepared, shouldSpectateWhenFull);
         });
+    }
+
+    /**
+     * Collects a top-up confirmation for `balance` and submits it like
+     * `topUpBalance`. A confirmation the network does not give
+     * (`JoinCollectionError`) fails the top-up with nothing submitted and
+     * keeps the participation; any other failure rejects.
+     */
+    public async collectAndTopUp(balance: BalanceStruct): Promise<boolean> {
+        const prepared = await this.collectConfirmation(balance);
+        if (!prepared) return false;
+        return this.topUpBalance(
+            prepared.confirmation,
+            prepared.expectedSnapshotHash,
+            prepared.expectedForkId
+        );
     }
 
     /** Submits a prepared top-up, retried like a join; a failed top-up keeps the participation. */
@@ -266,8 +290,9 @@ export default class ChannelJoinService {
         this.logger.info("Submitting the join", {
             submissionHeight: join.submissionHeight
         });
+        let tx: ContractTransactionResponse | undefined;
         try {
-            const tx = await sm.stateChannelManagerContract.joinChannel(
+            tx = await sm.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash,
                 expectedForkId
@@ -275,9 +300,11 @@ export default class ChannelJoinService {
             await tx.wait();
             return "submitted";
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
+            const outcome = await this.readOutcome(error, tx);
             if (
-                custom?.name === "ErrorJoinChannelParticipantAlreadyExists" &&
+                typeof outcome === "object" &&
+                outcome.custom?.name ===
+                    "ErrorJoinChannelParticipantAlreadyExists" &&
                 this.isCurrent(join)
             ) {
                 this.logger.warn(
@@ -285,8 +312,7 @@ export default class ChannelJoinService {
                 );
                 return "submitted";
             }
-            if (isProvenSubmissionFailure(error, custom))
-                return { error, custom };
+            if (outcome !== "uncertain") return outcome;
             if (await sm.membershipService.isSignerOnChain()) {
                 this.logger.warn(
                     "joinChannel - submission outcome uncertain but the chain lists the signer"
@@ -306,8 +332,9 @@ export default class ChannelJoinService {
         expectedSnapshotHash,
         expectedForkId
     }: PreparedJoinChannelConfirmation): Promise<SubmissionOutcome> {
+        let tx: ContractTransactionResponse | undefined;
         try {
-            const tx =
+            tx =
                 await this.stateManager.stateChannelManagerContract.topUpBalance(
                     confirmation,
                     expectedSnapshotHash,
@@ -316,11 +343,38 @@ export default class ChannelJoinService {
             await tx.wait();
             return "submitted";
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            return isProvenSubmissionFailure(error, custom)
-                ? { error, custom }
-                : "uncertain";
+            return this.readOutcome(error, tx);
         }
+    }
+
+    /**
+     * A failed join or top-up. One mined after another join landed reverts with
+     * no revert data: tryHandleEvmError replays it and names the refusal, or
+     * resubmits it when the replay passes.
+     */
+    private async readOutcome(
+        error: unknown,
+        tx: ContractTransactionResponse | undefined
+    ): Promise<SubmissionOutcome> {
+        const decoded = tryDecodeCustomError(error);
+        // Replay only a mined failure; an unmined one may still land.
+        if (!isProvenSubmissionFailure(error, decoded)) return "uncertain";
+        if (decoded || !tx) return { error, custom: decoded };
+        let refusal: CustomEvmError | null = null;
+        const handlers: EvmErrorHandlers = {};
+        for (const name of CONTRACT_ERROR_NAMES)
+            handlers[name] = (custom) => {
+                refusal = custom;
+            };
+        const isHandled = await tryHandleEvmError(error, {
+            tx,
+            signer: this.stateManager.signer,
+            logger: this.logger,
+            handlers
+        });
+        // handled without a refusal: its resubmission landed
+        if (isHandled && !refusal) return "submitted";
+        return { error, custom: refusal };
     }
 
     /**
@@ -438,14 +492,25 @@ export default class ChannelJoinService {
             String(confirmation.signedJoinChannel.encodedJoinChannel),
             Type.JoinChannel
         );
+        return this.collectConfirmation(balance);
+    }
+
+    /**
+     * A confirmation for `balance`; undefined when the network does not give
+     * one (`JoinCollectionError`). Any other failure rejects.
+     */
+    private async collectConfirmation(
+        balance: BalanceStruct
+    ): Promise<PreparedJoinChannelConfirmation | undefined> {
         try {
             return await this.stateManager.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                 balance
             );
         } catch (error) {
+            if (!(error instanceof JoinCollectionError)) throw error;
             this.logger.warn(
-                "The fresh confirmation for the retry could not be collected; the call fails without a further submission",
-                { error: errorMessage(error) }
+                "The join confirmation could not be collected; nothing is submitted",
+                { failures: error.failures }
             );
             return undefined;
         }

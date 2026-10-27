@@ -396,14 +396,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         if (isCommittedParticipantStatus(stateManager.status)) {
             if (openedGenesis) return true;
             if (!options.balance) return true;
-            const prepared =
-                await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
-                    options.balance
-                );
-            return stateManager.channelJoinService.topUpBalance(
-                prepared.confirmation,
-                prepared.expectedSnapshotHash,
-                prepared.expectedForkId
+            return stateManager.channelJoinService.collectAndTopUp(
+                options.balance
             );
         }
         if (stateManager.status !== Status.SYNCED) return false;

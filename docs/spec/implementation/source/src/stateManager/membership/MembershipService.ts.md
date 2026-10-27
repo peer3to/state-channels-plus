@@ -10,14 +10,15 @@
 - [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../../../../../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
+- [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../../../../../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
 ## UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF
 
 Source eligibility and membership facts
 
-- Setup: Hold, fail or race the pinned chain membership read and its log recovery; deliver join events, slashes and snapshots; read membership for real and absent sources. For consolidation, exercise the membership owner and the join-observation, snapshot-departure and expiry/drop caller boundaries with a real signer locally pending, pending only on chain, seated only on chain, or absent from both chain sets
-- Oracle: Consolidated membership reads preserve local-only timing, local-first confirmation on absence, and direct-chain seated-plus-pending semantics without new caches or outage fallback: `isSignerPendingInMirror` reads only the local mirror, `isSignerPendingOnChain` reads the mirror first and confirms absence on chain, and `isSignerOnChain` reads the chain's seated and pending sets. Cached hits make no read; one refresh is shared by concurrent misses; a slash cannot be undone by an older result; a chain search that does not return a needed log returns `false`; a failed chain read or local application rejects; reset clears every cached set
+- Setup: Hold, fail or race the pinned chain membership read and its log recovery; deliver join events, slashes and snapshots; read membership for real and absent sources. For consolidation, exercise the membership owner and the join-observation, snapshot-departure and expiry/drop caller boundaries with a real signer locally pending, pending only on chain, seated only on chain, or absent from both chain sets; ask a join-signature responder whose chain calls and block reads are held, or whose mirror misses its own landed join, whether it is in the threshold set
+- Oracle: Consolidated membership reads preserve local-only timing, local-first confirmation on absence, and direct-chain seated-plus-pending semantics without new caches or outage fallback: `isSignerPendingInMirror` reads only the local mirror, `isSignerPendingOnChain` reads the mirror first and confirms absence on chain, and `isSignerOnChain` reads the chain's seated and pending sets; `isSignerInThresholdSet` answers from the mirror when it lists the signer and reads the chain's threshold set only otherwise. Cached hits make no read; one refresh is shared by concurrent misses; a slash cannot be undone by an older result; a chain search that does not return a needed log returns `false`; a failed chain read or local application rejects; reset clears every cached set
 
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P15` — a slash observed during a held refresh cannot be undone by its older result
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P16` — a committed off-chain addition during refresh is eligible when the chain result misses it
@@ -47,3 +48,5 @@ Source eligibility and membership facts
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P75` — the direct-chain lookup of the expiry/drop checks (`isSignerOnChain`) answers true for a real peer seated on chain with no pending entry
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P76` — the direct-chain lookup of the expiry/drop checks (`isSignerOnChain`) answers true for a real joiner pending on chain that its local mirror misses
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P77` — the direct-chain expiry/drop check finds the signer in neither chain set and permits the existing expiry/drop decision
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P78` — `isSignerInThresholdSet` answers `true` from a mirror that lists the signer, with that runtime's chain calls and block reads held
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P79` — `isSignerInThresholdSet` with a mirror that misses the signer's own landed join reads the chain's threshold set and answers `true`

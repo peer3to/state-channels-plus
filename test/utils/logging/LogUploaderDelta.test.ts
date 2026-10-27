@@ -3,6 +3,7 @@ import {
     messagesOf,
     createUploaderFixture,
     decodeUpload,
+    loadSeparateNodeLogUploader,
     startLogReceiver,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
@@ -147,6 +148,29 @@ describe("LogUploader delta uploads", function () {
         LogUploader.cancelRealmUploads();
 
         expect(await running).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("an ending thread waits for an upload of a second copy of the uploader module in it, and cancels it", async function () {
+        const { logger, logUploader: separateUploader } = createUploaderFixture(
+            {
+                uploadEndpoint: receiver!.url,
+                jitterMaxMs: 300,
+                Uploader: loadSeparateNodeLogUploader()
+            }
+        );
+        logger.info("logged through the separate copy");
+        const posted = separateUploader.uploadLogs();
+
+        // This copy's thread end settles the other copy's upload.
+        await LogUploader.settleRealmUploads(5_000);
+        expect(receiver!.requests).to.have.length(1);
+        expect(await posted).to.deep.equal({ ok: true, entries: 1 });
+
+        logger.info("never posted");
+        const cancelled = separateUploader.uploadLogs();
+        LogUploader.cancelRealmUploads();
+        expect(await cancelled).to.deep.equal({ ok: false, entries: 0 });
         expect(receiver!.requests).to.have.length(1);
     });
 

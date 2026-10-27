@@ -47,6 +47,32 @@ export interface SyncRequest {
 }
 
 /**
+ * The answer to a sync request: the encoded sync payload, or a note that the
+ * responder is still in its own initial sync and cannot prove a state yet.
+ */
+export type SpectateResponse =
+    | { encodedSyncPayload: Bytes }
+    | { isResponderSyncing: true };
+
+/** A malformed answer is no syncing note: the payload check rejects it. */
+function isResponderSyncingResponse(
+    response: SpectateResponse
+): response is { isResponderSyncing: true } {
+    return (
+        (response as { isResponderSyncing?: unknown } | null)
+            ?.isResponderSyncing === true
+    );
+}
+
+/** A sync request's result for its caller. */
+export enum SyncResult {
+    Synced,
+    Failed,
+    /** the responder is still in its own initial sync: no verdict on it */
+    ResponderSyncing
+}
+
+/**
  * An applied sync payload's result. `unsettledForkId`: the chain has not
  * reduced this fork's dispute window yet -> the sync failed with no verdict
  * and is provable once the chain has.
@@ -54,12 +80,14 @@ export interface SyncRequest {
 export interface SyncOutcome {
     synced: boolean;
     unsettledForkId?: ForkId;
+    /** the responder is still in its own initial sync: no verdict on it */
+    isResponderSyncing?: boolean;
 }
 
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        { request: SyncRequest; result: Promise<boolean> }
+        { request: SyncRequest; result: Promise<SyncResult> }
     > = new Map();
     // aborted by `dispose`: every wait for a window's chain reduction ends
     private readonly disposal = new AbortController();
@@ -80,13 +108,35 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
+    /** `requestSync` for callers that only need to know if the sync succeeded. */
     public async sync(
         peerAddress: Address,
         channelId: ChannelId,
         forkId?: ForkId,
         blockHeight?: number,
-        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime * 1000
+        timeoutMs?: number
     ): Promise<boolean> {
+        const result = await this.requestSync(
+            peerAddress,
+            channelId,
+            forkId,
+            blockHeight,
+            timeoutMs
+        );
+        return result === SyncResult.Synced;
+    }
+
+    public async requestSync(
+        peerAddress: Address,
+        channelId: ChannelId,
+        forkId?: ForkId,
+        blockHeight?: number,
+        // Two agreement windows: a busy honest peer builds its proof in that time, and a
+        // timeout cuts the peer's connection.
+        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime *
+            2 *
+            1000
+    ): Promise<SyncResult> {
         const syncRequest: SyncRequest = {
             channelId,
             forkId,
@@ -109,8 +159,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     (request.blockHeight !== undefined &&
                         blockHeight !== undefined &&
                         request.blockHeight >= blockHeight));
-            const synced = await inFlight.result;
-            if (!synced || coversRequest) return synced;
+            const result = await inFlight.result;
+            if (result !== SyncResult.Synced || coversRequest) return result;
             inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
@@ -139,7 +189,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         normalizedPeerAddress: string,
         syncRequest: SyncRequest,
         timeoutMs: number
-    ): Promise<boolean> {
+    ): Promise<SyncResult> {
         let outcome = await this.requestAndApply(
             normalizedPeerAddress,
             syncRequest,
@@ -161,7 +211,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 timeoutMs
             );
         }
-        return outcome.synced;
+        if (outcome.synced) return SyncResult.Synced;
+        return outcome.isResponderSyncing
+            ? SyncResult.ResponderSyncing
+            : SyncResult.Failed;
     }
 
     private async requestAndApply(
@@ -169,7 +222,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         syncRequest: SyncRequest,
         timeoutMs: number
     ): Promise<SyncOutcome> {
-        let response: { encodedSyncPayload: Bytes };
+        let response: SpectateResponse;
         try {
             response = await this.remoteRpc.spectateService
                 .onSpectateRequest(syncRequest)
@@ -186,6 +239,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 DisconnectPolicy.allowRetry()
             );
             return { synced: false };
+        }
+        if (isResponderSyncingResponse(response)) {
+            // not a failure: the peer has no state to prove yet
+            this.logger.debug("spectateSync - responder still syncing", {
+                peerAddress: normalizedPeerAddress
+            });
+            return { synced: false, isResponderSyncing: true };
         }
         try {
             return await this.applySyncResponse(

@@ -13,6 +13,13 @@ export type ContractErrorName =
     | "Error"
     | "Panic";
 
+/** Every name `tryDecodeCustomError` can decode. */
+export const CONTRACT_ERROR_NAMES: readonly ContractErrorName[] = [
+    ...errorAbis.map(({ name }) => name),
+    "Error",
+    "Panic"
+];
+
 export type RaceConditionErrorName = Extract<
     ContractErrorName,
     | `RaceCondition${string}`
@@ -22,8 +29,8 @@ export type RaceConditionErrorName = Extract<
     | "ErrorDisputeCommitmentNotAvailable"
 >;
 
-export type RaceConditionErrorHandlers = Partial<
-    Record<RaceConditionErrorName, (error: CustomEvmError) => void>
+export type EvmErrorHandlers = Partial<
+    Record<ContractErrorName, (error: CustomEvmError) => void>
 >;
 
 // interface for parsing errors
@@ -195,7 +202,7 @@ export function isCustomEvmError(error: any): error is CustomEvmError {
 export type HandleEvmErrorOptions = {
     tx?: TransactionResponse;
     logger?: Logger;
-    handlers?: RaceConditionErrorHandlers;
+    handlers?: EvmErrorHandlers;
     signer?: Signer;
     forkId?: ForkId;
 };
@@ -226,8 +233,7 @@ async function _tryHandleEvmError(
     const customError = tryDecodeCustomError(error);
 
     if (customError) {
-        const handler =
-            handlers?.[customError.name as keyof RaceConditionErrorHandlers];
+        const handler = handlers?.[customError.name];
         if (handler) {
             logger?.info(
                 `tryHandleEvmError - Handling custom EVM error: ${customError.name} for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`

@@ -749,6 +749,29 @@ applied; a socket drop in the middle of one block's events can leave part of a b
 watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
 and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
 
+The application chain access the SDK exports (`createRpcNodesProvider`,
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)) uses the same trusted
+endpoints, liveness check and failover, so it adds no trust boundary. Its contract-log subscriptions
+deduplicate by block hash and log index over every node socket. Residual risks: a log emitted during a
+full outage, or missed by a node while it was down and delivered by no other node, is never delivered
+([`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11)); a reorganization removal is not reported
+([`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv)); a node's error answer to `eth_subscribe` on a live socket
+is an unhandled rejection, which a host that treats unhandled rejections as fatal turns into a crash
+([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5)); and while every endpoint is down requests wait and nothing
+throws ([`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)).
+
+A join-signature responder now answers from local reads
+([`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)): the deadline against its own protocol
+time, and its threshold membership from its local view, with a chain read only when that view does not
+list it. A probe no longer costs the responder chain reads while its view lists it. A responder whose
+protocol time is behind chain time can sign a join whose deadline chain time already passed;
+enforcement refuses that join at submission, so this costs the joiner one failed submission and grants
+no authority.
+
+A frame that arrives on a transport the participant already closed is now dropped before parsing
+([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)), so a late frame cannot reach a disposed
+runtime's services or logs.
+
 ## Milestone-only proof update — current assessment
 
 The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis

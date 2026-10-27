@@ -4,6 +4,7 @@ import { type SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
@@ -508,6 +509,9 @@ export async function assertSyncWindowReadRace(
                         await sm.p2pManager.remoteRpc.spectateService
                             .onSpectateRequest(request)
                             .request(args.source);
+                    if (!("encodedSyncPayload" in response)) {
+                        throw new Error("responder still syncing");
+                    }
                     return sm.p2pManager.localRpc.spectateService
                         .applySyncResponse(
                             args.source,
@@ -651,7 +655,7 @@ export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
             { source: source.address, forkId: sourceForkId }
         );
         const payload = Codec.decode(
-            response.encodedSyncPayload,
+            servedSyncPayload(response),
             Type.SyncPayload
         );
         // Repeat a real proved window to exercise responder-sized input before rejection;
@@ -949,7 +953,7 @@ export async function applySyncPayload(
                 .request(args.source),
         { source: source.address, forkId: options.forkId }
     );
-    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    const payload = Codec.decode(servedSyncPayload(response), Type.SyncPayload);
     options.mutate?.(payload);
     await options.afterServe?.();
 

@@ -176,12 +176,18 @@ export type DisconnectCleanupProbe = {
 };
 
 export type TransportRetirementProbe = {
-    oldRequestError: string;
+    isOldRequestPendingOnReplacement: boolean;
+    oldRequestValue: string;
     oldConnectionRemoved: boolean;
     replacementConnected: boolean;
     replacementValue: string;
     pendingCount: number;
     timerCount: number;
+};
+
+export type RemoteRetirementProbe = {
+    hookCallsAfterRemoteRetirement: number;
+    hookCallsAfterLastClose: number;
 };
 
 export type BulkPenaltyProbe = {
@@ -1527,9 +1533,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const profile = this.registerProfile(oldTransport, address);
         this.p2pManager.addConnection(oldTransport);
         const oldRequest = this.beginRequest(oldTransport, 1000);
-        const oldRequestError = oldRequest.promise.catch(
-            (error: Error) => error.message
-        );
         const originalAgreementTime =
             this.p2pManager.stateManager.timeConfig.agreementTime;
         this.p2pManager.stateManager.timeConfig.agreementTime = 0.005;
@@ -1539,7 +1542,23 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 replacement
             );
             this.p2pManager.addConnection(replacement);
-            await new Promise((resolve) => setTimeout(resolve, 15));
+            // The grace period retires the original transport.
+            await new Promise<void>((resolve) => {
+                if (oldTransport.isClosed) resolve();
+                else oldTransport.onClosed(() => resolve());
+            });
+            const isOldRequestPendingOnReplacement =
+                this.p2pManager.rpcRouter.pendingRequestsFor(oldTransport)
+                    .length === 0 &&
+                this.p2pManager.rpcRouter.pendingRequestsFor(replacement)
+                    .length === 1;
+            // The reply to the request sent before the upgrade arrives over the replacement.
+            this.response(
+                replacement,
+                oldRequest.requestId,
+                true,
+                "old-settled-by-replacement"
+            );
 
             const replacementRequest = this.beginRequest(replacement, 1000);
             this.response(
@@ -1549,7 +1568,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 "replacement-live"
             );
             return {
-                oldRequestError: await oldRequestError,
+                isOldRequestPendingOnReplacement,
+                oldRequestValue: await oldRequest.promise,
                 oldConnectionRemoved:
                     !this.p2pManager.openConnections.includes(oldTransport),
                 replacementConnected:
@@ -1560,6 +1580,40 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         } finally {
             this.p2pManager.stateManager.timeConfig.agreementTime =
                 originalAgreementTime;
+        }
+    }
+
+    /**
+     * The remote retires the original transport after an upgrade: our side
+     * sees an unexpected close while the replacement stays live, then the
+     * replacement closes too.
+     */
+    public probeRemoteRetirement(addressInput: string): RemoteRetirementProbe {
+        const address = getChecksumAddress(addressInput);
+        const oldTransport = this.transport(address);
+        const replacement = this.transport(address);
+        this.registerProfile(oldTransport, address);
+        this.p2pManager.addConnection(oldTransport);
+        this.p2pManager.profileManager.updateTransport(address, replacement);
+        this.p2pManager.addConnection(replacement);
+        let hookCalls = 0;
+        const unsubscribe = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onDisconnection",
+            () => {
+                hookCalls += 1;
+            }
+        );
+        try {
+            oldTransport.close();
+            const hookCallsAfterRemoteRetirement = hookCalls;
+            replacement.close();
+            return {
+                hookCallsAfterRemoteRetirement,
+                hookCallsAfterLastClose: hookCalls
+            };
+        } finally {
+            unsubscribe();
         }
     }
 

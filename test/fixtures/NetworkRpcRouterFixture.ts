@@ -10,9 +10,15 @@ import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
 import { ARpcRouter } from "@/rpc/router/ARpcRouter";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
+import { serializeRpc } from "@/rpc/Rpc";
+import LocalTransport from "@/transport/LocalTransport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import { Buffer } from "buffer";
 import { expect } from "chai";
+import { ethers } from "ethers";
+import type { AddressInfo } from "net";
+import sinon from "sinon";
+import WebSocket, { WebSocketServer } from "ws";
 
 export async function assertNetworkRouterOwnership(): Promise<void> {
     await withRuntimeRpc(async (sdk) => {
@@ -57,9 +63,7 @@ export async function assertNetworkRouterOwnership(): Promise<void> {
     });
 }
 
-export async function assertNetworkByteForwarding(
-    closeFirst: boolean
-): Promise<void> {
+export async function assertNetworkByteForwarding(): Promise<void> {
     await withWebRTCBridge(async (bridge) => {
         const connected = await bridge.negotiate();
         const transport = new WebRTCTransport(
@@ -81,7 +85,6 @@ export async function assertNetworkByteForwarding(
                 ok: true,
                 result: "é"
             });
-            if (closeFirst) transport.close(true);
             const pendingBefore = router.pendingRequestCount;
             transport.onMessage(response);
             transport.onMessage(Buffer.from(response));
@@ -92,6 +95,96 @@ export async function assertNetworkByteForwarding(
             router.onRpc = original;
             transport.close(true);
         }
+    });
+}
+
+/** Opens a real ws pair and returns the server-side socket. */
+async function withWebSocketPair(
+    operation: (serverSocket: WebSocket) => Promise<void>
+): Promise<void> {
+    const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+    const accepted = new Promise<WebSocket>((resolve) =>
+        server.once("connection", resolve)
+    );
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    const client = new WebSocket(`ws://127.0.0.1:${port}`);
+    try {
+        await new Promise<void>((resolve, reject) => {
+            client.once("open", resolve);
+            client.once("error", reject);
+        });
+        await operation(await accepted);
+    } finally {
+        client.terminate();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+}
+
+export async function assertNetworkClosedAdmission(): Promise<void> {
+    await withRuntimeRpc(async (sdk) => {
+        const host = [...sdk.roots].find(
+            (root): root is P2pRuntimeHostRoot =>
+                root instanceof P2pRuntimeHostRoot
+        );
+        if (!host) throw new Error("Expected the real SDK host");
+        const manager = host.hostRpc.requireManager();
+        await withWebSocketPair(async (serverSocket) => {
+            const transport = new LocalTransport(
+                serverSocket,
+                manager.rpcRouter
+            );
+            const router = manager.rpcRouter;
+            const service = manager.localRpc.initHandshakeService;
+            const originalOnRpc = router.onRpc;
+            const originalRunRpc = service.runRPC;
+            const ingress: Promise<void>[] = [];
+            let dispatched = 0;
+            router.onRpc = (frame, sender) => {
+                const handled = originalOnRpc.call(router, frame, sender);
+                ingress.push(handled);
+                return handled;
+            };
+            service.runRPC = function (rpc, sender) {
+                dispatched++;
+                return originalRunRpc.call(this, rpc, sender);
+            };
+            const loggerSandbox = sinon.createSandbox();
+            const verbose = loggerSandbox.spy(manager.logger, "verbose");
+            const error = loggerSandbox.spy(manager.logger, "error");
+            try {
+                transport.close(true);
+                expect(serverSocket.readyState).to.equal(WebSocket.CLOSING);
+                verbose.resetHistory();
+                error.resetHistory();
+                // ws in CLOSING still emits frames that were already received.
+                serverSocket.emit(
+                    "message",
+                    Buffer.from(
+                        serializeRpc({
+                            service: "initHandshakeService",
+                            method: "onInitHandshakeRequest",
+                            params: [ethers.ZeroHash, 0],
+                            requestId: "late-network-request"
+                        })
+                    ),
+                    false
+                );
+                expect(ingress.length).to.equal(1);
+                await ingress[0];
+                expect(dispatched).to.equal(0);
+                expect(
+                    [...verbose.getCalls(), ...error.getCalls()].map(
+                        (call) => call.args[0]
+                    )
+                ).to.deep.equal([]);
+                expect(router.pendingRequestCount).to.equal(0);
+            } finally {
+                loggerSandbox.restore();
+                router.onRpc = originalOnRpc;
+                service.runRPC = originalRunRpc;
+            }
+        });
     });
 }
 

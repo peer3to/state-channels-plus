@@ -14,6 +14,7 @@ import type {
     TimeoutSelectionProbe,
     DisconnectCleanupProbe,
     TransportRetirementProbe,
+    RemoteRetirementProbe,
     BulkPenaltyProbe,
     ConnectedPeerFallbackProbe,
     ConnectionsChangedProbe,
@@ -171,6 +172,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         address: string
     ): Promise<TransportRetirementProbe> {
         return this.service.probeTransportRetirement(address);
+    }
+
+    public probeRemoteRetirement(address: string): RemoteRetirementProbe {
+        return this.service.probeRemoteRetirement(address);
     }
 
     public probeBulkPenalty(

@@ -113,6 +113,8 @@ class WebRTCTransport extends NetworkTransport {
 
     // Overrides NetworkTransport.onMessage to handle WebRTC frames.
     public override onMessage(data: unknown): void {
+        // A closed channel can still deliver a frame; its runtime may be disposed.
+        if (this.isClosed) return;
         const serializedRpc =
             data instanceof Uint8Array
                 ? Buffer.from(data).toString()

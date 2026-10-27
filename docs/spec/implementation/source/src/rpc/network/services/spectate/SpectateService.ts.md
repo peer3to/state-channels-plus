@@ -18,6 +18,7 @@
 - [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
 - [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 - [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+- [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../../../../../../../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
@@ -29,8 +30,8 @@
 
 Requester verification chain
 
-- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles
-- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays
+- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles; a responder that answers it is still in its own initial sync
+- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays; a still-syncing answer is `SyncResult.ResponderSyncing` from `requestSync` and `false` from `sync`, with no close, strike or blacklist
 
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P1` — forged dispute window
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P2` — altered echo ignored
@@ -135,6 +136,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107` — A requester that already holds the base, with a stored block at the base height that conflicts with the served history: the conflict is found when the proof is staged, no install runs, the sync aborts with the local state kept and the responder is blacklisted.
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P108` — A spectator that installed a later point from one source, without the state at an earlier point, applies another source's payload based at that earlier point: `persistSyncPayload` keeps the local state (`unsafeSetLatestState` not called), the VM state equals the source's at the same height, and the next live blocks execute with no fraud proof or cut source
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P109` — The P108 case for a pending participant: it stays pending through the sync, disputes nothing, and the next live block seats it
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — a sync call with no explicit timeout gets a request deadline of two agreement windows: a responder that does not answer in time fails it only after two windows
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — a responder that answers it is still in its own initial sync: `sync` returns false at once, the requester keeps the connection with no strike, and neither side blacklists the other
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

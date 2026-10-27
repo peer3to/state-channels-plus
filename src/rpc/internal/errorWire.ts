@@ -3,6 +3,11 @@ import {
     maybeStampErrorWithPeerAddress
 } from "@/utils/errorPeerAddress";
 import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
+import {
+    getErrorWasmDiagnostics,
+    getWasmFailureDiagnostics,
+    type WasmFailureDiagnostics
+} from "@/utils/threadResources";
 import { ethers } from "ethers";
 
 /** Serializable error shape carried in failed runtime responses. */
@@ -27,6 +32,8 @@ export interface SerializedError {
     peerAddress?: string;
     /** Watchdog sample data attached by the event-loop monitor, when any. */
     eventLoopDelay?: EventLoopDelayDetails;
+    /** A WebAssembly failure's thread resources and memory probe, taken where it failed. */
+    wasmDiagnostics?: WasmFailureDiagnostics;
 }
 
 /**
@@ -124,6 +131,13 @@ function extractEventLoopDelay(
         | undefined;
 }
 
+/** Kept from an earlier hop, or taken now in the thread the failure happened in. */
+function extractWasmDiagnostics(
+    error: Error
+): WasmFailureDiagnostics | undefined {
+    return getErrorWasmDiagnostics(error) ?? getWasmFailureDiagnostics(error);
+}
+
 export function serializeError(error: unknown): SerializedError {
     if (error instanceof Error) {
         return {
@@ -133,7 +147,8 @@ export function serializeError(error: unknown): SerializedError {
             data: extractRevertData(error),
             ...serializeEthersErrorMetadata(error),
             peerAddress: getErrorPeerAddress(error),
-            eventLoopDelay: extractEventLoopDelay(error)
+            eventLoopDelay: extractEventLoopDelay(error),
+            wasmDiagnostics: extractWasmDiagnostics(error)
         };
     }
     return {
@@ -176,6 +191,11 @@ export function deserializeError(serialized: SerializedError): Error {
         (
             error as Error & { eventLoopDelay?: EventLoopDelayDetails }
         ).eventLoopDelay = serialized.eventLoopDelay;
+    }
+    if (serialized.wasmDiagnostics !== undefined) {
+        (
+            error as Error & { wasmDiagnostics?: WasmFailureDiagnostics }
+        ).wasmDiagnostics = serialized.wasmDiagnostics;
     }
     // Restore the originating-peer stamp (the non-enumerable in-process
     // property doesn't survive the structured-clone hop across the port).

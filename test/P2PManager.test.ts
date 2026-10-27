@@ -1,19 +1,31 @@
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { TransportType } from "@/transport";
 import { Status } from "@/types";
-import { channelIdToTargetedJoinTopic, sleep } from "@/utils";
+import { channelIdToTargetedJoinTopic } from "@/utils";
 
 import {
     assertLateSyncResultAfterAbortChangesNothing,
     assertObserverConnectSettlesFalseOnAbort,
-    withFreshInitialSyncObserver
+    INITIAL_SYNC_DEADLINE_TASK,
+    withFreshInitialSyncObserver,
+    withInitialDeadlineElapsedDuringHeldChecks
 } from "@test/fixtures/AbortDuringInitialSyncStaging";
+import {
+    PARTICIPANT_CHECK_STUB_FAILURE,
+    type SpectateSyncSettle
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { runHandshakeFailure } from "@test/fixtures/HandshakeFailureStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
-import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
+import {
+    clientRootFor,
+    inlineHostFor
+} from "@test/fixtures/RuntimeRootObservation";
+import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers, Wallet } from "ethers";
+import sinon from "sinon";
 
 describe("P2PManager", function () {
     let fixture: P2PManagerFixture | undefined;
@@ -300,20 +312,31 @@ describe("P2PManager", function () {
         expect(result.timerCount).to.equal(0);
     });
 
-    it("original transport retirement rejects its pending request", async function () {
+    it("original transport retirement keeps its pending request pending on the replacement, whose reply settles it", async function () {
         const result = await fixture!
             .control()
             .p2pManagerProbe.probeTransportRetirement(fixture!.address(1))
             .request();
 
-        expect(result.oldRequestError).to.equal(
-            "Peer disconnected before RPC response arrived"
-        );
+        expect(result.isOldRequestPendingOnReplacement).to.equal(true);
+        expect(result.oldRequestValue).to.equal("old-settled-by-replacement");
         expect(result.oldConnectionRemoved).to.equal(true);
         expect(result.replacementConnected).to.equal(true);
         expect(result.replacementValue).to.equal("replacement-live");
         expect(result.pendingCount).to.equal(0);
         expect(result.timerCount).to.equal(0);
+    });
+
+    it("reports no disconnection when the remote retires the original transport while the replacement stays live, and one when the last transport closes", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeRemoteRetirement(fixture!.address(1))
+            .request();
+
+        expect(result).to.deep.equal({
+            hookCallsAfterRemoteRetirement: 0,
+            hookCallsAfterLastClose: 1
+        });
     });
 
     it("unrelated peer cannot settle pending request", async function () {
@@ -498,7 +521,7 @@ describe("P2PManager", function () {
             return h.getPeer(observerIndex);
         };
 
-        it("initial handshake selects the two-window channel-load sync entry", async function () {
+        it("initial handshake starts one channel-load sync and reaches SYNCED", async function () {
             const h = fixture!.getHarness();
             await h.lifecycle.openChannelForParticipants([0, 1]);
             await h.network.joinSelectedKey([0, 1], String(h.channelId));
@@ -819,6 +842,62 @@ describe("P2PManager", function () {
             }
         });
 
+        it("observer initial sync request to a participant that never answers times out after two agreement windows", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const observerIndex = observer.index;
+                const releases = await Promise.all(
+                    [0, 1].map((index) =>
+                        h.rpcStub.holdSpectateResponses(index)
+                    )
+                );
+                // The false result is parked until it is read: it aborts the host.
+                const restoreSyncRecorder = await h.rpcStub.recordSpectateSync(
+                    observerIndex,
+                    { forward: true, holdResults: true }
+                );
+                let isRecorderRestored = false;
+                try {
+                    const connect =
+                        observer.p2pInstance.p2pSigner.connectToChannel(
+                            h.channelId
+                        );
+                    // The first sync call is the initial one; later calls
+                    // (queue-timeout probes) share its in-flight request.
+                    let settle: SpectateSyncSettle | undefined;
+                    await waitFor(async () => {
+                        settle = (
+                            await h.rpcStub.spectateSyncSettles(observerIndex)
+                        ).find((entry) => entry.callNumber === 1);
+                        return settle !== undefined;
+                    }, h.event.protocolEventTimeoutMs());
+                    expect(settle!.result).to.equal(SyncResult.Failed);
+                    // The request got the two-window default (one window is 2s).
+                    expect(settle!.requestTimeoutMs).to.equal(2 * 2 * 1000);
+                    // It ran into that timeout: a one-window bound ends before 3s.
+                    expect(
+                        settle!.settledAt - settle!.startedAt
+                    ).to.be.greaterThan(1.5 * 2 * 1000);
+                    await restoreSyncRecorder();
+                    isRecorderRestored = true;
+                    expect(await connect).to.equal(false);
+                } finally {
+                    if (!isRecorderRestored) await restoreSyncRecorder();
+                    await Promise.all(releases.map((release) => release()));
+                }
+            });
+        });
+
         it("observer connect resolves false when no participant handshake completes within the initial window", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
@@ -879,6 +958,300 @@ describe("P2PManager", function () {
                         )
                 );
             }
+        });
+
+        it("observer holds the initial deadline while a completed handshake's participant check runs and syncs once the check answers participant", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const observerIndex = observer.index;
+                const restoreSyncRecorder = await h.rpcStub.recordSpectateSync(
+                    observerIndex,
+                    { forward: true }
+                );
+                try {
+                    await withInitialDeadlineElapsedDuringHeldChecks(
+                        h,
+                        observer,
+                        {},
+                        async ({ connect, releaseChecks }) => {
+                            expect(
+                                await h.execOnHost(observer, async (sm) =>
+                                    Boolean(sm.isDisposed)
+                                )
+                            ).to.equal(false);
+                            expect(
+                                await h
+                                    .control(observer)
+                                    .query.getStatus()
+                                    .request()
+                            ).to.equal(Status.OPENED);
+                            expect(
+                                await h.rpcStub.spectateSyncCallCount(
+                                    observerIndex
+                                )
+                            ).to.equal(0);
+                            await releaseChecks("chain");
+                            expect(await connect).to.equal(true);
+                            expect(
+                                await h.rpcStub.spectateSyncCallCount(
+                                    observerIndex
+                                )
+                            ).to.equal(1);
+                            expect(
+                                await h
+                                    .control(observer)
+                                    .query.getStatus()
+                                    .request()
+                            ).to.equal(Status.SYNCED);
+                        }
+                    );
+                } finally {
+                    await restoreSyncRecorder();
+                }
+            });
+        });
+
+        it("observer aborts once a held participant check ends without a sync after the initial deadline elapsed", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const host = clientRootFor(
+                    observer.p2pInstance
+                ).p2pRuntimeHostRemoteRoot!;
+                await withInitialDeadlineElapsedDuringHeldChecks(
+                    h,
+                    observer,
+                    {},
+                    async ({ connect, releaseChecks }) => {
+                        expect(
+                            await h
+                                .control(observer)
+                                .query.getStatus()
+                                .request()
+                        ).to.equal(Status.OPENED);
+                        // The check answers "not a participant": no sync starts, so
+                        // the held deadline fires when the check ends.
+                        await releaseChecks("notParticipant");
+                        await waitFor(
+                            () => host.isClosed,
+                            h.event.protocolEventTimeoutMs()
+                        );
+                        expect(await connect).to.equal(false);
+                    }
+                );
+            });
+        });
+
+        it("observer aborts and keeps the error log once a held participant check rejects after the initial deadline elapsed", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                inlineHosts: true,
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                // The inline host's P2PManager: its error lines are read after the abort.
+                const errorLog = sinon.spy(
+                    inlineHostFor(observer.p2pInstance).hostRpc.requireManager()
+                        .logger,
+                    "error"
+                );
+                const host = clientRootFor(
+                    observer.p2pInstance
+                ).p2pRuntimeHostRemoteRoot!;
+                try {
+                    await withInitialDeadlineElapsedDuringHeldChecks(
+                        h,
+                        observer,
+                        {},
+                        async ({ connect, releaseChecks }) => {
+                            expect(
+                                await h
+                                    .control(observer)
+                                    .query.getStatus()
+                                    .request()
+                            ).to.equal(Status.OPENED);
+                            const rejected = await releaseChecks("throw");
+                            await waitFor(
+                                () => host.isClosed,
+                                h.event.protocolEventTimeoutMs()
+                            );
+                            expect(await connect).to.equal(false);
+                            // Each rejected check is rethrown as a fatal handshake failure.
+                            await TestSession.expectFirstDetachedError({
+                                includes: PARTICIPANT_CHECK_STUB_FAILURE,
+                                timeoutMs: h.event.protocolEventTimeoutMs()
+                            });
+                            expect(
+                                errorLog
+                                    .getCalls()
+                                    .filter(
+                                        (call) =>
+                                            call.args[0] ===
+                                            "Participant read or sync after handshake failed"
+                                    )
+                                    .map(
+                                        (call) =>
+                                            (call.args[1] as { error: string })
+                                                .error
+                                    )
+                            ).to.deep.equal(
+                                Array.from(
+                                    { length: rejected },
+                                    () => PARTICIPANT_CHECK_STUB_FAILURE
+                                )
+                            );
+                        }
+                    );
+                } finally {
+                    errorLog.restore();
+                }
+            });
+        });
+
+        it("observer holds the initial deadline until the last of two participant checks ends without a sync", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const host = clientRootFor(
+                    observer.p2pInstance
+                ).p2pRuntimeHostRemoteRoot!;
+                const stub = h.control(observer).stub;
+                h.event.resetEventSpies(observer.index);
+                // Both participants completed a handshake; both checks are held.
+                await withInitialDeadlineElapsedDuringHeldChecks(
+                    h,
+                    observer,
+                    { heldChecks: 2 },
+                    async ({ connect, releaseChecks }) => {
+                        expect(
+                            await stub
+                                .releaseOneParticipantCheck("notParticipant")
+                                .request()
+                        ).to.equal(true);
+                        // The connection hook runs after the first check's own end.
+                        await h.event.waitForEventCounts("onConnection", [
+                            { peerId: observer.index, expectedCount: 1 }
+                        ]);
+                        // The other check still runs: the deadline stays held.
+                        expect(
+                            await h.execOnHost(observer, async (sm) =>
+                                Boolean(sm.isDisposed)
+                            )
+                        ).to.equal(false);
+                        expect(
+                            await h
+                                .control(observer)
+                                .query.getStatus()
+                                .request()
+                        ).to.equal(Status.OPENED);
+                        // The other check was released alone above: one is still parked.
+                        expect(await releaseChecks("notParticipant")).to.equal(
+                            1
+                        );
+                        await waitFor(
+                            () => host.isClosed,
+                            h.event.protocolEventTimeoutMs()
+                        );
+                        expect(await connect).to.equal(false);
+                    }
+                );
+            });
+        });
+
+        it("observer aborts once its held participant checks end on closed transports after the initial deadline elapsed", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const host = clientRootFor(
+                    observer.p2pInstance
+                ).p2pRuntimeHostRemoteRoot!;
+                await withInitialDeadlineElapsedDuringHeldChecks(
+                    h,
+                    observer,
+                    {},
+                    async ({ connect, releaseChecks }) => {
+                        // Every checked transport closes while its check is held.
+                        for (const peer of h.peers.slice(0, 2)) {
+                            expect(
+                                await h
+                                    .control(observer)
+                                    .network.blacklistAndDisconnectPeerByAddress(
+                                        peer.address
+                                    )
+                                    .request()
+                            ).to.equal(true);
+                        }
+                        await waitFor(
+                            async () =>
+                                (
+                                    await h
+                                        .control(observer)
+                                        .query.getConnectedPeerAddresses()
+                                        .request()
+                                ).length === 0,
+                            h.event.protocolEventTimeoutMs()
+                        );
+                        expect(
+                            await h
+                                .control(observer)
+                                .query.getStatus()
+                                .request()
+                        ).to.equal(Status.OPENED);
+                        // The checks answer "participant", but their transports are
+                        // closed: no sync starts, and the last check's end aborts.
+                        await releaseChecks("chain");
+                        await waitFor(
+                            () => host.isClosed,
+                            h.event.protocolEventTimeoutMs()
+                        );
+                        expect(await connect).to.equal(false);
+                    }
+                );
+            });
         });
 
         it("observer connect resolves true when chain genesis lands before any participant handshake", async function () {
@@ -947,7 +1320,7 @@ describe("P2PManager", function () {
             });
         });
 
-        it("observer stays synced when the initial deadline elapses after chain genesis settled the wait", async function () {
+        it("observer cancels the initial deadline when chain genesis settles the wait and stays synced if it still runs", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -969,20 +1342,30 @@ describe("P2PManager", function () {
                             .request()
                     )
                 );
+                const deadline = await h.rpcStub.holdScheduledTasks(
+                    observerIndex,
+                    INITIAL_SYNC_DEADLINE_TASK
+                );
+                let isDeadlineRun = false;
                 try {
                     const connect =
                         observer.p2pInstance.p2pSigner.connectToChannel(
                             h.channelId
                         );
-                    await h.event.waitUntilPeerStatus(
-                        observerIndex,
-                        Status.OPENED
+                    await waitFor(
+                        async () => (await deadline.heldCount()) === 1,
+                        h.event.protocolEventTimeoutMs()
                     );
                     await h.lifecycle.applyChannelOpenedEvent(observerIndex);
                     expect(await connect).to.equal(true);
-                    // Two agreement windows is the pre-request deadline; the wait
-                    // settled first, so its elapsing must neither abort nor warn.
-                    await sleep(2 * 2 * 1000 + 1000);
+                    // The settle cancelled the pre-request deadline.
+                    expect(await deadline.cancelledCount()).to.equal(1);
+                    // A deadline that still runs after the settle must not abort.
+                    isDeadlineRun = true;
+                    expect(await deadline.runHeld()).to.deep.equal({
+                        ran: 1,
+                        errors: []
+                    });
                     expect(
                         await h.control(observer).query.getStatus().request()
                     ).to.equal(Status.SYNCED);
@@ -992,6 +1375,7 @@ describe("P2PManager", function () {
                         )
                     ).to.equal(false);
                 } finally {
+                    if (!isDeadlineRun) await deadline.release(false);
                     await Promise.all(
                         h.peers.map((peer) =>
                             h
@@ -1044,8 +1428,16 @@ describe("P2PManager", function () {
                     );
                     await h.lifecycle.applyChannelOpenedEvent(observerIndex);
                     expect(await connect).to.equal(true);
-                    // Let the held request run into its two-window timeout.
-                    await sleep(2 * 2 * 1000 + 1000);
+                    // The held request runs into its two-window timeout; the
+                    // false result is handled in the same turn it settles.
+                    let settle: SpectateSyncSettle | undefined;
+                    await waitFor(async () => {
+                        settle = (
+                            await h.rpcStub.spectateSyncSettles(observerIndex)
+                        ).find((entry) => entry.callNumber === 1);
+                        return settle !== undefined;
+                    }, h.event.protocolEventTimeoutMs());
+                    expect(settle!.result).to.equal(SyncResult.Failed);
                     expect(
                         await h.control(observer).query.getStatus().request()
                     ).to.equal(Status.SYNCED);

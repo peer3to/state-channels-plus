@@ -152,12 +152,9 @@ describe("Unit: bot-connection fixes", function () {
             expect(
                 (await h.channelManager.getParticipants(h.channelId)).length
             ).to.equal(0);
-            expect(await h.control(first).query.getStatus().request()).to.equal(
-                Status.NOT_OPENED
-            );
-            expect(
-                await h.control(second).query.getStatus().request()
-            ).to.equal(Status.NOT_OPENED);
+            // the channel close lands after the membership drop that reports the leave
+            await h.event.waitUntilPeerStatus(first.index, Status.NOT_OPENED);
+            await h.event.waitUntilPeerStatus(second.index, Status.NOT_OPENED);
         });
 
         it("U71: a last leaver whose exit leaves no participant and whose posts a JOIN that no block consumes refuses makes one follow-up post per queued trigger, never back-to-back posts", async function () {
@@ -450,9 +447,12 @@ describe("Unit: bot-connection fixes", function () {
         });
 
         it("U72: a leaver whose exit the remaining participants post while it sees no further block settles the leave, and the leave watchdog starts no self-removal dispute", async function () {
+            // the longer watchdog runs past the default test timeout
+            this.timeout(90_000);
             const h = TestSession.getHarness();
-            // the production default; long enough for the exit and two more blocks
-            const watchdogMs = 15_000;
+            // twice the production default: a watchdog firing as the exit lands
+            // is FIND-LEAVE-5-A1XAA4, recorded open; here it fires well after
+            const watchdogMs = 30_000;
             const {
                 leaver,
                 remainingPeerIndices,

@@ -1,13 +1,32 @@
 import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
+import {
+    type JoinCollectionFailure,
+    type JoinCollectionFailureReason,
+    JoinCollectionError
+} from "./JoinCollectionError";
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
-import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
+import type {
+    Address,
+    Bytes,
+    ChannelId,
+    ForkId,
+    Hash,
+    Signature
+} from "@/types/types";
+import {
+    addressesEqual,
+    Codec,
+    getChecksumAddress,
+    SignatureUtils,
+    Type
+} from "@/utils";
 import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 import type {
     BalanceStruct,
     JoinChannelConfirmationStruct,
@@ -20,6 +39,11 @@ export type PreparedJoinChannelConfirmation = {
     expectedSnapshotHash: Hash;
     expectedForkId: ForkId;
 };
+
+/** One threshold member's countersignature, or why it has none. */
+type CountersignatureOutcome =
+    | { signature: string }
+    | { failure: JoinCollectionFailure };
 
 export default class JoinChannelService extends ANetworkRpcService<JoinChannelRpcMethods> {
     constructor(p2pManager: P2PManager) {
@@ -108,30 +132,34 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         const encodedSignedJoinChannel = String(
             Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
         );
-        const signatures = await Promise.all(
-            thresholdParticipants.map(async (participant) => {
-                const response = addressesEqual(participant, localAddress)
-                    ? {
-                          signature: await SignatureUtils.signMsg(
+        const outcomes = await Promise.all(
+            thresholdParticipants.map(
+                async (participant): Promise<CountersignatureOutcome> =>
+                    addressesEqual(participant, localAddress)
+                        ? {
+                              signature: String(
+                                  await SignatureUtils.signMsg(
+                                      encoded,
+                                      sm.signer
+                                  )
+                              )
+                          }
+                        : this.requestCountersignature(
+                              participant,
                               encoded,
-                              sm.signer
+                              encodedSignedJoinChannel,
+                              timeoutMs
                           )
-                      }
-                    : await this.remoteRpc.joinChannelService
-                          .requestJoinSignature(encodedSignedJoinChannel)
-                          .request(participant, { timeoutMs });
-                const recovered = SignatureUtils.getSignerAddress(
-                    encoded,
-                    String(response.signature)
-                );
-                if (!addressesEqual(recovered, participant)) {
-                    throw new Error(
-                        `collectJoinChannelConfirmation: invalid signature from ${participant}`
-                    );
-                }
-                return String(response.signature);
-            })
+            )
         );
+        // every member's outcome is in, so the error names each missing one
+        const signatures: string[] = [];
+        const failures: JoinCollectionFailure[] = [];
+        for (const outcome of outcomes) {
+            if ("failure" in outcome) failures.push(outcome.failure);
+            else signatures.push(outcome.signature);
+        }
+        if (failures.length > 0) throw new JoinCollectionError(failures);
 
         return {
             confirmation: {
@@ -177,17 +205,13 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         // No snapshot or fork check: the signature covers only the encoded
         // join. The joiner's pins are separate submission arguments that the
         // contract checks for the joiner.
-        const [chainTime, thresholdParticipants] = await Promise.all([
-            Clock.getBlockchainTime(),
-            sm.membershipService.getOnChainThresholdSet(
-                String(joinChannel.channelId) as ChannelId
-            )
-        ]);
-        if (Number(joinChannel.deadlineTimestamp) < chainTime.timestamp) {
+        // Only local reads: the contract checks the deadline again at
+        // submission.
+        if (Number(joinChannel.deadlineTimestamp) < Clock.getTimeInSeconds()) {
             throw new Error("requestJoinSignature: join expired");
         }
 
-        if (!sm.membershipService.includesSigner(thresholdParticipants)) {
+        if (!(await sm.membershipService.isSignerInThresholdSet())) {
             throw new Error(
                 "requestJoinSignature: local signer not in threshold"
             );
@@ -209,6 +233,49 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
             sm.signer
         );
         return { signature: String(signature) };
+    }
+
+    /**
+     * One threshold member's countersignature. A failed request or a wrong
+     * signer is that member's failure; it does not end the other requests.
+     */
+    private async requestCountersignature(
+        participant: Address,
+        encodedJoinChannel: Bytes,
+        encodedSignedJoinChannel: string,
+        timeoutMs: number
+    ): Promise<CountersignatureOutcome> {
+        const failure = (
+            reason: JoinCollectionFailureReason,
+            detail: string
+        ): CountersignatureOutcome => ({
+            failure: {
+                participant: getChecksumAddress(participant),
+                reason,
+                detail
+            }
+        });
+        let response: { signature: Signature };
+        try {
+            response = await this.remoteRpc.joinChannelService
+                .requestJoinSignature(encodedSignedJoinChannel)
+                .request(participant, { timeoutMs });
+        } catch (error) {
+            return failure("no-answer", errorMessage(error));
+        }
+        const signature = String(response.signature);
+        let recovered: Address;
+        try {
+            recovered = SignatureUtils.getSignerAddress(
+                encodedJoinChannel,
+                signature
+            );
+        } catch (error) {
+            return failure("wrong-signer", errorMessage(error));
+        }
+        if (!addressesEqual(recovered, participant))
+            return failure("wrong-signer", `signed by ${recovered}`);
+        return { signature };
     }
 
     private async waitForThresholdReachability(
@@ -243,8 +310,12 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
         );
         this.p2pManager.stateManager.timeoutManager.cancelTask(timeout);
         if (!handshake)
-            throw new Error(
-                `collectJoinChannelConfirmation: threshold participant unavailable: ${getUnreachable().join(", ")}`
+            throw new JoinCollectionError(
+                getUnreachable().map((participant) => ({
+                    participant: getChecksumAddress(participant),
+                    reason: "unreachable",
+                    detail: "no transport after the reachability grace"
+                }))
             );
     }
 }

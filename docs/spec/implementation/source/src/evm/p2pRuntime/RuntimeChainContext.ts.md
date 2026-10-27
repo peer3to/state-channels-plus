@@ -6,6 +6,7 @@
 
 - [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 - [`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)
+- [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
 
 ## UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8
 
@@ -36,3 +37,4 @@ Endpoint list resolution and startup
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P10` — startup over a malformed endpoint opens no node
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P11` — invalid signing key opens no node
 - [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P12` — a `LOG_QUERY_MAX_BLOCKS` of zero or a fraction rejects startup and opens no node
+- [x] `UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13` — `createRpcNodesProvider` called directly with no reachable endpoint rejects with `Chain access requires a reachable WebSocket provider at …`, naming every endpoint by scheme and host

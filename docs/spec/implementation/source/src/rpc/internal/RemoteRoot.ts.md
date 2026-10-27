@@ -20,3 +20,4 @@ Complete remote handle and shared diagnostics
 - [x] `UNIT-TEST-REMOTE-ROOT-1-7D9JVE.P3` — Inline executor creation returns a typed handle, keeps transport and connection private at compile time, and repeated disposal preserves its owner
 - [x] `UNIT-TEST-REMOTE-ROOT-1-7D9JVE.P4` — Worker executor creation returns the same handle surface and repeated disposal preserves its owner
 - [x] `UNIT-TEST-REMOTE-ROOT-1-7D9JVE.P5` — A slow reply that lands after the owner's root logger is disposed skips the slow-request warning and does not log through the disposed logger
+- [ ] `UNIT-TEST-REMOTE-ROOT-1-7D9JVE.P6` — A child failure with pending requests logs `wasm`, the diagnostics the failed worker attached to a WebAssembly failure (absent for any other error), and `resources`, this thread's worker and WebAssembly counts

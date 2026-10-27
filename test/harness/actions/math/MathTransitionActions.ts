@@ -127,12 +127,10 @@ export class MathTransitionActions extends TransitionActions<
      */
     async postNextBlockOnlyOnChainWait(options?: { observerIndex?: number }) {
         const authored = await this.authorNextBlockOffWireWait(options);
-        await this.harness
-            .control(authored.leader)
-            .validation.postBlockCalldataOnChain(
-                authored.authored.encodedSignedBlock
-            )
-            .request();
+        await this.postBlockCalldataOnChainWait(
+            authored.leader,
+            authored.authored.encodedSignedBlock
+        );
         return authored;
     }
 

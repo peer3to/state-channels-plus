@@ -3,6 +3,217 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Still-syncing responder answers at once — 2026-10-26
+
+What changed: a peer that is still in its own initial sync answers a sync request at once that it is not
+synced yet, and the requester does not count that as a failed sync. Why: a candidate that asked a
+participant still in its own initial sync waited for that sync, timed out after 6 s and aborted as
+did-not-sync; the page then excluded a healthy table. Luka chose option a: "A peer that is still in its own
+initial sync answers a sync request at once with 'not synced yet', and does not wait. The requester does
+not count that as a failed sync: it syncs from another table member instead. A real sync failure still
+aborts at once, as today."
+
+1. [SpectateRpcMethods.ts](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md)
+   `onSpectateRequest`: an OPENED responder returns `{ isResponderSyncing: true }` at once. It no longer
+   waits on its own initial sync, and the "own initial sync failed" refusal is gone.
+2. [SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md):
+   `SpectateResponse` is the payload or the syncing note; `requestSync` returns `SyncResult` (`Synced`,
+   `Failed`, `ResponderSyncing`). `sync` keeps its boolean for other callers: a syncing responder gives
+   `false` with no disconnect and no strike.
+3. [P2PManager.ts](../implementation/source/src/P2PManager.ts.md) initial sync: `syncConnectedParticipant`
+   records participants checked while a request runs in `waitingParticipants`. On `ResponderSyncing`,
+   `onResponderSyncing` does not abort, syncs from the waiting participants, and asks the syncing peer again
+   after half an agreement window. The first such answer from a peer re-arms the two-window deadline. A
+   running sync holds an elapsed deadline and keeps the deadline it has. The abort log is now "No
+   participant could serve the initial sync within its window; aborting".
+4. Spec: [synchronization.md](../specification/peer-communication/synchronization.md) failure outcomes,
+   [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag) and
+   [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1);
+   [targeted-channel-join.md](../specification/peer-communication/targeted-channel-join.md) initial load and
+   [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6).
+   The [`REQ-SPC-3-AZBKR1.T1`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1) permutations 2 and 3 and the endpoint cases 4 to 8 of
+   [`UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH`](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md#unit-test-spectate-methods-1-zab4yh) described the waiting responder and are deleted;
+   new cases are [`REQ-SPC-3-AZBKR1.T1.P4`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p4)–`.P6`,
+   [`REQ-AUTH-5-BQG9AG.T3.P5`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag.t3.p5)–`.P6`,
+   [`UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P9`](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md#unit-test-spectate-methods-1-zab4yh)–`.P11`, [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) and
+   [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P43`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz)–`.P48`.
+5. Tests: the H11 cases in
+   [E2E-BotConnectionFixes.test.ts](../verification/tests/test/e2e/E2E-BotConnectionFixes.test.ts.md).
+   The "requester times out" and "responder sync already failed" cases are gone; "another participant
+   serves", "no participant serves in time" and "responder answers at once" are new.
+   [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) (two-window default) moved to the P2PManager timeout test.
+   [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz) (a running sync holds the deadline) and `.P48` (only the first
+   syncing answer re-arms it) have no test yet.
+6. [`FIND-SYNC-OBSERVER-1-YF6CJA`](open-findings.md#find-sync-observer-1-yf6cja) states the new fix.
+
+## Pending requests survive transport retirement — 2026-10-26
+
+Luka's transport-upgrade design: the new connection is established first and communication moves
+to it. The old and the new transport carry the same EVM-authenticated identity, so they are
+interchangeable. Plan 28 asked that pending requests stay pending when the old transport is retired;
+the implementation had reversed this and rejected them. Effect: a spectate sync to a phone peer was
+rejected 4 s after a Holepunch-to-WebRTC upgrade, the SDK aborted, and the poker manager excluded a
+healthy table.
+
+1. [P2PManager.ts](../implementation/source/src/P2PManager.ts.md) `closeConnection` moves the
+   closing transport's pending requests, with their deadlines, to another live transport of the
+   same peer (`profile.getLiveTransports()`, without the closing one). Only a peer with no other
+   live transport rejects them ("Peer disconnected before RPC response arrived").
+2. [ARpcRouter.ts](../implementation/source/src/rpc/router/ARpcRouter.ts.md) adds
+   `movePendingRpcRequests(from, to)`.
+3. Spec: [rpc.md](../specification/peer-communication/rpc.md) correlation text and
+   [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../specification/peer-communication/rpc.md#req-rpc-2-szdttm),
+   [transport-upgrade.md](../specification/peer-communication/transport-upgrade.md) failure
+   outcomes, and [`REQ-TJOIN-4-SDPZJW.T1`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw.t1)
+   now state the move.
+4. Test: `original transport retirement keeps its pending request pending on the replacement, whose
+reply settles it` ([`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P25`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz),
+   [`REQ-TJOIN-4-SDPZJW.T1.P3`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw.t1.p3)).
+5. [createRoot.ts](../implementation/source/src/rpc/internal/createRoot.ts.md) `fetchedFiles` logs
+   `requestMs`, `responseMs` and `protocol` (debug diagnostics only).
+6. Fixed by Luka's decision: [`FIND-RPC-7-8JDKBK`](open-findings.md#find-rpc-7-8jdkbk). The remote
+   side fired `onDisconnection` when its peer retired the old transport while still connected over
+   the new one. [NetworkTransport.ts](../implementation/source/src/transport/NetworkTransport.ts.md)
+   `afterClose` now fires it for an unexpected close only when the peer has no other live transport
+   (`isPeerStillConnected`). [transport-upgrade.md](../specification/peer-communication/transport-upgrade.md)
+   [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)
+   states the rule. Test: `reports no disconnection when the remote retires the original transport
+while the replacement stays live, and one when the last transport closes`
+   ([`UNIT-TEST-ATRANSPORT-1-7DGX9R.P13`](../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r),
+   [`REQ-UPG-2-WH7BC7.T1.P6`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7.t1.p6)).
+
+Related items not changed:
+
+- `DeferredAdmissionGuard` drops inbound requests queued on the old transport, as
+  [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) requires.
+- Frames that arrive on a closed old transport are dropped (`src/rpc/router/NetworkRpcRouter.ts:80`).
+
+## WebAssembly failure diagnostics and startup-failure log upload — 2026-10-26
+
+Luka asked for all logging possible after a phone stopped fatally with `RuntimeError: unreachable`
+in the prover's `__wbindgen_malloc` ([`FIND-RUNTIME-3-NWSN74`](open-findings.md#find-runtime-3-nwsn74)). His decision:
+these diagnostics only; no change to the slot count, self-matching, or the number of instances.
+
+1. New file [threadResources.ts](../implementation/source/src/utils/threadResources.ts.md) (no
+   specified behavior; new family
+   [`UNIT-TEST-THREAD-RESOURCES-1-AY7843`](../implementation/source/src/utils/threadResources.ts.md#unit-test-thread-resources-1-ay7843)).
+   At its first import in a thread it wraps the `WebAssembly` `Instance` and `Memory` constructors,
+   `instantiate` and `instantiateStreaming`, and counts this thread's live and created instances and
+   memories; `trackWorker` counts root workers until their first shutdown ends. `getThreadResources`
+   adds the JavaScript heap where the browser reports it; `getRuntimeEnvironment` reads the device
+   from the navigator and, once the browser answers, the high-entropy client hints. `index.ts`,
+   `internalRoot.ts` and `createRoot.ts` import it first, so it counts every instance created after.
+2. [errorWire.ts](../implementation/source/src/rpc/internal/errorWire.ts.md): `SerializedError.wasmDiagnostics`.
+   `serializeError` keeps the diagnostics of an earlier hop, or takes them now for a WebAssembly
+   failure (a `RuntimeError`, `CompileError` or `LinkError`, or a message that names WebAssembly or
+   Wasm memory): this thread's resources, a memory probe run once per thread, and the device.
+   `deserializeError` restores the field. The SDK exports `getErrorWasmDiagnostics` and the types
+   `RuntimeEnvironment`, `ThreadResources`, `WasmFailureDiagnostics` and `WasmMemoryProbe`.
+3. Logs: [RemoteRoot.ts](../implementation/source/src/rpc/internal/RemoteRoot.ts.md) "Worker failed with pending requests" adds
+   `wasm` and `resources`; [createRoot.ts](../implementation/source/src/rpc/internal/createRoot.ts.md) "Root worker started" and "Child
+   root ready" add `resources`; [setupP2pRuntime.ts](../implementation/source/src/evm/p2pRuntime/setupP2pRuntime.ts.md) logs
+   "Runtime resources" (resources and device) at debug level after its setup steps.
+4. A worker whose startup fails serializes the error (this takes the WebAssembly diagnostics).
+   When its root has a logger that is not disposed, it logs `Root worker startup failed` at error
+   level with `error` and `wasm`, and lets that upload settle within the flush bound
+   (`LogUploader.settleRealmUploads(CRASH_LOG_FLUSH_MS)`) before it posts `startupFailed`. Its
+   parent still terminates a worker that never became ready without a drain wait, so the worker
+   uploads its own lines before it reports the failure.
+   Requirement: [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1); new
+   permutation [`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6).
+
+The logs now carry the user agent and, where the browser gives them, the device model and
+platform version. They go only to the configured log endpoint, as every log line does.
+
+Untested cases stay open: `.P5` and `.P6` of the new family (`instantiateStreaming`, a failing
+probe), `.P6` of [`UNIT-TEST-REMOTE-ROOT-1-7D9JVE`](../implementation/source/src/rpc/internal/RemoteRoot.ts.md#unit-test-remote-root-1-7d9jve), and `.P42` of
+[`UNIT-TEST-ROOT-CREATION-1-1NWN3V`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v) with [`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6).
+Assessment: the reports match the code.
+
+## Application chain access, local join-signature answers, closed-transport frames — 2026-10-26
+
+Luka decided these changes in the shared poker client manager plan (poker-contracts
+`9-shared-poker-client-manager`, section "Implementation-review decisions").
+
+1. The SDK exports `createRpcNodesProvider(config, logger)` and the type `MultiRpcProvider` from
+   [`index.ts`](../implementation/source/src/index.ts.md). [RuntimeChainContext](../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md) builds the
+   runtime's provider through it; a start with no reachable endpoint now fails with "Chain access requires a
+   reachable WebSocket provider at …". Requirement:
+   [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8).
+2. [MultiRpcProvider](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) handles contract-log subscriptions itself:
+   `_getSubscriber` gives an `event` subscription an `RpcNodesLogSubscriber`, which subscribes the filter on every
+   node socket, also on reopened ones, and relays each log once by `blockHash:index`, dropping a log 128 or more
+   blocks below the highest delivered log. Block and log relaying share `RpcNodesSocketSubscriber`. Logs a node missed
+   while disconnected are not read again ([`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11)); removals are not reported
+   ([`FIND-RPC-6-CZ4GCV`](open-findings.md#find-rpc-6-cz4gcv)). In [RpcNodeProvider](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md),
+   `NodeSocket.send` returns a never-settling answer for an `eth_subscribe` that failed because the socket was
+   destroyed, so a destroy right after a subscription leaves no unhandled rejection; an error answer on a live
+   socket still does ([`FIND-RPC-5-G4WNX5`](open-findings.md#find-rpc-5-g4wnx5)). The provider still never throws after its start
+   while every endpoint is down ([`FIND-RPC-3-FY8YV3`](open-findings.md#find-rpc-3-fy8yv3)).
+3. [JoinChannelService](../implementation/source/src/rpc/network/services/joinChannel/JoinChannelService.ts.md) `signJoinRequest` does only local
+   work: the deadline against `Clock.getTimeInSeconds()`, and threshold membership through the new
+   [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md) `isSignerInThresholdSet`, which reads the local
+   diamond mirror first and the chain only when the mirror does not list the signer. Requirement:
+   [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v).
+4. [NetworkRpcRouter](../implementation/source/src/rpc/router/NetworkRpcRouter.ts.md) `onRpc` drops a frame whose transport is closed, and
+   [WebRTCTransport](../implementation/source/src/transport/WebRTCTransport.ts.md) `onMessage` returns early on a closed transport. The old
+   receive-after-close case of the network router family is deleted with its test. Requirement:
+   [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j).
+
+The exported entry's startup failure
+([`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13`](../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw)) and the 128-block bound
+([`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P18`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5)) now have tests in
+[RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md); each failed with the code
+temporarily broken and passed with it restored. The untested case that stays open is the WebRTC closed-transport early return
+([`UNIT-TEST-WEBRTC-TRANSPORT-1-XEP60P.P6`](../implementation/source/src/transport/WebRTCTransport.ts.md#unit-test-webrtc-transport-1-xep60p)).
+
+Recorded today without a code change: the stale-proof blacklist of an honest sync responder
+([`FIND-SYNC-7-SHT5K7`](open-findings.md#find-sync-7-sht5k7)), the duplicate probe sync during an initial sync
+([`OQ-IMPL-SYNC-PROBE-1-1288ZV` (Duplicate probe sync during a runtime's initial sync)](../implementation/open-questions.md#oq-impl-sync-probe-1-1288zv)), the rejoin-after-eviction race
+([`OQ-SPEC-JOIN-REJOIN-1-D506RT` (Rejoin after eviction collects against the disputed snapshot)](../specification/open-questions.md#oq-spec-join-rejoin-1-d506rt)) and the spectator reduction without the reduced latest
+state snapshot ([`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](../specification/open-questions.md#oq-spec-reduce-spectator-1-1ywdc5)).
+
+## Initial-sync deadline hold, two-window sync default, browser worker failure cause and drain — 2026-10-26
+
+Luka decided these changes in the shared poker client manager plan (poker-contracts
+`9-shared-poker-client-manager`, section "Implementation-review decisions"). The two-window default is his
+decision there: "The SDK spectate sync waits two agreement times before it gives up on a peer's answer".
+
+1. The initial-sync deadline does not abort while a completed handshake's participant check, or the sync it
+   started, is still running. The [P2PManager report](../implementation/source/src/P2PManager.ts.md) owns it:
+   `syncIfParticipant` counts the running checks, with their syncs, in `participantChecksInFlight`, and
+   `expireInitialSyncDeadline` marks an elapsed deadline as held (`isInitialSyncDeadlineHeld`) while one runs.
+   Each check's `finally` fires a held deadline once no check or sync runs: a check that answers "not a participant", a check on a closed transport, and
+   a rejected check (logged at error level and rethrown) all end in the abort. A settle cancels the deadline.
+   Requirement: [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6).
+2. The [SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) `sync`
+   default timeout is two agreement windows for every caller: the initial sync (which no longer passes its own
+   timeout), and the block queue's exact-block sync for an absent sender and `probeSource`. The synchronization,
+   targeted-join and runtime specifications no longer name a one-window default.
+3. A browser worker failure carries its real cause. The browser
+   [`createRootWorker`](../implementation/source/src/rpc/internal/browser/RootWorkerRuntime.ts.md) handles the
+   error event, fails the root with a summary that names the cause, and logs `Root worker failed` with the event
+   type, worker URL, worker name and time since spawn. Only a load or parse failure gets the one bounded
+   diagnostic fetch, once. A failing log write does not change the outcome. Requirement:
+   [`REQ-RUNTIME-8-M3ENFM` (An isolated context's failure names its cause)](../specification/runtime/execution.md#req-runtime-8-m3enfm).
+4. A ready browser worker drains before it is terminated. `closeRootWorker` posts a closing message after the
+   child settled its log uploads; the browser `drain` waits for it at most `CRASH_LOG_FLUSH_MS` plus the 1 s
+   `ROOT_WORKER_CLOSE_MARGIN_MS` and warns when the bound wins. [`createRoot`](../implementation/source/src/rpc/internal/createRoot.ts.md)
+   drains only a child that reached readiness, and drains before it closes the child connection. Requirements:
+   [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0),
+   [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1).
+
+Untested cases stay open: an `ErrorEvent` with no message
+([`REQ-RUNTIME-8-M3ENFM.T1.P6`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6)), a repeated load or parse failure event after the fetch started
+([`REQ-RUNTIME-8-M3ENFM.T1.P7`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7)), the drain of a worker that already failed
+([`REQ-RUNTIME-7-A2VAR0.T1.P15`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p15)), and the host not reporting a handled failure event as an uncaught
+error ([`REQ-RUNTIME-8-M3ENFM.T1.P8`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p8)). The first three also stay open as browser root worker cases in the file
+report.
+
+Separate gap fill: [StepTimer.ts](../implementation/source/src/utils/StepTimer.ts.md) and
+[EvmCustomPrecompiles.ts](../implementation/source/src/evm/EvmCustomPrecompiles.ts.md) came with HEAD `6bf307f32`
+without file reports; both reports are now added. They are not part of the changes above.
+
 ## Authoring rollback after a refused inbound message — 2026-10-16
 
 Observed 2026-10-16 on a live poker table: a player's `playTransaction` applied its action to the local VM, then the
@@ -1203,3 +1414,58 @@ the fix and green after. Mirror:
 [LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md).
 Another instance of
 [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw).
+
+## First-join collection failure aborts instead of escaping — 2026-10-26
+
+**What.** A join confirmation the network does not give is now one typed error. `JoinChannelService`
+asks every threshold member in parallel, keeps each member's outcome (a signature, or a failure:
+`unreachable`, `no-answer`, `wrong-signer`), and after all are in throws one `JoinCollectionError`
+that names each failed member
+([JoinChannelService.ts](../../../src/rpc/network/services/joinChannel/JoinChannelService.ts),
+[JoinCollectionError.ts](../../../src/rpc/network/services/joinChannel/JoinCollectionError.ts)). Chain
+reads, the `Clock`, the join-expired checks and local signing still throw their own errors; those stay
+fatal. A join deadline that passes during the reachability grace is a configuration error (a join
+lifetime shorter than two agreement windows), so it stays fatal too. `ChannelJoinService` owns the
+outcome: its `collectConfirmation` catches only `JoinCollectionError`, warns "The join confirmation could
+not be collected; nothing is submitted", and returns no confirmation. A first join through
+`collectAndJoinChannel` then calls `stateManager.abort()` and returns `false`, so the runtime aborts and
+disposes with nothing submitted. A committed caller's top-up through connect now goes through
+`collectAndTopUp`, which returns `false` with no abort and nothing submitted
+([LocalP2pSigner.ts](../../../src/evm/signer/LocalP2pSigner.ts)). A race retry's fresh collection keeps
+its `SYNCED`/`false` outcome only for the typed error; any other error now rejects the call
+([ChannelJoinService.ts](../../../src/stateManager/membership/ChannelJoinService.ts)).
+
+**Why.** Engineer decision (Luka, 2026-10-26, option 1a). A Mac join failed fatally: two threshold
+members' join-signature replies were lost on WebRTC links that dropped seconds after they opened (see
+[`FIND-UPG-DROP-1-ETY2PS`](open-findings.md#find-upg-drop-1-ety2ps)). The specification already said
+that a failed first-join collection aborts and disposes, but the code let the RPC timeout escape the
+connect call, so the integrator (poker) treated it as fatal. The specification now also states that the
+failure names every failed member and that only a collection failure has this outcome
+([`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q),
+[`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)).
+
+**Disposed-logger guard.** The abort disposes the joiner while its inbound handlers may still run. A
+handler that ends after that disposal logged its error or sent its reply through the disposed logger,
+which throws, so its dispatch rejected. `ANetworkRpcService.runRPC` now skips the error log, the reply
+and the async-send error log when its logger is disposed: a disposed runtime answers nobody and logs
+nothing ([ANetworkRpcService.ts](../../../src/rpc/network/ANetworkRpcService.ts),
+[`REQ-RPC-2-SZDTTM` (Request lifecycle)](../specification/peer-communication/rpc.md#req-rpc-2-szdttm)). The guard reads the
+logger, not `stateManager.isDisposed`: `abort()` marks the state manager disposed before its teardown
+ends, and loopback control requests sent during that teardown still need their replies.
+
+**Tests.** `JoinChannelSignatureRequest.test.ts`: the unreachable and fault cases check the error's
+name and exact message, one case names two failed members, and the silent-member case holds the
+responder's answers with `holdJoinSignatureResponses` (the old delay stub is deleted). Three new
+connect cases: a first join with one silent member returns `false`, aborts, disposes and submits
+nothing; a participating member's top-up with one silent member returns `false`, keeps its status and
+submits nothing; a first join whose threshold set read fails (`failNextJoinThresholdRead`) rejects with
+no abort and no submission. `ARpcService.test.ts` "ANetworkRpcService on a disposed runtime" releases a
+held handler into a disposed inline responder and expects every dispatch to resolve (staging in
+`test/fixtures/DisposedResponderStaging.ts`). The hold control is not released on harness disposal; the
+tests release it in `finally`
+([`FIND-HARNESS-HOLD-1-9B480C`](open-findings.md#find-harness-hold-1-9b480c)). Mirrors:
+[JoinChannelService.ts.md](../implementation/source/src/rpc/network/services/joinChannel/JoinChannelService.ts.md),
+[JoinCollectionError.ts.md](../implementation/source/src/rpc/network/services/joinChannel/JoinCollectionError.ts.md),
+[ChannelJoinService.ts.md](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md),
+[LocalP2pSigner.ts.md](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md),
+[ANetworkRpcService.ts.md](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md).

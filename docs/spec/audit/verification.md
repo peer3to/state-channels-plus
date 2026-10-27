@@ -11,6 +11,70 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## WebAssembly failure diagnostics — 2026-10-26
+
+New report [ThreadResources.test.ts](../verification/tests/test/utils/ThreadResources.test.ts.md) with four
+declarations. They use two hand-built modules (an exported memory, and a `trap` that runs
+`unreachable`) in the Node test thread: entry-point counting with `instanceof` intact, a real trap
+serialized with its diagnostics and kept through `deserializeError` and a second serialization, no
+diagnostics on an ordinary error, and one worker count across repeated shutdowns. They cover `.P1`
+to `.P4` of [`UNIT-TEST-THREAD-RESOURCES-1-AY7843`](../implementation/source/src/utils/threadResources.ts.md#unit-test-thread-resources-1-ay7843) and `.P7` of
+[`UNIT-TEST-ERROR-WIRE-1-ZWGJ00`](../implementation/source/src/rpc/internal/errorWire.ts.md#unit-test-error-wire-1-zwgj00). The memory probe is only tested where it works; the
+new log fields and the startup-failure upload
+([`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6)) have no test.
+
+## Application chain access, local join-signature answers, closed-transport frames — 2026-10-26
+
+[RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) gains four log-subscription declarations on
+two proxied nodes of one private chain: each log once with no `eth_newFilter`, failover after the first node
+drops, destroy right after a subscription, and unsubscribe at every node.
+[JoinChannelSignatureRequest.test.ts](../verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md)
+gains the held-chain-RPC collection and the mirror-miss fallback; the deadline case is renamed to "…on the
+responder's local clock" and now runs on the shared chain: it reads the responder's `Clock` second and calls the
+real `signJoinRequest` in one synchronous run (staging in `JoinSignatureDeadlineStaging`).
+[NetworkRpcRouter.test.ts](../verification/tests/test/rpc/NetworkRpcRouter.test.ts.md) deletes "keeps network
+receive-after-close admission unchanged" and adds "drops network frames on a closed transport before dispatch or
+logging". The harness `ValidationProbeService.postBlockCalldataOnChain` now only broadcasts and returns the
+transaction hash; `TransitionActions.postBlockCalldataOnChainWait` waits for the receipt on the harness provider,
+and every caller moved to it with unchanged oracles. The participant-lifecycle lone-leaver case and the first
+`U71` unit case now wait for `NOT_OPENED` with `waitUntilPeerStatus`: the leave check reports `onLeftChannel`
+before the close handler sets `NOT_OPENED`, and the specification does not order them.
+[RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) adds three declarations:
+"subscribes a reconnected node socket again and relays its logs once"
+([`REQ-CHAINOBS-4-JA3YF8.T1.P5`](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8.t1.p5)) cuts and restores the first node, then cuts the second, so
+only the reopened socket can deliver the next log; "does not relay a log 128 or more blocks below the highest
+relayed log" ([`REQ-CHAINOBS-4-JA3YF8.T1.P6`](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8.t1.p6)) withholds two log notifications at the proxy, mines with
+`hardhat_mine` to 128 blocks above the first, and releases them: the log 127 below is delivered and the log 128
+below is not; "rejects the exported chain access startup when no node is reachable and destroys every node"
+([`REQ-CHAINOBS-4-JA3YF8.T1.P7`](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8.t1.p7)) calls `createRpcNodesProvider` from the SDK index and checks the
+credential-safe error and that no destroyed node reconnects. Each failed with the code temporarily broken (no
+subscription on a reopened socket, no bound check, no node destroy) and passed with it restored. The once case
+now checks every log once, not only the first.
+
+## Initial-sync deadline hold, two-window sync default, browser worker failure cause and drain — 2026-10-26
+
+[P2PManager.test.ts](../verification/tests/test/P2PManager.test.ts.md) gains six declarations. Five hold the
+observer's real participant reads past the initial deadline and end them as participant, "not a participant",
+a rejection, one of two at a time, or after the transports closed; one checks that the initial sync request
+times out after two windows. The genesis-settle case now checks that the settle cancels the deadline task and
+that a task still run afterwards changes nothing. The E2E-BotConnectionFixes H11 timeout case asserts the
+two-window default for a non-initial caller. The case "initial handshake selects the two-window channel-load
+sync entry" is renamed to "initial handshake starts one channel-load sync and reaches SYNCED"; it still claims no
+permutation. The case "observer ignores a stale false sync result once chain genesis already synced it" now
+waits for the recorded settle of the timed-out request (result `false`) instead of a fixed sleep. The
+[browser worker gate](../verification/tests/test/browser/run-worker-contract-executor.mjs.md) gains six
+declarations in real Chromium: load, fetch, parse and top-level failures; the failure-log write that throws;
+the drain that stores a just-written error line before disposal returns; the not-ready disposal without the
+wait; and the drain timeout with and without a throwing warning write.
+These permutations have no test:
+[`REQ-RUNTIME-8-M3ENFM.T1.P6`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6) (an error with no message),
+[`REQ-RUNTIME-8-M3ENFM.T1.P7`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7) (a second load or parse
+failure report after the re-fetch started),
+[`REQ-RUNTIME-8-M3ENFM.T1.P8`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p8) (a handled failure event is
+not also reported as uncaught) and
+[`REQ-RUNTIME-7-A2VAR0.T1.P15`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p15) (a ready context the owner
+saw fail is stopped on disposal without the closing wait).
+
 ## Worker drain bound and refused handle close — 2026-10-14
 
 [RootWorkerDrain](../verification/tests/test/rpc/RootWorkerDrain.test.ts.md) gains three cases on a real

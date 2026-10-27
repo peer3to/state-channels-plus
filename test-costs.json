@@ -415,7 +415,7 @@
       "peakRssGb": 0.801,
       "measurementReason": null
     },
-    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition initial handshake selects the two-window channel-load sync entry": {
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition initial handshake starts one channel-load sync and reaches SYNCED": {
       "durationMs": 11167,
       "avgCores": 0.969,
       "peakRssGb": 0.773,
@@ -8929,7 +8929,7 @@
       "peakRssGb": 0.753,
       "measurementReason": null
     },
-    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests accepts the exact responder deadline and rejects one second past it on an owned chain": {
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests accepts the exact responder deadline and rejects one second past it on the responder's local clock": {
       "durationMs": 16679,
       "avgCores": 0.882,
       "peakRssGb": 1.3,

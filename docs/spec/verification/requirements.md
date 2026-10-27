@@ -192,7 +192,7 @@ Specification cases tested: 2/6. Untested: T1.P1, T1.P3, T1.P4, T1.P5.
 Specification cases tested: 7/9. Untested: T1.P1, T1.P3.
 
 [`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)
-Specification cases tested: 17/19. Untested: T1.P6, T1.P11.
+Specification cases tested: 19/21. Untested: T1.P6, T1.P11.
 
 [`REQ-AUTH-6-E7SSH3` (Initiator verification and bidirectional clock compatibility)](../specification/peer-communication/handshake.md#req-auth-6-e7ssh3)
 Specification cases tested: 4/12. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
@@ -277,6 +277,9 @@ Specification cases tested: 12/12.
 
 [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 Specification cases tested: 33/33.
+
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+Specification cases tested: 7/7.
 
 [`REQ-CONFIG-1-PDHA8T` (Explicit precedence)](../specification/runtime/configuration.md#req-config-1-pdha8t)
 Specification cases tested: 0/6.
@@ -579,10 +582,10 @@ Specification cases tested: 0/4.
 Specification cases tested: 0/6.
 
 [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
-Specification cases tested: 19/20. Untested: T1.P4.
+Specification cases tested: 22/23. Untested: T1.P4.
 
 [`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)
-Specification cases tested: 8/8.
+Specification cases tested: 9/9.
 
 [`REQ-JOINSIG-3-VAGFVD` (Refusal is penalty-free)](../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd)
 Specification cases tested: 6/6.
@@ -669,7 +672,7 @@ Specification cases tested: 4/6. Untested: T1.P2, T1.P6.
 Specification cases tested: 0/4.
 
 [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1)
-Specification cases tested: 1/4. Untested: T1.P1, T1.P2, T1.P3.
+Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P6.
 
 [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 Specification cases tested: 15/18. Untested: T1.P11, T1.P16, T1.P17.
@@ -759,7 +762,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 9/11. Untested: T1.P6, T1.P11.
 
 [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
-Specification cases tested: 14/20. Untested: T1.P8, T1.P9, T1.P11, T1.P14, T1.P16, T1.P18.
+Specification cases tested: 15/21. Untested: T1.P8, T1.P9, T1.P11, T1.P14, T1.P16, T1.P18.
 
 [`REQ-RPC-3-ZM9WR5` (Service authorization)](../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P6.
@@ -771,7 +774,7 @@ Specification cases tested: 7/8. Untested: T1.P4.
 Specification cases tested: 3/11. Untested: T1.P3, T1.P4, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11.
 
 [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
-Specification cases tested: 11/11.
+Specification cases tested: 12/12.
 
 [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
 Specification cases tested: 12/12.
@@ -810,7 +813,10 @@ Specification cases tested: 0/17.
 Specification cases tested: 2/2.
 
 [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0)
-Specification cases tested: 8/8.
+Specification cases tested: 12/13. Untested: T1.P15.
+
+[`REQ-RUNTIME-8-M3ENFM` (An isolated context's failure names its cause)](../specification/runtime/execution.md#req-runtime-8-m3enfm)
+Specification cases tested: 6/9. Untested: T1.P6, T1.P7, T1.P8.
 
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.
@@ -918,7 +924,7 @@ Specification cases tested: 79/79.
 Specification cases tested: 45/45.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
-Specification cases tested: 2/3. Untested: T1.P1.
+Specification cases tested: 3/4. Untested: T1.P1.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.
@@ -972,13 +978,13 @@ Specification cases tested: 7/7.
 Specification cases tested: 8/8.
 
 [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
-Specification cases tested: 14/14.
+Specification cases tested: 20/20.
 
 [`REQ-TJOIN-4-SDPZJW` (Direct response routing)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw)
 Specification cases tested: 3/4. Untested: T1.P2.
 
 [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
-Specification cases tested: 23/23.
+Specification cases tested: 26/26.
 
 [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
 Specification cases tested: 5/5.
@@ -1014,7 +1020,7 @@ Specification cases tested: 0/8.
 Specification cases tested: 0/4.
 
 [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)
-Specification cases tested: 2/5. Untested: T1.P2, T1.P3, T1.P4.
+Specification cases tested: 3/6. Untested: T1.P2, T1.P3, T1.P4.
 
 [`REQ-UPG-3-T1SRMS` (Single deterministic initiator)](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms)
 Specification cases tested: 0/6.

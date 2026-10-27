@@ -1,7 +1,10 @@
 // @spec-test-coverage-ignore: typed WebSocket boundary for HolepunchRelay component tests
 
+import Holepunch from "@/Holepunch";
 import HolepunchRelay from "@/HolepunchRelay";
+import type P2PManager from "@/P2PManager";
 import { type Logger, createLogger } from "@/utils";
+import { config } from "@/utils/config";
 import sinon from "sinon";
 
 type WebSocketListener = (event: unknown) => void;
@@ -93,17 +96,49 @@ export class HolepunchRelayFixture {
     }
 
     public init(urls: string[]): void {
-        this.logger = createLogger(
-            {},
-            {},
-            { level: "error", attachErrorListener: false }
-        );
+        this.logger = this.createLogger();
         this.relay = HolepunchRelay.init(
             urls,
             () => {
                 this.updateCount += 1;
             },
             this.logger
+        );
+    }
+
+    /**
+     * A browser-runtime Holepunch whose relay is a {@link RecordingWebSocket}:
+     * the real Hyperswarm and dht-relay client run on it, and no relayer ever
+     * answers what they send.
+     */
+    public createBrowserHolepunch(urls: string[]): Holepunch {
+        this.logger = this.createLogger();
+        this.sandbox.replace(config, "HOLEPUNCH_RELAYER_URLS", urls);
+        const windowDescriptor = Object.getOwnPropertyDescriptor(
+            globalThis,
+            "window"
+        );
+        Object.defineProperty(globalThis, "window", {
+            configurable: true,
+            value: globalThis
+        });
+        try {
+            return new Holepunch({
+                logger: this.logger,
+                rpcRouter: undefined
+            } as unknown as P2PManager);
+        } finally {
+            if (windowDescriptor)
+                Object.defineProperty(globalThis, "window", windowDescriptor);
+            else Reflect.deleteProperty(globalThis, "window");
+        }
+    }
+
+    private createLogger(): Logger {
+        return createLogger(
+            {},
+            {},
+            { level: "error", attachErrorListener: false }
         );
     }
 
@@ -154,6 +189,7 @@ export class HolepunchRelayFixture {
         this.clock = undefined;
         this.updateCount = 0;
         this.relay = undefined;
+        if (this.logger && !this.logger.isDisposed) this.logger.dispose();
         this.logger = undefined;
         RecordingWebSocket.instances = [];
     }
