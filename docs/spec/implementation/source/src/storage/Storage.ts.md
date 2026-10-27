@@ -25,7 +25,7 @@ Derived reads join explicitly and fail explicitly
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P2` — missing block at coordinates
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P3` — negative-height genesis resolution
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P4` — membership-change union with explicit resulting hash
-- [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P5` — getPreviousBlockOrSnapshot absent predecessor returns neither block nor snapshot
+- [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P5` — getPreviousBlockOrSnapshot absent predecessor returns neither block nor snapshot
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P6` — genesis machine-state full join
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P7` — previous-snapshot full join
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P8` — participants-union full join
@@ -35,7 +35,6 @@ Derived reads join explicitly and fail explicitly
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P12` — missing genesis snapshot
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P13` — missing machine state for genesis hash
 - [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P14` — membership-change union without explicit resulting hash
-- [ ] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P15` — getPreviousRelevantTimestamp absent predecessor is outside its precondition (its caller reads a stored block)
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P16` — stored lookup equals direct computation with the same snapshots
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P17` — unions overlapping snapshots and canonicalizes addresses without storing a result
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P18` — preserves both sides of disjoint membership changes
