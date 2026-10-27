@@ -7,6 +7,7 @@ import type {
 } from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
+import { installMirrorShadowCheck } from "./MirrorShadowCheck";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
@@ -441,6 +442,11 @@ export class PeerTestHarness<
             discoveryUrl = disc.url;
             this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
         }
+
+        // Diagnostic mode: compare every eth_call the mirror answers with the
+        // node's answer at the same block (inline runtimes only).
+        if (process.env.MIRROR_SHADOW_LOG)
+            installMirrorShadowCheck(nodeUrl, process.env.MIRROR_SHADOW_LOG);
 
         // The peers' providers answer latest-block reads from a local copy of
         // the chain that this service keeps current. One service serves every
