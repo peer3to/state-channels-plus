@@ -228,7 +228,7 @@ Specification cases tested: 4/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)
-Specification cases tested: 7/10. Untested: T1.P2, T1.P4, T1.P5.
+Specification cases tested: 9/12. Untested: T1.P2, T1.P4, T1.P5.
 
 [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)
 Specification cases tested: 0/11.

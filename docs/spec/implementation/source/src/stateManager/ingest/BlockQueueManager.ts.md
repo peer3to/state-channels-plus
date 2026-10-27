@@ -35,7 +35,7 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P6` — expiry merge branch
 - [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P7` — expiry schedule branch
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P8` — active-fork future block whose source proves a lineage carrying it: applied, source kept
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9` — unknown-fork one-shot sync probe at expiry
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9` — unknown fork at expiry while the own fork is not disputed: sender struck, no sync
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P10` — active-fork future block whose source proves a lineage holding a different block at that height: dropped, source excluded
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P11` — active-fork future block at a height its source never reached: probe fails, dropped, source excluded
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P12` — junk supplier with another sync in flight toward it at expiry: the probe waits, then excludes

@@ -281,7 +281,10 @@ request after the first completes. The in-flight claim is released on every outc
 **<a id="req-spc-3-azbkr1"></a>`REQ-SPC-3-AZBKR1` — No permanent exclusion for can't-prove-yet.** A responder
 that honestly cannot yet prove a requested target MUST NOT permanently exclude the requester. An
 uncommitted responder (its own initial load in flight) answers once that load settles: success
-answers normally; failure fails the request, and the responder aborts on its own.
+answers normally; failure fails the request, and the responder aborts on its own. A target above
+the responder's latest height, or a fork other than its derived latest fork, is not a can't-prove-yet
+case: an honest requester pins only a block its sender already stored, and asks about an unknown fork
+only while its own fork is disputed ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../block-progression/block-processing.md#req-block-pipe-4-cf52j6)).
 
 An authenticated source still absent after chain refresh triggers ordinary sync under
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df). Intake awaits the existing channel,

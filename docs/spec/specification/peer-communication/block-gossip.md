@@ -60,17 +60,17 @@ gossip redundancy plus the recovery paths of [`REQ-BLOCK-PIPE-4-CF52J6` (Recover
 
 ## Failure outcomes
 
-| Failure                                                                             | Outcome                                                                                                              |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Unauthenticated or malformed frame                                                  | Ingress dispatch consequences ([rpc.md](./rpc.md)); never reaches intake.                                            |
-| Duplicate/older/future confirmation                                                 | No penalty — merged or held by the pipeline's rules.                                                                 |
-| Wrong-channel confirmation                                                          | Terminate and exclude the sender: a peer addressing the wrong channel is misdirected or probing.                     |
-| Confirmation on a disputed fork                                                     | Ignored without penalty (the sender may be an honest straggler) unless the sender already acknowledged that dispute. |
-| Confirmation on an unknown fork                                                     | Held; the admitted-source expiry probe decides the sender's fate.                                                    |
-| Sender-attributable objective violation (per pipeline verdict)                      | Terminate and exclude the sender.                                                                                    |
-| Non-attributable invalid data                                                       | Drop; session-level consequence at most.                                                                             |
-| Local intake failure (own chain provider or local mirror unavailable during intake) | Not a verdict on the sender: it never excludes, suspends or strikes the sender.                                      |
-| Live confirmation before the receiver is synced                                     | Retained, then processed by normal intake once synced; dropped on abort.                                             |
+| Failure                                                                             | Outcome                                                                                                                                      |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unauthenticated or malformed frame                                                  | Ingress dispatch consequences ([rpc.md](./rpc.md)); never reaches intake.                                                                    |
+| Duplicate/older/future confirmation                                                 | No penalty — merged or held by the pipeline's rules.                                                                                         |
+| Wrong-channel confirmation                                                          | Terminate and exclude the sender: a peer addressing the wrong channel is misdirected or probing.                                             |
+| Confirmation on a disputed fork                                                     | Ignored without penalty (the sender may be an honest straggler) unless the sender already acknowledged that dispute.                         |
+| Confirmation on an unknown fork                                                     | Held; at expiry the sender takes a counted close, unless the receiver's own fork is disputed, when the admitted-source expiry probe decides. |
+| Sender-attributable objective violation (per pipeline verdict)                      | Terminate and exclude the sender.                                                                                                            |
+| Non-attributable invalid data                                                       | Drop; session-level consequence at most.                                                                                                     |
+| Local intake failure (own chain provider or local mirror unavailable during intake) | Not a verdict on the sender: it never excludes, suspends or strikes the sender.                                                              |
+| Live confirmation before the receiver is synced                                     | Retained, then processed by normal intake once synced; dropped on abort.                                                                     |
 
 ## Requirements and invariants
 

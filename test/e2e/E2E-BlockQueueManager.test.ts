@@ -1542,7 +1542,7 @@ describe("E2E: BlockQueueManager", function () {
             }
         });
 
-        it("queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier", async function () {
+        it("queues an unknown-fork block without an arrival sync; at expiry, with its own fork not disputed, the observer strikes the sender and asks nobody", async function () {
             const h = TestSession.getHarness();
             const timeConfig = {
                 p2pTime: 3,
@@ -1587,7 +1587,7 @@ describe("E2E: BlockQueueManager", function () {
             });
 
             // Queued unscheduled: the pipeline never ran, and there is NO
-            // arrival-time sync - the queue timeout is the sole sync probe now.
+            // arrival-time sync.
             expect(
                 await h
                     .control(observer)
@@ -1607,16 +1607,16 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.be.null;
 
-            // The consequence arrives through the sync flow, not the queue: the
-            // supplier cannot prove the fork, so the failed sync closes the
-            // connection with one strike and no verdict. `queueTimeout` removes
-            // the block before it issues that sync probe, so once the strike
+            // The observer's fork is not disputed, so no honest successor fork
+            // exists: `queueTimeout` removes the block and strikes its sender
+            // (one counted close, no verdict) without a sync, so once the strike
             // lands the eviction has already happened - asserted synchronously
             // below.
             await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
                 target: author
             });
+            expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(0);
             expect(
                 await h
                     .control(observer)
@@ -1765,58 +1765,7 @@ describe("E2E: BlockQueueManager", function () {
             }
         });
 
-        it("unknown-fork timeout asks both the supplier and the author to sync", async function () {
-            const h = TestSession.getHarness();
-            const timeConfig = {
-                p2pTime: 3,
-                agreementTime: 4,
-                chainFallbackTime: 30,
-                evidenceTime: 8
-            };
-            await h.lifecycle.start(3, 0, { timeConfig });
-
-            const observer = h.getPeer(0);
-            const author = h.getPeer(1);
-            const supplier = h.getPeer(2);
-
-            const restoreSync = await h.rpcStub.recordSpectateSync(0, {
-                forward: false
-            });
-
-            const { bogusBlock, blockConfirmation } =
-                await h.byzantine.craftBogusForkBlockZero(author.index);
-            await h.transition.ingestBlockConfirmationWait({
-                peerIndex: observer.index,
-                blockConfirmation,
-                ingestOptions: {
-                    origin: BlockOrigin.NETWORK,
-                    senderAddress: supplier.address
-                },
-                keepConnection: true,
-                waitForProcessed: false
-            });
-            expect(
-                await h
-                    .control(observer)
-                    .query.isBlockQueued(bogusBlock.hash)
-                    .request()
-            ).to.equal(true);
-
-            // the record stub releases this once the queue timeout has asked
-            // both - a signal, not a poll. members, not a set: same addresses in
-            // any order, and a peer asked twice would fail on the extra entry
-            expect(
-                await h.rpcStub.spectateSyncTargetsWait(
-                    0,
-                    2,
-                    (timeConfig.agreementTime + 20) * 1000
-                )
-            ).to.have.members([supplier.address, author.address]);
-
-            await restoreSync();
-        });
-
-        it("unknown fork: both the supplier and the author are asked and both are cut", async function () {
+        it("unknown fork while the observer's fork is not disputed: the supplier is struck and the author is left alone", async function () {
             const h = TestSession.getHarness();
             const timeConfig = {
                 p2pTime: 3,
@@ -1833,12 +1782,8 @@ describe("E2E: BlockQueueManager", function () {
                 .control(observer)
                 .query.getForkId()
                 .request();
-            const observerStatus = await h
-                .control(observer)
-                .query.getStatus()
-                .request();
 
-            const { blockConfirmation } =
+            const { bogusBlock, blockConfirmation } =
                 await h.byzantine.craftBogusForkBlockZero(author.index);
             await h.transition.ingestBlockConfirmationWait({
                 peerIndex: observer.index,
@@ -1851,19 +1796,142 @@ describe("E2E: BlockQueueManager", function () {
                 waitForProcessed: false
             });
 
-            // Neither can prove the fork: each failed sync probe is one strike,
-            // not a verdict, and both connections close.
+            // no honest successor of an undisputed fork exists: the sender
+            // takes one counted close, the author never sent it
             await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
                 target: supplier
             });
-            await h.assert.rpc.peerStruckWithoutBlacklist({
-                observer,
-                target: author
-            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.getStrikes(author.address)
+                    .request()
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(author)
+                    .query.isBlacklisted(observer.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request()
+            ).to.equal(false);
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(originalForkId);
+        });
+
+        it("a later spectator drops a replayed old-fork block while its own fork is not disputed: it strikes the sender, asks nobody, and its author does not blacklist it", async function () {
+            const h = TestSession.getHarness();
+            const { originalForkId, newForkId, honestPeers } =
+                await h.scenario.fourPeersDisputeResolution();
+            const honestIndices = honestPeers.map((peer) => peer.index);
+            // a snapshot on the successor -> a later sync starts after the
+            // dispute, so the spectator never learns the old fork was disputed
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: honestIndices,
+                waitForFinalization: true
+            });
+            await h.transition.postSnapshotWait({ forkId: String(newForkId) });
+            // the post waits for the reduction to settle on chain
+            await waitFor(
+                async () =>
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId === newForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            const { peer: spawned } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: honestIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20
+            });
+            const spectator = h.getPeer(spawned.index);
+            const [author, replayer] = honestPeers;
+
+            // a genuine old-fork block the author signed
+            const oldTip = await h
+                .control(author)
+                .query.getLatestBlockHeight(originalForkId)
+                .request();
+            let oldBlock = null;
+            for (let height = oldTip!; height >= 0 && !oldBlock; height--) {
+                const bundle = await h
+                    .control(author)
+                    .query.getBlockByHeight(originalForkId, height)
+                    .request();
+                if (bundle?.author === author.address) oldBlock = bundle;
+            }
+            expect(oldBlock, "author signed no old-fork block").to.not.equal(
+                null
+            );
+            expect(
+                (
+                    await h
+                        .control(spectator)
+                        .validation.probeIsDisputedFork(originalForkId, false)
+                        .request()
+                ).disputed,
+                "premise: the spectator's mirror does not know the old fork was disputed"
+            ).to.equal(false);
+
+            const restoreSync = await h.rpcStub.recordSpectateSync(
+                spectator.index,
+                { forward: true }
+            );
+            await h
+                .control(replayer)
+                .byzantine.sendBlockConfirmation(
+                    oldBlock!.encodedBlockConfirmation,
+                    spectator.address
+                )
+                .request();
+            await waitFor(
+                async () =>
+                    await h
+                        .control(spectator)
+                        .query.isBlockQueued(oldBlock!.hash)
+                        .request()
+            );
+            // the queue timeout strikes the sender: the replayer, not the author
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: spectator,
+                target: replayer
+            });
+            expect(
+                await h
+                    .control(spectator)
+                    .query.isBlockQueued(oldBlock!.hash)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h.rpcStub.spectateSyncCallCount(spectator.index)
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getStrikes(author.address)
+                    .request()
+            ).to.equal(0);
+            for (const peer of [author, replayer]) {
+                expect(
+                    await h
+                        .control(peer)
+                        .query.isBlacklisted(spectator.address)
+                        .request()
+                ).to.equal(false);
+            }
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getBlockByHash(oldBlock!.hash)
+                    .request()
+            ).to.be.null;
+            await restoreSync();
         });
 
         it("still recovers via local reduction when the raced block is on yet another unknown fork", async function () {

@@ -10,8 +10,9 @@ live collaborators — poking the component host-side through the harness contro
 ingest guards (forged author signature, author signatures in contract-rejected encodings,
 wrong-channel block, outsider-authored block), the
 queue-timeout expiry branches (future-block eviction without punishment, queued-entry merge into a
-stored block with strays stripped and the supplier blacklisted, unknown-fork probe that asks both
-supplier and author to sync and punishes through the failed sync), the wrong-fork recovery paths
+stored block with strays stripped and the supplier blacklisted, and an unknown-fork block whose
+sender is struck without a sync while the observer's own fork is not disputed, including an old-fork
+block replayed to a spectator that synced after the fork's dispute record was cleared), the wrong-fork recovery paths
 (local reduction at ingest when the current fork is disputed, quarantine-for-sync of unknown
 forks, queue drain after a fork transition), the `wrongGenesisDetected` strategy fallback with and
 without a genesis snapshot, the stale-fork entry gates, and the queue-timeout window arithmetic.
@@ -68,7 +69,7 @@ and hold no queued entry for it.
 - `future block whose source proves its lineage at queue timeout is applied and the source kept`: REQ-BLOCK-PIPE-4-CF52J6.T1.P7, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P8
 - `future block at a height its source holds a different block at queue timeout is dropped and the source excluded`: REQ-BLOCK-PIPE-4-CF52J6.T1.P8, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P10
 - `junk supplier is excluded even when another sync toward it is in flight at queue timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P12
-- `future block at a height its source never reached at queue timeout is dropped and the source struck`: REQ-BLOCK-PIPE-4-CF52J6.T1.P9, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P11
+- `future block at a height its source never reached at queue timeout is dropped and the source struck`: REQ-BLOCK-PIPE-4-CF52J6.T1.P3, REQ-BLOCK-PIPE-4-CF52J6.T1.P9, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P11
 - `queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P6
 - `a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P7
 - `recovers the first reduced-fork block by reducing locally at ingest`: REQ-BLOCK-PIPE-9-QA66GT.T1.P5
@@ -76,10 +77,10 @@ and hold no queued entry for it.
 - `a kill-period chain read failure while scheduling fork recovery does not blacklist the honest sender`: REQ-GOSSIP-2-9PMMNH.T2.P2, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P55
 - `a local failure during the sender's eligibility refresh does not blacklist the honest sender`: REQ-GOSSIP-2-9PMMNH.T2.P3, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56
 - `an absent sender whose intake-gate sync fails on our side gets no verdict`: REQ-GOSSIP-2-9PMMNH.T2.P4, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57
-- `queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier`: REQ-BLOCK-PIPE-4-CF52J6.T1.P3, REQ-BLOCK-PIPE-4-CF52J6.T1.P6
+- `queues an unknown-fork block without an arrival sync; at expiry, with its own fork not disputed, the observer strikes the sender and asks nobody`: REQ-BLOCK-PIPE-4-CF52J6.T1.P6, REQ-BLOCK-PIPE-4-CF52J6.T1.P10, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9
 - `a queue timeout accepts a proved successor fork without excluding the supplier or author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P13, REQ-SYNC-1-T2589H.T1.P8
-- `unknown-fork timeout asks both the supplier and the author to sync`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9
-- `unknown fork: both the supplier and the author are asked and both are cut`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P19
+- `unknown fork while the observer's fork is not disputed: the supplier is struck and the author is left alone`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P19
+- `a later spectator drops a replayed old-fork block while its own fork is not disputed: it strikes the sender, asks nobody, and its author does not blacklist it`: REQ-BLOCK-PIPE-4-CF52J6.T1.P11
 - `still recovers via local reduction when the raced block is on yet another unknown fork`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P20
 - `drains an early reduced-fork block once the fork transition catches up`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P4
 - `missing genesis: no proof to build, sources blacklisted, no dispute`: REQ-BLOCK-PIPE-8-N529VH.T1.P3

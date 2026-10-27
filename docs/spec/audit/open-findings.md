@@ -798,7 +798,7 @@ make the RPC layer drop the sender's session for our own failure. Regression:
 
 ### DEF-10-199C7F
 
-**Defect:** _Partially resolved (2026-08-31)._ An `OPENED` responder that has not applied
+**Defect:** _Resolved (2026-10-27); partially resolved 2026-08-31._ An `OPENED` responder that has not applied
 genesis/state now retains one initial-load request per authenticated address behind
 `DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses
 the ordinary payload path. A duplicate from that address is rejected without replacing the first.
@@ -819,9 +819,21 @@ needs a failed check on the peer's own data; the responder's own lag is not one.
 responder cannot prove for another reason (a requested fork other than the derived latest, an
 above-latest height) keeps the existing punishment rule.
 
-**Proposed direction:** The weaponizable initial-readiness case is closed. The remaining
-exact-recovery classification is accepted by the current protocol and must stay visible in security
-review.
+_Resolution (2026-10-27):_ the remaining refusals that still blacklist the requester are a target
+above the responder's latest height and a fork other than its derived latest fork. No honest request
+reaches either. A pinned request goes only to the peers that sent or signed that block, and a peer
+stores a block before it gossips or relays it, so the target height is always held. A request for a
+non-current fork came from the queue's expiry probe, which asked a block's author about an unknown
+fork; a later snapshot clears an old fork's dispute record on chain, so a participant could replay a
+genuine old block to a node that synced afterwards and have its honest author blacklist that node.
+The probe now runs for an unknown fork only while the node's own fork is disputed; otherwise the block
+is dropped and its senders take a counted close
+([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
+[`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
+[`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).
+Engineer decision (Luke, 2026-10-27).
+
+**Proposed direction:** None.
 
 <a id="find-bqm-3-182x91"></a>
 

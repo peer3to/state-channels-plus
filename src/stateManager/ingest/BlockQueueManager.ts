@@ -1,6 +1,7 @@
 import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
@@ -533,8 +534,38 @@ export default class BlockQueueManager {
                 );
                 return;
             }
-            // Unknown fork (not disputed, no local genesis for it): ask the
-            // suppliers to prove it once; a sync rejected for invalid evidence
+            // An honest successor fork exists only once our own fork is
+            // disputed. Otherwise the block is stale or junk: a later snapshot
+            // clears an old fork's dispute record on chain, so its genuine
+            // author cannot prove it and would cut us for asking. Drop it and
+            // strike the peers that sent it, not its author.
+            const sm = this.stateManager;
+            if (
+                !(await sm.validationService.isDisputedFork(
+                    sm.forkId,
+                    sm.channelId
+                ))
+            ) {
+                this.logger.verbose(
+                    "queueTimeout - unknown fork while our fork is not disputed, striking its senders",
+                    {
+                        expectedForkId: String(sm.forkId),
+                        block: LoggerUtils.getBlockMetadata(
+                            entry.block,
+                            sm.storage
+                        )
+                    }
+                );
+                for (const peer of getSourcePeers(entry)) {
+                    sm.p2pManager.disconnectConnection(
+                        peer,
+                        DisconnectPolicy.allowRetry()
+                    );
+                }
+                return;
+            }
+            // Unknown fork while our own fork is disputed (a successor we have
+            // not installed yet): ask the suppliers to prove it once; a sync rejected for invalid evidence
             // punishes them (one that meets a dispute window the chain has not
             // reduced waits for that reduction first), and so does a proven
             // lineage that does not carry the block. This is
