@@ -846,7 +846,7 @@ stores a block before it gossips or relays it, so the target height is always he
 non-current fork came from the queue's expiry probe, which also asked a block's author about an
 unknown fork; a later snapshot clears an old fork's dispute record on chain, so a participant could
 replay a genuine old block to a node that synced afterwards and have its honest author blacklist that
-node. The probe now asks only the peers that sent the block, never its author. A sender stored the
+node. The probe now asks only the peers that sent the block, not an author that did not send it. A sender stored the
 block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
 ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
 [`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
