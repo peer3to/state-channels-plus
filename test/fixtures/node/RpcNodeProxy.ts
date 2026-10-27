@@ -120,6 +120,13 @@ export class RpcNodeProxy {
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
+    /** Notification methods the node pushes that this proxy drops. */
+    private readonly droppedNotifications = new Set<JsonRpcMethod>();
+    /** Notification method -> the pushes waiting here until released. */
+    private readonly heldNotifications = new Map<
+        JsonRpcMethod,
+        (() => void)[]
+    >();
     /** Most blocks an eth_getLogs may span before this proxy rejects it. */
     private maxLogSpan?: number;
     /**
@@ -306,6 +313,29 @@ export class RpcNodeProxy {
         };
     }
 
+    /** Drop the node's pushes of `method` (a notification, e.g. a subscription's) until {@link stopDroppingNotifications}. */
+    dropNotifications(method: JsonRpcMethod): void {
+        this.droppedNotifications.add(method);
+    }
+
+    stopDroppingNotifications(method: JsonRpcMethod): void {
+        this.droppedNotifications.delete(method);
+    }
+
+    /**
+     * Keep the node's pushes of `method` at the proxy until the returned
+     * release sends them in order.
+     */
+    holdNotifications(method: JsonRpcMethod): () => void {
+        const sends: (() => void)[] = [];
+        this.heldNotifications.set(method, sends);
+        return () => {
+            if (this.heldNotifications.get(method) === sends)
+                this.heldNotifications.delete(method);
+            for (const send of sends.splice(0)) send();
+        };
+    }
+
     /** Keep every socket open but forward nothing in either direction. */
     blackhole(): void {
         this.isBlackholed = true;
@@ -418,6 +448,7 @@ export class RpcNodeProxy {
             const { method, id, params } = readJsonRpcFrame(data);
             if (!method && id !== undefined && this.swallowedReplyIds.has(id))
                 return;
+            if (method && this.droppedNotifications.has(method)) return;
             const send = () => {
                 if (client.readyState === WebSocket.OPEN)
                     client.send(data, { binary: isBinary });
@@ -427,6 +458,13 @@ export class RpcNodeProxy {
                     transactionHash: notifiedTransactionHash(params),
                     send
                 });
+                return;
+            }
+            const heldPushes = method
+                ? this.heldNotifications.get(method)
+                : undefined;
+            if (heldPushes) {
+                heldPushes.push(send);
                 return;
             }
             const heldReplies =

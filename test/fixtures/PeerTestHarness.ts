@@ -47,6 +47,7 @@ import {
 } from "@/utils";
 import { Config, config, createConfig } from "@/utils/config";
 import { LogLevel } from "@/utils/logging/Logger";
+import { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type { HostExecModules } from "@test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods";
 import { AssertActions } from "@test/harness/actions/assert/AssertActions";
@@ -101,6 +102,11 @@ const HARDHAT_MNEMONIC =
 
 const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
+// Blocks the harness's storage diff service keeps for catch-up. Starting it
+// reads this many headers from the node, so it stays small; a mirror that
+// falls further behind clears its cache and refetches.
+const HARNESS_STORAGE_DIFF_RETENTION = 16;
+
 /**
  * Main test harness for E2E peer-to-peer testing
  */
@@ -126,6 +132,7 @@ export class PeerTestHarness<
     public provider!: ethers.WebSocketProvider;
     private ownNode?: { stop: () => void };
     private ownDiscovery?: { stop: () => void };
+    private ownStorageDiff?: StorageDiffService;
     /** Peer index -> the RPC node proxies its runtime connects through. */
     private readonly rpcNodeProxies = new Map<number, RpcNodeProxy[]>();
 
@@ -435,10 +442,29 @@ export class PeerTestHarness<
             this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
         }
 
+        // The peers' providers answer latest-block reads from a local copy of
+        // the chain that this service keeps current. One service serves every
+        // peer of this harness.
+        let storageDiffUrl = process.env.STORAGE_DIFF_URL;
+        if (!storageDiffUrl) {
+            this.ownStorageDiff = await StorageDiffService.start({
+                upstreamUrl: nodeUrl.replace(/^http/, "ws"),
+                port: 0,
+                retention: HARNESS_STORAGE_DIFF_RETENTION,
+                logger: this.logger.child({ component: "StorageDiffService" })
+            });
+            storageDiffUrl = this.ownStorageDiff.url;
+            this.logger.debug(
+                `Started harness storage diff service at ${storageDiffUrl}`
+            );
+        }
+
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+        this.harnessConfig.STORAGE_DIFF_URL = storageDiffUrl;
         config.PROVIDER_URL = nodeUrl;
         config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+        config.STORAGE_DIFF_URL = storageDiffUrl;
 
         // WebSocket so block/event subscriptions are push-based (eth_subscribe)
         // rather than HTTP polling — far less main-thread event-loop pressure.
@@ -1048,6 +1074,8 @@ export class PeerTestHarness<
 
         // Drop the provider's pollers; stop the node/discovery we started (if any).
         await this.provider?.destroy();
+        await this.ownStorageDiff?.close();
+        this.ownStorageDiff = undefined;
         this.ownNode?.stop();
         this.ownDiscovery?.stop();
         this.ownNode = undefined;
