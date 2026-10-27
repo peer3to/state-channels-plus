@@ -2602,6 +2602,11 @@ describe("E2E: BlockQueueManager", function () {
                 observerIndex,
                 "BlockQueueManager.queueTimeout"
             );
+            // the leader holds its own next block, so its timeout of the next
+            // writer would dispute with that block in it and the observer's
+            // replay would store it
+            const restoreLeaderTimeouts =
+                await h.rpcStub.suppressTimeoutCheck(leaderIndex);
 
             // the leader's real next block stays off the wire, so the other
             // participants time its author out and dispute the fork
@@ -2674,6 +2679,7 @@ describe("E2E: BlockQueueManager", function () {
             ).to.equal(startHeight);
             expect(await control.query.getForkId().request()).to.equal(forkId);
 
+            await restoreLeaderTimeouts();
             await queueTimeouts.release(false);
             await race.release({
                 replayEvents: false,
