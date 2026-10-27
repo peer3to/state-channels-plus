@@ -2177,20 +2177,46 @@ drops an unparseable environment value, contrary to
 **Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
 `createConfig` and reject an unparseable or out-of-range value.
 
+<a id="find-lif-1-b36vst"></a>
+
+### FIND-LIF-1-B36VST
+
+**Defect:** _Withdrawn (2026-10-27)._ Luke decided to keep `onDisputeStarted(3 × evidenceTime)`
+in `EventHandler.handleDisputeCommitted`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)): the surfaced
+value is a conservative ceiling that also covers the reduction transaction landing after the kill
+period (measured pipeline latency in [`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)), while
+about `2 × evidenceTime` stays the protocol-side pause. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) now states the
+ceiling, so the code no longer departs from it.
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>
 
-### FIND-VERIFY-1-GFERDM — Four specified behavior families lack exact evidence
+### FIND-VERIFY-1-GFERDM — The host-environment matrix lacks exact evidence
 
-Status: open verification gap. The implementation links exist, but no declaration currently owns a complete permutation for these families. Adding an implementation link does not close this gap.
+Status: open verification gap, narrowed (2026-10-27) to the host matrix.
+[`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) and [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+now have exact evidence for every permutation. [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) has it
+for the valid, invalid, calldata and no-calldata cases. Luke decided the two other audit cases
+(2026-10-27):
 
-- [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The runtime setup report identifies its platform boundary; its code contribution does not supply the missing test evidence.
-- [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt): no exact declaration currently proves its planned dispute-window invariants in full.
-- [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81): no exact declaration currently owns its complete planned audit invariant.
-- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm): the required pause, queued-work, unrelated-fork, resume, notification and duplicate-event observations have no assigned specification evidence.
+- The delivery-order permutation is removed. Auditors learn disputes only from chain events, which
+  arrive in one canonical (block, log index) order, and a lagging auditor receives the same order
+  in a burst, so delivery order is not a variable the system can produce.
+- [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
+  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Storage is in memory only and a
+  restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
+  does not exist yet.
 
-Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix; the current source changes do not claim to implement this broader test matrix.
+What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
+worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,
+clock and logging scenarios, not the protocol capabilities in a browser host, a mixed
+browser/Node channel or browser lifecycle suspension. The runtime setup report identifies the
+platform boundary; its code contribution does not supply the missing test evidence.
+
+Keep its generated evidence cells as `none — gap`. Close a permutation only after a test asserts
+its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix.
 
 <a id="find-sync-1-jwy1c8"></a>
 

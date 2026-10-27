@@ -8,10 +8,12 @@ Exercises dispute submission and evidence timing around the initial window. The 
 
 The E47 late-timeout claim is constructed before the opening dispute starts the evidence window. Once the higher state is admitted, it is dated against that window, re-signed and its real transaction gas estimated before waiting for the later submission. The send still occurs at the same protocol timestamp target, with the same lower-state, counter, submission-count and reduction assertions.
 
+E48's reduction keeps the leader's off-wire block, which no other peer signed. The survivors resolve to exactly the fork that reduction computes and then author and apply a further block on it, so execution resumes on the successor with the non-final block carried forward.
+
 ## Tests
 
 - `E47: a peer whose frozen view is above the opening dispute submits its higher state at once; a lower-state dispute admitted after the higher evidence needs no new upload, its own false timeout is still countered, and reduction keeps the higher state`: REQ-DISPUTE-PIPE-6-6FZB9M.T2.P1, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P39
-- `E48: when the opening dispute already represents a peer's evidence, a lower-state dispute admitted near evidence closure gets no duplicate upload from that peer, and reduction keeps the higher state and the later dispute's own claim`: REQ-DISPUTE-PIPE-6-6FZB9M.T2.P2, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P40
+- `E48: when the opening dispute already represents a peer's evidence, a lower-state dispute admitted near evidence closure gets no duplicate upload from that peer, and reduction keeps the higher state and the later dispute's own claim`: REQ-DISPUTE-PIPE-6-6FZB9M.T2.P2, UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P40, REQ-LIF-7-0XZBDM.T1.P4
 - `E19: an auditor frozen by its own dispute replays a higher dispute as stored data only: no view change and no new signature, its own proof and dispute stay at the frozen height, and the reduction after the kill window uses the replayed state`: REQ-SP-10-JMVHTB.T4.P14, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P37
 - `Deferred: losing the only higher-state commitment after evidence closes (different trusted starts, equal reduction outputs, no duplicate upload, a surviving lower commitment, a valid kill of the sole higher commitment after admission closes; control: the higher commitment survives) — pending: remediation oracle undecided`: none
 
