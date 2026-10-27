@@ -70,6 +70,41 @@ const NOT_ETHEREUM_NETWORK = new Network("not-ethereum", 0n);
 
 /** A node's WebSocket. */
 class NodeSocket extends WebSocketProvider {
+    /**
+     * Called with the block number of each subscription notification the node
+     * pushes (a new head or a log), before the subscriber hears of it.
+     */
+    announced?: (blockNumber: bigint) => void;
+
+    // Overrides SocketProvider._processMessage: also reports the block each
+    // subscription notification belongs to.
+    override async _processMessage(message: string): Promise<void> {
+        if (this.announced) this.reportAnnouncedBlock(message, this.announced);
+        await super._processMessage(message);
+    }
+
+    private reportAnnouncedBlock(
+        message: string,
+        announced: (blockNumber: bigint) => void
+    ): void {
+        try {
+            const parsed: unknown = JSON.parse(message);
+            if (typeof parsed !== "object" || parsed === null) return;
+            const { method, params } = parsed as {
+                method?: unknown;
+                params?: {
+                    result?: { blockNumber?: unknown; number?: unknown };
+                };
+            };
+            if (method !== "eth_subscription") return;
+            const number =
+                params?.result?.blockNumber ?? params?.result?.number;
+            if (typeof number === "string") announced(BigInt(number));
+        } catch {
+            // not a notification this hook understands: the socket handles it
+        }
+    }
+
     // Overrides JsonRpcApiProvider.send: ethers sends a removed subscription's
     // eth_unsubscribe unawaited, so any failure (e.g. the socket destroyed
     // before the answer) is settled here; the subscription ends with the socket.
@@ -95,7 +130,7 @@ class NodeSocket extends WebSocketProvider {
  * that names the endpoint by scheme and host only: its text would carry the
  * whole URL, credentials included.
  */
-function openSocket(url: string, ethereum: boolean): WebSocketProvider {
+function openSocket(url: string, ethereum: boolean): NodeSocket {
     try {
         return ethereum
             ? new NodeSocket(url)
@@ -217,6 +252,10 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     readonly firstAttempt: Promise<Error | undefined>;
     private readonly logger: Logger;
     private readonly watchers = new Set<RpcNodeSocketWatcher>();
+    /** Called with the block of each notification a socket of this node pushes. */
+    private readonly announcedWatchers = new Set<
+        (blockNumber: bigint) => void
+    >();
     /** Called when an open socket of this node ends. */
     private readonly lossWatchers = new Set<() => void>();
     /** Requests waiting for this node to reconnect. */
@@ -267,6 +306,18 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         if (this.connection) watcher(this.connection.socket, false);
         return () => {
             this.watchers.delete(watcher);
+        };
+    }
+
+    /**
+     * Calls `watcher` with the block number of every subscription
+     * notification (a new head or a log) this node's sockets receive, before
+     * their subscribers hear of it. Returns the function that stops the calls.
+     */
+    watchAnnouncedBlocks(watcher: (blockNumber: bigint) => void): () => void {
+        this.announcedWatchers.add(watcher);
+        return () => {
+            this.announcedWatchers.delete(watcher);
         };
     }
 
@@ -409,7 +460,12 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             "RPC node connection attempt timed out"
         );
         try {
-            socket = openSocket(this.url, this.ethereum);
+            const opened = openSocket(this.url, this.ethereum);
+            opened.announced = (blockNumber) => {
+                for (const watcher of this.announcedWatchers)
+                    watcher(blockNumber);
+            };
+            socket = opened;
             const socketEnd = watchSocketEnd(socket);
             const network = await Promise.race([
                 this.ethereum ? socket.getNetwork() : this.firstAnswer(socket),
