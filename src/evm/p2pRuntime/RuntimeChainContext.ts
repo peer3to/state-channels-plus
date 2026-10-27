@@ -1,7 +1,10 @@
-import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
+import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
+import type MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
     type ExpectedChain
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
+import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import { assertLogQueryMaxBlocks, type Config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -74,11 +77,18 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
 /**
  * Build the multi-endpoint provider over the configured RPC nodes. Returns
  * once one node connected; the others keep connecting in the background.
- * Throws once every node's first attempt failed.
+ * Throws once every node's first attempt failed. The provider answers
+ * latest-block reads from the local mirror when `config.STORAGE_DIFF_URL` is
+ * set; `mirror` supplies the precompiles and owner of its EVM.
  */
 export async function createRpcNodesProvider(
-    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS">,
-    logger: Logger
+    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
+        Partial<Pick<Config, "STORAGE_DIFF_URL">>,
+    logger: Logger,
+    mirror: {
+        customPrecompiles?: EvmCustomPrecompileManifest[];
+        owner?: AInternalRpcRoot;
+    } = {}
 ): Promise<MultiRpcProvider> {
     const expectedChain: ExpectedChain = {};
     const nodes = resolveProviderUrls(config).map(
@@ -98,7 +108,10 @@ export async function createRpcNodesProvider(
             `Chain access requires a reachable WebSocket provider at ${reasons.join("; ")}`
         );
     }
-    return new MultiRpcProvider(nodes, logger);
+    return new MirrorRpcProvider(nodes, logger, {
+        storageDiffUrl: config.STORAGE_DIFF_URL,
+        ...mirror
+    });
 }
 
 /**
@@ -108,7 +121,11 @@ export async function createRpcNodesProvider(
 export async function createRuntimeChainContext(
     config: Config,
     signerSecret: string,
-    logger: Logger
+    logger: Logger,
+    mirror: {
+        customPrecompiles?: EvmCustomPrecompileManifest[];
+        owner?: AInternalRpcRoot;
+    } = {}
 ): Promise<RuntimeChainContext> {
     // a bad window size would only surface at the first catch-up
     assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
@@ -117,6 +134,6 @@ export async function createRuntimeChainContext(
     const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)
         ? new Wallet(secret)
         : Wallet.fromPhrase(secret);
-    const provider = await createRpcNodesProvider(config, logger);
+    const provider = await createRpcNodesProvider(config, logger, mirror);
     return { provider, signer: wallet.connect(provider) };
 }

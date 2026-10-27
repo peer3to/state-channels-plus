@@ -1,0 +1,153 @@
+import type {
+    AccountAddress,
+    BlockStorageDiff,
+    IncludedHeadRecord,
+    SubscriptionId
+} from "@/utils/node/storageDiff/blockStorageDiff";
+import { Network, WebSocketProvider } from "ethers";
+
+/** JSON-RPC error code of "Requested block has been pruned". */
+const PRUNED_ERROR_CODE = -32001;
+
+/** What `scp_getContractStorageDiffs` answers. */
+export type StorageDiffCatchUp = {
+    records: BlockStorageDiff[];
+    /** The relay-included head, or null while the service has none. */
+    includedHead: IncludedHeadRecord | null;
+};
+
+export type StorageDiffSocketHandlers = {
+    /** A record pushed to `subscription`. */
+    onRecord: (subscription: SubscriptionId, record: BlockStorageDiff) => void;
+    /** The included head advanced. */
+    onIncludedHead: (head: IncludedHeadRecord) => void;
+    /** The socket ended; the socket is unusable. */
+    onLost: (reason: Error) => void;
+};
+
+/** The service answered that the requested blocks are no longer retained. */
+export class StorageDiffPrunedError extends Error {}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+/**
+ * The storage diff service's JSON-RPC WebSocket as the mirror uses it: the
+ * three `scp_` requests, and the `scp_subscription` and `scp_includedHead`
+ * pushes handed to the handlers. The socket never reconnects; its owner
+ * opens a new one after `onLost`.
+ */
+export class StorageDiffSocket extends WebSocketProvider {
+    private readonly handlers: StorageDiffSocketHandlers;
+    /** Settles with the reason once the socket errors or closes. */
+    private readonly ended: Promise<Error>;
+    private hasEnded = false;
+    /** True once the owner closed the socket: its end is no loss. */
+    private closing = false;
+
+    constructor(url: string, handlers: StorageDiffSocketHandlers) {
+        // a known network: the service answers no eth_ request, so ethers
+        // must not detect one
+        super(url, new Network("storage-diff", 0n), { staticNetwork: true });
+        this.handlers = handlers;
+        // ethers installs no `onerror`; in Node an unhandled socket error
+        // would be thrown from `ws`
+        this.ended = new Promise<Error>((resolve) => {
+            const end = (reason: Error) => {
+                if (this.hasEnded) return;
+                this.hasEnded = true;
+                resolve(reason);
+                if (!this.closing) handlers.onLost(reason);
+            };
+            this.websocket.onerror = () =>
+                end(new Error("Storage diff socket failed"));
+            // `ws` and the browser WebSocket both have `onclose`; ethers'
+            // socket type does not declare it
+            if ("onclose" in this.websocket)
+                this.websocket.onclose = () =>
+                    end(new Error("Storage diff socket closed"));
+        });
+    }
+
+    /** Subscribes to every canonical block's record for `addresses`. */
+    async subscribe(addresses: AccountAddress[]): Promise<SubscriptionId> {
+        const id = await this.request("scp_subscribeContractStorage", [
+            addresses
+        ]);
+        if (typeof id !== "string")
+            throw new Error("Malformed storage diff subscription");
+        return id;
+    }
+
+    async unsubscribe(subscription: SubscriptionId): Promise<void> {
+        await this.request("scp_unsubscribe", [subscription]);
+    }
+
+    /** The retained records from `fromBlock` to the head, and the included head. */
+    async catchUp(
+        addresses: AccountAddress[],
+        fromBlock: bigint
+    ): Promise<StorageDiffCatchUp> {
+        const answer = await this.request("scp_getContractStorageDiffs", [
+            addresses,
+            "0x" + fromBlock.toString(16)
+        ]);
+        if (
+            !isRecord(answer) ||
+            !Array.isArray(answer.records) ||
+            !(answer.includedHead === null || isRecord(answer.includedHead))
+        )
+            throw new Error("Malformed storage diff catch-up");
+        return answer as StorageDiffCatchUp;
+    }
+
+    // Overrides SocketProvider._processMessage: the service's pushes are
+    // not eth_subscription messages, which is all the base class routes.
+    override async _processMessage(message: string): Promise<void> {
+        const parsed: unknown = JSON.parse(message);
+        if (isRecord(parsed) && !("id" in parsed)) {
+            const { method, params } = parsed;
+            if (method === "scp_subscription" && isRecord(params)) {
+                this.handlers.onRecord(
+                    params.subscription as SubscriptionId,
+                    params.result as BlockStorageDiff
+                );
+                return;
+            }
+            if (method === "scp_includedHead" && isRecord(params)) {
+                this.handlers.onIncludedHead(
+                    params as unknown as IncludedHeadRecord
+                );
+                return;
+            }
+            // scp_disconnect: the close that follows reports the loss
+            if (method === "scp_disconnect") return;
+        }
+        await super._processMessage(message);
+    }
+
+    // Overrides WebSocketProvider.destroy: the close it causes is not
+    // reported as a loss, and requests still waiting are rejected.
+    override async destroy(): Promise<void> {
+        this.closing = true;
+        await super.destroy();
+    }
+
+    private async request(method: string, params: unknown[]): Promise<unknown> {
+        try {
+            return await Promise.race([
+                this.send(method, params),
+                this.ended.then((reason) => Promise.reject(reason))
+            ]);
+        } catch (error) {
+            if (isRecord(error) && isRecord(error.error)) {
+                if (error.error.code === PRUNED_ERROR_CODE)
+                    throw new StorageDiffPrunedError(
+                        "Requested block has been pruned"
+                    );
+            }
+            throw error;
+        }
+    }
+}

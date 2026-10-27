@@ -9,6 +9,11 @@ export type Config = {
     // read longer ranges in windows of this size; set it at or below the
     // endpoints' own range limit. A positive integer.
     LOG_QUERY_MAX_BLOCKS: number;
+    // ws:// URL of the storage diff service whose records keep the runtime's
+    // local copy of the chain current. The runtime answers eth_call and
+    // state reads at the latest block from that copy. Empty means no copy:
+    // every read goes to the RPC nodes.
+    STORAGE_DIFF_URL: string;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -67,6 +72,7 @@ const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
     LOG_QUERY_MAX_BLOCKS: 1000,
+    STORAGE_DIFF_URL: "",
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,
