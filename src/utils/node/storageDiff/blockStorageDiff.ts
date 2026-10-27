@@ -3,11 +3,42 @@
  * blocks and traces, folding a block's transaction diffs, filtering a record.
  */
 
+import type {
+    AccountAddress,
+    AccountDiff,
+    AccountDiffs,
+    BlockEnvironment,
+    BlockStorageDiff,
+    IncludedHeadRecord,
+    StorageDiffLog,
+    StorageSlot,
+    StorageSlots
+} from "../../storageDiff/storageDiffWire";
 import { getBytes, keccak256 } from "ethers";
 
-export const PRUNED_ERROR_CODE = -32001;
-/** The block of a state read is unknown, orphaned or older than the window. */
-export const NOT_RETAINED_ERROR_CODE = -32002;
+// The wire types live in a shared module, which the mirror in the browser
+// build imports too; they are re-exported here for the service's own files.
+export {
+    NOT_RETAINED_ERROR_CODE,
+    PRUNED_ERROR_CODE
+} from "../../storageDiff/storageDiffWire";
+export type {
+    AccountAddress,
+    AccountDiff,
+    AccountDiffs,
+    BlockEnvironment,
+    BlockStorageDiff,
+    IncludedHeadRecord,
+    StateRequestParams,
+    StorageDiffCatchUp,
+    StorageDiffLog,
+    StorageDiffState,
+    StorageSlot,
+    StorageSlots,
+    StorageWord,
+    SubscriptionId
+} from "../../storageDiff/storageDiffWire";
+
 export const ZERO_WORD = "0x" + "00".repeat(32);
 
 export const INVALID_REQUEST = -32600;
@@ -16,69 +47,12 @@ export const INVALID_PARAMS = -32602;
 export const INTERNAL_ERROR = -32603;
 export const PARSE_ERROR = -32700;
 
-/** Lower-case `0x`-prefixed 20-byte account address. */
-export type AccountAddress = string;
-/** 32-byte storage key, `0x` + 64 lower-case hex digits. */
-export type StorageSlot = string;
-/** 32-byte storage value, `0x` + 64 lower-case hex digits. */
-export type StorageWord = string;
-/** Subscription id handed to a peer by `scp_subscribeContractStorage`. */
-export type SubscriptionId = string;
-
-export type StorageSlots = Record<StorageSlot, StorageWord>;
-
-/** One account's balance, nonce, code and storage; absent fields are untouched. */
-export interface AccountDiff {
-    balance?: string;
-    nonce?: number;
-    code?: string;
-    storage?: StorageSlots;
-}
-
-export type AccountDiffs = Record<AccountAddress, AccountDiff>;
-
-/** An event log of a subscribed address, as the upstream's `eth_getLogs` has it. */
-export interface StorageDiffLog {
-    address: AccountAddress;
-    topics: string[];
-    data: string;
-    logIndex: string;
-    transactionIndex: string;
-    transactionHash: string;
-}
-
-/** The block fields a local EVM needs to run a call against the block. */
-export interface BlockEnvironment {
-    number: string;
-    hash: string;
-    timestamp: string;
-    /** Absent before the upstream chain had a base fee. */
-    baseFeePerGas?: string;
-    gasLimit: string;
-    miner: AccountAddress;
-    mixHash: string;
-}
-
-export interface BlockStorageDiff extends BlockEnvironment {
-    parentHash: string;
-    pre: AccountDiffs;
-    post: AccountDiffs;
-    /** Logs of the subscribed addresses the service fetched them for, by logIndex. */
-    logs: StorageDiffLog[];
-}
-
 /** A retained block: the record plus the addresses whose logs it holds. */
 export interface StagedBlock extends BlockStorageDiff {
     /** Header bloom: tells which addresses may have logs in this block. */
     logsBloom: string;
     /** Bloom-matching addresses `eth_getLogs` was asked about; an empty answer counts. */
     loggedAddresses: Set<AccountAddress>;
-}
-
-/** The newest block the chain treats as final, as pushed and caught up. */
-export interface IncludedHeadRecord {
-    number: string;
-    hash: string;
 }
 
 /** The parts of an upstream block header the service follows. */

@@ -40,11 +40,17 @@ import {
     UpstreamRpcClient,
     UpstreamTimeoutError
 } from "./UpstreamRpcClient";
+import type {
+    StorageDiffCatchUp,
+    StorageDiffState
+} from "../../storageDiff/storageDiffWire";
 import type { Logger } from "@/utils";
 import { retry } from "@/utils/retry";
 import WebSocket, { WebSocketServer, type AddressInfo } from "ws";
 
 export const DEFAULT_RETENTION_BLOCKS = 128;
+export type { StorageDiffCatchUp, StorageDiffState };
+
 /** Retries of a failed head reconciliation before the service fails. */
 export const RECONCILE_RETRY_LIMIT = 3;
 /** Delay before the first retry; each further retry doubles it. */
@@ -91,22 +97,6 @@ export interface StorageDiffServiceOptions {
      */
     includedHead?: AIncludedHeadStrategy;
     logger: Logger;
-}
-
-/** What a catch-up answers: retained records and the included head. */
-export interface StorageDiffCatchUp {
-    records: BlockStorageDiff[];
-    /** `null` until the strategy reported one. */
-    includedHead: IncludedHeadRecord | null;
-    /** Environment of the best head, so a caller can run against it. */
-    head: BlockEnvironment;
-}
-
-/** State values at one retained block, shaped like a record's `post`. */
-export interface StorageDiffState {
-    number: string;
-    hash: string;
-    accounts: AccountDiffs;
 }
 
 /** One connected peer and the subscriptions it opened. */
