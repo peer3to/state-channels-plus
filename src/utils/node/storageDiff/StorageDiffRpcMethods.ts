@@ -1,13 +1,16 @@
 import {
     invalidParams,
     parseAddresses,
+    parseBlockHash,
     parseFromBlock,
+    parseStateRequests,
     type SubscriptionId
 } from "./blockStorageDiff";
 import type {
     StorageDiffCatchUp,
     StorageDiffPeer,
-    StorageDiffService
+    StorageDiffService,
+    StorageDiffState
 } from "./StorageDiffService";
 
 /**
@@ -56,6 +59,22 @@ export class StorageDiffRpcMethods {
         return await this.service.getDiffs(
             parseAddresses(params[0]),
             parseFromBlock(params[1])
+        );
+    }
+
+    /**
+     * Account and storage values at a retained block, from the service's
+     * shared cache: `[blockHash, [{address, slots?, account?, code?}]]`.
+     * `account` asks for balance and nonce. An unretained block fails with
+     * code -32002.
+     */
+    async scp_getState(params: unknown[]): Promise<StorageDiffState> {
+        if (params.length !== 2) {
+            throw invalidParams("Expected [blockHash, accounts]");
+        }
+        return await this.service.getState(
+            parseBlockHash(params[0]),
+            parseStateRequests(params[1])
         );
     }
 }

@@ -1,5 +1,6 @@
 import {
     bloomContains,
+    environmentOf,
     filterRecord,
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -7,6 +8,7 @@ import {
     isObject,
     mergeTransactionDiffs,
     METHOD_NOT_FOUND,
+    NOT_RETAINED_ERROR_CODE,
     PARSE_ERROR,
     parseHeader,
     parseLogs,
@@ -15,14 +17,22 @@ import {
     toQuantity,
     type AccountAddress,
     type AccountDiffs,
+    type BlockEnvironment,
     type BlockHeader,
     type BlockStorageDiff,
     type IncludedHeadRecord,
     type StagedBlock,
+    type StateRequest,
     type SubscriptionId
 } from "./blockStorageDiff";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
+import {
+    normalizeBalance,
+    StateCache,
+    type StateField,
+    type StateValue
+} from "./StateCache";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
 import {
     UpstreamLostError,
@@ -88,6 +98,15 @@ export interface StorageDiffCatchUp {
     records: BlockStorageDiff[];
     /** `null` until the strategy reported one. */
     includedHead: IncludedHeadRecord | null;
+    /** Environment of the best head, so a caller can run against it. */
+    head: BlockEnvironment;
+}
+
+/** State values at one retained block, shaped like a record's `post`. */
+export interface StorageDiffState {
+    number: string;
+    hash: string;
+    accounts: AccountDiffs;
 }
 
 /** One connected peer and the subscriptions it opened. */
@@ -98,6 +117,9 @@ export interface StorageDiffPeer {
     /** Cut for falling behind; gets nothing more. */
     closing: boolean;
 }
+
+/** Identifies one state fetch in flight: a `StateField` as text. */
+type FlightKey = string;
 
 /** The upstream chain moved while a reconciliation read it. */
 class HeadChangedError extends Error {}
@@ -160,6 +182,10 @@ export class StorageDiffService {
     private upstream?: UpstreamRpcClient;
     private server?: WebSocketServer;
     private canonical: StagedBlock[] = [];
+    // Account and slot values at the best head; every upstream read fills it.
+    private readonly stateCache = new StateCache();
+    // One fetch per missing field, shared by every reader waiting for it.
+    private readonly flights = new Map<FlightKey, Promise<void>>();
     private included?: IncludedHead;
     // Hash of the included head already reported as off the best chain.
     private divergenceReported?: string;
@@ -273,10 +299,12 @@ export class StorageDiffService {
     ): Promise<StorageDiffCatchUp> {
         return await this.enqueue(async () => {
             const includedHead = this.includedRecord();
-            const head = BigInt(
-                this.canonical[this.canonical.length - 1].number
-            );
-            if (fromBlock > head) return { records: [], includedHead };
+            const best = this.canonical[this.canonical.length - 1];
+            const head = BigInt(best.number);
+            const environment = environmentOf(best);
+            if (fromBlock > head) {
+                return { records: [], includedHead, head: environment };
+            }
             if (fromBlock < BigInt(this.canonical[0].number)) {
                 throw rpcError(
                     PRUNED_ERROR_CODE,
@@ -297,9 +325,44 @@ export class StorageDiffService {
                 records: blocks.map((record) =>
                     filterRecord(record, addresses)
                 ),
-                includedHead
+                includedHead,
+                head: environment
             };
         });
+    }
+
+    /**
+     * The values of the requested fields at retained block `blockHash`.
+     * A field missing from the cache is fetched from the upstream once, at the
+     * best head, however many readers wait for it; an older block is answered
+     * by undoing the later blocks' writes with their `pre` values.
+     */
+    async getState(
+        blockHash: string,
+        requests: StateRequest[]
+    ): Promise<StorageDiffState> {
+        const fields = requests.flatMap((request) => this.fieldsOf(request));
+        for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
+            this.assertRetained(blockHash);
+            await Promise.all(fields.map((field) => this.ensureCached(field)));
+            // Synchronous from here: the cache and the chain agree.
+            const index = this.retainedIndex(blockHash);
+            if (index < 0) continue;
+            const heads = fields.map((field) => this.stateCache.get(field));
+            if (heads.some((value) => value === undefined)) continue;
+            const scratch = new StateCache();
+            fields.forEach((field, i) => scratch.set(field, heads[i]!));
+            for (let i = this.canonical.length - 1; i > index; i--) {
+                scratch.applyBackward(this.canonical[i]);
+            }
+            const block = this.canonical[index];
+            return {
+                number: block.number,
+                hash: block.hash,
+                accounts: this.accountsOf(requests, fields, scratch)
+            };
+        }
+        throw new HeadChangedError("The chain moved while state was read");
     }
 
     /**
@@ -600,8 +663,10 @@ export class StorageDiffService {
                 diff = mergeTransactionDiffs(traces);
             }
             const record: StagedBlock = {
-                number: toQuantity(header.number),
-                hash: header.hash,
+                ...environmentOf({
+                    ...header,
+                    number: toQuantity(header.number)
+                }),
                 parentHash: header.parentHash,
                 ...diff,
                 logs: [],
@@ -746,8 +811,19 @@ export class StorageDiffService {
         if (branch.length > 0) {
             await this.assertCanonical(branch[branch.length - 1]);
         }
+        // Cached values follow the chain: back over the orphans, then forward.
+        if (below) {
+            this.stateCache.clear();
+        } else {
+            for (let i = canonical.length - 1; i > ancestor; i--) {
+                this.stateCache.applyBackward(canonical[i]);
+            }
+        }
         canonical.splice(ancestor + 1);
         canonical.push(...staged);
+        for (const record of staged.slice(below ? 1 : 0)) {
+            this.stateCache.applyForward(record);
+        }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
         const head = canonical[canonical.length - 1];
@@ -783,6 +859,135 @@ export class StorageDiffService {
             includedHash: included.hash,
             bestHash: best.hash
         });
+    }
+
+    private assertRetained(blockHash: string): void {
+        if (this.retainedIndex(blockHash) < 0) {
+            throw rpcError(NOT_RETAINED_ERROR_CODE, "Block is not retained");
+        }
+    }
+
+    private retainedIndex(blockHash: string): number {
+        return this.canonical.findIndex((record) => record.hash === blockHash);
+    }
+
+    private fieldsOf(request: StateRequest): StateField[] {
+        const { address } = request;
+        return [
+            ...request.slots.map(
+                (slot): StateField => ({
+                    kind: "slot",
+                    address,
+                    slot
+                })
+            ),
+            ...(request.account
+                ? [
+                      { kind: "balance", address } as const,
+                      { kind: "nonce", address } as const
+                  ]
+                : []),
+            ...(request.code ? [{ kind: "code", address } as const] : [])
+        ];
+    }
+
+    private accountsOf(
+        requests: StateRequest[],
+        fields: StateField[],
+        values: StateCache
+    ): AccountDiffs {
+        const accounts: AccountDiffs = {};
+        for (const request of requests) accounts[request.address] ??= {};
+        for (const field of fields) {
+            const account = accounts[field.address];
+            const value = values.get(field)!;
+            if (field.kind === "slot") {
+                (account.storage ??= {})[field.slot] = value as string;
+            } else if (field.kind === "nonce") {
+                account.nonce = value as number;
+            } else {
+                account[field.kind] = value as string;
+            }
+        }
+        return accounts;
+    }
+
+    /** Waits until `field` is cached, fetching it unless a fetch is running. */
+    private async ensureCached(field: StateField): Promise<void> {
+        if (this.stateCache.get(field) !== undefined) return;
+        const key: FlightKey = JSON.stringify(field);
+        let flight = this.flights.get(key);
+        if (!flight) {
+            flight = this.loadField(field).finally(() =>
+                this.flights.delete(key)
+            );
+            this.flights.set(key, flight);
+        }
+        await flight;
+    }
+
+    /**
+     * Reads `field` at the best head's hash, so the value belongs to the
+     * chain the service follows. If the chain moved on meanwhile, later
+     * blocks' writes are applied to it; if that block was dropped, it reads
+     * again.
+     */
+    private async loadField(field: StateField): Promise<void> {
+        for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
+            const pinned = this.canonical[this.canonical.length - 1].hash;
+            const value = await this.retryTransient(
+                () => this.fetchField(field, pinned),
+                "Retrying the state fetch"
+            );
+            const index = this.retainedIndex(pinned);
+            if (index < 0) continue;
+            const scratch = new StateCache();
+            scratch.set(field, value);
+            for (let i = index + 1; i < this.canonical.length; i++) {
+                scratch.applyForward(this.canonical[i]);
+            }
+            this.stateCache.set(field, scratch.get(field)!);
+            return;
+        }
+        throw new HeadChangedError("The chain moved while state was fetched");
+    }
+
+    private async fetchField(
+        field: StateField,
+        blockHash: string
+    ): Promise<StateValue> {
+        // EIP-1898: the read belongs to exactly this block.
+        const at = { blockHash };
+        const { address } = field;
+        if (field.kind === "slot") {
+            const word = await this.request("eth_getStorageAt", [
+                address,
+                field.slot,
+                at
+            ]);
+            if (
+                typeof word !== "string" ||
+                !/^0x[0-9a-fA-F]{1,64}$/.test(word)
+            ) {
+                throw new Error("Malformed storage word from upstream");
+            }
+            return "0x" + word.slice(2).toLowerCase().padStart(64, "0");
+        }
+        const method = {
+            balance: "eth_getBalance",
+            nonce: "eth_getTransactionCount",
+            code: "eth_getCode"
+        }[field.kind];
+        const value = await this.request(method, [address, at]);
+        if (typeof value !== "string" || !/^0x[0-9a-fA-F]*$/.test(value)) {
+            throw new Error(`Malformed ${field.kind} from upstream`);
+        }
+        if (field.kind === "code") return value.toLowerCase();
+        if (value === "0x")
+            throw new Error(`Malformed ${field.kind} from upstream`);
+        return field.kind === "balance"
+            ? normalizeBalance(value)
+            : Number(BigInt(value));
     }
 
     private includedRecord(): IncludedHeadRecord | null {

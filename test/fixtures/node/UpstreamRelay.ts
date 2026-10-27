@@ -37,6 +37,8 @@ export class UpstreamRelay {
     private readonly sockets = new Set<WebSocket>();
     // Requests seen per method, held or failed ones included.
     private readonly seen = new Map<UpstreamMethod, number>();
+    // Params of every request seen, per method, in arrival order.
+    private readonly seenParams = new Map<UpstreamMethod, unknown[][]>();
     private connections = 0;
     private refusing = false;
     private hold?: Hold;
@@ -65,6 +67,11 @@ export class UpstreamRelay {
     /** How many `method` requests reached the relay. */
     requestCount(method: UpstreamMethod): number {
         return this.seen.get(method) ?? 0;
+    }
+
+    /** The params of every `method` request that reached the relay. */
+    paramsOf(method: UpstreamMethod): unknown[][] {
+        return [...(this.seenParams.get(method) ?? [])];
     }
 
     /** Connections the service opened, refused ones included. */
@@ -142,6 +149,10 @@ export class UpstreamRelay {
                 request.method,
                 this.requestCount(request.method) + 1
             );
+            this.seenParams.set(request.method, [
+                ...(this.seenParams.get(request.method) ?? []),
+                request.params
+            ]);
             if (this.cutting?.method === request.method) {
                 if (--this.cutting.remaining === 0) this.cutting = undefined;
                 client.terminate();

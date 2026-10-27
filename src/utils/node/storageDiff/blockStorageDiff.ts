@@ -6,6 +6,8 @@
 import { getBytes, keccak256 } from "ethers";
 
 export const PRUNED_ERROR_CODE = -32001;
+/** The block of a state read is unknown, orphaned or older than the window. */
+export const NOT_RETAINED_ERROR_CODE = -32002;
 export const ZERO_WORD = "0x" + "00".repeat(32);
 
 export const INVALID_REQUEST = -32600;
@@ -45,9 +47,19 @@ export interface StorageDiffLog {
     transactionHash: string;
 }
 
-export interface BlockStorageDiff {
+/** The block fields a local EVM needs to run a call against the block. */
+export interface BlockEnvironment {
     number: string;
     hash: string;
+    timestamp: string;
+    /** Absent before the upstream chain had a base fee. */
+    baseFeePerGas?: string;
+    gasLimit: string;
+    miner: AccountAddress;
+    mixHash: string;
+}
+
+export interface BlockStorageDiff extends BlockEnvironment {
     parentHash: string;
     pre: AccountDiffs;
     post: AccountDiffs;
@@ -75,6 +87,11 @@ export interface BlockHeader {
     hash: string;
     parentHash: string;
     txCount: number;
+    timestamp: string;
+    baseFeePerGas?: string;
+    gasLimit: string;
+    miner: AccountAddress;
+    mixHash: string;
     /** 256-byte header bloom of the block's logs, lower-case hex. */
     logsBloom: string;
 }
@@ -267,6 +284,20 @@ export function bloomContains(logsBloom: string, item: string): boolean {
 }
 
 /** The record restricted to `addresses` (lower-case); never shares state. */
+export function environmentOf(block: BlockEnvironment): BlockEnvironment {
+    return {
+        number: block.number,
+        hash: block.hash,
+        timestamp: block.timestamp,
+        ...(block.baseFeePerGas !== undefined && {
+            baseFeePerGas: block.baseFeePerGas
+        }),
+        gasLimit: block.gasLimit,
+        miner: block.miner,
+        mixHash: block.mixHash
+    };
+}
+
 export function filterRecord(
     record: StagedBlock,
     addresses: AccountAddress[]
@@ -282,8 +313,7 @@ export function filterRecord(
         }
     }
     return {
-        number: record.number,
-        hash: record.hash,
+        ...environmentOf(record),
         parentHash: record.parentHash,
         pre: selectedPre,
         post: selectedPost,
@@ -335,6 +365,17 @@ export function parseHeader(value: unknown): BlockHeader {
         !HASH.test(value.hash) ||
         typeof value.parentHash !== "string" ||
         !HASH.test(value.parentHash) ||
+        typeof value.timestamp !== "string" ||
+        !HEX_QUANTITY_LOOSE.test(value.timestamp) ||
+        (value.baseFeePerGas !== undefined &&
+            (typeof value.baseFeePerGas !== "string" ||
+                !HEX_QUANTITY_LOOSE.test(value.baseFeePerGas))) ||
+        typeof value.gasLimit !== "string" ||
+        !HEX_QUANTITY_LOOSE.test(value.gasLimit) ||
+        typeof value.miner !== "string" ||
+        !ADDRESS.test(value.miner) ||
+        typeof value.mixHash !== "string" ||
+        !HASH.test(value.mixHash) ||
         typeof value.logsBloom !== "string" ||
         !LOGS_BLOOM.test(value.logsBloom) ||
         !Array.isArray(value.transactions)
@@ -346,6 +387,13 @@ export function parseHeader(value: unknown): BlockHeader {
         hash: value.hash.toLowerCase(),
         parentHash: value.parentHash.toLowerCase(),
         txCount: value.transactions.length,
+        timestamp: value.timestamp.toLowerCase(),
+        ...(value.baseFeePerGas !== undefined && {
+            baseFeePerGas: (value.baseFeePerGas as string).toLowerCase()
+        }),
+        gasLimit: value.gasLimit.toLowerCase(),
+        miner: value.miner.toLowerCase(),
+        mixHash: value.mixHash.toLowerCase(),
         logsBloom: value.logsBloom.toLowerCase()
     };
 }
@@ -378,4 +426,53 @@ export function parseFromBlock(value: unknown): bigint {
     throw invalidParams(
         "fromBlock must be a non-negative integer or hex quantity"
     );
+}
+
+/** What a peer asks of one account: all of it, or only the listed parts. */
+export interface StateRequest {
+    address: AccountAddress;
+    slots: StorageSlot[];
+    /** Balance and nonce. */
+    account: boolean;
+    code: boolean;
+}
+
+export function parseBlockHash(value: unknown): string {
+    if (typeof value !== "string" || !HASH.test(value)) {
+        throw invalidParams("blockHash must be a 32-byte hex hash");
+    }
+    return value.toLowerCase();
+}
+
+const STATE_REQUEST_SHAPE =
+    "accounts must be an array of {address, slots?, account?, code?}";
+
+export function parseStateRequests(value: unknown): StateRequest[] {
+    if (!Array.isArray(value)) throw invalidParams(STATE_REQUEST_SHAPE);
+    return value.map((raw): StateRequest => {
+        if (
+            !isObject(raw) ||
+            typeof raw.address !== "string" ||
+            !ADDRESS.test(raw.address) ||
+            (raw.slots !== undefined && !Array.isArray(raw.slots)) ||
+            (raw.account !== undefined && typeof raw.account !== "boolean") ||
+            (raw.code !== undefined && typeof raw.code !== "boolean")
+        ) {
+            throw invalidParams(STATE_REQUEST_SHAPE);
+        }
+        const slots = ((raw.slots as unknown[] | undefined) ?? []).map(
+            (slot) => {
+                if (typeof slot !== "string" || !HASH.test(slot)) {
+                    throw invalidParams("Invalid slot");
+                }
+                return slot.toLowerCase();
+            }
+        );
+        return {
+            address: raw.address.toLowerCase(),
+            slots: [...new Set(slots)],
+            account: raw.account === true,
+            code: raw.code === true
+        };
+    });
 }

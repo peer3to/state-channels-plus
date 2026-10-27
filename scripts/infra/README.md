@@ -59,14 +59,18 @@ block with no transactions gets empty maps and no trace.
   that subscription's pushes at once, or `false` for an id this socket does
   not hold. The socket's other subscriptions are unaffected.
 - `scp_getContractStorageDiffs` with params `[addresses, fromBlock]` returns
-  `{records, includedHead}`: the retained canonical records from `fromBlock` (a
+  `{records, includedHead, head}`: the retained canonical records from `fromBlock` (a
   non-negative integer or a canonical hex quantity) up to the head, inclusive
   and ascending, and the current included head (`{number, hash}`, or `null`
   while there is none). A `fromBlock` above the head returns `records: []`. One
   below the oldest retained block fails with code `-32001` and message
   `Requested block has been pruned`. A peer that reconnects restores both
-  levels from this one answer.
-- `record` is `{number, hash, parentHash, pre, post, logs}`. `pre` and `post` map
+  levels from this one answer. `head` is the block environment of the best
+  head (below), so a caller can run against it even when `records` is empty.
+- `record` is `{number, hash, parentHash, timestamp, baseFeePerGas?, gasLimit,
+  miner, mixHash, pre, post, logs}`. The block environment fields are
+  the quantities and hashes as the upstream's block has them (lower case);
+  `baseFeePerGas` is absent when the upstream block has none. `pre` and `post` map
   lower-case account addresses to `{balance?, nonce?, code?, storage?}`, and
   `storage` maps 32-byte slot keys to 32-byte words. They hold only the
   requested addresses; an empty address list is valid and yields headers with
@@ -127,6 +131,58 @@ that emits an event without changing storage is found the same way. A block
 staged before anyone subscribed to an address has its logs fetched, once, by
 the first catch-up that asks for that address. A rolled back block takes its
 logs with it; its replacement has its own.
+
+### Shared state cache and `scp_getState`
+
+Peers read state from the service, not from the upstream node. The service
+keeps a cache of storage slots and of account balance, nonce and code, for any
+address a peer asks about:
+
+- **Fill.** `scp_getState` with params
+  `[blockHash, [{address, slots?, account?, code?}]]` (`slots`: 32-byte slot
+  keys; `account`: balance and nonce; `code`: contract code) returns
+  `{number, hash, accounts}`, where `accounts` maps lower-case addresses to
+  `{balance?, nonce?, code?, storage?}` like a record's `post`. Balances are hex
+  quantities, nonces numbers, words 32-byte hex. A field the cache lacks is read
+  from the upstream once: `eth_getStorageAt`, `eth_getBalance`,
+  `eth_getTransactionCount` or `eth_getCode` with an EIP-1898 `{blockHash}` of
+  the best head, so the value belongs to the chain the service follows (anvil
+  and Asset Hub eth-rpc both accept it; the latter answers "Ethereum block not
+  found" for an unknown hash). Concurrent misses for one field share a single
+  fetch. If a block is committed during the fetch, its writes are applied to the
+  fetched value; if the pinned block was dropped, the fetch is repeated.
+- **Keep current.** Each committed block's `post` is applied to the cached
+  fields (only those already cached), and a reorg undoes the orphaned blocks
+  with their `pre` values, newest first. An account that appears only in `post`
+  did not exist before, so its balance, nonce, code and cached slots were
+  empty. A reorg whose common ancestor is older than the retained window clears
+  the cache.
+- **Older blocks.** `blockHash` may be any retained block: the value at the best
+  head is rolled back over the later blocks' `pre` values. A block that is
+  unknown, orphaned or older than the window fails with code `-32002` and
+  message `Block is not retained`, so a caller can fall back.
+- **Not covered.** The cache trusts the trace: state a block changes outside
+  its transactions' traced writes (system calls, withdrawals) is not seen. The
+  cache is not evicted.
+
+### Block environment
+
+Every record, and `head` of the catch-up, carries the block fields a local EVM
+needs: `number`, `hash`, `timestamp`, `baseFeePerGas`, `gasLimit`, `miner` and
+`mixHash` (prevRandao). They come from the block fetch the service already
+makes for each block.
+
+### Upstream request budget
+
+Per block the service makes the trace (`debug_traceBlockByNumber`, none for an
+empty block), the block fetches it needs to follow the chain, and
+`eth_getLogs` when a subscribed address matches the header bloom. State reads
+add on-demand requests only: one per slot, and one each for an account's
+balance, nonce and code, at most once per deployment while the service runs and
+the reorgs it sees stay inside the retained window. A cleared cache (a reorg
+below the window, or a restart) is filled again by the next reads. The relay
+inclusion strategy adds one relay subscription and one `state_getStorage` per
+inclusion.
 
 ### Reorgs and retention
 

@@ -11,7 +11,8 @@ import type {
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
 import {
     StorageDiffService,
-    type StorageDiffCatchUp
+    type StorageDiffCatchUp,
+    type StorageDiffState
 } from "@/utils/node/storageDiff/StorageDiffService";
 import {
     SimpleNumberStorage__factory,
@@ -133,6 +134,22 @@ export class StorageDiffClient {
             addresses,
             fromBlock
         ])) as StorageDiffCatchUp;
+    }
+
+    /** `scp_getState` at `blockHash`; rejects with the service's error. */
+    async getState(
+        blockHash: string,
+        accounts: {
+            address: AccountAddress;
+            slots?: string[];
+            account?: boolean;
+            code?: boolean;
+        }[]
+    ): Promise<StorageDiffState> {
+        return (await this.request("scp_getState", [
+            blockHash,
+            accounts
+        ])) as StorageDiffState;
     }
 
     async getDiffs(
