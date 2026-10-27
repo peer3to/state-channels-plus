@@ -104,8 +104,14 @@ is now armed before any handle closes, with an unconditional exit. The bots' Web
 is inferred, not confirmed; the leaked referenced timer that then held the loop (likely werift's) is
 not removed and now ends at the drain bound with a warning.
 
-**Status:** Open; medium. Fix implemented, tests pending the lead's gate; recheck the bots for a
-drain warning naming the remaining timer.
+**Status:** _Resolved (2026-10-27)._ The hang is fixed and covered by
+[`REQ-RUNTIME-7-A2VAR0.T1.P1`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p1)
+to [`.P4`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p4) and
+[`.P7`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p7) to
+[`.P10`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p10). A disposal now ends
+within the drain bound even when a timer leaks. Residual: the leaked timer (likely werift's) is
+not identified, so each affected disposal waits out the drain bound and logs the warning that names
+it; the bot recheck was dropped.
 
 ## Distributed test runner pool
 
@@ -1121,16 +1127,23 @@ deposit; the live SDK collector test proves the collected signer set excludes th
 
 ### FIND-STORAGE-3-GYR34M
 
-**Defect:** `Storage.getPreviousBlockOrSnapshot`/`getPreviousRelevantTimestamp` use non-null
-assertions, so an absent predecessor produces an unclassified throw instead of the explicit absence
+**Defect:** _Resolved (2026-10-27)._ `Storage.getPreviousBlockOrSnapshot` returns explicit absence:
+its non-null assertions are compile-time only, so an absent predecessor comes back with neither
+`block` nor `stateSnapshot` set, and its timeout and dispute-audit callers check for that
+([`ParticipantTimeoutService`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
+[`DisputeValidationService`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
+`getPreviousRelevantTimestamp` and
+[`BlockProductionService.createBlock`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
+presume the predecessor exists, as
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
-requires ([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
+allows for a read whose join links the pipeline maintains: the timestamp read's one caller,
+[`CalldataPostingService`](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md),
+reads it for a stored block, the producer builds on its own stored head, and participants commit
+history contiguously. Was: both reads were
+taken to throw an unclassified error on an absent predecessor
+([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
 
-**Proposed direction:** Decided (engineer review): documented precondition — the contiguity
-invariants (participants commit contiguously; sync persists state-proof anchor blocks before replay)
-make an absent predecessor unreachable through any designed flow, and the throw stands as the
-invariant tripwire. Spec-noted in
-[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
+**Proposed direction:** No change.
 
 <a id="find-storage-4-mfd7rz"></a>
 
