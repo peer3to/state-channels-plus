@@ -1083,7 +1083,6 @@ describe("E2E: BlockQueueManager", function () {
                         targetPeer.address
                     )
                     .request();
-                const secondBlockHash = bogusBlock.hash;
                 let judged: { outcome: string } | undefined;
                 await waitFor(async () => {
                     const records = await h
@@ -1093,7 +1092,7 @@ describe("E2E: BlockQueueManager", function () {
                     judged = records.find(
                         (record) =>
                             record.senderAddress === sourcePeer.address &&
-                            record.blockHash === secondBlockHash
+                            record.blockHash === bogusBlock.hash
                     );
                     return judged !== undefined;
                 }, h.event.protocolEventTimeoutMs());
@@ -1133,9 +1132,15 @@ describe("E2E: BlockQueueManager", function () {
                         .query.isConnectedTo(sourcePeer.address)
                         .request()
                 ).to.equal(true);
-                // No "not stored" assertion: an honest sync may install
-                // this block independently of the faulted copy; the queue
-                // entry counts are the fault oracle.
+                // The bogus block exists on no honest peer, so no sync
+                // can install it: only the faulted copy could have
+                // stored it.
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHash(bogusBlock.hash)
+                        .request()
+                ).to.be.null;
 
                 // The same local fault on the calldata origin: no sender
                 // exists to punish, the copy is dropped, nothing is queued.
@@ -1193,6 +1198,12 @@ describe("E2E: BlockQueueManager", function () {
                     ),
                     "calldata copy was never judged"
                 ).to.equal(true);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHash(calldataBlock.hash)
+                        .request()
+                ).to.be.null;
             } finally {
                 await h
                     .control(targetPeer)
