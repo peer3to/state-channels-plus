@@ -49,8 +49,9 @@ The committed-dispute case holds one observer's reductions and queue timeouts. T
 its real next block off the wire, so the other participants time it out and commit a dispute
 against the current fork. Before that commitment, the observer queues a future block from the
 leader. After the commitment the queued entry is gone, with its queue timeout still held, so the
-dispute discarded it. The leader's genuine next block, delivered afterwards, is neither queued nor
-stored. The observer's next height and fork stay unchanged.
+dispute discarded it. The leader's genuine next block, delivered afterwards with queue execution
+held, is rejected at intake: it is not queued, no queue execution is scheduled for it, and it is
+not stored. The observer's next height and fork stay unchanged.
 
 ## Tests
 

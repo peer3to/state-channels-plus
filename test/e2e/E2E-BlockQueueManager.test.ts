@@ -1904,6 +1904,11 @@ describe("E2E: BlockQueueManager", function () {
             expect(await queueTimeouts.heldCount()).to.be.greaterThan(0);
 
             // the genuine next block arrives after the commitment: rejected
+            // at intake, so it is never queued for execution and validation
+            const executions = await h.rpcStub.holdScheduledTasks(
+                observerIndex,
+                "BlockQueueManager.tryExecuteFromQueue"
+            );
             await control.transition
                 .ingestBlockConfirmation(
                     authored.encodedBlockConfirmation,
@@ -1913,6 +1918,8 @@ describe("E2E: BlockQueueManager", function () {
             expect(
                 await control.query.getQueuedRetention(authored.hash).request()
             ).to.equal(null);
+            expect(await executions.heldCount()).to.equal(0);
+            await executions.release(false);
             expect(
                 await control.query
                     .getBlockByHeight(forkId, startHeight)

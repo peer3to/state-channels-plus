@@ -2164,6 +2164,19 @@ drops an unparseable environment value, contrary to
 **Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
 `createConfig` and reject an unparseable or out-of-range value.
 
+<a id="find-lif-1-b36vst"></a>
+
+### FIND-LIF-1-B36VST
+
+**Defect:** Open (2026-10-27). `EventHandler.handleDisputeCommitted`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)) surfaces the
+first dispute's pause as `onDisputeStarted(3 × evidenceTime)`.
+[`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) bounds the pause by
+the evidence and kill periods, about `2 × evidenceTime`, and excludes the reduce challenge period.
+
+**Proposed direction:** Surface `2 × evidenceTime`, then let a test own
+[`REQ-LIF-7-0XZBDM.T1.P5`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5).
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>
@@ -2174,7 +2187,7 @@ Status: open verification gap, narrowed (2026-10-27). [`INV-ENFDIS-1-1K65DT` (Co
 
 - [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The browser gates run transport, executor, clock and logging scenarios, not the protocol capabilities in a browser host, a mixed browser/Node channel or browser lifecycle suspension. The runtime setup report identifies the platform boundary; its code contribution does not supply the missing test evidence.
 - [`INV-DISPUTE-PIPE-1-BN0K81.T1.P3`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p3) (delivery order) and [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart): every auditor sees the disputes in the chain's single order, and the restart staging rebuilds a runtime as a spectator. No test gives two auditors different delivery orders or restarts an auditor mid-audit.
-- [`REQ-LIF-7-0XZBDM.T1.P5`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) (pause notification with its expected duration): the oracle is unsettled. The specification bounds the pause at about `2 × evidenceTime`, while `EventHandler.handleDisputeCommitted` surfaces `onDisputeStarted(3 × evidenceTime)`. The engineer must settle the expected duration before a test can own this permutation.
+- [`REQ-LIF-7-0XZBDM.T1.P5`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) (pause notification with its expected duration): blocked by [`FIND-LIF-1-B36VST`](open-findings.md#find-lif-1-b36vst). The runtime surfaces `3 × evidenceTime` against the specified bound of about `2 × evidenceTime`, so no test can own this permutation until that defect is fixed.
 
 Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix.
 
