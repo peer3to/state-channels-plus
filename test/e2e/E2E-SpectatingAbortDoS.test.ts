@@ -5,11 +5,12 @@ import {
 } from "@test/harness";
 import { expect } from "chai";
 
-// A non-participant that sends a spectator a block it must reject should be
-// dropped + blacklisted, never able to take the spectator offline. Covers both
-// rejection paths: unauthenticated junk (rejected synchronously in ingest) and
-// an authenticated outsider-authored block (queued, then rejected when
-// executeQueuedEntry runs onBlockConfirmation).
+// A non-participant that sends a spectator a block it must reject is dropped
+// and never able to take the spectator offline. Unauthenticated junk is
+// rejected synchronously in ingest and blacklists the sender. An authenticated
+// block from an absent sender triggers the admission sync; a sender that
+// cannot prove its own block fails that sync -> one counted close, no verdict.
+// A relayed outsider-authored block reaches the author check on the live queue.
 
 const LIVE_FORK_TIME = {
     ...MIN_TEST_TIME_CONFIG,
@@ -115,7 +116,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
         await TestSession.settleDetached();
     });
 
-    it("cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running", async function () {
+    it("cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
@@ -145,10 +146,10 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
         // the attacker is connected to the channel's p2p network but is not a
         // channel participant. it authors + signs a well-formed next block with
-        // its own key: authentication passes, so it is queued and validated fresh
-        // -> reaches blockAuthorIsNotParticipant on the live queue, not the inline
-        // authenticate-failed path the junk cases hit. this is the vector that
-        // used to abort the spectator.
+        // its own key: authentication passes, so the absent sender is asked to
+        // prove its membership. it cannot prove that block -> the failed sync is
+        // one counted close, not a verdict. this is the vector that used to
+        // abort the spectator.
         const { encodedBlockConfirmation } =
             await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
                 0,
@@ -163,7 +164,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
             )
             .request();
 
-        await h.assert.rpc.peerBlacklistedAndDisconnected({
+        await h.assert.rpc.peerStruckWithoutBlacklist({
             observer: victim,
             target: attacker,
             expectedStatus: Status.SYNCED
@@ -305,7 +306,9 @@ describe("E2E: spectating strategy junk-block handling", function () {
             )
             .request();
 
-        await h.assert.rpc.peerBlacklistedAndDisconnected({
+        // the ex-member cannot prove the block it sent -> the failed
+        // admission sync is one counted close, not a verdict
+        await h.assert.rpc.peerStruckWithoutBlacklist({
             observer: victim,
             target: leaver,
             expectedStatus: Status.SYNCED
@@ -377,8 +380,10 @@ describe("E2E: active-participant stale-membership handling", function () {
             )
             .request();
 
-        // leaver (author == sender) is cut, victim keeps participating
-        await h.assert.rpc.peerBlacklistedAndDisconnected({
+        // leaver (author == sender) is cut, victim keeps participating;
+        // the ex-member cannot prove the block it sent -> the failed
+        // admission sync is one counted close, not a verdict
+        await h.assert.rpc.peerStruckWithoutBlacklist({
             observer: victim,
             target: leaver,
             expectedStatus: Status.PARTICIPATING

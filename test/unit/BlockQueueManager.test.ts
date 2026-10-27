@@ -396,6 +396,10 @@ describe("Unit: BlockQueueManager", () => {
         await assertOutsiderProofDoesNotAdmitCopy("success");
     });
 
+    it("an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("invalid");
+    });
+
     it("an oversized verified eligibility cache does not expand the N-source allowance", async () => {
         const f = new QueueIntakeFixture();
         await f.start();
@@ -505,7 +509,7 @@ describe("Unit: BlockQueueManager", () => {
         }
     });
 
-    it("sync with no sender transport ends intake without queueing the block", async () => {
+    it("sync with no sender transport ends intake with a counted close, no blacklist and no queued block", async () => {
         const f = new QueueIntakeFixture();
         await f.start();
         try {
@@ -513,9 +517,13 @@ describe("Unit: BlockQueueManager", () => {
             expect((await f.observation()).syncRequests).to.equal(0);
             expect((await f.observation()).completedSyncs).to.equal(1);
             expect(await f.retention()).to.equal(null);
+            // the failed request is the sync's counted close, not a verdict
             expect(
                 await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(true);
+            ).to.equal(false);
+            expect(
+                await f.control.query.getStrikes(f.strangers[0]).request()
+            ).to.equal(1);
         } finally {
             await f.close();
         }

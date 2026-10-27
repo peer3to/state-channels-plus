@@ -623,6 +623,32 @@ tests are the regression suite.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
+**Update (2026-10-16, PR #556):** Part (2) — blaming the sender — is fixed: the ingest catch now
+logs the local failure and returns the accepting verdict, so no local failure blacklists, suspends
+or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision
+(2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
+(logged, copy dropped, session kept) rather than surfaced as fatal, because an unaccounted honest
+failure must never blacklist an honest node; the general rate limit (planned) is the spam bound,
+and invalid inputs keep their explicit blacklisting verdicts. The ingest half of the
+surface-vs-tolerate question is therefore closed; the disposal design above remains deferred on
+its own. The swallow remains a recorded divergence from
+[`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
+refresh-is-fatal rule, recorded on the
+[`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
+
+**Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
+mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
+(a mid-merge throw would leave only valid merged signatures), and the disputed fork's queue clear,
+which the success path performs identically; the post-queue scheduling calls return a dummy handle
+after disposal instead of throwing. (2) No liveness loss for the non-network callers (all ignore
+the return value, as they did with `false`): calldata is stored before ingest is attempted, the
+participant-timeout check ingests recovered calldata itself on each re-armed check, and later
+validation reads the stored calldata — a fault-dropped validation is delayed, not lost. (3) Log
+cost is one error line per swallowed network fault (two on the sync-application loop), bounded by
+the accepted frame rate until the general rate limit lands; no state grows. The one attacker-shaped
+cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
+until rate limiting; a crafted payload that throws there is not demonstrated.
+
 <a id="find-inbound-gas-1-2bz8de"></a>
 
 ### FIND-INBOUND-GAS-1-2BZ8DE
@@ -763,9 +789,9 @@ guard-rejection send failure, including one attempt, one disconnect, and no unha
 
 ### DEF-9-724SXP
 
-**Defect:** Block ingest wraps everything in try/catch → `false` → disconnect+blacklist the sender,
-so a _local_ chain-provider failure (kill-period read in `maybeScheduleForkRecovery`) blacklists an
-honest gossiper for our own infrastructure fault
+**Defect:** _Resolved (2026-10-16) for block ingest._ Block ingest wrapped everything in try/catch →
+`false` → disconnect+blacklist the sender, so a _local_ chain-provider failure (kill-period read in
+`maybeScheduleForkRecovery`) blacklisted an honest gossiper for our own infrastructure fault
 ([peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)). _Scope
 note (2026-09-02):_ the lobby accepted-lease exclusion approved under
 [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
@@ -776,17 +802,23 @@ a measured universal execution bound. _Scope note (2026-09-16):_ one instance cl
 opening receipt that fails on this node's own chain provider no longer blacklists the counterparty;
 it closes with reconnect allowed and no strike. _Scope note (2026-09-18):_ a sync request that fails
 and a dispute acknowledgement that never arrives now take a counted close rather than a verdict, so
-a local outage during those requests costs the peer one retry, not its identity. Block ingest is
-unchanged, so the finding stays open.
+a local outage during those requests costs the peer one retry, not its identity.
 
-**Proposed direction:** Partition input faults from local faults; never penalize a peer for a local
-error.
+**Resolution:** `BlockQueueManager.ingestBlockConfirmation` now logs an ingest exception and
+returns the accepting verdict instead of the rejecting one, so a local fault drops the copy and
+keeps the sender's session; only its explicit verdicts reject the sender (failed authentication
+through the validation strategy, a wrong-channel network copy, and a sender still absent after an
+eligibility sync that succeeded — a failed sync ends intake without that verdict, see
+[`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)). Rethrowing was rejected: on the fire-and-forget gossip path it would
+make the RPC layer drop the sender's session for our own failure. Regression:
+`a local disputed-fork check failure during ingest does not blacklist the honest sender`
+([`REQ-GOSSIP-2-9PMMNH.T2.P1`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh.t2.p1)).
 
 <a id="def-10-199c7f"></a>
 
 ### DEF-10-199C7F
 
-**Defect:** _Partially resolved (2026-08-31)._ An `OPENED` responder that has not applied
+**Defect:** _Resolved (2026-10-27); partially resolved 2026-08-31._ An `OPENED` responder that has not applied
 genesis/state now retains one initial-load request per authenticated address behind
 `DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses
 the ordinary payload path. A duplicate from that address is rejected without replacing the first.
@@ -799,9 +831,65 @@ timeout and transport-failure liability, retained by the owner on 2026-09-07 und
 that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
 a measured universal execution bound.
 
-**Proposed direction:** The weaponizable initial-readiness case is closed. The remaining
-exact-recovery classification is accepted by the current protocol and must stay visible in security
-review.
+_Scope note (2026-10-23):_ narrowed. A responder whose own view lags a disputed window (the window's
+disputes, or the inbound run its reduce consumed, not yet locally readable) now fails the request
+with an error reply instead of returning no payload, so it no longer blacklists the requester; the
+requester takes its ordinary counted close. **Engineer decision (Luke, 2026-10-23):** a blacklist
+needs a failed check on the peer's own data; the responder's own lag is not one. A target the
+responder cannot prove for another reason (a requested fork other than the derived latest, an
+above-latest height) keeps the existing punishment rule.
+
+_Resolution (2026-10-27):_ the remaining refusals that still blacklist the requester are a target
+above the responder's latest height and a fork other than its derived latest fork. No honest request
+reaches either. A pinned request goes only to the peers that sent that block, and a peer
+stores a block before it gossips or relays it, so the target height is always held. A request for a
+non-current fork came from the queue's expiry probe, which also asked a block's author about an
+unknown fork; a later snapshot clears an old fork's dispute record on chain, so a participant could
+replay a genuine old block to a node that synced afterwards and have its honest author blacklist that
+node. The probe now asks only the peers that sent the block, not an author that did not send it. A sender stored the
+block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
+([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
+[`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
+[`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).
+Engineer decision (Luke, 2026-10-27).
+
+**Proposed direction:** None.
+
+<a id="find-bqm-3-182x91"></a>
+
+### FIND-BQM-3-182X91
+
+**Defect:** _Resolved (2026-10-23)._ A failed eligibility sync blacklisted an honest joiner.
+[`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+ignored what the intake-gate `sync` returned and blacklisted an absent sender whenever its cached
+eligibility was still not `ELIGIBLE`. A new joiner whose gossip reached a peer that had not yet
+applied its insertion, and which answered the admission sync slower than the sync timeout, took the
+sync's counted close and then a permanent blacklist for the same timeout.
+
+**Resolution:** Intake keeps the sync result and blacklists only when the sync succeeded and the
+sender is still not eligible. A failed sync carries its own consequence: an invalid payload already
+excluded the sender, and a failed request already took a counted close. **Engineer decision (Luke,
+2026-10-23):** a blacklist needs a failed check on the peer's own data; our own failure drops the
+copy and keeps the peer, and the counted close bounds a really silent peer
+([`REQ-GOSSIP-4-J5Z4DF.T1.P29`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p29),
+[`REQ-GOSSIP-4-J5Z4DF.T1.P47`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p47)).
+
+<a id="find-dack-1-7c03s9"></a>
+
+### FIND-DACK-1-7C03S9
+
+**Defect:** _Resolved (2026-10-23)._ A dispute acknowledgment on a lagging chain view blacklisted an
+honest disputer.
+[`IsForkDisputedRpcMethods.onDisputeAcknowledgmentRequest`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
+judged the requester by the responder's own chain view (local diamond, then its provider). The
+requester asks only after it has seen the dispute event, so a responder whose provider lags
+blacklisted an honest disputer; at a two-player table that cut the pair off.
+
+**Resolution:** A request for a fork the responder does not see as disputed now takes a counted close
+of the requester, the same bound the requester side already applies to a refusing responder. A
+duplicate request stays a protocol violation and still blacklists. **Engineer decision (Luke,
+2026-10-23)**, as in [`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)
+([`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../specification/peer-communication/dispute-acknowledgment.md#req-ifd-2-13862z)).
 
 <a id="def-11-jn8n6h"></a>
 

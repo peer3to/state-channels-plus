@@ -70,11 +70,13 @@ export class AssertRPCActions<
     }
 
     // The observer closed the target with the bounded tier: it recorded
-    // `expectedStrikes` against the target and no verdict.
+    // `expectedStrikes` against the target and no verdict. With
+    // `expectedStatus` it also checks the drop left the observer running.
     async peerStruckWithoutBlacklist(options: {
         observer: TestPeer<THost>;
         target: TestPeer<THost>;
         expectedStrikes?: number;
+        expectedStatus?: Status;
         timeoutMs?: number;
         pollMs?: number;
     }): Promise<void> {
@@ -97,6 +99,12 @@ export class AssertRPCActions<
             await query.isBlacklisted(target.address).request(),
             `peer ${observer.index} blacklisted peer ${target.index} instead of striking it`
         ).to.equal(false);
+        if (options.expectedStatus !== undefined)
+            await this.peerDroppedWithoutStatusChange({
+                observer,
+                target,
+                expectedStatus: options.expectedStatus
+            });
     }
 
     // Shared driver of the two exclusion assertions: wait for the exclusion

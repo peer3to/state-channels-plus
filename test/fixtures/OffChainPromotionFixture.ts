@@ -246,7 +246,7 @@ export async function assertVerifiedSyncPromotion() {
 }
 
 export async function assertPromotionBeforeReceiverApplication(
-    overlap = false
+    mode?: "overlap" | "slowSync"
 ) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
@@ -302,7 +302,7 @@ export async function assertPromotionBeforeReceiverApplication(
             (await h.control(receiver).stub.getAdmissionObservation().request())
                 .syncRequests
         ).to.equal(1);
-        if (overlap) {
+        if (mode === "overlap") {
             await h
                 .control(newcomer)
                 .byzantine.sendBlockConfirmation(
@@ -334,8 +334,39 @@ export async function assertPromotionBeforeReceiverApplication(
                 ).completedSyncs
             ).to.equal(0);
         }
+        if (mode === "slowSync") {
+            // the newcomer answers slower than the sync timeout: the failed
+            // request is one counted close, never a verdict
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(receiver)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).completedSyncs === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                (
+                    await h
+                        .control(receiver)
+                        .stub.getAdmissionObservation()
+                        .request()
+                ).successfulSyncs
+            ).to.equal(0);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: receiver,
+                target: newcomer
+            });
+        }
         await application.release();
         await h.control(newcomer).stub.releaseSpectateResponses().request();
+        if (mode === "slowSync")
+            await h.rpc.waitForHandshakeCompleted(
+                receiver.index,
+                newcomer.address
+            );
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
         await waitFor(
             async () =>
