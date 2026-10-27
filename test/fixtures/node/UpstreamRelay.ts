@@ -41,6 +41,7 @@ export class UpstreamRelay {
     private refusing = false;
     private hold?: Hold;
     private failing?: { method: UpstreamMethod; remaining: number };
+    private cutting?: { method: UpstreamMethod; remaining: number };
 
     private constructor(server: WebSocketServer, target: string) {
         this.server = server;
@@ -96,6 +97,11 @@ export class UpstreamRelay {
         this.failing = { method, remaining: count };
     }
 
+    /** Cuts the connection the next `count` `method` requests arrive on. */
+    cutNext(method: UpstreamMethod, count: number): void {
+        this.cutting = { method, remaining: count };
+    }
+
     /** Cuts every relayed connection. */
     disconnect(): void {
         for (const socket of this.sockets) socket.terminate();
@@ -136,6 +142,11 @@ export class UpstreamRelay {
                 request.method,
                 this.requestCount(request.method) + 1
             );
+            if (this.cutting?.method === request.method) {
+                if (--this.cutting.remaining === 0) this.cutting = undefined;
+                client.terminate();
+                return;
+            }
             if (this.failing?.method === request.method) {
                 if (--this.failing.remaining === 0) this.failing = undefined;
                 client.send(

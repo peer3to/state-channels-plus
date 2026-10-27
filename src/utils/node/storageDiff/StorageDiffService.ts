@@ -8,15 +8,21 @@ import {
     METHOD_NOT_FOUND,
     PARSE_ERROR,
     parseHeader,
+    parseLogs,
     PRUNED_ERROR_CODE,
     rpcError,
     toQuantity,
+    touchedAddresses,
     type AccountAddress,
     type AccountDiffs,
     type BlockHeader,
     type BlockStorageDiff,
+    type IncludedHeadRecord,
+    type StagedBlock,
     type SubscriptionId
 } from "./blockStorageDiff";
+import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
+import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
 import {
     UpstreamLostError,
@@ -69,7 +75,19 @@ export interface StorageDiffServiceOptions {
     retention?: number;
     /** A peer whose unsent bytes pass this is told why and cut. */
     maxPeerBufferedBytes?: number;
+    /**
+     * Where the included level comes from. Without one, no included head is
+     * pushed and catch-up reports `null`.
+     */
+    includedHead?: AIncludedHeadStrategy;
     logger: Logger;
+}
+
+/** What a catch-up answers: retained records and the included head. */
+export interface StorageDiffCatchUp {
+    records: BlockStorageDiff[];
+    /** `null` until the strategy reported one. */
+    includedHead: IncludedHeadRecord | null;
 }
 
 /** One connected peer and the subscriptions it opened. */
@@ -111,9 +129,14 @@ const noAncestor = () => new Error("Upstream chain shares no ancestor");
  * records, and serves address-filtered JSON-RPC 2.0 over WebSocket:
  * `scp_subscribeContractStorage` pushes future records,
  * `scp_getContractStorageDiffs` replays retained ones and `scp_unsubscribe`
- * ends a subscription. A reorg or an upstream error answer or timeout during
- * startup or reconciliation is retried, and a lost upstream socket is
- * reconnected, then reconciled from the last canonical record. A failure that
+ * ends a subscription. Two levels: records are the `latest` level (best head,
+ * may roll back); the included head, reported by an `AIncludedHeadStrategy`, is
+ * the level the chain treats as final. It is pushed as `scp_includedHead` and
+ * returned by catch-up. A record carries the logs of the subscribed addresses
+ * its trace touched, fetched once per block with `eth_getLogs` by block hash.
+ * A reorg or an upstream error answer or timeout during startup or
+ * reconciliation is retried, and a lost upstream socket is reconnected (during
+ * startup too), then reconciled from the last canonical record. A failure that
  * outlasts its retries is fatal: a supervisor restarts the process and
  * consumers catch up.
  *
@@ -131,11 +154,17 @@ export class StorageDiffService {
     private readonly port: number;
     private readonly retention: number;
     private readonly maxPeerBufferedBytes: number;
+    private readonly includedStrategy?: AIncludedHeadStrategy;
     private readonly peers = new Map<WebSocket, StorageDiffPeer>();
     private readonly stopping = new AbortController();
     private upstream?: UpstreamRpcClient;
     private server?: WebSocketServer;
-    private canonical: BlockStorageDiff[] = [];
+    private canonical: StagedBlock[] = [];
+    private included?: IncludedHead;
+    // Hash of the included head already reported as off the best chain.
+    private divergenceReported?: string;
+    // The upstream dropped while the service was starting.
+    private lostBeforeReady = false;
     // One serialized queue: reconciliation commits branches in order, and
     // subscriptions and catch-up reads see a consistent canonical history.
     private queueTail: Promise<unknown> = Promise.resolve();
@@ -154,6 +183,7 @@ export class StorageDiffService {
         upstreamEndpoint: string
     ) {
         this.logger = options.logger;
+        this.includedStrategy = options.includedHead;
         this.upstreamUrl = options.upstreamUrl;
         this.upstreamEndpoint = upstreamEndpoint;
         this.host = options.host ?? "127.0.0.1";
@@ -240,32 +270,99 @@ export class StorageDiffService {
     async getDiffs(
         addresses: AccountAddress[],
         fromBlock: bigint
-    ): Promise<BlockStorageDiff[]> {
+    ): Promise<StorageDiffCatchUp> {
         return await this.enqueue(async () => {
+            const includedHead = this.includedRecord();
             const head = BigInt(
                 this.canonical[this.canonical.length - 1].number
             );
-            if (fromBlock > head) return [];
+            if (fromBlock > head) return { records: [], includedHead };
             if (fromBlock < BigInt(this.canonical[0].number)) {
                 throw rpcError(
                     PRUNED_ERROR_CODE,
                     "Requested block has been pruned"
                 );
             }
-            const records = this.canonical.filter(
+            const blocks = this.canonical.filter(
                 (record) => BigInt(record.number) >= fromBlock
             );
-            return records.map((record) => filterRecord(record, addresses));
+            // Logs of blocks staged before anyone subscribed to these addresses.
+            for (const block of blocks) {
+                await this.retryTransient(
+                    () => this.attachLogs(block, addresses),
+                    "Retrying the log fetch"
+                );
+            }
+            return {
+                records: blocks.map((record) =>
+                    filterRecord(record, addresses)
+                ),
+                includedHead
+            };
+        });
+    }
+
+    /**
+     * Applies the included head the strategy reported: later than the current
+     * one only. Subscribed peers get it pushed.
+     */
+    advanceIncluded(head: IncludedHead): Promise<void> {
+        return this.enqueue(async () => {
+            if (this.included && head.number <= this.included.number) return;
+            this.included = head;
+            this.checkIncludedAncestry();
+            const record = this.includedRecord();
+            for (const peer of this.peers.values()) {
+                if (peer.closing || peer.subscriptions.size === 0) continue;
+                this.send(peer.socket, {
+                    jsonrpc: "2.0",
+                    method: "scp_includedHead",
+                    params: record
+                });
+                this.dropIfLagging(peer);
+            }
         });
     }
 
     private async open(): Promise<void> {
         try {
-            await this.connectUpstream();
-            this.canonical = await this.retryTransient(
-                () => this.loadHistory(),
-                "Retrying the initial history load"
+            // The upstream can drop during the load as well as after startup.
+            let connected = false;
+            this.canonical = await retry(
+                async () => {
+                    connected = false;
+                    await this.connectUpstream();
+                    connected = true;
+                    this.lostBeforeReady = false;
+                    return await this.retryTransient(
+                        () => this.loadHistory(),
+                        "Retrying the initial history load"
+                    );
+                },
+                {
+                    maxRetries: UPSTREAM_RECONNECT_LIMIT,
+                    delayMs: UPSTREAM_RECONNECT_BACKOFF_MS,
+                    useExponentialBackoff: true,
+                    signal: this.stopping.signal,
+                    // A failed connect has its own retries.
+                    shouldRetry: (error) =>
+                        connected && error instanceof UpstreamLostError,
+                    onRetry: (attempt, error) =>
+                        this.logger.warn(
+                            "Retrying startup after the upstream dropped",
+                            {
+                                attempt,
+                                reason: this.sanitize(describeError(error))
+                            }
+                        )
+                }
             );
+            await this.includedStrategy?.start({
+                logger: this.logger,
+                request: (method, params) => this.request(method, params),
+                advance: (head) => this.advanceIncluded(head),
+                fail: (error) => this.fail(error)
+            });
             await this.listen();
         } catch (error) {
             const failure = new Error(this.sanitize(describeError(error)));
@@ -273,11 +370,12 @@ export class StorageDiffService {
             throw failure;
         }
         this.ready = true;
+        if (this.lostBeforeReady) this.reconnect();
         if (this.wakePending) this.wake();
     }
 
     /** The last `retention` canonical blocks, oldest first. */
-    private async loadHistory(): Promise<BlockStorageDiff[]> {
+    private async loadHistory(): Promise<StagedBlock[]> {
         // Newest first by parent hashes, then traced oldest first.
         const headers = [await this.fetchHeader("latest")];
         while (
@@ -298,12 +396,16 @@ export class StorageDiffService {
                 const attempt = await UpstreamRpcClient.connect(
                     this.upstreamUrl,
                     {
-                        onHead: () => this.wake(),
-                        onLost: () => this.reconnect()
+                        // Before the service is ready, the failing request
+                        // reports the loss to `open`.
+                        onLost: () =>
+                            this.ready
+                                ? this.reconnect()
+                                : (this.lostBeforeReady = true)
                     }
                 );
                 try {
-                    await attempt.subscribeHeads();
+                    await attempt.subscribeHeads(() => this.wake());
                 } catch (error) {
                     attempt.close(new UpstreamLostError("Subscription failed"));
                     throw error;
@@ -475,8 +577,8 @@ export class StorageDiffService {
     }
 
     /** Traces each header's block once, in order; empty blocks need no trace. */
-    private async stage(headers: BlockHeader[]): Promise<BlockStorageDiff[]> {
-        const records: BlockStorageDiff[] = [];
+    private async stage(headers: BlockHeader[]): Promise<StagedBlock[]> {
+        const records: StagedBlock[] = [];
         for (const header of headers) {
             let diff: { pre: AccountDiffs; post: AccountDiffs } = {
                 pre: {},
@@ -497,14 +599,56 @@ export class StorageDiffService {
                 }
                 diff = mergeTransactionDiffs(traces);
             }
-            records.push({
+            const record: StagedBlock = {
                 number: toQuantity(header.number),
                 hash: header.hash,
                 parentHash: header.parentHash,
-                ...diff
-            });
+                ...diff,
+                logs: [],
+                loggedAddresses: new Set()
+            };
+            await this.attachLogs(record, this.subscribedAddresses());
+            records.push(record);
         }
         return records;
+    }
+
+    /** Every address some open subscription asks for. */
+    private subscribedAddresses(): AccountAddress[] {
+        const addresses = new Set<AccountAddress>();
+        for (const peer of this.peers.values()) {
+            for (const list of peer.subscriptions.values()) {
+                for (const address of list) addresses.add(address);
+            }
+        }
+        return [...addresses];
+    }
+
+    /**
+     * Fetches the block's logs of the `addresses` its trace touched and that
+     * it holds none for yet: one `eth_getLogs` by block hash, none when
+     * nothing qualifies.
+     */
+    private async attachLogs(
+        block: StagedBlock,
+        addresses: AccountAddress[]
+    ): Promise<void> {
+        const touched = touchedAddresses(block);
+        const missing = addresses.filter(
+            (address) =>
+                touched.has(address) && !block.loggedAddresses.has(address)
+        );
+        if (missing.length === 0) return;
+        const answer = await this.request("eth_getLogs", [
+            { blockHash: block.hash, address: missing }
+        ]);
+        const fetched = parseLogs(answer).filter((log) =>
+            missing.includes(log.address)
+        );
+        for (const address of missing) block.loggedAddresses.add(address);
+        block.logs = [...block.logs, ...fetched].sort((a, b) =>
+            Number(BigInt(a.logIndex) - BigInt(b.logIndex))
+        );
     }
 
     private send(socket: WebSocket, message: unknown): void {
@@ -512,7 +656,7 @@ export class StorageDiffService {
         socket.send(JSON.stringify(message));
     }
 
-    private publish(record: BlockStorageDiff): void {
+    private publish(record: StagedBlock): void {
         for (const [socket, peer] of this.peers) {
             if (peer.closing) continue;
             for (const [subscription, addresses] of peer.subscriptions) {
@@ -525,12 +669,16 @@ export class StorageDiffService {
                     }
                 });
             }
-            // The limit applies to the socket's aggregate buffered bytes, so a
-            // catch-up reply the peer has not drained counts as well.
-            // A peer that cannot keep up recovers with catch-up, not lost records.
-            if (socket.bufferedAmount > this.maxPeerBufferedBytes) {
-                this.dropLagging(peer);
-            }
+            this.dropIfLagging(peer);
+        }
+    }
+
+    // The limit applies to the socket's aggregate buffered bytes, so a
+    // catch-up reply the peer has not drained counts as well.
+    // A peer that cannot keep up recovers with catch-up, not lost records.
+    private dropIfLagging(peer: StorageDiffPeer): void {
+        if (peer.socket.bufferedAmount > this.maxPeerBufferedBytes) {
+            this.dropLagging(peer);
         }
     }
 
@@ -600,6 +748,48 @@ export class StorageDiffService {
         canonical.push(...staged);
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
+        const head = canonical[canonical.length - 1];
+        this.checkIncludedAncestry();
+        this.includedStrategy?.bestHeadCommitted({
+            number: BigInt(head.number),
+            hash: head.hash
+        });
+    }
+
+    /**
+     * The included head belongs to the best chain. A retained block of its
+     * number with another hash means it does not: an early reorg warning,
+     * which is only logged. A head outside the retained window cannot be
+     * judged here.
+     */
+    private checkIncludedAncestry(): void {
+        const included = this.included;
+        if (!included) return;
+        const best = this.canonical.find(
+            (record) => BigInt(record.number) === included.number
+        );
+        if (
+            !best ||
+            best.hash === included.hash ||
+            this.divergenceReported === included.hash
+        ) {
+            return;
+        }
+        this.divergenceReported = included.hash;
+        this.logger.warn("Included head is not an ancestor of the best head", {
+            includedNumber: toQuantity(included.number),
+            includedHash: included.hash,
+            bestHash: best.hash
+        });
+    }
+
+    private includedRecord(): IncludedHeadRecord | null {
+        return this.included
+            ? {
+                  number: toQuantity(this.included.number),
+                  hash: this.included.hash
+              }
+            : null;
     }
 
     /** Runs `job` again after a transient failure, with backoff. */
@@ -658,6 +848,7 @@ export class StorageDiffService {
     private teardown(reason?: Error): Promise<void> {
         this.shutdown ??= (async () => {
             this.stopping.abort();
+            this.includedStrategy?.close();
             this.upstream?.close(
                 reason ?? new Error("StorageDiffService closed")
             );

@@ -2,6 +2,8 @@ import { isObject } from "./blockStorageDiff";
 import WebSocket from "ws";
 
 const UPSTREAM_REQUEST_TIMEOUT_MS = 10_000;
+/** Unknown subscription ids whose notifications are held for a late answer. */
+const MAX_EARLY_SUBSCRIPTIONS = 8;
 
 /** JSON-RPC id of a request this client sent upstream. */
 type UpstreamRequestId = number;
@@ -21,9 +23,10 @@ export class UpstreamTimeoutError extends Error {}
 /** The connection could not be opened, or it is gone. */
 export class UpstreamLostError extends Error {}
 
+/** Id a node handed out for a subscription it opened. */
+type UpstreamSubscriptionId = string;
+
 export type UpstreamHandlers = {
-    /** A `newHeads` notification arrived. */
-    onHead: () => void;
     /** The socket is gone or sent garbage; the client is closed for good. */
     onLost: (error: Error) => void;
 };
@@ -39,7 +42,14 @@ export class UpstreamRpcClient {
     private readonly handlers: UpstreamHandlers;
     private readonly pending = new Map<UpstreamRequestId, PendingRequest>();
     private nextRequestId = 0;
-    private headSubscription?: string;
+    // Notification callbacks, by the subscription id the node assigned.
+    private readonly subscriptions = new Map<
+        UpstreamSubscriptionId,
+        (result: unknown) => void
+    >();
+    // Notifications that beat their subscription's answer to this client,
+    // replayed once `subscribe` knows the id.
+    private readonly early = new Map<UpstreamSubscriptionId, unknown[]>();
     private closed = false;
 
     private constructor(socket: WebSocket, handlers: UpstreamHandlers) {
@@ -72,12 +82,23 @@ export class UpstreamRpcClient {
         return new UpstreamRpcClient(socket, handlers);
     }
 
-    async subscribeHeads(): Promise<void> {
-        const id = await this.request("eth_subscribe", ["newHeads"]);
+    /** Opens a subscription; `onEvent` gets each notification's `result`. */
+    async subscribe(
+        method: string,
+        params: unknown[],
+        onEvent: (result: unknown) => void
+    ): Promise<void> {
+        const id = await this.request(method, params);
         if (typeof id !== "string") {
-            throw new Error("Malformed newHeads subscription from upstream");
+            throw new Error(`Malformed ${method} subscription from upstream`);
         }
-        this.headSubscription = id;
+        this.subscriptions.set(id, onEvent);
+        for (const result of this.early.get(id) ?? []) onEvent(result);
+        this.early.delete(id);
+    }
+
+    async subscribeHeads(onHead: () => void): Promise<void> {
+        await this.subscribe("eth_subscribe", ["newHeads"], onHead);
     }
 
     request(method: string, params: unknown[]): Promise<unknown> {
@@ -126,13 +147,21 @@ export class UpstreamRpcClient {
             const message: unknown = JSON.parse(raw);
             if (!isObject(message))
                 throw new Error("Malformed upstream message");
-            if (message.method === "eth_subscription") {
+            // `eth_subscription` and Substrate's `state_storage` alike.
+            if (typeof message.method === "string") {
                 const params = message.params;
                 if (
                     isObject(params) &&
-                    params.subscription === this.headSubscription
+                    typeof params.subscription === "string"
                 ) {
-                    this.handlers.onHead();
+                    const onEvent = this.subscriptions.get(params.subscription);
+                    if (onEvent) {
+                        onEvent(params.result);
+                    } else if (this.early.size < MAX_EARLY_SUBSCRIPTIONS) {
+                        const held = this.early.get(params.subscription) ?? [];
+                        held.push(params.result);
+                        this.early.set(params.subscription, held);
+                    }
                 }
                 return;
             }

@@ -2,10 +2,13 @@ import {
     invalidParams,
     parseAddresses,
     parseFromBlock,
-    type BlockStorageDiff,
     type SubscriptionId
 } from "./blockStorageDiff";
-import type { StorageDiffPeer, StorageDiffService } from "./StorageDiffService";
+import type {
+    StorageDiffCatchUp,
+    StorageDiffPeer,
+    StorageDiffService
+} from "./StorageDiffService";
 
 /**
  * The routable endpoints, one instance per connection. Requests reach methods
@@ -40,10 +43,13 @@ export class StorageDiffRpcMethods {
         return this.service.unsubscribe(this.peer, params[0]);
     }
 
-    /** The retained records from `fromBlock` to the head, filtered. */
+    /**
+     * The retained records from `fromBlock` to the head, filtered, and the
+     * current included head.
+     */
     async scp_getContractStorageDiffs(
         params: unknown[]
-    ): Promise<BlockStorageDiff[]> {
+    ): Promise<StorageDiffCatchUp> {
         if (params.length !== 2) {
             throw invalidParams("Expected [addresses, fromBlock]");
         }

@@ -439,6 +439,45 @@ describe("StorageDiffService", function () {
         });
     });
 
+    it("reconnects an upstream that drops while the initial history loads and starts", async function () {
+        await withStorageDiffUpstream(async ({ relay, signer, start }) => {
+            relay.cutNext("eth_getBlockByNumber", 1);
+
+            const service = await start();
+
+            expect(relay.connectionCount).to.equal(2);
+            const client = await StorageDiffClient.connect(service.url);
+            try {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([address]);
+                const receipt = await setValue(storage, 1n);
+                const record = await client.recordAt(
+                    subscription,
+                    receipt.blockNumber
+                );
+                expect(record.post[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(1n)
+                });
+            } finally {
+                client.close();
+            }
+        });
+    });
+
+    it("fails to start once the upstream keeps dropping during the initial history load", async function () {
+        await withStorageDiffUpstream(async ({ relay, start }) => {
+            relay.cutNext("eth_getBlockByNumber", UPSTREAM_RECONNECT_LIMIT + 1);
+
+            const failure = await rejectionOf(start());
+
+            expect(failure).to.be.instanceOf(Error);
+            expect(relay.connectionCount).to.equal(
+                UPSTREAM_RECONNECT_LIMIT + 1
+            );
+        });
+    });
+
     it("reconnects a lost upstream and pushes the blocks mined while it was away in chain order", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const storage = await deployNumberStorage(signer);

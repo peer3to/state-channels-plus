@@ -5,14 +5,20 @@ import { createLogger } from "@/utils";
 import type {
     AccountAddress,
     BlockStorageDiff,
+    IncludedHeadRecord,
     SubscriptionId
 } from "@/utils/node/storageDiff/blockStorageDiff";
-import { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
+import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
+import {
+    StorageDiffService,
+    type StorageDiffCatchUp
+} from "@/utils/node/storageDiff/StorageDiffService";
 import {
     SimpleNumberStorage__factory,
     type SimpleNumberStorage
 } from "@typechain-types";
 import {
+    id,
     toBeHex,
     type JsonRpcProvider,
     type JsonRpcSigner,
@@ -63,6 +69,9 @@ export class StorageDiffClient {
         SubscriptionId,
         Waiter<BlockStorageDiff>
     >();
+    // `scp_includedHead` params not yet read, in arrival order.
+    private readonly includedHeads: IncludedHeadRecord[] = [];
+    private includedHeadWaiter?: Waiter<IncludedHeadRecord>;
     // `scp_disconnect` notification params, in arrival order.
     private readonly disconnectNotices: unknown[] = [];
     private readonly socketClosed: Promise<{ code: number; reason: string }>;
@@ -116,14 +125,41 @@ export class StorageDiffClient {
         return [...(this.records.get(subscription) ?? [])];
     }
 
+    async catchUp(
+        addresses: AccountAddress[],
+        fromBlock: number
+    ): Promise<StorageDiffCatchUp> {
+        return (await this.request("scp_getContractStorageDiffs", [
+            addresses,
+            fromBlock
+        ])) as StorageDiffCatchUp;
+    }
+
     async getDiffs(
         addresses: AccountAddress[],
         fromBlock: number
     ): Promise<BlockStorageDiff[]> {
-        return (await this.request("scp_getContractStorageDiffs", [
-            addresses,
-            fromBlock
-        ])) as BlockStorageDiff[];
+        return (await this.catchUp(addresses, fromBlock)).records;
+    }
+
+    /** Pushed included heads not read yet, oldest first. */
+    unreadIncludedHeads(): IncludedHeadRecord[] {
+        return [...this.includedHeads];
+    }
+
+    /** The next `scp_includedHead` push, in push order. */
+    nextIncludedHead(): Promise<IncludedHeadRecord> {
+        const queued = this.includedHeads.shift();
+        if (queued) return Promise.resolve(queued);
+        return new Promise((resolve) => (this.includedHeadWaiter = resolve));
+    }
+
+    /** Reads pushed included heads until one reaches block `number`. */
+    async includedHeadAt(number: number): Promise<IncludedHeadRecord> {
+        for (;;) {
+            const head = await this.nextIncludedHead();
+            if (Number(head.number) >= number) return head;
+        }
     }
 
     /** The next pushed record of `subscription`, in push order. */
@@ -180,6 +216,13 @@ export class StorageDiffClient {
             this.disconnectNotices.push(message.params);
             return;
         }
+        if (message.method === "scp_includedHead") {
+            const waiter = this.includedHeadWaiter;
+            this.includedHeadWaiter = undefined;
+            if (waiter) waiter(message.params);
+            else this.includedHeads.push(message.params);
+            return;
+        }
         if (message.method === "scp_subscription") {
             const { subscription, result } = message.params;
             const waiter = this.recordWaiters.get(subscription);
@@ -212,13 +255,19 @@ export class StorageDiffClient {
 export type StorageDiffServiceSettings = {
     retention?: number;
     maxPeerBufferedBytes?: number;
+    includedHead?: AIncludedHeadStrategy;
 };
+
+/** A `warn` call of the service's logger. */
+export type LoggedWarning = { message: string; meta: unknown[] };
 
 export type StorageDiffUpstream = {
     provider: JsonRpcProvider;
     /** Sits between the service and the node, for upstream faults. */
     relay: UpstreamRelay;
     signer: JsonRpcSigner;
+    /** Warnings the services' loggers got, oldest first. */
+    warnings: LoggedWarning[];
     /** Starts a service on the relay; it is closed in `finally`. */
     start: (
         settings?: StorageDiffServiceSettings
@@ -245,22 +294,30 @@ export async function withStorageDiffUpstream<T>(
             provider._getConnection().url.replace(/^http/, "ws")
         );
         const services: StorageDiffService[] = [];
+        const warnings: LoggedWarning[] = [];
         try {
             const signer = await provider.getSigner(0);
             const start = async (settings: StorageDiffServiceSettings = {}) => {
+                const logger = createLogger(
+                    {},
+                    { component: "StorageDiffService" }
+                );
+                // Records each warning, then logs it as usual.
+                const warn = logger.warn.bind(logger);
+                logger.warn = (message: unknown, ...meta: unknown[]) => {
+                    warnings.push({ message: String(message), meta });
+                    warn(message, ...meta);
+                };
                 const service = await StorageDiffService.start({
                     upstreamUrl: relay.url,
                     port: 0,
                     ...settings,
-                    logger: createLogger(
-                        {},
-                        { component: "StorageDiffService" }
-                    )
+                    logger
                 });
                 services.push(service);
                 return service;
             };
-            return await use({ provider, relay, signer, start });
+            return await use({ provider, relay, signer, warnings, start });
         } finally {
             for (const service of services) await service.close();
             await relay.close();
@@ -309,4 +366,52 @@ export async function recordKey(
     contract: SimpleNumberStorage
 ): Promise<AccountAddress> {
     return (await contract.getAddress()).toLowerCase();
+}
+
+/** `ValueSet(uint256)`, the event the log emitter fires. */
+export const VALUE_SET_TOPIC = id("ValueSet(uint256)");
+
+// Runtime: slot 0 = calldata word; LOG1(topic ValueSet, data = that word).
+const LOG_EMITTER_RUNTIME =
+    "600035" + // CALLDATALOAD(0)
+    "80600055" + // DUP1, SSTORE(0, word)
+    "600052" + // MSTORE(0, word)
+    "7f" +
+    VALUE_SET_TOPIC.slice(2) + // PUSH32 topic
+    "60206000a1" + // LOG1(offset 0, size 32, topic)
+    "00"; // STOP
+// Initcode copies the runtime after its own 11 bytes and returns it.
+const LOG_EMITTER_INITCODE =
+    "0x60" +
+    (LOG_EMITTER_RUNTIME.length / 2).toString(16).padStart(2, "0") +
+    "80600b6000396000f3" +
+    LOG_EMITTER_RUNTIME;
+
+/**
+ * Deploys a contract that stores its call's 32-byte word in slot 0 and emits
+ * `ValueSet(word)`: the one place a test needs a real event with a touched slot.
+ */
+export async function deployLogEmitter(
+    signer: JsonRpcSigner
+): Promise<AccountAddress> {
+    const response = await signer.sendTransaction({
+        data: LOG_EMITTER_INITCODE
+    });
+    const receipt = await response.wait();
+    if (!receipt?.contractAddress) throw new Error("Emitter not deployed");
+    return receipt.contractAddress.toLowerCase();
+}
+
+export async function emitValue(
+    signer: JsonRpcSigner,
+    emitter: AccountAddress,
+    value: bigint
+): Promise<TransactionReceipt> {
+    const response = await signer.sendTransaction({
+        to: emitter,
+        data: storageWord(value)
+    });
+    const receipt = await response.wait();
+    if (!receipt) throw new Error("emitValue was not mined");
+    return receipt;
 }

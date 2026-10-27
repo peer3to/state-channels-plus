@@ -33,12 +33,36 @@ export interface AccountDiff {
 
 export type AccountDiffs = Record<AccountAddress, AccountDiff>;
 
+/** An event log of a subscribed address, as the upstream's `eth_getLogs` has it. */
+export interface StorageDiffLog {
+    address: AccountAddress;
+    topics: string[];
+    data: string;
+    logIndex: string;
+    transactionIndex: string;
+    transactionHash: string;
+}
+
 export interface BlockStorageDiff {
     number: string;
     hash: string;
     parentHash: string;
     pre: AccountDiffs;
     post: AccountDiffs;
+    /** Logs of the touched addresses the service fetched them for, by logIndex. */
+    logs: StorageDiffLog[];
+}
+
+/** A retained block: the record plus the addresses whose logs it holds. */
+export interface StagedBlock extends BlockStorageDiff {
+    /** Touched addresses `eth_getLogs` was asked about; an empty answer counts. */
+    loggedAddresses: Set<AccountAddress>;
+}
+
+/** The newest block the chain treats as final, as pushed and caught up. */
+export interface IncludedHeadRecord {
+    number: string;
+    hash: string;
 }
 
 /** The parts of an upstream block header the service follows. */
@@ -221,9 +245,16 @@ function cloneAccount(account: AccountDiff): AccountDiff {
         : { ...account };
 }
 
+/** The addresses the block's trace changed. */
+export function touchedAddresses(
+    record: Pick<BlockStorageDiff, "pre" | "post">
+): Set<AccountAddress> {
+    return new Set([...Object.keys(record.pre), ...Object.keys(record.post)]);
+}
+
 /** The record restricted to `addresses` (lower-case); never shares state. */
 export function filterRecord(
-    record: BlockStorageDiff,
+    record: StagedBlock,
     addresses: AccountAddress[]
 ): BlockStorageDiff {
     const selectedPre: AccountDiffs = {};
@@ -241,8 +272,44 @@ export function filterRecord(
         hash: record.hash,
         parentHash: record.parentHash,
         pre: selectedPre,
-        post: selectedPost
+        post: selectedPost,
+        logs: record.logs
+            .filter((log) => addresses.includes(log.address))
+            .map((log) => ({ ...log, topics: [...log.topics] }))
     };
+}
+
+/** Validates the `eth_getLogs` answer for one block; sorted by logIndex. */
+export function parseLogs(value: unknown): StorageDiffLog[] {
+    if (!Array.isArray(value)) throw new Error("Malformed logs from upstream");
+    const logs = value.map((raw): StorageDiffLog => {
+        if (
+            !isObject(raw) ||
+            typeof raw.address !== "string" ||
+            !ADDRESS.test(raw.address) ||
+            !Array.isArray(raw.topics) ||
+            !raw.topics.every((t) => typeof t === "string" && HASH.test(t)) ||
+            typeof raw.data !== "string" ||
+            !HEX_DATA.test(raw.data) ||
+            typeof raw.logIndex !== "string" ||
+            !HEX_QUANTITY_LOOSE.test(raw.logIndex) ||
+            typeof raw.transactionIndex !== "string" ||
+            !HEX_QUANTITY_LOOSE.test(raw.transactionIndex) ||
+            typeof raw.transactionHash !== "string" ||
+            !HASH.test(raw.transactionHash)
+        ) {
+            throw new Error("Malformed log from upstream");
+        }
+        return {
+            address: raw.address.toLowerCase(),
+            topics: (raw.topics as string[]).map((t) => t.toLowerCase()),
+            data: raw.data.toLowerCase(),
+            logIndex: raw.logIndex.toLowerCase(),
+            transactionIndex: raw.transactionIndex.toLowerCase(),
+            transactionHash: raw.transactionHash.toLowerCase()
+        };
+    });
+    return logs.sort((a, b) => Number(BigInt(a.logIndex) - BigInt(b.logIndex)));
 }
 
 export function parseHeader(value: unknown): BlockHeader {
