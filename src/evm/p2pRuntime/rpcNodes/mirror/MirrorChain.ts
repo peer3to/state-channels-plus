@@ -1,22 +1,22 @@
 import { getReconnectDelayMs } from "../RpcNodeProvider";
+import type { MirrorStateManager } from "./MirrorStateManager";
 import {
-    UntrackedAddressError,
-    type MirrorStateManager,
-    type MirrorUpstream
-} from "./MirrorStateManager";
-import {
+    StorageDiffNotRetainedError,
     StorageDiffPrunedError,
-    StorageDiffSocket,
-    type StorageDiffCatchUp
+    StorageDiffSocket
 } from "./StorageDiffSocket";
 import type { Logger } from "@/utils/logging/Logger";
 import { Mutex } from "@/utils/Mutex";
 import type {
     AccountAddress,
+    AccountDiffs,
+    BlockEnvironment,
     BlockStorageDiff,
     IncludedHeadRecord,
+    StateRequestParams,
+    StorageDiffCatchUp,
     SubscriptionId
-} from "@/utils/node/storageDiff/blockStorageDiff";
+} from "@/utils/storageDiff/storageDiffWire";
 
 /**
  * Applied blocks kept with their `pre` values for a rollback. A reorg
@@ -29,13 +29,13 @@ const MAX_APPLIED_BLOCKS = 128;
  */
 const OWN_TRANSACTION_WAIT_MS = 10_000;
 
-/** The parts of an upstream block header a call's block environment needs. */
-export type MirrorHeader = {
-    timestamp: bigint;
-    gasLimit: bigint;
-    baseFeePerGas?: bigint;
-    miner: string;
-};
+/**
+ * Passes over one read the mirror makes before giving up on it: each pass
+ * fills what the one before found missing.
+ */
+const MAX_DISCOVERY_PASSES = 256;
+/** A block number above any head: a catch-up from it answers the head alone. */
+const BEYOND_HEAD = 1n << 64n;
 
 /** A block of the chain as the mirror follows it. */
 type ChainBlock = { number: bigint; hash: string };
@@ -46,12 +46,22 @@ export type MirrorBlock = ChainBlock;
 /** The mirror's head: the block its cached state is at. */
 export type MirrorHead = ChainBlock;
 
-/** What the mirror asks the RPC node besides state reads. */
-export interface MirrorChainUpstream extends MirrorUpstream {
-    /** The node's header at `latest`, or at the block with `hash`. */
-    getHeader(
-        block: "latest" | { hash: string }
-    ): Promise<(ChainBlock & { header: MirrorHeader }) | null>;
+/**
+ * What the mirror reads from the RPC node when the service does not retain
+ * the head block (answers -32002), at that block's number.
+ */
+export interface MirrorUpstream {
+    getStorageAt(
+        address: AccountAddress,
+        slot: string,
+        block: bigint
+    ): Promise<string>;
+    getBalance(address: AccountAddress, block: bigint): Promise<string>;
+    getTransactionCount(
+        address: AccountAddress,
+        block: bigint
+    ): Promise<string>;
+    getCode(address: AccountAddress, block: bigint): Promise<string>;
 }
 
 /** The mirror cannot answer now; the request goes to the RPC node. */
@@ -61,7 +71,7 @@ export type MirrorChainOptions = {
     /** `ws://` URL of the storage diff service. */
     serviceUrl: string;
     state: MirrorStateManager;
-    upstream: MirrorChainUpstream;
+    upstream: MirrorUpstream;
     logger: Logger;
 };
 
@@ -75,7 +85,7 @@ export type MirrorChainOptions = {
 export class MirrorChain {
     private readonly serviceUrl: string;
     private readonly state: MirrorStateManager;
-    private readonly upstream: MirrorChainUpstream;
+    private readonly upstream: MirrorUpstream;
     private readonly logger: Logger;
     private readonly lock = new Mutex();
     /** Addresses the open subscription follows. */
@@ -88,9 +98,10 @@ export class MirrorChain {
     private subscription?: SubscriptionId;
     /** The block below `applied`; the head when nothing was applied yet. */
     private base?: ChainBlock;
+    /** The environment of `base`. */
+    private baseEnvironment?: BlockEnvironment;
     /** Blocks applied since `base`, oldest first. */
     private applied: BlockStorageDiff[] = [];
-    private headers = new Map<string, MirrorHeader>();
     private includedHeadRecord?: IncludedHeadRecord;
     /** Block of the peer's newest own transaction seen mined. */
     private requiredBlock?: ChainBlock;
@@ -119,10 +130,6 @@ export class MirrorChain {
         return newest ? this.toBlock(newest) : this.base;
     }
 
-    isTracked(address: AccountAddress): boolean {
-        return this.tracked.has(address);
-    }
-
     /**
      * A read issued from now on waits until the head reaches the block
      * `number` a node announced, so it never answers from before an event
@@ -139,37 +146,45 @@ export class MirrorChain {
     }
 
     /**
-     * Runs `read` with the state at the head. A read that touches an address
-     * the service does not follow yet is stopped, the address tracked, and
-     * the read run again from the start, so one read sees one head.
+     * Runs `read` with the state at the head. State the read finds missing
+     * is read from the service in one request, tracking the new addresses
+     * first, and the read runs again from the start, so one read sees one head.
      */
     async run<T>(read: (head: MirrorHead) => Promise<T>): Promise<T> {
         await this.waitForOwnTransactions();
         await this.lock.lock();
         try {
-            for (;;) {
+            for (let pass = 0; pass < MAX_DISCOVERY_PASSES; pass++) {
                 const head = await this.ensureFollowing();
+                let outcome: { value: T } | { error: unknown };
                 try {
-                    return await read(head);
+                    outcome = { value: await read(head) };
                 } catch (error) {
-                    if (!(error instanceof UntrackedAddressError)) throw error;
-                    await this.track(error.address);
+                    outcome = { error };
                 }
+                const misses = this.state.takeMisses();
+                if (misses.length === 0) {
+                    if ("error" in outcome) throw outcome.error;
+                    return outcome.value;
+                }
+                // the pass ran on placeholders: its outcome is discarded
+                await this.fillMisses(misses);
             }
+            throw new MirrorUnavailableError(
+                "The read keeps finding state missing"
+            );
         } finally {
             this.lock.unlock();
         }
     }
 
-    /** The header of the head block. */
-    async headHeader(head: MirrorHead): Promise<MirrorHeader> {
-        const cached = this.headers.get(head.hash);
-        if (cached) return cached;
-        const found = await this.upstream.getHeader({ hash: head.hash });
-        if (!found)
-            throw new MirrorUnavailableError("Head block unknown upstream");
-        this.headers = new Map([[head.hash, found.header]]);
-        return found.header;
+    /** The environment of the head block. */
+    headEnvironment(): BlockEnvironment {
+        const environment =
+            this.applied[this.applied.length - 1] ?? this.baseEnvironment;
+        if (!environment)
+            throw new MirrorUnavailableError("Mirror is not following");
+        return environment;
     }
 
     async close(): Promise<void> {
@@ -223,7 +238,7 @@ export class MirrorChain {
 
     /**
      * Whether the mirror's state includes `block`. Not following counts as
-     * including it: the read then starts from the node's latest block.
+     * including it: the read then starts from the service's best head.
      */
     private holds(block: ChainBlock | undefined): boolean {
         if (!this.base || !this.head) return true;
@@ -249,7 +264,7 @@ export class MirrorChain {
             );
         try {
             if (!this.socket) await this.connect();
-            if (!this.base) await this.startFromLatest();
+            if (!this.base) await this.startFromServiceHead();
             const head = this.head;
             if (!head)
                 throw new Error("The mirror lost its head while starting");
@@ -281,42 +296,109 @@ export class MirrorChain {
         this.subscription = await socket.subscribe([...this.tracked]);
     }
 
-    /** Takes the node's latest block as the head and catches up from it. */
-    private async startFromLatest(): Promise<void> {
-        const latest = await this.upstream.getHeader("latest");
-        if (!latest) throw new Error("The node has no latest block");
-        this.base = { number: latest.number, hash: latest.hash };
+    /** Takes the service's best head as the head. */
+    private async startFromServiceHead(): Promise<void> {
+        const answer = await this.socket!.catchUp(
+            [...this.tracked],
+            BEYOND_HEAD
+        );
+        if (answer.includedHead) this.noteIncludedHead(answer.includedHead);
+        const head = answer.head;
+        this.base = { number: BigInt(head.number), hash: head.hash };
+        this.baseEnvironment = head;
         this.applied = [];
-        this.headers = new Map([[latest.hash, latest.header]]);
-        this.state.setBlockTag(latest.number);
         for (const address of this.tracked)
-            this.trackedSince.set(address, latest.number);
-        await this.catchUp(latest.number + 1n);
+            this.trackedSince.set(address, this.base.number);
     }
 
-    private async track(address: AccountAddress): Promise<void> {
-        const head = this.head;
-        const socket = this.socket;
-        if (!head || !socket)
-            throw new MirrorUnavailableError("Mirror is not following");
+    /**
+     * Reads what a pass found missing from the service at the head block,
+     * after following the addresses it touched; the node answers only when
+     * the service does not retain that block.
+     */
+    private async fillMisses(misses: StateRequestParams[]): Promise<void> {
         try {
-            const previous = this.subscription;
-            this.subscription = await socket.subscribe([
-                ...this.tracked,
-                address
-            ]);
-            this.tracked.add(address);
-            this.trackedSince.set(address, head.number);
-            if (previous) await socket.unsubscribe(previous);
-            await this.catchUp(head.number + 1n);
+            await this.track(
+                misses
+                    .map((miss) => miss.address)
+                    .filter((address) => !this.tracked.has(address))
+            );
+            // following may have cleared the cache; the pass then starts over
+            const head = this.head;
+            if (!head) return;
+            try {
+                const state = await this.socket!.getState(head.hash, misses);
+                this.state.fill(state.accounts);
+            } catch (error) {
+                if (!(error instanceof StorageDiffNotRetainedError))
+                    throw error;
+                this.state.fill(await this.readFromNode(head.number, misses));
+            }
         } catch (error) {
             if (error instanceof MirrorUnavailableError) throw error;
-            this.log("warn", "Mirror cannot track an address", { error });
+            this.log("warn", "Mirror cannot read state", { error });
             await this.disconnect();
             throw new MirrorUnavailableError(
                 "Storage diff service unavailable"
             );
         }
+    }
+
+    private async readFromNode(
+        block: bigint,
+        misses: StateRequestParams[]
+    ): Promise<AccountDiffs> {
+        const accounts: AccountDiffs = {};
+        await Promise.all(
+            misses.map(async ({ address, slots, account, code }) => {
+                const read = (accounts[address] ??= {});
+                await Promise.all([
+                    ...(slots ?? []).map(async (slot) => {
+                        (read.storage ??= {})[slot] =
+                            await this.upstream.getStorageAt(
+                                address,
+                                slot,
+                                block
+                            );
+                    }),
+                    account &&
+                        this.upstream.getBalance(address, block).then((v) => {
+                            read.balance = v;
+                        }),
+                    account &&
+                        this.upstream
+                            .getTransactionCount(address, block)
+                            .then((v) => {
+                                read.nonce = Number(BigInt(v));
+                            }),
+                    code &&
+                        this.upstream.getCode(address, block).then((v) => {
+                            read.code = v;
+                        })
+                ]);
+            })
+        );
+        return accounts;
+    }
+
+    /** Follows `addresses` too: one subscription for the whole set, then a catch-up. */
+    private async track(addresses: AccountAddress[]): Promise<void> {
+        if (addresses.length === 0) return;
+        const head = this.head;
+        const socket = this.socket;
+        if (!head || !socket)
+            throw new MirrorUnavailableError("Mirror is not following");
+        const previous = this.subscription;
+        this.subscription = await socket.subscribe([
+            ...this.tracked,
+            ...addresses
+        ]);
+        for (const address of addresses) {
+            this.tracked.add(address);
+            this.trackedSince.set(address, head.number);
+        }
+        if (previous) await socket.unsubscribe(previous);
+        await this.catchUp(head.number + 1n);
     }
 
     private noteIncludedHead(head: IncludedHeadRecord): void {
@@ -343,6 +425,8 @@ export class MirrorChain {
     private async apply(record: BlockStorageDiff): Promise<void> {
         const head = this.head!;
         const number = BigInt(record.number);
+        // below what the mirror keeps: neither a duplicate nor placeable
+        if (number < this.base!.number) return;
         if (this.hashAt(number) === record.hash) return;
         if (this.attach(record)) return;
         // the parent is not a block the mirror holds: a gap, or a branch
@@ -381,6 +465,7 @@ export class MirrorChain {
         while (this.applied.length > MAX_APPLIED_BLOCKS) {
             const oldest = this.applied.shift()!;
             this.base = this.toBlock(oldest);
+            this.baseEnvironment = oldest;
         }
         this.notifyHeadWaiters();
     }
@@ -430,10 +515,11 @@ export class MirrorChain {
         }
     }
 
-    /** Forgets all cached state; the next read starts from the node's latest block. */
+    /** Forgets all cached state; the next read starts from the service's best head. */
     private clear(): void {
         this.state.clearCaches();
         this.base = undefined;
+        this.baseEnvironment = undefined;
         this.applied = [];
         this.trackedSince.clear();
         this.notifyHeadWaiters();

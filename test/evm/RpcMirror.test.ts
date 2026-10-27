@@ -1,10 +1,14 @@
 import { sleep } from "@/utils";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
+import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
 import {
     deployCommitProbe,
+    deployEnvironmentProbe,
     deployMirroredStorage,
     headNumber,
     nodeRequests,
+    nodeStateReads,
+    serviceRequests,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
 import { rejectionOf } from "@test/fixtures/node/StorageDiffService.fixture";
@@ -35,37 +39,51 @@ describe("MirrorRpcProvider", function () {
             const { storage } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             expect(await storage.getValue()).to.equal(5n);
-            const fetched = nodeRequests(session, "eth_getStorageAt").length;
+            const fetched = serviceRequests(session, "scp_getState").length;
 
             await (await storage.setValue(7n)).wait();
 
             expect(await storage.getValue()).to.equal(7n);
-            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
                 fetched
             );
+            expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
-    it("sends one eth_getStorageAt at the head block number for the first read of an uncached slot", async function () {
+    it("reads the first read of an uncached slot from the service at the head block, once, and nothing from the node", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
-            const head = await headNumber(session);
+            const head = await session.chain.getBlock(
+                await headNumber(session)
+            );
 
             const word = await session.provider.getStorage(address, 0);
 
             expect(BigInt(word)).to.equal(5n);
             expect(
-                nodeRequests(session, "eth_getStorageAt").map(
+                serviceRequests(session, "scp_getState").map(
                     (request) => request.params
                 )
             ).to.deep.equal([
-                [address.toLowerCase(), ZeroHash, toQuantity(head)]
+                [
+                    head!.hash,
+                    [
+                        {
+                            address: address.toLowerCase(),
+                            slots: [ZeroHash],
+                            account: false,
+                            code: false
+                        }
+                    ]
+                ]
             ]);
+            expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
-    it("sends no eth_getStorageAt for a second read of the same slot", async function () {
+    it("sends no scp_getState and no node read for a second read of the same slot", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
@@ -73,7 +91,8 @@ describe("MirrorRpcProvider", function () {
 
             await session.provider.getStorage(address, 0);
 
-            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(1);
+            expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
@@ -90,8 +109,8 @@ describe("MirrorRpcProvider", function () {
             expect(await session.provider.getStorage(address, 0)).to.equal(
                 ZeroHash
             );
-            expect(await storage.getValue()).to.equal(0n);
-            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(1);
+            expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
@@ -100,6 +119,7 @@ describe("MirrorRpcProvider", function () {
             const { storage } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             expect(await storage.getValue()).to.equal(5n);
+            const fetched = serviceRequests(session, "scp_getState").length;
             const snapshot = await session.chain.send("evm_snapshot", []);
             await (await storage.setValue(6n)).wait();
             expect(await storage.getValue()).to.equal(6n);
@@ -108,7 +128,10 @@ describe("MirrorRpcProvider", function () {
             await (await storage.setValue(9n)).wait();
 
             expect(await storage.getValue()).to.equal(9n);
-            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                fetched
+            );
+            expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
@@ -117,6 +140,7 @@ describe("MirrorRpcProvider", function () {
             const { storage } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
             expect(await storage.getValue()).to.equal(5n);
+            const fetched = serviceRequests(session, "scp_getState").length;
             const snapshot = await session.chain.send("evm_snapshot", []);
             await (await storage.setValue(6n)).wait();
             expect(await storage.getValue()).to.equal(6n);
@@ -125,7 +149,10 @@ describe("MirrorRpcProvider", function () {
             await session.chain.send("evm_mine", []);
 
             await waitFor(async () => (await storage.getValue()) === 5n);
-            expect(nodeRequests(session, "eth_getStorageAt")).to.have.length(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(
+                fetched
+            );
+            expect(nodeStateReads(session)).to.equal(0);
         });
     });
 
@@ -156,16 +183,14 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("empties the cache when the service no longer retains the missing blocks", async function () {
+    it("empties the cache when the service no longer retains the missing blocks, and the next read goes to the service again", async function () {
         await withMirrorSession(
             async (session) => {
                 const { storage, chainStorage } =
                     await deployMirroredStorage(session);
                 await (await chainStorage.setValue(5n)).wait();
                 expect(await storage.getValue()).to.equal(5n);
-                expect(
-                    nodeRequests(session, "eth_getStorageAt")
-                ).to.have.length(1);
+                const fetched = serviceRequests(session, "scp_getState").length;
 
                 session.service.dropNotifications("scp_subscription");
                 await session.chain.send("evm_mine", []);
@@ -175,11 +200,60 @@ describe("MirrorRpcProvider", function () {
 
                 expect(await storage.getValue()).to.equal(7n);
                 expect(
-                    nodeRequests(session, "eth_getStorageAt")
-                ).to.have.length(2);
+                    serviceRequests(session, "scp_getState").length
+                ).to.be.greaterThan(fetched);
+                expect(nodeStateReads(session)).to.equal(0);
             },
             { retention: 1 }
         );
+    });
+
+    it("reads from the node at the head block number only while the service answers that the block is not retained", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, chainStorage } =
+                await deployMirroredStorage(session);
+            await (await chainStorage.setValue(5n)).wait();
+            session.service.errorRequests(
+                "scp_getState",
+                NOT_RETAINED_ERROR_CODE,
+                "Block is not retained"
+            );
+            const head = await headNumber(session);
+
+            expect(await storage.getValue()).to.equal(5n);
+
+            expect(
+                nodeRequests(session, "eth_getStorageAt").map(
+                    (request) => (request.params as unknown[])[2]
+                )
+            ).to.deep.equal([toQuantity(head)]);
+            expect(
+                nodeRequests(session, "eth_getCode").length
+            ).to.be.greaterThan(0);
+            session.service.stopErroringRequests("scp_getState");
+            const fallbackReads = nodeStateReads(session);
+
+            await (await storage.setValue(6n)).wait();
+            expect(await storage.getValue()).to.equal(6n);
+            expect(nodeStateReads(session)).to.equal(fallbackReads);
+        });
+    });
+
+    it("takes the block environment from the service without reading blocks from the node", async function () {
+        await withMirrorSession(async (session) => {
+            const probe = await deployEnvironmentProbe(session.signer);
+
+            const answer = await session.provider.call({ to: probe });
+
+            expect(answer).to.equal(await session.chain.call({ to: probe }));
+            expect(BigInt(answer.slice(0, 66))).to.be.greaterThan(0n);
+            expect(nodeRequests(session, "eth_getBlockByHash")).to.have.length(
+                0
+            );
+            expect(
+                nodeRequests(session, "eth_getBlockByNumber")
+            ).to.have.length(0);
+        });
     });
 
     it("runs a custom precompile locally without an upstream request", async function () {
@@ -379,7 +453,10 @@ describe("MirrorRpcProvider", function () {
                 nodeRequests(session, "eth_getTransactionCount").map(
                     (request) => (request.params as unknown[])[1]
                 )
-            ).to.deep.equal(["pending", toQuantity(await headNumber(session))]);
+            ).to.deep.equal(["pending"]);
+            expect(
+                serviceRequests(session, "scp_getState")
+            ).to.have.length.greaterThan(0);
         });
     });
 

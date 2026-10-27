@@ -192,3 +192,46 @@ export async function deployCommitProbe(
     if (!receipt?.contractAddress) throw new Error("Probe not deployed");
     return receipt.contractAddress;
 }
+
+/** Requests of `method` the provider sent to the storage diff service. */
+export function serviceRequests(session: MirrorSession, method: string) {
+    return session.service.forwardedRequests.filter(
+        (request) => request.method === method
+    );
+}
+
+/** State reads the provider sent to the node: slots, balances and code. */
+export function nodeStateReads(session: MirrorSession): number {
+    return (
+        nodeRequests(session, "eth_getStorageAt").length +
+        nodeRequests(session, "eth_getBalance").length +
+        nodeRequests(session, "eth_getCode").length
+    );
+}
+
+/**
+ * Runtime that returns the block environment a call sees: TIMESTAMP, NUMBER,
+ * BASEFEE, PREVRANDAO, GASLIMIT and COINBASE as six words.
+ */
+export async function deployEnvironmentProbe(
+    signer: JsonRpcSigner
+): Promise<string> {
+    const opcodes = ["42", "43", "48", "44", "45", "41"];
+    const runtime =
+        opcodes
+            .map(
+                (op, i) =>
+                    op + "60" + (32 * i).toString(16).padStart(2, "0") + "52"
+            )
+            .join("") + "60c06000f3";
+    const initcode =
+        "0x60" +
+        (runtime.length / 2).toString(16).padStart(2, "0") +
+        "80600b6000396000f3" +
+        runtime;
+    const receipt = await (
+        await signer.sendTransaction({ data: initcode })
+    ).wait();
+    if (!receipt?.contractAddress) throw new Error("Probe not deployed");
+    return receipt.contractAddress;
+}

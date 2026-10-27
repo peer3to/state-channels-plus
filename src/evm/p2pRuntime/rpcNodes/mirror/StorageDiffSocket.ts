@@ -1,20 +1,15 @@
-import type {
-    AccountAddress,
-    BlockStorageDiff,
-    IncludedHeadRecord,
-    SubscriptionId
-} from "@/utils/node/storageDiff/blockStorageDiff";
+import {
+    NOT_RETAINED_ERROR_CODE,
+    PRUNED_ERROR_CODE,
+    type AccountAddress,
+    type BlockStorageDiff,
+    type IncludedHeadRecord,
+    type StateRequestParams,
+    type StorageDiffCatchUp,
+    type StorageDiffState,
+    type SubscriptionId
+} from "@/utils/storageDiff/storageDiffWire";
 import { Network, WebSocketProvider } from "ethers";
-
-/** JSON-RPC error code of "Requested block has been pruned". */
-const PRUNED_ERROR_CODE = -32001;
-
-/** What `scp_getContractStorageDiffs` answers. */
-export type StorageDiffCatchUp = {
-    records: BlockStorageDiff[];
-    /** The relay-included head, or null while the service has none. */
-    includedHead: IncludedHeadRecord | null;
-};
 
 export type StorageDiffSocketHandlers = {
     /** A record pushed to `subscription`. */
@@ -27,6 +22,9 @@ export type StorageDiffSocketHandlers = {
 
 /** The service answered that the requested blocks are no longer retained. */
 export class StorageDiffPrunedError extends Error {}
+
+/** The service does not retain the block of a state read: unknown, orphaned or too old. */
+export class StorageDiffNotRetainedError extends Error {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
@@ -96,10 +94,25 @@ export class StorageDiffSocket extends WebSocketProvider {
         if (
             !isRecord(answer) ||
             !Array.isArray(answer.records) ||
+            !isRecord(answer.head) ||
             !(answer.includedHead === null || isRecord(answer.includedHead))
         )
             throw new Error("Malformed storage diff catch-up");
-        return answer as StorageDiffCatchUp;
+        return answer as unknown as StorageDiffCatchUp;
+    }
+
+    /** The requested values at the retained block `blockHash`. */
+    async getState(
+        blockHash: string,
+        requests: StateRequestParams[]
+    ): Promise<StorageDiffState> {
+        const answer = await this.request("scp_getState", [
+            blockHash,
+            requests
+        ]);
+        if (!isRecord(answer) || !isRecord(answer.accounts))
+            throw new Error("Malformed storage diff state");
+        return answer as unknown as StorageDiffState;
     }
 
     // Overrides SocketProvider._processMessage: the service's pushes are
@@ -145,6 +158,10 @@ export class StorageDiffSocket extends WebSocketProvider {
                 if (error.error.code === PRUNED_ERROR_CODE)
                     throw new StorageDiffPrunedError(
                         "Requested block has been pruned"
+                    );
+                if (error.error.code === NOT_RETAINED_ERROR_CODE)
+                    throw new StorageDiffNotRetainedError(
+                        "Block is not retained"
                     );
             }
             throw error;

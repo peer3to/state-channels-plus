@@ -1,16 +1,18 @@
 import {
     MirrorChain,
     type MirrorBlock,
-    type MirrorChainUpstream,
     type MirrorHead,
-    type MirrorHeader
+    type MirrorUpstream
 } from "./MirrorChain";
 import { MirrorStateManager } from "./MirrorStateManager";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils/logging/Logger";
-import type { IncludedHeadRecord } from "@/utils/node/storageDiff/blockStorageDiff";
+import type {
+    BlockEnvironment,
+    IncludedHeadRecord
+} from "@/utils/storageDiff/storageDiffWire";
 import type { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { getBytes, hexlify, toBeHex, zeroPadValue } from "ethers";
@@ -34,7 +36,7 @@ export type MirrorCallOutcome =
 export type MirrorOptions = {
     /** `ws://` URL of the storage diff service. */
     serviceUrl: string;
-    upstream: MirrorChainUpstream;
+    upstream: MirrorUpstream;
     logger: Logger;
     customPrecompiles: EvmCustomPrecompileManifest[];
     /** The root that owns the precompiles' child roots, if the host has one. */
@@ -58,8 +60,6 @@ export class Mirror {
     constructor(options: MirrorOptions) {
         this.options = options;
         this.state = new MirrorStateManager({
-            upstream: options.upstream,
-            isTracked: (address) => this.chain.isTracked(address),
             isLocalOnly: (address) => this.precompileAddresses.has(address)
         });
         this.chain = new MirrorChain({
@@ -88,7 +88,7 @@ export class Mirror {
     async call(request: MirrorCall): Promise<MirrorCallOutcome> {
         const evm = await this.getEvm();
         return await this.chain.run(async (head) => {
-            const header = await this.chain.headHeader(head);
+            const header = this.chain.headEnvironment();
             try {
                 const result = await evm.runCall({
                     caller: request.from
@@ -98,7 +98,7 @@ export class Mirror {
                     data: getBytes(request.data),
                     value: request.value,
                     gasPrice: request.gasPrice,
-                    gasLimit: request.gas ?? header.gasLimit,
+                    gasLimit: request.gas ?? BigInt(header.gasLimit),
                     block: this.blockOf(head, header)
                 });
                 const data = hexlify(result.execResult.returnValue);
@@ -180,17 +180,20 @@ export class Mirror {
         return evm;
     }
 
-    private blockOf(head: MirrorHead, header: MirrorHeader) {
+    private blockOf(head: MirrorHead, environment: BlockEnvironment) {
         return {
             header: {
                 number: head.number,
                 cliqueSigner: () => Address.zero(),
-                coinbase: Address.fromString(header.miner),
-                timestamp: header.timestamp,
+                coinbase: Address.fromString(environment.miner),
+                timestamp: BigInt(environment.timestamp),
                 difficulty: 0n,
-                prevRandao: new Uint8Array(32),
-                gasLimit: header.gasLimit,
-                baseFeePerGas: header.baseFeePerGas,
+                prevRandao: getBytes(environment.mixHash),
+                gasLimit: BigInt(environment.gasLimit),
+                baseFeePerGas:
+                    environment.baseFeePerGas === undefined
+                        ? undefined
+                        : BigInt(environment.baseFeePerGas),
                 getBlobGasPrice: () => undefined
             }
         };

@@ -1,16 +1,18 @@
 import type {
     AccountAddress,
     AccountDiff,
+    AccountDiffs,
     BlockStorageDiff,
+    StateRequestParams,
     StorageSlot
-} from "@/utils/node/storageDiff/blockStorageDiff";
+} from "@/utils/storageDiff/storageDiffWire";
 import {
     AccountCache,
     CacheType,
     RPCStateManager,
     StorageCache
 } from "@ethereumjs/statemanager";
-import { Account, type Address, setLengthLeft } from "@ethereumjs/util";
+import { Account, type Address } from "@ethereumjs/util";
 import { getBytes, hexlify, keccak256 } from "ethers";
 
 /** Keccak-256 of empty code, the code hash of an account without code. */
@@ -25,31 +27,6 @@ const CALL_CACHE_SIZE = 100000;
  */
 const UNUSED_PROVIDER_URL = "http://mirror.invalid";
 
-/** What the mirror reads from the RPC node on a cache miss. */
-export interface MirrorUpstream {
-    getStorageAt(
-        address: AccountAddress,
-        slot: StorageSlot,
-        block: bigint
-    ): Promise<string>;
-    getBalance(address: AccountAddress, block: bigint): Promise<string>;
-    getTransactionCount(
-        address: AccountAddress,
-        block: bigint
-    ): Promise<string>;
-    getCode(address: AccountAddress, block: bigint): Promise<string>;
-}
-
-/** A read reached an address the storage diff service is not following. */
-export class UntrackedAddressError extends Error {
-    readonly address: AccountAddress;
-
-    constructor(address: AccountAddress) {
-        super(`Address ${address} is not tracked by the mirror`);
-        this.address = address;
-    }
-}
-
 /** One account as the mirror knows it; absent fields are not cached yet. */
 type MirrorAccount = {
     balance?: bigint;
@@ -60,51 +37,46 @@ type MirrorAccount = {
 };
 
 export type MirrorStateManagerOptions = {
-    upstream: MirrorUpstream;
-    /** Whether the storage diff service follows `address`. */
-    isTracked: (address: AccountAddress) => boolean;
     /**
      * Whether `address` is served by the local EVM itself (a precompile):
-     * its account is empty and never read upstream.
+     * its account is empty and never read from the service.
      */
     isLocalOnly: (address: AccountAddress) => boolean;
 };
 
 /**
  * The local EVM's state: the chain's state at the mirror's head, kept in
- * `accounts` and fed by the storage diff service and by RPC reads on a miss.
- * The inherited caches hold only what the running call itself writes; the
- * caller reverts them after each call, so the chain state is never touched.
+ * `accounts` and fed by the storage diff service. The inherited caches hold
+ * only what the running call itself writes; the caller discards them after
+ * each call, so the chain state is never touched.
+ *
+ * Missing state is not fetched here. A read of it answers a placeholder and
+ * records what was missing; the caller reads all of it from the service at
+ * once ({@link takeMisses}, {@link fill}) and runs the pass again.
  */
 export class MirrorStateManager extends RPCStateManager {
-    private readonly upstream: MirrorUpstream;
-    private readonly isTracked: (address: AccountAddress) => boolean;
     private readonly isLocalOnly: (address: AccountAddress) => boolean;
     /** The chain state; the inherited caches are only the call's writes. */
     private readonly accounts = new Map<AccountAddress, MirrorAccount>();
-    /** The block number every miss is read at. */
-    private head = 0n;
+    /** What the running pass found missing, by address. */
+    private readonly misses = new Map<AccountAddress, StateRequestParams>();
 
     constructor(options: MirrorStateManagerOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
-        this.upstream = options.upstream;
-        this.isTracked = options.isTracked;
         this.isLocalOnly = options.isLocalOnly;
     }
 
     // Overrides RPCStateManager.setBlockTag: the head moves by applying the
-    // block's diff, so the cache is kept instead of cleared. Only the block
-    // number misses are read at changes.
-    override setBlockTag(blockTag: bigint | "earliest"): void {
-        if (blockTag === "earliest")
-            throw new Error("The mirror reads at its head, not at earliest");
-        this.head = blockTag;
+    // block's diff, so the cache is kept; the base would clear it.
+    override setBlockTag(): void {
+        // nothing to do: reads are made at the chain's head block
     }
 
     // Overrides RPCStateManager.clearCaches: also forgets the chain state.
     override clearCaches(): void {
         super.clearCaches();
         this.accounts.clear();
+        this.misses.clear();
     }
 
     // Overrides RPCStateManager.shallowCopy: a copy would read through the
@@ -114,7 +86,8 @@ export class MirrorStateManager extends RPCStateManager {
     }
 
     // Overrides RPCStateManager.getContractStorage: the call's own writes,
-    // then the chain state, then one `eth_getStorageAt` at the head.
+    // then the chain state; a slot not cached yet answers zero and is
+    // recorded as missing.
     override async getContractStorage(
         address: Address,
         key: Uint8Array
@@ -126,29 +99,14 @@ export class MirrorStateManager extends RPCStateManager {
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return new Uint8Array(32);
         const slot = hexlify(key);
-        const account = this.accountOf(accountAddress);
-        const known = account.storage.get(slot);
+        const known = this.accountOf(accountAddress).storage.get(slot);
         if (known !== undefined) return known;
-        this.assertTracked(accountAddress);
-        const word = setLengthLeft(
-            getBytes(
-                await this.upstream.getStorageAt(
-                    accountAddress,
-                    slot,
-                    this.head
-                )
-            ),
-            32
-        );
-        // no block was applied while this read waited, so no diff holds a
-        // newer value for the slot
-        account.storage.set(slot, word);
-        return word;
+        this.missing(accountAddress).slots!.push(slot);
+        return new Uint8Array(32);
     }
 
     // Overrides RPCStateManager.getAccount: the call's own writes, then the
-    // chain state, read as balance, nonce and code because the node has no
-    // eth_getProof.
+    // chain state (balance, nonce and code), as the node has no eth_getProof.
     override async getAccount(address: Address): Promise<Account | undefined> {
         const written = this._accountCache.get(address);
         if (written !== undefined)
@@ -157,7 +115,15 @@ export class MirrorStateManager extends RPCStateManager {
                 : undefined;
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return undefined;
-        const { balance, nonce, code } = await this.loadAccount(accountAddress);
+        const account = this.accountOf(accountAddress);
+        if (account.balance === undefined || account.nonce === undefined) {
+            this.missing(accountAddress).account = true;
+        }
+        if (account.code === undefined)
+            this.missing(accountAddress).code = true;
+        const balance = account.balance ?? 0n;
+        const nonce = account.nonce ?? 0n;
+        const code = account.code ?? new Uint8Array();
         if (balance === 0n && nonce === 0n && code.length === 0)
             return undefined;
         return Account.fromAccountData({
@@ -174,13 +140,16 @@ export class MirrorStateManager extends RPCStateManager {
     }
 
     // Overrides RPCStateManager.getContractCode: code the call created, then
-    // the chain's, fetched once.
+    // the chain's; code not cached yet answers empty and is recorded as missing.
     override async getContractCode(address: Address): Promise<Uint8Array> {
         const created = this._contractCache.get(address.toString());
         if (created !== undefined) return created;
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return new Uint8Array();
-        return (await this.loadAccount(accountAddress)).code;
+        const account = this.accountOf(accountAddress);
+        if (account.code !== undefined) return account.code;
+        this.missing(accountAddress).code = true;
+        return new Uint8Array();
     }
 
     // Overrides RPCStateManager.getProof: the node has no eth_getProof.
@@ -188,15 +157,26 @@ export class MirrorStateManager extends RPCStateManager {
         throw new Error("The mirror cannot prove state");
     }
 
-    /** Applies one block's changes to the cached chain state. */
-    applyBlock(record: BlockStorageDiff): void {
-        for (const [address, post] of Object.entries(record.post)) {
+    /** What the pass found missing; the next pass starts with none. */
+    takeMisses(): StateRequestParams[] {
+        const taken = [...this.misses.values()];
+        this.misses.clear();
+        return taken;
+    }
+
+    /** Stores values read for the misses: a service answer, shaped like a record's `post`. */
+    fill(accounts: AccountDiffs): void {
+        for (const [address, diff] of Object.entries(accounts)) {
             const account = this.accountOf(address);
-            this.setFields(account, post, post);
-            for (const [slot, word] of Object.entries(post.storage ?? {}))
+            this.setFields(account, diff, diff);
+            for (const [slot, word] of Object.entries(diff.storage ?? {}))
                 account.storage.set(slot, getBytes(word));
         }
-        this.head = BigInt(record.number);
+    }
+
+    /** Applies one block's changes to the cached chain state. */
+    applyBlock(record: BlockStorageDiff): void {
+        this.fill(record.post);
     }
 
     /**
@@ -216,7 +196,6 @@ export class MirrorStateManager extends RPCStateManager {
                 else account.storage.set(slot, getBytes(word));
             }
         }
-        this.head = BigInt(record.number) - 1n;
     }
 
     /**
@@ -272,42 +251,13 @@ export class MirrorStateManager extends RPCStateManager {
         return account;
     }
 
-    private assertTracked(address: AccountAddress): void {
-        if (!this.isTracked(address)) throw new UntrackedAddressError(address);
-    }
-
-    /** The account's balance, nonce and code, reading what is missing. */
-    private async loadAccount(
-        address: AccountAddress
-    ): Promise<{ balance: bigint; nonce: bigint; code: Uint8Array }> {
-        const account = this.accountOf(address);
-        if (
-            account.balance === undefined ||
-            account.nonce === undefined ||
-            account.code === undefined
-        ) {
-            this.assertTracked(address);
-            const head = this.head;
-            const [balance, nonce, code] = await Promise.all([
-                account.balance === undefined
-                    ? this.upstream.getBalance(address, head)
-                    : undefined,
-                account.nonce === undefined
-                    ? this.upstream.getTransactionCount(address, head)
-                    : undefined,
-                account.code === undefined
-                    ? this.upstream.getCode(address, head)
-                    : undefined
-            ]);
-            if (balance !== undefined) account.balance = BigInt(balance);
-            if (nonce !== undefined) account.nonce = BigInt(nonce);
-            if (code !== undefined) account.code = getBytes(code);
+    private missing(address: AccountAddress): StateRequestParams {
+        let miss = this.misses.get(address);
+        if (!miss) {
+            miss = { address, slots: [], account: false, code: false };
+            this.misses.set(address, miss);
         }
-        return {
-            balance: account.balance!,
-            nonce: account.nonce!,
-            code: account.code!
-        };
+        return miss;
     }
 }
 

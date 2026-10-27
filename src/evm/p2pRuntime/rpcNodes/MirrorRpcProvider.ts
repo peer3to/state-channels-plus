@@ -1,6 +1,8 @@
 import { Mirror, type MirrorCall } from "./mirror/Mirror";
-import type { MirrorChainUpstream, MirrorHeader } from "./mirror/MirrorChain";
-import { MirrorUnavailableError } from "./mirror/MirrorChain";
+import {
+    MirrorUnavailableError,
+    type MirrorUpstream
+} from "./mirror/MirrorChain";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
@@ -181,29 +183,6 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
     }
 }
 
-/** The fields of a node's block a call's environment is built from. */
-function parseHeader(block: unknown): MirrorHeader | undefined {
-    if (typeof block !== "object" || block === null) return undefined;
-    const { timestamp, gasLimit, baseFeePerGas, miner } = block as Record<
-        string,
-        unknown
-    >;
-    if (
-        !isQuantity(timestamp) ||
-        !isQuantity(gasLimit) ||
-        !isAddress(miner) ||
-        (baseFeePerGas !== undefined && !isQuantity(baseFeePerGas))
-    )
-        return undefined;
-    return {
-        timestamp: BigInt(timestamp),
-        gasLimit: BigInt(gasLimit),
-        baseFeePerGas:
-            baseFeePerGas === undefined ? undefined : BigInt(baseFeePerGas),
-        miner
-    };
-}
-
 /**
  * {@link MultiRpcProvider} that answers `eth_call`, `eth_getStorageAt`,
  * `eth_getCode`, `eth_getBalance` and the latest `eth_getTransactionCount`
@@ -324,7 +303,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         return this.mirror?.includedHead;
     }
 
-    private createUpstream(): MirrorChainUpstream {
+    private createUpstream(): MirrorUpstream {
         const read = async (method: string, params: unknown[]) =>
             (await this.requestNode(method, params)) as string;
         return {
@@ -335,28 +314,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             getTransactionCount: (address, block) =>
                 read("eth_getTransactionCount", [address, toQuantity(block)]),
             getCode: (address, block) =>
-                read("eth_getCode", [address, toQuantity(block)]),
-            getHeader: async (block) => {
-                const found = (await this.requestNode(
-                    block === "latest"
-                        ? "eth_getBlockByNumber"
-                        : "eth_getBlockByHash",
-                    [block === "latest" ? "latest" : block.hash, false]
-                )) as { number?: unknown; hash?: unknown } | null;
-                if (!found) return null;
-                const header = parseHeader(found);
-                if (
-                    !header ||
-                    !isQuantity(found.number) ||
-                    typeof found.hash !== "string"
-                )
-                    throw new Error("Malformed block from the node");
-                return {
-                    number: BigInt(found.number),
-                    hash: found.hash.toLowerCase(),
-                    header
-                };
-            }
+                read("eth_getCode", [address, toQuantity(block)])
         };
     }
 }

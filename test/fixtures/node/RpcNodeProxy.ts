@@ -120,6 +120,11 @@ export class RpcNodeProxy {
     private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
+    /** Method -> the error this proxy answers every one of its requests with. */
+    private readonly erroringMethods = new Map<
+        JsonRpcMethod,
+        { code: number; message: string }
+    >();
     /** Notification methods the node pushes that this proxy drops. */
     private readonly droppedNotifications = new Set<JsonRpcMethod>();
     /** Notification method -> the pushes waiting here until released. */
@@ -216,6 +221,15 @@ export class RpcNodeProxy {
 
     stopFailingRequests(method: JsonRpcMethod): void {
         this.failingMethods.delete(method);
+    }
+
+    /** Answer every `method` request with this JSON-RPC error, unforwarded, until {@link stopErroringRequests}. */
+    errorRequests(method: JsonRpcMethod, code: number, message: string): void {
+        this.erroringMethods.set(method, { code, message });
+    }
+
+    stopErroringRequests(method: JsonRpcMethod): void {
+        this.erroringMethods.delete(method);
     }
 
     /** Answer every `method` request with `result` itself, unforwarded. */
@@ -401,6 +415,13 @@ export class RpcNodeProxy {
                 else this.failingMethods.set(method, failures - 1);
                 this.failedRequests.push({ method, params });
                 reply({ error: { code: -32005, message: "request failed" } });
+                return;
+            }
+            const erroring = method
+                ? this.erroringMethods.get(method)
+                : undefined;
+            if (erroring && id !== undefined) {
+                reply({ error: erroring });
                 return;
             }
             if (
