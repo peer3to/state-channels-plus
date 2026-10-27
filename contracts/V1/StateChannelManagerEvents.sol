@@ -47,10 +47,6 @@ interface StateChannelManagerEvents {
 
     event InboundMessagesProcessed(bytes32 indexed channelId, MessageBlock messageBlock);
 
-    event OutboundMessagesProcessed(
-        bytes32 indexed channelId, MessageBlock messageBlock, uint256 timestamp, Balance totalWithdrawals
-    );
-
     /// @dev The last call of `multicallBestEffortLast` reverted with `revertData`.
     event MulticallLastCallFailed(bytes revertData);
 }

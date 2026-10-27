@@ -9,10 +9,12 @@ The suite exercises the `Storage` facade's `getStateSnapshot` derived read over 
 genesis snapshot, one block-committed snapshot, and the block that commits it: negative heights
 (−1 and a random negative) resolve the fork's genesis snapshot, height ≥ 0 joins through the
 stored block to its committed snapshot, and a missing genesis, missing block, or wrong fork id
-each return `undefined`; a final test shows that mutating a returned snapshot leaves the stored
-copy untouched. The atomized per-read and per-missing-link permutations for `getStateSnapshot`
+each return `undefined`; a further test shows that mutating a returned snapshot leaves the stored
+copy untouched. One test reads `getPreviousBlockOrSnapshot` on an empty store: a missing
+predecessor block (height > 0) and a missing genesis snapshot (height 0) each come back with
+neither `block` nor `stateSnapshot` set. The atomized per-read and per-missing-link permutations for `getStateSnapshot`
 are assigned below; the facade permutations for derived reads this suite never calls
-(previous-snapshot, participant unions, previous block-or-snapshot, relevant timestamps) and for
+(previous-snapshot, a present previous block-or-snapshot, relevant timestamps) and for
 mutations of other returned object kinds stay unassigned.
 
 ## Tests
@@ -30,3 +32,4 @@ mutations of other returned object kinds stay unassigned.
 - `accepts an absent previous snapshot`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P19
 - `accepts an absent resulting snapshot`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P20
 - `returns an empty union for absent or empty snapshots`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P21
+- `returns neither block nor snapshot when the predecessor is absent`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P5

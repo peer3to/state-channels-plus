@@ -2453,6 +2453,102 @@ describe("E2E: BlockQueueManager", function () {
         });
     });
 
+    describe("committed dispute on the current fork", function () {
+        it("a committed dispute discards the queued block and rejects the leader's genuine next block; the head stays put", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 2);
+            const leaderIndex = (await h.query.getNextPeerToWrite()).index;
+            const observerIndex = h.peers.find(
+                (peer) => peer.index !== leaderIndex
+            )!.index;
+            // the disputed fork stays the observer's current fork, and its
+            // queued block can leave the queue only through the dispute
+            const race = await h.rpcStub.holdReductionRace(observerIndex);
+            const queueTimeouts = await h.rpcStub.holdScheduledTasks(
+                observerIndex,
+                "BlockQueueManager.queueTimeout"
+            );
+
+            // the leader's real next block stays off the wire, so the other
+            // participants time its author out and dispute the fork
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex
+                });
+            const queued = await factory.buildAndEncodeBlock(leader.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: startHeight + 1,
+                    participant: leader.address
+                }
+            });
+            const queuedHash = Block.fromBlockConfirmation(
+                Codec.decode(queued, Type.BlockConfirmation)
+            ).hash;
+            const control = h.control(observer);
+            const fromLeader = {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: leader.address
+            };
+            await control.transition
+                .ingestBlockConfirmation(queued, fromLeader)
+                .request();
+            expect(
+                await control.query.getQueuedRetention(queuedHash).request()
+            ).to.not.equal(null);
+
+            await h.event.waitForPeers(
+                "onDisputeCommitted",
+                [observerIndex],
+                1,
+                { mode: "atLeast" }
+            );
+            await waitFor(
+                async () =>
+                    (await control.query
+                        .getQueuedRetention(queuedHash)
+                        .request()) === null,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(await queueTimeouts.heldCount()).to.be.greaterThan(0);
+
+            // the genuine next block arrives after the commitment: rejected
+            // at intake, so it is never queued for execution and validation
+            const executions = await h.rpcStub.holdScheduledTasks(
+                observerIndex,
+                "BlockQueueManager.tryExecuteFromQueue"
+            );
+            await control.transition
+                .ingestBlockConfirmation(
+                    authored.encodedBlockConfirmation,
+                    fromLeader
+                )
+                .request();
+            expect(
+                await control.query.getQueuedRetention(authored.hash).request()
+            ).to.equal(null);
+            expect(await executions.heldCount()).to.equal(0);
+            await executions.release(false);
+            expect(
+                await control.query
+                    .getBlockByHeight(forkId, startHeight)
+                    .request()
+            ).to.equal(null);
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(startHeight);
+            expect(await control.query.getForkId().request()).to.equal(forkId);
+
+            await queueTimeouts.release(false);
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
+        });
+    });
+
     describe("queue timeout window (host-side unit scope)", function () {
         it("schedules the full window fresh, only the remainder after aging, and nothing at the deadline", async function () {
             const h = TestSession.getHarness();

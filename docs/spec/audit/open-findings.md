@@ -104,8 +104,14 @@ is now armed before any handle closes, with an unconditional exit. The bots' Web
 is inferred, not confirmed; the leaked referenced timer that then held the loop (likely werift's) is
 not removed and now ends at the drain bound with a warning.
 
-**Status:** Open; medium. Fix implemented, tests pending the lead's gate; recheck the bots for a
-drain warning naming the remaining timer.
+**Status:** _Resolved (2026-10-27)._ The hang is fixed and covered by
+[`REQ-RUNTIME-7-A2VAR0.T1.P1`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p1)
+to [`.P4`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p4) and
+[`.P7`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p7) to
+[`.P10`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p10). A disposal now ends
+within the drain bound even when a timer leaks. Residual: the leaked timer (likely werift's) is
+not identified, so each affected disposal waits out the drain bound and logs the warning that names
+it; the bot recheck was dropped.
 
 ## Distributed test runner pool
 
@@ -655,30 +661,44 @@ until rate limiting; a crafted payload that throws there is not demonstrated.
 
 ### DEF-1-92NTAG
 
-**Defect:** `open()` does not check `participants.length == balances.length` (out-of-bounds or
-silently ignored extras) and accepts `address(0)` participants.
+**Defect:** _Withdrawn (2026-10-26)._ Not a defect: `open()` still takes parallel `participants` and
+`balances` arrays without a length or zero-address check
+([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)),
+but no input harms anyone beyond the submitter's gas. Fewer balances than participants reads out of
+bounds and reverts the whole open. Extra balances are never read, and every listed participant signs
+the same `encodedOpenChannel` (unanimous `verifyThresholdSigned`), so each join uses the balance its
+participant signed. An `address(0)` participant can never sign: OpenZeppelin `ECDSA.recover` reverts
+rather than return `address(0)`, so the unanimous check fails. Was: the missing checks were read as
+out-of-bounds or silently ignored extras and an accepted `address(0)` participant.
 
-**Proposed direction:** Add explicit length and nonzero-address requires.
+**Proposed direction:** No change.
 
 <a id="def-2-shqr0a"></a>
 
 ### DEF-2-SHQR0A
 
-**Defect:** `OutboundMessagesProcessed` is emitted by
+**Defect:** _Resolved (2026-10-26)._ Not a defect for the SDK: `WithdrawalsUpdated` carries the
+final total in the same transaction, emitted by
 [`StateSnapshotFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
-but absent from the SDK's dispatched-event set — local withdrawal accounting can go stale.
+even with no outbound blocks, and the SDK dispatches it; the unused `OutboundMessagesProcessed`
+event was removed. Engineer decision (Luke, 2026-10-26).
 
-**Proposed direction:** Dispatch it idempotently, or document that `WithdrawalsUpdated` fully
-substitutes.
+**Proposed direction:** No further action.
 
 <a id="def-3-1xwq30"></a>
 
 ### DEF-3-1XWQ30
 
-**Defect:** `LocalDiamond.onChannelOpened` builds the genesis inbound message block in memory and
-never persists it — the local mirror diverges from the production `open` path.
+**Defect:** _Resolved (2026-08-23, PR #451)._ `LocalDiamond.onChannelOpened` once built the genesis
+inbound message block in memory and never persisted it. Now the production `open` stores that block
+through `_appendInboundMessages` → `_persistInboundMessageBlock`, which emits
+`InboundMessagesProcessed`; the SDK dispatches it and `LocalDiamond.onInboundMessagesProcessed`
+persists the same block. `onChannelOpened` records the genesis snapshot and its balance fields but
+stores no inbound block.
 
-**Proposed direction:** Persist it (or delete the dead code deliberately).
+**Proposed direction:** None — fixed; covered by
+`test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`
+([`UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3`](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#unit-test-local-diamond-1-pje47m)).
 
 <a id="def-4-qb3kqm"></a>
 
@@ -1139,33 +1159,38 @@ deposit; the live SDK collector test proves the collected signer set excludes th
 
 ### FIND-STORAGE-3-GYR34M
 
-**Defect:** `Storage.getPreviousBlockOrSnapshot`/`getPreviousRelevantTimestamp` use non-null
-assertions, so an absent predecessor produces an unclassified throw instead of the explicit absence
+**Defect:** _Resolved (2026-10-27)._ `Storage.getPreviousBlockOrSnapshot` returns explicit absence:
+its non-null assertions are compile-time only, so an absent predecessor comes back with neither
+`block` nor `stateSnapshot` set, and its timeout and dispute-audit callers check for that
+([`ParticipantTimeoutService`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
+[`DisputeValidationService`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
+`getPreviousRelevantTimestamp` and
+[`BlockProductionService.createBlock`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
+presume the predecessor exists, as
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
-requires ([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
+allows for a read whose join links the pipeline maintains: the timestamp read's one caller,
+[`CalldataPostingService`](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md),
+reads it for a stored block, the producer builds on its own stored head, and participants commit
+history contiguously. Was: both reads were
+taken to throw an unclassified error on an absent predecessor
+([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
 
-**Proposed direction:** Decided (engineer review): documented precondition — the contiguity
-invariants (participants commit contiguously; sync persists state-proof anchor blocks before replay)
-make an absent predecessor unreachable through any designed flow, and the throw stands as the
-invariant tripwire. Spec-noted in
-[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
+**Proposed direction:** No change.
 
 <a id="find-storage-4-mfd7rz"></a>
 
 ### FIND-STORAGE-4-MFD7RZ
 
-**Defect:** `FraudProofStorage` violates the first-write-wins clause of
-[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm):
-`storeFraudProof` overwrites unconditionally (src/storage/FraudProofStorage.ts:22) and appends to
-the participant index (:25-28), so re-storing the same `encodedProof` with a different `participant`
-field (the key hashes `encodedProof` only, :19) both replaces the stored proof and strands a stale
-index entry. `DisputeFraudProofStorage` complies (:26-29). No live impact today — current producers
-derive `participant` from the proof content — so this is a spec-letter violation and a latent
-producer-bug trap, not an active defect.
+**Defect:** _Resolved (2026-09-02)._ `FraudProofStorage.storeFraudProof` now returns the existing
+hash when the `encodedProof` hash is already stored, before writing the proof or the participant
+index (src/storage/FraudProofStorage.ts, ca92f7f18), so it is first-write-wins and the participant
+index holds exactly the stored proofs, satisfying
+[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm).
+Was: a re-store of the same `encodedProof` with a different `participant` replaced the stored proof
+and left a stale participant index entry.
 
-**Proposed direction:** Decided (engineer review): the spec is the intent — make `FraudProofStorage`
-first-write-wins and keep the participant index exactly consistent with the stored set. Closes when
-that lands.
+**Proposed direction:** Covered by
+[`REQ-DSTORE-3-ZNXSTM.T1.P3`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p3).
 
 <a id="find-storage-5-t301z1"></a>
 
@@ -1235,16 +1260,13 @@ caller.
 
 ### FIND-RUNTIME-1-GAPY72
 
-**Defect:** `p2pSetup` deploys the two local state machines _outside_ the `try` that owns runtime
-teardown (the two `deployStateMachine` calls in `src/evm/EvmDiamondStateMachine.ts`). A rejection
-there leaves whatever `startP2pRuntimeHost` had already built running for the life of the process.
-Narrow by construction: every failure raised _inside_ that `try` is already covered, because
-`startP2pRuntimeHost` runs `disposeRuntime()` before rethrowing and a readiness failure disposes
-through the `deployComplete` handler. Not introduced by the cross-thread log work.
+**Defect:** _Resolved (2026-09-13)._ `setupP2pRuntime` (src/evm/p2pRuntime/setupP2pRuntime.ts, the
+construction behind `p2pSetup`) now runs both `deployStateMachine` calls and `deployComplete` inside
+the `try` that owns runtime teardown; its `catch` disposes the instance, or the client root when no
+instance exists yet, before rethrowing (906316b0f). Was: the two deploys ran outside that `try`, so
+a deploy rejection left the partly built runtime running for the life of the process.
 
-**Proposed direction:** Move the two deploys inside the `try`, or wrap them so a rejection tears the
-partly built runtime down before it propagates. Then add an E2E that forces a deploy failure and
-asserts a later crash-log round reaches the same number of stores as before the attempt.
+**Proposed direction:** No further change. Regression: [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md), first- and second-deployment failure cases.
 
 <a id="find-gas-1-m26tmb"></a>
 
@@ -2187,20 +2209,46 @@ drops an unparseable environment value, contrary to
 **Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
 `createConfig` and reject an unparseable or out-of-range value.
 
+<a id="find-lif-1-b36vst"></a>
+
+### FIND-LIF-1-B36VST
+
+**Defect:** _Withdrawn (2026-10-27)._ Luke decided to keep `onDisputeStarted(3 × evidenceTime)`
+in `EventHandler.handleDisputeCommitted`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)): the surfaced
+value is a conservative ceiling that also covers the reduction transaction landing after the kill
+period (measured pipeline latency in [`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)), while
+about `2 × evidenceTime` stays the protocol-side pause. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) now states the
+ceiling, so the code no longer departs from it.
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>
 
-### FIND-VERIFY-1-GFERDM — Four specified behavior families lack exact evidence
+### FIND-VERIFY-1-GFERDM — The host-environment matrix lacks exact evidence
 
-Status: open verification gap. The implementation links exist, but no declaration currently owns a complete permutation for these families. Adding an implementation link does not close this gap.
+Status: open verification gap, narrowed (2026-10-27) to the host matrix.
+[`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) and [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+now have exact evidence for every permutation. [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) has it
+for the valid, invalid, calldata and no-calldata cases. Luke decided the two other audit cases
+(2026-10-27):
 
-- [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The runtime setup report identifies its platform boundary; its code contribution does not supply the missing test evidence.
-- [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt): no exact declaration currently proves its planned dispute-window invariants in full.
-- [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81): no exact declaration currently owns its complete planned audit invariant.
-- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm): the required pause, queued-work, unrelated-fork, resume, notification and duplicate-event observations have no assigned specification evidence.
+- The delivery-order permutation is removed. Auditors learn disputes only from chain events, which
+  arrive in one canonical (block, log index) order, and a lagging auditor receives the same order
+  in a burst, so delivery order is not a variable the system can produce.
+- [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
+  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Storage is in memory only and a
+  restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
+  does not exist yet.
 
-Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix; the current source changes do not claim to implement this broader test matrix.
+What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
+worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,
+clock and logging scenarios, not the protocol capabilities in a browser host, a mixed
+browser/Node channel or browser lifecycle suspension. The runtime setup report identifies the
+platform boundary; its code contribution does not supply the missing test evidence.
+
+Keep its generated evidence cells as `none — gap`. Close a permutation only after a test asserts
+its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix.
 
 <a id="find-sync-1-jwy1c8"></a>
 
