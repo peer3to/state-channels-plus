@@ -788,6 +788,19 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
             .map((p) => String(p.proofType));
     }
 
+    /** Proof type and accused disputer of every stored dispute fraud proof. */
+    public getDisputeFraudProofAccusations(): {
+        proofType: string;
+        participant: string;
+    }[] {
+        return this.service.storage.disputeFraudProofs
+            .getDisputeFraudProofs()
+            .map((p) => ({
+                proofType: String(p.proofType),
+                participant: String(p.participant)
+            }));
+    }
+
     public getTimeout(
         forkId: ForkId
     ): { isForced: boolean; participant: string } | null {

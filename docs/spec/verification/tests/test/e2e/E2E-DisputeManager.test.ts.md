@@ -21,7 +21,7 @@ skipped on a known product race. Per-field dispute-input and state-proof audits 
 (`test/unit/DisputeManager.test.ts`). The valid-dispute case, the spam and double-fault kills
 (no auditing calldata posted) and the partial-auditing-data kill (calldata posted) end by
 comparing every active honest auditor: each sits on the resolved successor fork, lists the same
-participants and stored the same dispute fraud-proof types (none for the valid dispute). In the
+participants and stored the same dispute fraud proofs, compared by proof type and accused disputer (none for the valid dispute). The double-fault case first checks that its dispute posted no auditing calldata. In the
 racing case, where every honest disputer's dispute is committed on one fork, each disputer surfaced
 `onDisputeStarted` exactly once. After the permutation split, the single-scenario
 dispute-input, kill, and recovery permutations demonstrated here are assigned below; per-predicate

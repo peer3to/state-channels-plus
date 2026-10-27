@@ -305,7 +305,9 @@ describe("E2E: Dispute Manager", function () {
                 timeConfig: { evidenceTime: 6 }
             });
             const forkId = h.activeForkId!;
-            await h.byzantine.tamperedDisputeDoubleFault(1);
+            const dispute = await h.byzantine.tamperedDisputeDoubleFault(1);
+            // settled fork -> the dispute posts no auditing calldata
+            expect(dispute.postedAuditingData).to.equal(false);
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast"
             });

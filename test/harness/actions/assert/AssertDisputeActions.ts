@@ -182,7 +182,7 @@ export class AssertDisputeActions<
     /**
      * Every active honest auditor reached the same audit result: it sits on
      * `forkId`, lists the same participants and stored the same dispute
-     * fraud-proof types.
+     * fraud proofs (proof type and accused disputer).
      */
     async auditorsAgree(forkId: ForkId): Promise<void> {
         const auditors = this.harness.getActiveHonestPeers();
@@ -190,16 +190,18 @@ export class AssertDisputeActions<
         const views = await Promise.all(
             auditors.map(async (peer) => {
                 const query = this.harness.control(peer).query;
-                const [peerForkId, participants, proofTypes] =
+                const [peerForkId, participants, accusations] =
                     await Promise.all([
                         query.getForkId().request(),
                         query.getParticipants().request(),
-                        query.getDisputeFraudProofTypes().request()
+                        query.getDisputeFraudProofAccusations().request()
                     ]);
                 return {
                     forkId: peerForkId,
                     participants: [...participants].sort(),
-                    proofTypes: [...proofTypes].sort()
+                    accusations: accusations
+                        .map((a) => `${a.proofType}:${a.participant}`)
+                        .sort()
                 };
             })
         );
@@ -207,7 +209,7 @@ export class AssertDisputeActions<
             auditors.map(() => ({
                 forkId,
                 participants: views[0].participants,
-                proofTypes: views[0].proofTypes
+                accusations: views[0].accusations
             }))
         );
     }
