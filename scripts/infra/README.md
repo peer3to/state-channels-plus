@@ -214,18 +214,21 @@ below the window, or a restart) is filled again by the next reads. The relay
 inclusion strategy adds one relay subscription and one `state_getStorage` per
 inclusion.
 
-### Values come from reads, not from the trace
+### Values come from reads when a frame failed
 
-The trace says **which** storage keys and accounts a block touched, never their
-values. For each block the service takes the union of touched keys, and of the
-balance, nonce and code of touched accounts, and reads their end-of-block
-values with `eth_getStorageAt`, `eth_getBalance`, `eth_getTransactionCount` and
-`eth_getCode` pinned to `{blockHash}`, in one JSON-RPC batch. Pre values come
-from the service's own cache when it is at the parent block, else from reads at
-the parent hash. A touched key whose value did not change produces no entry in
-`pre` or `post`. Only subscribed addresses are read. A block therefore costs
-one extra batch round trip when it touches a subscribed address, and none
-otherwise.
+Each traced block is asked for in one batch: its `prestateTracer` diff and
+its `callTracer` frames. If no call frame of the block carries an `error`
+(top frame or nested at any depth) the diff's values are used as they are,
+for the subscribed addresses. A block with a failed frame, or whose call
+frames could not be had, takes only **which** storage keys and accounts it
+touched from the trace and reads their end-of-block values with
+`eth_getStorageAt`, `eth_getBalance`, `eth_getTransactionCount` and
+`eth_getCode` pinned to `{blockHash}`, in one JSON-RPC batch. Balance, nonce
+and code are read only for accounts whose `post` shows that field (or that
+`post` leaves out). Old values come from the service's own cache, carried
+forward block by block over what the step has read, when the step extends the
+head; from reads at the parent hash otherwise. A touched key whose value did
+not change produces no entry in `pre` or `post`.
 
 This is required by an Asset Hub bug: its `prestateTracer` in `diffMode`
 reports storage writes (and value transfers) of **reverted sub-call frames** in
@@ -234,7 +237,7 @@ reports storage writes (and value transfers) of **reverted sub-call frames** in
 shows slot 0 = 1, slot 1 = 5 and slot 2 = 1, but only slot 0 is really 1.
 Anvil's tracer is correct, which is why runs against anvil never showed it.
 The service assumes the trace never omits a key that really changed (the trace
-is a superset of the truth); the test "misses no slot anvil holds after calls
+is a superset of the truth; Asset Hub's trace of a deploy transaction breaks this, see below); the test "misses no slot anvil holds after calls
 that nest and re-enter" checks this on nested and re-entered frames against
 `anvil_dumpState`.
 
