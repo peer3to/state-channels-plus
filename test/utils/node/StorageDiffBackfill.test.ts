@@ -235,6 +235,40 @@ describe("StorageDiffService backfill", function () {
     });
 });
 
+describe("StorageDiffService backfill beyond the window", function () {
+    it("reads on, in more rounds, the blocks mined past the retained window while the history was being traced", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                const first = await writeSlot(signer, writer, 1, 5n);
+                const held = relay.holdNext(
+                    "debug_traceBlockByNumber",
+                    toQuantity(first.blockNumber)
+                );
+                const subscription = await client.subscribe([writer]);
+                await held.arrived;
+
+                await writeSlot(signer, writer, 1, 6n);
+                for (let i = 0; i < 4; i++)
+                    await writeSlot(signer, writer, 2, BigInt(i + 1));
+                held.release();
+                const snapshot = await client.nextSnapshot(subscription);
+
+                expect(
+                    nonZero(snapshot.accounts[writer].storage)
+                ).to.deep.equal({
+                    [slotKey(1)]: storageWord(6n),
+                    [slotKey(2)]: storageWord(4n)
+                });
+                expect(
+                    service.statistics.backfills[0].roundTrips
+                ).to.be.greaterThan(4);
+            },
+            { retention: 2 }
+        );
+    });
+});
+
 describe("StorageDiffService persisted cache", function () {
     it("resumes a complete contract from disk without reading its history again", async function () {
         const cacheDir = mkdtempSync(path.join(tmpdir(), "storage-diff-"));
