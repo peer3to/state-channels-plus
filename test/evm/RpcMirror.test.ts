@@ -55,10 +55,28 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
-    it("reads the first read of an uncached slot from the service at the head block, once, and nothing from the node", async function () {
+    it("reads the first read of a slot from the snapshot the service pushed, with no scp_getState and no node read", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
             await (await storage.setValue(5n)).wait();
+
+            const word = await session.provider.getStorage(address, 0);
+
+            expect(BigInt(word)).to.equal(5n);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
+            expect(nodeStateReads(session)).to.equal(0);
+            expect(session.provider.mirrorStatistics).to.include({
+                lazyReads: 0,
+                snapshots: 1
+            });
+        });
+    });
+
+    it("asks the service for exactly the missing fields, at the head block, when no snapshot comes", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            session.service.dropNotifications("scp_snapshot");
             const head = await session.chain.getBlock(
                 await headNumber(session)
             );
@@ -84,6 +102,11 @@ describe("MirrorRpcProvider", function () {
                 ]
             ]);
             expect(nodeStateReads(session)).to.equal(0);
+            expect(session.provider.mirrorStatistics).to.include({
+                lazyReads: 1,
+                lazyFields: 1,
+                snapshotTimeouts: 1
+            });
         });
     });
 
@@ -95,7 +118,7 @@ describe("MirrorRpcProvider", function () {
 
             await session.provider.getStorage(address, 0);
 
-            expect(serviceRequests(session, "scp_getState")).to.have.length(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
@@ -113,7 +136,7 @@ describe("MirrorRpcProvider", function () {
             expect(await session.provider.getStorage(address, 0)).to.equal(
                 ZeroHash
             );
-            expect(serviceRequests(session, "scp_getState")).to.have.length(1);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
             expect(nodeStateReads(session)).to.equal(0);
         });
     });
@@ -217,6 +240,7 @@ describe("MirrorRpcProvider", function () {
             const { storage, chainStorage } =
                 await deployMirroredStorage(session);
             await (await chainStorage.setValue(5n)).wait();
+            session.service.dropNotifications("scp_snapshot");
             session.service.errorRequests(
                 "scp_getState",
                 NOT_RETAINED_ERROR_CODE,
@@ -459,8 +483,8 @@ describe("MirrorRpcProvider", function () {
                 )
             ).to.deep.equal(["pending"]);
             expect(
-                serviceRequests(session, "scp_getState")
-            ).to.have.length.greaterThan(0);
+                session.provider.mirrorStatistics?.snapshots
+            ).to.be.greaterThan(0);
         });
     });
 

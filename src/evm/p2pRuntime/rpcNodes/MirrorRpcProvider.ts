@@ -358,6 +358,11 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         });
     }
 
+    /** What the mirror's own state reads cost so far. */
+    get mirrorStatistics() {
+        return this.mirror?.statistics;
+    }
+
     /** The newest block the storage diff service reported as included. */
     get includedHead() {
         return this.mirror?.includedHead;

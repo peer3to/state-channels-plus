@@ -1,3 +1,5 @@
+import { isNodeOnlyAddress, isPolkaVmCode } from "./LocalExecutionPolicy";
+import { NotLocalError } from "./MirrorUnavailableError";
 import type {
     AccountAddress,
     AccountDiff,
@@ -29,6 +31,8 @@ const UNUSED_PROVIDER_URL = "http://mirror.invalid";
 
 /** One account as the mirror knows it; absent fields are not cached yet. */
 type MirrorAccount = {
+    /** Every slot it ever wrote is in `storage`: a slot not there reads as zero. */
+    complete?: boolean;
     balance?: bigint;
     nonce?: bigint;
     code?: Uint8Array;
@@ -98,9 +102,12 @@ export class MirrorStateManager extends RPCStateManager {
         if (written !== undefined) return written;
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return new Uint8Array(32);
+        this.assertRunsHere(accountAddress);
         const slot = hexlify(key);
-        const known = this.accountOf(accountAddress).storage.get(slot);
+        const account = this.accountOf(accountAddress);
+        const known = account.storage.get(slot);
         if (known !== undefined) return known;
+        if (account.complete) return new Uint8Array(32);
         this.missing(accountAddress).slots!.push(slot);
         return new Uint8Array(32);
     }
@@ -115,6 +122,7 @@ export class MirrorStateManager extends RPCStateManager {
                 : undefined;
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return undefined;
+        this.assertRunsHere(accountAddress);
         const account = this.accountOf(accountAddress);
         if (account.balance === undefined || account.nonce === undefined) {
             this.missing(accountAddress).account = true;
@@ -146,10 +154,19 @@ export class MirrorStateManager extends RPCStateManager {
         if (created !== undefined) return created;
         const accountAddress = toAccountAddress(address);
         if (this.isLocalOnly(accountAddress)) return new Uint8Array();
-        const account = this.accountOf(accountAddress);
-        if (account.code !== undefined) return account.code;
-        this.missing(accountAddress).code = true;
-        return new Uint8Array();
+        this.assertRunsHere(accountAddress);
+        const code = this.readCode(accountAddress);
+        // PolkaVM code is no EVM code: the node runs the call
+        if (code && isPolkaVmCode(code))
+            throw new NotLocalError(`${accountAddress} holds PolkaVM code`);
+        return code ?? new Uint8Array();
+    }
+
+    /** The code of `address` as the chain has it, whatever it is; empty and recorded as missing if not cached. */
+    readCodeOf(address: Address): Uint8Array {
+        const accountAddress = toAccountAddress(address);
+        if (this.isLocalOnly(accountAddress)) return new Uint8Array();
+        return this.readCode(accountAddress) ?? new Uint8Array();
     }
 
     // Overrides RPCStateManager.getProof: the node has no eth_getProof.
@@ -162,6 +179,64 @@ export class MirrorStateManager extends RPCStateManager {
         const taken = [...this.misses.values()];
         this.misses.clear();
         return taken;
+    }
+
+    /**
+     * Makes each account in `accounts` exactly what the snapshot says, with
+     * every slot it ever wrote: a slot not listed reads as zero from now on.
+     */
+    applySnapshot(accounts: AccountDiffs): void {
+        for (const [address, diff] of Object.entries(accounts)) {
+            const account: MirrorAccount = {
+                complete: true,
+                storage: new Map()
+            };
+            this.accounts.set(address, account);
+            this.setFields(account, diff, diff);
+            for (const [slot, word] of Object.entries(diff.storage ?? {}))
+                account.storage.set(slot, getBytes(word));
+        }
+    }
+
+    /** Applies what `record` wrote to the accounts `addresses` only. */
+    replay(record: BlockStorageDiff, addresses: AccountAddress[]): void {
+        for (const address of addresses) {
+            const post = record.post[address];
+            if (!post) continue;
+            const account = this.accountOf(address);
+            this.setFields(account, post, post);
+            for (const [slot, word] of Object.entries(post.storage ?? {}))
+                account.storage.set(slot, getBytes(word));
+        }
+    }
+
+    /** Of `requests`, the parts not cached: what is still to be read. */
+    stillMissing(requests: StateRequestParams[]): StateRequestParams[] {
+        const lacking: StateRequestParams[] = [];
+        for (const request of requests) {
+            const account = this.accounts.get(request.address);
+            const slots = (request.slots ?? []).filter(
+                (slot) => !account?.complete && !account?.storage.has(slot)
+            );
+            const needsAccount =
+                request.account === true &&
+                (account?.balance === undefined || account.nonce === undefined);
+            const needsCode =
+                request.code === true && account?.code === undefined;
+            if (slots.length > 0 || needsAccount || needsCode)
+                lacking.push({
+                    address: request.address,
+                    slots,
+                    account: needsAccount,
+                    code: needsCode
+                });
+        }
+        return lacking;
+    }
+
+    /** Whether `address` has its complete state cached. */
+    isComplete(address: AccountAddress): boolean {
+        return this.accounts.get(address)?.complete === true;
     }
 
     /** Stores values read for the misses: a service answer, shaped like a record's `post`. */
@@ -240,6 +315,19 @@ export class MirrorStateManager extends RPCStateManager {
         if (post.code !== undefined)
             account.code =
                 source.code === undefined ? undefined : getBytes(source.code);
+    }
+
+    // The cached code, or undefined with the code recorded as missing.
+    private readCode(address: AccountAddress): Uint8Array | undefined {
+        const code = this.accountOf(address).code;
+        if (code === undefined) this.missing(address).code = true;
+        return code;
+    }
+
+    // An address the chain answers with its own precompile is not run here.
+    private assertRunsHere(address: AccountAddress): void {
+        if (isNodeOnlyAddress(getBytes(address)))
+            throw new NotLocalError(`${address} is a chain precompile`);
     }
 
     private accountOf(address: AccountAddress): MirrorAccount {

@@ -1,3 +1,4 @@
+import { isNodeOnlyAddress } from "./LocalExecutionPolicy";
 import {
     MirrorChain,
     MirrorUnavailableError,
@@ -6,9 +7,12 @@ import {
     type MirrorUpstream
 } from "./MirrorChain";
 import { MirrorStateManager } from "./MirrorStateManager";
+import { NotLocalError } from "./MirrorUnavailableError";
+import { StorageDiffSocket } from "./StorageDiffSocket";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
+import { toEthereumJsEvmAddress } from "@/utils";
 import type { Logger } from "@/utils/logging/Logger";
 import type {
     BlockEnvironment,
@@ -66,7 +70,8 @@ export class Mirror {
             isLocalOnly: (address) => this.precompileAddresses.has(address)
         });
         this.chain = new MirrorChain({
-            serviceUrl: options.serviceUrl,
+            openFeed: (handlers) =>
+                new StorageDiffSocket(options.serviceUrl, handlers),
             state: this.state,
             upstream: options.upstream,
             logger: options.logger
@@ -148,10 +153,13 @@ export class Mirror {
 
     async getCode(address: string): Promise<string> {
         return await this.chain.run(async () =>
-            hexlify(
-                await this.state.getContractCode(Address.fromString(address))
-            )
+            hexlify(this.state.readCodeOf(Address.fromString(address)))
         );
+    }
+
+    /** What the mirror's own state reads cost so far. */
+    get statistics() {
+        return this.chain.statistics;
     }
 
     /** The number of the newest block the service follows. */
@@ -232,6 +240,27 @@ export class Mirror {
         evm.common.chainId = () => chainId;
         for (const address of evm.precompiles.keys())
             this.precompileAddresses.add(`0x${address}`);
+        // a call that reaches an address the chain serves with its own
+        // precompile, and that no precompile of ours replaces, runs on the node
+        const customAddresses = new Set(
+            this.options.customPrecompiles.map((precompile) =>
+                toEthereumJsEvmAddress(precompile.address)
+                    .toString()
+                    .toLowerCase()
+            )
+        );
+        evm.events?.on("beforeMessage", (message) => {
+            if (message.to === undefined && message._codeAddress === undefined)
+                return;
+            const target = message.codeAddress;
+            if (
+                !customAddresses.has(target.toString().toLowerCase()) &&
+                isNodeOnlyAddress(target.bytes)
+            )
+                throw new NotLocalError(
+                    `${target.toString()} is a chain precompile`
+                );
+        });
         return evm;
     }
 

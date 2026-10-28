@@ -249,3 +249,34 @@ export async function deployEnvironmentProbe(
     if (!receipt?.contractAddress) throw new Error("Probe not deployed");
     return receipt.contractAddress;
 }
+
+/** Deploys `runtime` (hex, no prefix) as a contract's code and returns its address. */
+export async function deployRuntime(
+    signer: JsonRpcSigner,
+    runtime: string
+): Promise<string> {
+    // initcode copies the runtime after its own 11 bytes and returns it
+    const initcode =
+        "0x60" +
+        (runtime.length / 2).toString(16).padStart(2, "0") +
+        "80600b6000396000f3" +
+        runtime;
+    const receipt = await (
+        await signer.sendTransaction({ data: initcode })
+    ).wait();
+    if (!receipt?.contractAddress) throw new Error("Runtime not deployed");
+    return receipt.contractAddress;
+}
+
+/** Runtime that calls `target` with no data and returns its success flag as a word. */
+export function callerRuntime(target: string): string {
+    return (
+        "6000".repeat(5) + // retSize, retOffset, argsSize, argsOffset, value
+        "73" +
+        target.slice(2) + // PUSH20 target
+        "5a" + // GAS
+        "f1" + // CALL
+        "600052" + // MSTORE(0, success)
+        "60206000f3" // RETURN(0, 32)
+    );
+}

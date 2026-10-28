@@ -1,4 +1,10 @@
 import {
+    StorageDiffNotRetainedError,
+    StorageDiffPrunedError,
+    type MirrorFeed,
+    type MirrorFeedHandlers
+} from "./MirrorFeed";
+import {
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE,
     type AccountAddress,
@@ -8,26 +14,12 @@ import {
     type IncludedHeadRecord,
     type RpcBlock,
     type StateRequestParams,
+    type StorageDiffSnapshot,
     type StorageDiffCatchUp,
     type StorageDiffState,
     type SubscriptionId
 } from "@/utils/storageDiff/storageDiffWire";
 import { Network, WebSocketProvider } from "ethers";
-
-export type StorageDiffSocketHandlers = {
-    /** A record pushed to `subscription`. */
-    onRecord: (subscription: SubscriptionId, record: BlockStorageDiff) => void;
-    /** The included head advanced. */
-    onIncludedHead: (head: IncludedHeadRecord) => void;
-    /** The socket ended; the socket is unusable. */
-    onLost: (reason: Error) => void;
-};
-
-/** The service answered that the requested blocks are no longer retained. */
-export class StorageDiffPrunedError extends Error {}
-
-/** The service does not retain the block of a state read: unknown, orphaned or too old. */
-export class StorageDiffNotRetainedError extends Error {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
@@ -39,15 +31,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * pushes handed to the handlers. The socket never reconnects; its owner
  * opens a new one after `onLost`.
  */
-export class StorageDiffSocket extends WebSocketProvider {
-    private readonly handlers: StorageDiffSocketHandlers;
+export class StorageDiffSocket extends WebSocketProvider implements MirrorFeed {
+    private readonly handlers: MirrorFeedHandlers;
     /** Settles with the reason once the socket errors or closes. */
     private readonly ended: Promise<Error>;
     private hasEnded = false;
     /** True once the owner closed the socket: its end is no loss. */
     private closing = false;
 
-    constructor(url: string, handlers: StorageDiffSocketHandlers) {
+    constructor(url: string, handlers: MirrorFeedHandlers) {
         // a known network: the service answers no eth_ request, so ethers
         // must not detect one
         super(url, new Network("storage-diff", 0n), { staticNetwork: true });
@@ -170,6 +162,13 @@ export class StorageDiffSocket extends WebSocketProvider {
                 this.handlers.onRecord(
                     params.subscription as SubscriptionId,
                     params.result as BlockStorageDiff
+                );
+                return;
+            }
+            if (method === "scp_snapshot" && isRecord(params)) {
+                this.handlers.onSnapshot(
+                    params.subscription as SubscriptionId,
+                    params.result as StorageDiffSnapshot
                 );
                 return;
             }
