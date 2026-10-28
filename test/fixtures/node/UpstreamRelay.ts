@@ -31,6 +31,9 @@ type Hold = {
  * connection, or cut the connection. It never answers a request itself
  * except with an injected error.
  */
+/** What a tamper returns to answer that one request with an error frame. */
+export const UPSTREAM_FAULT = Symbol("upstream fault");
+
 export class UpstreamRelay {
     private readonly server: WebSocketServer;
     private readonly target: string;
@@ -179,8 +182,13 @@ export class UpstreamRelay {
             for (const answer of answers) {
                 const request = asked.get(answer.id);
                 const transform = request && this.tampering.get(request.method);
-                if (transform && "result" in answer)
-                    answer.result = transform(answer.result, request.params);
+                if (transform && "result" in answer) {
+                    const result = transform(answer.result, request.params);
+                    if (result === UPSTREAM_FAULT) {
+                        delete answer.result;
+                        answer.error = { code: -32000, message: "relay fault" };
+                    } else answer.result = result;
+                }
             }
             client.send(JSON.stringify(parsed));
         });
@@ -195,6 +203,24 @@ export class UpstreamRelay {
             // a batch array is counted per call and forwarded whole
             if (Array.isArray(parsed)) {
                 for (const call of parsed) this.count(call);
+                // a failing method fails the whole batch it travels in
+                if (
+                    this.failing &&
+                    parsed.some((call) => call.method === this.failing!.method)
+                ) {
+                    if (--this.failing.remaining === 0)
+                        this.failing = undefined;
+                    client.send(
+                        JSON.stringify(
+                            parsed.map((call) => ({
+                                jsonrpc: "2.0",
+                                id: call.id,
+                                error: { code: -32000, message: "relay fault" }
+                            }))
+                        )
+                    );
+                    return;
+                }
                 const hold = this.hold;
                 // a held call holds the whole batch it travels in
                 if (

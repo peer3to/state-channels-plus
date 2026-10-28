@@ -4,10 +4,12 @@ import {
     bloomContains,
     environmentOf,
     filterRecord,
+    hasRevertedFrame,
     INTERNAL_ERROR,
     INVALID_PARAMS,
     INVALID_REQUEST,
     isObject,
+    mergeTransactionDiffs,
     touchesOf,
     METHOD_NOT_FOUND,
     NOT_RETAINED_ERROR_CODE,
@@ -104,6 +106,8 @@ const TRACE_OPTIONS = {
     tracer: "prestateTracer",
     tracerConfig: { diffMode: true }
 };
+
+const CALL_TRACE_OPTIONS = { tracer: "callTracer" };
 
 /** A field's identity in a map. */
 function fieldKey(field: StateField): string {
@@ -866,11 +870,10 @@ export class StorageDiffService {
         const running = new Map<string, StateValue>();
         for (const header of headers) {
             let touches: BlockTouches = {};
+            // the trace's values stand for a block in which no call frame failed
+            let trusted: { pre: AccountDiffs; post: AccountDiffs } | undefined;
             if (header.txCount > 0) {
-                const traces = await this.request("debug_traceBlockByNumber", [
-                    toQuantity(header.number),
-                    TRACE_OPTIONS
-                ]);
+                const { traces, calls } = await this.traceBlock(header.number);
                 // the trace is of this block only if it is still the one at its number
                 await this.assertCanonical(header);
                 if (
@@ -880,6 +883,8 @@ export class StorageDiffService {
                     throw new Error("Upstream trace does not cover the block");
                 }
                 touches = touchesOf(traces);
+                if (!hasRevertedFrame(calls, header.txCount))
+                    trusted = mergeTransactionDiffs(traces);
             }
             const record: StagedBlock = {
                 ...environmentOf({
@@ -898,11 +903,61 @@ export class StorageDiffService {
             };
             const addresses = [...this.watched.keys()];
             for (const address of addresses) record.covered.add(address);
-            await this.readValues(record, addresses, preFrom, running);
+            if (trusted)
+                this.takeTraceValues(record, trusted, addresses, running);
+            else await this.readValues(record, addresses, preFrom, running);
             await this.attachLogs(record, this.subscribedAddresses());
             records.push(record);
         }
         return records;
+    }
+
+    /**
+     * The block's `prestateTracer` diff and its `callTracer` frames, asked for
+     * in one batch. A `callTracer` answer that is an error is `undefined`: the
+     * caller then reads values from the node.
+     */
+    private async traceBlock(
+        number: bigint
+    ): Promise<{ traces: unknown; calls: unknown }> {
+        if (!this.upstream)
+            throw new UpstreamLostError("Upstream connection is not open");
+        const [traces, calls] = this.upstream.requestBatch([
+            {
+                method: "debug_traceBlockByNumber",
+                params: [toQuantity(number), TRACE_OPTIONS]
+            },
+            {
+                method: "debug_traceBlockByNumber",
+                params: [toQuantity(number), CALL_TRACE_OPTIONS]
+            }
+        ]);
+        const frames = calls.catch(() => undefined);
+        return { traces: await traces, calls: await frames };
+    }
+
+    /**
+     * Keeps the trace's own values of `addresses` in `record`, for a block in
+     * which no call frame failed, and carries them into `running` for the
+     * blocks after it in the step.
+     */
+    private takeTraceValues(
+        record: StagedBlock,
+        trace: { pre: AccountDiffs; post: AccountDiffs },
+        addresses: AccountAddress[],
+        running: Map<string, StateValue>
+    ): void {
+        for (const address of addresses) {
+            if (trace.pre[address]) record.pre[address] = trace.pre[address];
+            const post = trace.post[address];
+            if (!post) continue;
+            record.post[address] = post;
+            for (const kind of ["balance", "nonce", "code"] as const)
+                if (post[kind] !== undefined)
+                    running.set(fieldKey({ kind, address }), post[kind]!);
+            for (const [slot, word] of Object.entries(post.storage ?? {}))
+                running.set(fieldKey({ kind: "slot", address, slot }), word);
+        }
     }
 
     /**

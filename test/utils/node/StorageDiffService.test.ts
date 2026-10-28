@@ -373,15 +373,24 @@ describe("StorageDiffService", function () {
                 "debug_traceBlockByNumber",
                 RECONCILE_RETRY_LIMIT + 1
             );
-            const tracesBefore = relay.requestCount("debug_traceBlockByNumber");
+            // one attempt asks for the state diff and the call frames in one batch
+            const attempts = () =>
+                relay
+                    .paramsOf("debug_traceBlockByNumber")
+                    .filter(
+                        (params) =>
+                            (params[1] as { tracer: string }).tracer ===
+                            "prestateTracer"
+                    ).length;
+            const tracesBefore = attempts();
 
             await setValue(storage, 1n);
             const failure = await rejectionOf(service.closed);
 
             expect(failure).to.be.instanceOf(Error);
-            expect(
-                relay.requestCount("debug_traceBlockByNumber") - tracesBefore
-            ).to.equal(RECONCILE_RETRY_LIMIT + 1);
+            expect(attempts() - tracesBefore).to.equal(
+                RECONCILE_RETRY_LIMIT + 1
+            );
         });
     });
 

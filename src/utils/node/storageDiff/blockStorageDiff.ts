@@ -230,6 +230,28 @@ export function touchesOf(entries: unknown): BlockTouches {
 }
 
 /**
+ * Whether any call frame of the block's `callTracer` trace failed: the
+ * `error` field on a transaction's entry or on any frame of its call tree,
+ * nested calls included. A trace that does not cover the block's `txCount`
+ * transactions, or is not of the expected shape, counts as failed.
+ */
+export function hasRevertedFrame(trace: unknown, txCount: number): boolean {
+    if (!Array.isArray(trace) || trace.length !== txCount) return true;
+    const failed = (frame: unknown): boolean => {
+        if (!isObject(frame) || frame.error !== undefined) return true;
+        const calls = frame.calls;
+        if (calls === undefined) return false;
+        return !Array.isArray(calls) || calls.some(failed);
+    };
+    return trace.some(
+        (entry) =>
+            !isObject(entry) ||
+            entry.error !== undefined ||
+            failed(entry.result)
+    );
+}
+
+/**
  * Folds the ordered per-transaction `prestateTracer` diff entries of one block
  * into one block-level `{pre, post}`: `pre` keeps the earliest value of each
  * field and slot, `post` the latest. A slot (or whole account) the

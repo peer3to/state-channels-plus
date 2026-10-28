@@ -1,3 +1,4 @@
+import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import {
     deployNestedWriter,
     deployNumberStorage,
@@ -20,6 +21,19 @@ import { Wallet, toQuantity } from "ethers";
 
 /** Time is the input: how long a read that must wait is watched for. */
 const ABSENCE_WINDOW_MS = 500;
+
+/** Whether a debug_traceBlockByNumber request asks for the call frames. */
+function asksCallFrames(params: unknown[]): boolean {
+    return (params[1] as { tracer?: string }).tracer === "callTracer";
+}
+
+/** The call frames of a block with a failed frame in each transaction. */
+function withFailedFrames(result: unknown): unknown {
+    return (result as { result: object }[]).map((entry) => ({
+        ...entry,
+        result: { ...entry.result, error: "execution reverted" }
+    }));
+}
 
 describe("StorageDiffService blocks", function () {
     it("serves the best head as the upstream returns it, with full and with hashed transactions", async function () {
@@ -312,29 +326,33 @@ describe("StorageDiffService values come from reads, not from the trace", functi
                 const probe = await deployRevertProbe(signer, recipient);
                 const subscription = await client.subscribe([probe, recipient]);
                 await client.nextSnapshot(subscription);
-                relay.tamper("debug_traceBlockByNumber", (result) =>
-                    (result as { result: { pre: object; post: object } }[]).map(
-                        (entry) => ({
-                            ...entry,
-                            result: {
-                                pre: {
-                                    ...entry.result.pre,
-                                    [probe]: { storage: {} },
-                                    [recipient]: { balance: "0x0" }
-                                },
-                                post: {
-                                    ...entry.result.post,
-                                    [probe]: {
-                                        storage: {
-                                            [slotKey(1)]: storageWord(1n),
-                                            [slotKey(2)]: storageWord(5n)
-                                        }
-                                    },
-                                    [recipient]: { balance: "0x1" }
-                                }
-                            }
-                        })
-                    )
+                relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                    asksCallFrames(params)
+                        ? result
+                        : (
+                              result as {
+                                  result: { pre: object; post: object };
+                              }[]
+                          ).map((entry) => ({
+                              ...entry,
+                              result: {
+                                  pre: {
+                                      ...entry.result.pre,
+                                      [probe]: { storage: {} },
+                                      [recipient]: { balance: "0x0" }
+                                  },
+                                  post: {
+                                      ...entry.result.post,
+                                      [probe]: {
+                                          storage: {
+                                              [slotKey(1)]: storageWord(1n),
+                                              [slotKey(2)]: storageWord(5n)
+                                          }
+                                      },
+                                      [recipient]: { balance: "0x1" }
+                                  }
+                              }
+                          }))
                 );
 
                 const receipt = await (
@@ -364,20 +382,22 @@ describe("StorageDiffService values come from reads, not from the trace", functi
             const subscription = await client.subscribe([writer]);
             await client.nextSnapshot(subscription);
             // the trace names the slot as touched, as a rewrite of it may
-            relay.tamper("debug_traceBlockByNumber", (result) =>
-                (result as { result: { pre: object; post: object } }[]).map(
-                    (entry) => ({
-                        result: {
-                            pre: {
-                                ...entry.result.pre,
-                                [writer]: {
-                                    storage: { [slotKey(1)]: storageWord(5n) }
-                                }
-                            },
-                            post: entry.result.post
-                        }
-                    })
-                )
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params)
+                    ? withFailedFrames(result)
+                    : (
+                          result as { result: { pre: object; post: object } }[]
+                      ).map((entry) => ({
+                          result: {
+                              pre: {
+                                  ...entry.result.pre,
+                                  [writer]: {
+                                      storage: { [slotKey(1)]: storageWord(5n) }
+                                  }
+                              },
+                              post: entry.result.post
+                          }
+                      }))
             );
             const receipt = await writeSlot(signer, writer, 1, 5n);
             await client.recordAt(subscription, receipt.blockNumber);
@@ -440,12 +460,94 @@ describe("StorageDiffService values come from reads, not from the trace", functi
     });
 });
 
+describe("StorageDiffService trusted traces", function () {
+    it("takes the values of a block in which nothing reverted from the trace, with no read of them", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+
+            const receipt = await writeSlot(signer, writer, 1, 6n);
+            const record = await client.recordAt(
+                subscription,
+                receipt.blockNumber
+            );
+
+            const readsAtBlock = [
+                "eth_getStorageAt",
+                "eth_getBalance",
+                "eth_getTransactionCount",
+                "eth_getCode"
+            ]
+                .flatMap((method) => relay.paramsOf(method))
+                .filter(
+                    (params) =>
+                        (params.at(-1) as { blockHash?: string })?.blockHash ===
+                        receipt.blockHash
+                ).length;
+            expect(readsAtBlock).to.equal(0);
+            expect(record.pre[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(5n)
+            });
+            expect(record.post[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(6n)
+            });
+            // the block was traced for its state diff and for its call frames
+            const tracers = relay
+                .paramsOf("debug_traceBlockByNumber")
+                .filter(
+                    (params) => params[0] === toQuantity(receipt.blockNumber)
+                )
+                .map((params) => (params[1] as { tracer: string }).tracer);
+            expect(tracers.sort()).to.deep.equal([
+                "callTracer",
+                "prestateTracer"
+            ]);
+        });
+    });
+
+    it("reads the values of a block when the call frames cannot be had", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params) ? UPSTREAM_FAULT : result
+            );
+
+            const receipt = await writeSlot(signer, writer, 1, 6n);
+            const record = await client.recordAt(
+                subscription,
+                receipt.blockNumber
+            );
+
+            expect(record.post[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(6n)
+            });
+            expect(
+                relay
+                    .paramsOf("eth_getStorageAt")
+                    .filter(
+                        (params) =>
+                            (params.at(-1) as { blockHash?: string })
+                                ?.blockHash === receipt.blockHash
+                    ).length
+            ).to.equal(1);
+        });
+    });
+});
+
 describe("StorageDiffService old values", function () {
     it("reads the old value of a slot from its cache for every block of a multi-block step", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const writer = await deploySlotWriter(signer);
             const subscription = await client.subscribe([writer]);
             await client.nextSnapshot(subscription);
+            // a failed frame in every block makes the service read the values
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params) ? withFailedFrames(result) : result
+            );
             const first = await writeSlot(signer, writer, 1, 5n);
             await client.recordAt(subscription, first.blockNumber);
             const reads = () => relay.requestCount("eth_getStorageAt");
@@ -481,6 +583,10 @@ describe("StorageDiffService old values", function () {
                 const sender = (await signer.getAddress()).toLowerCase();
                 const subscription = await client.subscribe([writer, sender]);
                 await client.nextSnapshot(subscription);
+                // a failed frame in every block makes the service read the values
+                relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                    asksCallFrames(params) ? withFailedFrames(result) : result
+                );
 
                 const receipt = await writeSlot(signer, writer, 1, 5n);
                 await client.recordAt(subscription, receipt.blockNumber);

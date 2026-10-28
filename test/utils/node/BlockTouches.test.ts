@@ -1,4 +1,7 @@
-import { touchesOf } from "@/utils/node/storageDiff/blockStorageDiff";
+import {
+    hasRevertedFrame,
+    touchesOf
+} from "@/utils/node/storageDiff/blockStorageDiff";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
 
@@ -60,5 +63,45 @@ describe("touchesOf", function () {
 
         expect(touches[A].changed.nonce).to.equal(true);
         expect(touches[A].slots).to.deep.equal([SLOT]);
+    });
+});
+
+describe("hasRevertedFrame", function () {
+    const ok = { from: A, to: B, type: "CALL" };
+
+    it("finds no failure in clean frames, nested calls included", function () {
+        const trace = [{ result: { ...ok, calls: [{ ...ok, calls: [ok] }] } }];
+        expect(hasRevertedFrame(trace, 1)).to.equal(false);
+    });
+
+    it("finds a failure on the top frame", function () {
+        const trace = [{ result: { ...ok, error: "execution reverted" } }];
+        expect(hasRevertedFrame(trace, 1)).to.equal(true);
+    });
+
+    it("finds a failure on a nested frame two calls deep", function () {
+        const trace = [
+            {
+                result: {
+                    ...ok,
+                    calls: [{ ...ok, calls: [{ ...ok, error: "out of gas" }] }]
+                }
+            }
+        ];
+        expect(hasRevertedFrame(trace, 1)).to.equal(true);
+    });
+
+    it("finds a failure in any transaction of the block", function () {
+        const trace = [
+            { result: ok },
+            { result: { ...ok, calls: [{ ...ok, error: "reverted" }] } }
+        ];
+        expect(hasRevertedFrame(trace, 2)).to.equal(true);
+    });
+
+    it("counts an entry with an error of its own, a missing trace or a wrong length as failed", function () {
+        expect(hasRevertedFrame([{ error: "x" }], 1)).to.equal(true);
+        expect(hasRevertedFrame(undefined, 1)).to.equal(true);
+        expect(hasRevertedFrame([{ result: ok }], 2)).to.equal(true);
     });
 });
