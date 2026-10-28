@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared hook wiring exercised by mapped TestSession and full-flow tests
 
 import { TestSession } from "./TestSession";
+import { closeAllSharedStorageDiffs } from "../../fixtures/HarnessStorageDiff";
 import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
 import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 
@@ -61,6 +62,12 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
         !globalThis.__peer3SessionHooksRegistered__
     ) {
         globalThis.__peer3SessionHooksRegistered__ = true;
+
+        // the end of the process: the storage diff services shared by its tests
+        after(async function () {
+            this.timeout(120000);
+            await closeAllSharedStorageDiffs();
+        });
 
         beforeEach(async function () {
             this.timeout(120000);
