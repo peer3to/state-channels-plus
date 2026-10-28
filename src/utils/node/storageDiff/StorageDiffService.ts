@@ -12,6 +12,7 @@ import {
     PARSE_ERROR,
     parseHeader,
     parseLogs,
+    type ParsedBlockSelector,
     PRUNED_ERROR_CODE,
     rpcError,
     toQuantity,
@@ -21,6 +22,7 @@ import {
     type BlockHeader,
     type BlockStorageDiff,
     type IncludedHeadRecord,
+    type RpcBlock,
     type StagedBlock,
     type StateRequest,
     type SubscriptionId
@@ -179,6 +181,8 @@ export class StorageDiffService {
     private included?: IncludedHead;
     // Hash of the included head already reported as off the best chain.
     private divergenceReported?: string;
+    // Whether the upstream answers eth_getBlockReceipts; one failed call turns it off.
+    private blockReceiptsSupported = true;
     // The upstream dropped while the service was starting.
     private lostBeforeReady = false;
     // One serialized queue: reconciliation commits branches in order, and
@@ -334,6 +338,7 @@ export class StorageDiffService {
         const fields = requests.flatMap((request) => this.fieldsOf(request));
         for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
             this.assertRetained(blockHash);
+            this.fetchMissing(fields);
             await Promise.all(fields.map((field) => this.ensureCached(field)));
             // Synchronous from here: the cache and the chain agree.
             const index = this.retainedIndex(blockHash);
@@ -353,6 +358,56 @@ export class StorageDiffService {
             };
         }
         throw new HeadChangedError("The chain moved while state was read");
+    }
+
+    /**
+     * A retained block as the upstream returned it, with full or hashed
+     * transactions; null when the block is not retained.
+     */
+    getBlock(selector: ParsedBlockSelector, full: boolean): RpcBlock | null {
+        const record =
+            selector.kind === "latest"
+                ? this.canonical[this.canonical.length - 1]
+                : this.canonical.find((candidate) =>
+                      selector.kind === "hash"
+                          ? candidate.hash === selector.hash
+                          : BigInt(candidate.number) === selector.number
+                  );
+        if (!record) return null;
+        if (full) return record.raw;
+        return {
+            ...record.raw,
+            transactions: record.raw.transactions.map(
+                (transaction) => (transaction as { hash: string }).hash
+            )
+        };
+    }
+
+    /** A transaction of a retained block, as the upstream returned it. */
+    getTransaction(hash: string): unknown {
+        return this.findTransaction(hash)?.transaction ?? null;
+    }
+
+    /**
+     * The receipt of a transaction of a retained block. The block's receipts
+     * are fetched from the upstream once, on the first read of any of them.
+     */
+    async getTransactionReceipt(hash: string): Promise<unknown> {
+        const found = this.findTransaction(hash);
+        if (!found) return null;
+        const { block, transaction } = found;
+        block.receipts ??= this.fetchReceipts(block).catch((error) => {
+            block.receipts = undefined;
+            throw error;
+        });
+        const receipts = await block.receipts;
+        return (
+            receipts.find(
+                (receipt) =>
+                    (receipt as { transactionHash?: string })
+                        .transactionHash === transaction.hash
+            ) ?? null
+        );
     }
 
     /**
@@ -612,7 +667,8 @@ export class StorageDiffService {
         const byHash = typeof by === "string" && by !== "latest";
         const block = await this.request(
             byHash ? "eth_getBlockByHash" : "eth_getBlockByNumber",
-            [typeof by === "bigint" ? toQuantity(by) : by, false]
+            // full transactions: the service serves the block as the node does
+            [typeof by === "bigint" ? toQuantity(by) : by, true]
         );
         if (block === null) {
             throw new HeadChangedError(`Block ${String(by)} is not known`);
@@ -638,11 +694,11 @@ export class StorageDiffService {
                 post: {}
             };
             if (header.txCount > 0) {
-                await this.assertCanonical(header);
                 const traces = await this.request("debug_traceBlockByNumber", [
                     toQuantity(header.number),
                     TRACE_OPTIONS
                 ]);
+                // the trace is of this block only if it is still the one at its number
                 await this.assertCanonical(header);
                 if (
                     !Array.isArray(traces) ||
@@ -659,6 +715,7 @@ export class StorageDiffService {
                 }),
                 parentHash: header.parentHash,
                 ...diff,
+                raw: header.raw,
                 logs: [],
                 logsBloom: header.logsBloom,
                 loggedAddresses: new Set()
@@ -773,9 +830,14 @@ export class StorageDiffService {
             if (ancestor >= 0) break;
             branch.push(cursor);
             if (cursor.number === 0n) throw noAncestor();
+            // the parent is retained: its record is the ancestor, no fetch
+            ancestor = canonical.findIndex(
+                (record) => record.hash === cursor.parentHash
+            );
+            if (ancestor >= 0) break;
             cursor = await this.fetchHeader(cursor.parentHash);
         }
-        if (cursor.number < floor) {
+        if (ancestor < 0 && cursor.number < floor) {
             // Walk the old chain down by hash, fetching only what it needs.
             let oldNumber = floor;
             let oldHash = canonical[0].hash;
@@ -797,10 +859,9 @@ export class StorageDiffService {
         }
         branch.reverse();
         // An ancestor older than the window becomes the oldest retained record.
+        // A traced block was checked after its trace; an empty tip is not
+        // rechecked: a reorg during staging wakes a new reconciliation.
         const staged = await this.stage(below ? [below, ...branch] : branch);
-        if (branch.length > 0) {
-            await this.assertCanonical(branch[branch.length - 1]);
-        }
         // Cached values follow the chain: back over the orphans, then forward.
         if (below) {
             this.stateCache.clear();
@@ -849,6 +910,49 @@ export class StorageDiffService {
             includedHash: included.hash,
             bestHash: best.hash
         });
+    }
+
+    private findTransaction(
+        hash: string
+    ): { block: StagedBlock; transaction: { hash: string } } | undefined {
+        for (let i = this.canonical.length - 1; i >= 0; i--) {
+            const block = this.canonical[i];
+            const transaction = (
+                block.raw.transactions as { hash: string }[]
+            ).find((candidate) => candidate.hash.toLowerCase() === hash);
+            if (transaction) return { block, transaction };
+        }
+        return undefined;
+    }
+
+    /** One `eth_getBlockReceipts`, or one batch of receipt reads where the node lacks it. */
+    private async fetchReceipts(block: StagedBlock): Promise<unknown[]> {
+        const transactions = block.raw.transactions as { hash: string }[];
+        if (this.blockReceiptsSupported) {
+            try {
+                const receipts = await this.request("eth_getBlockReceipts", [
+                    block.hash
+                ]);
+                if (
+                    !Array.isArray(receipts) ||
+                    receipts.length !== transactions.length
+                )
+                    throw new Error("Receipts do not cover the block");
+                return receipts;
+            } catch (error) {
+                if (!(error instanceof UpstreamRequestError)) throw error;
+                this.blockReceiptsSupported = false;
+            }
+        }
+        const answers = this.upstream
+            ? this.upstream.requestBatch(
+                  transactions.map((transaction) => ({
+                      method: "eth_getTransactionReceipt",
+                      params: [transaction.hash]
+                  }))
+              )
+            : [];
+        return await Promise.all(answers);
     }
 
     private assertRetained(blockHash: string): void {
@@ -902,6 +1006,41 @@ export class StorageDiffService {
         return accounts;
     }
 
+    /**
+     * Starts one batched upstream request for every field that is neither
+     * cached nor being fetched, so a read of many fields is one round trip.
+     * Each field gets its own flight, which settles from the batch answer.
+     */
+    private fetchMissing(fields: StateField[]): void {
+        const pinned = this.canonical[this.canonical.length - 1].hash;
+        const missing = new Map<FlightKey, StateField>();
+        for (const field of fields) {
+            const key: FlightKey = JSON.stringify(field);
+            if (
+                this.stateCache.get(field) === undefined &&
+                !this.flights.has(key)
+            )
+                missing.set(key, field);
+        }
+        if (missing.size === 0) return;
+        const entries = [...missing];
+        const answers = this.upstream
+            ? this.upstream.requestBatch(
+                  entries.map(([, field]) => this.fieldCall(field, pinned))
+              )
+            : entries.map(() =>
+                  Promise.reject(new UpstreamLostError("Upstream is not open"))
+              );
+        entries.forEach(([key, field], i) => {
+            const first = answers[i].then((raw) => this.parseField(field, raw));
+            const flight = this.loadField(field, {
+                pinned,
+                value: first
+            }).finally(() => this.flights.delete(key));
+            this.flights.set(key, flight);
+        });
+    }
+
     /** Waits until `field` is cached, fetching it unless a fetch is running. */
     private async ensureCached(field: StateField): Promise<void> {
         if (this.stateCache.get(field) !== undefined) return;
@@ -922,11 +1061,26 @@ export class StorageDiffService {
      * blocks' writes are applied to it; if that block was dropped, it reads
      * again.
      */
-    private async loadField(field: StateField): Promise<void> {
+    private async loadField(
+        field: StateField,
+        first?: { pinned: string; value: Promise<StateValue> }
+    ): Promise<void> {
+        let unused = first;
         for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
-            const pinned = this.canonical[this.canonical.length - 1].hash;
+            const pinned =
+                unused?.pinned ??
+                this.canonical[this.canonical.length - 1].hash;
+            // the first try is the batch's answer; a retry asks on its own
+            const issued = unused;
+            unused = undefined;
             const value = await this.retryTransient(
-                () => this.fetchField(field, pinned),
+                () =>
+                    issued
+                        ? issued.value.catch((error) => {
+                              issued.value = this.fetchField(field, pinned);
+                              throw error;
+                          })
+                        : this.fetchField(field, pinned),
                 "Retrying the state fetch"
             );
             const index = this.retainedIndex(pinned);
@@ -946,15 +1100,34 @@ export class StorageDiffService {
         field: StateField,
         blockHash: string
     ): Promise<StateValue> {
-        // EIP-1898: the read belongs to exactly this block.
+        const { method, params } = this.fieldCall(field, blockHash);
+        return this.parseField(field, await this.request(method, params));
+    }
+
+    /** The upstream read of `field` at exactly block `blockHash` (EIP-1898). */
+    private fieldCall(
+        field: StateField,
+        blockHash: string
+    ): { method: string; params: unknown[] } {
         const at = { blockHash };
         const { address } = field;
         if (field.kind === "slot") {
-            const word = await this.request("eth_getStorageAt", [
-                address,
-                field.slot,
-                at
-            ]);
+            return {
+                method: "eth_getStorageAt",
+                params: [address, field.slot, at]
+            };
+        }
+        const method = {
+            balance: "eth_getBalance",
+            nonce: "eth_getTransactionCount",
+            code: "eth_getCode"
+        }[field.kind];
+        return { method, params: [address, at] };
+    }
+
+    private parseField(field: StateField, answer: unknown): StateValue {
+        if (field.kind === "slot") {
+            const word = answer;
             if (
                 typeof word !== "string" ||
                 !/^0x[0-9a-fA-F]{1,64}$/.test(word)
@@ -963,12 +1136,7 @@ export class StorageDiffService {
             }
             return "0x" + word.slice(2).toLowerCase().padStart(64, "0");
         }
-        const method = {
-            balance: "eth_getBalance",
-            nonce: "eth_getTransactionCount",
-            code: "eth_getCode"
-        }[field.kind];
-        const value = await this.request(method, [address, at]);
+        const value = answer;
         if (typeof value !== "string" || !/^0x[0-9a-fA-F]*$/.test(value)) {
             throw new Error(`Malformed ${field.kind} from upstream`);
         }

@@ -10,6 +10,7 @@ import type {
     BlockEnvironment,
     BlockStorageDiff,
     IncludedHeadRecord,
+    RpcBlock,
     StorageDiffLog,
     StorageSlot,
     StorageSlots
@@ -29,6 +30,7 @@ export type {
     BlockEnvironment,
     BlockStorageDiff,
     IncludedHeadRecord,
+    RpcBlock,
     StateRequestParams,
     StorageDiffCatchUp,
     StorageDiffLog,
@@ -49,6 +51,10 @@ export const PARSE_ERROR = -32700;
 
 /** A retained block: the record plus the addresses whose logs it holds. */
 export interface StagedBlock extends BlockStorageDiff {
+    /** The block as the upstream returned it, with full transactions. */
+    raw: RpcBlock;
+    /** Its receipts, fetched on first use and shared by every reader. */
+    receipts?: Promise<unknown[]>;
     /** Header bloom: tells which addresses may have logs in this block. */
     logsBloom: string;
     /** Bloom-matching addresses `eth_getLogs` was asked about; an empty answer counts. */
@@ -57,6 +63,8 @@ export interface StagedBlock extends BlockStorageDiff {
 
 /** The parts of an upstream block header the service follows. */
 export interface BlockHeader {
+    /** The block as the upstream returned it, with full transactions. */
+    raw: RpcBlock;
     number: bigint;
     hash: string;
     parentHash: string;
@@ -357,6 +365,7 @@ export function parseHeader(value: unknown): BlockHeader {
         throw new Error("Malformed block from upstream");
     }
     return {
+        raw: value as RpcBlock,
         number: BigInt(value.number),
         hash: value.hash.toLowerCase(),
         parentHash: value.parentHash.toLowerCase(),
@@ -409,6 +418,26 @@ export interface StateRequest {
     /** Balance and nonce. */
     account: boolean;
     code: boolean;
+}
+
+/** `scp_getBlock`'s block: `"latest"`, a quantity, or a 32-byte hash. */
+export type ParsedBlockSelector =
+    | { kind: "latest" }
+    | { kind: "number"; number: bigint }
+    | { kind: "hash"; hash: string };
+
+export function parseBlockSelector(value: unknown): ParsedBlockSelector {
+    if (value === "latest") return { kind: "latest" };
+    // a 64-digit quantity is a hash
+    if (typeof value === "string" && HASH.test(value)) {
+        return { kind: "hash", hash: value.toLowerCase() };
+    }
+    if (typeof value === "string" && QUANTITY.test(value)) {
+        return { kind: "number", number: BigInt(value) };
+    }
+    throw invalidParams(
+        'block must be "latest", a hex quantity or a 32-byte hash'
+    );
 }
 
 export function parseBlockHash(value: unknown): string {

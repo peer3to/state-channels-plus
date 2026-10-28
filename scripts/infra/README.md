@@ -165,6 +165,35 @@ address a peer asks about:
   its transactions' traced writes (system calls, withdrawals) is not seen. The
   cache is not evicted.
 
+### Serving blocks, transactions and receipts
+
+The service keeps each retained block as the upstream returned it (full
+transactions), so a peer can read chain data from it instead of the node:
+
+- `scp_getBlock` with params `[block, full?]`, `block` being `"latest"`, a hex
+  quantity or a 32-byte hash, returns the block exactly as the upstream's
+  `eth_getBlockBy*` does, with full or hashed transactions (`full`, default
+  false). A block that is not retained answers `null`.
+- `scp_getTransaction` with `[hash]` returns a transaction of a retained block
+  as `eth_getTransactionByHash` does, or `null`.
+- `scp_getTransactionReceipt` with `[hash]` returns its receipt as
+  `eth_getTransactionReceipt` does, or `null`. A block's receipts are fetched
+  once, on the first read of any of them, with `eth_getBlockReceipts` (anvil and
+  Asset Hub eth-rpc both serve it); an upstream that refuses it gets one batch
+  of `eth_getTransactionReceipt`.
+
+A `null` does not mean the chain lacks the block or transaction: it may be newer
+than the service's head or older than its window, so a caller asks the node then.
+
+### Upstream round trips
+
+Fields a `scp_getState` has to read from the upstream go out as one JSON-RPC
+batch array (anvil and Asset Hub eth-rpc both accept arrays), so a read of many
+fields is one round trip. Per new block the service makes one block fetch (with
+full transactions), plus one more after the trace of a block with transactions,
+to check that the trace was of the block still at that number. A parent inside
+the retained window is not fetched.
+
 ### Block environment
 
 Every record, and `head` of the catch-up, carries the block fields a local EVM

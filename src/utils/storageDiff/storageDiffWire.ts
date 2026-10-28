@@ -66,6 +66,16 @@ export interface IncludedHeadRecord {
     hash: string;
 }
 
+/** A block as the upstream's `eth_getBlockBy*` returns it, transactions as objects or hashes. */
+export type RpcBlock = Record<string, unknown> & {
+    number: string;
+    hash: string;
+    transactions: unknown[];
+};
+
+/** Which block `scp_getBlock` answers: the best head, or one by number or hash. */
+export type BlockSelector = "latest" | string;
+
 /** What a peer asks of one account: all of it, or only the listed parts. */
 export interface StateRequestParams {
     address: AccountAddress;

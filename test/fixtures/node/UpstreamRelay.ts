@@ -40,6 +40,7 @@ export class UpstreamRelay {
     // Params of every request seen, per method, in arrival order.
     private readonly seenParams = new Map<UpstreamMethod, unknown[][]>();
     private connections = 0;
+    private roundTripCount = 0;
     private refusing = false;
     private hold?: Hold;
     private failing?: { method: UpstreamMethod; remaining: number };
@@ -72,6 +73,11 @@ export class UpstreamRelay {
     /** The params of every `method` request that reached the relay. */
     paramsOf(method: UpstreamMethod): unknown[][] {
         return [...(this.seenParams.get(method) ?? [])];
+    }
+
+    /** Frames the service sent: a batch array is one. */
+    get roundTrips(): number {
+        return this.roundTripCount;
     }
 
     /** Connections the service opened, refused ones included. */
@@ -121,6 +127,14 @@ export class UpstreamRelay {
         );
     }
 
+    private count(request: RelayedRequest): void {
+        this.seen.set(request.method, this.requestCount(request.method) + 1);
+        this.seenParams.set(request.method, [
+            ...(this.seenParams.get(request.method) ?? []),
+            request.params
+        ]);
+    }
+
     private relay(client: WebSocket): void {
         this.connections++;
         if (this.refusing) {
@@ -144,15 +158,34 @@ export class UpstreamRelay {
         });
         client.on("message", (data) => {
             const frame = data.toString();
-            const request = JSON.parse(frame) as RelayedRequest;
-            this.seen.set(
-                request.method,
-                this.requestCount(request.method) + 1
-            );
-            this.seenParams.set(request.method, [
-                ...(this.seenParams.get(request.method) ?? []),
-                request.params
-            ]);
+            const parsed = JSON.parse(frame) as
+                | RelayedRequest
+                | RelayedRequest[];
+            this.roundTripCount++;
+            // a batch array is counted per call and forwarded whole
+            if (Array.isArray(parsed)) {
+                for (const call of parsed) this.count(call);
+                const hold = this.hold;
+                // a held call holds the whole batch it travels in
+                if (
+                    hold &&
+                    !hold.forward &&
+                    parsed.some(
+                        (call) =>
+                            call.method === hold.method &&
+                            call.params[0] === hold.firstParam
+                    )
+                ) {
+                    this.hold = undefined;
+                    hold.forward = () => forward(frame);
+                    hold.onArrive();
+                    return;
+                }
+                forward(frame);
+                return;
+            }
+            const request = parsed;
+            this.count(request);
             if (this.cutting?.method === request.method) {
                 if (--this.cutting.remaining === 0) this.cutting = undefined;
                 client.terminate();

@@ -123,6 +123,44 @@ export class UpstreamRpcClient {
         });
     }
 
+    /**
+     * Sends `calls` as one JSON-RPC batch array: one round trip. Each call
+     * settles on its own, so one error answer fails only its call.
+     */
+    requestBatch(
+        calls: { method: string; params: unknown[] }[]
+    ): Promise<unknown>[] {
+        if (this.closed || this.socket.readyState !== WebSocket.OPEN) {
+            return calls.map(() =>
+                Promise.reject(
+                    new UpstreamLostError("Upstream connection is not open")
+                )
+            );
+        }
+        const frame: unknown[] = [];
+        const settled = calls.map(
+            ({ method, params }) =>
+                new Promise<unknown>((resolve, reject) => {
+                    const id = ++this.nextRequestId;
+                    const timer = setTimeout(() => {
+                        this.pending.delete(id);
+                        reject(
+                            new UpstreamTimeoutError(
+                                `Upstream ${method} timed out`
+                            )
+                        );
+                    }, UPSTREAM_REQUEST_TIMEOUT_MS);
+                    this.pending.set(id, { resolve, reject, timer });
+                    frame.push({ jsonrpc: "2.0", id, method, params });
+                })
+        );
+        this.socket.send(
+            JSON.stringify(frame),
+            (error) => error && this.lose(error.message)
+        );
+        return settled;
+    }
+
     /** Idempotent: rejects pending requests with `reason`, drops the socket. */
     close(reason: Error): void {
         if (this.closed) return;
@@ -144,7 +182,20 @@ export class UpstreamRpcClient {
 
     private onMessage(raw: string): void {
         try {
-            const message: unknown = JSON.parse(raw);
+            const parsed: unknown = JSON.parse(raw);
+            // a batch answer: one message per call
+            if (Array.isArray(parsed)) {
+                for (const answer of parsed) this.onAnswer(answer);
+                return;
+            }
+            this.onAnswer(parsed);
+        } catch (error) {
+            this.lose(error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    private onAnswer(message: unknown): void {
+        try {
             if (!isObject(message))
                 throw new Error("Malformed upstream message");
             // `eth_subscription` and Substrate's `state_storage` alike.
