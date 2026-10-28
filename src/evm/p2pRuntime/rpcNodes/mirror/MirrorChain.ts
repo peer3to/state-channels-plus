@@ -26,9 +26,10 @@ const MAX_APPLIED_BLOCKS = 128;
 /**
  * Longest a read waits for the mirror to reach a block the peer saw (its own
  * transaction, or a block a node announced) before it goes to the RPC node.
- * Over 854 waits in the shadow runs the head took 2 ms at the median, 16 ms at
- * the 99th percentile and 52 ms at most to arrive after the node's
- * announcement. The bound is for a service that is stuck, and is not below
+ * Over 1,430 waits in the shadow runs (15 E2E files, inline) the head took
+ * 3 ms at the median, 18 ms at the 99th percentile and 105 ms at most to
+ * arrive after the node's announcement (371 waits in worker mode: 3, 23 and 28
+ * ms). The bound is for a service that is stuck, and is not below
  * 4 s, two Asset Hub blocks.
  */
 const OWN_TRANSACTION_WAIT_MS = 4_000;

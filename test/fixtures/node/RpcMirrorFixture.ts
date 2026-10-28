@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: private node, storage diff service and proxies for the RPC mirror cases; declarations live in RpcMirror.test.ts
+import { installMirrorShadowCheck } from "../MirrorShadowCheck";
 import { RpcNodeProxy } from "./RpcNodeProxy";
 import {
     deployNumberStorage,
@@ -71,6 +72,12 @@ export async function withMirrorSession<T>(
                 {},
                 { level: "error", attachErrorListener: false }
             );
+            // diagnostic mode: compare every local read with the node's
+            if (process.env.MIRROR_SHADOW_LOG)
+                installMirrorShadowCheck(
+                    chain._getConnection().url,
+                    process.env.MIRROR_SHADOW_LOG
+                );
             const rpcNode = new RpcNodeProvider(node.url, logger);
             const provider = new MirrorRpcProvider([rpcNode], logger, {
                 storageDiffUrl: withoutService ? undefined : service.url,

@@ -976,7 +976,9 @@ describe("E2E: Multiple RPC nodes", function () {
             // the reconnect backoff and the lagging node keep the channel
             // idle past the default first-block timeout, whose dispute
             // would reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME },
+            // the subject is the nodes' head answers; the service would answer them
+            configOverrides: { STORAGE_DIFF_URL: "" }
         });
         const [first, backup] = h.getRpcNodeProxies(proxied);
         const validation = h.control(h.getPeer(proxied)).validation;
@@ -1041,7 +1043,9 @@ describe("E2E: Multiple RPC nodes", function () {
             // the head retries, the reconnect backoff and the lagging node
             // keep the channel idle past the default first-block timeout,
             // whose dispute would reject the later top-up
-            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME },
+            // the subject is the nodes' head answers; the service would answer them
+            configOverrides: { STORAGE_DIFF_URL: "" }
         });
         const [first, backup] = h.getRpcNodeProxies(proxied);
         const validation = h.control(h.getPeer(proxied)).validation;
