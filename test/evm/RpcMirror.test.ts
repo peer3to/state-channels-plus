@@ -72,6 +72,31 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
+    it("applies a snapshot that reaches the mirror before the reply of the subscription that asked for it", async function () {
+        await withMirrorSession(async (session) => {
+            // the mirror follows the first contract before the second is deployed
+            const first = await deployMirroredStorage(session);
+            await first.storage.getValue();
+            const second = await deployMirroredStorage(session);
+            await (await second.storage.setValue(5n)).wait();
+            const held = session.service.holdReplies(
+                "scp_subscribeContractStorage"
+            );
+
+            const read = session.provider.getStorage(second.address, 0);
+            // the snapshot is pushed while the subscribe reply is held back
+            while (held.heldReplies() === 0) await sleep(20);
+            await sleep(500);
+            held.release();
+
+            expect(BigInt(await read)).to.equal(5n);
+            expect(serviceRequests(session, "scp_getState")).to.have.length(0);
+            expect(session.provider.mirrorStatistics).to.include({
+                lazyReads: 0
+            });
+        });
+    });
+
     it("asks the service for exactly the missing fields, at the head block, when no snapshot comes", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);
