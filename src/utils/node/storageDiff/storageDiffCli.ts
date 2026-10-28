@@ -31,7 +31,8 @@ export function parseStorageDiffArgs(
             "included-relay-url": { type: "string" },
             "included-asset-hub-url": { type: "string" },
             "included-para-id": { type: "string" },
-            "included-dev-depth": { type: "string" }
+            "included-dev-depth": { type: "string" },
+            "cache-dir": { type: "string" }
         },
         strict: true,
         allowPositionals: false
@@ -85,6 +86,9 @@ export function parseStorageDiffArgs(
                 "max-peer-buffered-bytes",
                 values["max-peer-buffered-bytes"]
             )
+        }),
+        ...(values["cache-dir"] !== undefined && {
+            cacheDir: values["cache-dir"]
         }),
         ...(includedHead && { includedHead })
     };

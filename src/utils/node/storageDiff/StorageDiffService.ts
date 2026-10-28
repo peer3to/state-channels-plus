@@ -27,6 +27,11 @@ import {
     type StateRequest,
     type SubscriptionId
 } from "./blockStorageDiff";
+import {
+    ChainMovedError,
+    ContractBackfill,
+    type BackfillCost
+} from "./ContractBackfill";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import {
@@ -35,6 +40,7 @@ import {
     type StateField,
     type StateValue
 } from "./StateCache";
+import { StateStore, type PersistedBlock } from "./StateStore";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
 import {
     UpstreamLostError,
@@ -74,6 +80,14 @@ export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
  * tens of milliseconds; the bound is for a service that is stuck.
  */
 export const HEAD_WAIT_MS = 2_000;
+/** Quiet time before the cache is written to disk, so a burst of blocks is one write. */
+export const SAVE_DEBOUNCE_MS = 500;
+/** Newest blocks the file keeps, to undo them if the saved head is orphaned. */
+const PERSISTED_BLOCKS = 64;
+/** Rounds a backfill may take to catch up with a head that keeps moving. */
+const BACKFILL_ROUNDS = 100;
+/** Times a backfill starts over after a reorg moved blocks under it. */
+const BACKFILL_RESTARTS = 5;
 const MAX_PEER_PAYLOAD_BYTES = 1024 * 1024;
 /** How long a cut peer gets to drain the notice before the socket drops. */
 const PEER_CLOSE_GRACE_MS = 10_000;
@@ -105,7 +119,37 @@ export interface StorageDiffServiceOptions {
      * pushed and catch-up reports `null`.
      */
     includedHead?: AIncludedHeadStrategy;
+    /**
+     * Directory the cache is kept in, so a restart resumes from the saved head.
+     * Without one the cache lives in memory only.
+     */
+    cacheDir?: string;
     logger: Logger;
+}
+
+/** What one contract's backfill cost and found. */
+export interface BackfillRecord extends BackfillCost {
+    address: AccountAddress;
+    /** Block the contract's code first appears at; undefined for an account without code. */
+    deployBlock?: string;
+    /** Blocks listed, and how many of them were traced. */
+    blocks: number;
+    tracedBlocks: number;
+    /** Slots found written. */
+    slots: number;
+    /** Requests of the final balance, nonce and code read. */
+    stateReads: number;
+    milliseconds: number;
+}
+
+/** Counters of the service's own upstream work for state, for measurement. */
+export interface StorageDiffStatistics {
+    /** Fields a read found neither cached nor in a complete account, fetched one by one. */
+    lazyFieldFetches: number;
+    /** Reads (`scp_getState` calls) that fetched at least one such field. */
+    lazyReads: number;
+    backfills: BackfillRecord[];
+    snapshotsSent: number;
 }
 
 /** One connected peer and the subscriptions it opened. */
@@ -115,6 +159,10 @@ export interface StorageDiffPeer {
     nextSubscription: number;
     /** Cut for falling behind; gets nothing more. */
     closing: boolean;
+    /** Accounts whose snapshot this peer has been sent. */
+    snapshotted: Set<AccountAddress>;
+    /** Run once the reply to the request in hand is sent. */
+    afterReply: (() => void)[];
 }
 
 /** Identifies one state fetch in flight: a `StateField` as text. */
@@ -188,6 +236,16 @@ export class StorageDiffService {
     private included?: IncludedHead;
     // Hash of the included head already reported as off the best chain.
     private divergenceReported?: string;
+    // Backfills in flight, one per account.
+    private readonly backfills = new Map<AccountAddress, Promise<void>>();
+    private readonly store?: StateStore;
+    private saveTimer?: ReturnType<typeof setTimeout>;
+    private readonly counters: StorageDiffStatistics = {
+        lazyFieldFetches: 0,
+        lazyReads: 0,
+        backfills: [],
+        snapshotsSent: 0
+    };
     // Reads waiting for the best head to reach the block their caller saw.
     private readonly headWaiters = new Set<() => void>();
     // Whether the upstream answers eth_getBlockReceipts; one failed call turns it off.
@@ -213,6 +271,7 @@ export class StorageDiffService {
     ) {
         this.logger = options.logger;
         this.includedStrategy = options.includedHead;
+        if (options.cacheDir) this.store = new StateStore(options.cacheDir);
         this.upstreamUrl = options.upstreamUrl;
         this.upstreamEndpoint = upstreamEndpoint;
         this.host = options.host ?? "127.0.0.1";
@@ -274,6 +333,14 @@ export class StorageDiffService {
         return `ws://${bound}:${address.port}`;
     }
 
+    /** The counters of lazy state reads and backfills so far. */
+    get statistics(): StorageDiffStatistics {
+        return {
+            ...this.counters,
+            backfills: [...this.counters.backfills]
+        };
+    }
+
     /** Idempotent: closes peers, the upstream socket and pending work. */
     close(): Promise<void> {
         return this.teardown();
@@ -287,6 +354,14 @@ export class StorageDiffService {
             if (!this.peers.has(peer.socket)) throw new Error("Peer closed");
             const id = "0x" + (++peer.nextSubscription).toString(16);
             peer.subscriptions.set(id, addresses);
+            // after the reply: the peer learns the id before the snapshots
+            peer.afterReply.push(() => {
+                void this.enqueue(async () => {
+                    this.sendSnapshots(peer, addresses);
+                    for (const address of addresses)
+                        this.startBackfill(address);
+                });
+            });
             return id;
         });
     }
@@ -515,6 +590,7 @@ export class StorageDiffService {
                         )
                 }
             );
+            await this.resumeFromStore();
             await this.includedStrategy?.start({
                 logger: this.logger,
                 request: (method, params) => this.request(method, params),
@@ -626,7 +702,9 @@ export class StorageDiffService {
             socket,
             subscriptions: new Map(),
             nextSubscription: 0,
-            closing: false
+            closing: false,
+            snapshotted: new Set(),
+            afterReply: []
         };
         const methods = new StorageDiffRpcMethods(this, peer);
         this.peers.set(socket, peer);
@@ -685,6 +763,8 @@ export class StorageDiffService {
             const result = await methods[endpoint](request.params);
             if (!notification)
                 this.send(socket, { jsonrpc: "2.0", id, result });
+            const peer = this.peers.get(socket);
+            for (const job of peer?.afterReply.splice(0) ?? []) job();
         } catch (error) {
             const code = (error as { code?: unknown }).code;
             if (notification) return;
@@ -915,6 +995,10 @@ export class StorageDiffService {
         // Cached values follow the chain: back over the orphans, then forward.
         if (below) {
             this.stateCache.clear();
+            // nothing is complete now: peers get new snapshots after new backfills
+            for (const peer of this.peers.values()) peer.snapshotted.clear();
+            for (const address of this.subscribedAddresses())
+                this.startBackfill(address);
         } else {
             for (let i = canonical.length - 1; i > ancestor; i--) {
                 this.stateCache.applyBackward(canonical[i]);
@@ -928,6 +1012,7 @@ export class StorageDiffService {
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
         for (const waiter of [...this.headWaiters]) waiter();
+        this.scheduleSave();
         const head = canonical[canonical.length - 1];
         this.checkIncludedAncestry();
         this.includedStrategy?.bestHeadCommitted({
@@ -1016,6 +1101,332 @@ export class StorageDiffService {
         return this.canonical.findIndex((record) => record.hash === blockHash);
     }
 
+    /** Starts rebuilding `address` from its history, unless that is done or running. */
+    private startBackfill(address: AccountAddress): void {
+        if (this.backfills.has(address) || this.stateCache.isComplete(address))
+            return;
+        const job = this.runBackfill(address)
+            .catch((error) =>
+                this.logger.warn(
+                    "Backfill failed; the account is read lazily",
+                    {
+                        address,
+                        reason: this.sanitize(describeError(error))
+                    }
+                )
+            )
+            .finally(() => this.backfills.delete(address));
+        this.backfills.set(address, job);
+    }
+
+    /**
+     * Reads the contract's history up to the best head, in rounds: each round
+     * covers the blocks that arrived during the one before, until the covered
+     * block is inside the retained window, where the rest is applied from the
+     * records. A covered block that a reorg orphaned starts over.
+     */
+    private async runBackfill(address: AccountAddress): Promise<void> {
+        const started = Date.now();
+        const upstream = {
+            request: (method: string, params: unknown[]) =>
+                this.request(method, params),
+            requestBatch: (calls: { method: string; params: unknown[] }[]) =>
+                this.upstream
+                    ? this.upstream.requestBatch(calls)
+                    : calls.map(() =>
+                          Promise.reject(
+                              new UpstreamLostError("Upstream is not open")
+                          )
+                      )
+        };
+        let restarts = 0;
+        let covered: { number: bigint; hash: string } | undefined;
+        let storage: Record<string, string> = {};
+        let record: BackfillRecord | undefined;
+        for (let round = 0; round < BACKFILL_ROUNDS; round++) {
+            if (this.stopping.signal.aborted) return;
+            const tipRecord = this.canonical[this.canonical.length - 1];
+            const tip = {
+                number: BigInt(tipRecord.number),
+                hash: tipRecord.hash
+            };
+            const backfill = new ContractBackfill(upstream, address);
+            let found:
+                | Awaited<ReturnType<ContractBackfill["storageThrough"]>>
+                | undefined;
+            let deploy: bigint | undefined;
+            let at: { number: bigint; hash: string };
+            let reads: unknown[];
+            try {
+                if (!covered) {
+                    deploy = await backfill.findDeployBlock(tip.number);
+                    if (deploy !== undefined)
+                        found = await backfill.storageThrough(deploy, tip);
+                } else if (tip.number > covered.number) {
+                    found = await backfill.storageThrough(
+                        covered.number + 1n,
+                        tip,
+                        covered.hash
+                    );
+                }
+                at = found ? tip : (covered ?? tip);
+                // the account's scalar fields at the block the storage is through
+                reads = await Promise.all(
+                    upstream.requestBatch(
+                        (
+                            [
+                                "eth_getBalance",
+                                "eth_getTransactionCount",
+                                "eth_getCode"
+                            ] as const
+                        ).map((method) => ({
+                            method,
+                            params: [address, { blockHash: at.hash }]
+                        }))
+                    )
+                );
+            } catch (error) {
+                // a reorg moved blocks under the read: read the range again
+                if (
+                    !(
+                        error instanceof ChainMovedError ||
+                        error instanceof UpstreamRequestError
+                    ) ||
+                    ++restarts > BACKFILL_RESTARTS
+                )
+                    throw error;
+                covered = undefined;
+                storage = {};
+                record = undefined;
+                continue;
+            }
+            const roundCost = backfill.spent;
+            if (!record) {
+                record = {
+                    address,
+                    codeProbes: 0,
+                    blockReads: 0,
+                    traces: 0,
+                    roundTrips: 0,
+                    blocks: 0,
+                    tracedBlocks: 0,
+                    slots: 0,
+                    stateReads: 0,
+                    milliseconds: 0
+                };
+            }
+            record.codeProbes += roundCost.codeProbes;
+            record.blockReads += roundCost.blockReads;
+            record.traces += roundCost.traces;
+            record.roundTrips += roundCost.roundTrips + 1;
+            record.stateReads += 3;
+            record.blocks += found?.blocks ?? 0;
+            record.tracedBlocks += found?.tracedBlocks ?? 0;
+            if (deploy !== undefined) record.deployBlock = toQuantity(deploy);
+            Object.assign(storage, found?.storage);
+            covered = at;
+            const outcome = await this.enqueue(() =>
+                this.completeBackfill(address, covered!, storage, reads)
+            );
+            if (outcome === "done") {
+                record.slots = Object.keys(storage).length;
+                record.milliseconds = Date.now() - started;
+                this.counters.backfills.push(record);
+                this.logger.info("Backfilled an account", { ...record });
+                return;
+            }
+            if (outcome === "restart") {
+                covered = undefined;
+                storage = {};
+                record = undefined;
+            }
+        }
+        throw new Error("The chain kept moving under the backfill");
+    }
+
+    /**
+     * Makes the account complete once the covered block is inside the window:
+     * the blocks after it come from the records. "again" asks for one more
+     * round, "restart" for a new backfill after a reorg dropped the block.
+     */
+    private async completeBackfill(
+        address: AccountAddress,
+        covered: { number: bigint; hash: string },
+        storage: Record<string, string>,
+        reads: unknown[]
+    ): Promise<"done" | "again" | "restart"> {
+        const index = this.retainedIndex(covered.hash);
+        if (index < 0) {
+            const floor = BigInt(this.canonical[0].number);
+            if (covered.number >= floor) return "restart";
+            // below the window: the blocks up to it are still to be read
+            const current = await this.fetchHeader(covered.number);
+            return current.hash === covered.hash ? "again" : "restart";
+        }
+        const [balance, nonce, code] = reads as string[];
+        const scratch = new StateCache();
+        scratch.setComplete(
+            address,
+            {
+                balance: normalizeBalance(balance),
+                nonce: Number(BigInt(nonce)),
+                code: code.toLowerCase()
+            },
+            storage
+        );
+        for (let i = index + 1; i < this.canonical.length; i++) {
+            scratch.applyForward(this.canonical[i]);
+        }
+        const account = scratch.accountOf(address);
+        this.stateCache.setComplete(
+            address,
+            {
+                balance: account.balance!,
+                nonce: account.nonce!,
+                code: account.code!
+            },
+            account.storage ?? {}
+        );
+        for (const peer of this.peers.values()) {
+            if (!peer.closing) this.sendSnapshots(peer, [address]);
+        }
+        this.scheduleSave();
+        return "done";
+    }
+
+    /**
+     * Sends `peer` the complete state of those of `addresses` it subscribed
+     * to and has no snapshot of yet, at the best head, one message per
+     * subscription.
+     */
+    private sendSnapshots(
+        peer: StorageDiffPeer,
+        addresses: AccountAddress[]
+    ): void {
+        const head = this.canonical[this.canonical.length - 1];
+        for (const [subscription, subscribed] of peer.subscriptions) {
+            const accounts: AccountDiffs = {};
+            for (const address of addresses) {
+                if (
+                    !subscribed.includes(address) ||
+                    peer.snapshotted.has(address) ||
+                    !this.stateCache.isComplete(address)
+                )
+                    continue;
+                accounts[address] = this.stateCache.accountOf(address);
+                peer.snapshotted.add(address);
+            }
+            if (Object.keys(accounts).length === 0) continue;
+            this.counters.snapshotsSent++;
+            this.send(peer.socket, {
+                jsonrpc: "2.0",
+                method: "scp_snapshot",
+                params: {
+                    subscription,
+                    result: {
+                        block: { number: head.number, hash: head.hash },
+                        accounts
+                    }
+                }
+            });
+            this.dropIfLagging(peer);
+        }
+    }
+
+    /** The cache and its newest blocks, as the file keeps them. */
+    private async saveNow(): Promise<void> {
+        const store = this.store;
+        if (!store || this.canonical.length === 0) return;
+        const cached = this.stateCache.cachedAddresses();
+        const only = (diffs: AccountDiffs): AccountDiffs =>
+            Object.fromEntries(
+                Object.entries(diffs).filter(([address]) => cached.has(address))
+            );
+        const head = this.canonical[this.canonical.length - 1];
+        const recent: PersistedBlock[] = this.canonical
+            .slice(-PERSISTED_BLOCKS)
+            .map((record) => ({
+                number: record.number,
+                hash: record.hash,
+                parentHash: record.parentHash,
+                pre: only(record.pre),
+                post: only(record.post)
+            }));
+        try {
+            await store.save({
+                head: { number: head.number, hash: head.hash },
+                cache: this.stateCache.exportAll(),
+                recent
+            });
+        } catch (error) {
+            this.logger.warn("Cannot save the cache", {
+                reason: this.sanitize(describeError(error))
+            });
+        }
+    }
+
+    private scheduleSave(): void {
+        if (!this.store || this.saveTimer || this.stopping.signal.aborted)
+            return;
+        this.saveTimer = setTimeout(() => {
+            this.saveTimer = undefined;
+            void this.saveNow();
+        }, SAVE_DEBOUNCE_MS);
+        this.saveTimer.unref();
+    }
+
+    /**
+     * Brings the saved cache to the best head: undo the saved blocks a reorg
+     * dropped, trace the blocks between the saved head and the retained
+     * window, then apply the window's records. A file that does not lead
+     * there is dropped.
+     */
+    private async resumeFromStore(): Promise<void> {
+        const saved = await this.store?.load();
+        if (!saved) return;
+        try {
+            this.stateCache.importAll(saved.cache);
+            const floor = BigInt(this.canonical[0].number);
+            let index = -1;
+            let below: { number: bigint } | undefined;
+            for (const block of [...saved.recent].reverse()) {
+                index = this.retainedIndex(block.hash);
+                if (index >= 0) break;
+                if (BigInt(block.number) < floor) {
+                    const current = await this.fetchHeader(
+                        BigInt(block.number)
+                    );
+                    if (current.hash === block.hash) {
+                        below = { number: BigInt(block.number) };
+                        break;
+                    }
+                }
+                // dropped by a reorg since it was saved
+                this.stateCache.applyBackward(block);
+            }
+            if (index < 0 && !below)
+                throw new Error("No saved block is on the chain");
+            if (below) {
+                const headers: BlockHeader[] = [];
+                for (let n = below.number + 1n; n < floor; n++)
+                    headers.push(await this.fetchHeader(n));
+                for (const record of await this.stage(headers))
+                    this.stateCache.applyForward(record);
+            }
+            for (let i = index + 1; i < this.canonical.length; i++)
+                this.stateCache.applyForward(this.canonical[i]);
+            this.logger.info("Resumed the cache from disk", {
+                savedHead: saved.head.number,
+                head: this.canonical[this.canonical.length - 1].number
+            });
+        } catch (error) {
+            this.stateCache.clear();
+            this.logger.warn("Dropped the saved cache", {
+                reason: this.sanitize(describeError(error))
+            });
+        }
+    }
+
     private fieldsOf(request: StateRequest): StateField[] {
         const { address } = request;
         return [
@@ -1074,6 +1485,8 @@ export class StorageDiffService {
                 missing.set(key, field);
         }
         if (missing.size === 0) return;
+        this.counters.lazyReads++;
+        this.counters.lazyFieldFetches += missing.size;
         const entries = [...missing];
         const answers = this.upstream
             ? this.upstream.requestBatch(
@@ -1264,6 +1677,8 @@ export class StorageDiffService {
     private teardown(reason?: Error): Promise<void> {
         this.shutdown ??= (async () => {
             this.stopping.abort();
+            if (this.saveTimer) clearTimeout(this.saveTimer);
+            await this.saveNow();
             this.includedStrategy?.close();
             this.upstream?.close(
                 reason ?? new Error("StorageDiffService closed")

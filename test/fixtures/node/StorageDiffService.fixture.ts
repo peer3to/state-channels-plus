@@ -6,6 +6,7 @@ import type {
     AccountAddress,
     BlockStorageDiff,
     IncludedHeadRecord,
+    StorageDiffSnapshot,
     SubscriptionId
 } from "@/utils/node/storageDiff/blockStorageDiff";
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
@@ -19,12 +20,14 @@ import {
     type SimpleNumberStorage
 } from "@typechain-types";
 import {
+    getAddress,
     id,
     toBeHex,
     type JsonRpcProvider,
     type JsonRpcSigner,
     type TransactionReceipt
 } from "ethers";
+import { gunzipSync } from "node:zlib";
 import WebSocket from "ws";
 
 /** `SimpleNumberStorage.value` lives in storage slot 0. */
@@ -69,6 +72,15 @@ export class StorageDiffClient {
     private readonly recordWaiters = new Map<
         SubscriptionId,
         Waiter<BlockStorageDiff>
+    >();
+    // Snapshots pushed to a subscription and not read yet, in arrival order.
+    private readonly snapshots = new Map<
+        SubscriptionId,
+        StorageDiffSnapshot[]
+    >();
+    private readonly snapshotWaiters = new Map<
+        SubscriptionId,
+        Waiter<StorageDiffSnapshot>
     >();
     // `scp_includedHead` params not yet read, in arrival order.
     private readonly includedHeads: IncludedHeadRecord[] = [];
@@ -159,6 +171,20 @@ export class StorageDiffClient {
         return (await this.catchUp(addresses, fromBlock)).records;
     }
 
+    /** The next snapshot pushed to `subscription`. */
+    nextSnapshot(subscription: SubscriptionId): Promise<StorageDiffSnapshot> {
+        const queued = this.snapshots.get(subscription)?.shift();
+        if (queued) return Promise.resolve(queued);
+        return new Promise((resolve) =>
+            this.snapshotWaiters.set(subscription, resolve)
+        );
+    }
+
+    /** Snapshots pushed to `subscription` and not read yet. */
+    unreadSnapshots(subscription: SubscriptionId): StorageDiffSnapshot[] {
+        return [...(this.snapshots.get(subscription) ?? [])];
+    }
+
     /** Pushed included heads not read yet, oldest first. */
     unreadIncludedHeads(): IncludedHeadRecord[] {
         return [...this.includedHeads];
@@ -240,6 +266,19 @@ export class StorageDiffClient {
             else this.includedHeads.push(message.params);
             return;
         }
+        if (message.method === "scp_snapshot") {
+            const { subscription, result } = message.params;
+            const waiter = this.snapshotWaiters.get(subscription);
+            if (waiter) {
+                this.snapshotWaiters.delete(subscription);
+                waiter(result);
+                return;
+            }
+            const queue = this.snapshots.get(subscription) ?? [];
+            queue.push(result);
+            this.snapshots.set(subscription, queue);
+            return;
+        }
         if (message.method === "scp_subscription") {
             const { subscription, result } = message.params;
             const waiter = this.recordWaiters.get(subscription);
@@ -271,6 +310,7 @@ export class StorageDiffClient {
 
 export type StorageDiffServiceSettings = {
     retention?: number;
+    cacheDir?: string;
     maxPeerBufferedBytes?: number;
     includedHead?: AIncludedHeadStrategy;
 };
@@ -453,4 +493,63 @@ export async function emitValue(
     const receipt = await response.wait();
     if (!receipt) throw new Error("emitValue was not mined");
     return receipt;
+}
+
+// Runtime: SSTORE(calldata[0:32], calldata[32:64]); STOP.
+const SLOT_WRITER_RUNTIME = "6020356000355500";
+const SLOT_WRITER_INITCODE =
+    "0x60" +
+    (SLOT_WRITER_RUNTIME.length / 2).toString(16).padStart(2, "0") +
+    "80600b6000396000f3" +
+    SLOT_WRITER_RUNTIME;
+
+/** Deploys a contract that writes any slot to any value, from calldata. */
+export async function deploySlotWriter(
+    signer: JsonRpcSigner
+): Promise<AccountAddress> {
+    const receipt = await (
+        await signer.sendTransaction({ data: SLOT_WRITER_INITCODE })
+    ).wait();
+    if (!receipt?.contractAddress) throw new Error("Writer not deployed");
+    return receipt.contractAddress.toLowerCase();
+}
+
+/** The 32-byte key of slot number `slot`. */
+export function slotKey(slot: number): string {
+    return toBeHex(slot, 32);
+}
+
+export async function writeSlot(
+    signer: JsonRpcSigner,
+    writer: AccountAddress,
+    slot: number,
+    value: bigint
+): Promise<TransactionReceipt> {
+    const receipt = await (
+        await signer.sendTransaction({
+            to: writer,
+            data: slotKey(slot) + storageWord(value).slice(2)
+        })
+    ).wait();
+    if (!receipt) throw new Error("writeSlot was not mined");
+    return receipt;
+}
+
+/** An account as anvil's `anvil_dumpState` lists it: the test-only oracle of a complete cache. */
+export async function dumpedAccount(
+    provider: JsonRpcProvider,
+    address: AccountAddress
+): Promise<{
+    balance: string;
+    nonce: number;
+    code: string;
+    storage: Record<string, string>;
+}> {
+    const dump = (await provider.send("anvil_dumpState", [])) as string;
+    const state = JSON.parse(
+        gunzipSync(Buffer.from(dump.slice(2), "hex")).toString()
+    );
+    const account =
+        state.accounts[address] ?? state.accounts[getAddress(address)];
+    return account ?? { balance: "0x0", nonce: 0, code: "0x", storage: {} };
 }

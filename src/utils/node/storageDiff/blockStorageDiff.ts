@@ -32,6 +32,7 @@ export type {
     IncludedHeadRecord,
     RpcBlock,
     StateRequestParams,
+    StorageDiffSnapshot,
     StorageDiffCatchUp,
     StorageDiffLog,
     StorageDiffState,

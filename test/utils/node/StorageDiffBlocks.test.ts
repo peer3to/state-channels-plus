@@ -163,8 +163,7 @@ describe("StorageDiffService blocks", function () {
     it("fetches a traced head once and checks it once after its trace", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([address]);
+            const subscription = await client.subscribe([]);
             const byNumber = relay.requestCount("eth_getBlockByNumber");
 
             const receipt = await setValue(storage, 3n);

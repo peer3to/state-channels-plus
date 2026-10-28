@@ -66,6 +66,22 @@ export interface IncludedHeadRecord {
     hash: string;
 }
 
+/** A block named by number and hash: what a snapshot is anchored to. */
+export interface BlockAnchor {
+    number: string;
+    hash: string;
+}
+
+/**
+ * The complete state of the subscribed accounts at `block`, pushed once per
+ * account when a subscription first covers it; the records that follow are
+ * the changes after `block`.
+ */
+export interface StorageDiffSnapshot {
+    block: BlockAnchor;
+    accounts: AccountDiffs;
+}
+
 /** A block as the upstream's `eth_getBlockBy*` returns it, transactions as objects or hashes. */
 export type RpcBlock = Record<string, unknown> & {
     number: string;

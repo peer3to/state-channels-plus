@@ -1,6 +1,7 @@
 import {
     ZERO_WORD,
     type AccountAddress,
+    type AccountDiff,
     type AccountDiffs,
     type StorageSlot,
     type StorageWord
@@ -16,6 +17,13 @@ export type StateValue = string | number;
 
 /** The part of a record a cache follows: what a block wrote and what it replaced. */
 export type StateChange = { pre: AccountDiffs; post: AccountDiffs };
+
+/** The whole cache as plain data, for a file. */
+export type CachedState = {
+    scalars: [string, StateValue][];
+    slots: [AccountAddress, [StorageSlot, StorageWord][]][];
+    complete: AccountAddress[];
+};
 
 /** Identifies one scalar field: its kind and account. */
 type ScalarKey = string;
@@ -43,10 +51,16 @@ export class StateCache {
         AccountAddress,
         Map<StorageSlot, StorageWord>
     >();
+    // Accounts whose every written slot is cached: a slot not in the map was
+    // never written, so it reads as zero.
+    private readonly complete = new Set<AccountAddress>();
 
     get(field: StateField): StateValue | undefined {
         if (field.kind === "slot") {
-            return this.slots.get(field.address)?.get(field.slot);
+            return (
+                this.slots.get(field.address)?.get(field.slot) ??
+                (this.complete.has(field.address) ? ZERO_WORD : undefined)
+            );
         }
         return this.scalars.get(scalarKey(field.kind, field.address));
     }
@@ -64,6 +78,66 @@ export class StateCache {
     clear(): void {
         this.scalars.clear();
         this.slots.clear();
+        this.complete.clear();
+    }
+
+    /** Every account with a cached field. */
+    cachedAddresses(): Set<AccountAddress> {
+        const addresses = new Set<AccountAddress>(this.slots.keys());
+        for (const key of this.scalars.keys())
+            addresses.add(key.slice(key.indexOf(":") + 1));
+        return addresses;
+    }
+
+    isComplete(address: AccountAddress): boolean {
+        return this.complete.has(address);
+    }
+
+    /**
+     * Makes `account` the complete state of `address`: every slot it ever
+     * wrote, and its balance, nonce and code. Replaces what was cached.
+     */
+    setComplete(
+        address: AccountAddress,
+        account: { balance: string; nonce: number; code: string },
+        storage: Record<StorageSlot, StorageWord>
+    ): void {
+        this.scalars.set(scalarKey("balance", address), account.balance);
+        this.scalars.set(scalarKey("nonce", address), account.nonce);
+        this.scalars.set(scalarKey("code", address), account.code);
+        this.slots.set(address, new Map(Object.entries(storage)));
+        this.complete.add(address);
+    }
+
+    /** What is cached of `address`, in the shape of a record's `post`. */
+    accountOf(address: AccountAddress): AccountDiff {
+        const account: AccountDiff = {};
+        const balance = this.scalars.get(scalarKey("balance", address));
+        const nonce = this.scalars.get(scalarKey("nonce", address));
+        const code = this.scalars.get(scalarKey("code", address));
+        if (balance !== undefined) account.balance = balance as string;
+        if (nonce !== undefined) account.nonce = nonce as number;
+        if (code !== undefined) account.code = code as string;
+        const slots = this.slots.get(address);
+        if (slots) account.storage = Object.fromEntries(slots);
+        return account;
+    }
+
+    /** Everything cached, for a file. */
+    exportAll(): CachedState {
+        return {
+            scalars: [...this.scalars],
+            slots: [...this.slots].map(([address, map]) => [address, [...map]]),
+            complete: [...this.complete]
+        };
+    }
+
+    importAll(state: CachedState): void {
+        this.clear();
+        for (const [key, value] of state.scalars) this.scalars.set(key, value);
+        for (const [address, entries] of state.slots)
+            this.slots.set(address, new Map(entries));
+        for (const address of state.complete) this.complete.add(address);
     }
 
     /** Moves cached fields to the state after `change`. */
@@ -84,7 +158,8 @@ export class StateCache {
             }
             for (const [slot, word] of Object.entries(account.storage ?? {})) {
                 const cached = this.slots.get(address);
-                if (cached?.has(slot)) cached.set(slot, word);
+                if (cached && (cached.has(slot) || this.complete.has(address)))
+                    cached.set(slot, word);
             }
         }
     }
