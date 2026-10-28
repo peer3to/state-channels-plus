@@ -3,6 +3,7 @@ import {
     StorageDiffClient,
     withStorageDiffUpstream
 } from "../../fixtures/node/StorageDiffService.fixture";
+import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import { RelayIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/RelayIncludedHeadStrategy";
 import { parseStorageDiffArgs } from "@/utils/node/storageDiff/storageDiffCli";
@@ -44,6 +45,26 @@ describe("storage diff service flags", function () {
 
         expect(options.maxPeerBufferedBytes).to.equal(undefined);
         expect(options.includedHead).to.equal(undefined);
+    });
+
+    it("lists backfill blocks through the Asset Hub child trie with the relay flags, and leaves the default without them", function () {
+        const relay = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1",
+            "--included-relay-url",
+            "ws://127.0.0.1:2",
+            "--included-asset-hub-url",
+            "ws://127.0.0.1:3"
+        ]);
+        const dev = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1",
+            "--included-dev-depth",
+            "2"
+        ]);
+
+        expect(relay.backfillBlocks).to.be.instanceOf(ChildTrieBlockSource);
+        expect(dev.backfillBlocks).to.equal(undefined);
     });
 
     it("builds the relay strategy from the relay flags", function () {

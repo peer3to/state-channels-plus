@@ -1,3 +1,4 @@
+import { ChildTrieBlockSource } from "./backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "./includedHead/DepthIncludedHeadStrategy";
 import { RelayIncludedHeadStrategy } from "./includedHead/RelayIncludedHeadStrategy";
 import type { StorageDiffServiceOptions } from "./StorageDiffService";
@@ -53,12 +54,14 @@ export function parseStorageDiffArgs(
         );
     }
     let includedHead;
+    let backfillBlocks;
     if (relayFlags) {
         if (relayUrl === undefined || assetHubUrl === undefined) {
             throw new Error(
                 "--included-relay-url and --included-asset-hub-url are required together"
             );
         }
+        backfillBlocks = new ChildTrieBlockSource(assetHubUrl);
         includedHead = new RelayIncludedHeadStrategy({
             relayUrl,
             assetHubUrl,
@@ -90,6 +93,7 @@ export function parseStorageDiffArgs(
         ...(values["cache-dir"] !== undefined && {
             cacheDir: values["cache-dir"]
         }),
-        ...(includedHead && { includedHead })
+        ...(includedHead && { includedHead }),
+        ...(backfillBlocks && { backfillBlocks })
     };
 }

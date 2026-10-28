@@ -34,6 +34,8 @@ import {
     type BackfilledState,
     type BackfillCost
 } from "./ContractBackfill";
+import type ABackfillBlockSource from "./backfillBlocks/ABackfillBlockSource";
+import { ListedBlockSource } from "./backfillBlocks/ListedBlockSource";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import {
@@ -125,6 +127,11 @@ export interface StorageDiffServiceOptions {
      * pushed and catch-up reports `null`.
      */
     includedHead?: AIncludedHeadStrategy;
+    /**
+     * Where a backfill learns which blocks to trace. Defaults to listing every
+     * block of the range, which suits dev chains.
+     */
+    backfillBlocks?: ABackfillBlockSource;
     /**
      * Directory the cache is kept in, so a restart resumes from the saved head.
      * Without one the cache lives in memory only.
@@ -230,6 +237,7 @@ export class StorageDiffService {
     private readonly retention: number;
     private readonly maxPeerBufferedBytes: number;
     private readonly includedStrategy?: AIncludedHeadStrategy;
+    private readonly backfillBlocks: ABackfillBlockSource;
     private readonly peers = new Map<WebSocket, StorageDiffPeer>();
     private readonly stopping = new AbortController();
     private upstream?: UpstreamRpcClient;
@@ -280,6 +288,7 @@ export class StorageDiffService {
     ) {
         this.logger = options.logger;
         this.includedStrategy = options.includedHead;
+        this.backfillBlocks = options.backfillBlocks ?? new ListedBlockSource();
         if (options.cacheDir) this.store = new StateStore(options.cacheDir);
         this.upstreamUrl = options.upstreamUrl;
         this.upstreamEndpoint = upstreamEndpoint;
@@ -1282,6 +1291,7 @@ export class StorageDiffService {
                 address,
                 codeProbes: 0,
                 blockReads: 0,
+                rootReads: 0,
                 traces: 0,
                 stateReads: 0,
                 roundTrips: 0,
@@ -1292,6 +1302,7 @@ export class StorageDiffService {
             };
             record.codeProbes += cost.codeProbes;
             record.blockReads += cost.blockReads;
+            record.rootReads += cost.rootReads;
             record.traces += cost.traces;
             record.stateReads += cost.stateReads;
             record.roundTrips += cost.roundTrips;
@@ -1303,7 +1314,11 @@ export class StorageDiffService {
                 number: BigInt(tipRecord.number),
                 hash: tipRecord.hash
             };
-            const backfill = new ContractBackfill(upstream, address);
+            const backfill = new ContractBackfill(
+                upstream,
+                address,
+                this.backfillBlocks
+            );
             try {
                 if (!covered) {
                     const deploy = await backfill.findDeployBlock(tip.number);
@@ -1335,7 +1350,11 @@ export class StorageDiffService {
                 if (prepared === "restart")
                     throw new ChainMovedError("Covered block dropped");
                 // the values at the head, read outside the queue
-                const reader = new ContractBackfill(upstream, address);
+                const reader = new ContractBackfill(
+                    upstream,
+                    address,
+                    this.backfillBlocks
+                );
                 const state = await reader.readState(
                     prepared.anchor.hash,
                     prepared.keys
@@ -1848,6 +1867,7 @@ export class StorageDiffService {
             if (this.saveTimer) clearTimeout(this.saveTimer);
             await this.saveNow();
             this.includedStrategy?.close();
+            this.backfillBlocks.close();
             this.upstream?.close(
                 reason ?? new Error("StorageDiffService closed")
             );

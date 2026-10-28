@@ -1,6 +1,9 @@
+import ABackfillBlockSource, {
+    ChainMovedError,
+    type BackfillUpstream
+} from "./backfillBlocks/ABackfillBlockSource";
 import {
     touchesOf,
-    parseHeader,
     toQuantity,
     type AccountAddress,
     type StorageSlot,
@@ -8,8 +11,6 @@ import {
 } from "./blockStorageDiff";
 import { UpstreamRequestError } from "./UpstreamRpcClient";
 
-/** Blocks asked for in one batch when listing which ones have transactions. */
-const BLOCK_BATCH = 100;
 /** Values read in one batch. */
 const STATE_BATCH = 200;
 /** Blocks traced in one batch. */
@@ -19,16 +20,7 @@ const TRACE_OPTIONS = {
     tracerConfig: { diffMode: true }
 };
 
-/** The chain changed under the range being read; the range is read again. */
-export class ChainMovedError extends Error {}
-
-/** What the backfill reads from the upstream. */
-export interface BackfillUpstream {
-    request(method: string, params: unknown[]): Promise<unknown>;
-    requestBatch(
-        calls: { method: string; params: unknown[] }[]
-    ): Promise<unknown>[];
-}
+export { ChainMovedError, type BackfillUpstream };
 
 /** What a backfill cost, in upstream requests and round trips. */
 export interface BackfillCost {
@@ -36,6 +28,8 @@ export interface BackfillCost {
     codeProbes: number;
     /** `eth_getBlockByNumber` calls that listed the blocks. */
     blockReads: number;
+    /** Child trie root reads that found the changed blocks. */
+    rootReads: number;
     /** `debug_traceBlockByNumber` calls. */
     traces: number;
     /** Reads of the final balance, nonce, code and slot values. */
@@ -76,17 +70,24 @@ export interface BackfilledState {
 export class ContractBackfill {
     private readonly upstream: BackfillUpstream;
     private readonly address: AccountAddress;
+    private readonly blocks: ABackfillBlockSource;
     private readonly cost: BackfillCost = {
         codeProbes: 0,
         blockReads: 0,
+        rootReads: 0,
         traces: 0,
         stateReads: 0,
         roundTrips: 0
     };
 
-    constructor(upstream: BackfillUpstream, address: AccountAddress) {
+    constructor(
+        upstream: BackfillUpstream,
+        address: AccountAddress,
+        blocks: ABackfillBlockSource
+    ) {
         this.upstream = upstream;
         this.address = address;
+        this.blocks = blocks;
     }
 
     /**
@@ -111,52 +112,24 @@ export class ContractBackfill {
         tip: { number: bigint; hash: string },
         parentHash?: string
     ): Promise<BackfilledKeys> {
-        const keys = new Set<StorageSlot>();
-        let blocks = 0;
-        let tracedBlocks = 0;
-        let previousHash = parentHash;
-        for (
-            let start = from;
-            start <= tip.number;
-            start += BigInt(BLOCK_BATCH)
-        ) {
-            const end =
-                start + BigInt(BLOCK_BATCH) - 1n < tip.number
-                    ? start + BigInt(BLOCK_BATCH) - 1n
-                    : tip.number;
-            const numbers: bigint[] = [];
-            for (let n = start; n <= end; n++) numbers.push(n);
-            const listed = await this.batch(
-                numbers.map((number) => ({
-                    method: "eth_getBlockByNumber",
-                    params: [toQuantity(number), false]
-                })),
-                "blockReads"
-            );
-            const withTransactions: bigint[] = [];
-            for (const block of listed) {
-                const header = parseHeader(block);
-                // the listing must be one chain, or it was read across a reorg
-                if (
-                    previousHash !== undefined &&
-                    header.parentHash !== previousHash
-                )
-                    throw new ChainMovedError(
-                        "The chain moved while its blocks were listed"
-                    );
-                previousHash = header.hash;
-                blocks++;
-                if (header.txCount > 0) withTransactions.push(header.number);
-            }
-            for (const slot of await this.traceKeys(withTransactions))
-                keys.add(slot);
-            tracedBlocks += withTransactions.length;
-        }
-        if (previousHash !== tip.hash)
-            throw new ChainMovedError(
-                "The range does not end at the expected block"
-            );
-        return { from, through: tip, keys, blocks, tracedBlocks };
+        const listing = await this.blocks.listBlocks(
+            this.upstream,
+            this.address,
+            from,
+            tip,
+            parentHash
+        );
+        this.cost.blockReads += listing.blockReads;
+        this.cost.rootReads += listing.rootReads;
+        this.cost.roundTrips += listing.roundTrips;
+        const keys = await this.traceKeys(listing.numbers);
+        return {
+            from,
+            through: tip,
+            keys,
+            blocks: listing.blocks,
+            tracedBlocks: listing.numbers.length
+        };
     }
 
     /** The slots the contract's traces name in blocks `numbers`. */
@@ -244,7 +217,7 @@ export class ContractBackfill {
 
     private async batch(
         calls: { method: string; params: unknown[] }[],
-        counter: "blockReads" | "traces"
+        counter: "traces"
     ): Promise<unknown[]> {
         this.cost[counter] += calls.length;
         this.cost.roundTrips++;
