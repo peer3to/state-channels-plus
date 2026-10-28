@@ -1,3 +1,5 @@
+import type ABackfillBlockSource from "./backfillBlocks/ABackfillBlockSource";
+import { ListedBlockSource } from "./backfillBlocks/ListedBlockSource";
 import {
     bloomContains,
     environmentOf,
@@ -34,8 +36,6 @@ import {
     type BackfilledState,
     type BackfillCost
 } from "./ContractBackfill";
-import type ABackfillBlockSource from "./backfillBlocks/ABackfillBlockSource";
-import { ListedBlockSource } from "./backfillBlocks/ListedBlockSource";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
 import type { IncludedHead } from "./includedHead/AIncludedHeadStrategy";
 import {

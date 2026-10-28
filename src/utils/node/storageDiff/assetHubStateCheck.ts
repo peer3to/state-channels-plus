@@ -1,9 +1,9 @@
+import type { StorageSlot, StorageWord } from "./blockStorageDiff";
 import {
     blake2b256,
     bytesToHex,
     hexToBytes
 } from "./includedHead/assetHubInclusion";
-import type { StorageSlot, StorageWord } from "./blockStorageDiff";
 
 /**
  * Pure helpers of the Asset Hub completeness check: where a contract's child
