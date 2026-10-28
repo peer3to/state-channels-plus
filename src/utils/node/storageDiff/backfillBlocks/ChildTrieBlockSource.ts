@@ -14,6 +14,8 @@ import ABackfillBlockSource, {
 
 /** Reads sent in one batch to the Substrate node. */
 const READ_BATCH = 200;
+/** Child trie keys asked for in one page. */
+const KEYS_PAGE = 1000;
 
 /**
  * Asset Hub: finds the blocks that changed a contract's storage by bisecting
@@ -43,13 +45,7 @@ export class ChildTrieBlockSource extends ABackfillBlockSource {
         const tipHash = await node.request("chain_getBlockHash", [
             Number(tip.number)
         ]);
-        const info = await node.request("state_getStorage", [
-            reviveAccountInfoKey(address),
-            tipHash
-        ]);
-        const trieId = typeof info === "string" ? trieIdOf(info) : undefined;
-        if (!trieId) throw new Error("The address is not a contract");
-        const rootKey = childStorageKey(trieId);
+        const rootKey = await this.rootKeyOf(node, address, tipHash);
         const found = await findChangedBlocks(
             async (blocks) => {
                 const hashes = await this.inBatches(
@@ -89,11 +85,51 @@ export class ChildTrieBlockSource extends ABackfillBlockSource {
         };
     }
 
+    public async countStorageEntries(
+        address: AccountAddress,
+        at: { number: bigint }
+    ): Promise<number> {
+        const node = await this.connect();
+        const hash = await node.request("chain_getBlockHash", [
+            Number(at.number)
+        ]);
+        const rootKey = await this.rootKeyOf(node, address, hash);
+        let count = 0;
+        let last: unknown = null;
+        for (;;) {
+            const page = (await node.request("childstate_getKeysPaged", [
+                rootKey,
+                "0x",
+                KEYS_PAGE,
+                last,
+                hash
+            ])) as string[];
+            count += page.length;
+            if (page.length < KEYS_PAGE) return count;
+            last = page[page.length - 1];
+        }
+    }
+
     public close(): void {
         this.closed = true;
         void this.client?.then((node) =>
             node.close(new Error("Backfill block source closed"))
         );
+    }
+
+    /** The key naming the contract's child trie at block `hash`. */
+    private async rootKeyOf(
+        node: UpstreamRpcClient,
+        address: AccountAddress,
+        hash: unknown
+    ): Promise<string> {
+        const info = await node.request("state_getStorage", [
+            reviveAccountInfoKey(address),
+            hash
+        ]);
+        const trieId = typeof info === "string" ? trieIdOf(info) : undefined;
+        if (!trieId) throw new Error("The address is not a contract");
+        return childStorageKey(trieId);
     }
 
     private connect(): Promise<UpstreamRpcClient> {

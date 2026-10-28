@@ -44,6 +44,16 @@ export default abstract class ABackfillBlockSource {
         parentHash?: string
     ): Promise<BlockListing>;
 
+    /**
+     * How many non-zero storage entries the chain holds for `address` at
+     * block `at`, when the source can count them; undefined when it cannot.
+     * A backfill that found another number is not complete.
+     */
+    public abstract countStorageEntries(
+        address: AccountAddress,
+        at: { number: bigint }
+    ): Promise<number | undefined>;
+
     /** Idempotent: drops connections the source opened. */
     public abstract close(): void;
 }

@@ -1,4 +1,8 @@
 import {
+    RECORDED_ACCOUNT_INFO,
+    withSubstrateNode
+} from "../../fixtures/node/SubstrateChildTrieNode";
+import {
     deploySlotWriter,
     dumpedAccount,
     slotKey,
@@ -9,6 +13,9 @@ import {
     writeSlot
 } from "../../fixtures/node/StorageDiffService.fixture";
 import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
+import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
+import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
+import { sleep } from "@/utils";
 import { expect } from "chai";
 import { Wallet, toQuantity } from "ethers";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -379,5 +386,132 @@ describe("StorageDiffService persisted cache", function () {
         } finally {
             rmSync(cacheDir, { recursive: true, force: true });
         }
+    });
+});
+
+describe("StorageDiffService backfill checked against the chain", function () {
+    /** A node of the writer's chain with `entries` child trie entries. */
+    async function backfillWith(
+        entries: number,
+        run: (context: {
+            session: Parameters<
+                Parameters<typeof withStorageDiffUpstream>[0]
+            >[0];
+            writer: string;
+            client: StorageDiffClient;
+            service: StorageDiffService;
+            head: { number: number; hash: string };
+        }) => Promise<void>
+    ): Promise<void> {
+        await withStorageDiffUpstream(async (session) => {
+            const { provider, signer, start } = session;
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            await writeSlot(signer, writer, 2, 7n);
+            const block = (await provider.getBlock("latest"))!;
+            await withSubstrateNode(
+                {
+                    address: writer,
+                    changes: [block.number - 2, block.number - 1, block.number],
+                    deployed: block.number - 2,
+                    tipNumber: block.number,
+                    tipHash: () => "0xtip",
+                    info: RECORDED_ACCOUNT_INFO,
+                    entries
+                },
+                async (node) => {
+                    const service = await start({
+                        backfillBlocks: new ChildTrieBlockSource(node.url)
+                    });
+                    const client = await StorageDiffClient.connect(service.url);
+                    try {
+                        await run({
+                            session,
+                            writer,
+                            client,
+                            service,
+                            head: { number: block.number, hash: block.hash! }
+                        });
+                    } finally {
+                        client.close();
+                    }
+                }
+            );
+        });
+    }
+
+    async function backfilled(service: StorageDiffService): Promise<void> {
+        while (service.statistics.backfills.length === 0) await sleep(20);
+    }
+
+    it("keeps an account lazy and warns with both counts when the chain holds more entries than the history named", async function () {
+        await backfillWith(
+            3,
+            async ({ session, writer, client, service, head }) => {
+                const subscription = await client.subscribe([writer]);
+                await backfilled(service);
+                await sleep(300);
+
+                expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
+                const warning = session.warnings.find(({ message }) =>
+                    message.includes("stays lazy")
+                );
+                expect(warning?.meta[0]).to.include({
+                    backfilled: 2,
+                    onChain: 3
+                });
+                // a slot the history never named is fetched when asked for
+                const fetched = service.statistics.lazyFieldFetches;
+                const state = await client.getState(head.hash, [
+                    { address: writer, slots: [slotKey(1), slotKey(9)] }
+                ]);
+                expect(state.accounts[writer].storage).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n),
+                    [slotKey(9)]: storageWord(0n)
+                });
+                expect(service.statistics.lazyFieldFetches - fetched).to.equal(
+                    1
+                );
+            }
+        );
+    });
+
+    it("does not backfill a lazy account again when it is subscribed again", async function () {
+        await backfillWith(3, async ({ writer, client, service }) => {
+            await client.subscribe([writer]);
+            await backfilled(service);
+
+            await client.subscribe([writer]);
+            await sleep(300);
+
+            expect(service.statistics.backfills).to.have.length(1);
+        });
+    });
+
+    it("pushes the snapshot and answers every slot from the cache when the chain holds just the entries the history named", async function () {
+        await backfillWith(
+            2,
+            async ({ session, writer, client, service, head }) => {
+                const subscription = await client.subscribe([writer]);
+                const snapshot = await client.nextSnapshot(subscription);
+
+                expect(
+                    nonZero(snapshot.accounts[writer].storage)
+                ).to.deep.equal({
+                    [slotKey(1)]: storageWord(5n),
+                    [slotKey(2)]: storageWord(7n)
+                });
+                const fetched = service.statistics.lazyFieldFetches;
+                await client.getState(head.hash, [
+                    { address: writer, slots: [slotKey(9)] }
+                ]);
+                expect(service.statistics.lazyFieldFetches).to.equal(fetched);
+                expect(
+                    session.warnings.filter(({ message }) =>
+                        message.includes("stays lazy")
+                    )
+                ).to.deep.equal([]);
+            }
+        );
     });
 });

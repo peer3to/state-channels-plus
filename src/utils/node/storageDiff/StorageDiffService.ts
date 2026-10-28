@@ -266,6 +266,8 @@ export class StorageDiffService {
     private readonly watched = new Map<AccountAddress, Promise<void>>();
     // Backfills in flight, one per account.
     private readonly backfills = new Map<AccountAddress, Promise<void>>();
+    // Accounts whose backfill found fewer entries than the chain holds: read lazily, not backfilled again.
+    private readonly lazyAccounts = new Set<AccountAddress>();
     private readonly store?: StateStore;
     private saveTimer?: ReturnType<typeof setTimeout>;
     private readonly counters: StorageDiffStatistics = {
@@ -1195,6 +1197,7 @@ export class StorageDiffService {
         // Cached values follow the chain: back over the orphans, then forward.
         if (below) {
             this.stateCache.clear();
+            this.lazyAccounts.clear();
             // nothing is complete now: peers get new snapshots after new backfills
             for (const peer of this.peers.values()) peer.snapshotted.clear();
             for (const address of this.subscribedAddresses())
@@ -1303,7 +1306,11 @@ export class StorageDiffService {
 
     /** Starts rebuilding `address` from its history, unless that is done or running. */
     private startBackfill(address: AccountAddress): void {
-        if (this.backfills.has(address) || this.stateCache.isComplete(address))
+        if (
+            this.backfills.has(address) ||
+            this.lazyAccounts.has(address) ||
+            this.stateCache.isComplete(address)
+        )
             return;
         const job = this.runBackfill(address)
             .catch((error) =>
@@ -1421,8 +1428,25 @@ export class StorageDiffService {
                     prepared.keys
                 );
                 spend(reader);
+                // a chain that holds other entries than the history named is not backfilled whole
+                const held = await this.backfillBlocks.countStorageEntries(
+                    address,
+                    prepared.anchor
+                );
+                const slots = Object.keys(state.storage).length;
+                const complete = held === undefined || held === slots;
+                if (!complete)
+                    this.logger.warn(
+                        "Backfill found fewer storage entries than the chain holds; the account stays lazy",
+                        { address, backfilled: slots, onChain: held }
+                    );
                 const outcome = await this.enqueue(() =>
-                    this.commitBackfill(address, prepared.anchor, state)
+                    this.commitBackfill(
+                        address,
+                        prepared.anchor,
+                        state,
+                        complete
+                    )
                 );
                 if (outcome === "retry") {
                     covered = prepared.anchor;
@@ -1494,7 +1518,8 @@ export class StorageDiffService {
     private async commitBackfill(
         address: AccountAddress,
         anchor: { number: bigint; hash: string },
-        state: BackfilledState
+        state: BackfilledState,
+        complete: boolean
     ): Promise<"done" | "retry"> {
         const index = this.retainedIndex(anchor.hash);
         if (index < 0) return "retry";
@@ -1512,15 +1537,24 @@ export class StorageDiffService {
             scratch.applyForward(this.canonical[i]);
         }
         const account = scratch.accountOf(address);
-        this.stateCache.setComplete(
-            address,
-            {
-                balance: account.balance!,
-                nonce: account.nonce!,
-                code: account.code!
-            },
-            account.storage ?? {}
-        );
+        if (complete)
+            this.stateCache.setComplete(
+                address,
+                {
+                    balance: account.balance!,
+                    nonce: account.nonce!,
+                    code: account.code!
+                },
+                account.storage ?? {}
+            );
+        else {
+            this.lazyAccounts.add(address);
+            // what is known is cached; any other slot is fetched when asked for
+            for (const kind of ["balance", "nonce", "code"] as const)
+                this.stateCache.set({ kind, address }, account[kind]!);
+            for (const [slot, word] of Object.entries(account.storage ?? {}))
+                this.stateCache.set({ kind: "slot", address, slot }, word);
+        }
         for (const peer of this.peers.values()) {
             if (!peer.closing) this.sendSnapshots(peer, [address]);
         }

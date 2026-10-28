@@ -9,6 +9,7 @@ import type {
     StorageDiffSnapshot,
     SubscriptionId
 } from "@/utils/node/storageDiff/blockStorageDiff";
+import type ABackfillBlockSource from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
 import {
     StorageDiffService,
@@ -313,6 +314,7 @@ export type StorageDiffServiceSettings = {
     cacheDir?: string;
     maxPeerBufferedBytes?: number;
     includedHead?: AIncludedHeadStrategy;
+    backfillBlocks?: ABackfillBlockSource;
 };
 
 /** A `warn` call of the service's logger. */
