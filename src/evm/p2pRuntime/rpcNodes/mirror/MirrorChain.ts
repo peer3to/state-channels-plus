@@ -139,6 +139,47 @@ export class MirrorChain {
         if (number > this.requiredNumber) this.requiredNumber = number;
     }
 
+    /** The newest block number a node announced to this runtime. */
+    get announcedNumber(): bigint {
+        return this.requiredNumber;
+    }
+
+    /**
+     * Asks the service something that needs none of the cached state: no
+     * lock, no wait. The mirror opens the service connection first if it is
+     * not open.
+     */
+    async queryService<T>(
+        ask: (socket: StorageDiffSocket) => Promise<T>
+    ): Promise<T> {
+        if (!this.socket) {
+            await this.lock.lock();
+            try {
+                await this.ensureFollowing();
+            } finally {
+                this.lock.unlock();
+            }
+        }
+        const socket = this.socket;
+        if (!socket)
+            throw new MirrorUnavailableError("Mirror is not following");
+        try {
+            return await ask(socket);
+        } catch (error) {
+            this.log("warn", "Storage diff service query failed", { error });
+            throw new MirrorUnavailableError(
+                "Storage diff service query failed"
+            );
+        }
+    }
+
+    /** The newest head the service follows. */
+    async serviceHead(): Promise<BlockEnvironment> {
+        return (
+            await this.queryService((socket) => socket.catchUp([], BEYOND_HEAD))
+        ).head;
+    }
+
     /** A read issued from now on waits until the mirror applied `block`. */
     requireBlock(block: ChainBlock): void {
         if (!this.requiredBlock || block.number >= this.requiredBlock.number)

@@ -5,6 +5,7 @@ import {
     withStorageDiffUpstream,
     type StorageDiffServiceSettings
 } from "./StorageDiffService.fixture";
+import type { UpstreamRelay } from "./UpstreamRelay";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import MirrorRpcProvider from "@/evm/p2pRuntime/rpcNodes/MirrorRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
@@ -28,6 +29,10 @@ const ANVIL_MNEMONIC =
 export type MirrorSession = {
     /** The provider under test. */
     provider: MirrorRpcProvider;
+    /** The provider's node socket, for subscriptions of its own. */
+    rpcNode: RpcNodeProvider;
+    /** Between the storage diff service and the node. */
+    relay: UpstreamRelay;
     /** Every request the provider sent to the node. */
     node: RpcNodeProxy;
     /** Every request and push between the provider and the service. */
@@ -57,7 +62,7 @@ export async function withMirrorSession<T>(
 ): Promise<T> {
     const { customPrecompiles, withoutService, ...serviceSettings } = settings;
     return await withStorageDiffUpstream(
-        async ({ provider: chain, signer, start }) => {
+        async ({ provider: chain, relay, signer, start }) => {
             const storageDiff = await start(serviceSettings);
             const node = await RpcNodeProxy.start(chain._getConnection().url);
             const service = await RpcNodeProxy.start(storageDiff.url);
@@ -75,6 +80,8 @@ export async function withMirrorSession<T>(
                 await rpcNode.firstAttempt;
                 return await use({
                     provider,
+                    rpcNode,
+                    relay,
                     node,
                     service,
                     storageDiff,

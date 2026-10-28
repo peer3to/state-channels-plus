@@ -11,7 +11,11 @@ import {
     serviceRequests,
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
-import { rejectionOf } from "@test/fixtures/node/StorageDiffService.fixture";
+import {
+    deployLogEmitter,
+    emitValue,
+    rejectionOf
+} from "@test/fixtures/node/StorageDiffService.fixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { AbiCoder, isError, toQuantity, ZeroHash } from "ethers";
@@ -482,5 +486,169 @@ describe("MirrorRpcProvider", function () {
             },
             { includedHead: new DepthIncludedHeadStrategy(1) }
         );
+    });
+
+    it("answers the chain id from its first answer without asking a node again", async function () {
+        await withMirrorSession(async (session) => {
+            await session.provider.send("eth_chainId", []);
+            const asked = nodeRequests(session, "eth_chainId").length;
+
+            await session.provider.send("eth_chainId", []);
+            await session.provider.send("eth_chainId", []);
+
+            expect(nodeRequests(session, "eth_chainId")).to.have.length(asked);
+        });
+    });
+
+    it("answers the block number, blocks, transactions and receipts as the node does, without asking a node", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage } = await deployMirroredStorage(session);
+            const sent = await storage.setValue(5n);
+            const receipt = await sent.wait();
+            const head = await headNumber(session);
+            const number = toQuantity(head);
+            const blockReads = () =>
+                nodeRequests(session, "eth_blockNumber").length +
+                nodeRequests(session, "eth_getBlockByNumber").length +
+                nodeRequests(session, "eth_getBlockByHash").length +
+                nodeRequests(session, "eth_getTransactionByHash").length +
+                nodeRequests(session, "eth_getTransactionReceipt").length;
+            const before = blockReads();
+
+            const answers = [
+                await session.provider.send("eth_blockNumber", []),
+                await session.provider.send("eth_getBlockByNumber", [
+                    "latest",
+                    true
+                ]),
+                await session.provider.send("eth_getBlockByNumber", [
+                    number,
+                    false
+                ]),
+                await session.provider.send("eth_getBlockByHash", [
+                    receipt!.blockHash,
+                    true
+                ]),
+                await session.provider.send("eth_getTransactionByHash", [
+                    sent.hash
+                ]),
+                await session.provider.send("eth_getTransactionReceipt", [
+                    sent.hash
+                ])
+            ];
+
+            expect(answers).to.deep.equal([
+                await session.chain.send("eth_blockNumber", []),
+                await session.chain.send("eth_getBlockByNumber", [
+                    "latest",
+                    true
+                ]),
+                await session.chain.send("eth_getBlockByNumber", [
+                    number,
+                    false
+                ]),
+                await session.chain.send("eth_getBlockByHash", [
+                    receipt!.blockHash,
+                    true
+                ]),
+                await session.chain.send("eth_getTransactionByHash", [
+                    sent.hash
+                ]),
+                await session.chain.send("eth_getTransactionReceipt", [
+                    sent.hash
+                ])
+            ]);
+            expect(blockReads()).to.equal(before);
+        });
+    });
+
+    it("asks the node for a transaction, receipt or block the service does not hold", async function () {
+        await withMirrorSession(async (session) => {
+            const unknown = "0x" + "ab".repeat(32);
+            const asked = (method: string) =>
+                nodeRequests(session, method).length;
+            const receipts = asked("eth_getTransactionReceipt");
+            const blocks = asked("eth_getBlockByHash");
+
+            expect(
+                await session.provider.send("eth_getTransactionReceipt", [
+                    unknown
+                ])
+            ).to.equal(null);
+            expect(
+                await session.provider.send("eth_getBlockByHash", [
+                    unknown,
+                    false
+                ])
+            ).to.equal(null);
+
+            expect(asked("eth_getTransactionReceipt")).to.equal(receipts + 1);
+            expect(asked("eth_getBlockByHash")).to.equal(blocks + 1);
+        });
+    });
+
+    it("asks the node for the latest block while the service is behind a block the node announced", async function () {
+        await withMirrorSession(async (session) => {
+            await session.rpcNode.watchSockets((socket) => {
+                void socket.on("block", () => undefined);
+            });
+            await session.provider.send("eth_getBlockByNumber", [
+                "latest",
+                false
+            ]);
+            const held = session.relay.holdNext(
+                "eth_getBlockByNumber",
+                "latest"
+            );
+
+            await session.chain.send("evm_mine", []);
+            await held.arrived;
+            await sleep(ABSENCE_WINDOW_MS);
+            const asked = nodeRequests(session, "eth_getBlockByNumber").length;
+            const block = await session.provider.send("eth_getBlockByNumber", [
+                "latest",
+                false
+            ]);
+
+            expect(block.number).to.equal(
+                toQuantity(await headNumber(session))
+            );
+            expect(
+                nodeRequests(session, "eth_getBlockByNumber")
+            ).to.have.length(asked + 1);
+            held.release();
+        });
+    });
+
+    it("holds a read until the mirror reaches the block of a log notification the node pushed first", async function () {
+        await withMirrorSession(async (session) => {
+            const emitter = await deployLogEmitter(session.signer);
+            await emitValue(session.signer, emitter, 1n);
+            expect(
+                BigInt(await session.provider.getStorage(emitter, 0))
+            ).to.equal(1n);
+            const logged = new Promise<void>((resolve) => {
+                session.rpcNode.watchSockets((socket) => {
+                    void socket.on({ address: emitter }, () => resolve());
+                });
+            });
+            await sleep(ABSENCE_WINDOW_MS);
+            const release =
+                session.service.holdNotifications("scp_subscription");
+
+            await emitValue(session.signer, emitter, 9n);
+            await logged;
+            let settled = false;
+            const read = session.provider
+                .getStorage(emitter, 0)
+                .finally(() => (settled = true));
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(settled, "the read waits for the log's block").to.equal(
+                false
+            );
+            release();
+
+            expect(BigInt(await read)).to.equal(9n);
+        });
     });
 });

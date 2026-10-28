@@ -69,6 +69,15 @@ function isQuantity(value: unknown): value is string {
     );
 }
 
+function isHash(value: unknown): value is string {
+    return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+/** A block number as a canonical quantity; a 64-digit one would read as a hash. */
+function isBlockNumber(value: unknown): value is string {
+    return isQuantity(value) && value.length <= 18;
+}
+
 function parseCall(params: unknown[]): MirrorCall | undefined {
     const [tx, tag] = params;
     if (params.length > 2 || !isHeadTag(tag, true)) return undefined;
@@ -177,6 +186,49 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 result: toQuantity(await mirror.getTransactionCount(address))
             });
         }
+        case "eth_blockNumber":
+            if (params.length !== 0) return undefined;
+            return async (mirror) => ({
+                result: toQuantity(await mirror.blockNumber())
+            });
+        case "eth_getBlockByNumber": {
+            const [tag, full] = params;
+            if (
+                params.length !== 2 ||
+                typeof full !== "boolean" ||
+                !(tag === "latest" || isBlockNumber(tag))
+            )
+                return undefined;
+            return async (mirror) => ({
+                result: await mirror.getBlock(tag as string, full)
+            });
+        }
+        case "eth_getBlockByHash": {
+            const [hash, full] = params;
+            if (
+                params.length !== 2 ||
+                !isHash(hash) ||
+                typeof full !== "boolean"
+            )
+                return undefined;
+            return async (mirror) => ({
+                result: await mirror.getBlock(hash, full)
+            });
+        }
+        case "eth_getTransactionByHash": {
+            const [hash] = params;
+            if (params.length !== 1 || !isHash(hash)) return undefined;
+            return async (mirror) => ({
+                result: await mirror.getTransaction(hash)
+            });
+        }
+        case "eth_getTransactionReceipt": {
+            const [hash] = params;
+            if (params.length !== 1 || !isHash(hash)) return undefined;
+            return async (mirror) => ({
+                result: await mirror.getTransactionReceipt(hash)
+            });
+        }
         default:
             return undefined;
     }
@@ -196,6 +248,8 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     private readonly mirror?: Mirror;
     /** Hashes of the transactions this provider sent and has not seen mined. */
     private readonly ownTransactions = new Set<string>();
+    /** The chain id the nodes answered; it never changes. */
+    private chainIdAnswer?: unknown;
     private readonly unwatchNodes: (() => void)[] = [];
 
     constructor(
@@ -242,13 +296,21 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     private async answer(
         request: JsonRpcPayload
     ): Promise<JsonRpcResult | JsonRpcError> {
+        if (
+            request.method === "eth_chainId" &&
+            this.chainIdAnswer !== undefined
+        )
+            return { id: request.id, result: this.chainIdAnswer };
         const mirror = this.mirror;
         const read = mirror ? parseLocalRead(request) : undefined;
         if (mirror && read) {
             try {
-                return { id: request.id, ...(await read(mirror)) } as
+                const answer = { id: request.id, ...(await read(mirror)) } as
                     | JsonRpcResult
                     | JsonRpcError;
+                if ("result" in answer)
+                    this.noteOwnTransaction(request, answer);
+                return answer;
             } catch (error) {
                 if (!(error instanceof MirrorUnavailableError))
                     this.logger.warn("Mirror failed a read; asking the nodes", {
@@ -258,6 +320,8 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             }
         }
         const response = await this.forward(request);
+        if (request.method === "eth_chainId")
+            this.chainIdAnswer = response.result;
         this.noteOwnTransaction(request, response);
         return response;
     }

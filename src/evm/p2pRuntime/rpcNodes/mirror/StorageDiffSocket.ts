@@ -2,8 +2,10 @@ import {
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE,
     type AccountAddress,
+    type BlockSelector,
     type BlockStorageDiff,
     type IncludedHeadRecord,
+    type RpcBlock,
     type StateRequestParams,
     type StorageDiffCatchUp,
     type StorageDiffState,
@@ -113,6 +115,27 @@ export class StorageDiffSocket extends WebSocketProvider {
         if (!isRecord(answer) || !isRecord(answer.accounts))
             throw new Error("Malformed storage diff state");
         return answer as unknown as StorageDiffState;
+    }
+
+    /** A retained block as the upstream returns it, or null. */
+    async fetchBlock(
+        block: BlockSelector,
+        full: boolean
+    ): Promise<RpcBlock | null> {
+        const answer = await this.request("scp_getBlock", [block, full]);
+        if (answer !== null && !isRecord(answer))
+            throw new Error("Malformed storage diff block");
+        return answer as RpcBlock | null;
+    }
+
+    /** A transaction of a retained block, or null. */
+    async fetchTransaction(hash: string): Promise<unknown> {
+        return await this.request("scp_getTransaction", [hash]);
+    }
+
+    /** The receipt of a transaction of a retained block, or null. */
+    async fetchReceipt(hash: string): Promise<unknown> {
+        return await this.request("scp_getTransactionReceipt", [hash]);
     }
 
     // Overrides SocketProvider._processMessage: the service's pushes are

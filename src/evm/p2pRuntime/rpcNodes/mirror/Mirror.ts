@@ -1,5 +1,6 @@
 import {
     MirrorChain,
+    MirrorUnavailableError,
     type MirrorBlock,
     type MirrorHead,
     type MirrorUpstream
@@ -11,7 +12,9 @@ import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils/logging/Logger";
 import type {
     BlockEnvironment,
-    IncludedHeadRecord
+    BlockSelector,
+    IncludedHeadRecord,
+    RpcBlock
 } from "@/utils/storageDiff/storageDiffWire";
 import type { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
@@ -151,8 +154,58 @@ export class Mirror {
         );
     }
 
+    /** The number of the newest block the service follows. */
+    async blockNumber(): Promise<bigint> {
+        const head = await this.chain.serviceHead();
+        return this.fresh(BigInt(head.number));
+    }
+
+    /**
+     * A block as the node returns it. A block the service does not retain,
+     * or a latest older than one the node announced, is declined.
+     */
+    async getBlock(selector: BlockSelector, full: boolean): Promise<RpcBlock> {
+        const block = await this.chain.queryService((socket) =>
+            socket.fetchBlock(selector, full)
+        );
+        if (!block) throw new MirrorUnavailableError("Block not retained");
+        if (selector === "latest") this.fresh(BigInt(block.number));
+        return block;
+    }
+
+    /** A transaction of a block the service retains; declined if it holds none. */
+    async getTransaction(hash: string): Promise<unknown> {
+        return this.known(
+            await this.chain.queryService((socket) =>
+                socket.fetchTransaction(hash)
+            )
+        );
+    }
+
+    /** A receipt of a block the service retains; declined if it holds none. */
+    async getTransactionReceipt(hash: string): Promise<unknown> {
+        return this.known(
+            await this.chain.queryService((socket) =>
+                socket.fetchReceipt(hash)
+            )
+        );
+    }
+
     async close(): Promise<void> {
         await this.chain.close();
+    }
+
+    /** `number`, unless a node announced a newer block than the service has. */
+    private fresh(number: bigint): bigint {
+        if (number < this.chain.announcedNumber)
+            throw new MirrorUnavailableError("Service is behind the node");
+        return number;
+    }
+
+    private known<T>(answer: T | null): T {
+        if (answer === null)
+            throw new MirrorUnavailableError("Not held by the service");
+        return answer;
     }
 
     private getEvm(): Promise<EVM> {
