@@ -6,6 +6,7 @@ import {
     type StorageSlot,
     type StorageWord
 } from "./blockStorageDiff";
+import { UpstreamRequestError } from "./UpstreamRpcClient";
 
 /** Blocks asked for in one batch when listing which ones have transactions. */
 const BLOCK_BATCH = 100;
@@ -133,22 +134,8 @@ export class ContractBackfill {
                 blocks++;
                 if (header.txCount > 0) withTransactions.push(header.number);
             }
-            for (let i = 0; i < withTransactions.length; i += TRACE_BATCH) {
-                const group = withTransactions.slice(i, i + TRACE_BATCH);
-                const traces = await this.batch(
-                    group.map((number) => ({
-                        method: "debug_traceBlockByNumber",
-                        params: [toQuantity(number), TRACE_OPTIONS]
-                    })),
-                    "traces"
-                );
-                for (const trace of traces) {
-                    const written =
-                        mergeTransactionDiffs(trace).post[this.address];
-                    Object.assign(storage, written?.storage);
-                    tracedBlocks++;
-                }
-            }
+            Object.assign(storage, await this.traceStorage(withTransactions));
+            tracedBlocks += withTransactions.length;
         }
         if (previousHash !== tip.hash)
             throw new ChainMovedError(
@@ -164,6 +151,30 @@ export class ContractBackfill {
         };
     }
 
+    /**
+     * The slots the contract wrote in blocks `numbers` (ascending), with their
+     * last values: the blocks' prestate traces, folded in order.
+     */
+    async traceStorage(
+        numbers: bigint[]
+    ): Promise<Record<StorageSlot, StorageWord>> {
+        const storage: Record<StorageSlot, StorageWord> = {};
+        for (let i = 0; i < numbers.length; i += TRACE_BATCH) {
+            const traces = await this.batch(
+                numbers.slice(i, i + TRACE_BATCH).map((number) => ({
+                    method: "debug_traceBlockByNumber",
+                    params: [toQuantity(number), TRACE_OPTIONS]
+                })),
+                "traces"
+            );
+            for (const trace of traces) {
+                const written = mergeTransactionDiffs(trace).post[this.address];
+                Object.assign(storage, written?.storage);
+            }
+        }
+        return storage;
+    }
+
     /** The requests and round trips made so far. */
     get spent(): BackfillCost {
         return { ...this.cost };
@@ -172,11 +183,18 @@ export class ContractBackfill {
     private async hasCode(block: bigint): Promise<boolean> {
         this.cost.codeProbes++;
         this.cost.roundTrips++;
-        const code = await this.upstream.request("eth_getCode", [
-            this.address,
-            toQuantity(block)
-        ]);
-        return typeof code === "string" && code !== "0x";
+        try {
+            const code = await this.upstream.request("eth_getCode", [
+                this.address,
+                toQuantity(block)
+            ]);
+            return typeof code === "string" && code !== "0x";
+        } catch (error) {
+            // Asset Hub answers "not supported at the queried block" before
+            // its contracts pallet existed: no code there
+            if (error instanceof UpstreamRequestError) return false;
+            throw error;
+        }
     }
 
     private async batch(
