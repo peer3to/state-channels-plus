@@ -490,6 +490,8 @@ describe("MirrorRpcProvider", function () {
 
     it("answers the chain id from its first answer without asking a node again", async function () {
         await withMirrorSession(async (session) => {
+            // the provider's own network detection has asked once
+            await session.provider.getNetwork();
             await session.provider.send("eth_chainId", []);
             const asked = nodeRequests(session, "eth_chainId").length;
 
