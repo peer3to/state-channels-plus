@@ -36,6 +36,13 @@ type MethodCounts = {
     declined: number;
     /** The node was gone (the test was torn down); nothing to compare. */
     unchecked: number;
+    /**
+     * Differed once, then matched when the node was asked again. anvil answers
+     * a call at the best block's number with the next block's environment when
+     * a block is mined at that moment, so the first answer is the node's own
+     * inconsistency; a mirror that is wrong differs the second time as well.
+     */
+    nodeRaced: number;
 };
 
 type ShadowStore = { head?: MirrorHead };
@@ -145,6 +152,8 @@ function describeRead(
 /** One id per runtime thread: the last line of each carries its totals. */
 const WRITER = `${process.pid}-${threadId}`;
 const FLUSH_EVERY = 20;
+/** Time is the input: the pause before a differing answer is asked for again. */
+const NODE_RECHECK_MS = 150;
 
 let installed = false;
 let node: JsonRpcProvider | undefined;
@@ -194,7 +203,8 @@ export function installMirrorShadowCheck(
                 mismatches: 0,
                 stale: 0,
                 declined: 0,
-                unchecked: 0
+                unchecked: 0,
+                nodeRaced: 0
             };
             counts.set(method, entry);
         }
@@ -244,11 +254,24 @@ export function installMirrorShadowCheck(
                 }
                 const context = describeRead(args, shadowed.head);
                 try {
-                    record(
-                        method,
-                        await check(node!, args, result, shadowed.head),
-                        context
-                    );
+                    let found = await check(node!, args, result, shadowed.head);
+                    if (found !== "unchecked" && !found.same) {
+                        // ask again, once the best block's number is no longer being mined
+                        await new Promise((resolve) =>
+                            setTimeout(resolve, NODE_RECHECK_MS)
+                        );
+                        const again = await check(
+                            node!,
+                            args,
+                            result,
+                            shadowed.head
+                        );
+                        if (again !== "unchecked" && again.same) {
+                            countsOf(method).nodeRaced++;
+                            found = again;
+                        }
+                    }
+                    record(method, found, context);
                 } catch (error) {
                     record(
                         method,
