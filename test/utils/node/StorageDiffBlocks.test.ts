@@ -358,11 +358,27 @@ describe("StorageDiffService values come from reads, not from the trace", functi
     });
 
     it("lists no slot a transaction wrote with the value it already had", async function () {
-        await withStorageDiffSession(async ({ client, signer }) => {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
             const writer = await deploySlotWriter(signer);
             await writeSlot(signer, writer, 1, 5n);
             const subscription = await client.subscribe([writer]);
             await client.nextSnapshot(subscription);
+            // the trace names the slot as touched, as a rewrite of it may
+            relay.tamper("debug_traceBlockByNumber", (result) =>
+                (result as { result: { pre: object; post: object } }[]).map(
+                    (entry) => ({
+                        result: {
+                            pre: {
+                                ...entry.result.pre,
+                                [writer]: {
+                                    storage: { [slotKey(1)]: storageWord(5n) }
+                                }
+                            },
+                            post: entry.result.post
+                        }
+                    })
+                )
+            );
             const receipt = await writeSlot(signer, writer, 1, 5n);
             await client.recordAt(subscription, receipt.blockNumber);
             const records = await client.getDiffs(

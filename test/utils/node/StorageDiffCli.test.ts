@@ -20,6 +20,22 @@ describe("storage diff service flags", function () {
         expect(options.maxPeerBufferedBytes).to.equal(65536);
     });
 
+    it("passes --cache-dir on as the cache directory, and leaves it unset without the flag", function () {
+        const withFlag = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1",
+            "--cache-dir",
+            "/var/lib/storage-diff"
+        ]);
+        const without = parseStorageDiffArgs([
+            "--upstream",
+            "ws://127.0.0.1:1"
+        ]);
+
+        expect(withFlag.cacheDir).to.equal("/var/lib/storage-diff");
+        expect(without.cacheDir).to.equal(undefined);
+    });
+
     it("leaves the peer buffer limit and the inclusion strategy unset without their flags", function () {
         const options = parseStorageDiffArgs([
             "--upstream",

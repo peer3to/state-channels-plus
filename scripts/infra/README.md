@@ -29,6 +29,7 @@ yarn infra:storage-diff --upstream ws://127.0.0.1:8546
 | `--port`      | `19778`     | Bind port; `0` takes an OS-assigned port.            |
 | `--retention` | `128`       | Canonical blocks kept for catch-up (integer >= 1).   |
 | `--max-peer-buffered-bytes` | `16777216` | A peer whose unsent bytes pass this is told why and cut (integer >= 1). |
+| `--cache-dir` | (none) | Directory for the persisted cache (`state.json`). Without it the cache lives in memory only. See [Backfill, snapshots and persistence](#backfill-snapshots-and-persistence). |
 | `--included-relay-url` | (none) | `ws://` or `wss://` relay chain node for the Asset Hub inclusion strategy, e.g. `wss://rpc.polkadot.io`. Needs `--included-asset-hub-url`. |
 | `--included-asset-hub-url` | (none) | `ws://` or `wss://` Asset Hub **Substrate** node (not eth-rpc), e.g. `wss://polkadot-asset-hub-rpc.polkadot.io`. |
 | `--included-para-id` | `1000` | Relay chain id of the parachain (1000 is Polkadot Asset Hub). |
@@ -161,9 +162,9 @@ address a peer asks about:
   head is rolled back over the later blocks' `pre` values. A block that is
   unknown, orphaned or older than the window fails with code `-32002` and
   message `Block is not retained`, so a caller can fall back.
-- **Not covered.** The cache trusts the trace: state a block changes outside
-  its transactions' traced writes (system calls, withdrawals) is not seen. The
-  cache is not evicted.
+- **Not covered.** State a block changes outside its transactions' traced
+  keys and accounts (system calls, withdrawals) is not seen. The cache is not
+  evicted.
 
 ### Serving blocks, transactions and receipts
 
@@ -213,6 +214,61 @@ below the window, or a restart) is filled again by the next reads. The relay
 inclusion strategy adds one relay subscription and one `state_getStorage` per
 inclusion.
 
+### Values come from reads, not from the trace
+
+The trace says **which** storage keys and accounts a block touched, never their
+values. For each block the service takes the union of touched keys, and of the
+balance, nonce and code of touched accounts, and reads their end-of-block
+values with `eth_getStorageAt`, `eth_getBalance`, `eth_getTransactionCount` and
+`eth_getCode` pinned to `{blockHash}`, in one JSON-RPC batch. Pre values come
+from the service's own cache when it is at the parent block, else from reads at
+the parent hash. A touched key whose value did not change produces no entry in
+`pre` or `post`. Only subscribed addresses are read. A block therefore costs
+one extra batch round trip when it touches a subscribed address, and none
+otherwise.
+
+This is required by an Asset Hub bug: its `prestateTracer` in `diffMode`
+reports storage writes (and value transfers) of **reverted sub-call frames** in
+`post`. The reproduction is a contract whose `f()` sets `a = 1` and calls
+`this.g()`, where `g()` sets `b = 5`, `flag = true` and reverts: the trace
+shows slot 0 = 1, slot 1 = 5 and slot 2 = 1, but only slot 0 is really 1.
+Anvil's tracer is correct, which is why runs against anvil never showed it.
+The service assumes the trace never omits a key that really changed (the trace
+is a superset of the truth); the test "misses no slot anvil holds after calls
+that nest and re-enter" checks this on nested and re-entered frames against
+`anvil_dumpState`.
+
+### Backfill, snapshots and persistence
+
+- **Backfill.** The first subscription to an address makes the service
+  rebuild its complete state: it finds the deploy block by bisecting
+  `eth_getCode` (about log2(chain height) probes; an error answer counts as no
+  code), lists the blocks since that have transactions in batches of 100
+  `eth_getBlockByNumber`, traces only those (batches of 8 traces), unions the
+  touched keys, and reads all their values in batches of 200 pinned to the
+  backfill's anchor block. The listing is linear in the blocks since deploy
+  (about 130 blocks/s on Asset Hub eth-rpc), so a contract deployed millions of
+  blocks ago is slow to backfill. Blocks mined meanwhile are included by
+  further rounds (at most 5 restarts if a reorg drops the anchor). The cost of
+  each backfill is logged (`codeProbes`, `blockReads`, `traces`, `stateReads`,
+  `roundTrips`, `blocks`, `tracedBlocks`, `slots`, `milliseconds`,
+  `deployBlock`). `contracts/` do not emit an event for every write, so logs
+  cannot list the writing blocks.
+- **Complete accounts.** A backfilled account is complete: a slot it does not
+  hold reads zero without asking the upstream.
+- **Snapshot.** After backfill the service pushes `scp_snapshot` with
+  `{subscription, result: {block: {number, hash}, accounts}}` holding the
+  full state at that block, then per-block records. A peer applies the snapshot
+  and the records after it, and reads nothing else from the service on the
+  normal path. A later subscribe pushes snapshots only for addresses not
+  already complete.
+- **Lazy path.** A read of anything not held still goes through `scp_getState`
+  (which reads the upstream once); the peer falls back to its node on `-32002`.
+- **Persistence.** With `--cache-dir` the service writes `state.json`
+  (atomic rename, debounced 500 ms) with the head, the cache and the last 64
+  blocks' hashes. On start it loads it, rolls the cache back over `pre` values
+  if the saved head is no longer canonical, and catches up the missed blocks.
+
 ### Reorgs and retention
 
 Every head notification triggers a lookup of the current best block, so a
@@ -260,7 +316,8 @@ Errors name the upstream by scheme and host only, never its credentials.
 
 There is no authentication and the upstream is trusted. The default bind is
 loopback; binding elsewhere is the operator's responsibility. There are no
-proofs and no gossip, and history is in memory only.
+proofs and no gossip, and history is in memory only (the cache alone can be persisted, see
+below).
 
 ## Open security questions
 
