@@ -1,4 +1,3 @@
-import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import {
     deployNestedWriter,
     deployNumberStorage,
@@ -13,6 +12,7 @@ import {
     withStorageDiffSession,
     writeSlot
 } from "../../fixtures/node/StorageDiffService.fixture";
+import { UPSTREAM_FAULT } from "../../fixtures/node/UpstreamRelay";
 import { sleep } from "@/utils";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/node/storageDiff/blockStorageDiff";
 import { HEAD_WAIT_MS } from "@/utils/node/storageDiff/StorageDiffService";

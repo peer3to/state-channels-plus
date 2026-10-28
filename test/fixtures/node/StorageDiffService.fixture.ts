@@ -2,6 +2,7 @@
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import { UpstreamRelay } from "./UpstreamRelay";
 import { createLogger } from "@/utils";
+import type ABackfillBlockSource from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
 import type {
     AccountAddress,
     BlockStorageDiff,
@@ -9,7 +10,6 @@ import type {
     StorageDiffSnapshot,
     SubscriptionId
 } from "@/utils/node/storageDiff/blockStorageDiff";
-import type ABackfillBlockSource from "@/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource";
 import type AIncludedHeadStrategy from "@/utils/node/storageDiff/includedHead/AIncludedHeadStrategy";
 import {
     StorageDiffService,

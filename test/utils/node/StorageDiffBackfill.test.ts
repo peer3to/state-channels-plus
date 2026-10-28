@@ -1,8 +1,4 @@
 import {
-    RECORDED_ACCOUNT_INFO,
-    withSubstrateNode
-} from "../../fixtures/node/SubstrateChildTrieNode";
-import {
     deploySlotWriter,
     dumpedAccount,
     slotKey,
@@ -12,10 +8,14 @@ import {
     StorageDiffClient,
     writeSlot
 } from "../../fixtures/node/StorageDiffService.fixture";
-import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
-import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
-import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
+import {
+    RECORDED_ACCOUNT_INFO,
+    withSubstrateNode
+} from "../../fixtures/node/SubstrateChildTrieNode";
 import { sleep } from "@/utils";
+import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
+import { ZERO_WORD } from "@/utils/node/storageDiff/blockStorageDiff";
+import type { StorageDiffService } from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
 import { Wallet, toQuantity } from "ethers";
 import { mkdtempSync, rmSync } from "node:fs";

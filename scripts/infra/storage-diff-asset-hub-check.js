@@ -199,6 +199,16 @@ async function main() {
             nonZeroSlots: Object.keys(state.storage).length
         });
 
+        // the service's own completeness test: the chain's entry count against the backfill's
+        const held = await source.countStorageEntries(address, tip);
+        const nonZeroSlots = Object.keys(state.storage).length;
+        log({
+            step: "serviceCheck",
+            onChain: held,
+            backfilled: nonZeroSlots,
+            serviceMarksComplete: held === nonZeroSlots
+        });
+
         // the check: every child trie entry at the same block, from the node
         const info = await sub.request("state_getStorage", [
             reviveAccountInfoKey(address),

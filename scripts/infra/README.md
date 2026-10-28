@@ -292,11 +292,21 @@ every 64 traced blocks, so a killed run resumes. Exit 1 when they differ.
 Measured on mainnet contract `0x99ee73298423dcf5da3059a5e48bda20bfbcd01b`
 (deployed at block 19,760,180, 2,649,917 blocks before the check): 93 s,
 25 code probes, 15,413 child root reads, 3,125 traces, 351 state reads, 468
-round trips. 317 non-zero cached slots matched the node's values exactly,
-but the child trie holds 320 entries: slots 0x16, 0x1e and 0x1f (values 5, 25,
-100, written in the deploy block) are missing from Asset Hub's
-`prestateTracer` trace of that block, so the trace named a key set that was
-not a superset. The cache is therefore not complete for this contract.
+round trips. 317 non-zero cached slots matched the node's values exactly, but
+the child trie holds 320 entries. The 3 missing slots, 0x16, 0x1e and 0x1f
+(values 5, 25 and 100), are constructor writes: the deploy transaction's
+initcode stores them, and Asset Hub's `prestateTracer` trace of the deploy
+block leaves them out, so the trace named a key set that was not a superset.
+
+The service catches this itself. After a backfill with `ChildTrieBlockSource`
+it counts the contract's child trie entries at the anchor block
+(`countStorageEntries`) and compares them with the backfill's non-zero slots.
+When they differ it logs a warning with both counts and does not mark the
+account complete: no snapshot is pushed, the slots it knows are cached, and
+any other slot is fetched from the node when asked for (`scp_getState`). It
+does not backfill that account again until its cache is cleared. A peer whose
+first read of such an account finds no snapshot waits its snapshot timeout,
+then reads lazily. `ListedBlockSource` cannot count and never refuses.
 
 ### Reorgs and retention
 
