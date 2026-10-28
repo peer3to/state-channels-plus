@@ -1,5 +1,5 @@
 import {
-    mergeTransactionDiffs,
+    touchesOf,
     parseHeader,
     toQuantity,
     type AccountAddress,
@@ -10,6 +10,8 @@ import { UpstreamRequestError } from "./UpstreamRpcClient";
 
 /** Blocks asked for in one batch when listing which ones have transactions. */
 const BLOCK_BATCH = 100;
+/** Values read in one batch. */
+const STATE_BATCH = 200;
 /** Blocks traced in one batch. */
 const TRACE_BATCH = 8;
 const TRACE_OPTIONS = {
@@ -36,29 +38,40 @@ export interface BackfillCost {
     blockReads: number;
     /** `debug_traceBlockByNumber` calls. */
     traces: number;
+    /** Reads of the final balance, nonce, code and slot values. */
+    stateReads: number;
     /** Frames sent: a batch array is one. */
     roundTrips: number;
 }
 
-/** A contract's storage from its deploy block through `through`. */
-export interface BackfilledStorage {
-    /** First block with the contract's code. */
-    deployBlock: bigint;
-    /** Last block applied. */
+/** The storage keys a contract touched from its deploy block through `through`. */
+export interface BackfilledKeys {
+    /** First block of the range read. */
+    from: bigint;
+    /** Last block of the range read. */
     through: { number: bigint; hash: string };
-    /** Every slot written in the range, with its last value. */
-    storage: Record<StorageSlot, StorageWord>;
-    cost: BackfillCost;
+    /** Every slot the traces name for the contract. */
+    keys: Set<StorageSlot>;
     /** Blocks in the range, and how many of them had transactions. */
     blocks: number;
     tracedBlocks: number;
 }
 
+/** A contract's state as the node reports it at one block. */
+export interface BackfilledState {
+    balance: string;
+    nonce: string;
+    code: string;
+    /** The slots read, zero words left out. */
+    storage: Record<StorageSlot, StorageWord>;
+}
+
 /**
- * Rebuilds the storage of one contract by reading its history: the deploy
- * block is found by bisecting `eth_getCode`, and the prestate trace of every
- * block that has transactions is folded in order. Never-written slots are
- * zero, so the result is the complete storage.
+ * Rebuilds the state of one contract from its history: the deploy block is
+ * found by bisecting `eth_getCode`, the prestate trace of every block that has
+ * transactions names the keys the contract touched, and the values of all of
+ * them are read at one block. A trace is only used for which keys, never for
+ * what is in them. Never-touched slots are zero, so the result is complete.
  */
 export class ContractBackfill {
     private readonly upstream: BackfillUpstream;
@@ -67,6 +80,7 @@ export class ContractBackfill {
         codeProbes: 0,
         blockReads: 0,
         traces: 0,
+        stateReads: 0,
         roundTrips: 0
     };
 
@@ -91,13 +105,13 @@ export class ContractBackfill {
         return high;
     }
 
-    /** Applies the traces of blocks `from`..`tip.number` that have transactions. */
-    async storageThrough(
+    /** The keys the traces of blocks `from`..`tip.number` that have transactions name. */
+    async keysThrough(
         from: bigint,
         tip: { number: bigint; hash: string },
         parentHash?: string
-    ): Promise<BackfilledStorage> {
-        const storage: Record<StorageSlot, StorageWord> = {};
+    ): Promise<BackfilledKeys> {
+        const keys = new Set<StorageSlot>();
         let blocks = 0;
         let tracedBlocks = 0;
         let previousHash = parentHash;
@@ -134,31 +148,20 @@ export class ContractBackfill {
                 blocks++;
                 if (header.txCount > 0) withTransactions.push(header.number);
             }
-            Object.assign(storage, await this.traceStorage(withTransactions));
+            for (const slot of await this.traceKeys(withTransactions))
+                keys.add(slot);
             tracedBlocks += withTransactions.length;
         }
         if (previousHash !== tip.hash)
             throw new ChainMovedError(
                 "The range does not end at the expected block"
             );
-        return {
-            deployBlock: from,
-            through: tip,
-            storage,
-            cost: { ...this.cost },
-            blocks,
-            tracedBlocks
-        };
+        return { from, through: tip, keys, blocks, tracedBlocks };
     }
 
-    /**
-     * The slots the contract wrote in blocks `numbers` (ascending), with their
-     * last values: the blocks' prestate traces, folded in order.
-     */
-    async traceStorage(
-        numbers: bigint[]
-    ): Promise<Record<StorageSlot, StorageWord>> {
-        const storage: Record<StorageSlot, StorageWord> = {};
+    /** The slots the contract's traces name in blocks `numbers`. */
+    async traceKeys(numbers: bigint[]): Promise<Set<StorageSlot>> {
+        const keys = new Set<StorageSlot>();
         for (let i = 0; i < numbers.length; i += TRACE_BATCH) {
             const traces = await this.batch(
                 numbers.slice(i, i + TRACE_BATCH).map((number) => ({
@@ -167,12 +170,54 @@ export class ContractBackfill {
                 })),
                 "traces"
             );
-            for (const trace of traces) {
-                const written = mergeTransactionDiffs(trace).post[this.address];
-                Object.assign(storage, written?.storage);
-            }
+            for (const trace of traces)
+                for (const slot of touchesOf(trace)[this.address]?.slots ?? [])
+                    keys.add(slot);
         }
-        return storage;
+        return keys;
+    }
+
+    /**
+     * The contract's balance, nonce and code, and the value of each of `keys`,
+     * at block `blockHash`, in batches.
+     */
+    async readState(
+        blockHash: string,
+        keys: Iterable<StorageSlot>
+    ): Promise<BackfilledState> {
+        const at = { blockHash };
+        const slots = [...keys];
+        const calls = [
+            ...(
+                [
+                    "eth_getBalance",
+                    "eth_getTransactionCount",
+                    "eth_getCode"
+                ] as const
+            ).map((method) => ({ method, params: [this.address, at] })),
+            ...slots.map((slot) => ({
+                method: "eth_getStorageAt",
+                params: [this.address, slot, at]
+            }))
+        ];
+        const answers: unknown[] = [];
+        for (let i = 0; i < calls.length; i += STATE_BATCH) {
+            this.cost.stateReads += Math.min(STATE_BATCH, calls.length - i);
+            this.cost.roundTrips++;
+            answers.push(
+                ...(await Promise.all(
+                    this.upstream.requestBatch(calls.slice(i, i + STATE_BATCH))
+                ))
+            );
+        }
+        const [balance, nonce, code, ...words] = answers as string[];
+        const storage: Record<StorageSlot, StorageWord> = {};
+        slots.forEach((slot, i) => {
+            const word =
+                "0x" + words[i].slice(2).padStart(64, "0").toLowerCase();
+            if (BigInt(word) !== 0n) storage[slot] = word;
+        });
+        return { balance, nonce, code: code.toLowerCase(), storage };
     }
 
     /** The requests and round trips made so far. */

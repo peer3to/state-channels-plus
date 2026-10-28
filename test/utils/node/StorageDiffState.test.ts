@@ -21,28 +21,30 @@ const SLOT = { slots: [VALUE_SLOT] };
 
 describe("StorageDiffService state", function () {
     it("reads a slot from the upstream on the first read, pinned to the best head's block hash", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const receipt = await setValue(storage, 5n);
-            const head = await client.recordAt(
-                subscription,
-                receipt.blockNumber
-            );
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const receipt = await setValue(storage, 5n);
+                const head = await client.recordAt(
+                    subscription,
+                    receipt.blockNumber
+                );
 
-            const state = await client.getState(head.hash, [
-                { address, ...SLOT }
-            ]);
+                const state = await client.getState(head.hash, [
+                    { address, ...SLOT }
+                ]);
 
-            expect(state.accounts[address].storage).to.deep.equal({
-                [VALUE_SLOT]: storageWord(5n)
-            });
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
-            expect(relay.paramsOf("eth_getStorageAt")[0][2]).to.deep.equal({
-                blockHash: head.hash
-            });
-        });
+                expect(state.accounts[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(5n)
+                });
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
+                expect(relay.paramsOf("eth_getStorageAt")[0][2]).to.deep.equal({
+                    blockHash: head.hash
+                });
+            }
+        );
     });
 
     it("answers a second client from the cache without an upstream request", async function () {
@@ -66,7 +68,7 @@ describe("StorageDiffService state", function () {
                     expect(state.accounts[address].storage).to.deep.equal({
                         [VALUE_SLOT]: storageWord(5n)
                     });
-                    expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
+                    expect(service.statistics.lazyFieldFetches).to.equal(1);
                 } finally {
                     other.close();
                 }
@@ -102,7 +104,7 @@ describe("StorageDiffService state", function () {
                             [VALUE_SLOT]: storageWord(5n)
                         });
                     }
-                    expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
+                    expect(service.statistics.lazyFieldFetches).to.equal(1);
                 } finally {
                     for (const peer of clients) peer.close();
                 }
@@ -111,87 +113,102 @@ describe("StorageDiffService state", function () {
     });
 
     it("updates a cached slot from a block's write without an upstream request", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 5n);
-            const head = await client.recordAt(subscription, first.blockNumber);
-            await client.getState(head.hash, [{ address, ...SLOT }]);
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const first = await setValue(storage, 5n);
+                const head = await client.recordAt(
+                    subscription,
+                    first.blockNumber
+                );
+                await client.getState(head.hash, [{ address, ...SLOT }]);
 
-            const second = await setValue(storage, 9n);
-            const next = await client.recordAt(
-                subscription,
-                second.blockNumber
-            );
-            const state = await client.getState(next.hash, [
-                { address, ...SLOT }
-            ]);
+                const second = await setValue(storage, 9n);
+                const next = await client.recordAt(
+                    subscription,
+                    second.blockNumber
+                );
+                const state = await client.getState(next.hash, [
+                    { address, ...SLOT }
+                ]);
 
-            expect(state.accounts[address].storage).to.deep.equal({
-                [VALUE_SLOT]: storageWord(9n)
-            });
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
-        });
+                expect(state.accounts[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(9n)
+                });
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
+            }
+        );
     });
 
     it("reads a slot cleared to zero as the zero word", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 5n);
-            const head = await client.recordAt(subscription, first.blockNumber);
-            await client.getState(head.hash, [{ address, ...SLOT }]);
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const first = await setValue(storage, 5n);
+                const head = await client.recordAt(
+                    subscription,
+                    first.blockNumber
+                );
+                await client.getState(head.hash, [{ address, ...SLOT }]);
 
-            const cleared = await setValue(storage, 0n);
-            const next = await client.recordAt(
-                subscription,
-                cleared.blockNumber
-            );
-            const state = await client.getState(next.hash, [
-                { address, ...SLOT }
-            ]);
+                const cleared = await setValue(storage, 0n);
+                const next = await client.recordAt(
+                    subscription,
+                    cleared.blockNumber
+                );
+                const state = await client.getState(next.hash, [
+                    { address, ...SLOT }
+                ]);
 
-            expect(state.accounts[address].storage).to.deep.equal({
-                [VALUE_SLOT]: ZERO_WORD
-            });
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
-        });
+                expect(state.accounts[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: ZERO_WORD
+                });
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
+            }
+        );
     });
 
     it("applies a block mined while the fetch of a slot was in flight", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 1n);
-            const head = await client.recordAt(subscription, first.blockNumber);
-            const held = relay.holdNext("eth_getStorageAt", address);
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const first = await setValue(storage, 1n);
+                const head = await client.recordAt(
+                    subscription,
+                    first.blockNumber
+                );
+                const held = relay.holdNext("eth_getStorageAt", address);
 
-            const read = client.getState(head.hash, [{ address, ...SLOT }]);
-            await held.arrived;
-            const second = await setValue(storage, 7n);
-            const next = await client.recordAt(
-                subscription,
-                second.blockNumber
-            );
-            held.release();
-            await read;
+                const read = client.getState(head.hash, [{ address, ...SLOT }]);
+                await held.arrived;
+                const second = await setValue(storage, 7n);
+                const next = await client.recordAt(
+                    subscription,
+                    second.blockNumber
+                );
+                held.release();
+                await read;
 
-            const state = await client.getState(next.hash, [
-                { address, ...SLOT }
-            ]);
-            expect(state.accounts[address].storage).to.deep.equal({
-                [VALUE_SLOT]: storageWord(7n)
-            });
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
-        });
+                const state = await client.getState(next.hash, [
+                    { address, ...SLOT }
+                ]);
+                expect(state.accounts[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(7n)
+                });
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
+            }
+        );
     });
 
     it("rolls a cached slot back to the value before an orphaned block after a reorg", async function () {
         await withStorageDiffSession(
-            async ({ client, provider, relay, signer }) => {
+            async ({ client, provider, relay, service, signer }) => {
                 const storage = await deployNumberStorage(signer);
                 const address = await recordKey(storage);
                 const subscription = await client.subscribe([]);
@@ -219,48 +236,50 @@ describe("StorageDiffService state", function () {
                 expect(state.accounts[address].storage).to.deep.equal({
                     [VALUE_SLOT]: storageWord(1n)
                 });
-                expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
             }
         );
     });
 
     it("reads a slot at an older retained block as that block's value", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const first = await setValue(storage, 1n);
-            const second = await setValue(storage, 2n);
-            const older = await client.recordAt(
-                subscription,
-                first.blockNumber
-            );
-            const newer = await client.recordAt(
-                subscription,
-                second.blockNumber
-            );
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const first = await setValue(storage, 1n);
+                const second = await setValue(storage, 2n);
+                const older = await client.recordAt(
+                    subscription,
+                    first.blockNumber
+                );
+                const newer = await client.recordAt(
+                    subscription,
+                    second.blockNumber
+                );
 
-            const atNewer = await client.getState(newer.hash, [
-                { address, ...SLOT }
-            ]);
-            const atOlder = await client.getState(older.hash, [
-                { address, ...SLOT }
-            ]);
+                const atNewer = await client.getState(newer.hash, [
+                    { address, ...SLOT }
+                ]);
+                const atOlder = await client.getState(older.hash, [
+                    { address, ...SLOT }
+                ]);
 
-            expect(atNewer.accounts[address].storage).to.deep.equal({
-                [VALUE_SLOT]: storageWord(2n)
-            });
-            expect(atOlder.accounts[address].storage).to.deep.equal({
-                [VALUE_SLOT]: storageWord(1n)
-            });
-            expect(atOlder.number).to.equal(toQuantity(first.blockNumber));
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
-        });
+                expect(atNewer.accounts[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(2n)
+                });
+                expect(atOlder.accounts[address].storage).to.deep.equal({
+                    [VALUE_SLOT]: storageWord(1n)
+                });
+                expect(atOlder.number).to.equal(toQuantity(first.blockNumber));
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
+            }
+        );
     });
 
     it("fails with the not-retained error for a block older than the window", async function () {
         await withStorageDiffSession(
-            async ({ client, provider, signer }) => {
+            async ({ client, provider, service, signer }) => {
                 const storage = await deployNumberStorage(signer);
                 const address = await recordKey(storage);
                 const subscription = await client.subscribe([]);
@@ -287,43 +306,49 @@ describe("StorageDiffService state", function () {
     });
 
     it("fails with the not-retained error for a block hash the service does not know", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
 
-            const error = await rejectionOf(
-                client.getState("0x" + "11".repeat(32), [{ address, ...SLOT }])
-            );
+                const error = await rejectionOf(
+                    client.getState("0x" + "11".repeat(32), [
+                        { address, ...SLOT }
+                    ])
+                );
 
-            expect((error as StorageDiffRpcError).code).to.equal(
-                NOT_RETAINED_ERROR_CODE
-            );
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(0);
-        });
+                expect((error as StorageDiffRpcError).code).to.equal(
+                    NOT_RETAINED_ERROR_CODE
+                );
+                expect(service.statistics.lazyFieldFetches).to.equal(0);
+            }
+        );
     });
 
     it("fails with the not-retained error for a block a reorg orphaned", async function () {
-        await withStorageDiffSession(async ({ client, provider, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const dropped = await setValue(storage, 2n);
-            const orphan = await client.recordAt(
-                subscription,
-                dropped.blockNumber
-            );
-            await provider.send("anvil_reorg", [1, []]);
-            await provider.send("evm_mine", []);
-            await client.nextRecord(subscription);
+        await withStorageDiffSession(
+            async ({ client, provider, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const dropped = await setValue(storage, 2n);
+                const orphan = await client.recordAt(
+                    subscription,
+                    dropped.blockNumber
+                );
+                await provider.send("anvil_reorg", [1, []]);
+                await provider.send("evm_mine", []);
+                await client.nextRecord(subscription);
 
-            const error = await rejectionOf(
-                client.getState(orphan.hash, [{ address, ...SLOT }])
-            );
+                const error = await rejectionOf(
+                    client.getState(orphan.hash, [{ address, ...SLOT }])
+                );
 
-            expect((error as StorageDiffRpcError).code).to.equal(
-                NOT_RETAINED_ERROR_CODE
-            );
-        });
+                expect((error as StorageDiffRpcError).code).to.equal(
+                    NOT_RETAINED_ERROR_CODE
+                );
+            }
+        );
     });
 
     it("refuses a malformed state request with invalid params", async function () {
@@ -342,143 +367,152 @@ describe("StorageDiffService state", function () {
     });
 
     it("keeps a cached balance current after a transfer without another fetch", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const recipient = "0x" + "ab".repeat(20);
-            const subscription = await client.subscribe([]);
-            const start = await signer.sendTransaction({
-                to: "0x" + "cd".repeat(20),
-                value: 1n
-            });
-            const first = await client.recordAt(
-                subscription,
-                (await start.wait())!.blockNumber
-            );
-            const before = await client.getState(first.hash, [
-                { address: recipient, account: true }
-            ]);
-            expect(before.accounts[recipient].balance).to.equal("0x0");
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const recipient = "0x" + "ab".repeat(20);
+                const subscription = await client.subscribe([]);
+                const start = await signer.sendTransaction({
+                    to: "0x" + "cd".repeat(20),
+                    value: 1n
+                });
+                const first = await client.recordAt(
+                    subscription,
+                    (await start.wait())!.blockNumber
+                );
+                const before = await client.getState(first.hash, [
+                    { address: recipient, account: true }
+                ]);
+                expect(before.accounts[recipient].balance).to.equal("0x0");
 
-            const transfer = await signer.sendTransaction({
-                to: recipient,
-                value: 5n
-            });
-            const next = await client.recordAt(
-                subscription,
-                (await transfer.wait())!.blockNumber
-            );
-            const after = await client.getState(next.hash, [
-                { address: recipient, account: true }
-            ]);
+                const transfer = await signer.sendTransaction({
+                    to: recipient,
+                    value: 5n
+                });
+                const next = await client.recordAt(
+                    subscription,
+                    (await transfer.wait())!.blockNumber
+                );
+                const after = await client.getState(next.hash, [
+                    { address: recipient, account: true }
+                ]);
 
-            expect(after.accounts[recipient].balance).to.equal("0x5");
-            expect(relay.requestCount("eth_getBalance")).to.equal(1);
-        });
+                expect(after.accounts[recipient].balance).to.equal("0x5");
+                expect(service.statistics.lazyFieldFetches).to.equal(2);
+            }
+        );
     });
 
     it("keeps a cached nonce current after the account sends a transaction", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const sender = (await signer.getAddress()).toLowerCase();
-            const subscription = await client.subscribe([]);
-            const first = await signer.sendTransaction({ to: sender });
-            const head = await client.recordAt(
-                subscription,
-                (await first.wait())!.blockNumber
-            );
-            const before = await client.getState(head.hash, [
-                { address: sender, account: true }
-            ]);
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const sender = (await signer.getAddress()).toLowerCase();
+                const subscription = await client.subscribe([]);
+                const first = await signer.sendTransaction({ to: sender });
+                const head = await client.recordAt(
+                    subscription,
+                    (await first.wait())!.blockNumber
+                );
+                const before = await client.getState(head.hash, [
+                    { address: sender, account: true }
+                ]);
 
-            const second = await signer.sendTransaction({ to: sender });
-            const next = await client.recordAt(
-                subscription,
-                (await second.wait())!.blockNumber
-            );
-            const after = await client.getState(next.hash, [
-                { address: sender, account: true }
-            ]);
+                const second = await signer.sendTransaction({ to: sender });
+                const next = await client.recordAt(
+                    subscription,
+                    (await second.wait())!.blockNumber
+                );
+                const after = await client.getState(next.hash, [
+                    { address: sender, account: true }
+                ]);
 
-            expect(after.accounts[sender].nonce).to.equal(
-                before.accounts[sender].nonce! + 1
-            );
-            expect(relay.requestCount("eth_getTransactionCount")).to.equal(1);
-        });
+                expect(after.accounts[sender].nonce).to.equal(
+                    before.accounts[sender].nonce! + 1
+                );
+                expect(service.statistics.lazyFieldFetches).to.equal(2);
+            }
+        );
     });
 
     it("keeps cached code current after a deploy and reads it as empty at an earlier block", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const subscription = await client.subscribe([]);
-            const sender = await signer.getAddress();
-            const prelude = await signer.sendTransaction({ to: sender });
-            const earlier = await client.recordAt(
-                subscription,
-                (await prelude.wait())!.blockNumber
-            );
-            const future = getCreateAddress({
-                from: sender,
-                nonce: await signer.getNonce()
-            }).toLowerCase();
-            const empty = await client.getState(earlier.hash, [
-                { address: future, code: true }
-            ]);
-            expect(empty.accounts[future].code).to.equal("0x");
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const subscription = await client.subscribe([]);
+                const sender = await signer.getAddress();
+                const prelude = await signer.sendTransaction({ to: sender });
+                const earlier = await client.recordAt(
+                    subscription,
+                    (await prelude.wait())!.blockNumber
+                );
+                const future = getCreateAddress({
+                    from: sender,
+                    nonce: await signer.getNonce()
+                }).toLowerCase();
+                const empty = await client.getState(earlier.hash, [
+                    { address: future, code: true }
+                ]);
+                expect(empty.accounts[future].code).to.equal("0x");
 
-            const storage = await deployNumberStorage(signer);
-            expect(await recordKey(storage)).to.equal(future);
-            const deployed = await client.recordAt(
-                subscription,
-                Number(
-                    (await storage.deploymentTransaction()!.wait())!.blockNumber
-                )
-            );
-            const now = await client.getState(deployed.hash, [
-                { address: future, code: true }
-            ]);
-            const back = await client.getState(earlier.hash, [
-                { address: future, code: true }
-            ]);
+                const storage = await deployNumberStorage(signer);
+                expect(await recordKey(storage)).to.equal(future);
+                const deployed = await client.recordAt(
+                    subscription,
+                    Number(
+                        (await storage.deploymentTransaction()!.wait())!
+                            .blockNumber
+                    )
+                );
+                const now = await client.getState(deployed.hash, [
+                    { address: future, code: true }
+                ]);
+                const back = await client.getState(earlier.hash, [
+                    { address: future, code: true }
+                ]);
 
-            expect(now.accounts[future].code).to.have.length.greaterThan(2);
-            expect(back.accounts[future].code).to.equal("0x");
-            expect(relay.requestCount("eth_getCode")).to.equal(1);
-        });
+                expect(now.accounts[future].code).to.have.length.greaterThan(2);
+                expect(back.accounts[future].code).to.equal("0x");
+                expect(service.statistics.lazyFieldFetches).to.equal(1);
+            }
+        );
     });
 
     it("carries the block environment on every pushed record and on the catch-up head", async function () {
-        await withStorageDiffSession(async ({ client, provider, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const subscription = await client.subscribe([]);
-            const receipt = await setValue(storage, 3n);
+        await withStorageDiffSession(
+            async ({ client, provider, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const subscription = await client.subscribe([]);
+                const receipt = await setValue(storage, 3n);
 
-            const record = await client.recordAt(
-                subscription,
-                receipt.blockNumber
-            );
+                const record = await client.recordAt(
+                    subscription,
+                    receipt.blockNumber
+                );
 
-            const raw = await provider.send("eth_getBlockByNumber", [
-                toQuantity(receipt.blockNumber),
-                false
-            ]);
-            expect({
-                number: record.number,
-                hash: record.hash,
-                timestamp: record.timestamp,
-                baseFeePerGas: record.baseFeePerGas,
-                gasLimit: record.gasLimit,
-                miner: record.miner,
-                mixHash: record.mixHash
-            }).to.deep.equal({
-                number: raw.number,
-                hash: raw.hash,
-                timestamp: raw.timestamp,
-                baseFeePerGas: raw.baseFeePerGas,
-                gasLimit: raw.gasLimit,
-                miner: raw.miner.toLowerCase(),
-                mixHash: raw.mixHash
-            });
-            const catchUp = await client.catchUp([], receipt.blockNumber);
-            expect(catchUp.head.hash).to.equal(record.hash);
-            expect(catchUp.head.timestamp).to.equal(raw.timestamp);
-            expect(catchUp.records[0].miner).to.equal(record.miner);
-        });
+                const raw = await provider.send("eth_getBlockByNumber", [
+                    toQuantity(receipt.blockNumber),
+                    false
+                ]);
+                expect({
+                    number: record.number,
+                    hash: record.hash,
+                    timestamp: record.timestamp,
+                    baseFeePerGas: record.baseFeePerGas,
+                    gasLimit: record.gasLimit,
+                    miner: record.miner,
+                    mixHash: record.mixHash
+                }).to.deep.equal({
+                    number: raw.number,
+                    hash: raw.hash,
+                    timestamp: raw.timestamp,
+                    baseFeePerGas: raw.baseFeePerGas,
+                    gasLimit: raw.gasLimit,
+                    miner: raw.miner.toLowerCase(),
+                    mixHash: raw.mixHash
+                });
+                const catchUp = await client.catchUp([], receipt.blockNumber);
+                expect(catchUp.head.hash).to.equal(record.hash);
+                expect(catchUp.head.timestamp).to.equal(raw.timestamp);
+                expect(catchUp.records[0].miner).to.equal(record.miner);
+            }
+        );
     });
 });

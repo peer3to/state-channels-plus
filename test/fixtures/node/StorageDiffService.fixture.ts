@@ -553,3 +553,112 @@ export async function dumpedAccount(
         state.accounts[address] ?? state.accounts[getAddress(address)];
     return account ?? { balance: "0x0", nonce: 0, code: "0x", storage: {} };
 }
+
+/** Deploys `runtime` (hex, no prefix) as a contract's code and returns its address. */
+export async function deployRuntimeCode(
+    signer: JsonRpcSigner,
+    runtime: string
+): Promise<AccountAddress> {
+    // initcode copies the runtime after its own 11 bytes and returns it
+    const initcode =
+        "0x60" +
+        (runtime.length / 2).toString(16).padStart(2, "0") +
+        "80600b6000396000f3" +
+        runtime;
+    const receipt = await (
+        await signer.sendTransaction({ data: initcode })
+    ).wait();
+    if (!receipt?.contractAddress) throw new Error("Runtime not deployed");
+    return receipt.contractAddress.toLowerCase();
+}
+
+/** SSTORE(slot, value) for small numbers. */
+function sstore(slot: number, value: number): string {
+    return `60${value.toString(16).padStart(2, "0")}60${slot.toString(16).padStart(2, "0")}55`;
+}
+
+/** CALL to itself with `size` bytes of calldata, result dropped. */
+function selfCall(size: number): string {
+    return (
+        `60006000${"60" + size.toString(16).padStart(2, "0")}6000600030` +
+        "5af150"
+    );
+}
+
+/**
+ * Code that tells three frames apart by calldata size: empty is the parent, one
+ * byte the child, two bytes the grandchild; the frames call each other as the
+ * parts say.
+ */
+function threeFrames(
+    parent: string,
+    child: string,
+    grandchild: string
+): string {
+    const dispatch = (parentAt: number, childAt: number) =>
+        "3680" + // CALLDATASIZE, DUP1
+        "15" + // ISZERO
+        "60" +
+        parentAt.toString(16).padStart(2, "0") +
+        "57" + // JUMPI parent
+        "80" +
+        "6001" +
+        "14" + // DUP1, size == 1
+        "60" +
+        childAt.toString(16).padStart(2, "0") +
+        "57"; // JUMPI child
+    const dispatchLength = dispatch(0, 0).length / 2;
+    const childAt = dispatchLength + (grandchild + "00").length / 2;
+    const parentAt = childAt + ("5b" + child).length / 2;
+    return (
+        dispatch(parentAt, childAt) +
+        grandchild +
+        "00" +
+        "5b" +
+        child +
+        "5b" +
+        parent
+    );
+}
+
+/**
+ * A contract whose parent frame writes slot 1 and calls its child, whose
+ * frame writes slot 2, sends 1 wei to `recipient` and reverts: only slot 1
+ * is written by the transaction.
+ */
+export async function deployRevertProbe(
+    signer: JsonRpcSigner,
+    recipient: AccountAddress
+): Promise<AccountAddress> {
+    return await deployRuntimeCode(
+        signer,
+        threeFrames(
+            sstore(1, 1) + selfCall(1) + "00",
+            sstore(2, 5) +
+                "6000600060006000" +
+                "6001" +
+                "73" +
+                recipient.slice(2) +
+                "5af150" +
+                "60006000fd",
+            "00"
+        )
+    );
+}
+
+/**
+ * A contract that writes slots 1 to 5 across three nested self-calls: the
+ * parent slots 1 and 4, its child 2 and 5, the grandchild 3.
+ */
+export async function deployNestedWriter(
+    signer: JsonRpcSigner
+): Promise<AccountAddress> {
+    return await deployRuntimeCode(
+        signer,
+        threeFrames(
+            sstore(1, 1) + selfCall(1) + sstore(4, 4) + "00",
+            sstore(2, 2) + selfCall(2) + sstore(5, 5) + "00",
+            sstore(3, 3)
+        )
+    );
+}

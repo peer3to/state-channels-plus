@@ -1,15 +1,22 @@
 import {
+    deployNestedWriter,
     deployNumberStorage,
+    deployRevertProbe,
+    deploySlotWriter,
+    dumpedAccount,
     recordKey,
     rejectionOf,
     setValue,
-    withStorageDiffSession
+    slotKey,
+    storageWord,
+    withStorageDiffSession,
+    writeSlot
 } from "../../fixtures/node/StorageDiffService.fixture";
 import { sleep } from "@/utils";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/node/storageDiff/blockStorageDiff";
 import { HEAD_WAIT_MS } from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
-import { toQuantity } from "ethers";
+import { Wallet, toQuantity } from "ethers";
 
 /** Time is the input: how long a read that must wait is watched for. */
 const ABSENCE_WINDOW_MS = 500;
@@ -177,36 +184,38 @@ describe("StorageDiffService blocks", function () {
     });
 
     it("sends the fields of one state read to the upstream as one batch", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
-            const storage = await deployNumberStorage(signer);
-            const address = await recordKey(storage);
-            const subscription = await client.subscribe([]);
-            const receipt = await setValue(storage, 5n);
-            const head = await client.recordAt(
-                subscription,
-                receipt.blockNumber
-            );
-            const trips = relay.roundTrips;
+        await withStorageDiffSession(
+            async ({ client, relay, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                const address = await recordKey(storage);
+                const subscription = await client.subscribe([]);
+                const receipt = await setValue(storage, 5n);
+                const head = await client.recordAt(
+                    subscription,
+                    receipt.blockNumber
+                );
+                // the account's retained history is filled once, before its values are read
+                await client.getState(head.hash, [{ address }]);
+                const trips = relay.roundTrips;
+                const lazy = service.statistics.lazyFieldFetches;
 
-            await client.getState(head.hash, [
-                {
-                    address,
-                    slots: ["0x" + "00".repeat(32)],
-                    account: true,
-                    code: true
-                }
-            ]);
+                await client.getState(head.hash, [
+                    {
+                        address,
+                        slots: ["0x" + "00".repeat(32)],
+                        account: true,
+                        code: true
+                    }
+                ]);
 
-            expect(relay.roundTrips - trips).to.equal(1);
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
-            expect(relay.requestCount("eth_getBalance")).to.equal(1);
-            expect(relay.requestCount("eth_getTransactionCount")).to.equal(1);
-            expect(relay.requestCount("eth_getCode")).to.equal(1);
-        });
+                expect(relay.roundTrips - trips).to.equal(1);
+                expect(service.statistics.lazyFieldFetches - lazy).to.equal(4);
+            }
+        );
     });
 
     it("keeps answering a state read for an older retained block after the head moved", async function () {
-        await withStorageDiffSession(async ({ client, relay, signer }) => {
+        await withStorageDiffSession(async ({ client, service, signer }) => {
             const storage = await deployNumberStorage(signer);
             const address = await recordKey(storage);
             const subscription = await client.subscribe([]);
@@ -225,7 +234,7 @@ describe("StorageDiffService blocks", function () {
                 BigInt(state.accounts[address].storage!["0x" + "00".repeat(32)])
             ).to.equal(5n);
             expect(NOT_RETAINED_ERROR_CODE).to.equal(-32002);
-            expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
+            expect(service.statistics.lazyFieldFetches).to.equal(1);
         });
     });
 
@@ -289,6 +298,128 @@ describe("StorageDiffService blocks", function () {
 
             expect(answer.number).to.equal(head.number);
             expect(Date.now() - started).to.be.at.least(HEAD_WAIT_MS - 100);
+        });
+    });
+});
+
+describe("StorageDiffService values come from reads, not from the trace", function () {
+    // Asset Hub's prestateTracer reports writes of reverted sub-calls in `post`;
+    // the relay adds such writes to every trace the service asks for.
+    it("leaves out the slot and the value transfer of a reverted sub-call that the trace reports", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, signer, service }) => {
+                const recipient = Wallet.createRandom().address.toLowerCase();
+                const probe = await deployRevertProbe(signer, recipient);
+                const subscription = await client.subscribe([probe, recipient]);
+                await client.nextSnapshot(subscription);
+                relay.tamper("debug_traceBlockByNumber", (result) =>
+                    (result as { result: { pre: object; post: object } }[]).map(
+                        (entry) => ({
+                            ...entry,
+                            result: {
+                                pre: {
+                                    ...entry.result.pre,
+                                    [probe]: { storage: {} },
+                                    [recipient]: { balance: "0x0" }
+                                },
+                                post: {
+                                    ...entry.result.post,
+                                    [probe]: {
+                                        storage: {
+                                            [slotKey(1)]: storageWord(1n),
+                                            [slotKey(2)]: storageWord(5n)
+                                        }
+                                    },
+                                    [recipient]: { balance: "0x1" }
+                                }
+                            }
+                        })
+                    )
+                );
+
+                const receipt = await (
+                    await signer.sendTransaction({ to: probe })
+                ).wait();
+                await client.recordAt(subscription, receipt!.blockNumber);
+                const [record] = (
+                    await client.getDiffs(
+                        [probe, recipient],
+                        receipt!.blockNumber
+                    )
+                ).filter((r) => r.number === toQuantity(receipt!.blockNumber));
+
+                expect(record.post[probe].storage).to.deep.equal({
+                    [slotKey(1)]: storageWord(1n)
+                });
+                expect(record.post[recipient]).to.equal(undefined);
+                void service;
+            }
+        );
+    });
+
+    it("lists no slot a transaction wrote with the value it already had", async function () {
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            await writeSlot(signer, writer, 1, 5n);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            const receipt = await writeSlot(signer, writer, 1, 5n);
+            await client.recordAt(subscription, receipt.blockNumber);
+            const records = await client.getDiffs(
+                [writer],
+                receipt.blockNumber
+            );
+            const record = records.find(
+                (r) => r.number === toQuantity(receipt.blockNumber)
+            );
+            expect(record?.post[writer]?.storage ?? {}).to.deep.equal({});
+        });
+    });
+
+    it("misses no slot anvil holds after calls that nest and re-enter, and the diffs add up to its state", async function () {
+        await withStorageDiffSession(async ({ client, provider, signer }) => {
+            const nested = await deployNestedWriter(signer);
+            const subscription = await client.subscribe([nested]);
+            await client.nextSnapshot(subscription);
+            const first = await (
+                await signer.sendTransaction({ to: nested })
+            ).wait();
+            const second = await (
+                await signer.sendTransaction({ to: nested })
+            ).wait();
+            await client.recordAt(subscription, second!.blockNumber);
+            const records = await client.getDiffs([nested], first!.blockNumber);
+            const written = new Set(
+                records.flatMap((r) =>
+                    Object.keys(r.post[nested]?.storage ?? {})
+                )
+            );
+            const dumped = await dumpedAccount(provider, nested);
+            const held = Object.entries(dumped.storage)
+                .filter(([, word]) => BigInt(word) !== 0n)
+                .map(([slot]) => slotKey(Number(BigInt(slot))));
+            expect(held).to.have.length(5);
+            for (const slot of held) expect(written).to.include(slot);
+        });
+    });
+
+    it("fills the history of an account subscribed after its blocks were retained from reads", async function () {
+        await withStorageDiffSession(async ({ client, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            const receipt = await writeSlot(signer, writer, 3, 7n);
+            await writeSlot(signer, writer, 3, 9n);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            const records = await client.getDiffs(
+                [writer],
+                receipt.blockNumber
+            );
+            const record = records.find(
+                (r) => r.number === toQuantity(receipt.blockNumber)
+            );
+            expect(record?.post[writer]?.storage).to.deep.equal({
+                [slotKey(3)]: storageWord(7n)
+            });
         });
     });
 });

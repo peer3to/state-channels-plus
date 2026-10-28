@@ -125,7 +125,7 @@ describe("StorageDiffService backfill", function () {
                     [slotKey(77)]: ZERO_WORD,
                     [slotKey(1)]: storageWord(5n)
                 });
-                expect(relay.requestCount("eth_getStorageAt")).to.equal(0);
+                expect(service.statistics.lazyFieldFetches).to.equal(0);
                 expect(service.statistics.lazyFieldFetches).to.equal(0);
             }
         );

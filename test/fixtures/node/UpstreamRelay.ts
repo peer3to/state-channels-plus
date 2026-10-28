@@ -39,6 +39,11 @@ export class UpstreamRelay {
     private readonly seen = new Map<UpstreamMethod, number>();
     // Params of every request seen, per method, in arrival order.
     private readonly seenParams = new Map<UpstreamMethod, unknown[][]>();
+    // Method -> how its answers are rewritten.
+    private readonly tampering = new Map<
+        UpstreamMethod,
+        (result: unknown, params: unknown[]) => unknown
+    >();
     private connections = 0;
     private roundTripCount = 0;
     private refusing = false;
@@ -105,6 +110,17 @@ export class UpstreamRelay {
         };
     }
 
+    /**
+     * Rewrites the `result` of every answer to a `method` request, as an
+     * upstream whose answers are wrong would send it.
+     */
+    tamper(
+        method: UpstreamMethod,
+        transform: (result: unknown, params: unknown[]) => unknown
+    ): void {
+        this.tampering.set(method, transform);
+    }
+
     /** Answers the next `count` `method` requests with an error frame. */
     failNext(method: UpstreamMethod, count: number): void {
         this.failing = { method, remaining: count };
@@ -152,9 +168,21 @@ export class UpstreamRelay {
             if (upstream.readyState === WebSocket.OPEN) upstream.send(frame);
             else toUpstream.push(frame);
         };
+        // requests in flight, by id, so an answer can be rewritten
+        const asked = new Map<unknown, RelayedRequest>();
         upstream.on("message", (data) => {
-            if (client.readyState === WebSocket.OPEN)
-                client.send(data.toString());
+            if (client.readyState !== WebSocket.OPEN) return;
+            if (this.tampering.size === 0)
+                return void client.send(data.toString());
+            const parsed = JSON.parse(data.toString());
+            const answers = Array.isArray(parsed) ? parsed : [parsed];
+            for (const answer of answers) {
+                const request = asked.get(answer.id);
+                const transform = request && this.tampering.get(request.method);
+                if (transform && "result" in answer)
+                    answer.result = transform(answer.result, request.params);
+            }
+            client.send(JSON.stringify(parsed));
         });
         client.on("message", (data) => {
             const frame = data.toString();
@@ -162,6 +190,8 @@ export class UpstreamRelay {
                 | RelayedRequest
                 | RelayedRequest[];
             this.roundTripCount++;
+            for (const call of Array.isArray(parsed) ? parsed : [parsed])
+                asked.set(call.id, call);
             // a batch array is counted per call and forwarded whole
             if (Array.isArray(parsed)) {
                 for (const call of parsed) this.count(call);

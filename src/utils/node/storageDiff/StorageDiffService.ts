@@ -6,7 +6,7 @@ import {
     INVALID_PARAMS,
     INVALID_REQUEST,
     isObject,
-    mergeTransactionDiffs,
+    touchesOf,
     METHOD_NOT_FOUND,
     NOT_RETAINED_ERROR_CODE,
     PARSE_ERROR,
@@ -20,6 +20,7 @@ import {
     type AccountDiffs,
     type BlockEnvironment,
     type BlockHeader,
+    type BlockTouches,
     type BlockStorageDiff,
     type IncludedHeadRecord,
     type RpcBlock,
@@ -30,6 +31,7 @@ import {
 import {
     ChainMovedError,
     ContractBackfill,
+    type BackfilledState,
     type BackfillCost
 } from "./ContractBackfill";
 import type AIncludedHeadStrategy from "./includedHead/AIncludedHeadStrategy";
@@ -40,7 +42,11 @@ import {
     type StateField,
     type StateValue
 } from "./StateCache";
-import { StateStore, type PersistedBlock } from "./StateStore";
+import {
+    StateStore,
+    type PersistedBlock,
+    type PersistedState
+} from "./StateStore";
 import { StorageDiffRpcMethods } from "./StorageDiffRpcMethods";
 import {
     UpstreamLostError,
@@ -236,6 +242,9 @@ export class StorageDiffService {
     private included?: IncludedHead;
     // Hash of the included head already reported as off the best chain.
     private divergenceReported?: string;
+    // Accounts the service keeps the values of in every record it stages: one
+    // entry per account, settled when the retained records hold them too.
+    private readonly watched = new Map<AccountAddress, Promise<void>>();
     // Backfills in flight, one per account.
     private readonly backfills = new Map<AccountAddress, Promise<void>>();
     private readonly store?: StateStore;
@@ -362,6 +371,8 @@ export class StorageDiffService {
                         this.startBackfill(address);
                 });
             });
+            // the records keep these accounts' values from the next block on
+            for (const address of addresses) void this.watch(address);
             return id;
         });
     }
@@ -375,6 +386,8 @@ export class StorageDiffService {
         addresses: AccountAddress[],
         fromBlock: bigint
     ): Promise<StorageDiffCatchUp> {
+        // the records hold the requested accounts, filled in if need be
+        await Promise.all(addresses.map((address) => this.watch(address)));
         return await this.enqueue(async () => {
             const includedHead = this.includedRecord();
             const best = this.canonical[this.canonical.length - 1];
@@ -420,6 +433,10 @@ export class StorageDiffService {
         requests: StateRequest[]
     ): Promise<StorageDiffState> {
         const fields = requests.flatMap((request) => this.fieldsOf(request));
+        // the records hold the requested accounts, which a value read needs
+        await Promise.all(
+            requests.map((request) => this.watch(request.address))
+        );
         for (let attempt = 0; attempt <= RECONCILE_RETRY_LIMIT; attempt++) {
             this.assertRetained(blockHash);
             this.fetchMissing(fields);
@@ -561,6 +578,7 @@ export class StorageDiffService {
         try {
             // The upstream can drop during the load as well as after startup.
             let connected = false;
+            const saved = await this.restoreSavedCache();
             this.canonical = await retry(
                 async () => {
                     connected = false;
@@ -590,7 +608,7 @@ export class StorageDiffService {
                         )
                 }
             );
-            await this.resumeFromStore();
+            await this.alignSavedCache(saved);
             await this.includedStrategy?.start({
                 logger: this.logger,
                 request: (method, params) => this.request(method, params),
@@ -620,7 +638,7 @@ export class StorageDiffService {
                 await this.fetchHeader(headers[headers.length - 1].parentHash)
             );
         }
-        return await this.stage(headers.reverse());
+        return await this.stage(headers.reverse(), "chain");
     }
 
     /** Opens the upstream and its head subscription, with bounded retries. */
@@ -815,14 +833,20 @@ export class StorageDiffService {
         }
     }
 
-    /** Traces each header's block once, in order; empty blocks need no trace. */
-    private async stage(headers: BlockHeader[]): Promise<StagedBlock[]> {
+    /**
+     * Traces each header's block once, in order; empty blocks need no trace.
+     * The trace names what the block touched; the values of what the watched
+     * accounts touched are read from the node, never taken from the trace.
+     * `pre` values come from the cache when the cache is at the block's parent
+     * (`preFrom` "cache"), from the node at the parent block otherwise.
+     */
+    private async stage(
+        headers: BlockHeader[],
+        preFrom: "cache" | "chain"
+    ): Promise<StagedBlock[]> {
         const records: StagedBlock[] = [];
-        for (const header of headers) {
-            let diff: { pre: AccountDiffs; post: AccountDiffs } = {
-                pre: {},
-                post: {}
-            };
+        for (const [index, header] of headers.entries()) {
+            let touches: BlockTouches = {};
             if (header.txCount > 0) {
                 const traces = await this.request("debug_traceBlockByNumber", [
                     toQuantity(header.number),
@@ -836,7 +860,7 @@ export class StorageDiffService {
                 ) {
                     throw new Error("Upstream trace does not cover the block");
                 }
-                diff = mergeTransactionDiffs(traces);
+                touches = touchesOf(traces);
             }
             const record: StagedBlock = {
                 ...environmentOf({
@@ -844,16 +868,116 @@ export class StorageDiffService {
                     number: toQuantity(header.number)
                 }),
                 parentHash: header.parentHash,
-                ...diff,
+                pre: {},
+                post: {},
+                touches,
+                covered: new Set(),
                 raw: header.raw,
                 logs: [],
                 logsBloom: header.logsBloom,
                 loggedAddresses: new Set()
             };
+            const addresses = [...this.watched.keys()];
+            for (const address of addresses) record.covered.add(address);
+            await this.readValues(
+                record,
+                addresses,
+                index === 0 && preFrom === "cache" ? "cache" : "chain"
+            );
             await this.attachLogs(record, this.subscribedAddresses());
             records.push(record);
         }
         return records;
+    }
+
+    /**
+     * Reads, in one batch, the values `addresses` have at `record`'s block for
+     * what the block touched of them, and the values before it, and keeps what
+     * changed in `record.pre` and `record.post`.
+     */
+    private async readValues(
+        record: StagedBlock,
+        addresses: AccountAddress[],
+        preFrom: "cache" | "chain"
+    ): Promise<void> {
+        const fields: StateField[] = [];
+        for (const address of addresses) {
+            const touched = record.touches[address];
+            if (!touched) continue;
+            for (const slot of touched.slots)
+                fields.push({ kind: "slot", address, slot });
+            fields.push(
+                { kind: "balance", address },
+                { kind: "nonce", address },
+                { kind: "code", address }
+            );
+        }
+        if (fields.length === 0 || !this.upstream) return;
+        const before = fields.map((field) =>
+            preFrom === "cache" ? this.stateCache.get(field) : undefined
+        );
+        const calls = fields.map((field) => this.fieldCall(field, record.hash));
+        fields.forEach((field, i) => {
+            if (before[i] === undefined)
+                calls.push(this.fieldCall(field, record.parentHash));
+        });
+        let answers: unknown[];
+        try {
+            answers = await this.retryTransient(
+                () => Promise.all(this.upstream!.requestBatch(calls)),
+                "Retrying the block's value reads"
+            );
+        } catch (error) {
+            // a block the node dropped cannot be read by hash: the head moved
+            if (error instanceof UpstreamRequestError)
+                throw new HeadChangedError(
+                    `Block ${record.number} could not be read`
+                );
+            throw error;
+        }
+        let next = fields.length;
+        fields.forEach((field, i) => {
+            const post = this.parseField(field, answers[i]);
+            const pre =
+                before[i] ?? this.parseField(field, answers[next++ as number]);
+            if (post === pre) return;
+            for (const [side, value] of [
+                [record.pre, pre],
+                [record.post, post]
+            ] as const) {
+                const account = (side[field.address] ??= {});
+                if (field.kind === "slot")
+                    (account.storage ??= {})[field.slot] = value as string;
+                else if (field.kind === "nonce")
+                    account.nonce = value as number;
+                else account[field.kind] = value as string;
+            }
+        });
+    }
+
+    /**
+     * Starts keeping the values of `address` in every record, and fills the
+     * retained records staged before. Settles when they hold it; asking again
+     * returns the same promise.
+     */
+    private watch(address: AccountAddress): Promise<void> {
+        let filled = this.watched.get(address);
+        if (!filled) {
+            // later blocks cover it from here; the fill covers the earlier ones
+            filled = this.enqueue(() => this.fillHistory(address));
+            this.watched.set(address, filled);
+            filled.catch(() => this.watched.delete(address));
+        }
+        return filled;
+    }
+
+    /** Adds `address` to the retained records that were staged without it. */
+    private async fillHistory(address: AccountAddress): Promise<void> {
+        for (const record of this.canonical) {
+            if (record.covered.has(address)) continue;
+            await this.readValues(record, [address], "chain");
+            record.covered.add(address);
+        }
     }
 
     /** Every address some open subscription asks for. */
@@ -991,7 +1115,13 @@ export class StorageDiffService {
         // An ancestor older than the window becomes the oldest retained record.
         // A traced block was checked after its trace; an empty tip is not
         // rechecked: a reorg during staging wakes a new reconciliation.
-        const staged = await this.stage(below ? [below, ...branch] : branch);
+        const staged = await this.stage(
+            below ? [below, ...branch] : branch,
+            // the cache is at the parent only when the branch is one block on the head
+            !below && branch.length === 1 && ancestor === canonical.length - 1
+                ? "cache"
+                : "chain"
+        );
         // Cached values follow the chain: back over the orphans, then forward.
         if (below) {
             this.stateCache.clear();
@@ -1120,10 +1250,11 @@ export class StorageDiffService {
     }
 
     /**
-     * Reads the contract's history up to the best head, in rounds: each round
-     * covers the blocks that arrived during the one before, until the covered
-     * block is inside the retained window, where the rest is applied from the
-     * records. A covered block that a reorg orphaned starts over.
+     * Reads the contract's history up to the best head, in rounds: the keys
+     * its traces name (never their values) up to a block inside the retained
+     * window, where the window's own records add the rest. Then the values of
+     * all those keys are read at one block, the head, and the records after
+     * it are applied. A covered block that a reorg orphaned starts over.
      */
     private async runBackfill(address: AccountAddress): Promise<void> {
         const started = Date.now();
@@ -1139,10 +1270,32 @@ export class StorageDiffService {
                           )
                       )
         };
+        // the records keep its values from now on
+        await this.watch(address);
         let restarts = 0;
         let covered: { number: bigint; hash: string } | undefined;
-        let storage: Record<string, string> = {};
+        let keys = new Set<string>();
         let record: BackfillRecord | undefined;
+        const spend = (backfill: ContractBackfill) => {
+            const cost = backfill.spent;
+            record ??= {
+                address,
+                codeProbes: 0,
+                blockReads: 0,
+                traces: 0,
+                stateReads: 0,
+                roundTrips: 0,
+                blocks: 0,
+                tracedBlocks: 0,
+                slots: 0,
+                milliseconds: 0
+            };
+            record.codeProbes += cost.codeProbes;
+            record.blockReads += cost.blockReads;
+            record.traces += cost.traces;
+            record.stateReads += cost.stateReads;
+            record.roundTrips += cost.roundTrips;
+        };
         for (let round = 0; round < BACKFILL_ROUNDS; round++) {
             if (this.stopping.signal.aborted) return;
             const tipRecord = this.canonical[this.canonical.length - 1];
@@ -1151,40 +1304,56 @@ export class StorageDiffService {
                 hash: tipRecord.hash
             };
             const backfill = new ContractBackfill(upstream, address);
-            let found:
-                | Awaited<ReturnType<ContractBackfill["storageThrough"]>>
-                | undefined;
-            let deploy: bigint | undefined;
-            let at: { number: bigint; hash: string };
-            let reads: unknown[];
             try {
                 if (!covered) {
-                    deploy = await backfill.findDeployBlock(tip.number);
-                    if (deploy !== undefined)
-                        found = await backfill.storageThrough(deploy, tip);
+                    const deploy = await backfill.findDeployBlock(tip.number);
+                    if (deploy !== undefined) {
+                        const found = await backfill.keysThrough(deploy, tip);
+                        for (const slot of found.keys) keys.add(slot);
+                        spend(backfill);
+                        record!.blocks += found.blocks;
+                        record!.tracedBlocks += found.tracedBlocks;
+                        record!.deployBlock = toQuantity(deploy);
+                    } else spend(backfill);
+                    covered = tip;
                 } else if (tip.number > covered.number) {
-                    found = await backfill.storageThrough(
+                    const found = await backfill.keysThrough(
                         covered.number + 1n,
                         tip,
                         covered.hash
                     );
+                    for (const slot of found.keys) keys.add(slot);
+                    spend(backfill);
+                    record!.blocks += found.blocks;
+                    record!.tracedBlocks += found.tracedBlocks;
+                    covered = tip;
                 }
-                at = found ? tip : (covered ?? tip);
-                // the account's scalar fields at the block the storage is through
-                reads = await Promise.all(
-                    upstream.requestBatch(
-                        (
-                            [
-                                "eth_getBalance",
-                                "eth_getTransactionCount",
-                                "eth_getCode"
-                            ] as const
-                        ).map((method) => ({
-                            method,
-                            params: [address, { blockHash: at.hash }]
-                        }))
-                    )
+                const prepared = await this.enqueue(() =>
+                    this.prepareBackfill(address, covered!, keys)
                 );
+                if (prepared === "again") continue;
+                if (prepared === "restart")
+                    throw new ChainMovedError("Covered block dropped");
+                // the values at the head, read outside the queue
+                const reader = new ContractBackfill(upstream, address);
+                const state = await reader.readState(
+                    prepared.anchor.hash,
+                    prepared.keys
+                );
+                spend(reader);
+                const outcome = await this.enqueue(() =>
+                    this.commitBackfill(address, prepared.anchor, state)
+                );
+                if (outcome === "retry") {
+                    covered = prepared.anchor;
+                    keys = new Set(prepared.keys);
+                    continue;
+                }
+                record!.slots = Object.keys(state.storage).length;
+                record!.milliseconds = Date.now() - started;
+                this.counters.backfills.push(record!);
+                this.logger.info("Backfilled an account", { ...record! });
+                return;
             } catch (error) {
                 // a reorg moved blocks under the read: read the range again
                 if (
@@ -1196,48 +1365,7 @@ export class StorageDiffService {
                 )
                     throw error;
                 covered = undefined;
-                storage = {};
-                record = undefined;
-                continue;
-            }
-            const roundCost = backfill.spent;
-            if (!record) {
-                record = {
-                    address,
-                    codeProbes: 0,
-                    blockReads: 0,
-                    traces: 0,
-                    roundTrips: 0,
-                    blocks: 0,
-                    tracedBlocks: 0,
-                    slots: 0,
-                    stateReads: 0,
-                    milliseconds: 0
-                };
-            }
-            record.codeProbes += roundCost.codeProbes;
-            record.blockReads += roundCost.blockReads;
-            record.traces += roundCost.traces;
-            record.roundTrips += roundCost.roundTrips + 1;
-            record.stateReads += 3;
-            record.blocks += found?.blocks ?? 0;
-            record.tracedBlocks += found?.tracedBlocks ?? 0;
-            if (deploy !== undefined) record.deployBlock = toQuantity(deploy);
-            Object.assign(storage, found?.storage);
-            covered = at;
-            const outcome = await this.enqueue(() =>
-                this.completeBackfill(address, covered!, storage, reads)
-            );
-            if (outcome === "done") {
-                record.slots = Object.keys(storage).length;
-                record.milliseconds = Date.now() - started;
-                this.counters.backfills.push(record);
-                this.logger.info("Backfilled an account", { ...record });
-                return;
-            }
-            if (outcome === "restart") {
-                covered = undefined;
-                storage = {};
+                keys = new Set();
                 record = undefined;
             }
         }
@@ -1245,16 +1373,20 @@ export class StorageDiffService {
     }
 
     /**
-     * Makes the account complete once the covered block is inside the window:
-     * the blocks after it come from the records. "again" asks for one more
-     * round, "restart" for a new backfill after a reorg dropped the block.
+     * Once the covered block is inside the window, takes the head as the
+     * anchor and adds the keys the window's blocks after the covered one
+     * touched. "again" asks for one more round of traces, "restart" for a new
+     * backfill after a reorg dropped the block.
      */
-    private async completeBackfill(
+    private async prepareBackfill(
         address: AccountAddress,
         covered: { number: bigint; hash: string },
-        storage: Record<string, string>,
-        reads: unknown[]
-    ): Promise<"done" | "again" | "restart"> {
+        keys: Set<string>
+    ): Promise<
+        | "again"
+        | "restart"
+        | { anchor: { number: bigint; hash: string }; keys: Set<string> }
+    > {
         const index = this.retainedIndex(covered.hash);
         if (index < 0) {
             const floor = BigInt(this.canonical[0].number);
@@ -1263,16 +1395,38 @@ export class StorageDiffService {
             const current = await this.fetchHeader(covered.number);
             return current.hash === covered.hash ? "again" : "restart";
         }
-        const [balance, nonce, code] = reads as string[];
+        const all = new Set(keys);
+        for (let i = index + 1; i < this.canonical.length; i++)
+            for (const slot of this.canonical[i].touches[address]?.slots ?? [])
+                all.add(slot);
+        const head = this.canonical[this.canonical.length - 1];
+        return {
+            anchor: { number: BigInt(head.number), hash: head.hash },
+            keys: all
+        };
+    }
+
+    /**
+     * Makes the account complete from the values read at `anchor`, if that
+     * block is still on the chain: the records after it, which hold the
+     * account because it is watched, bring it to the head.
+     */
+    private async commitBackfill(
+        address: AccountAddress,
+        anchor: { number: bigint; hash: string },
+        state: BackfilledState
+    ): Promise<"done" | "retry"> {
+        const index = this.retainedIndex(anchor.hash);
+        if (index < 0) return "retry";
         const scratch = new StateCache();
         scratch.setComplete(
             address,
             {
-                balance: normalizeBalance(balance),
-                nonce: Number(BigInt(nonce)),
-                code: code.toLowerCase()
+                balance: normalizeBalance(state.balance),
+                nonce: Number(BigInt(state.nonce)),
+                code: state.code
             },
-            storage
+            state.storage
         );
         for (let i = index + 1; i < this.canonical.length; i++) {
             scratch.applyForward(this.canonical[i]);
@@ -1376,16 +1530,29 @@ export class StorageDiffService {
     }
 
     /**
-     * Brings the saved cache to the best head: undo the saved blocks a reorg
-     * dropped, trace the blocks between the saved head and the retained
+     * Loads the saved cache, before the history is staged, and watches its
+     * accounts so the staged records hold their values.
+     */
+    private async restoreSavedCache(): Promise<PersistedState | undefined> {
+        const saved = await this.store?.load();
+        if (!saved) return undefined;
+        this.stateCache.importAll(saved.cache);
+        for (const address of this.stateCache.cachedAddresses())
+            this.watched.set(address, Promise.resolve());
+        return saved;
+    }
+
+    /**
+     * Brings the restored cache to the best head: undo the saved blocks a
+     * reorg dropped, trace the blocks between the saved head and the retained
      * window, then apply the window's records. A file that does not lead
      * there is dropped.
      */
-    private async resumeFromStore(): Promise<void> {
-        const saved = await this.store?.load();
+    private async alignSavedCache(
+        saved: PersistedState | undefined
+    ): Promise<void> {
         if (!saved) return;
         try {
-            this.stateCache.importAll(saved.cache);
             const floor = BigInt(this.canonical[0].number);
             let index = -1;
             let below: { number: bigint } | undefined;
@@ -1410,7 +1577,7 @@ export class StorageDiffService {
                 const headers: BlockHeader[] = [];
                 for (let n = below.number + 1n; n < floor; n++)
                     headers.push(await this.fetchHeader(n));
-                for (const record of await this.stage(headers))
+                for (const record of await this.stage(headers, "chain"))
                     this.stateCache.applyForward(record);
             }
             for (let i = index + 1; i < this.canonical.length; i++)
@@ -1421,6 +1588,7 @@ export class StorageDiffService {
             });
         } catch (error) {
             this.stateCache.clear();
+            this.watched.clear();
             this.logger.warn("Dropped the saved cache", {
                 reason: this.sanitize(describeError(error))
             });
