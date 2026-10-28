@@ -105,6 +105,13 @@ const TRACE_OPTIONS = {
     tracerConfig: { diffMode: true }
 };
 
+/** A field's identity in a map. */
+function fieldKey(field: StateField): string {
+    return field.kind === "slot"
+        ? `slot:${field.address}:${field.slot}`
+        : `${field.kind}:${field.address}`;
+}
+
 /** Endpoint names a request may route to: the endpoint class's own methods. */
 const ENDPOINTS: ReadonlySet<string> = new Set(
     Object.getOwnPropertyNames(StorageDiffRpcMethods.prototype).filter(
@@ -846,15 +853,18 @@ export class StorageDiffService {
      * Traces each header's block once, in order; empty blocks need no trace.
      * The trace names what the block touched; the values of what the watched
      * accounts touched are read from the node, never taken from the trace.
-     * `pre` values come from the cache when the cache is at the block's parent
-     * (`preFrom` "cache"), from the node at the parent block otherwise.
+     * `pre` values come from the cache when the cache is at the parent of the
+     * first block (`preFrom` "cache"), carried forward block by block over
+     * what the staged blocks read; from the node at the parent block otherwise.
      */
     private async stage(
         headers: BlockHeader[],
         preFrom: "cache" | "chain"
     ): Promise<StagedBlock[]> {
         const records: StagedBlock[] = [];
-        for (const [index, header] of headers.entries()) {
+        // the value each field has after the blocks staged so far
+        const running = new Map<string, StateValue>();
+        for (const header of headers) {
             let touches: BlockTouches = {};
             if (header.txCount > 0) {
                 const traces = await this.request("debug_traceBlockByNumber", [
@@ -888,11 +898,7 @@ export class StorageDiffService {
             };
             const addresses = [...this.watched.keys()];
             for (const address of addresses) record.covered.add(address);
-            await this.readValues(
-                record,
-                addresses,
-                index === 0 && preFrom === "cache" ? "cache" : "chain"
-            );
+            await this.readValues(record, addresses, preFrom, running);
             await this.attachLogs(record, this.subscribedAddresses());
             records.push(record);
         }
@@ -907,7 +913,8 @@ export class StorageDiffService {
     private async readValues(
         record: StagedBlock,
         addresses: AccountAddress[],
-        preFrom: "cache" | "chain"
+        preFrom: "cache" | "chain",
+        running = new Map<string, StateValue>()
     ): Promise<void> {
         const fields: StateField[] = [];
         for (const address of addresses) {
@@ -922,8 +929,11 @@ export class StorageDiffService {
             );
         }
         if (fields.length === 0 || !this.upstream) return;
-        const before = fields.map((field) =>
-            preFrom === "cache" ? this.stateCache.get(field) : undefined
+        // a block before this one in the step read the field; else the cache is at the step's parent
+        const before = fields.map(
+            (field) =>
+                running.get(fieldKey(field)) ??
+                (preFrom === "cache" ? this.stateCache.get(field) : undefined)
         );
         const calls = fields.map((field) => this.fieldCall(field, record.hash));
         fields.forEach((field, i) => {
@@ -947,6 +957,7 @@ export class StorageDiffService {
         let next = fields.length;
         fields.forEach((field, i) => {
             const post = this.parseField(field, answers[i]);
+            running.set(fieldKey(field), post);
             const pre =
                 before[i] ?? this.parseField(field, answers[next++ as number]);
             if (post === pre) return;
@@ -1126,10 +1137,8 @@ export class StorageDiffService {
         // rechecked: a reorg during staging wakes a new reconciliation.
         const staged = await this.stage(
             below ? [below, ...branch] : branch,
-            // the cache is at the parent only when the branch is one block on the head
-            !below && branch.length === 1 && ancestor === canonical.length - 1
-                ? "cache"
-                : "chain"
+            // the cache is at the first block's parent when the branch extends the head
+            !below && ancestor === canonical.length - 1 ? "cache" : "chain"
         );
         // Cached values follow the chain: back over the orphans, then forward.
         if (below) {

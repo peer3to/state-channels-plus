@@ -439,3 +439,38 @@ describe("StorageDiffService values come from reads, not from the trace", functi
         });
     });
 });
+
+describe("StorageDiffService old values", function () {
+    it("reads the old value of a slot from its cache for every block of a multi-block step", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            const first = await writeSlot(signer, writer, 1, 5n);
+            await client.recordAt(subscription, first.blockNumber);
+            const reads = () => relay.requestCount("eth_getStorageAt");
+
+            relay.refuseConnections(true);
+            relay.disconnect();
+            await writeSlot(signer, writer, 1, 6n);
+            await writeSlot(signer, writer, 1, 7n);
+            const last = await writeSlot(signer, writer, 1, 8n);
+            const before = reads();
+            relay.refuseConnections(false);
+            const records = [
+                await client.nextRecord(subscription),
+                await client.nextRecord(subscription),
+                await client.nextRecord(subscription)
+            ];
+
+            // one read of the new value per block, none of the old value
+            expect(reads() - before).to.equal(3);
+            expect(records.map((r) => r.pre[writer].storage)).to.deep.equal([
+                { [slotKey(1)]: storageWord(5n) },
+                { [slotKey(1)]: storageWord(6n) },
+                { [slotKey(1)]: storageWord(7n) }
+            ]);
+            expect(records[2].number).to.equal(toQuantity(last.blockNumber));
+        });
+    });
+});
