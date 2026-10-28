@@ -24,10 +24,14 @@ import type {
  */
 const MAX_APPLIED_BLOCKS = 128;
 /**
- * Longest a read waits for the mirror to reach a block of the peer's own
- * transaction before it goes to the RPC node.
+ * Longest a read waits for the mirror to reach a block the peer saw (its own
+ * transaction, or a block a node announced) before it goes to the RPC node.
+ * Over 854 waits in the shadow runs the head took 2 ms at the median, 16 ms at
+ * the 99th percentile and 52 ms at most to arrive after the node's
+ * announcement. The bound is for a service that is stuck, and is not below
+ * 4 s, two Asset Hub blocks.
  */
-const OWN_TRANSACTION_WAIT_MS = 10_000;
+const OWN_TRANSACTION_WAIT_MS = 4_000;
 
 /**
  * Passes over one read the mirror makes before giving up on it: each pass
