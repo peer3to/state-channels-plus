@@ -183,7 +183,7 @@ export type StubKey =
     | "failMatchedNegotiation"
     | "setChannelId"
     | "eventListenerRemoval"
-    | "postMatchTargetRefresh"
+    | "openedStatusRefresh"
     | "membershipJoinReceipt"
     | "joinSendAfterEstimate"
     | "membershipTopUpReceipt"
@@ -196,6 +196,8 @@ export type StubKey =
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
 export type HeldMembershipReceiptKind = "joinChannel" | "topUpBalance";
+/** Which of a connect's opened-status reads a hold parks. */
+export type HeldOpenedStatusRead = "first" | "second";
 
 /**
  * Where the reduction genesis application is paused (`hold`) or made to fail
@@ -876,8 +878,8 @@ export class StubService extends ANetworkRpcService<
     private heldSetChannelId?: HeldRpcReply;
     private heldEventListenerRemoval?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
-    private heldPostMatchTargetRefresh?: HeldRpcReply;
-    private postMatchTargetRefreshCallCount = 0;
+    private heldOpenedStatusRefresh?: HeldRpcReply;
+    private openedStatusRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
     /** The latest call a membership submission hold let through. */
@@ -1572,19 +1574,23 @@ export class StubService extends ANetworkRpcService<
         return this.heldSpectateResponse?.entered ?? 0;
     }
 
-    /** Park the second opened-status refresh; `autoReleaseMs` frees it by timer. */
-    public holdPostMatchTargetRefresh(autoReleaseMs?: number): void {
-        this.releasePostMatchTargetRefresh();
+    /** Park the `heldRead` opened-status refresh; `autoReleaseMs` frees it by timer. */
+    public holdOpenedStatusRefresh(
+        heldRead: HeldOpenedStatusRead,
+        autoReleaseMs?: number
+    ): void {
+        this.releaseOpenedStatusRefresh();
         const original = this.sm.refreshOpenedStatusFromChain.bind(this.sm);
-        this.stubOriginals.set("postMatchTargetRefresh", original);
+        this.stubOriginals.set("openedStatusRefresh", original);
         const hold = this.createRpcHold("exchangeTerms");
-        this.heldPostMatchTargetRefresh = hold;
-        this.postMatchTargetRefreshCallCount = 0;
+        this.heldOpenedStatusRefresh = hold;
+        this.openedStatusRefreshCallCount = 0;
+        const heldCallCount = heldRead === "first" ? 1 : 2;
         if (autoReleaseMs !== undefined)
             setTimeout(() => hold.release(), autoReleaseMs).unref();
         this.sm.refreshOpenedStatusFromChain = async () => {
-            this.postMatchTargetRefreshCallCount += 1;
-            if (this.postMatchTargetRefreshCallCount === 2) {
+            this.openedStatusRefreshCallCount += 1;
+            if (this.openedStatusRefreshCallCount === heldCallCount) {
                 hold.entered += 1;
                 await hold.gate;
             }
@@ -1592,21 +1598,21 @@ export class StubService extends ANetworkRpcService<
         };
     }
 
-    public releasePostMatchTargetRefresh(): number {
-        const entered = this.heldPostMatchTargetRefresh?.entered ?? 0;
-        this.heldPostMatchTargetRefresh?.release();
-        const original = this.stubOriginals.get("postMatchTargetRefresh");
+    public releaseOpenedStatusRefresh(): number {
+        const entered = this.heldOpenedStatusRefresh?.entered ?? 0;
+        this.heldOpenedStatusRefresh?.release();
+        const original = this.stubOriginals.get("openedStatusRefresh");
         if (original) {
             this.sm.refreshOpenedStatusFromChain =
                 original as typeof this.sm.refreshOpenedStatusFromChain;
-            this.stubOriginals.delete("postMatchTargetRefresh");
+            this.stubOriginals.delete("openedStatusRefresh");
         }
-        this.heldPostMatchTargetRefresh = undefined;
+        this.heldOpenedStatusRefresh = undefined;
         return entered;
     }
 
-    public getHeldPostMatchTargetRefreshCount(): number {
-        return this.heldPostMatchTargetRefresh?.entered ?? 0;
+    public getHeldOpenedStatusRefreshCount(): number {
+        return this.heldOpenedStatusRefresh?.entered ?? 0;
     }
 
     private membershipStubKey(kind: HeldMembershipReceiptKind): StubKey {

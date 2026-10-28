@@ -1,12 +1,15 @@
-import type { WebRTCStateSteps } from "@test/fixtures/customRpc/p2pManagerProbe/P2PManagerProbeService";
+import type { WebRTCConnectionStateSnapshot } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
+import type {
+    WebRTCConnectionStatesScenario,
+    WebRTCStateSteps
+} from "@test/fixtures/customRpc/p2pManagerProbe/P2PManagerProbeService";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { expect } from "chai";
 
-// The setup service's grace for a connection whose path stopped answering is 5 s.
-const PAST_GRACE_MS = 5_500;
-const WITHIN_GRACE_MS = 4_000;
-// The probe waits inside the host.
-const PROBE_TIMEOUT_MS = 20_000;
+// The setup service's grace for a connection whose path stopped answering is
+// 5 s. The probe waits on fake timers inside the host.
+const PAST_GRACE_MS = 5_001;
+const WITHIN_GRACE_MS = 4_999;
 
 const WAITING = "WebRTC connection disconnected; waiting for it to recover";
 const NOT_RECOVERED =
@@ -24,28 +27,31 @@ const PATH_BACK: WebRTCStateSteps = [
 ];
 
 describe("WebRTC connection grace", function () {
-    this.timeout(40_000);
     let fixture: P2PManagerFixture;
 
     beforeEach(async function () {
         fixture = new P2PManagerFixture();
-        await fixture.setup();
+        // The probe's fake timers stay in the peer's own thread.
+        await fixture.setup({ isolatedPeers: true });
     });
 
     afterEach(async function () {
         await fixture.cleanup();
     });
 
-    function probe(steps: WebRTCStateSteps, waitMs: number, replace?: boolean) {
+    function probe(
+        steps: WebRTCStateSteps,
+        waitMs: number,
+        options: Omit<WebRTCConnectionStatesScenario, "steps" | "waitMs"> = {}
+    ) {
         return fixture
             .control()
-            .p2pManagerProbe.probeWebRTCConnectionStates(
-                fixture.address(1),
+            .p2pManagerProbe.probeWebRTCConnectionStates(fixture.address(1), {
                 steps,
                 waitMs,
-                replace
-            )
-            .request({ timeoutMs: PROBE_TIMEOUT_MS });
+                ...options
+            })
+            .request();
     }
 
     it("keeps the transport of a connection whose path recovers within the grace, and logs the loss and the recovery", async function () {
@@ -80,11 +86,12 @@ describe("WebRTC connection grace", function () {
     });
 
     it("closes the transport and its connection at once when the connection or its path fails or closes, also a DTLS failure on a working path", async function () {
-        for (const state of [
+        const finalStates: WebRTCConnectionStateSnapshot[] = [
             { connectionState: "failed", iceState: "failed" },
             { connectionState: "closed", iceState: "closed" },
             { connectionState: "failed", iceState: "connected" }
-        ]) {
+        ];
+        for (const state of finalStates) {
             const result = await probe([state], 0);
             const label = `${state.connectionState}/${state.iceState}`;
 
@@ -124,7 +131,7 @@ describe("WebRTC connection grace", function () {
         const result = await probe(
             [
                 ...PATH_LOST,
-                { waitMs: 3_000 },
+                { waitMs: WITHIN_GRACE_MS },
                 ...PATH_BACK,
                 ...PATH_LOST,
                 { waitMs: WITHIN_GRACE_MS }
@@ -137,11 +144,32 @@ describe("WebRTC connection grace", function () {
     });
 
     it("closes a replaced connection's transport when its replacement starts, without closing the replacement's connection", async function () {
-        const result = await probe(PATH_LOST, PAST_GRACE_MS, true);
+        const result = await probe(PATH_LOST, PAST_GRACE_MS, {
+            shouldReplace: true
+        });
 
         expect(result.transportOpen).to.equal(false);
         expect(result.replacementOpen).to.equal(true);
         expect(result.warnings).to.deep.equal([WAITING]);
         expect(result.factoryCloses).to.deep.equal([]);
+    });
+
+    it("closes and forgets a connection that fails or closes during a grace before it has a transport", async function () {
+        const finalStates: WebRTCConnectionStateSnapshot[] = [
+            { connectionState: "failed", iceState: "failed" },
+            { connectionState: "closed", iceState: "closed" }
+        ];
+        for (const state of finalStates) {
+            const result = await probe([...PATH_LOST, state], PAST_GRACE_MS, {
+                hasDataChannel: false
+            });
+            const label = `${state.connectionState}/${state.iceState}`;
+
+            expect(result.warnings, label).to.deep.equal([WAITING, ENDED]);
+            expect(result.factoryCloses, label).to.deep.equal([
+                fixture.address(1)
+            ]);
+            expect(result.trackedPeers, label).to.deep.equal([]);
+        }
     });
 });

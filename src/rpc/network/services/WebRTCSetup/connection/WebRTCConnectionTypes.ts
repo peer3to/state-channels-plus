@@ -2,14 +2,51 @@ import type { Address } from "@/types";
 
 export type WebRTCPeerAddress = Address;
 
+/** An `RTCPeerConnectionState`, or "unknown" when the runtime reports none. */
+export type WebRTCConnectionStateName =
+    | "new"
+    | "connecting"
+    | "connected"
+    | "disconnected"
+    | "failed"
+    | "closed"
+    | "unknown";
+
+/** An `RTCIceConnectionState`, or "unknown" when the runtime reports none. */
+export type WebRTCIceStateName =
+    | "new"
+    | "checking"
+    | "connected"
+    | "completed"
+    | "disconnected"
+    | "failed"
+    | "closed"
+    | "unknown";
+
+/** An `RTCDtlsTransportState`. */
+export type WebRTCDtlsStateName =
+    | "new"
+    | "connecting"
+    | "connected"
+    | "closed"
+    | "failed";
+
+/** An `RTCStatsIceCandidatePairState`. */
+export type WebRTCCandidatePairStateName =
+    | "frozen"
+    | "waiting"
+    | "in-progress"
+    | "failed"
+    | "succeeded";
+
 /**
  * The connection's selected network path, read from `getStats()` when its
  * state changed. A field the runtime does not report is absent.
  */
 export type WebRTCPathStats = {
-    dtlsState?: string;
+    dtlsState?: WebRTCDtlsStateName;
     selectedPairChanges?: number;
-    pairState?: string;
+    pairState?: WebRTCCandidatePairStateName;
     /** Candidate type and protocol, e.g. "host udp". */
     localCandidate?: string;
     remoteCandidate?: string;
@@ -27,8 +64,8 @@ export type WebRTCPathStats = {
 };
 
 export type WebRTCConnectionStateSnapshot = {
-    connectionState: string;
-    iceState: string;
+    connectionState: WebRTCConnectionStateName;
+    iceState: WebRTCIceStateName;
     /** Absent when the runtime has no `getStats()` or the read failed. */
     path?: WebRTCPathStats;
 };
@@ -45,8 +82,8 @@ export type WebRTCDataChannelLike = {
 };
 
 export type WebRTCPeerConnectionLike = {
-    connectionState?: string;
-    iceConnectionState?: string;
+    connectionState?: WebRTCConnectionStateName;
+    iceConnectionState?: WebRTCIceStateName;
     /** werift fires the ICE state change only as an event, never through `oniceconnectionstatechange`. */
     addEventListener(
         type: "connectionstatechange" | "iceconnectionstatechange",

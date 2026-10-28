@@ -20,6 +20,12 @@ const require = createRequire(import.meta.url);
 // the crash-log smoke's crash is deliberate; every other console error fails
 const BROWSER_WORKER_CRASH_MESSAGE =
     "browser worker answer precompile async crash";
+// the non-Error report case's failures are deliberate; the page logs each
+// report. Filtered only while that case runs.
+const NON_ERROR_FAILURE_MESSAGES = [
+    "browser worker error event without error",
+    "browser worker thrown string"
+];
 // the load-failure case's worker script 404s on purpose: its failed request
 // and console line are expected
 const MISSING_WORKER_SCRIPT = "missing-worker-entry.js";
@@ -130,6 +136,7 @@ try {
     await installSdkRuntimeConfig(page, origin);
     page.setDefaultTimeout(PAGE_TIMEOUT_MS);
     const browserErrors = [];
+    let isNonErrorSmokeRunning = false;
 
     page.on("pageerror", (error) => {
         // the crash-log smoke crashes its vm worker on purpose
@@ -150,6 +157,10 @@ try {
             message.text().includes(BROWSER_WORKER_CRASH_MESSAGE) ||
             message.text().includes(FAILURE_LOG_WRITE_ERROR) ||
             message.text().includes(DRAIN_WARNING_WRITE_ERROR) ||
+            (isNonErrorSmokeRunning &&
+                NON_ERROR_FAILURE_MESSAGES.some((text) =>
+                    message.text().includes(text)
+                )) ||
             message.location().url.includes(MISSING_WORKER_SCRIPT) ||
             message.location().url.includes(ABORTED_WORKER_SCRIPT) ||
             message.text().includes(ABORTED_WORKER_SCRIPT)
@@ -201,6 +212,7 @@ try {
                 Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke) &&
                 Boolean(globalThis.runCrashLogBrowserSmoke) &&
+                Boolean(globalThis.runWorkerNonErrorReportBrowserSmoke) &&
                 Boolean(globalThis.runBrowserWebRTCAutoFallback)
         );
     } catch (error) {
@@ -366,6 +378,31 @@ try {
         assert.equal(watchdog.rejection.reportsBeforeArm, 0);
         assert.equal(watchdog.rejection.reportCount, 1);
         assert.equal(watchdog.rejection.servedAfterReport, true);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker reports an uncaught failure with no Error as one Error", async () => {
+        isNonErrorSmokeRunning = true;
+        let result;
+        try {
+            result = await runSmoke("runWorkerNonErrorReportBrowserSmoke");
+        } finally {
+            isNonErrorSmokeRunning = false;
+        }
+        assert.deepEqual(result, {
+            errorEventWithoutError: {
+                messages: [
+                    "browser worker error event without error at worker-precompile.js:3:7"
+                ],
+                isServing: true
+            },
+            thrownString: {
+                messages: [
+                    "uncaught exception in the vm worker with a non-Error value: browser worker thrown string"
+                ],
+                isServing: true
+            }
+        });
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 

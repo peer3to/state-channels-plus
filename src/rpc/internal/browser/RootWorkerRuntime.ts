@@ -1,5 +1,5 @@
 import "../threadName";
-import type { RootWorker } from "../createRoot";
+import type { RootWorker, UncaughtFailureKind } from "../createRoot";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import { config, createConfig } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
@@ -255,18 +255,26 @@ export function closeRootWorker(): void {
  * fatal worker failure instead of the detached report it is.
  */
 export function onUnhandledWorkerError(
-    handler: (error: unknown) => void
+    handler: (failure: unknown, kind: UncaughtFailureKind) => void
 ): void {
     self.addEventListener(
         "unhandledrejection",
         (event: PromiseRejectionEvent) => {
             event.preventDefault();
-            handler(event.reason);
+            handler(event.reason, "unhandled rejection");
         }
     );
     self.addEventListener("error", (event: ErrorEvent) => {
         event.preventDefault();
-        handler(event.error ?? event.message);
+        // The event carries the thrown value, an Error or not. When it
+        // carries none, its own message and location are what is known.
+        handler(
+            event.error ??
+                new Error(
+                    `${event.message} at ${event.filename}:${event.lineno}:${event.colno}`
+                ),
+            "uncaught exception"
+        );
     });
 }
 

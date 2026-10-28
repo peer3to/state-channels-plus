@@ -22,6 +22,10 @@ The initial-sync genesis and abort cases keep the original participants authorin
 observer's spawn and the held-request window. This prevents a participant timeout from changing the
 fork before the settlement behavior is exercised; protocol time values are unchanged.
 
+The early targeted-cancel case parks the first opened-status read of a connect with opening permission
+through the stub service, cancels during that read and then releases it; the cancel must return `true`,
+the connect `false`, and the lobby must show no matching session and no joined topic.
+
 The held participant-check cases park the observer's real chain participant reads through the stub
 service while the initial deadline task runs. With the reads still held, they check that the observer is
 neither aborted nor disposed, stays `OPENED` and sent no sync request. Then they release the reads as
@@ -70,6 +74,7 @@ the deadline task, checks that the settle cancelled it, then runs the held task 
 - `unopened target without autoOpen leaves raw and matching discovery untouched`: INV-TJOIN-1-R3K75D.T1.P1
 - `targeted matching keeps the selected channel without entering DISCOVERING`: INV-TJOIN-1-R3K75D.T1.P4
 - `targeted matching probe settles after the derived topic is joined`: none
+- `a cancel during the target's opened-status read ends the connect before matching starts`: UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV.P1, REQ-TJOIN-1-5VGR1F.T1.P8
 - `unsigned targeted failure retains the target and blacklists neither peer`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P1, REQ-TJOIN-5-Q795M7.T1.P11
 - `explicit same-ID retry creates a fresh matcher and negotiation attempt`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2, REQ-TJOIN-5-Q795M7.T1.P2
 - `fatal initial sync closes its root and rejects later same-channel client calls`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3, REQ-TJOIN-5-Q795M7.T1.P4

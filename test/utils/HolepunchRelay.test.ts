@@ -25,9 +25,16 @@ describe("HolepunchRelay", function () {
     it("reconnects after a relay socket closes", function () {
         fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
 
-        fixture.latestSocket().emitClose();
+        fixture.latestSocket().emitClose(1006, "gone");
         fixture.tick(250);
 
+        expect(
+            fixture
+                .relayerFailures()
+                .map((failure) => (failure as Error).message)
+        ).to.deep.equal([
+            "Holepunch relayer wss://relay-a.example close event (code 1006, reason gone)"
+        ]);
         expect(fixture.sockets().map((socket) => socket.url)).to.deep.equal([
             "wss://relay-a.example",
             "wss://relay-b.example"
@@ -111,5 +118,89 @@ describe("HolepunchRelay", function () {
 
         expect(fixture.sockets()).to.have.length(2);
         expect(fixture.updates()).to.equal(2);
+    });
+
+    it("fails over once, with no unhandled rejection, when a socket fails before it opens", async function () {
+        fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
+
+        fixture.latestSocket().failBeforeOpen();
+
+        expect(await fixture.unhandledRejections()).to.deep.equal([]);
+        const failures = fixture.relayerFailures();
+        expect(failures).to.have.length(1);
+        expect(failures[0]).to.be.instanceOf(Error);
+        expect((failures[0] as Error).message).to.equal(
+            "Holepunch relayer wss://relay-a.example error event"
+        );
+        fixture.tick(250);
+        expect(fixture.sockets().map((socket) => socket.url)).to.deep.equal([
+            "wss://relay-a.example",
+            "wss://relay-b.example"
+        ]);
+    });
+
+    it("fails over once, naming the relayer, when the relay's opening rejects with its own Error", async function () {
+        fixture.createSocketsClosed();
+        fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
+
+        expect(await fixture.unhandledRejections()).to.deep.equal([]);
+        const failures = fixture.relayerFailures() as Error[];
+        expect(failures.map((failure) => failure.message)).to.deep.equal([
+            "Holepunch relayer wss://relay-a.example failed to open: Socket is closed"
+        ]);
+        expect((Reflect.get(failures[0], "cause") as Error).message).to.equal(
+            "Socket is closed"
+        );
+        expect(fixture.sockets()).to.have.length(1);
+    });
+
+    it("counts one failure when a socket closes before it opens with no error event", async function () {
+        fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
+
+        fixture.latestSocket().emitClose(1006, "");
+
+        expect(await fixture.unhandledRejections()).to.deep.equal([]);
+        expect(
+            fixture
+                .relayerFailures()
+                .map((failure) => (failure as Error).message)
+        ).to.deep.equal([
+            "Holepunch relayer wss://relay-a.example close event (code 1006)"
+        ]);
+        fixture.tick(250);
+        expect(fixture.sockets()).to.have.length(2);
+    });
+
+    it("a relay opening that fails after disposal neither counts a failure nor reconnects", async function () {
+        fixture.init(["wss://relay-a.example", "wss://relay-b.example"]);
+        const socket = fixture.latestSocket();
+
+        fixture.disposeRuntime();
+        socket.failBeforeOpen();
+
+        expect(await fixture.unhandledRejections()).to.deep.equal([]);
+        fixture.tick(30_000);
+        expect(fixture.relayerFailures()).to.deep.equal([]);
+        expect(fixture.sockets()).to.deep.equal([socket]);
+    });
+
+    it("throws at initialization for an invalid relayer URL among valid ones, a configuration error, and opens no socket, counts no relay failure and retries nothing", function () {
+        expect(() =>
+            fixture.init(["wss://relay-a.example", "not a url"])
+        ).to.throw(
+            Error,
+            'Invalid holepunch relayer URL "not a url": expected a ws: or wss: URL'
+        );
+        expect(() =>
+            fixture.init(["wss://relay-a.example", "https://relay-b.example"])
+        ).to.throw(
+            Error,
+            'Invalid holepunch relayer URL "https://relay-b.example": expected a ws: or wss: URL'
+        );
+
+        fixture.tick(30_000);
+        expect(fixture.relayerFailures()).to.deep.equal([]);
+        expect(fixture.sockets()).to.deep.equal([]);
+        expect(fixture.updates()).to.equal(0);
     });
 });

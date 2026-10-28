@@ -1,5 +1,5 @@
 import "../threadName";
-import type { RootWorker } from "../createRoot";
+import type { RootWorker, UncaughtFailureKind } from "../createRoot";
 import { startCpuProfilerIfEnabled } from "@/evm/node/workerCpuProfiler";
 import { resolveWorkerResourceLimits } from "@/evm/node/workerResourceLimits";
 import { createWorkerShutdown } from "@/evm/node/workerShutdown";
@@ -292,10 +292,14 @@ export function adaptTransferredPort(port: unknown): RuntimePort {
  * worker before it can be funnelled to the orchestrator.
  */
 export function onUnhandledWorkerError(
-    handler: (error: unknown) => void
+    handler: (failure: unknown, kind: UncaughtFailureKind) => void
 ): void {
-    process.on("unhandledRejection", (reason) => handler(reason));
-    process.on("uncaughtException", (error) => handler(error));
+    process.on("unhandledRejection", (reason) =>
+        handler(reason, "unhandled rejection")
+    );
+    process.on("uncaughtException", (error) =>
+        handler(error, "uncaught exception")
+    );
 }
 
 export function reportRootStartupTiming(timing: {

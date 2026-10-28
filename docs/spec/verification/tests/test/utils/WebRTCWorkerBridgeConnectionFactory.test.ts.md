@@ -5,7 +5,7 @@ Exercises: [WorkerBridgeWebRTCConnectionFactory.ts](../../../../implementation/s
 
 ## Overview
 
-Exercises real SDK-owned worker bridge roots, main-thread broker roots and native WebRTC providers. Cases cover negotiation, channel proxy traffic, peer callbacks, independent bridge instances, timeout and post failure, recursive disposal and external broker attachment after readiness. The delayed-attachment cases also check port-wait timeout, attachment notification and clearing the default adapter after disposal.
+Exercises real SDK-owned worker bridge roots, main-thread broker roots and native WebRTC providers. Cases cover negotiation, channel proxy traffic, peer callbacks, independent bridge instances, timeout and post failure, recursive disposal, a close held at the broker while the bridge is disposed, a close whose corrupted request fails at the broker and whose held failure is released after the bridge disposal started, and external broker attachment after readiness. The delayed-attachment cases also check port-wait timeout, attachment notification and clearing the default adapter after disposal.
 
 ## Tests
 
@@ -17,6 +17,8 @@ Exercises real SDK-owned worker bridge roots, main-thread broker roots and nativ
 - `creates a proxy data channel from bridge channel events`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P13
 - `routes bridge state and ICE events to connection callbacks`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P14
 - `rejects in-flight requests when the shared bridge is disposed`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P4
+- `resolves a close that the bridge disposal interrupts and a close after the disposal`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P22, REQ-RUNTIME-3-VQXW59.T1.P85
+- `rejects a close whose own failure arrives while the bridge is disposing`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P23, REQ-RUNTIME-3-VQXW59.T1.P86
 - `keeps recursive bridge disposal idempotent`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P15
 - `delivers real connection changes only to replacement callbacks`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P16
 - `ignores retired provider channel callbacks after reconnect`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P17

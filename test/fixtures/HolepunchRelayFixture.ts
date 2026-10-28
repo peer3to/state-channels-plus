@@ -3,40 +3,37 @@
 import Holepunch from "@/Holepunch";
 import HolepunchRelay from "@/HolepunchRelay";
 import type P2PManager from "@/P2PManager";
+import { RelayerPool } from "@/transport/relay/RelayerPool";
 import { type Logger, createLogger } from "@/utils";
 import { config } from "@/utils/config";
+import {
+    type UnhandledRejectionRecorder,
+    recordUnhandledRejections
+} from "@test/fixtures/UnhandledRejectionRecorder";
 import sinon from "sinon";
 
-type WebSocketListener = (event: unknown) => void;
-
-export class RecordingWebSocket {
+/**
+ * A WebSocket whose events the test fires; listeners get real `Event`s whose
+ * target is the socket.
+ */
+export class RecordingWebSocket extends EventTarget {
     public static instances: RecordingWebSocket[] = [];
+    /** Each new socket is already CLOSED, as one whose connection failed at once. */
+    public static isCreatedClosed = false;
 
     public readonly url: string;
     public readyState = 0;
     public binaryType = "arraybuffer";
     public onopen: (() => void) | null = null;
-    public onclose: (() => void) | null = null;
-    public onerror: ((error: Error) => void) | null = null;
+    public onclose: ((event: Event) => void) | null = null;
+    public onerror: ((event: Event) => void) | null = null;
     public onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
-    private readonly listeners = new Map<string, Set<WebSocketListener>>();
 
     constructor(url: string) {
+        super();
         this.url = url;
+        if (RecordingWebSocket.isCreatedClosed) this.readyState = 3;
         RecordingWebSocket.instances.push(this);
-    }
-
-    public addEventListener(type: string, listener: WebSocketListener): void {
-        const listeners = this.listeners.get(type) ?? new Set();
-        listeners.add(listener);
-        this.listeners.set(type, listeners);
-    }
-
-    public removeEventListener(
-        type: string,
-        listener: WebSocketListener
-    ): void {
-        this.listeners.get(type)?.delete(listener);
     }
 
     public send(): void {}
@@ -47,23 +44,32 @@ export class RecordingWebSocket {
 
     public emitOpen(): void {
         this.readyState = 1;
-        this.emit("open", {});
+        this.dispatchEvent(new Event("open"));
         this.onopen?.();
     }
 
-    public emitClose(): void {
+    /** A close event with the browser CloseEvent's code and reason. */
+    public emitClose(code = 1006, reason = ""): void {
         this.readyState = 3;
-        this.emit("close", {});
-        this.onclose?.();
+        const event = Object.assign(new Event("close"), { code, reason });
+        this.dispatchEvent(event);
+        this.onclose?.(event);
     }
 
-    public emitError(error = new Error("relay unavailable")): void {
-        this.emit("error", error);
-        this.onerror?.(error);
+    public emitError(): void {
+        const event = new Event("error");
+        this.dispatchEvent(event);
+        this.onerror?.(event);
     }
 
-    private emit(type: string, event: unknown): void {
-        for (const listener of this.listeners.get(type) ?? []) listener(event);
+    /**
+     * A browser socket that fails before it opens: it is already CLOSED when
+     * its error event fires, and its close event follows.
+     */
+    public failBeforeOpen(): void {
+        this.readyState = 3;
+        this.emitError();
+        this.emitClose();
     }
 }
 
@@ -74,6 +80,8 @@ export class HolepunchRelayFixture {
     private updateCount = 0;
     private relay?: HolepunchRelay;
     private logger?: Logger;
+    private failureSpy?: sinon.SinonSpy;
+    private unhandled?: UnhandledRejectionRecorder;
 
     public setup(randomValues: number[] = [0]): void {
         this.clock = this.sandbox.useFakeTimers();
@@ -84,7 +92,10 @@ export class HolepunchRelayFixture {
             randomIndex += 1;
             return value;
         });
+        this.failureSpy = this.sandbox.spy(RelayerPool.prototype, "onFailure");
+        this.unhandled = recordUnhandledRejections();
         RecordingWebSocket.instances = [];
+        RecordingWebSocket.isCreatedClosed = false;
         this.webSocketDescriptor = Object.getOwnPropertyDescriptor(
             globalThis,
             "WebSocket"
@@ -166,8 +177,23 @@ export class HolepunchRelayFixture {
         return [...RecordingWebSocket.instances];
     }
 
+    /** Every socket the relay opens from now on is already CLOSED. */
+    public createSocketsClosed(): void {
+        RecordingWebSocket.isCreatedClosed = true;
+    }
+
     public updates(): number {
         return this.updateCount;
+    }
+
+    /** The reason of each failure the relay handed to its pool. */
+    public relayerFailures(): unknown[] {
+        return (this.failureSpy?.getCalls() ?? []).map((call) => call.args[1]);
+    }
+
+    /** Waits one real macrotask, after which Node has reported every rejection left unhandled. */
+    public unhandledRejections(): Promise<readonly unknown[]> {
+        return this.unhandled!.settled();
     }
 
     public tick(milliseconds: number): void {
@@ -176,6 +202,9 @@ export class HolepunchRelayFixture {
 
     public cleanup(): void {
         this.sandbox.restore();
+        this.unhandled?.stop();
+        this.unhandled = undefined;
+        this.failureSpy = undefined;
         if (this.webSocketDescriptor) {
             Object.defineProperty(
                 globalThis,
@@ -192,5 +221,6 @@ export class HolepunchRelayFixture {
         if (this.logger && !this.logger.isDisposed) this.logger.dispose();
         this.logger = undefined;
         RecordingWebSocket.instances = [];
+        RecordingWebSocket.isCreatedClosed = false;
     }
 }

@@ -1,7 +1,9 @@
 // @spec-test-coverage-ignore: typed SDK-edge recorders for transport component tests
 import type { BannablePeerInfo } from "@/PeerProfile";
 import type {
+    WebRTCConnectionStateName,
     WebRTCDataChannelLike,
+    WebRTCIceStateName,
     WebRTCPeerConnectionLike,
     WebRTCStatsReport
 } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
@@ -76,8 +78,8 @@ export class RecordingWebRTCDataChannel implements WebRTCDataChannelLike {
  * like the Node implementation.
  */
 export class RecordingRTCPeerConnection implements WebRTCPeerConnectionLike {
-    public connectionState = "new";
-    public iceConnectionState = "new";
+    public connectionState: WebRTCConnectionStateName = "new";
+    public iceConnectionState: WebRTCIceStateName = "new";
     private readonly listeners = {
         connectionstatechange: [] as (() => void)[],
         iceconnectionstatechange: [] as (() => void)[]
@@ -105,14 +107,17 @@ export class RecordingRTCPeerConnection implements WebRTCPeerConnectionLike {
         this.listeners[type].push(listener);
     }
 
-    public changeState(connectionState: string, iceState: string): void {
+    public changeState(
+        connectionState: WebRTCConnectionStateName,
+        iceState: WebRTCIceStateName
+    ): void {
         this.changeIceState(iceState);
         this.connectionState = connectionState;
         for (const listener of this.listeners.connectionstatechange) listener();
     }
 
     /** Only the ICE state changes, as werift reports an ICE recovery. */
-    public changeIceState(iceState: string): void {
+    public changeIceState(iceState: WebRTCIceStateName): void {
         this.iceConnectionState = iceState;
         for (const listener of this.listeners.iceconnectionstatechange)
             listener();

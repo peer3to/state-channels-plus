@@ -50,7 +50,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216)   | Future spectator relaying                                                                                                                                   | Plan                                          | Current queue admission and optional promotion                                                                                                                                                                             | Future; non-blocking              |
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Open (later)                      |
-| [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game logs (2026-10-27)     | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
+| [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
 
 ## Register assumptions and constraints
 
@@ -712,6 +712,9 @@ rules. Alternatives are retaining current exclusion or defining a distinct stale
 specified retry and attribution rules. Requested engineer decision: whether either honest stale case should
 avoid blacklisting, and under what evidence. This blocks a softer policy, not the current rejection behavior.
 
+Related finding: a chain block that lands during one sync verification can fail an honest payload
+([`FIND-SYNC-8-E9K3YP`](../audit/open-findings.md#find-sync-8-e9k3yp)).
+
 <a id="oq-spec-clock-1-z8tbfe"></a>
 
 ## OQ-SPEC-CLOCK-1-Z8TBFE — Keeping runtime clocks in agreement over a session
@@ -813,21 +816,20 @@ Affected layers: [synchronization](peer-communication/synchronization.md), imple
 
 ## OQ-SPEC-RELAY-1-SW2BKP — Confirmation re-broadcast volume delays counter-signatures past the agreement window
 
-Open; to address later (Luka, 2026-10-28). Found in a six-player game on the private testnet (three
-Macs, three Android phones, one LAN, every link on WebRTC and stable). The authors of blocks 113 and 114
-(ordered contributions) and 123 (a voluntary quit) posted their blocks' calldata on-chain: at the
-author's check one `agreementTime` (4 s) after commit, not every participant's counter-signature had
-arrived. The links were healthy; the time went into processing.
+Open; to address later (Luka, 2026-10-28). Seen in a six-player game (three desktop and three mobile
+browsers on one LAN, every link on WebRTC and stable): authors of ordered-contribution and voluntary-quit
+blocks posted their blocks' calldata on-chain because, at the author's check one `agreementTime` (4 s)
+after commit, not every participant's counter-signature had arrived. The links were healthy; the time went
+into processing.
 
-Measured over 19 blocks (23:44:10–23:44:40): every player received about 455 messages (5.9 MB) and sent
-about as many, about 24 messages and 310 KB per block, with peaks near 1 MB/s. Between two commits each
-player ran about 20 (4–68) merges of confirmations for blocks it already held. A merge that adds any
-signature re-broadcasts the whole block confirmation to every peer
+In that game every player received and sent about 24 messages and 310 KB per block, with peaks near
+1 MB/s, and between two commits each player ran about 20 (4–68) merges of confirmations for blocks it
+already held. A merge that adds any signature re-broadcasts the whole block confirmation to every peer
 (`BlockValidationStrategy.goodNewSignaturesOnExistingBlock`), also after everyone has signed, because
 each peer learns a block's signatures in several steps: about n × (n − 1) × (n − 1) messages per block
 for n peers. The merges run in the same per-fork queue that commits new blocks
 (`BlockQueueManager.executeQueuedEntry`), so a slow device's own counter-signature waits behind them. In
-bursts the Android phones committed 2–3 s after the first player, leaving about 1 s for their signature
+bursts the mobile devices committed 2–3 s after the first player, leaving about 1 s for their signature
 to reach the author. Proof verification is not the cause (about 4 ms per ordered contribution).
 
 Owner: [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](peer-communication/block-gossip.md#req-gossip-3-hqznqx).

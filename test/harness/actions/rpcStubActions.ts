@@ -27,6 +27,7 @@ import type {
     HeldLobbyReplyKind,
     HeldMembershipReceiptKind,
     HeldNegotiationReplyKind,
+    HeldOpenedStatusRead,
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
@@ -380,18 +381,19 @@ export class RpcStubActions<
                 .request();
     }
 
-    async holdPostMatchTargetRefresh(
-        peerIndex: number
+    async holdOpenedStatusRefresh(
+        peerIndex: number,
+        heldRead: HeldOpenedStatusRead
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.holdPostMatchTargetRefresh()
+            .stub.holdOpenedStatusRefresh(heldRead)
             .request();
         return async () =>
             await this.harness
                 .control(peer)
-                .stub.releasePostMatchTargetRefresh()
+                .stub.releaseOpenedStatusRefresh()
                 .request();
     }
 

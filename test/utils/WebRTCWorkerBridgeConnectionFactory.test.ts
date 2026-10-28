@@ -1,3 +1,4 @@
+import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import { assertAbnormalBridgeError } from "@test/fixtures/node/WebRTCBridgeFixture";
 import {
     withWebRTCBridge,
@@ -125,6 +126,34 @@ describe("WorkerBridgeWebRTCConnectionFactory", function () {
             expect(rejection).to.be.instanceOf(Error);
             expect(rejection.message).to.include("disposed");
             expect(bridge.client.router.pendingRequestCount).to.equal(0);
+        });
+    });
+    it("resolves a close that the bridge disposal interrupts and a close after the disposal", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const received = bridge.control.holdNextResponse("close");
+            const closing = bridge.factory.close(bridge.peerAddress);
+            await received;
+            await bridge.dispose();
+            await closing;
+            await bridge.factory.close(bridge.peerAddress);
+            expect(bridge.client.router.pendingRequestCount).to.equal(0);
+        });
+    });
+    it("rejects a close whose own failure arrives while the bridge is disposing", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const received = bridge.control.holdNextResponse("close");
+            bridge.control.corruptNextParams("close");
+            const closing = bridge.factory.close(bridge.peerAddress).then(
+                () => undefined,
+                (error: unknown) => error
+            );
+            await received;
+            const disposing = bridge.dispose();
+            bridge.control.release();
+            const failure = await closing;
+            await disposing;
+            expect(failure).to.be.instanceOf(Error);
+            expect(isRootDisposedError(failure)).to.equal(false);
         });
     });
 });

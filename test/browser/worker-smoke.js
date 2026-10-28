@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: browser page script for the worker smokes; evidence is mapped from run-worker-contract-executor.mjs
+import { waitForPlain } from "../utils/waitForPlain.js";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
@@ -41,6 +42,49 @@ globalThis.runContractExecutorWorkerBrowserSmoke = async () => {
     } finally {
         await sdk.dispose();
     }
+};
+
+// One executor per failure: its vm worker lets each failure escape once,
+// and the report arrives as one detached error.
+globalThis.runWorkerNonErrorReportBrowserSmoke = async () => {
+    const reportOf = async (failure) => {
+        const signalName = `non-error-${crypto.randomUUID()}`;
+        const reports = [];
+        const sdk = await createBrowserSdkExecutor({
+            customPrecompiles: [
+                {
+                    address: CUSTOM_ADDRESS,
+                    module: new URL("./worker-precompile.js", import.meta.url)
+                        .href,
+                    options: {
+                        expectedData: "0x",
+                        value: "42",
+                        nonErrorSignal: signalName
+                    }
+                }
+            ],
+            dependencies: { onDetachedError: (error) => reports.push(error) }
+        });
+        const signal = new BroadcastChannel(signalName);
+        try {
+            // The call loads the precompile, so its channel listens.
+            await sdk.executor.simulateCall("0x", CUSTOM_ADDRESS);
+            signal.postMessage(failure);
+            await waitForPlain(() => reports.length >= 1, 15_000, 50);
+            await sdk.executor.simulateCall("0x", CUSTOM_ADDRESS);
+            return {
+                messages: reports.map((report) => report.message),
+                isServing: true
+            };
+        } finally {
+            signal.close();
+            await sdk.dispose();
+        }
+    };
+    return {
+        errorEventWithoutError: await reportOf("error-event-without-error"),
+        thrownString: await reportOf("thrown-string")
+    };
 };
 
 // Runtime code: TIMESTAMP, MSTORE at 0, RETURN 32 bytes; the init code

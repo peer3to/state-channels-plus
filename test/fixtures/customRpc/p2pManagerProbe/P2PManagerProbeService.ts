@@ -622,13 +622,25 @@ export type WebRTCStateStep =
     | { waitMs: number };
 export type WebRTCStateSteps = WebRTCStateStep[];
 
+export type WebRTCConnectionStatesScenario = {
+    steps: WebRTCStateSteps;
+    /** How long to wait after the steps. */
+    waitMs: number;
+    /** A second connection for the same peer replaces the first after the steps. */
+    shouldReplace?: boolean;
+    /** False: the first connection never gets a data channel, so it has no transport. */
+    hasDataChannel?: boolean;
+};
+
 export type WebRTCConnectionStatesProbe = {
-    /** Whether the WebRTC transport is open after the steps and the wait. */
+    /** Whether the WebRTC transport is open after the steps and the wait; false without one. */
     transportOpen: boolean;
     /** With a replacing connection: whether its transport is open. */
     replacementOpen?: boolean;
     /** The peers whose factory connection the service closed, in order. */
     factoryCloses: string[];
+    /** The peers whose connection the service still tracks. */
+    trackedPeers: string[];
     warnings: string[];
     infos: string[];
 };
@@ -2607,18 +2619,24 @@ export class P2PManagerProbeService extends ANetworkRpcService<
 
     /**
      * Opens a WebRTC connection to `address` through a stand-in connection
-     * factory and hands the setup service a recording data channel, so the
-     * service creates and owns the transport. Plays `steps`: each reports a
-     * connection state or waits. With `replace`, a second connection for the
-     * same peer replaces the first after the steps. Then waits `waitMs` and
-     * records whether each transport's channel is open and the setup
-     * service's log messages.
+     * factory and, unless `hasDataChannel` is false, hands the setup service
+     * a recording data channel, so the service creates and owns the
+     * transport. Plays `steps`: each reports a connection state or waits.
+     * With `shouldReplace`, a second connection for the same peer replaces
+     * the first after the steps. Then waits `waitMs` and records whether each
+     * transport's channel is open, the factory closes, the peers the service
+     * still tracks and the setup service's log messages. The waits run on
+     * fake timers, installed for the host's whole thread from the first
+     * step to the record; a timer still pending at the record is dropped.
      */
     public async probeWebRTCConnectionStates(
         address: string,
-        steps: WebRTCStateSteps,
-        waitMs: number,
-        replace = false
+        {
+            steps,
+            waitMs,
+            shouldReplace = false,
+            hasDataChannel = true
+        }: WebRTCConnectionStatesScenario
     ): Promise<WebRTCConnectionStatesProbe> {
         const service = this.p2pManager.localRpc.webRTCSetupService;
         const connections: WebRTCConnectionCallbacks[] = [];
@@ -2639,31 +2657,43 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const logger = Reflect.get(service, "logger") as Logger;
         const warn = sinon.spy(logger, "warn");
         const info = sinon.spy(logger, "info");
-        const connect = async () => {
+        const connect = async (isChannelOpened: boolean) => {
             await service.acceptWebRTCOffer(address, {});
             const channel = new RecordingWebRTCDataChannel();
             const callbacks = connections.at(-1)!;
-            callbacks.onDataChannel(channel);
-            return { channel, callbacks };
+            if (isChannelOpened) callbacks.onDataChannel(channel);
+            return { channel, callbacks, isChannelOpened };
         };
-        const wait = (ms: number) =>
-            new Promise((resolve) => setTimeout(resolve, ms));
+        let clock: sinon.SinonFakeTimers | undefined;
         try {
-            const first = await connect();
+            const first = await connect(hasDataChannel);
+            clock = sinon.useFakeTimers({
+                toFake: ["setTimeout", "clearTimeout"]
+            });
             for (const step of steps) {
-                if ("waitMs" in step) await wait(step.waitMs);
+                if ("waitMs" in step) await clock.tickAsync(step.waitMs);
                 else first.callbacks.onConnectionStateChange(step);
             }
-            const replacement = replace ? await connect() : undefined;
-            await wait(waitMs);
+            const replacement = shouldReplace ? await connect(true) : undefined;
+            await clock.tickAsync(waitMs);
+            const trackedPeers = [
+                ...(
+                    Reflect.get(service, "currentWatches") as Map<
+                        string,
+                        unknown
+                    >
+                ).keys()
+            ];
             return {
-                transportOpen: !first.channel.closed,
+                transportOpen: first.isChannelOpened && !first.channel.closed,
                 replacementOpen: replacement && !replacement.channel.closed,
                 factoryCloses,
+                trackedPeers,
                 warnings: warn.args.map(([message]) => String(message)),
                 infos: info.args.map(([message]) => String(message))
             };
         } finally {
+            clock?.restore();
             warn.restore();
             info.restore();
         }

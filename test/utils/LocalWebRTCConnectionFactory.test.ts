@@ -1,83 +1,16 @@
-import LocalWebRTCConnectionFactory from "@/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory";
-import type { WebRTCConnectionStateSnapshot } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
-import { RecordingRTCPeerConnection } from "@test/fixtures/P2PTransportFixture";
+import { STATS_READ_TIME_LIMIT_MS } from "@/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory";
+import {
+    FIREFOX_SELECTED_PATH,
+    NO_SELECTED_PATH,
+    SELECTED_PAIR_STATS,
+    SELECTED_PATH,
+    openConnection,
+    statsHold
+} from "@test/fixtures/LocalWebRTCConnectionFactoryFixture";
+import { recordUnhandledRejections } from "@test/fixtures/UnhandledRejectionRecorder";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ethers } from "ethers";
-
-/** A factory over stand-in connections, recording each connection, state report and error. */
-async function openConnection(withStats: boolean) {
-    const connections: RecordingRTCPeerConnection[] = [];
-    const factory = new LocalWebRTCConnectionFactory({
-        RTCPeerConnection: class extends RecordingRTCPeerConnection {
-            constructor() {
-                super(withStats);
-                connections.push(this);
-            }
-        }
-    });
-    const peerAddress = ethers.Wallet.createRandom().address;
-    const states: WebRTCConnectionStateSnapshot[] = [];
-    const errors: Error[] = [];
-    const callbacks = {
-        onIceCandidate: () => undefined,
-        onDataChannel: () => undefined,
-        onConnectionStateChange: (state: WebRTCConnectionStateSnapshot) =>
-            states.push(state),
-        onError: (error: Error) => errors.push(error)
-    };
-    await factory.createOffer(peerAddress, callbacks);
-    return {
-        factory,
-        peerAddress,
-        callbacks,
-        connections,
-        connection: connections[0],
-        states,
-        errors
-    };
-}
-
-/** A hold for one getStats call, and its release. */
-function statsHold(): { hold: Promise<void>; release: () => void } {
-    let release!: () => void;
-    const hold = new Promise<void>((resolve) => (release = resolve));
-    return { hold, release };
-}
-
-const SELECTED_PATH = new Map<string, Record<string, any>>([
-    [
-        "T",
-        {
-            type: "transport",
-            selectedCandidatePairId: "P",
-            dtlsState: "connected",
-            selectedCandidatePairChanges: 1
-        }
-    ],
-    [
-        "P",
-        {
-            type: "candidate-pair",
-            timestamp: 10_000,
-            state: "succeeded",
-            localCandidateId: "L",
-            remoteCandidateId: "R",
-            currentRoundTripTime: 0.012,
-            requestsSent: 20,
-            responsesReceived: 18,
-            requestsReceived: 19,
-            responsesSent: 19,
-            consentRequestsSent: 15,
-            packetsSent: 100,
-            packetsReceived: 90,
-            lastPacketSentTimestamp: 9_900,
-            lastPacketReceivedTimestamp: 7_000
-        }
-    ],
-    ["L", { type: "local-candidate", candidateType: "host", protocol: "udp" }],
-    ["R", { type: "remote-candidate", candidateType: "srflx", protocol: "udp" }]
-]);
+import sinon from "sinon";
 
 describe("LocalWebRTCConnectionFactory state reports", function () {
     it("reports each state change with its selected path's stats, in the order of the changes, also when the first stats read is slow", async function () {
@@ -104,19 +37,7 @@ describe("LocalWebRTCConnectionFactory state reports", function () {
         expect(states[1].path).to.deep.equal({
             dtlsState: "connected",
             selectedPairChanges: 1,
-            pairState: "succeeded",
-            localCandidate: "host udp",
-            remoteCandidate: "srflx udp",
-            roundTripTimeMs: 12,
-            requestsSent: 20,
-            responsesReceived: 18,
-            requestsReceived: 19,
-            responsesSent: 19,
-            consentRequestsSent: 15,
-            packetsSent: 100,
-            packetsReceived: 90,
-            msSinceLastPacketSent: 100,
-            msSinceLastPacketReceived: 3000
+            ...SELECTED_PAIR_STATS
         });
         expect(errors).to.deep.equal([]);
     });
@@ -175,6 +96,45 @@ describe("LocalWebRTCConnectionFactory state reports", function () {
         ]);
     });
 
+    it("reports a state change whose stats read never settles after the time limit, without path stats, and still reports the later changes", async function () {
+        const { connection, states, errors } = await openConnection(true);
+        const clock = sinon.useFakeTimers();
+        try {
+            connection.statsReport = SELECTED_PATH;
+            connection.statsHolds.push(statsHold().hold);
+
+            connection.changeIceState("disconnected");
+            await clock.tickAsync(STATS_READ_TIME_LIMIT_MS - 1);
+            expect(states).to.deep.equal([]);
+            await clock.tickAsync(1);
+            expect(states).to.deep.equal([
+                {
+                    connectionState: "new",
+                    iceState: "disconnected",
+                    path: undefined
+                }
+            ]);
+            expect(errors.map((error) => error.message)).to.deep.equal([
+                `WebRTC getStats() did not settle within ${STATS_READ_TIME_LIMIT_MS} ms`
+            ]);
+
+            connection.changeIceState("connected");
+            await clock.tickAsync(0);
+            expect(states.map((state) => state.iceState)).to.deep.equal([
+                "disconnected",
+                "connected"
+            ]);
+            expect(states[1].path).to.deep.equal({
+                dtlsState: "connected",
+                selectedPairChanges: 1,
+                ...SELECTED_PAIR_STATS
+            });
+            expect(errors).to.have.length(1);
+        } finally {
+            clock.restore();
+        }
+    });
+
     it("reports nothing more for a connection once it is closed, also a change whose stats read was running", async function () {
         const { factory, peerAddress, connection, states } =
             await openConnection(true);
@@ -204,5 +164,78 @@ describe("LocalWebRTCConnectionFactory state reports", function () {
         expect(
             states.map((state) => `${state.connectionState}/${state.iceState}`)
         ).to.deep.equal(["new/connected", "connected/connected"]);
+    });
+
+    it("reads the pair marked selected where the runtime has no transport stats, as Firefox reports it", async function () {
+        const { connection, states } = await openConnection(true);
+        connection.statsReport = FIREFOX_SELECTED_PATH;
+
+        connection.changeState("connected", "connected");
+        await waitFor(() => states.length === 2, 5_000, 5);
+
+        expect(states[1].path).to.deep.equal({
+            dtlsState: undefined,
+            selectedPairChanges: undefined,
+            ...SELECTED_PAIR_STATS
+        });
+    });
+
+    it("reports only the transport stats while no candidate pair is selected", async function () {
+        const { connection, states } = await openConnection(true);
+        connection.statsReport = NO_SELECTED_PATH;
+
+        connection.changeState("connecting", "checking");
+        await waitFor(() => states.length === 2, 5_000, 5);
+
+        expect(states[1].path).to.deep.equal({
+            dtlsState: "new",
+            selectedPairChanges: undefined,
+            pairState: undefined,
+            localCandidate: undefined,
+            remoteCandidate: undefined,
+            roundTripTimeMs: undefined,
+            requestsSent: undefined,
+            responsesReceived: undefined,
+            requestsReceived: undefined,
+            responsesSent: undefined,
+            consentRequestsSent: undefined,
+            packetsSent: undefined,
+            packetsReceived: undefined,
+            msSinceLastPacketSent: undefined,
+            msSinceLastPacketReceived: undefined
+        });
+    });
+
+    it("raises a throw in the state handling once as an unhandled rejection, not as a reported factory error, and still reports the later changes", async function () {
+        const failure = new Error("state handling failed");
+        const unhandled = recordUnhandledRejections();
+        try {
+            const { connection, states, errors } = await openConnection(
+                false,
+                failure
+            );
+
+            connection.changeState("connected", "connected");
+            await waitFor(() => states.length === 2, 5_000, 5);
+            expect(await unhandled.settled()).to.deep.equal([failure]);
+
+            connection.changeState("disconnected", "disconnected");
+            await waitFor(() => states.length === 4, 5_000, 5);
+            expect(await unhandled.settled()).to.deep.equal([failure]);
+
+            expect(
+                states.map(
+                    (state) => `${state.connectionState}/${state.iceState}`
+                )
+            ).to.deep.equal([
+                "new/connected",
+                "connected/connected",
+                "connected/disconnected",
+                "disconnected/disconnected"
+            ]);
+            expect(errors).to.deep.equal([]);
+        } finally {
+            unhandled.stop();
+        }
     });
 });

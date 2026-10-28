@@ -26,6 +26,7 @@ import type {
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
+    HeldOpenedStatusRead,
     ParticipantCheckAnswer,
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
@@ -3723,13 +3724,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldSpectateResponseCount();
     }
 
-    public holdPostMatchTargetRefresh(autoReleaseMs?: number): boolean {
-        this.service.holdPostMatchTargetRefresh(autoReleaseMs);
+    public holdOpenedStatusRefresh(
+        heldRead: HeldOpenedStatusRead,
+        autoReleaseMs?: number
+    ): boolean {
+        this.service.holdOpenedStatusRefresh(heldRead, autoReleaseMs);
         return true;
     }
 
-    public releasePostMatchTargetRefresh(): number {
-        return this.service.releasePostMatchTargetRefresh();
+    public releaseOpenedStatusRefresh(): number {
+        return this.service.releaseOpenedStatusRefresh();
     }
 
     public holdParticipantCheck(): boolean {
@@ -3749,8 +3753,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldParticipantCheckCount();
     }
 
-    public getHeldPostMatchTargetRefreshCount(): number {
-        return this.service.getHeldPostMatchTargetRefreshCount();
+    public getHeldOpenedStatusRefreshCount(): number {
+        return this.service.getHeldOpenedStatusRefreshCount();
     }
 
     public holdMembershipReceipt(

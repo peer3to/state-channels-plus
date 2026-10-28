@@ -3,6 +3,136 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Early targeted cancel, bounded stats read, strict bridge close — 2026-10-28
+
+What changed (Luka's review decisions 1, 3 and 8; decisions 4 and 7 are recorded as findings, 2, 5
+and 6 keep the code):
+
+1. [LocalP2pSigner.ts](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md): a targeted
+   connect with opening permission is tracked in `targetedConnects` from its start until its matching
+   step returns. `cancelConnectToChannel` hands a running matching on the topic to
+   `LobbyMatchingService.cancelMatching`, as before; when no matching runs on the topic, it marks the
+   tracked connects and returns `true` if there was one. A marked connect does not start matching (the
+   mark is also the `left` check `match` makes after a cleanup wait) and returns `false`. Before, a
+   cancel during the connect's channel selection or on-chain status read was lost and the connect
+   waited in matching without end. Requirement:
+   [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f),
+   case [`REQ-TJOIN-1-5VGR1F.T1.P8`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f.t1.p8);
+   [`UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md#unit-test-local-p2p-signer-3-3xwprv).
+2. [LocalWebRTCConnectionFactory.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts.md)
+   `createConnection`: a state report's stats read has a time limit, `STATS_READ_TIME_LIMIT_MS` (2 s).
+   A read past it is handled as a failed read: the timeout Error goes to `onError` and the report goes
+   on without path statistics, so a `getStats()` that never settles no longer blocks every later report.
+   Case [`REQ-UPG-9-60XCXK.T1.P16`](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk.t1.p16).
+3. [WorkerBridgeWebRTCConnectionFactory.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts.md)
+   `close` resolves only the disposal's own rejection while the bridge is disposing; every other failure
+   rejects. [RemoteRoot.ts](../implementation/source/src/rpc/internal/RemoteRoot.ts.md) owns the marker:
+   `childDisposedError` now returns a `RootDisposedError` (name `RootDisposedError`), and
+   `isRootDisposedError` checks the name, which also survives a port hop.
+   [WebRTCWorkerBridgeRoot.ts](../implementation/source/src/rpc/internal/roots/WebRTCWorkerBridgeRoot.ts.md)
+   rejects its pending requests at disposal with a `RootDisposedError` too. A close requested after the
+   disposal started still returns at once. Case
+   [`REQ-RUNTIME-3-VQXW59.T1.P86`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p86).
+4. Recorded, deferred: [`FIND-TIMEOUT-1-R8EWZ5`](open-findings.md#find-timeout-1-r8ewz5)
+   (`TimeoutManager.scheduleTask` swallows task errors) and
+   [`FIND-UPG-STALE-REPORT-1-PHPJ5H`](open-findings.md#find-upg-stale-report-1-phpj5h) (a stale
+   bridge state report reaches the next connection).
+5. Kept: a failed stats read stays a reported diagnostic that does not hold back the state change
+   ([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk));
+   an invalid relayer URL stays fatal at startup.
+
+## Relay failure before open stays handled; uncaught non-Error reports name their escape — 2026-10-28
+
+What changed: a relayer WebSocket that failed before it opened (mobile resume, network drop) made the
+dht-relay stream reject its opening with the socket's DOM `Event`. Nothing observed that promise, so the
+rejection escaped in the sdk worker, crossed the port as `String(event)` and reached the page as the fatal
+"[object Event]". Luka chose option A on the SDK side: the relay pool owns that expected failure. A
+component that receives a non-Error failure converts it at its own boundary; everything else handles
+Errors only, and the worker funnel is the last stop for a non-Error nobody handled.
+
+1. [HolepunchRelay.ts](../implementation/source/src/HolepunchRelay.ts.md) `connectToRelayer` observes
+   `dht.ready()` and hands a failed opening to the pool. One `fail` per socket counts only the first of its
+   error event, close event and failed opening, and nothing once the socket is no longer current (after
+   `dispose` or a reconnect); the open handler is gated the same way, so `dispose` only releases and
+   closes the socket. `relayerFailure` is the one boundary conversion: a socket `Event` becomes an Error
+   naming the relayer URL, the event type and a close event's code and reason; the relay's own Error
+   becomes an Error naming the relayer that keeps it as `cause`. The socket's own warn logs and the
+   catch's error log are gone; the pool logs each failure once.
+2. `connectToRelayer` has no try/catch. The constructor (`assertRelayerUrl`) checks every relayer URL
+   once, a parsable ws: or wss: URL, and throws for the first one that is not, so an invalid URL among
+   valid ones fails at startup, not at the failover that first selects it. The WebSocket constructor still
+   throws for a URL it can never open (a blocked port): agent decision on Luka's request, to be confirmed,
+   that this is a configuration error, fatal and not retried. DHT, Hyperswarm and `updateCallback` throws
+   are internal failures and fatal too.
+3. [RelayerPool.ts](../implementation/source/src/transport/relay/RelayerPool.ts.md) `onFailure` takes the
+   reason and logs `Holepunch relayer failed` at warn level with the URL, reason, excluded count and
+   total. It has no branch for a failure while a retry is pending: `HolepunchRelay` counts at most one
+   failure per socket and opens the next socket only after the retry fired, so that case cannot occur.
+   Requirement: [`REQ-UPG-5-YQV7MJ` (Relay retries converge without stale work)](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj), cases
+   [`REQ-UPG-5-YQV7MJ.T1.P9`](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj.t1.p9) to
+   [`REQ-UPG-5-YQV7MJ.T1.P14`](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj.t1.p14).
+4. [createRoot.ts](../implementation/source/src/rpc/internal/createRoot.ts.md) `startRootWorker`: the
+   funnel passes an Error unchanged and turns a non-Error into one Error, "`<kind>` in the `<thread>`
+   worker with a non-Error value: `<valueText(value)>`", with the value as `cause`.
+   [errorMessage.ts](../implementation/source/src/utils/errorMessage.ts.md) `valueText` falls back to the
+   object tag when `String()` throws (a null-prototype object). The node and browser
+   [RootWorkerRuntime.ts](../implementation/source/src/rpc/internal/node/RootWorkerRuntime.ts.md)
+   `onUnhandledWorkerError` pass the kind (`UncaughtFailureKind`, defined in createRoot.ts). The browser
+   `error` funnel passes `event.error`, an Error or not; only an event with no error object gets an Error
+   built from `event.message` and `event.filename:event.lineno:event.colno`. `errorMessage`,
+   `serializeError` and the log encoder are unchanged. Requirement:
+   [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../specification/runtime/execution.md#req-runtime-9-p5vpt5).
+5. Residual risks: the `cause` stays in the worker; `serializeError` sends only message and stack, so the
+   host sees the value's text (for an `Event`, "[object Event]") and not its fields. The fork
+   still rejects its opening with a raw `Event` and leaves the promise unobserved when nobody calls
+   `ready()`; another consumer of the fork would hit the same leak. The funnel's Error for a non-Error
+   value carries neither that value's `eventLoopDelay` nor its `peerAddress`; Luka accepted this
+   (2026-10-28). The
+   all-endpoints-down policy is
+   [`FIND-NO-ENDPOINT-1-JFSVS6`](open-findings.md#find-no-endpoint-1-jfsvs6).
+
+## WebRTC bridge close during disposal; state reports go on after a throw — 2026-10-28
+
+What changed (round-3 review fixes):
+
+1. [WorkerBridgeWebRTCConnectionFactory.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts.md)
+   `close` owns the one expected bridge failure: it resolves when the bridge is disposing or disposed
+   (`isBridgeDisposing`), also for a close request in flight that the bridge disposal rejects. Every
+   other close failure rejects, and `WebRTCSetupService.closeConnection` leaves it unhandled, which is
+   fatal. The factory keeps its bridge after the bridge closed, so a close during the host's
+   `p2pManager.dispose` no longer throws "WebRTC worker bridge is not initialized"; the other
+   operations on a closed bridge throw "WebRTC worker bridge is closed". Requirement:
+   [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59),
+   case [`REQ-RUNTIME-3-VQXW59.T1.P85`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p85).
+2. [LocalWebRTCConnectionFactory.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts.md)
+   `createConnection`: a throw in the state handling is raised once, off the report chain, as an
+   unhandled rejection; the chain goes on, so later state changes are still reported. Before, the
+   rejected chain re-raised the same error at every later change and reported nothing more.
+3. A bridge close request that fails for another reason while the bridge is disposing now rejects; see
+   "Early targeted cancel, bounded stats read, strict bridge close" above.
+
+## WebRTC connection state handling failures are fatal — 2026-10-28
+
+What changed (review fixes on the connection grace of
+[`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)):
+
+1. [LocalWebRTCConnectionFactory.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/connection/LocalWebRTCConnectionFactory.ts.md)
+   `createConnection`: the state-report chain does not catch a throw in the state handling: it
+   escapes as an unhandled rejection (fatal, through the worker funnel) instead of a logged factory
+   error. A `getStats()` rejection still is reported through `onError` and does not hold back the state
+   change; a non-Error rejection is converted at that boundary by `statsReadFailure`.
+2. [WebRTCSetupService.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts.md)
+   `closeConnection`: a failed factory close is no longer swallowed at verbose level; it escapes as an
+   unhandled rejection. `handleConnectionStateChange` on `failed`/`closed` cancels the grace task, and
+   when the connection has no transport yet it stops tracking the connection and closes it in the
+   factory. Connection and ICE state names are named union types
+   ([WebRTCConnectionTypes.ts](../implementation/source/src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes.ts.md)).
+3. Decided 2026-10-28 (see "Early targeted cancel, bounded stats read, strict bridge close" above): a
+   failed stats read stays a reported diagnostic; a `getStats()` call that never settles is cut off
+   after 2 s; the swallowed task errors of `TimeoutManager.scheduleTask` are
+   [`FIND-TIMEOUT-1-R8EWZ5`](open-findings.md#find-timeout-1-r8ewz5). Still open, Luka decides: the
+   grace end without a transport only resets the grace.
+
 ## Still-syncing responder answers at once — 2026-10-26
 
 What changed: a peer that is still in its own initial sync answers a sync request at once that it is not

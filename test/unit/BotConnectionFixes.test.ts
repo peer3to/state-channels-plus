@@ -259,7 +259,7 @@ describe("Unit: bot-connection fixes", function () {
 
         it("U72: a leaver whose exit is blocked by an inbound join that no block consumes posts again on each finalized block and starts one self-removal dispute when the one leave watchdog expires", async function () {
             const h = TestSession.getHarness();
-            // the production default; long enough for the exit and two more blocks
+            // the production default
             const watchdogMs = 15_000;
             const {
                 joiner,
@@ -270,10 +270,21 @@ describe("Unit: bot-connection fixes", function () {
                 configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: watchdogMs }
             });
             const leaver = h.getPeer(1);
+            // the omitted join is staging: the joiner's force-join dispute is recorded, not started
+            await h
+                .control(joiner)
+                .stub.stubSuppressForceJoinDispute()
+                .request();
             for (const peerIndex of [0, 1, 2]) {
                 await h.byzantine.stubPendingInboundInclusion(peerIndex);
             }
             const posts = await recordSnapshotPostWaitResults(h, leaver);
+            // The watchdog is held until the reposts are checked, then expires
+            // on release; installed first, so the task recorder still sees its delay.
+            const watchdog = await h.rpcStub.holdScheduledTasks(
+                leaver.index,
+                "channel leave watchdog"
+            );
             const tasks = await h.rpcStub.recordScheduledTasks(leaver.index);
             // The dispute is recorded, not sent: its boundary is the subject.
             const recorder = await h.rpcStub.recordDisputeSubmissions(
@@ -322,9 +333,12 @@ describe("Unit: bot-connection fixes", function () {
                         )
                         .map((task) => task.delayMs)
                 ).to.deep.equal([watchdogMs]);
+                expect(await watchdog.heldCount()).to.equal(1);
+                await tasks.restore();
+                await watchdog.release(true);
                 await waitFor(
                     async () => (await recorder.submissions()).length === 1,
-                    watchdogMs + h.event.protocolEventTimeoutMs()
+                    h.event.protocolEventTimeoutMs()
                 );
                 const [submission] = await recorder.submissions();
                 expect(
@@ -340,6 +354,7 @@ describe("Unit: bot-connection fixes", function () {
             } finally {
                 await posts.restore();
                 await tasks.restore();
+                await watchdog.release(false);
                 await recorder.restore();
             }
             await leaver.p2pInstance.dispose();

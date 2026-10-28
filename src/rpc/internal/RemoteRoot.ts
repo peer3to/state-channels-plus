@@ -8,8 +8,26 @@ import {
     getThreadResources
 } from "@/utils/threadResources";
 
+const ROOT_DISPOSED_ERROR_NAME = "RootDisposedError";
+
+/** The rejection a root's disposal gives the requests it cuts off. */
+export class RootDisposedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = ROOT_DISPOSED_ERROR_NAME;
+    }
+}
+
+/**
+ * True for a disposal rejection, also one restored after it crossed a port:
+ * the name crosses, the class does not.
+ */
+export function isRootDisposedError(error: unknown): boolean {
+    return error instanceof Error && error.name === ROOT_DISPOSED_ERROR_NAME;
+}
+
 export function childDisposedError(): Error {
-    return new Error("Runtime child disposed");
+    return new RootDisposedError("Runtime child disposed");
 }
 
 /** A connected root owns its RPC surface and its connection lifetime together. */

@@ -313,10 +313,10 @@
       "peakRssGb": 0.588,
       "measurementReason": null
     },
-    "hardhat|test/P2PManager.test.ts|P2PManager original transport retirement rejects its pending request": {
-      "durationMs": 9041,
-      "avgCores": 0.977,
-      "peakRssGb": 0.594,
+    "hardhat|test/P2PManager.test.ts|P2PManager original transport retirement keeps its pending request pending on the replacement, whose reply settles it": {
+      "durationMs": 5433,
+      "avgCores": 0.985,
+      "peakRssGb": 0.551,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager prefers a transport address over its registered profile address": {
@@ -335,6 +335,12 @@
       "durationMs": 6255,
       "avgCores": 0.502,
       "peakRssGb": 0.581,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager reports no disconnection when the remote retires the original transport while the replacement stays live, and one when the last transport closes": {
+      "durationMs": 5236,
+      "avgCores": 1.01,
+      "peakRssGb": 0.553,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager retires a replaced handshake transport and keeps one live connection": {
@@ -391,6 +397,12 @@
       "peakRssGb": 0.576,
       "measurementReason": null
     },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition a cancel during the target's opened-status read ends the connect before matching starts": {
+      "durationMs": 7042,
+      "avgCores": 0.653,
+      "peakRssGb": 1.093,
+      "measurementReason": null
+    },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition a late sync failure after the abort changes nothing": {
       "durationMs": 22422,
       "avgCores": 0.874,
@@ -427,6 +439,30 @@
       "peakRssGb": 0.787,
       "measurementReason": null
     },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer aborts and keeps the error log once a held participant check rejects after the initial deadline elapsed": {
+      "durationMs": 18640,
+      "avgCores": 0.847,
+      "peakRssGb": 0.556,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer aborts once a held participant check ends without a sync after the initial deadline elapsed": {
+      "durationMs": 13493,
+      "avgCores": 0.854,
+      "peakRssGb": 0.772,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer aborts once its held participant checks end on closed transports after the initial deadline elapsed": {
+      "durationMs": 12254,
+      "avgCores": 0.953,
+      "peakRssGb": 0.773,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer cancels the initial deadline when chain genesis settles the wait and stays synced if it still runs": {
+      "durationMs": 12117,
+      "avgCores": 0.948,
+      "peakRssGb": 0.772,
+      "measurementReason": null
+    },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer connect resolves false when no participant handshake completes within the initial window": {
       "durationMs": 22080,
       "avgCores": 0.68,
@@ -457,16 +493,28 @@
       "peakRssGb": 0.795,
       "measurementReason": null
     },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer holds the initial deadline until the last of two participant checks ends without a sync": {
+      "durationMs": 19875,
+      "avgCores": 0.966,
+      "peakRssGb": 0.784,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer holds the initial deadline while a completed handshake's participant check runs and syncs once the check answers participant": {
+      "durationMs": 13856,
+      "avgCores": 0.961,
+      "peakRssGb": 0.78,
+      "measurementReason": null
+    },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer ignores a stale false sync result once chain genesis already synced it": {
       "durationMs": 23278,
       "avgCores": 0.73,
       "peakRssGb": 0.802,
       "measurementReason": null
     },
-    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer stays synced when the initial deadline elapses after chain genesis settled the wait": {
-      "durationMs": 38846,
-      "avgCores": 0.628,
-      "peakRssGb": 0.818,
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer initial sync request to a participant that never answers times out after two agreement windows": {
+      "durationMs": 23894,
+      "avgCores": 0.883,
+      "peakRssGb": 0.785,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition provider open event switches targeted matching to raw channel discovery": {
@@ -1411,10 +1459,22 @@
       "peakRssGb": 1.219,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant waits until that runtime's initial-sync deadline fires and is then refused with only a retry-tier close": {
-      "durationMs": 12441,
-      "avgCores": 0.497,
-      "peakRssGb": 0.938,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (another participant serves): a fresh observer whose initial sync first asks a participant with its own initial sync in flight does not abort or cut that participant and syncs at once from another connected participant": {
+      "durationMs": 10425,
+      "avgCores": 1.086,
+      "peakRssGb": 0.762,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant gets a still-syncing answer at once with no close or strike, and that runtime later aborts at its own initial-sync deadline": {
+      "durationMs": 17882,
+      "avgCores": 0.647,
+      "peakRssGb": 0.942,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant serves in time): a fresh observer whose only chain-eligible participant stays in its own initial sync aborts at its initial-sync deadline without cutting that participant, adopting nothing": {
+      "durationMs": 15809,
+      "avgCores": 0.559,
+      "peakRssGb": 0.755,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (not a member): a fresh spectator whose first handshake is with a synced spectator that is not slashed and not a member skips it and syncs from a participant": {
@@ -1429,28 +1489,22 @@
       "peakRssGb": 1.239,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (requester times out): a probe to a participant whose own initial sync is still in flight times out after one window with only a retry-tier close, neither side blacklists the other, and the late answer changes nothing on the requester": {
-      "durationMs": 13352,
-      "avgCores": 0.519,
-      "peakRssGb": 0.467,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder answers at once): a participant with its own initial sync in flight answers a spectate request at once that it is still syncing, and the requester's sync returns false with no close, strike or blacklist": {
+      "durationMs": 6849,
+      "avgCores": 1.06,
+      "peakRssGb": 0.567,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder still syncing): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight gets its answer once that sync succeeds and syncs from it": {
-      "durationMs": 9780,
-      "avgCores": 0.652,
-      "peakRssGb": 0.707,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder still syncing): a fresh observer whose only chain-eligible handshake is a participant with its own initial sync in flight gets a still-syncing answer, keeps the connection, asks again after half a window and syncs from it once that sync succeeds": {
+      "durationMs": 10589,
+      "avgCores": 0.939,
+      "peakRssGb": 0.765,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync already failed): a spectate request that enters the endpoint after the responder's own initial sync failed is refused at once with the own-sync failure": {
-      "durationMs": 9401,
-      "avgCores": 0.696,
-      "peakRssGb": 0.479,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync fails): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight aborts when that sync fails, adopting nothing": {
-      "durationMs": 8666,
-      "avgCores": 0.726,
-      "peakRssGb": 0.735,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync fails): a fresh observer whose only chain-eligible handshake is a participant with its own initial sync in flight gets a still-syncing answer and aborts once that sync fails, adopting nothing": {
+      "durationMs": 18413,
+      "avgCores": 0.546,
+      "peakRssGb": 0.746,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (same fork): a fresh spectator whose first handshake is with a slashed peer that reduced onto the same successor skips it and syncs from an honest participant": {
@@ -2315,6 +2369,12 @@
       "durationMs": 21443,
       "avgCores": 1.006,
       "peakRssGb": 1.261,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard two synced spectators whose joins race on one table both end pending when the second's transaction is estimated before the first lands and mined after it: the mined refusal for the widened threshold set is collected again, countersigned by the first, and lands with no abort": {
+      "durationMs": 13607,
+      "avgCores": 1.307,
+      "peakRssGb": 1.161,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-KillAndDispute.test.ts|E2E: kill then dispute, and challenge timing E22: a challenge sent after the kill period ends reverts with RaceConditionDisputeKillPeriodExpired and is fatal: no kill, no slash, the invalid dispute stays committed": {
@@ -6013,10 +6073,28 @@
       "peakRssGb": 0.338,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) names a worker's non-Error rejection value that String() cannot convert by its object tag": {
+      "durationMs": 14430,
+      "avgCores": 0.111,
+      "peakRssGb": 0.367,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) reports a detached worker crash and keeps serving": {
       "durationMs": 14957,
       "avgCores": 0.357,
       "peakRssGb": 0.368,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) reports a worker's uncaught non-Error throw as one Error naming the kind, the thread and the value": {
+      "durationMs": 14402,
+      "avgCores": 0.108,
+      "peakRssGb": 0.366,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) reports a worker's unhandled non-Error rejection as one Error naming the kind, the thread and the value": {
+      "durationMs": 14385,
+      "avgCores": 0.11,
+      "peakRssGb": 0.359,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) request failure preserves nested revert data and peer metadata across the worker": {
@@ -6085,6 +6163,12 @@
       "peakRssGb": 1.064,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider does not relay a log 128 or more blocks below the highest relayed log": {
+      "durationMs": 3953,
+      "avgCores": 0.817,
+      "peakRssGb": 0.632,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a read over to the next node when the first drops mid-request": {
       "durationMs": 8533,
       "avgCores": 1.168,
@@ -6115,6 +6199,12 @@
       "peakRssGb": 1.148,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider keeps relaying logs through the next node socket after the first drops": {
+      "durationMs": 4520,
+      "avgCores": 0.934,
+      "peakRssGb": 0.627,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider leaves no unhandled rejection and keeps reading when a node answers an unsubscribe with an error": {
       "durationMs": 4667,
       "avgCores": 0.688,
@@ -6125,6 +6215,12 @@
       "durationMs": 4781,
       "avgCores": 0.684,
       "peakRssGb": 0.597,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider leaves no unhandled rejection when destroyed right after a log subscription": {
+      "durationMs": 3717,
+      "avgCores": 0.815,
+      "peakRssGb": 0.635,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider marks a node whose socket stops answering as dead and fails the read over": {
@@ -6175,6 +6271,18 @@
       "peakRssGb": 1.139,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects the exported chain access startup when no node is reachable and destroys every node": {
+      "durationMs": 4317,
+      "avgCores": 0.908,
+      "peakRssGb": 0.637,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each matching log once from the node sockets": {
+      "durationMs": 3428,
+      "avgCores": 0.869,
+      "peakRssGb": 0.61,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each new block once from the node sockets without polling": {
       "durationMs": 23206,
       "avgCores": 0.458,
@@ -6203,6 +6311,18 @@
       "durationMs": 9937,
       "avgCores": 1.011,
       "peakRssGb": 1.043,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider subscribes a reconnected node socket again and relays its logs once": {
+      "durationMs": 3654,
+      "avgCores": 0.78,
+      "peakRssGb": 0.636,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider unsubscribes every node socket when the last log listener goes": {
+      "durationMs": 3892,
+      "avgCores": 0.678,
+      "peakRssGb": 0.652,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider warns once per outage of every node and again after a reconnect": {
@@ -7273,6 +7393,12 @@
       "peakRssGb": 0.583,
       "measurementReason": null
     },
+    "hardhat|test/rpc/ARpcService.test.ts|ANetworkRpcService on a disposed runtime a handler that ends after its runtime disposed answers nobody and logs nothing: its dispatch resolves": {
+      "durationMs": 5613,
+      "avgCores": 1.108,
+      "peakRssGb": 0.481,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/ARpcService.test.ts|ANetworkRpcService rejects ANetworkRpcMethods and Object prototype names": {
       "durationMs": 7701,
       "avgCores": 1.092,
@@ -7591,6 +7717,12 @@
       "peakRssGb": 0.308,
       "measurementReason": null
     },
+    "hardhat|test/rpc/NetworkRpcRouter.test.ts|NetworkRpcRouter drops network frames on a closed transport before dispatch or logging": {
+      "durationMs": 11637,
+      "avgCores": 0.283,
+      "peakRssGb": 0.218,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/NetworkRpcRouter.test.ts|NetworkRpcRouter gives the real SDK manager one router shared by services and loopback": {
       "durationMs": 18015,
       "avgCores": 0.265,
@@ -7601,12 +7733,6 @@
       "durationMs": 16828,
       "avgCores": 0.237,
       "peakRssGb": 0.446,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/NetworkRpcRouter.test.ts|NetworkRpcRouter keeps network receive-after-close admission unchanged": {
-      "durationMs": 17832,
-      "avgCores": 0.271,
-      "peakRssGb": 0.491,
       "measurementReason": null
     },
     "hardhat|test/rpc/RootCreation.test.ts|RootCreation borrows a caller's logger for a parentless worker and leaves it usable after disposal": {
@@ -8923,6 +9049,24 @@
       "peakRssGb": 0.583,
       "measurementReason": null
     },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a committed member's top-up through connect with one silent threshold member returns false: it keeps its status and submits nothing": {
+      "durationMs": 18097,
+      "avgCores": 0.713,
+      "peakRssGb": 0.955,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a connect's join whose threshold set read fails rejects: the failure is not a collection failure, so the joiner neither aborts nor submits": {
+      "durationMs": 12030,
+      "avgCores": 1.038,
+      "peakRssGb": 0.975,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a connect's join with one silent threshold member returns false: the joiner aborts and disposes, and submits nothing": {
+      "durationMs": 13770,
+      "avgCores": 0.974,
+      "peakRssGb": 0.975,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a prepared first join's deadline is its chain time plus the configured lifetime; a later runtime gets the default": {
       "durationMs": 11921,
       "avgCores": 0.83,
@@ -8939,6 +9083,12 @@
       "durationMs": 16468,
       "avgCores": 0.979,
       "peakRssGb": 1.113,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests collects every countersignature while a threshold member's chain RPC holds every read: the member answers from its local clock and mirror": {
+      "durationMs": 13988,
+      "avgCores": 0.899,
+      "peakRssGb": 0.753,
       "measurementReason": null
     },
     "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests excludes an on-chain-slashed participant from collection": {
@@ -8969,6 +9119,12 @@
       "durationMs": 13924,
       "avgCores": 0.863,
       "peakRssGb": 0.791,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests signs for a threshold member whose mirror misses its own pending join: the chain lists it": {
+      "durationMs": 17023,
+      "avgCores": 0.979,
+      "peakRssGb": 0.947,
       "measurementReason": null
     },
     "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests validates requests, signs exact joins, and waits through reachability grace for a missing threshold transport": {
@@ -14035,6 +14191,12 @@
       "peakRssGb": 1.008,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService starts no log dispatch after stop, so a recovery still running in a disposing runtime needs nothing its disposal closes": {
+      "durationMs": 7380,
+      "avgCores": 1.089,
+      "peakRssGb": 0.741,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService tryRecoverBlockCalldataAndScheduleValidation missed calldata log → recovered by query, validation scheduled": {
       "durationMs": 21864,
       "avgCores": 0.766,
@@ -15967,6 +16129,12 @@
       "peakRssGb": 0.528,
       "measurementReason": null
     },
+    "hardhat|test/transport/HolepunchRelayDispose.test.ts|Holepunch disposal on a browser relay disposes while the first topic announce still waits on the relayer's listening reply": {
+      "durationMs": 607,
+      "avgCores": 0.626,
+      "peakRssGb": 0.175,
+      "measurementReason": null
+    },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport closes once and rejects only calls owned by that connection": {
       "durationMs": 31354,
       "avgCores": 0.152,
@@ -16051,10 +16219,10 @@
       "peakRssGb": 0.207,
       "measurementReason": null
     },
-    "hardhat|test/transport/RelayerPool.test.ts|RelayerPool deduplicates paired error and close failures for one connection": {
-      "durationMs": 2611,
-      "avgCores": 1.072,
-      "peakRssGb": 0.453,
+    "hardhat|test/transport/RelayerPool.test.ts|RelayerPool logs each failure with its relayer, reason and counts": {
+      "durationMs": 528,
+      "avgCores": 0.701,
+      "peakRssGb": 0.19,
       "measurementReason": null
     },
     "hardhat|test/transport/RelayerPool.test.ts|RelayerPool returns undefined and schedules nothing for an empty relayer list": {
@@ -16079,6 +16247,60 @@
       "durationMs": 2932,
       "avgCores": 0.992,
       "peakRssGb": 0.3,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes a replaced connection's transport when its replacement starts, without closing the replacement's connection": {
+      "durationMs": 9566,
+      "avgCores": 0.578,
+      "peakRssGb": 1.085,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes and forgets a connection that fails or closes during a grace before it has a transport": {
+      "durationMs": 15208,
+      "avgCores": 0.389,
+      "peakRssGb": 1.097,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes the transport and its connection at once when the connection or its path fails or closes, also a DTLS failure on a working path": {
+      "durationMs": 6746,
+      "avgCores": 0.869,
+      "peakRssGb": 0.968,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes the transport at once when the connection fails during the grace, and the grace closes nothing more": {
+      "durationMs": 10493,
+      "avgCores": 0.625,
+      "peakRssGb": 1,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes the transport of a connection whose path is still down when the grace ends, with one grace for repeated reports": {
+      "durationMs": 12549,
+      "avgCores": 0.51,
+      "peakRssGb": 0.946,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace ends the grace when the path recovers while the connection state stays disconnected, as in Node": {
+      "durationMs": 10638,
+      "avgCores": 0.602,
+      "peakRssGb": 1.105,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace gives each path loss its own full grace": {
+      "durationMs": 11162,
+      "avgCores": 0.521,
+      "peakRssGb": 1.084,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace keeps the transport of a connection whose path recovers within the grace, and logs the loss and the recovery": {
+      "durationMs": 13460,
+      "avgCores": 0.486,
+      "peakRssGb": 1.101,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace keeps the transport open during the grace": {
+      "durationMs": 12095,
+      "avgCores": 0.556,
+      "peakRssGb": 1.011,
       "measurementReason": null
     },
     "hardhat|test/types/flags.test.ts|isCommittedParticipantStatus classifies DISCOVERING": {
@@ -22087,16 +22309,40 @@
       "peakRssGb": 0.16,
       "measurementReason": null
     },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay a relay opening that fails after disposal neither counts a failure nor reconnects": {
+      "durationMs": 594,
+      "avgCores": 0.64,
+      "peakRssGb": 0.175,
+      "measurementReason": null
+    },
     "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay a relay socket closing after disposal neither logs nor reconnects": {
       "durationMs": 2094,
       "avgCores": 0.879,
       "peakRssGb": 0.243,
       "measurementReason": null
     },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay counts one failure when a socket closes before it opens with no error event": {
+      "durationMs": 636,
+      "avgCores": 0.582,
+      "peakRssGb": 0.157,
+      "measurementReason": null
+    },
     "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay deduplicates error and close events from one socket": {
       "durationMs": 3097,
       "avgCores": 0.898,
       "peakRssGb": 0.28,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay fails over once, naming the relayer, when the relay's opening rejects with its own Error": {
+      "durationMs": 618,
+      "avgCores": 0.615,
+      "peakRssGb": 0.161,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay fails over once, with no unhandled rejection, when a socket fails before it opens": {
+      "durationMs": 637,
+      "avgCores": 0.597,
+      "peakRssGb": 0.171,
       "measurementReason": null
     },
     "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay keeps reconnecting after the whole relay pool fails": {
@@ -22127,6 +22373,12 @@
       "durationMs": 2928,
       "avgCores": 1.014,
       "peakRssGb": 0.295,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay throws at initialization for an invalid relayer URL among valid ones, a configuration error, and opens no socket, counts no relay failure and retries nothing": {
+      "durationMs": 538,
+      "avgCores": 0.706,
+      "peakRssGb": 0.179,
       "measurementReason": null
     },
     "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle closes an accepted socket whose ready frame arrives after manager disposal": {
@@ -22205,6 +22457,66 @@
       "durationMs": 7734,
       "avgCores": 1.042,
       "peakRssGb": 0.531,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports raises a throw in the state handling once as an unhandled rejection, not as a reported factory error, and still reports the later changes": {
+      "durationMs": 340,
+      "avgCores": 1.118,
+      "peakRssGb": 0.181,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reads the pair marked selected where the runtime has no transport stats, as Firefox reports it": {
+      "durationMs": 360,
+      "avgCores": 1.028,
+      "peakRssGb": 0.167,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports a state change whose stats read fails, without path stats, and reports the failure": {
+      "durationMs": 348,
+      "avgCores": 1.092,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports a state change whose stats read never settles after the time limit, without path stats, and still reports the later changes": {
+      "durationMs": 330,
+      "avgCores": 1.152,
+      "peakRssGb": 0.18,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports an ICE change that comes without a connection-state change, as werift reports a recovered path": {
+      "durationMs": 339,
+      "avgCores": 1.121,
+      "peakRssGb": 0.174,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports each state change with its selected path's stats, in the order of the changes, also when the first stats read is slow": {
+      "durationMs": 367,
+      "avgCores": 1.008,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports nothing more for a connection once it is closed, also a change whose stats read was running": {
+      "durationMs": 349,
+      "avgCores": 1.089,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports nothing more for a connection replaced by the peer's next one, and reports the next one's changes": {
+      "durationMs": 350,
+      "avgCores": 1.086,
+      "peakRssGb": 0.174,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports only the transport stats while no candidate pair is selected": {
+      "durationMs": 345,
+      "avgCores": 1.101,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports state changes without path stats where the runtime has no getStats": {
+      "durationMs": 340,
+      "avgCores": 1.118,
+      "peakRssGb": 0.174,
       "measurementReason": null
     },
     "hardhat|test/utils/LogUploader.test.ts|LogUploader captures a non-Error reason whose toString throws without itself throwing": {
@@ -22681,6 +22993,30 @@
       "peakRssGb": 0.267,
       "measurementReason": null
     },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources attaches no WebAssembly diagnostics to an ordinary error": {
+      "durationMs": 401,
+      "avgCores": 0.848,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources attaches this thread's resources, a working memory probe, and the device to a WebAssembly trap it serializes, and the receiving side keeps them": {
+      "durationMs": 343,
+      "avgCores": 0.962,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts a spawned worker until its first shutdown ends, once across repeated shutdowns": {
+      "durationMs": 395,
+      "avgCores": 0.937,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts the instances and memories this thread creates through each WebAssembly entry point, and keeps instanceof working": {
+      "durationMs": 358,
+      "avgCores": 0.95,
+      "peakRssGb": 0.087,
+      "measurementReason": null
+    },
     "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport drops sends when the channel is already closed": {
       "durationMs": 18717,
       "avgCores": 0.292,
@@ -22789,10 +23125,22 @@
       "peakRssGb": 0.328,
       "measurementReason": null
     },
+    "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory rejects a close whose own failure arrives while the bridge is disposing": {
+      "durationMs": 14069,
+      "avgCores": 0.11,
+      "peakRssGb": 0.365,
+      "measurementReason": null
+    },
     "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory rejects in-flight requests when the shared bridge is disposed": {
       "durationMs": 15614,
       "avgCores": 0.487,
       "peakRssGb": 0.297,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory resolves a close that the bridge disposal interrupts and a close after the disposal": {
+      "durationMs": 14083,
+      "avgCores": 0.104,
+      "peakRssGb": 0.349,
       "measurementReason": null
     },
     "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory routes bridge state and ICE events to connection callbacks": {
@@ -22933,6 +23281,18 @@
       "peakRssGb": 0.223,
       "measurementReason": null
     },
+    "hardhat|test/utils/errorMessage.test.ts|errorMessage valueText converts a value String() converts": {
+      "durationMs": 298,
+      "avgCores": 0.436,
+      "peakRssGb": 0.114,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/errorMessage.test.ts|errorMessage valueText names a value String() cannot convert by its object tag": {
+      "durationMs": 309,
+      "avgCores": 0.421,
+      "peakRssGb": 0.111,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logEncoder.test.ts|encodeLogEntry coerces a hostile message without running its code": {
       "durationMs": 2119,
       "avgCores": 0.76,
@@ -23039,6 +23399,12 @@
       "durationMs": 2544,
       "avgCores": 0.256,
       "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload of a second copy of the uploader module in it, and cancels it": {
+      "durationMs": 627,
+      "avgCores": 0.558,
+      "peakRssGb": 0.095,
       "measurementReason": null
     },
     "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed": {

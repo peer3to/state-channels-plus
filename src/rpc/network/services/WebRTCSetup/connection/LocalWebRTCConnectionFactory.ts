@@ -8,6 +8,13 @@ import {
     WebRTCPeerConnectionLike
 } from "./WebRTCConnectionTypes";
 import { loadWebRTCProvider, type WebRTCProvider } from "./WebRTCProvider";
+import { valueText } from "@/utils/errorMessage";
+
+/**
+ * Longest wait for a state report's `getStats()` read; after it the report
+ * goes on without path statistics, like after a failed read.
+ */
+export const STATS_READ_TIME_LIMIT_MS = 2_000;
 
 /**
  * The selected candidate pair of `connection` and its transport, from
@@ -56,6 +63,41 @@ async function readPathStats(
         msSinceLastPacketSent: msSince(pair?.lastPacketSentTimestamp),
         msSinceLastPacketReceived: msSince(pair?.lastPacketReceivedTimestamp)
     };
+}
+
+/** `read`, or a rejection when it has not settled within the time limit. */
+async function withinStatsReadTimeLimit<T>(read: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () =>
+                reject(
+                    new Error(
+                        `WebRTC getStats() did not settle within ${STATS_READ_TIME_LIMIT_MS} ms`
+                    )
+                ),
+            STATS_READ_TIME_LIMIT_MS
+        );
+    });
+    try {
+        return await Promise.race([read, limit]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/**
+ * `getStats()` is a runtime boundary: an Error it rejects with passes
+ * unchanged, any other value becomes an Error that names it.
+ */
+function statsReadFailure(failure: unknown): Error {
+    if (failure instanceof Error) return failure;
+    return Object.assign(
+        new Error(
+            `WebRTC getStats() rejected with a non-Error value: ${valueText(failure)}`
+        ),
+        { cause: failure }
+    );
 }
 
 class LocalWebRTCConnectionFactory implements WebRTCConnectionFactory {
@@ -116,24 +158,31 @@ class LocalWebRTCConnectionFactory implements WebRTCConnectionFactory {
         let reported = Promise.resolve();
         const notifyState = () => {
             const state = this.getSnapshot(connection);
-            reported = reported
-                .then(async () => {
-                    if (!isCurrent()) return;
-                    // The stats are diagnostics: a failed read must not hold
-                    // back the state change. A read that never settles
-                    // would; no runtime is known to do that.
-                    let readError: unknown;
-                    const path = await readPathStats(connection).catch(
-                        (error) => {
-                            readError = error;
-                            return undefined;
-                        }
-                    );
-                    if (!isCurrent()) return;
-                    if (readError) callbacks.onError(readError as Error);
-                    callbacks.onConnectionStateChange({ ...state, path });
-                })
-                .catch((error) => callbacks.onError(error));
+            // A throw in the state handling is not caught: it is raised
+            // once, off the chain, as an unhandled rejection, which is
+            // fatal. The chain goes on past it, so later reports still run.
+            const step = reported.then(async () => {
+                if (!isCurrent()) return;
+                // The stats are diagnostics: a failed read must not hold
+                // back the state change, and a read past its time limit
+                // counts as failed.
+                let readFailure: Error | undefined;
+                const path = await withinStatsReadTimeLimit(
+                    readPathStats(connection)
+                ).catch((failure: unknown) => {
+                    readFailure = statsReadFailure(failure);
+                    return undefined;
+                });
+                if (!isCurrent()) return;
+                if (readFailure) callbacks.onError(readFailure);
+                callbacks.onConnectionStateChange({ ...state, path });
+            });
+            reported = step.then(
+                () => undefined,
+                (failure: unknown) => {
+                    void Promise.reject(failure);
+                }
+            );
         };
 
         connection.addEventListener("connectionstatechange", notifyState);

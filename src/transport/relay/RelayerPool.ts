@@ -38,13 +38,15 @@ export class RelayerPool {
         return available[index];
     }
 
-    /** Exclude a failed url and schedule the caller's retry (failover jitter or exhaustion backoff). */
-    onFailure(url: string, retry: () => void): void {
-        if (this.pendingRetry !== undefined) return;
-
+    /**
+     * Log the failure, then exclude the failed url and schedule the caller's
+     * retry (failover jitter or exhaustion backoff).
+     */
+    onFailure(url: string, reason: Error, retry: () => void): void {
         this.excludedRelayers.add(url);
-        this.logger.debug("Excluded holepunch relayer after failure", {
-            excluded: url,
+        this.logger.warn("Holepunch relayer failed", {
+            relayerUrl: url,
+            reason,
             excludedCount: this.excludedRelayers.size,
             total: this.urls.length
         });

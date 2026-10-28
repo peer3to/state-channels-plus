@@ -30,7 +30,7 @@ Signaling inertness and binding
 Connection health of an upgraded transport
 
 - Setup: Open a WebRTC connection through a stand-in connection factory inside the host and hand the service a recording data channel, so the service creates and owns the transport; report connection and path states, with waits, and wait past the 5 s grace where the case needs it.
-- Oracle: The path (ICE) state decides: `disconnected` keeps the transport and starts one grace; `connected` or `completed` ends it; the grace end, or `failed`/`closed` in either state, closes the connection's own transport; a transport closes the factory connection only while it is the peer's current one; a new connection closes the replaced connection's transport; every change is logged.
+- Oracle: The path (ICE) state decides: `disconnected` keeps the transport and starts one grace; `connected` or `completed` ends it; the grace end, or `failed`/`closed` in either state, closes the connection's own transport, and `failed`/`closed` before the connection has a transport closes its factory connection and stops tracking it; a transport closes the factory connection only while it is the peer's current one; a new connection closes the replaced connection's transport; every change is logged.
 
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P1` — a path that recovers within the grace keeps the transport; the loss and the recovery are logged
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P2` — the transport stays open during the grace
@@ -40,3 +40,4 @@ Connection health of an upgraded transport
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P6` — a recovered path ends the grace while the connection state stays `disconnected` (Node)
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P7` — each path loss gets its own full grace
 - [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P8` — a replaced connection's transport closes when its replacement starts, without closing the replacement's factory connection
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P9` — `failed` or `closed` during a grace, before the connection has a transport, closes its factory connection and the service stops tracking it

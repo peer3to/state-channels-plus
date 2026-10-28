@@ -9,6 +9,7 @@ import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerEx
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import { config } from "@/utils/config";
+import { valueText } from "@/utils/errorMessage";
 import type { Logger, SharedLoggerContext } from "@/utils/logging/Logger";
 import { LogUploader } from "@/utils/logging/LogUploader";
 import { runCleanup } from "@/utils/runCleanup";
@@ -23,6 +24,9 @@ import {
 } from "@platform/rootWorkerRuntime";
 
 export type { RemoteRoot } from "./RemoteRoot";
+
+/** How a failure escaped every handler in its worker. */
+export type UncaughtFailureKind = "unhandled rejection" | "uncaught exception";
 
 export interface RootWorker {
     postMessage(value: unknown, transfer?: unknown[]): void;
@@ -503,7 +507,16 @@ export function startRootWorker<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         // Same policy as the sdk worker: an error outside a request is reported to
         // the host and the worker keeps serving. The funnel is registered as soon as
         // the port and the host reporter exist, before request handling begins.
-        onUnhandledWorkerError((error) => {
+        onUnhandledWorkerError((failure, kind) => {
+            const error =
+                failure instanceof Error
+                    ? failure
+                    : Object.assign(
+                          new Error(
+                              `${kind} in the ${globalThis.threadName} worker with a non-Error value: ${valueText(failure)}`
+                          ),
+                          { cause: failure }
+                      );
             if (receivingRoot) receivingRoot.reportError(error);
             else
                 port.post({

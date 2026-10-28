@@ -125,7 +125,7 @@ the path is still down after a 5 s grace
 ([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)),
 so a short drop no longer costs a reconnect. Each state change is logged with the selected path's
 statistics (round-trip time, connectivity checks sent and answered, time since the last packet each
-way); the next phone session's logs should show where the drops come from.
+way), so the logs of a dropped link show where the drop comes from.
 
 <a id="find-upg-stale-report-1-phpj5h"></a>
 
@@ -141,11 +141,14 @@ at once, and a stale `disconnected` starts a grace that closes it if the new con
 `connected` within 5 s. This breaks the rule that a closed or replaced connection reports no more state
 changes ([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)).
 The window is a few milliseconds, only during a replacement while the old connection is still active.
+Since `WebRTCSetupService.handleConnectionStateChange` closes a connection that reports `failed` or
+`closed` before it has a transport, a stale `failed` also closes the new connection while it is still
+being set up; the cost is one extra reconnect.
 
-**Status:** Open. Engineer decision (Luka, 2026-10-27): record it, no fix now. Proposed direction: tag
-each connection with a number set on the main thread when the connection is created, return it with the
-offer or answer, send it with every state report, and drop reports whose number is not the peer's
-current one in the worker.
+**Status:** Open. Engineer decision (Luka, 2026-10-27, confirmed 2026-10-28): record it, no fix now
+(deferred). Proposed direction: tag each connection with a number set on the main thread when the
+connection is created, return it with the offer or answer, send it with every state report, and drop
+reports whose number is not the peer's current one in the worker.
 
 ## Runtime host worker teardown
 
@@ -616,6 +619,52 @@ trusted walk now chooses canonical final state.
 preserve the report's prerequisites and proof gaps. Owed regression:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12),
 [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+
+## No relayer or RPC node available
+
+<a id="find-no-endpoint-1-jfsvs6"></a>
+
+### FIND-NO-ENDPOINT-1-JFSVS6
+
+**Defect:** _Open (2026-10-28, engineer decision recorded; not implemented)._ When no endpoint of a
+kind is available, the SDK only logs and waits. Relay: when every Holepunch relayer failed since the
+last success, `RelayerPool.scheduleRetryAfterExhaustion`
+([RelayerPool.ts](../implementation/source/src/transport/relay/RelayerPool.ts.md)) warns "All
+holepunch relayers failed, retrying pool after backoff", clears the exclusions and retries after a
+jittered exponential backoff (1 s base, 30 s cap) without end; with no relayer configured,
+`HolepunchRelay.connectToRelayer` warns once and stays idle. RPC: when every node lost its socket,
+`MultiRpcProvider.onNodeLost`
+([MultiRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md))
+warns once per outage, and every request waits in `waitForConnectedNode` for the first node to
+reconnect; `forward` throws ("no RPC node is connected and none reconnects") only after
+`stopReconnecting` or `destroy`. Relates to
+[`REQ-UPG-5-YQV7MJ` (Relay retries converge without stale work)](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj)
+and [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3).
+
+**Engineer decision (Luka, 2026-10-28):** when no Holepunch relayer is available (the pool is
+exhausted, every relayer failed) and when no RPC node is available in `MultiRpcProvider` (every node
+down), the SDK throws a fatal error instead of only logging and retrying or waiting.
+
+**Open design point:** a transient outage of every endpoint, for example right after a mobile
+resume while the sockets reopen, would then be fatal. The exact trigger is not decided: an empty
+configuration only, an endpoint set that never reconnects, a time bound on the outage, or at once on
+exhaustion. The specification requirements above change with the chosen trigger.
+
+**Logging until then:** the components should log every relevant fact (URL, reason, attempt count,
+backoff). Gaps seen in the code:
+
+1. `RelayerPool.onFailure` logs the URL, the reason and the excluded count, but not the retry delay
+   it schedules (failover jitter) or the current backoff attempt.
+2. `RelayerPool.scheduleRetryAfterExhaustion` logs the delay, the capped backoff and the URLs, but
+   not the backoff attempt number and not the failure reason of each relayer in the round.
+3. `MultiRpcProvider.onNodeLost` logs only the node hosts: not the last failure reason of each
+   node, the number of requests that wait, or when the outage started. Nothing logs the outage
+   end or its duration at the provider level (each node logs only its own reconnect).
+4. `RpcNodeProvider.logFailedAttempt` logs the host, the attempt count and the error, but not the
+   delay of the next attempt that `scheduleReconnect` picks; later attempts are logged at most once a
+   minute at warn level, the rest at debug level.
+
+**Disposition:** Open; engineer decision on the trigger needed before implementation.
 
 ## Implementation defects with a proposed direction
 
@@ -1825,6 +1874,39 @@ Code-traced, not executed.
 
 **Disposition:** Recorded as an open finding; not addressed now. No fix is selected.
 
+<a id="find-sync-8-e9k3yp"></a>
+
+### FIND-SYNC-8-E9K3YP
+
+**Defect:** Open (2026-10-28). A spectator can blacklist an honest sync sender when the chain moves
+during verification. `applySyncResponse` in
+[SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+reads the on-chain snapshot in step 1 (`fetchAndPersistOnChainSnapshot`), and its later chain reads
+(window finality, dispute windows, the chain proof tier, and the balance invariant check
+`verifyBalanceInvariantCheckSnapshot` in step 2.11) read at `latest`. A block can land between these
+reads. When it closes the channel (`StateSnapshotFacet._updateStateSnapshot` deletes the snapshot
+and the inbound blocks once no participant is left) or posts a newer exit snapshot, an honest
+payload fails "balance invariant failed", or "proof ends below the finalized state" through the
+local-mirror tiers, and `rejectSync` blacklists the sender. Seen in poker bot E2E runs when
+background spectators sync while the seated members' exit posts close the channel. Block intake adds
+to this: `queueBlock` in
+[BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+blacklists an `ABSENT` sender after any sync that does not make it eligible, whatever the sync's
+outcome. Related:
+[`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed),
+[`FIND-SYNC-7-SHT5K7`](open-findings.md#find-sync-7-sht5k7), open question
+[`OQ-SPEC-SYNC-STALE-1-CJTJ6S` (Too-old sync and fork-adoption blacklist policy)](../specification/open-questions.md#oq-spec-sync-stale-1-cjtj6s).
+
+**Candidate directions (not chosen; the fix must stay simple):**
+
+1. Read the whole verification at one chain block. Tried and reverted (2026-10-28): it threaded a
+   block parameter through many layers and needed a multi-provider rule for nodes that lag the
+   pinned block.
+2. Re-read the on-chain snapshot before a verdict, and end the sync with no verdict when it changed
+   or the channel closed.
+
+**Disposition:** Recorded as an open finding; not addressed now. No fix is selected.
+
 <a id="find-stipend-1-9ysnwb"></a>
 
 ### FIND-STIPEND-1-9YSNWB
@@ -2327,6 +2409,24 @@ drops an unparseable environment value, contrary to
 
 **Proposed direction:** Validate every timing, memory, concurrency, payload and retry value in
 `createConfig` and reject an unparseable or out-of-range value.
+
+<a id="find-timeout-1-r8ewz5"></a>
+
+### FIND-TIMEOUT-1-R8EWZ5
+
+**Defect:** Open (2026-10-28). `TimeoutManager.scheduleTask`
+([TimeoutManager.ts](../implementation/source/src/utils/TimeoutManager.ts.md)) runs every scheduled
+task inside a try/catch that only writes the error with `console.error`. An internal failure in a
+scheduled task is therefore swallowed: it is not fatal, it does not reach the runtime error funnel,
+and its owner never sees it. This includes the WebRTC grace close
+(`WebRTCSetupService`), the lobby match timeout and every other timer task. This is contrary to the
+rule that internal failures are fatal and are owned by the component that causes them.
+
+**Engineer decision (Luka, 2026-10-28):** remove the try/catch from `scheduleTask`; every caller defines
+how it handles its own task's errors.
+
+**Status:** Open, deferred: the change touches every `scheduleTask` caller, so the surface is too big for
+now.
 
 ## Evidence backlog retained after traceability repair
 

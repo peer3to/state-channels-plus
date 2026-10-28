@@ -40,19 +40,24 @@ class HolepunchRelay {
     }
 
     /**
-     * Stops reconnecting and detaches the socket's handlers before closing it:
-     * the socket closes after its runtime's logger is disposed, and a handler
-     * left attached would log through that logger and reconnect.
+     * Stops reconnecting and releases the socket before closing it: the
+     * socket closes after its runtime's logger is disposed, and its handlers
+     * act only for the current socket, so nothing logs or reconnects after.
      */
     public dispose(): void {
         this.relayerPool.dispose();
-        if (!this.socket) return;
-        this.socket.onopen = null;
-        this.socket.onclose = null;
-        this.socket.onerror = null;
-        this.socket.close();
+        const socket = this.socket;
+        this.socket = undefined;
+        socket?.close();
     }
 
+    /**
+     * The URLs were checked at construction. The WebSocket constructor still
+     * throws for one it can never open (a blocked port): a configuration
+     * error, which is fatal and not retried. A connection failure arrives
+     * only as the socket's error or close event, or as the relay's failed
+     * opening.
+     */
     private connectToRelayer(): void {
         if (this.relayerUrls.length === 0) {
             this.logger.warn("No holepunch relayers configured");
@@ -64,47 +69,40 @@ class HolepunchRelay {
             relayerUrl
         });
         if (!relayerUrl) return;
-        try {
-            const ws = new WebSocket(relayerUrl);
-            this.socket = ws;
-            const dht = new DHT(new Stream(true, ws));
-            this.swarm = new Hyperswarm({
-                dht: dht
-            });
-            ws.onopen = () => {
-                this.logger.info("Holepunch relayer connected", {
-                    relayerUrl
-                });
-                this.relayerPool.onSuccess();
-            };
-            ws.onclose = () => {
-                this.logger.warn("Holepunch relayer disconnected", {
-                    relayerUrl
-                });
-                this.relayerPool.onFailure(relayerUrl, () =>
-                    this.connectToRelayer()
-                );
-            };
-            ws.onerror = (error) => {
-                this.logger.warn("Holepunch relayer error", {
-                    relayerUrl,
-                    error
-                });
-                this.relayerPool.onFailure(relayerUrl, () =>
-                    this.connectToRelayer()
-                );
-            };
-
-            this.updateCallback();
-        } catch (e) {
-            this.logger.error("Failed to connect to holepunch relayer", {
+        const ws = new WebSocket(relayerUrl);
+        this.socket = ws;
+        const isCurrent = () => this.socket === ws;
+        // One failure per socket: the first of its error event, its close
+        // event and the relay's failed opening counts. Disposal releases
+        // the socket, so nothing counts after it.
+        let hasFailed = false;
+        const fail = (failure: Error | Event) => {
+            if (hasFailed || !isCurrent()) return;
+            hasFailed = true;
+            this.relayerPool.onFailure(
                 relayerUrl,
-                error: e
-            });
-            this.relayerPool.onFailure(relayerUrl, () =>
-                this.connectToRelayer()
+                relayerFailure(relayerUrl, failure),
+                () => this.connectToRelayer()
             );
-        }
+        };
+        const dht = new DHT(new Stream(true, ws));
+        // The relay rejects its opening when the socket fails before it
+        // opens: with the socket's error event, or its own Error.
+        dht.ready().catch(fail);
+        this.swarm = new Hyperswarm({
+            dht: dht
+        });
+        ws.onopen = () => {
+            if (!isCurrent()) return;
+            this.logger.info("Holepunch relayer connected", {
+                relayerUrl
+            });
+            this.relayerPool.onSuccess();
+        };
+        ws.onclose = fail;
+        ws.onerror = fail;
+
+        this.updateCallback();
     }
 
     private constructor(
@@ -112,11 +110,50 @@ class HolepunchRelay {
         updateCallback: Function,
         logger: Logger
     ) {
+        for (const relayerUrl of relayerUrls) assertRelayerUrl(relayerUrl);
         this.relayerUrls = relayerUrls;
         this.updateCallback = updateCallback;
         this.logger = logger.child({ component: "HolepunchRelay" });
         this.relayerPool = new RelayerPool(relayerUrls, this.logger);
     }
+}
+
+/**
+ * A relayer URL that is not a ws: or wss: URL is a configuration error: it
+ * throws at construction, not when a failover first selects it.
+ */
+function assertRelayerUrl(relayerUrl: string): void {
+    const protocol = URL.canParse(relayerUrl)
+        ? new URL(relayerUrl).protocol
+        : undefined;
+    if (protocol !== "ws:" && protocol !== "wss:")
+        throw new Error(
+            `Invalid holepunch relayer URL "${relayerUrl}": expected a ws: or wss: URL`
+        );
+}
+
+/**
+ * The one conversion of a relay failure into the Error the pool logs; it
+ * names the relayer. A socket fails with an `Event`, which has no message:
+ * the Error names its type, and a close event's code and reason. The relay's
+ * own Error becomes the cause.
+ */
+function relayerFailure(relayerUrl: string, failure: Error | Event): Error {
+    if (failure instanceof Error)
+        return Object.assign(
+            new Error(
+                `Holepunch relayer ${relayerUrl} failed to open: ${failure.message}`
+            ),
+            { cause: failure }
+        );
+    const close = failure as Partial<CloseEvent>;
+    const detail =
+        close.code === undefined
+            ? ""
+            : ` (code ${close.code}${close.reason ? `, reason ${close.reason}` : ""})`;
+    return new Error(
+        `Holepunch relayer ${relayerUrl} ${failure.type} event${detail}`
+    );
 }
 
 export default HolepunchRelay;

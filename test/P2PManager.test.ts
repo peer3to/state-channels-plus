@@ -588,7 +588,7 @@ describe("P2PManager", function () {
             const observers = [await addObserver(), await addObserver()];
             const releases = await Promise.all(
                 observers.map((peer) =>
-                    h.rpcStub.holdPostMatchTargetRefresh(peer.index)
+                    h.rpcStub.holdOpenedStatusRefresh(peer.index, "second")
                 )
             );
             const connects = observers.map((peer) =>
@@ -604,7 +604,7 @@ describe("P2PManager", function () {
                                 observers.map((peer) =>
                                     h
                                         .control(peer)
-                                        .stub.getHeldPostMatchTargetRefreshCount()
+                                        .stub.getHeldOpenedStatusRefreshCount()
                                         .request()
                                 )
                             )
@@ -720,6 +720,47 @@ describe("P2PManager", function () {
             }, h.event.protocolEventTimeoutMs());
             expect(await signer.cancelConnectToChannel(target)).to.equal(true);
             expect(await pending).to.equal(false);
+        });
+
+        it("a cancel during the target's opened-status read ends the connect before matching starts", async function () {
+            const h = fixture!.getHarness();
+            const target = Wallet.createRandom().privateKey;
+            const peer = h.getPeer(0);
+            const signer = peer.p2pInstance.p2pSigner;
+            const release = await h.rpcStub.holdOpenedStatusRefresh(
+                peer.index,
+                "first"
+            );
+            try {
+                // the timeout only bounds a connect whose cancel was lost
+                const pending = signer.connectToChannel(target, {
+                    autoOpen: true,
+                    timeoutMs: h.event.protocolEventTimeoutMs()
+                });
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(peer)
+                            .stub.getHeldOpenedStatusRefreshCount()
+                            .request()) === 1
+                );
+                expect(await signer.cancelConnectToChannel(target)).to.equal(
+                    true
+                );
+                await release();
+                expect(await pending).to.equal(false);
+                const availability = await h
+                    .control(peer)
+                    .query.getLobbyAvailability()
+                    .request();
+                expect(availability).to.include({
+                    matching: false,
+                    topicJoined: false
+                });
+                expect(availability.topic).to.equal(undefined);
+            } finally {
+                await release();
+            }
         });
 
         it("unsigned targeted failure retains the target and blacklists neither peer", async function () {
@@ -1549,7 +1590,7 @@ describe("P2PManager", function () {
                         fixture!
                             .getHarness()
                             .control(observer)
-                            .stub.holdPostMatchTargetRefresh(holdMs)
+                            .stub.holdOpenedStatusRefresh("second", holdMs)
                             .request()
                             .then(() => undefined)
                 }

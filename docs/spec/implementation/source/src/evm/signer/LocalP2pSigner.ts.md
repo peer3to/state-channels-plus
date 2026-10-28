@@ -44,3 +44,12 @@ Ordinary lobby join leave
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P1` — same-topic leave ends both joins
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P2` — a rejected second join on the signer keeps the leave
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-2-S5D9EJ.P3` — a differently cased leave counts, and a later leave of another topic returns false and does not undo it
+
+## UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV
+
+Targeted connect cancel before matching starts
+
+- Setup: Hold the first on-chain opened-status read of an unopened target's connect with opening permission, cancel the connect during that read, then release the read
+- Oracle: The cancel returns true; the connect returns false and no matching session or targeted topic exists
+
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV.P1` — a cancel during the opened-status read is kept, and the connect ends false without starting matching

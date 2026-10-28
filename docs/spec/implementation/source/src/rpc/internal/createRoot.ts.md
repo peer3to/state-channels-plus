@@ -15,6 +15,7 @@
 - [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../../../../../specification/runtime/execution.md#req-runtime-7-a2var0)
 - [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)
 - [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)
+- [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../../../../../specification/runtime/execution.md#req-runtime-9-p5vpt5)
 
 ## UNIT-TEST-ROOT-CREATION-1-1NWN3V
 

@@ -45,6 +45,13 @@ type LobbyJoin = {
     ended: Promise<void>;
 };
 
+/** A targeted connect that may still start matching. */
+type TargetedConnect = {
+    topic: string;
+    /** A cancel marked it; matching never starts for a marked connect. */
+    cancelled: boolean;
+};
+
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
  * transactions and coordination actions.
@@ -62,6 +69,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     // ordinary lobby joins in flight; a leave marks every join on its topic
     // and waits until they have settled
     lobbyJoins = new Set<LobbyJoin>();
+    // targeted connects that have not ended their matching step; a cancel
+    // that finds no running matching marks every one on its topic
+    targetedConnects = new Set<TargetedConnect>();
 
     constructor(
         signer: Signer,
@@ -193,10 +203,21 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
+    /**
+     * Cancels a targeted connect before match acceptance. A connect whose
+     * matching has not started yet is marked, so it ends `false` without
+     * starting matching; a running matching is cancelled by its owner.
+     */
     public cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
-        return this.p2pManager.localRpc.lobbyMatchingService.cancelMatching(
-            channelIdToTargetedJoinTopic(ethers.hexlify(channelId))
+        const matching = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = channelIdToTargetedJoinTopic(ethers.hexlify(channelId));
+        if (matching.rendezvousTopic === topic)
+            return matching.cancelMatching(topic);
+        const connects = [...this.targetedConnects].filter(
+            (connect) => connect.topic === topic
         );
+        for (const connect of connects) connect.cancelled = true;
+        return Promise.resolve(connects.length > 0);
     }
 
     /** Starts this runtime's leave; `onLeftChannel` reports its end. */
@@ -334,26 +355,37 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             "connectToChannel"
         );
         let openedGenesis = false;
-
-        if (String(stateManager.channelId) !== normalizedChannelId) {
-            if (String(stateManager.channelId) !== ethers.ZeroHash) {
-                throw new Error(
-                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+        const matching = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = channelIdToTargetedJoinTopic(normalizedChannelId);
+        const connect: TargetedConnect = { topic, cancelled: false };
+        if (options.autoOpen) this.targetedConnects.add(connect);
+        let isTargetUnopened: boolean;
+        let match: LobbyMatch | undefined;
+        try {
+            if (String(stateManager.channelId) !== normalizedChannelId) {
+                if (String(stateManager.channelId) !== ethers.ZeroHash) {
+                    throw new Error(
+                        `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+                    );
+                }
+                await stateManager.setChannelId(normalizedChannelId);
+            }
+            await stateManager.refreshOpenedStatusFromChain();
+            isTargetUnopened = stateManager.status === Status.NOT_OPENED;
+            if (isTargetUnopened && options.autoOpen && !connect.cancelled) {
+                match = await matching.match(
+                    topic,
+                    options.timeoutMs,
+                    normalizedChannelId,
+                    () => connect.cancelled
                 );
             }
-            await stateManager.setChannelId(normalizedChannelId);
+        } finally {
+            this.targetedConnects.delete(connect);
         }
-
-        await stateManager.refreshOpenedStatusFromChain();
-        if (stateManager.status === Status.NOT_OPENED) {
+        if (connect.cancelled) return false;
+        if (isTargetUnopened) {
             if (!options.autoOpen) return false;
-            const matching = this.p2pManager.localRpc.lobbyMatchingService;
-            const topic = channelIdToTargetedJoinTopic(normalizedChannelId);
-            const match = await matching.match(
-                topic,
-                options.timeoutMs,
-                normalizedChannelId
-            );
             if (!match) {
                 if (!matching.takeObservedTargetOpen(normalizedChannelId))
                     return false;

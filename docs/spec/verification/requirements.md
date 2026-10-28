@@ -801,7 +801,7 @@ Specification cases tested: 5/12. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 
 [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)
-Specification cases tested: 81/85. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
+Specification cases tested: 83/87. Untested: T1.P2, T1.P3, T1.P4, T1.P6.
 
 [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../specification/runtime/execution.md#req-runtime-4-b0n70y)
 Specification cases tested: 2/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
@@ -817,6 +817,9 @@ Specification cases tested: 12/13. Untested: T1.P15.
 
 [`REQ-RUNTIME-8-M3ENFM` (An isolated context's failure names its cause)](../specification/runtime/execution.md#req-runtime-8-m3enfm)
 Specification cases tested: 6/9. Untested: T1.P6, T1.P7, T1.P8.
+
+[`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../specification/runtime/execution.md#req-runtime-9-p5vpt5)
+Specification cases tested: 5/5.
 
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.
@@ -972,7 +975,7 @@ Specification cases tested: 0/15.
 Specification cases tested: 3/3.
 
 [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)
-Specification cases tested: 7/7.
+Specification cases tested: 8/8.
 
 [`REQ-TJOIN-2-MFWADG` (Separated matching and handoff)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg)
 Specification cases tested: 8/8.
@@ -1029,7 +1032,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 14/14.
 
 [`REQ-UPG-5-YQV7MJ` (Relay retries converge without stale work)](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj)
-Specification cases tested: 8/8.
+Specification cases tested: 14/14.
 
 [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
 Specification cases tested: 7/8. Untested: T1.P8.
@@ -1041,7 +1044,7 @@ Specification cases tested: 8/8.
 Specification cases tested: 2/2.
 
 [`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)
-Specification cases tested: 14/14.
+Specification cases tested: 16/16.
 
 [`REQ-WRTC-1-B12MMP` (Untrusted signaling payloads)](../specification/peer-communication/transport-upgrade.md#req-wrtc-1-b12mmp)
 Specification cases tested: 0/1.

@@ -5,6 +5,10 @@ import {
     type WebRTCConnectionStateSnapshot,
     type WebRTCPeerAddress
 } from "./connection/WebRTCConnectionFactory";
+import type {
+    WebRTCConnectionStateName,
+    WebRTCIceStateName
+} from "./connection/WebRTCConnectionTypes";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -22,10 +26,12 @@ import { getChecksumAddress } from "@/utils";
 const DISCONNECTED_GRACE_MS = 5_000;
 
 /** States after which a connection never recovers. */
-const FINAL_STATES: ReadonlySet<string> = new Set(["failed", "closed"]);
+const FINAL_STATES: ReadonlySet<
+    WebRTCConnectionStateName | WebRTCIceStateName
+> = new Set(["failed", "closed"]);
 
 /** ICE states of a working network path. */
-const RECOVERED_ICE_STATES: ReadonlySet<string> = new Set([
+const RECOVERED_ICE_STATES: ReadonlySet<WebRTCIceStateName> = new Set([
     "connected",
     "completed"
 ]);
@@ -121,7 +127,12 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
                 "WebRTC connection ended; closing its transport",
                 details
             );
-            watch.transport?.close();
+            if (watch.graceTask) timeoutManager.cancelTask(watch.graceTask);
+            watch.graceTask = undefined;
+            // The transport's close closes its connection; without one
+            // yet, the connection closes here.
+            if (watch.transport) watch.transport.close();
+            else this.closeConnection(peerAddress, watch);
             return;
         }
         if (state.iceState === "disconnected" && !watch.disconnectedAt) {
@@ -212,12 +223,23 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
     public closeWebRTCConnection(transport: WebRTCTransport): void {
         for (const [peerAddress, watch] of this.currentWatches) {
             if (watch.transport !== transport) continue;
-            this.currentWatches.delete(peerAddress);
-            this.connectionFactory?.close(peerAddress).catch((error) => {
-                this.logger.verbose("closeWebRTCConnection - error", error);
-            });
+            this.closeConnection(peerAddress, watch);
             return;
         }
+    }
+
+    /**
+     * Forgets `watch`, the peer's current connection, and closes that
+     * connection in the factory. A failed close is not caught: it escapes
+     * as an unhandled rejection, which is fatal.
+     */
+    private closeConnection(
+        peerAddress: WebRTCPeerAddress,
+        watch: ConnectionWatch
+    ): void {
+        if (this.currentWatches.get(peerAddress) !== watch) return;
+        this.currentWatches.delete(peerAddress);
+        void this.connectionFactory?.close(peerAddress);
     }
 
     public async acceptWebRTCOffer(
