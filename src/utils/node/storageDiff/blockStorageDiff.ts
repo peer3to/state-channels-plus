@@ -175,7 +175,11 @@ function parseTraceAccounts(value: unknown, what: string): AccountDiffs {
  */
 export type BlockTouches = Record<
     AccountAddress,
-    { slots: StorageSlot[]; scalars: boolean }
+    {
+        slots: StorageSlot[];
+        /** Whether the trace's `post` shows the account's balance, nonce or code, or leaves the account out. */
+        changed: { balance: boolean; nonce: boolean; code: boolean };
+    }
 >;
 
 /**
@@ -185,28 +189,42 @@ export type BlockTouches = Record<
 export function touchesOf(entries: unknown): BlockTouches {
     if (!Array.isArray(entries)) throw new Error("Malformed upstream trace");
     const slots = new Map<AccountAddress, Set<StorageSlot>>();
+    const changed = new Map<
+        AccountAddress,
+        { balance: boolean; nonce: boolean; code: boolean }
+    >();
     for (const entry of entries) {
         if (!isObject(entry) || entry.error !== undefined) {
             throw new Error("Upstream trace reported a transaction failure");
         }
         const result = entry.result;
         if (!isObject(result)) throw new Error("Malformed upstream trace");
-        for (const side of [
-            parseTraceAccounts(result.pre, "pre"),
-            parseTraceAccounts(result.post, "post")
-        ]) {
+        const pre = parseTraceAccounts(result.pre, "pre");
+        const post = parseTraceAccounts(result.post, "post");
+        for (const side of [pre, post]) {
             for (const [address, account] of Object.entries(side)) {
                 const keys = slots.get(address) ?? new Set<StorageSlot>();
                 slots.set(address, keys);
                 for (const slot of Object.keys(account.storage ?? {}))
                     keys.add(slot);
+                const flags = changed.get(address) ?? {
+                    balance: false,
+                    nonce: false,
+                    code: false
+                };
+                changed.set(address, flags);
+                // `post` lists what changed; an account it omits may be gone
+                const shown = side === post ? account : post[address];
+                flags.balance ||= !shown || shown.balance !== undefined;
+                flags.nonce ||= !shown || shown.nonce !== undefined;
+                flags.code ||= !shown || shown.code !== undefined;
             }
         }
     }
     return Object.fromEntries(
         [...slots].map(([address, keys]) => [
             address,
-            { slots: [...keys], scalars: true }
+            { slots: [...keys], changed: changed.get(address)! }
         ])
     );
 }

@@ -922,11 +922,8 @@ export class StorageDiffService {
             if (!touched) continue;
             for (const slot of touched.slots)
                 fields.push({ kind: "slot", address, slot });
-            fields.push(
-                { kind: "balance", address },
-                { kind: "nonce", address },
-                { kind: "code", address }
-            );
+            for (const kind of ["balance", "nonce", "code"] as const)
+                if (touched.changed[kind]) fields.push({ kind, address });
         }
         if (fields.length === 0 || !this.upstream) return;
         // a block before this one in the step read the field; else the cache is at the step's parent

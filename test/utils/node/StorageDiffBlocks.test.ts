@@ -473,4 +473,31 @@ describe("StorageDiffService old values", function () {
             expect(records[2].number).to.equal(toQuantity(last.blockNumber));
         });
     });
+
+    it("reads the balance, nonce and code of a touched account only when the trace shows them change", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, signer }) => {
+                const writer = await deploySlotWriter(signer);
+                const sender = (await signer.getAddress()).toLowerCase();
+                const subscription = await client.subscribe([writer, sender]);
+                await client.nextSnapshot(subscription);
+
+                const receipt = await writeSlot(signer, writer, 1, 5n);
+                await client.recordAt(subscription, receipt.blockNumber);
+
+                const readsOf = (address: string) =>
+                    ["eth_getBalance", "eth_getTransactionCount", "eth_getCode"]
+                        .flatMap((method) => relay.paramsOf(method))
+                        .filter(
+                            (params) =>
+                                params[0] === address &&
+                                (params[1] as { blockHash?: string })
+                                    ?.blockHash === receipt.blockHash
+                        ).length;
+                // the sender pays and sends: its balance and nonce change; the writer's scalars do not
+                expect(readsOf(writer)).to.equal(0);
+                expect(readsOf(sender)).to.be.greaterThan(0);
+            }
+        );
+    });
 });
