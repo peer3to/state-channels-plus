@@ -54,10 +54,13 @@ type Check<A extends unknown[], R> = (
 const SAME: Verdict = { same: true };
 
 function text(value: unknown): string {
-    return (typeof value === "string" ? value : JSON.stringify(value)).slice(
-        0,
-        300
-    );
+    return (
+        typeof value === "string"
+            ? value
+            : JSON.stringify(value, (_key, field) =>
+                  typeof field === "bigint" ? field.toString() : field
+              )
+    ).slice(0, 4000);
 }
 
 function verdict(mirror: unknown, node: unknown): Verdict {
@@ -121,6 +124,24 @@ async function nodeCall(
     }
 }
 
+/** Where a mismatch happened: the call's target and calldata prefix, and the block. */
+function describeRead(
+    args: unknown[],
+    head: MirrorHead | undefined
+): { to?: string; calldataPrefix?: string; block?: string } {
+    const first = args[0] as
+        | { to?: string; data?: string }
+        | string
+        | undefined;
+    const call =
+        typeof first === "object" && first !== null ? first : undefined;
+    return {
+        to: call?.to ?? (typeof first === "string" ? first : undefined),
+        calldataPrefix: call?.data?.slice(0, 10),
+        block: head ? `${head.number} ${head.hash}` : undefined
+    };
+}
+
 /** One id per runtime thread: the last line of each carries its totals. */
 const WRITER = `${process.pid}-${threadId}`;
 const FLUSH_EVERY = 20;
@@ -179,7 +200,11 @@ export function installMirrorShadowCheck(
         }
         return entry;
     };
-    const record = (method: CheckedMethod, outcome: Verdict | "unchecked") => {
+    const record = (
+        method: CheckedMethod,
+        outcome: Verdict | "unchecked",
+        context: { to?: string; calldataPrefix?: string; block?: string } = {}
+    ) => {
         const entry = countsOf(method);
         if (outcome === "unchecked") entry.unchecked++;
         else if (outcome.same) entry.matches++;
@@ -187,7 +212,9 @@ export function installMirrorShadowCheck(
             entry.mismatches++;
             appendFileSync(
                 logPath,
-                JSON.stringify({ mismatch: { method, ...outcome } }) + "\n"
+                JSON.stringify({
+                    mismatch: { method, ...context, ...outcome }
+                }) + "\n"
             );
         }
         if (++events % FLUSH_EVERY === 0) flush();
@@ -215,10 +242,12 @@ export function installMirrorShadowCheck(
                         countsOf(method).declined++;
                     throw error;
                 }
+                const context = describeRead(args, shadowed.head);
                 try {
                     record(
                         method,
-                        await check(node!, args, result, shadowed.head)
+                        await check(node!, args, result, shadowed.head),
+                        context
                     );
                 } catch (error) {
                     record(
@@ -229,7 +258,8 @@ export function installMirrorShadowCheck(
                                   same: false,
                                   mirror: text(result),
                                   node: `shadow check failed: ${String(error).slice(0, 160)}`
-                              }
+                              },
+                        context
                     );
                 }
                 return result;
