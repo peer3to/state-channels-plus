@@ -369,9 +369,10 @@ export class MirrorChain {
                 if (subscription === this.subscription && !this.closed)
                     void this.applyPushed(record);
             },
-            onSnapshot: (subscription, snapshot) => {
-                if (subscription === this.subscription && !this.closed)
-                    this.receiveSnapshot(snapshot);
+            // A snapshot comes under the id of the subscribe that added its
+            // accounts, which is not always the one records come under.
+            onSnapshot: (_subscription, snapshot) => {
+                if (!this.closed) this.receiveSnapshot(snapshot);
             },
             onIncludedHead: (head) => this.noteIncludedHead(head),
             onLost: (reason) => void this.onFeedLost(feed, reason)
