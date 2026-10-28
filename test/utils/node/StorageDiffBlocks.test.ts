@@ -1,6 +1,7 @@
 import {
     deployNumberStorage,
     recordKey,
+    rejectionOf,
     setValue,
     withStorageDiffSession
 } from "../../fixtures/node/StorageDiffService.fixture";
@@ -222,5 +223,21 @@ describe("StorageDiffService blocks", function () {
             expect(NOT_RETAINED_ERROR_CODE).to.equal(-32002);
             expect(relay.requestCount("eth_getStorageAt")).to.equal(1);
         });
+    });
+
+    it("fails, so a supervisor restarts it, when the upstream is reset to a chain sharing no ancestor", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, service, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                await setValue(storage, 3n);
+                await client.subscribe([]);
+
+                await provider.send("anvil_reset", []);
+                await provider.send("evm_mine", []);
+
+                const failure = await rejectionOf(service.closed);
+                expect((failure as Error).message).to.contain("no ancestor");
+            }
+        );
     });
 });
