@@ -50,6 +50,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216)   | Future spectator relaying                                                                                                                                   | Plan                                          | Current queue admission and optional promotion                                                                                                                                                                             | Future; non-blocking              |
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Open (later)                      |
+| [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game logs (2026-10-27)     | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
 
 ## Register assumptions and constraints
 
@@ -807,3 +808,36 @@ spectator in this case fails the reduction. Requested engineer decision: which a
 Affected layers: [synchronization](peer-communication/synchronization.md), implementation
 ([ReductionComputationService](../implementation/source/src/stateManager/reduction/ReductionComputationService.ts.md),
 [AgreementManager](../implementation/source/src/agreementManager/AgreementManager.ts.md)).
+
+<a id="oq-spec-relay-1-sw2bkp"></a>
+
+## OQ-SPEC-RELAY-1-SW2BKP — Confirmation re-broadcast volume delays counter-signatures past the agreement window
+
+Open; to address later (Luka, 2026-10-28). Found in a six-player game on the private testnet (three
+Macs, three Android phones, one LAN, every link on WebRTC and stable). The authors of blocks 113 and 114
+(ordered contributions) and 123 (a voluntary quit) posted their blocks' calldata on-chain: at the
+author's check one `agreementTime` (4 s) after commit, not every participant's counter-signature had
+arrived. The links were healthy; the time went into processing.
+
+Measured over 19 blocks (23:44:10–23:44:40): every player received about 455 messages (5.9 MB) and sent
+about as many, about 24 messages and 310 KB per block, with peaks near 1 MB/s. Between two commits each
+player ran about 20 (4–68) merges of confirmations for blocks it already held. A merge that adds any
+signature re-broadcasts the whole block confirmation to every peer
+(`BlockValidationStrategy.goodNewSignaturesOnExistingBlock`), also after everyone has signed, because
+each peer learns a block's signatures in several steps: about n × (n − 1) × (n − 1) messages per block
+for n peers. The merges run in the same per-fork queue that commits new blocks
+(`BlockQueueManager.executeQueuedEntry`), so a slow device's own counter-signature waits behind them. In
+bursts the Android phones committed 2–3 s after the first player, leaving about 1 s for their signature
+to reach the author. Proof verification is not the cause (about 4 ms per ordered contribution).
+
+Owner: [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](peer-communication/block-gossip.md#req-gossip-3-hqznqx).
+Alternatives: (1) keep re-broadcasting all growth (current); (2) re-broadcast only while this peer can
+still add signatures, and stop once everyone has signed; (3) send only the new signatures, not the whole
+block; (4) each peer sends only its own signature and nobody relays others'. `agreementTime` stays the
+calldata posting deadline (Luka, 2026-10-28). Blocking effect: none for safety; avoidable calldata posts
+(gas, chain load) whenever a slow device lags, growing with the number of peers. Requested engineer
+decision: which relay rule applies. Affected layers: [block gossip](peer-communication/block-gossip.md),
+implementation
+([BlockValidationStrategy](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md),
+[BlockQueueManager](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
+[CalldataPostingService](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md)).

@@ -151,10 +151,12 @@ describe("WorkerBridgeWebRTCConnectionFactory callback ownership", () => {
                     replacedStates.push(state.connectionState);
                 }
             });
-            await bridge.factory.close(bridge.peerAddress);
+            // A connection closed on this side reports nothing more, so the
+            // change comes from the far side closing.
+            await bridge.closeRemote();
             await waitFor(() => replacedStates.length > 0);
             expect(connected.states.length).to.equal(originalCount);
-            expect(replacedStates).to.include("closed");
+            expect(replacedStates).to.include("disconnected");
         });
     });
     it("ignores retired provider channel callbacks after reconnect", async () => {

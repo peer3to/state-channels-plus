@@ -153,15 +153,9 @@ class WebRTCTransport extends NetworkTransport {
 
     _close(): void {
         this.p2pManager.logger.debug("Closing WebRTC channel");
-        const profile =
-            this.p2pManager.profileManager.getProfileByTransport(this);
-        const peerAddress =
-            this.peerAddress || profile?.getEvmAddress()?.toString();
-        if (peerAddress) {
-            this.p2pManager.localRpc?.webRTCSetupService?.closeWebRTCConnection(
-                peerAddress
-            );
-        }
+        this.p2pManager.localRpc?.webRTCSetupService?.closeWebRTCConnection(
+            this
+        );
         this.webRTCChannel.close();
     }
 }

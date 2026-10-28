@@ -2,9 +2,35 @@ import type { Address } from "@/types";
 
 export type WebRTCPeerAddress = Address;
 
+/**
+ * The connection's selected network path, read from `getStats()` when its
+ * state changed. A field the runtime does not report is absent.
+ */
+export type WebRTCPathStats = {
+    dtlsState?: string;
+    selectedPairChanges?: number;
+    pairState?: string;
+    /** Candidate type and protocol, e.g. "host udp". */
+    localCandidate?: string;
+    remoteCandidate?: string;
+    roundTripTimeMs?: number;
+    /** Connectivity checks sent and answered, both directions. */
+    requestsSent?: number;
+    responsesReceived?: number;
+    requestsReceived?: number;
+    responsesSent?: number;
+    consentRequestsSent?: number;
+    packetsSent?: number;
+    packetsReceived?: number;
+    msSinceLastPacketSent?: number;
+    msSinceLastPacketReceived?: number;
+};
+
 export type WebRTCConnectionStateSnapshot = {
     connectionState: string;
     iceState: string;
+    /** Absent when the runtime has no `getStats()` or the read failed. */
+    path?: WebRTCPathStats;
 };
 
 export type WebRTCDataChannelLike = {
@@ -21,8 +47,11 @@ export type WebRTCDataChannelLike = {
 export type WebRTCPeerConnectionLike = {
     connectionState?: string;
     iceConnectionState?: string;
-    onconnectionstatechange?: ((event?: any) => void) | null;
-    oniceconnectionstatechange?: ((event?: any) => void) | null;
+    /** werift fires the ICE state change only as an event, never through `oniceconnectionstatechange`. */
+    addEventListener(
+        type: "connectionstatechange" | "iceconnectionstatechange",
+        listener: () => void
+    ): void;
     onicecandidate?: ((event: { candidate?: any }) => void) | null;
     ondatachannel?:
         | ((event: { channel: WebRTCDataChannelLike }) => void)
@@ -33,7 +62,15 @@ export type WebRTCPeerConnectionLike = {
     setLocalDescription(description: any): Promise<void>;
     setRemoteDescription(description: any): Promise<void>;
     addIceCandidate(candidate: any): Promise<void>;
+    /** Browsers only; the Node implementation (werift) has none. */
+    getStats?(): Promise<WebRTCStatsReport>;
     close(): void;
+};
+
+/** The parts of an `RTCStatsReport` the path stats read. */
+export type WebRTCStatsReport = {
+    get(id: string): Record<string, any> | undefined;
+    values(): IterableIterator<Record<string, any>>;
 };
 
 export type WebRTCConnectionCallbacks = {

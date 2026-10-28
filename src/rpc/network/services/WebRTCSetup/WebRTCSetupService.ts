@@ -3,36 +3,56 @@ import {
     type WebRTCConnectionCallbacks,
     type WebRTCConnectionFactory,
     type WebRTCConnectionStateSnapshot,
-    type WebRTCDataChannelLike,
     type WebRTCPeerAddress
 } from "./connection/WebRTCConnectionFactory";
 import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
-import { NetworkTransport, TransportType } from "@/transport";
+import { NetworkTransport } from "@/transport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import { getChecksumAddress } from "@/utils";
 
+/**
+ * How long a connection whose network path stopped answering may take to
+ * recover by itself before its transport closes. Chrome reports
+ * `disconnected` after about 2-3 s without connectivity-check answers, and
+ * `failed` only after about 30 s.
+ */
+const DISCONNECTED_GRACE_MS = 5_000;
+
+/** States after which a connection never recovers. */
+const FINAL_STATES: ReadonlySet<string> = new Set(["failed", "closed"]);
+
+/** ICE states of a working network path. */
+const RECOVERED_ICE_STATES: ReadonlySet<string> = new Set([
+    "connected",
+    "completed"
+]);
+
+/** Milliseconds since the Unix epoch. */
+type EpochMs = number;
+
+/** One connection: its transport, its last reported state, and its current `disconnected` episode. */
+type ConnectionWatch = {
+    transport?: WebRTCTransport;
+    lastState?: WebRTCConnectionStateSnapshot;
+    disconnectedAt?: EpochMs;
+    graceTask?: ReturnType<typeof setTimeout>;
+};
+
 class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
     private connectionFactory?: WebRTCConnectionFactory;
+    /** Each peer's current connection; the factory holds one per peer. */
+    private readonly currentWatches = new Map<
+        WebRTCPeerAddress,
+        ConnectionWatch
+    >();
 
     private normalizePeerAddress(
         peerAddress: WebRTCPeerAddress
     ): WebRTCPeerAddress {
         return getChecksumAddress(peerAddress) as WebRTCPeerAddress;
-    }
-
-    private findWebRTCTransport(
-        peerAddress: WebRTCPeerAddress
-    ): NetworkTransport | undefined {
-        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
-        return this.p2pManager.openConnections.find(
-            (t) =>
-                t.peerAddress &&
-                getChecksumAddress(t.peerAddress) === normalizedPeerAddress &&
-                t.transportType === TransportType.WEBRTC
-        );
     }
 
     constructor(p2pManager: P2PManager) {
@@ -72,59 +92,99 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
             .sendOne(peerAddress);
     }
 
+    /**
+     * The network path (ICE state) decides: `disconnected` means the path
+     * stopped answering, and it keeps being checked, so the connection's
+     * transport stays open for DISCONNECTED_GRACE_MS and closes only if the
+     * path is still down then. `connected` or `completed` ends the grace. In
+     * Node (werift) `connectionState` stays `disconnected` after the path
+     * recovers, so it cannot end the grace. `failed` or `closed` in either
+     * state, a DTLS failure included, closes the transport at once.
+     */
     private handleConnectionStateChange(
         peerAddress: WebRTCPeerAddress,
+        watch: ConnectionWatch,
         state: WebRTCConnectionStateSnapshot
     ): void {
+        const timeoutManager = this.p2pManager.stateManager.timeoutManager;
+        const disconnectedMs =
+            watch.disconnectedAt === undefined
+                ? undefined
+                : Date.now() - watch.disconnectedAt;
+        const details = { peerAddress, ...state, disconnectedMs };
+        watch.lastState = state;
         if (
-            state.connectionState === "disconnected" ||
-            state.connectionState === "failed" ||
-            state.connectionState === "closed"
+            FINAL_STATES.has(state.connectionState) ||
+            FINAL_STATES.has(state.iceState)
         ) {
             this.logger.warn(
-                `WebRTC connection state changed: ${state.connectionState}`,
-                {
-                    iceState: state.iceState
-                }
+                "WebRTC connection ended; closing its transport",
+                details
             );
-            this.findWebRTCTransport(peerAddress)?.close();
+            watch.transport?.close();
             return;
         }
-
-        if (
-            state.iceState === "disconnected" ||
-            state.iceState === "failed" ||
-            state.iceState === "closed"
-        ) {
+        if (state.iceState === "disconnected" && !watch.disconnectedAt) {
+            watch.disconnectedAt = Date.now();
             this.logger.warn(
-                `WebRTC IceConnection state changed: ${state.iceState}`,
-                {
-                    iceState: state.iceState,
-                    connectionState: state.connectionState
-                }
+                "WebRTC connection disconnected; waiting for it to recover",
+                { ...details, graceMs: DISCONNECTED_GRACE_MS }
             );
-            this.findWebRTCTransport(peerAddress)?.close();
+            watch.graceTask = timeoutManager.scheduleTask(
+                () => {
+                    if (!watch.transport) {
+                        // No transport to close yet: the next loss starts a new grace.
+                        watch.disconnectedAt = undefined;
+                        watch.graceTask = undefined;
+                        return;
+                    }
+                    if (watch.transport.isClosed) return;
+                    this.logger.warn(
+                        "WebRTC connection did not recover; closing its transport",
+                        {
+                            peerAddress,
+                            ...watch.lastState,
+                            disconnectedMs: Date.now() - watch.disconnectedAt!
+                        }
+                    );
+                    watch.transport.close();
+                },
+                DISCONNECTED_GRACE_MS,
+                "WebRTC disconnected grace elapsed"
+            );
+            return;
         }
-    }
-
-    private createTransportForDataChannel(
-        channel: WebRTCDataChannelLike
-    ): void {
-        new WebRTCTransport(channel, this.p2pManager.rpcRouter);
+        if (RECOVERED_ICE_STATES.has(state.iceState) && watch.disconnectedAt) {
+            if (watch.graceTask) timeoutManager.cancelTask(watch.graceTask);
+            watch.graceTask = undefined;
+            watch.disconnectedAt = undefined;
+            this.logger.info("WebRTC connection recovered", details);
+            return;
+        }
+        this.logger.info("WebRTC connection state changed", details);
     }
 
     private createConnectionCallbacks(
         peerAddress: WebRTCPeerAddress
     ): WebRTCConnectionCallbacks {
+        // The factory closes the peer's previous connection, so its
+        // transport is dead: close it now, which also ends its grace.
+        const previous = this.currentWatches.get(peerAddress);
+        const watch: ConnectionWatch = {};
+        this.currentWatches.set(peerAddress, watch);
+        previous?.transport?.close();
         return {
             onIceCandidate: (candidate) => {
                 this.serializeAndSendIceCandidate(peerAddress, candidate);
             },
             onDataChannel: (channel) => {
-                this.createTransportForDataChannel(channel);
+                watch.transport = new WebRTCTransport(
+                    channel,
+                    this.p2pManager.rpcRouter
+                );
             },
             onConnectionStateChange: (state) => {
-                this.handleConnectionStateChange(peerAddress, state);
+                this.handleConnectionStateChange(peerAddress, watch, state);
             },
             onError: (error) => {
                 this.logger.error("WebRTC connection factory error", error);
@@ -144,13 +204,20 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
         );
     }
 
-    public closeWebRTCConnection(peerAddress: WebRTCPeerAddress): void {
-        if (!this.connectionFactory) return;
-        this.connectionFactory
-            .close(this.normalizePeerAddress(peerAddress))
-            .catch((error) => {
+    /**
+     * Closes the connection of `transport` when it is still its peer's
+     * current one. A replaced connection is already closed, and closing by
+     * peer would close the peer's newer connection.
+     */
+    public closeWebRTCConnection(transport: WebRTCTransport): void {
+        for (const [peerAddress, watch] of this.currentWatches) {
+            if (watch.transport !== transport) continue;
+            this.currentWatches.delete(peerAddress);
+            this.connectionFactory?.close(peerAddress).catch((error) => {
                 this.logger.verbose("closeWebRTCConnection - error", error);
             });
+            return;
+        }
     }
 
     public async acceptWebRTCOffer(

@@ -69,7 +69,6 @@ contract StateChannelManagerProxyRegistrationTest is Test {
         b.transaction.header.forkId = keccak256("poster-fork");
         b.transaction.header.transactionCnt = 1;
         b.transaction.header.timestamp = 1;
-        b.transaction.body.encodedData = hex"123456";
         b.transaction.body.data = hex"ab";
         b.stateSnapshotHash = keccak256("poster-snapshot");
         b.previousBlockHash = keccak256("poster-prev");

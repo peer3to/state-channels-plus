@@ -138,7 +138,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 timestamp: BigInt(Clock.getTimeInSeconds())
             },
             body: {
-                encodedData: tx.data!,
                 data: tx.data!
             }
         };

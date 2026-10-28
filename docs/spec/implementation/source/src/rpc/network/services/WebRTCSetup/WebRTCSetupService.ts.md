@@ -9,6 +9,7 @@
   Partial: [`DEF-11-JN8N6H`](../../../../../../../audit/open-findings.md#def-11-jn8n6h) unfiltered ICE targets; map-entry leak without close.
 - [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)
 - [`REQ-UPG-3-T1SRMS` (Single deterministic initiator)](../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms)
+- [`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)
 
 ## UNIT-TEST-WEBRTC-SETUP-SERVICE-1-9QST0H
 
@@ -23,3 +24,19 @@ Signaling inertness and binding
 - [ ] `UNIT-TEST-WEBRTC-SETUP-SERVICE-1-9QST0H.P4` — orphan candidate
 - [ ] `UNIT-TEST-WEBRTC-SETUP-SERVICE-1-9QST0H.P5` — payload-identity inert
 - [ ] `UNIT-TEST-WEBRTC-SETUP-SERVICE-1-9QST0H.P6` — hostile ICE target (documents [`DEF-11-JN8N6H`](../../../../../../../audit/open-findings.md#def-11-jn8n6h))
+
+## UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q
+
+Connection health of an upgraded transport
+
+- Setup: Open a WebRTC connection through a stand-in connection factory inside the host and hand the service a recording data channel, so the service creates and owns the transport; report connection and path states, with waits, and wait past the 5 s grace where the case needs it.
+- Oracle: The path (ICE) state decides: `disconnected` keeps the transport and starts one grace; `connected` or `completed` ends it; the grace end, or `failed`/`closed` in either state, closes the connection's own transport; a transport closes the factory connection only while it is the peer's current one; a new connection closes the replaced connection's transport; every change is logged.
+
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P1` — a path that recovers within the grace keeps the transport; the loss and the recovery are logged
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P2` — the transport stays open during the grace
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P3` — a path still down when the grace ends closes the transport; repeated reports start one grace
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P4` — `failed` or `closed` in either state closes the transport and its factory connection at once, a DTLS failure on a working path included
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P5` — a failure during the grace closes at once and the grace closes nothing more
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P6` — a recovered path ends the grace while the connection state stays `disconnected` (Node)
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P7` — each path loss gets its own full grace
+- [x] `UNIT-TEST-WEBRTC-SETUP-SERVICE-2-8TNH4Q.P8` — a replaced connection's transport closes when its replacement starts, without closing the replacement's factory connection

@@ -120,6 +120,33 @@ the drops is not proven; it needs a `chrome://webrtc-internals` capture of a dro
 Holepunch longer after the upgrade; (2) fall back to Holepunch when a WebRTC link drops; (3) a keepalive
 that detects a silent link sooner than ICE consent.
 
+**Update (2026-10-27):** A WebRTC transport now stays open while its path is down and closes only if
+the path is still down after a 5 s grace
+([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)),
+so a short drop no longer costs a reconnect. Each state change is logged with the selected path's
+statistics (round-trip time, connectivity checks sent and answered, time since the last packet each
+way); the next phone session's logs should show where the drops come from.
+
+<a id="find-upg-stale-report-1-phpj5h"></a>
+
+### FIND-UPG-STALE-REPORT-1-PHPJ5H
+
+**Current defect:** In the browser, the SDK runs in a worker and the `RTCPeerConnection` lives on the
+page's main thread. The main-thread factory drops every state report of a connection that is closed or
+replaced, but a report it sent just before can still be in flight to the worker. The worker routes
+state reports by peer address only (`WorkerBridgeWebRTCConnectionFactory.state`), to the callbacks
+registered last. So when the peer's next connection registers its callbacks in that window, the old
+connection's report reaches the new connection: a stale `failed` or `closed` closes the new transport
+at once, and a stale `disconnected` starts a grace that closes it if the new connection does not report
+`connected` within 5 s. This breaks the rule that a closed or replaced connection reports no more state
+changes ([`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)).
+The window is a few milliseconds, only during a replacement while the old connection is still active.
+
+**Status:** Open. Engineer decision (Luka, 2026-10-27): record it, no fix now. Proposed direction: tag
+each connection with a number set on the main thread when the connection is created, return it with the
+offer or answer, send it with every state report, and drop reports whose number is not the peer's
+current one in the worker.
+
 ## Runtime host worker teardown
 
 <a id="find-worker-drain-1-ekyjqv"></a>

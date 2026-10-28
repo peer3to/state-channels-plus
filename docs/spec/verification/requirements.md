@@ -1040,5 +1040,8 @@ Specification cases tested: 8/8.
 [`REQ-UPG-8-06HTCM` (Fallback is re-established within one agreement window)](../specification/peer-communication/transport-upgrade.md#req-upg-8-06htcm)
 Specification cases tested: 2/2.
 
+[`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)
+Specification cases tested: 14/14.
+
 [`REQ-WRTC-1-B12MMP` (Untrusted signaling payloads)](../specification/peer-communication/transport-upgrade.md#req-wrtc-1-b12mmp)
 Specification cases tested: 0/1.

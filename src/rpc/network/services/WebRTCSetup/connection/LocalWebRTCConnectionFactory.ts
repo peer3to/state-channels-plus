@@ -3,10 +3,60 @@ import {
     WebRTCConnectionCallbacks,
     WebRTCConnectionFactory,
     WebRTCConnectionStateSnapshot,
+    WebRTCPathStats,
     WebRTCPeerAddress,
     WebRTCPeerConnectionLike
 } from "./WebRTCConnectionTypes";
 import { loadWebRTCProvider, type WebRTCProvider } from "./WebRTCProvider";
+
+/**
+ * The selected candidate pair of `connection` and its transport, from
+ * `getStats()`. Undefined without `getStats()`.
+ */
+async function readPathStats(
+    connection: WebRTCPeerConnectionLike
+): Promise<WebRTCPathStats | undefined> {
+    if (!connection.getStats) return undefined;
+    const report = await connection.getStats();
+    const stats = [...report.values()];
+    const transport = stats.find((entry) => entry.type === "transport");
+    // Firefox has no transport stats; it marks the pair itself.
+    const pair = transport?.selectedCandidatePairId
+        ? report.get(transport.selectedCandidatePairId)
+        : stats.find(
+              (entry) => entry.type === "candidate-pair" && entry.selected
+          );
+    const describe = (id?: string) => {
+        const candidate = id ? report.get(id) : undefined;
+        return candidate
+            ? `${candidate.candidateType} ${candidate.protocol}`
+            : undefined;
+    };
+    const msSince = (timestamp?: number) =>
+        pair && timestamp !== undefined
+            ? Math.round(pair.timestamp - timestamp)
+            : undefined;
+    return {
+        dtlsState: transport?.dtlsState,
+        selectedPairChanges: transport?.selectedCandidatePairChanges,
+        pairState: pair?.state,
+        localCandidate: describe(pair?.localCandidateId),
+        remoteCandidate: describe(pair?.remoteCandidateId),
+        roundTripTimeMs:
+            pair?.currentRoundTripTime === undefined
+                ? undefined
+                : Math.round(pair.currentRoundTripTime * 1000),
+        requestsSent: pair?.requestsSent,
+        responsesReceived: pair?.responsesReceived,
+        requestsReceived: pair?.requestsReceived,
+        responsesSent: pair?.responsesSent,
+        consentRequestsSent: pair?.consentRequestsSent,
+        packetsSent: pair?.packetsSent,
+        packetsReceived: pair?.packetsReceived,
+        msSinceLastPacketSent: msSince(pair?.lastPacketSentTimestamp),
+        msSinceLastPacketReceived: msSince(pair?.lastPacketReceivedTimestamp)
+    };
+}
 
 class LocalWebRTCConnectionFactory implements WebRTCConnectionFactory {
     private provider?: WebRTCProvider;
@@ -57,12 +107,37 @@ class LocalWebRTCConnectionFactory implements WebRTCConnectionFactory {
             callbacks.onIceCandidate(candidate);
         };
 
+        // Each report waits for the previous one's stats, so reports keep the
+        // order of the state changes. A connection that was closed or
+        // replaced reports nothing more: its reports would reach the callbacks
+        // of the peer's next connection across the worker bridge.
+        const isCurrent = () =>
+            this.connectionMap.get(peerAddress) === connection;
+        let reported = Promise.resolve();
         const notifyState = () => {
-            callbacks.onConnectionStateChange(this.getSnapshot(connection));
+            const state = this.getSnapshot(connection);
+            reported = reported
+                .then(async () => {
+                    if (!isCurrent()) return;
+                    // The stats are diagnostics: a failed read must not hold
+                    // back the state change. A read that never settles
+                    // would; no runtime is known to do that.
+                    let readError: unknown;
+                    const path = await readPathStats(connection).catch(
+                        (error) => {
+                            readError = error;
+                            return undefined;
+                        }
+                    );
+                    if (!isCurrent()) return;
+                    if (readError) callbacks.onError(readError as Error);
+                    callbacks.onConnectionStateChange({ ...state, path });
+                })
+                .catch((error) => callbacks.onError(error));
         };
 
-        connection.onconnectionstatechange = notifyState;
-        connection.oniceconnectionstatechange = notifyState;
+        connection.addEventListener("connectionstatechange", notifyState);
+        connection.addEventListener("iceconnectionstatechange", notifyState);
 
         return connection;
     }

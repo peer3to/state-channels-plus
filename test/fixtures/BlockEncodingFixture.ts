@@ -59,7 +59,6 @@ export async function encodeLinkedNextBlock(
         },
         transaction: factory.transaction({
             body: {
-                encodedData: data,
                 data
             }
         }),
