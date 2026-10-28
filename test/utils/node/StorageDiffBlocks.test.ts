@@ -265,10 +265,13 @@ describe("StorageDiffService blocks", function () {
                     settled,
                     "the service has not reached the block"
                 ).to.equal(false);
+                const released = Date.now();
                 held.release();
 
                 const block = (await read) as { number: string };
                 expect(block.number).to.equal(mined);
+                // the head reaching the block ends the wait, not the bound
+                expect(Date.now() - released).to.be.lessThan(HEAD_WAIT_MS / 2);
                 void storage;
             }
         );
