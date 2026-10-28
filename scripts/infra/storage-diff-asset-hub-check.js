@@ -2,8 +2,10 @@
 
 // Read-only completeness check of the storage diff service's backfill against
 // a Polkadot Asset Hub node. See "Checking a backfill against Asset Hub" in
-// scripts/infra/README.md.
+// scripts/infra/README.md. With --progress-file a killed run resumes where it
+// stopped instead of starting from zero.
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { parseArgs } = require("node:util");
 
@@ -15,6 +17,9 @@ process.env.TS_NODE_PROJECT ||= path.join(
 );
 require("ts-node/register");
 const {
+    ChildTrieBlockSource
+} = require("../../src/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource");
+const {
     ContractBackfill
 } = require("../../src/utils/node/storageDiff/ContractBackfill");
 const {
@@ -23,13 +28,15 @@ const {
 const {
     childStorageKey,
     compareChildTrie,
-    findChangedBlocks,
     reviveAccountInfoKey,
     trieIdOf
 } = require("../../src/utils/node/storageDiff/assetHubStateCheck");
 
 const CHILD_KEYS_PAGE = 1000;
 const READ_BATCH = 200;
+// blocks traced between two saves of the progress, in parallel lanes
+const TRACE_CHUNK = 64;
+const TRACE_LANES = 4;
 
 const { values } = parseArgs({
     options: {
@@ -40,17 +47,43 @@ const { values } = parseArgs({
             default: "wss://polkadot-asset-hub-rpc.polkadot.io"
         },
         // blocks behind the best head the check reads at, clear of reorgs
-        depth: { type: "string", default: "10" }
+        depth: { type: "string", default: "10" },
+        "progress-file": { type: "string" }
     }
 });
 if (!values.address) {
     // eslint-disable-next-line no-console
-    console.error("usage: --address 0x... [--eth-rpc ws] [--substrate ws]");
+    console.error(
+        "usage: --address 0x... [--eth-rpc ws] [--substrate ws] [--progress-file path]"
+    );
     process.exit(2);
 }
 const address = values.address.toLowerCase();
 const log = (event) => console.log(JSON.stringify(event)); // eslint-disable-line no-console
 const hex = (n) => "0x" + n.toString(16);
+
+const ZERO_COST = {
+    codeProbes: 0,
+    blockReads: 0,
+    rootReads: 0,
+    traces: 0,
+    stateReads: 0,
+    roundTrips: 0
+};
+
+function load() {
+    const file = values["progress-file"];
+    if (file && fs.existsSync(file))
+        return JSON.parse(fs.readFileSync(file, "utf8"));
+    return { cost: { ...ZERO_COST }, activeMs: 0, runs: 0 };
+}
+
+function save(progress) {
+    const file = values["progress-file"];
+    if (!file) return;
+    fs.writeFileSync(file + ".tmp", JSON.stringify(progress));
+    fs.renameSync(file + ".tmp", file);
+}
 
 async function inBatches(client, calls) {
     const answers = [];
@@ -67,83 +100,111 @@ async function main() {
     const handlers = { onLost: (error) => log({ lost: error.message }) };
     const eth = await UpstreamRpcClient.connect(values["eth-rpc"], handlers);
     const sub = await UpstreamRpcClient.connect(values.substrate, handlers);
+    const source = new ChildTrieBlockSource(values.substrate);
+    const progress = load();
+    progress.runs++;
+    const runStarted = Date.now();
+    const activeBefore = progress.activeMs;
+    const backfill = new ContractBackfill(eth, address, source);
+    // cost spent by this run's backfill so far, added to the saved totals
+    const savedCost = { ...progress.cost };
+    const checkpoint = () => {
+        const spent = backfill.spent;
+        for (const key of Object.keys(ZERO_COST))
+            progress.cost[key] = savedCost[key] + spent[key];
+        progress.activeMs = activeBefore + (Date.now() - runStarted);
+        save(progress);
+    };
     try {
-        const started = Date.now();
-        const best = Number(await eth.request("eth_blockNumber", []));
-        const tip = BigInt(best - Number(values.depth));
-        const ethTip = await eth.request("eth_getBlockByNumber", [
-            hex(tip),
-            false
-        ]);
-        const subHash = await sub.request("chain_getBlockHash", [Number(tip)]);
-        log({
-            step: "tip",
-            number: Number(tip),
-            ethHash: ethTip.hash,
-            subHash
-        });
-
-        // backfill, same code as the service: deploy block, traced keys, values
-        const backfill = new ContractBackfill(eth, address);
-        const deploy = await backfill.findDeployBlock(tip);
-        if (deploy === undefined) throw new Error("The address has no code");
-        log({
-            step: "deploy",
-            block: Number(deploy),
-            codeProbes: backfill.spent.codeProbes
-        });
-
-        // block finder: bisect the child trie root instead of listing every block
-        const info = await sub.request("state_getStorage", [
-            reviveAccountInfoKey(address),
-            subHash
-        ]);
-        const trieId = trieIdOf(info);
-        if (!trieId) throw new Error("The address is not a contract");
-        const rootKey = childStorageKey(trieId);
-        const rootsAt = async (blocks) => {
-            const hashes = await Promise.all(
-                sub.requestBatch(
-                    blocks.map((n) => ({
-                        method: "chain_getBlockHash",
-                        params: [n]
-                    }))
-                )
-            );
-            const roots = await inBatches(
-                sub,
-                hashes.map((hash) => ({
-                    method: "state_getStorage",
-                    params: [rootKey, hash]
-                }))
-            );
-            return roots.map((root) => root ?? undefined);
+        if (!progress.tip) {
+            const best = Number(await eth.request("eth_blockNumber", []));
+            const number = best - Number(values.depth);
+            const ethTip = await eth.request("eth_getBlockByNumber", [
+                hex(number),
+                false
+            ]);
+            const subHash = await sub.request("chain_getBlockHash", [number]);
+            progress.tip = { number, ethHash: ethTip.hash, subHash };
+            checkpoint();
+        }
+        const tip = {
+            number: BigInt(progress.tip.number),
+            hash: progress.tip.ethHash
         };
-        const found = await findChangedBlocks(
-            rootsAt,
-            Number(deploy) - 1,
-            Number(tip)
-        );
+        log({ step: "tip", ...progress.tip, run: progress.runs });
+
+        if (progress.deploy === undefined) {
+            const deploy = await backfill.findDeployBlock(tip.number);
+            if (deploy === undefined)
+                throw new Error("The address has no code");
+            progress.deploy = Number(deploy);
+            checkpoint();
+        }
+        log({ step: "deploy", block: progress.deploy });
+
+        if (!progress.numbers) {
+            const listing = await source.listBlocks(
+                eth,
+                address,
+                BigInt(progress.deploy),
+                tip
+            );
+            progress.numbers = listing.numbers.map(Number);
+            progress.blocks = listing.blocks;
+            progress.cost.rootReads += listing.rootReads;
+            progress.cost.roundTrips += listing.roundTrips;
+            savedCost.rootReads += listing.rootReads;
+            savedCost.roundTrips += listing.roundTrips;
+            progress.keys = [];
+            progress.traced = 0;
+            checkpoint();
+        }
         log({
             step: "changedBlocks",
-            blocksSinceDeploy: Number(tip - deploy) + 1,
-            changed: found.changed.length,
-            rootReads: found.rootReads,
-            roundTrips: found.roundTrips,
-            blocks: found.changed
+            blocksSinceDeploy: progress.blocks,
+            changed: progress.numbers.length,
+            rootReads: progress.cost.rootReads
         });
 
-        const keys = await backfill.traceKeys(found.changed.map(BigInt));
-        const state = await backfill.readState(ethTip.hash, keys);
+        const keys = new Set(progress.keys);
+        while (progress.traced < progress.numbers.length) {
+            const chunk = progress.numbers
+                .slice(progress.traced, progress.traced + TRACE_CHUNK)
+                .map(BigInt);
+            const lane = Math.ceil(chunk.length / TRACE_LANES);
+            const found = await Promise.all(
+                [...Array(TRACE_LANES).keys()].map((i) =>
+                    backfill.traceKeys(chunk.slice(i * lane, (i + 1) * lane))
+                )
+            );
+            for (const slots of found) for (const slot of slots) keys.add(slot);
+            progress.traced += chunk.length;
+            progress.keys = [...keys];
+            checkpoint();
+            if (progress.traced % (TRACE_CHUNK * 5) < TRACE_CHUNK)
+                log({
+                    step: "tracing",
+                    traced: progress.traced,
+                    of: progress.numbers.length,
+                    keys: keys.size
+                });
+        }
+
+        const state = await backfill.readState(progress.tip.ethHash, keys);
+        checkpoint();
         log({
             step: "backfilled",
-            tracedBlocks: found.changed.length,
+            tracedBlocks: progress.numbers.length,
             keys: keys.size,
-            nonZeroSlots: Object.keys(state.storage).length,
-            cost: backfill.spent
+            nonZeroSlots: Object.keys(state.storage).length
         });
 
         // the check: every child trie entry at the same block, from the node
+        const info = await sub.request("state_getStorage", [
+            reviveAccountInfoKey(address),
+            progress.tip.subHash
+        ]);
+        const rootKey = childStorageKey(trieIdOf(info));
         const childKeys = [];
         for (;;) {
             const page = await sub.request("childstate_getKeysPaged", [
@@ -151,7 +212,7 @@ async function main() {
                 "0x",
                 CHILD_KEYS_PAGE,
                 childKeys.at(-1) ?? null,
-                subHash
+                progress.tip.subHash
             ]);
             childKeys.push(...page);
             if (page.length < CHILD_KEYS_PAGE) break;
@@ -160,7 +221,7 @@ async function main() {
             sub,
             childKeys.map((key) => ({
                 method: "childstate_getStorage",
-                params: [rootKey, key, subHash]
+                params: [rootKey, key, progress.tip.subHash]
             }))
         );
         const entries = new Map(
@@ -174,6 +235,7 @@ async function main() {
             result.missing.length === 0 &&
             result.extra.length === 0 &&
             result.differing.length === 0;
+        checkpoint();
         log({
             step: "check",
             complete,
@@ -182,10 +244,15 @@ async function main() {
             missing: result.missing,
             extra: result.extra,
             differing: result.differing,
-            seconds: (Date.now() - started) / 1000
+            tracedKeysNotInNode: keys.size - result.nodeEntries,
+            cost: progress.cost,
+            activeSeconds: progress.activeMs / 1000,
+            runs: progress.runs
         });
         process.exitCode = complete ? 0 : 1;
     } finally {
+        checkpoint();
+        source.close();
         eth.close(new Error("done"));
         sub.close(new Error("done"));
     }

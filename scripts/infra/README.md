@@ -254,6 +254,15 @@ that nest and re-enter" checks this on nested and re-entered frames against
   `roundTrips`, `blocks`, `tracedBlocks`, `slots`, `milliseconds`,
   `deployBlock`). `contracts/` do not emit an event for every write, so logs
   cannot list the writing blocks.
+- **Block source.** Which blocks to trace is a strategy
+  ([ABackfillBlockSource](../../src/utils/node/storageDiff/backfillBlocks/ABackfillBlockSource.ts)).
+  `ListedBlockSource` (the default) lists every block of the range, as above.
+  `ChildTrieBlockSource` is selected by the `--included-relay-url` and
+  `--included-asset-hub-url` flags: it bisects the root of the contract's child
+  trie on the Asset Hub Substrate node (an archive node), about log2(range)
+  root reads per changed block, and names only the blocks that changed the
+  contract's storage. It does not check that the chain stayed one chain
+  between reads beyond the tip block.
 - **Complete accounts.** A backfilled account is complete: a slot it does not
   hold reads zero without asking the upstream.
 - **Snapshot.** After backfill the service pushes `scp_snapshot` with
@@ -268,6 +277,26 @@ that nest and re-enter" checks this on nested and re-entered frames against
   (atomic rename, debounced 500 ms) with the head, the cache and the last 64
   blocks' hashes. On start it loads it, rolls the cache back over `pre` values
   if the saved head is no longer canonical, and catches up the missed blocks.
+
+### Checking a backfill against Asset Hub
+
+`scripts/infra/storage-diff-asset-hub-check.js --address 0x... [--progress-file f]`
+reads only. It backfills one contract with the service's own code (deploy
+bisect, `ChildTrieBlockSource`, `traceKeys`, `readState`) at a block 10 behind
+the head of Asset Hub eth-rpc, then reads the contract's whole child trie from
+the Substrate node at the same block (`Revive.AccountInfoOf` gives the
+`trie_id`; `childstate_getKeysPaged` lists the keys, `blake2_256(slot)` each)
+and compares keys and values with the cache. `--progress-file` saves after
+every 64 traced blocks, so a killed run resumes. Exit 1 when they differ.
+
+Measured on mainnet contract `0x99ee73298423dcf5da3059a5e48bda20bfbcd01b`
+(deployed at block 19,760,180, 2,649,917 blocks before the check): 93 s,
+25 code probes, 15,413 child root reads, 3,125 traces, 351 state reads, 468
+round trips. 317 non-zero cached slots matched the node's values exactly,
+but the child trie holds 320 entries: slots 0x16, 0x1e and 0x1f (values 5, 25,
+100, written in the deploy block) are missing from Asset Hub's
+`prestateTracer` trace of that block, so the trace named a key set that was
+not a superset. The cache is therefore not complete for this contract.
 
 ### Reorgs and retention
 
@@ -318,6 +347,14 @@ There is no authentication and the upstream is trusted. The default bind is
 loopback; binding elsewhere is the operator's responsibility. There are no
 proofs and no gossip, and history is in memory only (the cache alone can be persisted, see
 below).
+
+### Phase-2 openings
+
+The wire already carries what proofs need, with no proof code: snapshots and
+records are anchored to a `{number, hash}` block (records also carry
+`parentHash`); notifications are objects with named fields; slot keys are raw
+32-byte keys; and the mirror takes its feed through one replaceable interface
+(`MirrorFeed`), so a verifying client can replace the plain one.
 
 ## Open security questions
 
