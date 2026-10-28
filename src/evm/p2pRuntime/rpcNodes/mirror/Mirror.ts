@@ -12,7 +12,6 @@ import { StorageDiffSocket } from "./StorageDiffSocket";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import { createEvm } from "@/evm/EvmFactory";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
-import { toEthereumJsEvmAddress } from "@/utils";
 import type { Logger } from "@/utils/logging/Logger";
 import type {
     BlockEnvironment,
@@ -240,27 +239,6 @@ export class Mirror {
         evm.common.chainId = () => chainId;
         for (const address of evm.precompiles.keys())
             this.precompileAddresses.add(`0x${address}`);
-        // a call that reaches an address the chain serves with its own
-        // precompile, and that no precompile of ours replaces, runs on the node
-        const customAddresses = new Set(
-            this.options.customPrecompiles.map((precompile) =>
-                toEthereumJsEvmAddress(precompile.address)
-                    .toString()
-                    .toLowerCase()
-            )
-        );
-        evm.events?.on("beforeMessage", (message) => {
-            if (message.to === undefined && message._codeAddress === undefined)
-                return;
-            const target = message.codeAddress;
-            if (
-                !customAddresses.has(target.toString().toLowerCase()) &&
-                isNodeOnlyAddress(target.bytes)
-            )
-                throw new NotLocalError(
-                    `${target.toString()} is a chain precompile`
-                );
-        });
         return evm;
     }
 
