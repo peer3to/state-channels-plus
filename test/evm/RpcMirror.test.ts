@@ -493,6 +493,7 @@ describe("MirrorRpcProvider", function () {
             // the provider's own network detection has asked once
             await session.provider.getNetwork();
             await session.provider.send("eth_chainId", []);
+            await session.provider.send("eth_chainId", []);
             const asked = nodeRequests(session, "eth_chainId").length;
 
             await session.provider.send("eth_chainId", []);

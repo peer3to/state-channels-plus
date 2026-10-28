@@ -2,6 +2,7 @@ import {
     NOT_RETAINED_ERROR_CODE,
     PRUNED_ERROR_CODE,
     type AccountAddress,
+    type BlockEnvironment,
     type BlockSelector,
     type BlockStorageDiff,
     type IncludedHeadRecord,
@@ -120,22 +121,43 @@ export class StorageDiffSocket extends WebSocketProvider {
     /** A retained block as the upstream returns it, or null. */
     async fetchBlock(
         block: BlockSelector,
-        full: boolean
+        full: boolean,
+        minBlock?: string
     ): Promise<RpcBlock | null> {
-        const answer = await this.request("scp_getBlock", [block, full]);
+        const answer = await this.request("scp_getBlock", [
+            block,
+            full,
+            ...(minBlock ? [minBlock] : [])
+        ]);
         if (answer !== null && !isRecord(answer))
             throw new Error("Malformed storage diff block");
         return answer as RpcBlock | null;
     }
 
     /** A transaction of a retained block, or null. */
-    async fetchTransaction(hash: string): Promise<unknown> {
-        return await this.request("scp_getTransaction", [hash]);
+    async fetchTransaction(hash: string, minBlock?: string): Promise<unknown> {
+        return await this.request("scp_getTransaction", [
+            hash,
+            ...(minBlock ? [minBlock] : [])
+        ]);
     }
 
     /** The receipt of a transaction of a retained block, or null. */
-    async fetchReceipt(hash: string): Promise<unknown> {
-        return await this.request("scp_getTransactionReceipt", [hash]);
+    async fetchReceipt(hash: string, minBlock?: string): Promise<unknown> {
+        return await this.request("scp_getTransactionReceipt", [
+            hash,
+            ...(minBlock ? [minBlock] : [])
+        ]);
+    }
+
+    /** The environment of the service's best head, once it reaches `minBlock` if one is named. */
+    async fetchHead(minBlock?: string): Promise<BlockEnvironment> {
+        const answer = await this.request(
+            "scp_getHead",
+            minBlock ? [minBlock] : []
+        );
+        if (!isRecord(answer)) throw new Error("Malformed storage diff head");
+        return answer as unknown as BlockEnvironment;
     }
 
     // Overrides SocketProvider._processMessage: the service's pushes are

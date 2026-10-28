@@ -173,11 +173,11 @@ export class MirrorChain {
         }
     }
 
-    /** The newest head the service follows. */
-    async serviceHead(): Promise<BlockEnvironment> {
-        return (
-            await this.queryService((socket) => socket.catchUp([], BEYOND_HEAD))
-        ).head;
+    /** The block number a service read names as the one its caller saw, if any. */
+    get seenBlock(): string | undefined {
+        return this.requiredNumber > 0n
+            ? "0x" + this.requiredNumber.toString(16)
+            : undefined;
     }
 
     /** A read issued from now on waits until the mirror applied `block`. */

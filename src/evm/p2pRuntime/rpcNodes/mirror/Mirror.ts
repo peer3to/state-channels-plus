@@ -156,7 +156,9 @@ export class Mirror {
 
     /** The number of the newest block the service follows. */
     async blockNumber(): Promise<bigint> {
-        const head = await this.chain.serviceHead();
+        const head = await this.chain.queryService((socket) =>
+            socket.fetchHead(this.chain.seenBlock)
+        );
         return this.fresh(BigInt(head.number));
     }
 
@@ -166,7 +168,7 @@ export class Mirror {
      */
     async getBlock(selector: BlockSelector, full: boolean): Promise<RpcBlock> {
         const block = await this.chain.queryService((socket) =>
-            socket.fetchBlock(selector, full)
+            socket.fetchBlock(selector, full, this.chain.seenBlock)
         );
         if (!block) throw new MirrorUnavailableError("Block not retained");
         if (selector === "latest") this.fresh(BigInt(block.number));
@@ -177,7 +179,7 @@ export class Mirror {
     async getTransaction(hash: string): Promise<unknown> {
         return this.known(
             await this.chain.queryService((socket) =>
-                socket.fetchTransaction(hash)
+                socket.fetchTransaction(hash, this.chain.seenBlock)
             )
         );
     }
@@ -186,7 +188,7 @@ export class Mirror {
     async getTransactionReceipt(hash: string): Promise<unknown> {
         return this.known(
             await this.chain.queryService((socket) =>
-                socket.fetchReceipt(hash)
+                socket.fetchReceipt(hash, this.chain.seenBlock)
             )
         );
     }
