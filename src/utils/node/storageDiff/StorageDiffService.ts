@@ -67,6 +67,13 @@ export const SEND_BUFFER_OVERFLOW = "send-buffer-overflow";
 /** WebSocket close code for that cut: policy violation. */
 export const SEND_BUFFER_OVERFLOW_CLOSE_CODE = 1008;
 
+/**
+ * Longest a read that names the block its caller saw waits for the service's
+ * head to reach it. The service learns of a block from the same node
+ * notification as the caller, then fetches and traces it, so a wait is a few
+ * tens of milliseconds; the bound is for a service that is stuck.
+ */
+export const HEAD_WAIT_MS = 2_000;
 const MAX_PEER_PAYLOAD_BYTES = 1024 * 1024;
 /** How long a cut peer gets to drain the notice before the socket drops. */
 const PEER_CLOSE_GRACE_MS = 10_000;
@@ -181,6 +188,8 @@ export class StorageDiffService {
     private included?: IncludedHead;
     // Hash of the included head already reported as off the best chain.
     private divergenceReported?: string;
+    // Reads waiting for the best head to reach the block their caller saw.
+    private readonly headWaiters = new Set<() => void>();
     // Whether the upstream answers eth_getBlockReceipts; one failed call turns it off.
     private blockReceiptsSupported = true;
     // The upstream dropped while the service was starting.
@@ -364,7 +373,12 @@ export class StorageDiffService {
      * A retained block as the upstream returned it, with full or hashed
      * transactions; null when the block is not retained.
      */
-    getBlock(selector: ParsedBlockSelector, full: boolean): RpcBlock | null {
+    async getBlock(
+        selector: ParsedBlockSelector,
+        full: boolean,
+        minBlock?: bigint
+    ): Promise<RpcBlock | null> {
+        await this.reachHead(minBlock);
         const record =
             selector.kind === "latest"
                 ? this.canonical[this.canonical.length - 1]
@@ -384,7 +398,8 @@ export class StorageDiffService {
     }
 
     /** A transaction of a retained block, as the upstream returned it. */
-    getTransaction(hash: string): unknown {
+    async getTransaction(hash: string, minBlock?: bigint): Promise<unknown> {
+        await this.reachHead(minBlock);
         return this.findTransaction(hash)?.transaction ?? null;
     }
 
@@ -392,7 +407,11 @@ export class StorageDiffService {
      * The receipt of a transaction of a retained block. The block's receipts
      * are fetched from the upstream once, on the first read of any of them.
      */
-    async getTransactionReceipt(hash: string): Promise<unknown> {
+    async getTransactionReceipt(
+        hash: string,
+        minBlock?: bigint
+    ): Promise<unknown> {
+        await this.reachHead(minBlock);
         const found = this.findTransaction(hash);
         if (!found) return null;
         const { block, transaction } = found;
@@ -408,6 +427,37 @@ export class StorageDiffService {
                         .transactionHash === transaction.hash
             ) ?? null
         );
+    }
+
+    /** The environment of the best head, once it reaches `minBlock` if one is named. */
+    async getHead(minBlock?: bigint): Promise<BlockEnvironment> {
+        await this.reachHead(minBlock);
+        return environmentOf(this.canonical[this.canonical.length - 1]);
+    }
+
+    /**
+     * Resolves once the best head is at `minBlock` or higher, or after
+     * {@link HEAD_WAIT_MS}; a caller then answers with what the service holds.
+     */
+    private reachHead(minBlock: bigint | undefined): Promise<void> {
+        const reached = () =>
+            minBlock === undefined ||
+            BigInt(this.canonical[this.canonical.length - 1].number) >=
+                minBlock;
+        if (reached()) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+            const waiter = () => {
+                if (!reached()) return;
+                this.headWaiters.delete(waiter);
+                clearTimeout(timer);
+                resolve();
+            };
+            const timer = setTimeout(() => {
+                this.headWaiters.delete(waiter);
+                resolve();
+            }, HEAD_WAIT_MS);
+            this.headWaiters.add(waiter);
+        });
     }
 
     /**
@@ -877,6 +927,7 @@ export class StorageDiffService {
         }
         canonical.splice(0, Math.max(0, canonical.length - this.retention));
         for (const record of staged.slice(below ? 1 : 0)) this.publish(record);
+        for (const waiter of [...this.headWaiters]) waiter();
         const head = canonical[canonical.length - 1];
         this.checkIncludedAncestry();
         this.includedStrategy?.bestHeadCommitted({

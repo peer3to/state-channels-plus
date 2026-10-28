@@ -5,9 +5,14 @@ import {
     setValue,
     withStorageDiffSession
 } from "../../fixtures/node/StorageDiffService.fixture";
+import { sleep } from "@/utils";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/node/storageDiff/blockStorageDiff";
+import { HEAD_WAIT_MS } from "@/utils/node/storageDiff/StorageDiffService";
 import { expect } from "chai";
 import { toQuantity } from "ethers";
+
+/** Time is the input: how long a read that must wait is watched for. */
+const ABSENCE_WINDOW_MS = 500;
 
 describe("StorageDiffService blocks", function () {
     it("serves the best head as the upstream returns it, with full and with hashed transactions", async function () {
@@ -239,5 +244,49 @@ describe("StorageDiffService blocks", function () {
                 expect((failure as Error).message).to.contain("no ancestor");
             }
         );
+    });
+
+    it("holds a read that names the block its caller saw until the head reaches it", async function () {
+        await withStorageDiffSession(
+            async ({ client, provider, relay, signer }) => {
+                const storage = await deployNumberStorage(signer);
+                await client.subscribe([]);
+                const held = relay.holdNext("eth_getBlockByNumber", "latest");
+
+                await provider.send("evm_mine", []);
+                await held.arrived;
+                const mined = await provider.send("eth_blockNumber", []);
+                let settled = false;
+                const read = client
+                    .request("scp_getBlock", ["latest", false, mined])
+                    .finally(() => (settled = true));
+                await sleep(ABSENCE_WINDOW_MS);
+                expect(
+                    settled,
+                    "the service has not reached the block"
+                ).to.equal(false);
+                held.release();
+
+                const block = (await read) as { number: string };
+                expect(block.number).to.equal(mined);
+                void storage;
+            }
+        );
+    });
+
+    it("answers with what it holds after the head wait, when the head never gets there", async function () {
+        await withStorageDiffSession(async ({ client }) => {
+            const head = (await client.request("scp_getHead", [])) as {
+                number: string;
+            };
+            const started = Date.now();
+
+            const answer = (await client.request("scp_getHead", [
+                toQuantity(BigInt(head.number) + 100n)
+            ])) as { number: string };
+
+            expect(answer.number).to.equal(head.number);
+            expect(Date.now() - started).to.be.at.least(HEAD_WAIT_MS - 100);
+        });
     });
 });

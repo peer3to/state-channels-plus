@@ -440,6 +440,14 @@ export function parseBlockSelector(value: unknown): ParsedBlockSelector {
     );
 }
 
+/** The optional block number a read waits for the head to reach. */
+export function parseMinBlock(value: unknown): bigint | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value === "string" && QUANTITY.test(value) && value.length <= 18)
+        return BigInt(value);
+    throw invalidParams("minBlock must be a hex quantity");
+}
+
 export function parseBlockHash(value: unknown): string {
     if (typeof value !== "string" || !HASH.test(value)) {
         throw invalidParams("blockHash must be a 32-byte hex hash");

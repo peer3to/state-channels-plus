@@ -3,6 +3,7 @@ import {
     parseAddresses,
     parseBlockHash,
     parseBlockSelector,
+    parseMinBlock,
     parseFromBlock,
     parseStateRequests,
     type SubscriptionId
@@ -13,7 +14,10 @@ import type {
     StorageDiffService,
     StorageDiffState
 } from "./StorageDiffService";
-import type { RpcBlock } from "../../storageDiff/storageDiffWire";
+import type {
+    BlockEnvironment,
+    RpcBlock
+} from "../../storageDiff/storageDiffWire";
 
 /**
  * The routable endpoints, one instance per connection. Requests reach methods
@@ -75,29 +79,42 @@ export class StorageDiffRpcMethods {
      * `["latest" | quantity | hash, full?]`; null when it is not retained.
      */
     async scp_getBlock(params: unknown[]): Promise<RpcBlock | null> {
-        if (params.length < 1 || params.length > 2) {
-            throw invalidParams("Expected [block, full?]");
+        if (params.length < 1 || params.length > 3) {
+            throw invalidParams("Expected [block, full?, minBlock?]");
         }
         if (params[1] !== undefined && typeof params[1] !== "boolean") {
             throw invalidParams("full must be a boolean");
         }
-        return this.service.getBlock(
+        return await this.service.getBlock(
             parseBlockSelector(params[0]),
-            params[1] === true
+            params[1] === true,
+            parseMinBlock(params[2])
         );
+    }
+
+    /** The environment of the best head, once it reaches `minBlock` if one is named. */
+    async scp_getHead(params: unknown[]): Promise<BlockEnvironment> {
+        if (params.length > 1) throw invalidParams("Expected [minBlock?]");
+        return await this.service.getHead(parseMinBlock(params[0]));
     }
 
     /** A transaction of a retained block; null when none holds it. */
     async scp_getTransaction(params: unknown[]): Promise<unknown> {
-        if (params.length !== 1) throw invalidParams("Expected [hash]");
-        return this.service.getTransaction(parseBlockHash(params[0]));
+        if (params.length < 1 || params.length > 2)
+            throw invalidParams("Expected [hash, minBlock?]");
+        return await this.service.getTransaction(
+            parseBlockHash(params[0]),
+            parseMinBlock(params[1])
+        );
     }
 
     /** The receipt of a transaction of a retained block; null when none holds it. */
     async scp_getTransactionReceipt(params: unknown[]): Promise<unknown> {
-        if (params.length !== 1) throw invalidParams("Expected [hash]");
+        if (params.length < 1 || params.length > 2)
+            throw invalidParams("Expected [hash, minBlock?]");
         return await this.service.getTransactionReceipt(
-            parseBlockHash(params[0])
+            parseBlockHash(params[0]),
+            parseMinBlock(params[1])
         );
     }
 
