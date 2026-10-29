@@ -903,11 +903,15 @@ export class StorageDiffService {
                 logsBloom: header.logsBloom,
                 loggedAddresses: new Set()
             };
-            const addresses = [...this.watched.keys()];
-            for (const address of addresses) record.covered.add(address);
-            if (trusted)
-                this.takeTraceValues(record, trusted, addresses, running);
-            else await this.readValues(record, addresses, preFrom, running);
+            if (trusted) {
+                record.covered = "all";
+                this.takeTraceValues(record, trusted, running);
+            } else {
+                const addresses = [...this.watched.keys()];
+                for (const address of addresses)
+                    (record.covered as Set<AccountAddress>).add(address);
+                await this.readValues(record, addresses, preFrom, running);
+            }
             await this.attachLogs(record, this.subscribedAddresses());
             records.push(record);
         }
@@ -939,21 +943,19 @@ export class StorageDiffService {
     }
 
     /**
-     * Keeps the trace's own values of `addresses` in `record`, for a block in
-     * which no call frame failed, and carries them into `running` for the
-     * blocks after it in the step.
+     * Keeps the trace's own values of every account it names in `record`, for
+     * a block in which no call frame failed, so an account watched later finds
+     * its history in memory, and carries them into `running` for the blocks
+     * after it in the step.
      */
     private takeTraceValues(
         record: StagedBlock,
         trace: { pre: AccountDiffs; post: AccountDiffs },
-        addresses: AccountAddress[],
         running: Map<string, StateValue>
     ): void {
-        for (const address of addresses) {
-            if (trace.pre[address]) record.pre[address] = trace.pre[address];
-            const post = trace.post[address];
-            if (!post) continue;
-            record.post[address] = post;
+        record.pre = trace.pre;
+        record.post = trace.post;
+        for (const [address, post] of Object.entries(trace.post)) {
             for (const kind of ["balance", "nonce", "code"] as const)
                 if (post[kind] !== undefined)
                     running.set(fieldKey({ kind, address }), post[kind]!);
@@ -1048,7 +1050,8 @@ export class StorageDiffService {
     /** Adds `address` to the retained records that were staged without it. */
     private async fillHistory(address: AccountAddress): Promise<void> {
         for (const record of this.canonical) {
-            if (record.covered.has(address)) continue;
+            if (record.covered === "all" || record.covered.has(address))
+                continue;
             await this.readValues(record, [address], "chain");
             record.covered.add(address);
         }

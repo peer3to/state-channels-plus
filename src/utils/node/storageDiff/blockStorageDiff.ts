@@ -55,11 +55,13 @@ export interface StagedBlock extends BlockStorageDiff {
     /** Every account and key the block's trace names. */
     touches: BlockTouches;
     /**
-     * The accounts whose `pre` and `post` this record holds: the touched ones
-     * among them have their values read from the node. An account that was
-     * watched after the block was staged is added when its history is filled.
+     * The accounts whose `pre` and `post` this record holds: "all" for a block
+     * whose trace values were kept (every account of the trace), else the
+     * watched accounts whose values were read from the node. An account
+     * watched after such a block was staged is added when its history is
+     * filled.
      */
-    covered: Set<AccountAddress>;
+    covered: Set<AccountAddress> | "all";
     /** The block as the upstream returned it, with full transactions. */
     raw: RpcBlock;
     /** Its receipts, fetched on first use and shared by every reader. */

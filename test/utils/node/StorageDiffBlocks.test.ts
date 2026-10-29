@@ -507,6 +507,86 @@ describe("StorageDiffService trusted traces", function () {
         });
     });
 
+    it("serves the history of an account first watched after N retained blocks from memory, with no value read", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            const writer = await deploySlotWriter(signer);
+            const receipts = [
+                await writeSlot(signer, writer, 1, 5n),
+                await writeSlot(signer, writer, 1, 6n),
+                await writeSlot(signer, writer, 2, 7n)
+            ];
+
+            // the service watches nobody until now
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            const records = await client.getDiffs(
+                [writer],
+                receipts[0].blockNumber
+            );
+
+            // the backfill reads at the head; no read names an earlier retained block
+            const earlier = new Set(
+                receipts.slice(0, -1).map((receipt) => receipt.blockHash)
+            );
+            const readsAtEarlierBlocks = [
+                "eth_getStorageAt",
+                "eth_getBalance",
+                "eth_getTransactionCount",
+                "eth_getCode"
+            ]
+                .flatMap((method) => relay.paramsOf(method))
+                .filter((params) =>
+                    earlier.has(
+                        (params.at(-1) as { blockHash?: string })
+                            ?.blockHash as string
+                    )
+                ).length;
+            expect(readsAtEarlierBlocks).to.equal(0);
+            expect(
+                records.map((record) => record.post[writer]?.storage)
+            ).to.deep.equal([
+                { [slotKey(1)]: storageWord(5n) },
+                { [slotKey(1)]: storageWord(6n) },
+                { [slotKey(2)]: storageWord(7n) }
+            ]);
+            expect(records[1].pre[writer].storage).to.deep.equal({
+                [slotKey(1)]: storageWord(5n)
+            });
+        });
+    });
+
+    it("reads the history of an account first watched after retained blocks whose values were not kept", async function () {
+        await withStorageDiffSession(async ({ client, relay, signer }) => {
+            // a failed frame in every block: only watched accounts get values
+            relay.tamper("debug_traceBlockByNumber", (result, params) =>
+                asksCallFrames(params) ? withFailedFrames(result) : result
+            );
+            const writer = await deploySlotWriter(signer);
+            const first = await writeSlot(signer, writer, 1, 5n);
+            const last = await writeSlot(signer, writer, 1, 6n);
+
+            const subscription = await client.subscribe([writer]);
+            await client.nextSnapshot(subscription);
+            const records = await client.getDiffs([writer], first.blockNumber);
+
+            const readsAtFirst = relay
+                .paramsOf("eth_getStorageAt")
+                .filter(
+                    (params) =>
+                        (params.at(-1) as { blockHash?: string })?.blockHash ===
+                        first.blockHash
+                ).length;
+            expect(readsAtFirst).to.be.greaterThan(0);
+            expect(
+                records.map((record) => record.post[writer]?.storage)
+            ).to.deep.equal([
+                { [slotKey(1)]: storageWord(5n) },
+                { [slotKey(1)]: storageWord(6n) }
+            ]);
+            expect(last.blockNumber).to.equal(first.blockNumber + 1);
+        });
+    });
+
     it("reads the values of a block when the call frames cannot be had", async function () {
         await withStorageDiffSession(async ({ client, relay, signer }) => {
             const writer = await deploySlotWriter(signer);
