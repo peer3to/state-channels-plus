@@ -1,0 +1,244 @@
+# Mutual Identity Handshake
+
+> **Agent status:** Maintained reverse-engineered draft.
+> **Engineer verification:** Pending.
+> **Status:** Draft.
+> **Scope:** The authentication service: how a raw transport becomes a session bound to a proven
+> protocol identity with compatible protocol time. The handshake contract ends at that session;
+> post-authentication engagement and catch-up are owned by
+> [synchronization.md](./synchronization.md) ([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](synchronization.md#req-auth-5-bqg9ag)).
+> Shared communication rules: [rpc.md](./rpc.md).
+
+## Contents
+
+- [Purpose and observable contract](#purpose-and-observable-contract)
+- [Algorithm](#algorithm)
+- [System interactions](#system-interactions)
+- [Failure outcomes](#failure-outcomes)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and observable contract
+
+A fresh transport is a byte pipe to an unknown counterparty — discovery metadata may _claim_ an
+identity but proves nothing. The handshake establishes exactly two objective facts, per direction:
+
+1. the counterparty controls the private key of its claimed protocol identity; and
+2. the peers' logical clocks are compatible — the remote reading is within the agreement tolerance
+   of the local reading in either direction, and the exchange itself is fresh within its own bound.
+
+Clock compatibility is part of authentication because peers with incompatible clocks would later
+disagree about protocol state and time; excessive skew therefore prevents the session, exactly as a
+failed proof does. Completion produces the one authenticated session every gated service requires
+([`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](rpc.md#inv-rpc-1-sjs2t6)) and binds the identity to that exact transport for
+addressed delivery and response correlation. The identity profile survives transport replacement;
+each replacement must authenticate separately. This is the only service that accepts pre-session traffic.
+
+The contract ends there. Completion decides no channel participation, no synchronization
+eligibility, no authorization, and no subjective standing of the proven identity
+([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)); at the current baseline every completed
+peer proceeds to continued interaction ([`REQ-AUTH-7-VJFSD5`](handshake.md#req-auth-7-vjfsd5)),
+and what happens next is owned downstream
+([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](synchronization.md#req-auth-5-bqg9ag)).
+
+## Algorithm
+
+Both peers run the same exchange in both directions over one transport; the session completes when
+each side has proven the other. This section is explanatory; the binding rules are
+[`REQ-AUTH-1-RF901K`](handshake.md#req-auth-1-rf901k) through
+[`REQ-AUTH-7-VJFSD5`](handshake.md#req-auth-7-vjfsd5) and the invariants below.
+
+**Challenge/response (one direction):**
+
+1. **Challenge.** The initiator generates a single-use unpredictable challenge (fresh randomness,
+   never reused, held only for this exchange) and sends it with its current protocol-time reading,
+   expecting a response within the agreement window.
+2. **Responder validation before signing.** The responder verifies the challenge's exact shape and
+   that the claimed time is a finite value within the agreement window of its own clock — _before_
+   producing any signature. Signing is an action taken for an unauthenticated caller; nothing
+   malformed or out-of-window may reach the signer.
+3. **Domain-tagged signature.** The responder signs the challenge under a dedicated, versioned
+   handshake domain tag — never the bare challenge bytes. The domain separation makes a handshake
+   signature structurally incapable of colliding with any other protocol signature (in particular,
+   a challenge chosen to equal a block commitment must not yield a usable block signature). The
+   responder returns the signature, its own time reading, and its transport preference, and now
+   expects the initiator's acknowledgement.
+4. **Initiator verification.** The initiator independently bounds the exchange round trip and the
+   responder's clock skew ([`REQ-AUTH-6-E7SSH3`](handshake.md#req-auth-6-e7ssh3)), recovers the
+   signer identity from the domain-tagged message over exactly its issued challenge, rejects
+   identities it has excluded, stores the provisional proof against the transport, and sends an
+   acknowledgement. The public transport address remains absent until mutual completion.
+5. **Acknowledgement.** The ack tells the responder its counterparty verified it. A duplicate ack
+   on one transport is a protocol violation. The ack proves receipt, not identity — the responder
+   has _not_ authenticated the initiator through this direction's exchange.
+
+**Completion (both directions).** A session is authenticated only when this node has verified the
+peer (its initiator role) _and_ received the peer's acknowledgement (its responder role) — the
+symmetric exchange gives the peer the same pair. Completion is idempotent and establishes exactly
+one live authenticated session by writing the proven identity onto the exact transport. The
+churn-surviving peer record owns identity policy but does not duplicate transport authentication.
+The handshake takes no further decision: continued engagement, participation resolution,
+and catch-up begin downstream ([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](synchronization.md#req-auth-5-bqg9ag)).
+Completion may also trigger a transport upgrade by deterministic tie-break
+([transport-upgrade.md](./transport-upgrade.md)). An exchange that stalls past the agreement window
+times out: a peer already verified but never acknowledging is excluded by identity; an unverified
+peer is merely dropped — there is no proven identity to penalize.
+
+## System interactions
+
+| System                                      | Interaction                                                                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Peer communication](./rpc.md)              | Produces the authenticated session every guard checks; releases calls deferred during negotiation.                                                |
+| [Protocol model](../protocol-model/time.md) | Agreement-window arithmetic for freshness/skew bounds; signature scheme and identity model.                                                       |
+| [Transport upgrade](./transport-upgrade.md) | Triggered at completion under a deterministic single-initiator tie-break.                                                                         |
+| [Synchronization](./synchronization.md)     | Owns post-authentication engagement and catch-up ([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)); both begin only after completion. |
+| [Security](../security/trust-model.md)      | Exclusion (blacklist) policy; identity-vs-transport trust boundary.                                                                               |
+
+## Failure outcomes
+
+| Failure                                                 | Outcome                                                                                                                                        |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Malformed challenge or non-finite time at the responder | Reject before signing; exclude with a recorded verdict, by identity when this transport already has one and by its transport handle otherwise. |
+| Out-of-window request time at the responder             | Reject before signing; counted close against the sender, keyed by its transport key before proof and by its identity after.                    |
+| Response timeout, or a refused challenge                | Counted close; no verdict.                                                                                                                     |
+| Round-trip or skew bound exceeded                       | Counted close; no verdict.                                                                                                                     |
+| Undecodable signature                                   | Reject; exclude with a recorded verdict, by identity when this transport already has one and by its transport handle otherwise.                |
+| Signature verifying to an excluded identity             | Drop the transport; the identity remains excluded.                                                                                             |
+| Duplicate acknowledgement                               | Protocol violation: terminate and exclude.                                                                                                     |
+| Verified peer never acknowledges within the window      | Counted close against the transport key; the close that reaches the bound suspends the key and the proven identity together.                   |
+| Unverified peer stalls                                  | Drop the transport only.                                                                                                                       |
+
+## Requirements and invariants
+
+**<a id="inv-auth-1-j0prya"></a>`INV-AUTH-1-J0PRYA` — Signature is the only proof.** The sole authentication evidence is a valid signature
+over this node's own fresh challenge under the handshake domain. Discovery metadata,
+acknowledgements, peer assertions such as claimed channel membership, and transport properties
+prove nothing. Any value carried on an acknowledgement is diagnostic only and never authenticates or
+authorizes anything.
+
+**<a id="inv-auth-2-vq6d54"></a>`INV-AUTH-2-VQ6D54` — Domain separation.** Handshake signatures are made only over the domain-tagged,
+versioned message form; a handshake exchange can never produce a signature usable in any other
+protocol context, regardless of the challenge value chosen by the counterparty. Every message the node
+signs for an unauthenticated caller is domain-separated in this way.
+
+**<a id="inv-auth-3-0qp5e9"></a>`INV-AUTH-3-0QP5E9` — Objective facts only.** Handshake completion establishes exactly two objective
+facts — proven key control and clock compatibility — and decides nothing else: no channel
+participation, no synchronization eligibility, no authorization, and no subjective standing of the
+proven identity. An identity's channel role never changes the handshake outcome.
+
+**<a id="req-auth-1-rf901k"></a>`REQ-AUTH-1-RF901K` — Validate before signing.** A responder MUST fully validate challenge shape and time
+bounds before creating any signature for an unauthenticated caller. A non-finite claimed time MUST be
+rejected explicitly: every comparison against it is false, so it would pass the window check and let
+the caller choose what gets signed with an out-of-window time. Every handshake endpoint accepts
+pre-authentication traffic and MUST tolerate wholly unauthenticated, adversarial input without an
+escaping failure.
+
+**<a id="req-auth-2-bq5crg"></a>`REQ-AUTH-2-BQ5CRG` — Fresh single-use challenges.** Challenges MUST be unpredictable, single-use, and
+scoped to one exchange; verification MUST bind the response to exactly the issued challenge.
+
+**<a id="req-auth-3-zv74kb"></a>`REQ-AUTH-3-ZV74KB` — Completion requires both roles.** A session authenticates only when local
+verification _and_ the peer's acknowledgement are both present, with the peer's transport preference
+known; completion is idempotent,
+establishes exactly one live authenticated session for the peer pair, and writes the proven identity
+onto the exact authenticated transport. The identity profile may survive later transport replacement.
+
+**<a id="req-auth-4-jwcf71"></a>`REQ-AUTH-4-JWCF71` — Penalty requires proof, and clock faults are not proof.** Exclusion consequences apply only to proven
+identities. An authenticated transport retains that proof during later re-handshake validation, so
+malformed or invalid-signature traffic on it excludes the known sender with a recorded verdict.
+An out-of-window time, a response that never arrives or is refused, a round trip beyond the window,
+and a verified peer's missing acknowledgement are environment or liveness faults rather than
+misconduct, so they MUST NOT record a verdict: each such failure only closes the connection and counts
+against one stated per-peer bound for the session, and the failure that reaches the bound suspends the
+peer for the remainder of the session instead. Before proof the count is keyed by the transport key the
+peer presented, so a first contact that keeps failing is refused by that key; after proof it is keyed
+by the identity, and a suspension reached on a verified-but-unacknowledged transport bars the identity
+and the key together. A failure on an unknown transport never records a verdict against an identity.
+
+**<a id="req-auth-6-e7ssh3"></a>`REQ-AUTH-6-E7SSH3` — Initiator verification and bidirectional clock compatibility.** Before recording
+a proven identity, the initiator MUST independently validate two timing conditions: the signed
+difference between the remote clock reading and its own MUST be within the inclusive agreement
+tolerance in either direction, and the challenge/response exchange MUST be within its own inclusive
+round-trip/freshness bound. The responder's request-time check, the round trip, and the response
+timestamp all use the same agreement window. Passing one condition never waives the other; excessive positive skew,
+excessive negative skew, or a stale exchange prevents authenticated session establishment. The
+signature MUST verify over exactly the issued challenge under the handshake domain, and an identity
+this node has excluded MUST be rejected.
+
+**<a id="req-auth-7-vjfsd5"></a>`REQ-AUTH-7-VJFSD5` — Uniform continued interaction (current baseline).** Until a separate subjective
+engagement policy exists, every peer that completes mutual proof and the timing checks proceeds to
+continued interaction at this layer; the handshake applies no identity-specific opinion or
+participation filter. A peer that fails any objective check never reaches continued interaction.
+This states current observable behavior, not a promise that every identity must remain acceptable
+under a future policy ([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../open-questions.md#oq-45-aczcde)).
+
+## Assumptions and constraints
+
+- Runs against wholly untrusted input on every network transport; only the node's own loopback is
+  exempt ([rpc.md](./rpc.md)).
+- Timing bounds derive from the protocol's agreement window
+  ([time.md](../protocol-model/time.md)); honest peers within stated skew must complete.
+- Protocol-version compatibility should bind into this exchange ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](rpc.md#req-rpc-8-44xecf)); the scheme is open
+  ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
+- The handshake authenticates _identity and clock compatibility_, not authorization: whether the
+  identity may join, sync, or dispute is each downstream service's own check
+  ([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)).
+
+## Security considerations
+
+This service is the trust boundary's gatekeeper and its own biggest target. Threats and defenses:
+identity spoofing (defeated by challenge-response over the domain tag); signing-oracle abuse — the
+counterparty choosing challenges to harvest signatures (defeated by domain separation, [`INV-AUTH-2-VQ6D54`](handshake.md#inv-auth-2-vq6d54));
+replayed or stale exchanges (freshness windows plus single-use challenges); acknowledgement forgery
+(the ack carries no authority, [`INV-AUTH-1-J0PRYA`](handshake.md#inv-auth-1-j0prya)); and penalty misdirection — tricking a node into
+excluding an identity that never proved itself ([`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71)). Completion grants no channel
+authority: a proven stranger gains continued interaction at this layer and nothing downstream —
+participation, catch-up, and authorization are decided by their own owners
+([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)). Residual: the responder in a single
+direction signs for an unauthenticated caller by design; the cost is bounded by validation-before-
+signing and the domain tag. The signed message binds no transport, session, or peer identities, so a
+live relay can forward one peer's challenge to a third party and return that party's signature; the
+transports supply no channel binding of their own, and only the agreement-window bounds limit the relay.
+The handshake signature is the entire root of identity trust, so this lack of channel binding is its
+largest residual risk. Binding the peer identities or a transport-derived key into the signed message
+is a pending decision ([`OQ-35-E5RRDF`](../../implementation/open-questions.md#oq-35-e5rrdf)). Each request costs the responder a signature before any guard applies; that
+flood is unbounded until rate limiting is decided ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). A response discloses only the
+responder's transport preference and clock reading. Exclusion durability and its interaction with deferred-call queues are
+open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
+
+## Verification and test plan
+
+For the timing plans below, `S` is the inclusive absolute clock-skew tolerance, `R` the inclusive
+round-trip/freshness bound, and `ε` the smallest meaningful positive interval.
+
+### Requirement test matrix
+
+| Plan item                                               | Requirements / invariants                             | Setup and stimulus                                                                                                                                                                                                                               | Expected result                                                                                                                                                                                                                                                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-auth-1-j0prya.t1"></a>`INV-AUTH-1-J0PRYA.T1` | [`INV-AUTH-1-J0PRYA`](handshake.md#inv-auth-1-j0prya) | Attempt authentication with forged metadata, claimed participation or peer assertions, replayed signatures, wrong-challenge signatures, and a correct fresh exchange.                                                                            | Only the correct signature over this node's own fresh challenge authenticates.                                                                                                                                                                                                                                              | <a id="inv-auth-1-j0prya.t1.p1"></a>`INV-AUTH-1-J0PRYA.T1.P1` — correct exchange; <a id="inv-auth-1-j0prya.t1.p2"></a>`INV-AUTH-1-J0PRYA.T1.P2` — replayed signature; <a id="inv-auth-1-j0prya.t1.p3"></a>`INV-AUTH-1-J0PRYA.T1.P3` — metadata-only or asserted claim rejected; <a id="inv-auth-1-j0prya.t1.p4"></a>`INV-AUTH-1-J0PRYA.T1.P4` — wrong-challenge signature.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| <a id="req-auth-2-bq5crg.t1"></a>`REQ-AUTH-2-BQ5CRG.T1` | [`REQ-AUTH-2-BQ5CRG`](handshake.md#req-auth-2-bq5crg) | Observe challenge generation across many exchanges; attempt cross-exchange and repeated use of one challenge.                                                                                                                                    | Challenges are unpredictable and never reused; a response to a different exchange's challenge fails verification.                                                                                                                                                                                                           | <a id="req-auth-2-bq5crg.t1.p1"></a>`REQ-AUTH-2-BQ5CRG.T1.P1` — uniqueness/unpredictability across exchanges; <a id="req-auth-2-bq5crg.t1.p2"></a>`REQ-AUTH-2-BQ5CRG.T1.P2` — cross-exchange challenge reuse rejected; <a id="req-auth-2-bq5crg.t1.p3"></a>`REQ-AUTH-2-BQ5CRG.T1.P3` — response bound to exactly the issued challenge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| <a id="inv-auth-2-vq6d54.t1"></a>`INV-AUTH-2-VQ6D54.T1` | [`INV-AUTH-2-VQ6D54`](handshake.md#inv-auth-2-vq6d54) | Present challenges crafted to equal other protocol commitments (block hashes, dispute encodings).                                                                                                                                                | The returned signature verifies only under the handshake domain and is unusable in any other protocol context.                                                                                                                                                                                                              | <a id="inv-auth-2-vq6d54.t1.p1"></a>`INV-AUTH-2-VQ6D54.T1.P1` — block-commitment challenge; <a id="inv-auth-2-vq6d54.t1.p2"></a>`INV-AUTH-2-VQ6D54.T1.P2` — dispute-encoding challenge; <a id="inv-auth-2-vq6d54.t1.p3"></a>`INV-AUTH-2-VQ6D54.T1.P3` — domain-tag version mismatch fails verification; <a id="inv-auth-2-vq6d54.t1.p4"></a>`INV-AUTH-2-VQ6D54.T1.P4` — join-encoding challenge; <a id="inv-auth-2-vq6d54.t1.p5"></a>`INV-AUTH-2-VQ6D54.T1.P5` — opening-struct challenge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| <a id="req-auth-1-rf901k.t1"></a>`REQ-AUTH-1-RF901K.T1` | [`REQ-AUTH-1-RF901K`](handshake.md#req-auth-1-rf901k) | Send malformed shapes, non-finite times, and boundary-window times.                                                                                                                                                                              | Invalid input terminates before any signature exists; boundary values behave per the window definition.                                                                                                                                                                                                                     | <a id="req-auth-1-rf901k.t1.p1"></a>`REQ-AUTH-1-RF901K.T1.P1` — malformed challenge bytes; <a id="req-auth-1-rf901k.t1.p2"></a>`REQ-AUTH-1-RF901K.T1.P2` — non-finite time; <a id="req-auth-1-rf901k.t1.p3"></a>`REQ-AUTH-1-RF901K.T1.P3` — at window boundary; <a id="req-auth-1-rf901k.t1.p4"></a>`REQ-AUTH-1-RF901K.T1.P4` — structurally invalid message; <a id="req-auth-1-rf901k.t1.p5"></a>`REQ-AUTH-1-RF901K.T1.P5` — just beyond window; <a id="req-auth-1-rf901k.t1.p6"></a>`REQ-AUTH-1-RF901K.T1.P6` — undecodable signature in a response is handled without an escaping failure; <a id="req-auth-1-rf901k.t1.p7"></a>`REQ-AUTH-1-RF901K.T1.P7` — well-formed in-window request is signed and answered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| <a id="req-auth-3-zv74kb.t1"></a>`REQ-AUTH-3-ZV74KB.T1` | [`REQ-AUTH-3-ZV74KB`](handshake.md#req-auth-3-zv74kb) | Drive exchanges to every partial-completion state, including duplicates, races, and transport replacement mid-exchange.                                                                                                                          | Sessions authenticate only with both roles complete; completion is idempotent and yields exactly one live session; identity survives transport churn.                                                                                                                                                                       | <a id="req-auth-3-zv74kb.t1.p1"></a>`REQ-AUTH-3-ZV74KB.T1.P1` — verified-only stall; <a id="req-auth-3-zv74kb.t1.p2"></a>`REQ-AUTH-3-ZV74KB.T1.P2` — duplicate ack violation; <a id="req-auth-3-zv74kb.t1.p3"></a>`REQ-AUTH-3-ZV74KB.T1.P3` — concurrent bidirectional completion; <a id="req-auth-3-zv74kb.t1.p4"></a>`REQ-AUTH-3-ZV74KB.T1.P4` — repeated completion idempotent; <a id="req-auth-3-zv74kb.t1.p5"></a>`REQ-AUTH-3-ZV74KB.T1.P5` — acked-only stall; <a id="req-auth-3-zv74kb.t1.p6"></a>`REQ-AUTH-3-ZV74KB.T1.P6` — local verification and peer acknowledgement both present: the session authenticates under the proven identity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| <a id="req-auth-4-jwcf71.t1"></a>`REQ-AUTH-4-JWCF71.T1` | [`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71) | Fail exchanges before proof and repeat malformed, timing-invalid, invalid-signature, or silent exchanges on unproven and already authenticated transports, taking the timing-invalid and silent cases both below and up to their per-peer bound. | Pre-proof failures count against the transport key with no identity verdict; malformed and invalid-signature faults exclude with a recorded verdict; timing and silence faults only close until their bound, then suspend for the session without one, and a suspension reached after proof bars key and identity together. | <a id="req-auth-4-jwcf71.t1.p1"></a>`REQ-AUTH-4-JWCF71.T1.P1` — timeout before proof counts against the transport key and records no identity verdict; <a id="req-auth-4-jwcf71.t1.p2"></a>`REQ-AUTH-4-JWCF71.T1.P2` — verified-but-silent peer counted once and reconnected, with no verdict; <a id="req-auth-4-jwcf71.t1.p3"></a>`REQ-AUTH-4-JWCF71.T1.P3` — excluded identity refused at verification; <a id="req-auth-4-jwcf71.t1.p4"></a>`REQ-AUTH-4-JWCF71.T1.P4` — out-of-window exchanges below the bound leave the peer reconnectable and unpenalized; <a id="req-auth-4-jwcf71.t1.p5"></a>`REQ-AUTH-4-JWCF71.T1.P5` — the out-of-window exchange reaching the bound suspends the peer for the session without recording a verdict; <a id="req-auth-4-jwcf71.t1.p6"></a>`REQ-AUTH-4-JWCF71.T1.P6` — first-contact skew on an unproven transport is counted by the transport key and the bound refuses that key; <a id="req-auth-4-jwcf71.t1.p7"></a>`REQ-AUTH-4-JWCF71.T1.P7` — invalid-signature traffic on an authenticated transport excludes the known sender with a recorded verdict; <a id="req-auth-4-jwcf71.t1.p8"></a>`REQ-AUTH-4-JWCF71.T1.P8` — a response that never arrives on an authenticated transport closes it below the bound with one count and no verdict, and the identity reconnects; <a id="req-auth-4-jwcf71.t1.p9"></a>`REQ-AUTH-4-JWCF71.T1.P9` — an out-of-window response timestamp on an authenticated transport closes it below the bound with one count and no verdict, and the identity reconnects. |
+| <a id="req-auth-6-e7ssh3.t1"></a>`REQ-AUTH-6-E7SSH3.T1` | [`REQ-AUTH-6-E7SSH3`](handshake.md#req-auth-6-e7ssh3) | Exchange valid mutual proofs while sweeping the signed remote-minus-local clock difference and the exchange round trip across their inclusive boundaries, varying each bound independently while the other stays comfortably valid.              | In-range and exact-boundary values establish exactly one authenticated identity-bound session; either bound exceeded prevents establishment; neither bound waives the other.                                                                                                                                                | <a id="req-auth-6-e7ssh3.t1.p1"></a>`REQ-AUTH-6-E7SSH3.T1.P1` — zero clock difference completes; <a id="req-auth-6-e7ssh3.t1.p2"></a>`REQ-AUTH-6-E7SSH3.T1.P2` — exact `+S` and `-S` boundaries complete; <a id="req-auth-6-e7ssh3.t1.p3"></a>`REQ-AUTH-6-E7SSH3.T1.P3` — just-inside `±(S − ε)` completes; <a id="req-auth-6-e7ssh3.t1.p4"></a>`REQ-AUTH-6-E7SSH3.T1.P4` — just-outside `+(S + ε)` prevents establishment; <a id="req-auth-6-e7ssh3.t1.p5"></a>`REQ-AUTH-6-E7SSH3.T1.P5` — just-outside `-(S + ε)` prevents establishment; <a id="req-auth-6-e7ssh3.t1.p6"></a>`REQ-AUTH-6-E7SSH3.T1.P6` — round trip at `R` and `R − ε` completes; <a id="req-auth-6-e7ssh3.t1.p7"></a>`REQ-AUTH-6-E7SSH3.T1.P7` — round trip at `R + ε` prevents establishment; <a id="req-auth-6-e7ssh3.t1.p8"></a>`REQ-AUTH-6-E7SSH3.T1.P8` — compatible clocks with a stale exchange prevents establishment; <a id="req-auth-6-e7ssh3.t1.p9"></a>`REQ-AUTH-6-E7SSH3.T1.P9` — fresh exchange with incompatible clocks prevents establishment; <a id="req-auth-6-e7ssh3.t1.p10"></a>`REQ-AUTH-6-E7SSH3.T1.P10` — request time outside the agreement window is refused by the responder; <a id="req-auth-6-e7ssh3.t1.p11"></a>`REQ-AUTH-6-E7SSH3.T1.P11` — response not arriving within the round-trip bound prevents establishment; <a id="req-auth-6-e7ssh3.t1.p12"></a>`REQ-AUTH-6-E7SSH3.T1.P12` — response timestamp far outside the agreement window prevents establishment.                                                                         |
+| <a id="inv-auth-3-0qp5e9.t1"></a>`INV-AUTH-3-0QP5E9.T1` | [`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9) | Complete otherwise-identical handshakes for identities with and without any channel role, supplying no downstream policy input.                                                                                                                  | Completion outcome is identical regardless of channel role; the handshake itself takes no participation, synchronization, or authorization decision.                                                                                                                                                                        | <a id="inv-auth-3-0qp5e9.t1.p1"></a>`INV-AUTH-3-0QP5E9.T1.P1` — non-participant identity completes identically to a participant identity; <a id="inv-auth-3-0qp5e9.t1.p2"></a>`INV-AUTH-3-0QP5E9.T1.P2` — completion itself starts no catch-up and grants no downstream authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| <a id="req-auth-7-vjfsd5.t1"></a>`REQ-AUTH-7-VJFSD5.T1` | [`REQ-AUTH-7-VJFSD5`](handshake.md#req-auth-7-vjfsd5) | In separate exchanges, complete two different valid identities with identical acceptable timing, then run failure variants for each objective check.                                                                                             | Both proven identities proceed to continued interaction identically; every failed variant produces no session and never reaches continued interaction.                                                                                                                                                                      | <a id="req-auth-7-vjfsd5.t1.p1"></a>`REQ-AUTH-7-VJFSD5.T1.P1` — two different proven identities share the current baseline; <a id="req-auth-7-vjfsd5.t1.p2"></a>`REQ-AUTH-7-VJFSD5.T1.P2` — invalid identity proof never reaches continued interaction; <a id="req-auth-7-vjfsd5.t1.p3"></a>`REQ-AUTH-7-VJFSD5.T1.P3` — missing mutual proof never reaches continued interaction; <a id="req-auth-7-vjfsd5.t1.p4"></a>`REQ-AUTH-7-VJFSD5.T1.P4` — incompatible clock skew never reaches continued interaction; <a id="req-auth-7-vjfsd5.t1.p5"></a>`REQ-AUTH-7-VJFSD5.T1.P5` — stale exchange timing never reaches continued interaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+## Future Work
+
+_Non-normative._ Bind protocol-version negotiation into the signed handshake ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](rpc.md#req-rpc-8-44xecf),
+[`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)); align with the signature-domain decision for all protocol objects
+([`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf)); define exclusion persistence and appeal semantics.
+
+**Subjective engagement after authentication** ([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../open-questions.md#oq-45-aczcde)).
+A later specification should define how a node forms a local, subjective opinion about whether to
+continue interacting with a proven identity. That opinion may differ between nodes, must not erase
+or contradict the objective facts authentication established, and must remain separate from channel
+participation. The owning specification must define admissible evidence inputs; decision outcomes
+and their effect on later interaction; default and policy-unavailable behavior; reevaluation
+triggers; persistence across reconnects and restarts; and the relationship between rejection,
+connection termination, and identity exclusion. Until it exists, the no-opinion baseline of
+[`REQ-AUTH-7-VJFSD5`](handshake.md#req-auth-7-vjfsd5) is the current behavior.

@@ -1,0 +1,299 @@
+import { Codec, Type, hash } from "@/utils";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
+import {
+    MESSAGE_TYPE_EXIT,
+    decodeMathState,
+    encodeExitChannelData,
+    encodeMathState,
+    type MathStateDecoded
+} from "@test/utils/mathHarnessAbi";
+import { waitFor } from "@test/utils/waitFor";
+import type {
+    MessageBlockStruct,
+    BalanceStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+
+describe("E2E: Malicious updateSnapshot", function () {
+    it("colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const initialBalance = h.options.initialBalance!;
+        // every peer in this scenario joined the channel at open (no spectator),
+        // each funding `initialBalance`, so this is the channel's deposit total
+        const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
+        const inflatedAmount = totalDeposits + 500n;
+        const recipient = h.getPeer(0).address;
+
+        let revertError: unknown;
+        try {
+            await h.byzantine.postFraudulentSnapshot({
+                poster: 0,
+                mutate: ({ originalSnapshotData, blockTimestamp }) => {
+                    const previousBlockHash =
+                        originalSnapshotData.latestOutboundMessageBlockHash as string;
+                    const newHeight =
+                        BigInt(
+                            originalSnapshotData.latestOutboundMessageBlockHeight
+                        ) + 1n;
+                    const fraudulentBalance: BalanceStruct = {
+                        amount: inflatedAmount,
+                        data: "0x"
+                    };
+                    const fakeMessage = {
+                        messageType: MESSAGE_TYPE_EXIT,
+                        participant: recipient,
+                        balance: fraudulentBalance,
+                        data: encodeExitChannelData(
+                            recipient,
+                            fraudulentBalance
+                        )
+                    };
+
+                    const block: MessageBlockStruct = {
+                        previousBlockHash,
+                        blockHeight: newHeight,
+                        messages: [fakeMessage],
+                        totalBalance: fraudulentBalance,
+                        timestamp: BigInt(blockTimestamp)
+                    };
+                    const blockHash = hash(
+                        Codec.encode(block, Type.MessageBlock)
+                    );
+                    const newSnapshotData: SnapshotDataStruct = {
+                        ...originalSnapshotData,
+                        totalWithdrawals: fraudulentBalance,
+                        latestOutboundMessageBlockHash: blockHash,
+                        latestOutboundMessageBlockHeight: newHeight
+                    };
+                    return {
+                        snapshotData: newSnapshotData,
+                        outboundMessageBlock: block
+                    };
+                }
+            });
+            expect.fail(
+                "expected updateStateSnapshotSameFork to revert with CantWithdrawMoreThanDeposits"
+            );
+        } catch (e) {
+            revertError = e;
+        }
+
+        const customError = expectDecodedError(
+            revertError,
+            "CantWithdrawMoreThanDeposits",
+            "expected CantWithdrawMoreThanDeposits"
+        );
+        const args = customError.errorDescription.args;
+        // the running withdrawal total is exactly the forged exit message
+        expect(args.totalWithdrawalAmount).to.equal(inflatedAmount);
+        // and the deposit side is exactly what the participants funded at open,
+        // which is what the forged withdrawal outgrew
+        expect(args.totalDepositAmount).to.equal(totalDeposits);
+    });
+
+    it("outbound block messages sum exceeds snapshot.totalWithdrawals → updateStateSnapshotSameFork reverts with ErrorOutboundMessageBlocksInvalid", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const initialBalance = h.options.initialBalance!;
+        const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
+        const inflatedAmount = totalDeposits + 500n;
+        const recipient = h.getPeer(0).address;
+
+        let revertError: unknown;
+        try {
+            await h.byzantine.postFraudulentSnapshot({
+                poster: 0,
+                mutate: ({ originalSnapshotData, blockTimestamp }) => {
+                    const previousBlockHash =
+                        originalSnapshotData.latestOutboundMessageBlockHash as string;
+                    const newHeight =
+                        BigInt(
+                            originalSnapshotData.latestOutboundMessageBlockHeight
+                        ) + 1n;
+                    const fraudulentBalance: BalanceStruct = {
+                        amount: inflatedAmount,
+                        data: "0x"
+                    };
+                    const fakeMessage = {
+                        messageType: MESSAGE_TYPE_EXIT,
+                        participant: recipient,
+                        balance: fraudulentBalance,
+                        data: encodeExitChannelData(
+                            recipient,
+                            fraudulentBalance
+                        )
+                    };
+
+                    const block: MessageBlockStruct = {
+                        previousBlockHash,
+                        blockHeight: newHeight,
+                        messages: [fakeMessage],
+                        totalBalance: fraudulentBalance,
+                        timestamp: BigInt(blockTimestamp)
+                    };
+                    const blockHash = hash(
+                        Codec.encode(block, Type.MessageBlock)
+                    );
+                    const newSnapshotData: SnapshotDataStruct = {
+                        ...originalSnapshotData,
+                        latestOutboundMessageBlockHash: blockHash,
+                        latestOutboundMessageBlockHeight: newHeight
+                    };
+                    return {
+                        snapshotData: newSnapshotData,
+                        outboundMessageBlock: block
+                    };
+                }
+            });
+            expect.fail(
+                "expected updateStateSnapshotSameFork to revert with ErrorOutboundMessageBlocksInvalid"
+            );
+        } catch (e) {
+            revertError = e;
+        }
+
+        const customError = expectDecodedError(
+            revertError,
+            "ErrorOutboundMessageBlocksInvalid",
+            "expected ErrorOutboundMessageBlocksInvalid"
+        );
+        // the update reverted, so the chain still holds the pre-attempt snapshot
+        // the error reported as the lower bound of the outbound chain
+        const onChainSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        const args = customError.errorDescription.args;
+        expect(args.lowerLatestOutboundMessageBlockHash).to.equal(
+            onChainSnapshot.snapshotData.latestOutboundMessageBlockHash
+        );
+        expect(args.lowerLatestOutboundMessageBlockHeight).to.equal(
+            onChainSnapshot.snapshotData.latestOutboundMessageBlockHeight
+        );
+        // the single forged block survived pruning and was the one rejected
+        expect(args.outboundMessageBlockCount).to.equal(1n);
+    });
+
+    it("colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {
+        const h = TestSession.getHarness();
+
+        await h.lifecycle.start(3, 1, {
+            timeConfig: {
+                p2pTime: 5,
+                agreementTime: 2,
+                chainFallbackTime: 2,
+                evidenceTime: 4
+            }
+        });
+
+        // Read the seed state-machine bytes host-side (latest block → its
+        // snapshot → its state-machine state).
+        const encodedStatemachineState = await h.execOnHost(
+            h.getPeer(0),
+            (sm, args) => {
+                const block = sm.storage.blocks.getLatestBlock(args.forkId);
+                if (!block) throw new Error("no latest block");
+                const snapshot =
+                    sm.storage.stateSnapshots.getStateSnapshotByHash(
+                        block.stateSnapshotHash
+                    );
+                if (!snapshot) throw new Error("seed snapshot not found");
+                const encoded =
+                    sm.storage.stateMachineStates.getStateMachineState(
+                        snapshot.stateMachineStateHash
+                    );
+                return encoded === undefined ? null : String(encoded);
+            },
+            { forkId: h.activeForkId! }
+        );
+        if (!encodedStatemachineState) {
+            throw new Error("seed encoded state not found");
+        }
+
+        const decodedStateMachineState = decodeMathState(
+            encodedStatemachineState
+        );
+
+        // Inflate balance
+        const inflatedDecoded: MathStateDecoded = {
+            ...decodedStateMachineState,
+            // increase the balance of the first participant by 1
+            balances: decodedStateMachineState.balances.map((b, i) =>
+                i === 0 ? b + 1n : b
+            )
+        };
+        const inflatedEncodedState = encodeMathState(inflatedDecoded);
+        const inflatedHash = hash(inflatedEncodedState);
+
+        await h.transition.advanceState();
+        await h.byzantine.postFraudulentSnapshot({
+            poster: 0,
+            mutate: ({ originalSnapshotData }) => {
+                const newSnapshotData: SnapshotDataStruct = {
+                    ...originalSnapshotData,
+                    stateMachineStateHash: inflatedHash
+                };
+                return {
+                    snapshotData: newSnapshotData,
+                    encodedStateMachineStateOverride: inflatedEncodedState
+                };
+            }
+        });
+
+        // Sanity: the on-chain snapshot now has the colluded hash.
+        const onChainSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        expect(onChainSnapshot.snapshotData.stateMachineStateHash).to.equal(
+            inflatedHash,
+            "on-chain snapshot must commit to the inflated stateMachineStateHash"
+        );
+
+        // The spectator fetches stateMachine bytes via p2p, keyed by on-chain
+        // hash; every peer must serve the inflated bytes for the spectator to
+        // reach the balance-invariant check.
+        // Every peer must serve the inflated bytes for the spectator to reach
+        // the balance-invariant check — store them host-side on each peer.
+        await Promise.all(
+            h.peers.map((p) =>
+                h.execOnHost(
+                    p,
+                    (sm, args) => {
+                        sm.storage.stateMachineStates.storeStateMachineState(
+                            args.encoded,
+                            { hash: args.hash }
+                        );
+                    },
+                    { encoded: inflatedEncodedState, hash: inflatedHash }
+                )
+            )
+        );
+
+        // Spawn-only, classified: the participants no longer agree with the
+        // chain after the colluded snapshot, so no block may be authored
+        // here. Retain the created spectator's root handle before its first
+        // sync so abort cleanup remains observable after its port closes.
+        const added = await h.join.createSpectatorPeer();
+        const host = clientRootFor(added.p2pInstance).p2pRuntimeHostRemoteRoot!;
+        await h.join.connectSpectator(added);
+        const spectator = h.getPeer(added.index);
+
+        await h.event.waitForPeers("onAbort", [spectator.index], 1);
+        await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
+        expect(
+            h.event.getEventCallCount(spectator.index, "onSetState")
+        ).to.equal(0);
+        await h.assert.sync.spectatorNoTransportToPeersWait({
+            spectatorPeerIndex: spectator.index,
+            peerIndices: [0, 1]
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
+    });
+});

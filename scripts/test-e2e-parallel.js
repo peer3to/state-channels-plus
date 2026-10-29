@@ -1,0 +1,695 @@
+/* eslint-disable no-console */
+require("dotenv").config({ quiet: true });
+const os = require("os");
+const path = require("path");
+const fs = require("fs");
+
+const {
+    DEFAULT_SLOTS,
+    SCHEDULER_TICK_MS,
+    TARGET_LOAD_PER_CORE,
+    MEM_LIMIT_FRACTION,
+    MAX_SLOTS_FROM_POOL,
+    DEFAULT_STREAM_CHILD_OUTPUT,
+    DEFAULT_COST_OVERRIDES_PATH
+} = require("./e2e-parallel/shared/constants");
+
+const {
+    getHelpText,
+    parseCliArgs,
+    resolveDiscoverySelection
+} = require("./e2e-parallel/shared/argParser");
+const {
+    compiledTestTreeAvailable,
+    refreshCompiledTestTree
+} = require("./e2e-parallel/shared/compiledTree");
+const { readOverrides } = require("./e2e-parallel/shared/costCache");
+const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
+const {
+    discoverForgeTasks
+} = require("./e2e-parallel/shared/forgeTaskDiscovery");
+const {
+    discoverBrowserTasks
+} = require("./e2e-parallel/shared/browserTaskDiscovery");
+const {
+    TASK_RUNNERS,
+    tierBuildFailure,
+    browserTypecheckFailure,
+    browserChromiumFailure,
+    countTasksForRunner,
+    forgeBuildFailure,
+    requiresChainSlot
+} = require("./e2e-parallel/shared/taskRunners");
+const {
+    resolveThreadModes,
+    runScheduler
+} = require("./e2e-parallel/local/scheduler");
+const {
+    provisionSlots,
+    teardownInfra,
+    startGasMonitor
+} = require("../test/utils/nodeInfra");
+const { teardownTaskChildren } = require("./e2e-parallel/shared/runTask");
+const {
+    loadOrchestratorKeyPair
+} = require("./e2e-parallel/distributed/orchestratorIdentity");
+const logging = require("./e2e-parallel/shared/logging");
+const {
+    buildRuntimeManifest,
+    discoverRepositories
+} = require("./e2e-parallel/distributed/runtimeBundle");
+const {
+    buildRemoteEnvironment
+} = require("./e2e-parallel/distributed/remoteEnvironment");
+const { runDistributed } = require("./e2e-parallel/distributed/orchestrator");
+
+// Module-level teardown ref so main().catch can tear down infra on any throw.
+let _teardown = () => {};
+
+/**
+ * Name what actually failed during discovery. A bad `--grep` compiles to a
+ * SyntaxError; anything else came from the tier's own discovery (a broken glob,
+ * an unreadable file, forge thread validation) and must not be reported as a
+ * grep problem.
+ */
+function discoveryFailureMessage(tier, grep, error) {
+    if (grep !== undefined && error instanceof SyntaxError) {
+        return `Invalid --grep RegExp: ${JSON.stringify(grep)}`;
+    }
+    return `${tier} test discovery failed: ${error.message}`;
+}
+
+function validateDiscoveryResults(
+    cli,
+    selection,
+    mocha,
+    forge,
+    browser = { tasks: [], preGrepTaskCount: 0 }
+) {
+    if (cli.mochaTestPattern !== undefined && !selection.includeMocha) {
+        return `--mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} conflicts with the selected tiers (--forge-only=${cli.forgeOnly}, --browser-only=${cli.browserOnly}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.forgeTestPattern !== undefined && !selection.includeForge) {
+        return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --browser-only=${cli.browserOnly}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.browserTestPattern !== undefined && !selection.includeBrowser) {
+        return `--browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} conflicts with the selected tiers (--test-browser=${cli.browser}, --forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.mochaTestPattern !== undefined && mocha.preGrepTaskCount === 0) {
+        return `Mocha tier selected by --mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} contains no runnable tests`;
+    }
+    if (cli.forgeTestPattern !== undefined && forge.preGrepTaskCount === 0) {
+        return `Forge tier selected by --forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} contains no runnable tests`;
+    }
+    if (
+        cli.browserTestPattern !== undefined &&
+        browser.preGrepTaskCount === 0
+    ) {
+        return `Browser tier selected by --browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} contains no runnable gates`;
+    }
+    const tasks = [...mocha.tasks, ...forge.tasks, ...browser.tasks];
+    if (tasks.length > 0) return null;
+    return cli.grep
+        ? `No selected tests matched --grep ${JSON.stringify(cli.grep)}`
+        : "No implemented tests found";
+}
+
+/**
+ * What a run has to warm before it admits a task, in order: forge so concurrent
+ * tasks never race on a cold via_ir build, Chromium because a gate cannot run
+ * without it, and the browser typecheck so one run performs it once rather than
+ * per gate. A tier with no scheduled task warms nothing. Forge is warmed in
+ * both modes; a distributed run ships the result to its workers. Chromium is
+ * checked only locally, because workers carry it in their image. The browser
+ * typecheck runs once here, for the same sources the workers receive.
+ */
+function resolveWarmUps(tasks, distributed) {
+    return [
+        {
+            runner: TASK_RUNNERS.FORGE,
+            localOnly: false,
+            message: "Warming the Foundry build before the forge tier...",
+            warm: () => forgeBuildFailure(tasks, distributed)
+        },
+        {
+            runner: TASK_RUNNERS.BROWSER,
+            localOnly: true,
+            message: "Checking Chromium before the browser tier...",
+            warm: browserChromiumFailure
+        },
+        {
+            runner: TASK_RUNNERS.BROWSER,
+            localOnly: false,
+            message:
+                "Typechecking the browser sources before the browser tier...",
+            warm: browserTypecheckFailure
+        }
+    ]
+        .filter(({ localOnly }) => !distributed || !localOnly)
+        .filter(({ runner }) => countTasksForRunner(tasks, runner) > 0)
+        .map(({ runner, message, warm }) => ({ runner, message, warm }));
+}
+
+/**
+ * Compile a project's contracts and generate the TypeScript read from them. A
+ * project without the generator scripts has nothing to build. Returns the
+ * failure, or null.
+ */
+function contractBuildFailure(root) {
+    const manifestPath = path.join(root, "package.json");
+    const scripts = fs.existsSync(manifestPath)
+        ? (JSON.parse(fs.readFileSync(manifestPath, "utf8")).scripts ?? {})
+        : {};
+    if (!scripts["generate-enums"] || !scripts["generate-artifacts"]) {
+        return null;
+    }
+    for (const args of [
+        ["hardhat", "compile"],
+        // Hardhat's compile task already updates TypeChain for changed contracts.
+        // Recover a missing generated tree even when Solidity's cache is warm.
+        ...(!fs.existsSync(path.join(root, "typechain-types", "index.ts"))
+            ? [["hardhat", "typechain"]]
+            : []),
+        ["generate-enums"],
+        ["generate-artifacts"]
+    ]) {
+        const failure = tierBuildFailure("yarn", args, {
+            missing: "Install the project dependencies before running tests.",
+            failed: "Fix contract compilation before building the TypeScript test tree.",
+            cwd: root
+        });
+        if (failure) return failure;
+    }
+    return null;
+}
+
+/**
+ * The order tasks are admitted in. Browser gates run for minutes each, so they
+ * start first instead of stretching the end of the run; and the coordinator
+ * copies the most recently admitted task onto an idle worker, so gates admitted
+ * last would each be launched again, with its own Chromium, on every idle one.
+ */
+function orderTasks(mochaTasks, forgeTasks, browserTasks) {
+    return [...browserTasks, ...mochaTasks, ...forgeTasks];
+}
+
+/**
+ * Slots are provisioned whenever the run holds a hardhat task and offered to
+ * every one of them; no task is classified by directory or source. A test uses
+ * the shared node (via PROVIDER_URL) or ignores it and keeps hardhat's
+ * in-process network. A run made only of forge tasks has nothing to offer a
+ * slot to, so it skips the hardhat node and discovery server entirely.
+ */
+function resolveSlotCount(tasks, requestedSlotCount, maxSlots) {
+    if (!tasks.some(requiresChainSlot)) return 0;
+    return Math.min(requestedSlotCount, maxSlots);
+}
+
+function resolveDistributedExecutionProfile(profile, slotCount) {
+    if (slotCount !== 0) return profile;
+    return { ...profile, slots: 0 };
+}
+
+function resolveDistributedOrchestratorKeyPair(
+    stateDir,
+    environment = process.env
+) {
+    return loadOrchestratorKeyPair(
+        stateDir,
+        environment.SCP_TEST_ORCHESTRATOR_SEED
+    );
+}
+
+// Build the env every test child inherits (log level, thread modes, etc.).
+function buildBaseEnv(threadModes) {
+    return {
+        ...process.env,
+        LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+        // Every child already writes its complete output to the run directory.
+        // Remote uploads can leave DNS/HTTP requests active during worker exit.
+        CRASH_LOG_UPLOAD_ENDPOINT: "",
+        NODE_OPTIONS: [
+            process.env.NODE_OPTIONS,
+            "--enable-source-maps",
+            "--stack-trace-limit=1000"
+        ]
+            .filter(Boolean)
+            .join(" "),
+        STREAM_PARALLEL_CHILD_OUTPUT:
+            process.env.STREAM_PARALLEL_CHILD_OUTPUT ||
+            (DEFAULT_STREAM_CHILD_OUTPUT ? "1" : "0"),
+        FORCE_COLOR: "1",
+        TERM: process.env.TERM || "xterm-256color",
+        // Thread modes are uniform across the whole run.
+        RUN_SDK_IN_THREAD: threadModes.sdkThread ? "true" : "false",
+        VM_DEDICATED_THREAD: threadModes.vmThread ? "true" : "false"
+        // Timing diagnostics are enabled via peer3.test.config
+        // (EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0), not env.
+    };
+}
+
+async function main(options = {}) {
+    const cli = { ...parseCliArgs(process.argv), ...options };
+    if (cli.help) {
+        console.log(getHelpText());
+        return;
+    }
+    // A broken overrides file fails the run before anything is built.
+    readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
+
+    if (!cli.skipBuild && !cli.dryRun) {
+        // A distributed run ships the build outputs its linked repositories
+        // declare, so it builds them here, dependencies first: the project's
+        // own build reads them.
+        const projectRoot = fs.realpathSync(process.cwd());
+        const linked = cli.distributed
+            ? discoverRepositories(projectRoot).filter(
+                  ({ root, packageJson }) =>
+                      root !== projectRoot &&
+                      packageJson.peer3TestDistribution?.buildOutputs
+              )
+            : [];
+        for (const { root, packageJson } of linked) {
+            const failure =
+                contractBuildFailure(root) ??
+                (compiledTestTreeAvailable(root)
+                    ? refreshCompiledTestTree(root)
+                    : undefined);
+            if (failure) {
+                console.error(
+                    `Building linked repository ${packageJson.name} (${root}) failed:`,
+                    failure
+                );
+                process.exit(1);
+            }
+        }
+        // Contracts supply the types read by the local build, including distributed discovery.
+        const failure = contractBuildFailure(process.cwd());
+        if (failure) {
+            console.error(failure);
+            process.exit(1);
+        }
+    }
+
+    // ---- discover tasks ----
+    // The Mocha, Foundry and browser tiers are discovered independently and
+    // scheduled as one task list; each task carries the runner that executes it.
+    let mochaDiscovery = { tasks: [], preGrepTaskCount: 0 };
+    let forgeDiscovery = { tasks: [], preGrepTaskCount: 0 };
+    let browserDiscovery = { tasks: [], preGrepTaskCount: 0 };
+    const { includeMocha, includeForge, includeBrowser } =
+        resolveDiscoverySelection(cli);
+    const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
+    // Compiled mode (default): every child and worker thread loads plain
+    // JavaScript, so the per-thread transpile of the SDK graph disappears.
+    // It needs this project's build; a runner invoked elsewhere (the runner
+    // tests spawn it against temporary repositories) runs the sources.
+    const compiledAvailable =
+        includeMocha && !cli.sourceTests && compiledTestTreeAvailable();
+    if (includeMocha && !cli.sourceTests && !compiledAvailable) {
+        console.error(
+            "Compiled test mode needs this project's test:parallel:build script; running the TypeScript sources under ts-node."
+        );
+    }
+    // Both paths build here: a distributed run ships this tree to its workers
+    // with the other declared build outputs. The tree is refreshed when a
+    // source is newer than the last build. The
+    // refresh emits in place and never deletes dist: this runner may itself be
+    // a task of an outer run whose siblings are loading from that tree.
+    if (compiledAvailable && !cli.skipBuild && !cli.dryRun) {
+        const failure = refreshCompiledTestTree();
+        if (failure) {
+            console.error(failure);
+            process.exit(1);
+        }
+    }
+    if (includeMocha) {
+        try {
+            mochaDiscovery = discoverTasks(
+                testDir,
+                cli.grep,
+                undefined,
+                cli.mochaTestPattern ?? cli.testPattern,
+                {
+                    compiled: compiledAvailable,
+                    includeParallelScript: cli.testParallelScript,
+                    includeBrowser
+                }
+            );
+        } catch (e) {
+            console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
+            process.exit(1);
+        }
+    }
+    if (includeForge) {
+        try {
+            forgeDiscovery = discoverForgeTasks(
+                path.resolve("test"),
+                cli.grep,
+                {
+                    threads: cli.forgeThreads,
+                    testPattern: cli.forgeTestPattern ?? cli.testPattern
+                }
+            );
+        } catch (e) {
+            console.error(discoveryFailureMessage("Forge", cli.grep, e), e);
+            process.exit(1);
+        }
+    }
+    if (includeBrowser) {
+        try {
+            browserDiscovery = discoverBrowserTasks(
+                path.resolve("test"),
+                cli.grep,
+                { testPattern: cli.browserTestPattern ?? cli.testPattern }
+            );
+        } catch (e) {
+            console.error(discoveryFailureMessage("Browser", cli.grep, e), e);
+            process.exit(1);
+        }
+    }
+    const discoveryError = validateDiscoveryResults(
+        cli,
+        { includeMocha, includeForge, includeBrowser },
+        mochaDiscovery,
+        forgeDiscovery,
+        browserDiscovery
+    );
+    if (discoveryError) {
+        console.error(discoveryError);
+        process.exit(1);
+    }
+    const forgeTasks = forgeDiscovery.tasks;
+    const browserTasks = browserDiscovery.tasks;
+    const tasks = orderTasks(mochaDiscovery.tasks, forgeTasks, browserTasks);
+
+    // ---- resolve config ----
+    const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
+    const slotCount = resolveSlotCount(
+        tasks,
+        requestedSlotCount,
+        MAX_SLOTS_FROM_POOL
+    );
+    if (slotCount > 0 && requestedSlotCount > slotCount) {
+        console.log(
+            `slots clamped to ${slotCount} (account pool allows ${MAX_SLOTS_FROM_POOL})`
+        );
+    }
+    const threadModes = resolveThreadModes(cli);
+    const targetLoad = cli.targetLoad ?? TARGET_LOAD_PER_CORE;
+    const schedulerTickMs = cli.schedulerTickMs ?? SCHEDULER_TICK_MS;
+    const totalGb = os.totalmem() / 1024 ** 3;
+    const memBoundGb = cli.memLimitGb ?? totalGb * MEM_LIMIT_FRACTION;
+    const concurrencyCap = Math.min(
+        MAX_SLOTS_FROM_POOL,
+        cli.workers ?? MAX_SLOTS_FROM_POOL
+    );
+
+    if (cli.dryRun) {
+        if (cli.distributed) {
+            const profile = resolveDistributedExecutionProfile(
+                cli.executionProfile,
+                slotCount
+            );
+            console.log(
+                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge, ${browserTasks.length} browser); slots=${profile?.slots ?? "worker default"}; remaining capacity is configured by test:parallel:server`
+            );
+            return;
+        }
+        logging.dryRun({
+            taskCount: tasks.length,
+            forgeTaskCount: forgeTasks.length,
+            browserTaskCount: browserTasks.length,
+            forgeThreads: cli.forgeThreads,
+            slotCount,
+            threadModes,
+            targetLoad,
+            memBoundGb,
+            totalGb,
+            concurrencyCap,
+            tickMs: schedulerTickMs
+        });
+        return;
+    }
+
+    if (!cli.distributed) {
+        logging.runHeader({
+            taskCount: tasks.length,
+            forgeTaskCount: forgeTasks.length,
+            browserTaskCount: browserTasks.length,
+            grep: cli.grep,
+            e2eOnly: cli.e2eOnly,
+            slotCount,
+            threadModes,
+            targetLoad,
+            tickMs: schedulerTickMs,
+            memBoundGb,
+            concurrencyCap
+        });
+    }
+
+    for (const { message, warm } of resolveWarmUps(tasks, cli.distributed)) {
+        console.log(message);
+        const buildFailure = await warm();
+        if (buildFailure) {
+            console.error(buildFailure.message);
+            process.exit(1);
+        }
+    }
+
+    // Default: a fresh run-N dir per run (./logs/run-0, ./logs/run-1, ...)
+    // so earlier runs' error logs survive for cross-run comparison. An
+    // explicit --logDir is used (and cleared) as-is.
+    const logDir = cli.logDirProvided
+        ? cli.logDir
+        : logging.nextRunDir(cli.logDir);
+    logging.safeEmptyDir(logDir, cli.allowLogdirPurge);
+    console.log(`Logs: ${path.resolve(logDir)}`);
+
+    // ---- run ----
+    let infra = { nodes: [], discoveries: [] };
+    let gasMonitor = null;
+    const teardown = () => {
+        gasMonitor?.stop();
+        teardownTaskChildren();
+        teardownInfra(infra);
+    };
+    _teardown = teardown;
+
+    let shuttingDown = false;
+    let signalExitCode = 0;
+    const distributedCancellation = new AbortController();
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+        process.on(signal, () => {
+            if (shuttingDown) {
+                process.exit(signal === "SIGINT" ? 130 : 143);
+            }
+            shuttingDown = true;
+            if (cli.distributed) {
+                signalExitCode = signal === "SIGINT" ? 130 : 143;
+                distributedCancellation.abort();
+                const forcedExit = setTimeout(
+                    () => process.exit(signalExitCode),
+                    5000
+                );
+                forcedExit.unref();
+                return;
+            }
+            teardown();
+            process.exit(signal === "SIGINT" ? 130 : 143);
+        });
+    }
+
+    const startTime = Date.now();
+    try {
+        if (cli.distributed) {
+            const poolSecret = process.env.SCP_TEST_POOL_SECRET;
+            if (!poolSecret)
+                throw new Error(
+                    "SCP_TEST_POOL_SECRET is required for --distributed"
+                );
+            const transferRoot = path.join(logDir, "distributed-transfer");
+            const archivePath = path.join(transferRoot, "source.tgz");
+            try {
+                const manifest = await buildRuntimeManifest(
+                    process.cwd(),
+                    console.log
+                );
+                const stats = await runDistributed({
+                    tasks,
+                    schedule: cli.schedule,
+                    projectRoot: process.cwd(),
+                    costCachePath: cli.costCachePath,
+                    costCacheReadOnly: cli.costCacheReadOnly,
+                    costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
+                    archivePath,
+                    manifest,
+                    logDir,
+                    poolSecret,
+                    keyPair: resolveDistributedOrchestratorKeyPair(
+                        path.join(
+                            process.cwd(),
+                            "temp",
+                            "distributed-orchestrator"
+                        )
+                    ),
+                    discoveryTimeoutMs: cli.discoveryTimeoutMs,
+                    executionProfile: resolveDistributedExecutionProfile(
+                        cli.executionProfile,
+                        slotCount
+                    ),
+                    keepInfraLogs: cli.keepInfraLogs,
+                    signal: distributedCancellation.signal,
+                    baseEnv: buildRemoteEnvironment(
+                        process.env,
+                        cli.forwardEnv,
+                        {
+                            LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+                            CRASH_LOG_UPLOAD_ENDPOINT: "",
+                            NODE_OPTIONS:
+                                "--enable-source-maps --stack-trace-limit=1000",
+                            STREAM_PARALLEL_CHILD_OUTPUT: "0",
+                            FORCE_COLOR: "1",
+                            TERM: process.env.TERM || "xterm-256color",
+                            RUN_SDK_IN_THREAD: threadModes.sdkThread
+                                ? "true"
+                                : "false",
+                            VM_DEDICATED_THREAD: threadModes.vmThread
+                                ? "true"
+                                : "false"
+                        }
+                    )
+                });
+                if (signalExitCode) {
+                    console.error(
+                        `Distributed run cancelled by ${signalExitCode === 130 ? "SIGINT" : "SIGTERM"}; ${stats.completed}/${tasks.length} tasks completed`
+                    );
+                    process.exitCode = signalExitCode;
+                    return;
+                }
+                logging.summary({
+                    tasks,
+                    failed: stats.failed,
+                    completed: stats.completed,
+                    wallMs: Date.now() - startTime,
+                    sumDurationMs: stats.sumDurationMs,
+                    peakCpu: stats.peakCpu,
+                    avgCpu: stats.avgCpu,
+                    peakCpuPressure: stats.peakCpuPressure,
+                    avgCpuPressure: stats.avgCpuPressure,
+                    cpuDetail: stats.cpuDetail,
+                    peakOccupiedGb: stats.sumPeakOccupiedGb,
+                    memoryPeakLabel: "sum of worker peaks",
+                    avgPerTestGb: stats.avgPerTestGb,
+                    memBoundGb: stats.memBoundGb,
+                    workers: stats.workers,
+                    workerLabel: stats.workerLabel
+                });
+                logging.cleanupNonErrorLogs(
+                    logDir,
+                    cli.allowLogdirPurge,
+                    cli.keepInfraLogs,
+                    stats.failed.length === 0
+                );
+                process.exitCode = stats.failed.length ? 1 : 0;
+                return;
+            } finally {
+                fs.rmSync(transferRoot, { recursive: true, force: true });
+            }
+        }
+
+        const provisioned = await provisionSlots(slotCount, logDir);
+        infra = provisioned.infra;
+        const slots = provisioned.slots;
+        if (slotCount > 0) {
+            console.log(
+                `Provisioned ${slotCount} slot(s). Starting scheduler.`
+            );
+        }
+
+        gasMonitor = startGasMonitor(slots, logging.gasPeakLine);
+
+        const infraPids = () =>
+            [
+                process.pid,
+                ...infra.nodes.map((n) => n.proc.pid),
+                ...infra.discoveries.map((d) => d.child.pid)
+            ].filter(Boolean);
+
+        const stats = await runScheduler({
+            tasks,
+            schedule: cli.schedule,
+            projectRoot: process.cwd(),
+            costCachePath: cli.costCachePath,
+            costCacheReadOnly: cli.costCacheReadOnly,
+            costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
+            slots,
+            slotCount,
+            concurrencyCap,
+            targetLoad,
+            tickMs: schedulerTickMs,
+            memBoundGb,
+            baseEnv: buildBaseEnv(threadModes),
+            logDir,
+            infraPids
+        });
+        gasMonitor.stop();
+
+        logging.summary({
+            tasks,
+            failed: stats.failed,
+            completed: stats.completed,
+            wallMs: Date.now() - startTime,
+            sumDurationMs: stats.sumDurationMs,
+            peakCpu: stats.peakCpu,
+            avgCpu: stats.avgCpu,
+            peakCpuPressure: stats.peakCpuPressure,
+            avgCpuPressure: stats.avgCpuPressure,
+            cpuDetail: stats,
+            peakOccupiedGb: stats.peakOccupiedGb,
+            avgPerTestGb: stats.avgPerTestGb,
+            memBoundGb,
+            targetLoad,
+            gasPeak: gasMonitor.gasPeak
+        });
+
+        if (stats.failed.length > 0) {
+            logging.cleanupNonErrorLogs(
+                logDir,
+                cli.allowLogdirPurge,
+                cli.keepInfraLogs,
+                false
+            );
+            process.exitCode = 1;
+            return;
+        }
+        logging.cleanupNonErrorLogs(
+            logDir,
+            cli.allowLogdirPurge,
+            cli.keepInfraLogs,
+            true
+        );
+    } finally {
+        teardown();
+    }
+}
+
+if (require.main === module) {
+    main().catch((err) => {
+        _teardown();
+        console.error(err);
+        process.exit(1);
+    });
+}
+
+module.exports = {
+    buildBaseEnv,
+    resolveWarmUps,
+    orderTasks,
+    discoveryFailureMessage,
+    validateDiscoveryResults,
+    resolveDistributedExecutionProfile,
+    resolveDistributedOrchestratorKeyPair,
+    resolveSlotCount,
+    main
+};

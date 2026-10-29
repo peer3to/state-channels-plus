@@ -1,0 +1,7 @@
+# rootWorkerGlobals.ts
+
+> **Source:** [rootWorkerGlobals.ts](../../../../../../../src/rpc/internal/rootWorkerGlobals.ts)
+
+## Requirements
+
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)

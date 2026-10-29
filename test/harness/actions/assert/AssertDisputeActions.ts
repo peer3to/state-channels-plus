@@ -1,0 +1,284 @@
+// @spec-test-coverage-ignore: shared dispute assertions exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { ForkId } from "@/types/types";
+import { addressesEqual } from "@/utils";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { expect } from "chai";
+
+export class AssertDisputeActions<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
+
+    async initiatedAndCommitedWait(options?: {
+        expectedCount?: number;
+        timeoutMs?: number;
+        peersIndices?: number[];
+        initiatedWithAuditingData?: boolean;
+    }) {
+        await this.initiatedWait(options);
+        await this.committedWait(options);
+    }
+
+    async initiatedWait(options?: {
+        peersIndices?: number[];
+        timeoutMs?: number;
+        initiatedWithAuditingData?: boolean;
+    }): Promise<void> {
+        const {
+            peersIndices,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            }),
+            initiatedWithAuditingData
+        } = options || {};
+
+        const peers = this.harness.getFilteredOrHonestPeers(peersIndices);
+
+        const expectedCounts = peers.map((peer) => ({
+            peerId: peer.index,
+            expectedCount: 1
+        }));
+
+        await this.harness.event.waitForEventCounts(
+            "onInitiatingDispute",
+            expectedCounts,
+            timeoutMs
+        );
+
+        if (initiatedWithAuditingData !== undefined) {
+            for (const peer of peers) {
+                const spy = peer.eventSpies.onInitiatingDispute;
+                expect(
+                    spy?.callCount,
+                    `Peer ${peer.index} should have onInitiatingDispute calls`
+                ).to.be.at.least(1);
+                const dispute = spy!.lastCall.args[1] as DisputeStruct;
+                expect(
+                    dispute.postedAuditingData,
+                    `Peer ${peer.index} dispute postedAuditingData`
+                ).to.equal(initiatedWithAuditingData);
+            }
+        }
+
+        if (peersIndices !== undefined) {
+            return;
+        }
+
+        const nonInitiators = this.harness.peers.filter(
+            (peer) => !peers.includes(peer)
+        );
+
+        for (const peer of nonInitiators) {
+            const count = this.harness.event.getEventCallCount(
+                peer.index,
+                "onInitiatingDispute"
+            );
+            expect(count).to.equal(
+                0,
+                `Peer ${peer.index} should not have initiated dispute`
+            );
+        }
+    }
+
+    async committedWait(options?: {
+        expectedCount?: number;
+        timeoutMs?: number;
+        peersIndices?: number[];
+        /** Default "atLeast" so extra commitments (e.g. from malicious peer) still pass. */
+        mode?: "exact" | "atLeast";
+    }): Promise<void> {
+        const {
+            expectedCount = this.harness.getHonestPeers().length,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            }),
+            peersIndices,
+            mode = "atLeast"
+        } = options || {};
+
+        const peers = this.harness.getFilteredOrHonestPeers(peersIndices);
+
+        const expectedCounts = peers.map((p) => ({
+            peerId: p.index,
+            expectedCount: expectedCount
+        }));
+
+        await this.harness.event.waitForEventCounts(
+            "onDisputeCommitted",
+            expectedCounts,
+            timeoutMs,
+            { mode }
+        );
+    }
+
+    async didNotInitiate(options: { peers: number[] }): Promise<void> {
+        const peers = this.harness.getFilteredPeers(options.peers);
+
+        for (const peer of peers) {
+            const count = this.harness.event.getEventCallCount(
+                peer.index,
+                "onInitiatingDispute"
+            );
+            expect(count).to.equal(
+                0,
+                `Peer ${peer.index} should not have initiated dispute`
+            );
+        }
+    }
+
+    async reductionCompletedWait(options: {
+        sourceForkId: ForkId;
+        reducedForkId?: ForkId;
+        peerIndices: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        // Assert the fork each peer recorded when its wait passed. A peer that
+        // leaves right after the reduction (its exit turn) stops its state
+        // manager, which drops the record; a second read would see null.
+        const completedForkIds = await Promise.all(
+            options.peerIndices.map(async (peerIndex) => {
+                let completedForkId: ForkId | null = null;
+                await waitFor(
+                    async () => {
+                        completedForkId = await this.harness
+                            .control(this.harness.getPeer(peerIndex))
+                            .query.getCompletedReductionForkId(
+                                options.sourceForkId
+                            )
+                            .request();
+                        return completedForkId !== null;
+                    },
+                    options.timeoutMs ??
+                        this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }),
+                    50
+                );
+                return completedForkId;
+            })
+        );
+        const expectedForkIds =
+            options.reducedForkId !== undefined
+                ? options.peerIndices.map(() => options.reducedForkId)
+                : await Promise.all(
+                      options.peerIndices.map((peerIndex) =>
+                          this.harness
+                              .control(this.harness.getPeer(peerIndex))
+                              .query.getForkId()
+                              .request()
+                      )
+                  );
+        expect(completedForkIds).to.deep.equal(expectedForkIds);
+    }
+
+    /**
+     * Every active honest auditor reached the same audit result: it sits on
+     * `forkId`, lists the same participants and stored the same dispute
+     * fraud proofs (proof type and accused disputer).
+     */
+    async auditorsAgree(forkId: ForkId): Promise<void> {
+        const auditors = this.harness.getActiveHonestPeers();
+        expect(auditors.length).to.be.greaterThan(1);
+        const views = await Promise.all(
+            auditors.map(async (peer) => {
+                const query = this.harness.control(peer).query;
+                const [peerForkId, participants, accusations] =
+                    await Promise.all([
+                        query.getForkId().request(),
+                        query.getParticipants().request(),
+                        query.getDisputeFraudProofAccusations().request()
+                    ]);
+                return {
+                    forkId: peerForkId,
+                    participants: [...participants].sort(),
+                    accusations: accusations
+                        .map((a) => `${a.proofType}:${a.participant}`)
+                        .sort()
+                };
+            })
+        );
+        expect(views).to.deep.equal(
+            auditors.map(() => ({
+                forkId,
+                participants: views[0].participants,
+                accusations: views[0].accusations
+            }))
+        );
+    }
+
+    noDisputes(): void {
+        const totalInitiated = this.harness.peers.reduce((sum, peer) => {
+            return (
+                sum +
+                this.harness.event.getEventCallCount(
+                    peer.index,
+                    "onInitiatingDispute"
+                )
+            );
+        }, 0);
+
+        const totalCommitted = this.harness.peers.reduce((sum, peer) => {
+            return (
+                sum +
+                this.harness.event.getEventCallCount(
+                    peer.index,
+                    "onDisputeCommitted"
+                )
+            );
+        }, 0);
+
+        if (totalInitiated > 0) {
+            throw new Error(
+                `Expected no disputes to be initiated, but ${totalInitiated} were initiated`
+            );
+        }
+
+        if (totalCommitted > 0) {
+            throw new Error(
+                `Expected no disputes to be committed, but ${totalCommitted} were committed`
+            );
+        }
+    }
+
+    async slashedOnChain(
+        address: string,
+        msg = `${address} must be on-chain slashed`
+    ): Promise<void> {
+        const slashed =
+            await this.harness.channelManager.getOnChainSlashedParticipants(
+                this.harness.channelId
+            );
+        expect(
+            slashed.some((a) => addressesEqual(a, address)),
+            msg
+        ).to.equal(true);
+    }
+
+    async slashedOnChainExactly(addresses: string[]): Promise<void> {
+        const slashed =
+            await this.harness.channelManager.getOnChainSlashedParticipants(
+                this.harness.channelId
+            );
+        for (const address of addresses) {
+            expect(
+                slashed.some((a) => addressesEqual(a, address)),
+                `${address} must be on-chain slashed`
+            ).to.equal(true);
+        }
+        const unexpected = slashed.filter(
+            (a) => !addresses.some((addr) => addressesEqual(a, addr))
+        );
+        expect(
+            unexpected,
+            `unexpected on-chain slashes: ${unexpected.join(", ")}`
+        ).to.have.length(0);
+    }
+}

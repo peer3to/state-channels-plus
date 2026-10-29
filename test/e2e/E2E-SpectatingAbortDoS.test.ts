@@ -1,0 +1,477 @@
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
+import { Status } from "@/types";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
+import { expect } from "chai";
+
+// A non-participant that sends a spectator a block it must reject is dropped
+// and never able to take the spectator offline. Unauthenticated junk is
+// rejected synchronously in ingest and blacklists the sender. An authenticated
+// block from an absent sender triggers the admission sync; a sender that
+// cannot prove its own block fails that sync -> one counted close, no verdict.
+// A relayed outsider-authored block reaches the author check on the live queue.
+
+const LIVE_FORK_TIME = {
+    ...MIN_TEST_TIME_CONFIG,
+    chainFallbackTime: 12
+};
+
+describe("E2E: spectating strategy junk-block handling", function () {
+    it("cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        const { peer: attacker } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
+        });
+        await h.connectionBarrier.waitFor(
+            async () =>
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage: "attacker never connected to victim"
+            }
+        );
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftJunkBlockConfirmation(0, forkId);
+        await h
+            .control(attacker)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: attacker,
+            expectedStatus: Status.SYNCED
+        });
+    });
+
+    it("cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        await h.join.joinChannelWait({ joiner: victim });
+        expect(await h.control(victim).query.getStatus().request()).to.equal(
+            Status.PENDING_PARTICIPANT
+        );
+
+        // Spawn-only, classified: the fork is idle by design (LIVE_FORK_TIME)
+        // and any keep-alive block would promote the pending victim, which
+        // the assertion below requires to stay PENDING_PARTICIPANT.
+        const attacker = await h.join.addSpectator();
+        await h.connectionBarrier.waitFor(
+            async () =>
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage: "attacker never connected to victim"
+            }
+        );
+        // The pending victim is a chain participant, so it can be the
+        // attacker's initial-sync responder: let that sync finish before the
+        // victim cuts the attacker, or the cut aborts the attacker's connect.
+        await h.event.waitUntilPeerStatus(attacker.index, Status.SYNCED);
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftJunkBlockConfirmation(0, forkId);
+        await h
+            .control(attacker)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: attacker,
+            expectedStatus: Status.PENDING_PARTICIPANT
+        });
+        await TestSession.settleDetached();
+    });
+
+    it("cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        const { peer: attacker } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
+        });
+        await h.connectionBarrier.waitFor(
+            async () =>
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage: "attacker never connected to victim"
+            }
+        );
+
+        // the attacker is connected to the channel's p2p network but is not a
+        // channel participant. it authors + signs a well-formed next block with
+        // its own key: authentication passes, so the absent sender is asked to
+        // prove its membership. it cannot prove that block -> the failed sync is
+        // one counted close, not a verdict. this is the vector that used to
+        // abort the spectator.
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                0,
+                forkId,
+                attacker.signer
+            );
+        await h
+            .control(attacker)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerStruckWithoutBlacklist({
+            observer: victim,
+            target: attacker,
+            expectedStatus: Status.SYNCED
+        });
+    });
+
+    it("cuts the sender of an authenticated outsider-authored block that answers it is still in its own initial sync with one counted close and keeps a SYNCED spectator running", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        // the attacker's own initial sync is held at its install, so it
+        // stays OPENED and answers every sync request that it is still syncing
+        const { peer: attacker } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false,
+            beforeConnect: async (peer) => {
+                await h.control(peer).stub.holdSyncInstall().request();
+            }
+        });
+        const attackerStub = h.control(attacker).stub;
+        const restoreSyncRecorder = await h.rpcStub.recordSpectateSync(
+            victim.index,
+            { forward: true }
+        );
+        try {
+            await h.connectionBarrier.waitFor(
+                async () =>
+                    (await attackerStub.getSyncInstallEntered().request()) ===
+                        1 &&
+                    (await h
+                        .control(attacker)
+                        .query.isConnectedTo(victim.address)
+                        .request()),
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs(),
+                    timeoutMessage:
+                        "attacker never held its sync install while connected to victim"
+                }
+            );
+            expect(
+                await h.control(attacker).query.getStatus().request()
+            ).to.equal(Status.OPENED);
+
+            // the absent sender is asked to prove its block and answers it
+            // is still syncing: it has no block to send -> one counted close
+            const { encodedBlockConfirmation } =
+                await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                    0,
+                    forkId,
+                    attacker.signer
+                );
+            await h
+                .control(attacker)
+                .byzantine.sendBlockConfirmation(
+                    encodedBlockConfirmation,
+                    victim.address
+                )
+                .request();
+
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: victim,
+                target: attacker,
+                expectedStrikes: 1,
+                expectedStatus: Status.SYNCED
+            });
+            expect(
+                (await h.rpcStub.spectateSyncSettles(victim.index)).map(
+                    (settle) => settle.result
+                )
+            ).to.deep.equal([SyncResult.ResponderSyncing]);
+            expect(
+                await h.control(attacker).query.getStatus().request()
+            ).to.equal(Status.OPENED);
+        } finally {
+            await restoreSyncRecorder();
+            await attackerStub.releaseSyncInstall().request();
+        }
+    });
+
+    // supplier != author. every other case here has the attacker author the
+    // block it sends, so they cannot tell "cut the supplier" from "cut the
+    // author" - this one separates them and asserts that both are cut.
+    it("cuts both an eligible relayer and the outsider author while the victim keeps spectating", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        // The participants keep authoring while each peer process spawns and
+        // the victim syncs; a fixed block count followed by an idle wait would
+        // leave the writer slot empty on a loaded farm and get the next block
+        // rejected as stale. The author and relayer only need to be connected.
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        const { peer: author } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
+        });
+        const relayer = h.getPeer(1);
+        await h.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2, victim.index]
+        });
+
+        // An eligible transport reaches author validation; an outsider transport
+        // would be dropped earlier by source admission.
+        await h.connectionBarrier.waitFor(
+            async () =>
+                (await h
+                    .control(relayer)
+                    .query.isConnectedTo(victim.address)
+                    .request()) &&
+                (await h
+                    .control(author)
+                    .query.isConnectedTo(victim.address)
+                    .request()),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage: "relayer/author never both connected to victim"
+            }
+        );
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                0,
+                forkId,
+                author.signer
+            );
+        // the relayer never authored anything - it only supplied the transport
+        await h
+            .control(relayer)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: relayer,
+            expectedStatus: Status.SYNCED
+        });
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: author,
+            expectedStatus: Status.SYNCED
+        });
+    });
+
+    // A participant that has LEFT is still connected. Snapshots are keyed by hash
+    // and never pruned, so the ex-member authors a block naming a snapshot from
+    // while it was still a member; without the coordinate binding the author gate
+    // unions that stale snapshot and re-admits it, the block reaches the leader
+    // check, and the spectator aborts as if a participant misbehaved. An ex-member
+    // is a non-participant: drop it, never abort.
+    it("cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        // victim spectates and stores the pre-leave snapshots (still listing the
+        // leaver as a participant)
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2, 3],
+            minimumBlocks: 2,
+            maximumBlocks: 20,
+            waitForFinalization: true
+        });
+
+        const staleHeight = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+
+        const leaverIndex = await h.transition.participantLeaveDetached();
+        const leaver = h.getPeer(leaverIndex);
+        const remainingParticipantIndices = [0, 1, 2, 3].filter(
+            (peerIndex) => peerIndex !== leaverIndex
+        );
+
+        // move past the leave so the current previous snapshot excludes them
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: remainingParticipantIndices
+        });
+        await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
+
+        const participants = await h
+            .control(h.getPeer(0))
+            .query.getParticipants()
+            .request();
+        expect(
+            participants.map((p) => p.toLowerCase()),
+            "leaver should be out of the current participant set"
+        ).to.not.include(leaver.address.toLowerCase());
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftStaleMembershipBlockConfirmation(
+                0,
+                forkId,
+                leaver.signer,
+                staleHeight!
+            );
+        await h
+            .control(leaver)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        // the ex-member cannot prove the block it sent -> the failed
+        // admission sync is one counted close, not a verdict
+        await h.assert.rpc.peerStruckWithoutBlacklist({
+            observer: victim,
+            target: leaver,
+            expectedStatus: Status.SYNCED
+        });
+    });
+});
+
+describe("E2E: active-participant stale-membership handling", function () {
+    it("cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        // build the pre-leave snapshot the ex-member will name
+        await h.transition.advanceState({ count: 2 });
+        const staleHeight = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+
+        // a participant leaves; move past the leave so the current previous
+        // snapshot excludes them
+        const leaverIndex = await h.transition.participantLeaveDetached();
+        const leaver = h.getPeer(leaverIndex);
+        const remainingParticipantIndices = [0, 1, 2, 3].filter(
+            (peerIndex) => peerIndex !== leaverIndex
+        );
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: remainingParticipantIndices
+        });
+        await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
+
+        // victim = an active participant that is not the leaver; read the craft
+        // source from it too so the crafted block links to the live head (the
+        // departed leaver may no longer track it)
+        const victim = h
+            .getActiveHonestPeers()
+            .find((p) => p.index !== leaverIndex)!;
+        expect(
+            await h.control(victim).query.getStatus().request(),
+            "victim is an active participant"
+        ).to.equal(Status.PARTICIPATING);
+
+        const participants = await h
+            .control(victim)
+            .query.getParticipants()
+            .request();
+        expect(
+            participants.map((p) => p.toLowerCase()),
+            "leaver should be out of the current participant set"
+        ).to.not.include(leaver.address.toLowerCase());
+
+        // clean dispute-event baseline before the attack
+        h.event.resetEventSpies();
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftStaleMembershipBlockConfirmation(
+                victim.index,
+                forkId,
+                leaver.signer,
+                staleHeight!
+            );
+        await h
+            .control(leaver)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        // leaver (author == sender) is cut, victim keeps participating;
+        // the ex-member cannot prove the block it sent -> the failed
+        // admission sync is one counted close, not a verdict
+        await h.assert.rpc.peerStruckWithoutBlacklist({
+            observer: victim,
+            target: leaver,
+            expectedStatus: Status.PARTICIPATING
+        });
+        // no false dispute against the honest fork, everyone still in sync
+        h.assert.dispute.noDisputes();
+        await h.assert.sync.onlyHonestPeersInSync();
+    });
+});

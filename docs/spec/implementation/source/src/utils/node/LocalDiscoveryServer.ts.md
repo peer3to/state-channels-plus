@@ -1,0 +1,37 @@
+# LocalDiscoveryServer.ts
+
+> **Source:** [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts)
+
+## Requirements
+
+- [`INV-AUTH-1-J0PRYA` (Signature is the only proof)](../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya)
+- [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
+
+## UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5
+
+Topic-owned local discovery lifecycle
+
+- Setup: Use real loopback discovery, authenticated managers, transport close, blacklist, topic leave, topic rejoin, accepted sockets held unread so a closed dial socket stays closing, and cleanup
+- Oracle: One eligible replacement while observed; no replacement after leave, blacklist, or cleanup; at most one pending dial/retry per session peer
+
+- [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P1` — valid client-ready frame before cleanup acknowledges and starts one handshake
+- [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P2` — malformed ready frame closes without transport or handshake
+- [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P3` — valid ready frame after cleanup begins closes without acknowledgement, transport, or handshake
+- [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P4` — pending dial and retry callbacks cannot create a post-cleanup transport
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5` — authenticated close creates a different transport while the exact topic remains observed
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6` — topic leave stops later replacement
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7` — blacklist plus close produces no replacement
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P8` — a peer with a live authenticated transport on another observed topic is not dialed again
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P9` — concurrent and repeated joins create one listener, leave removes it even during startup, and a later join establishes a usable session
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P10` — deduplicates an in-flight dial across topics before authentication
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P11` — an accepted socket sends its valid ready frame after manager disposal but before process-wide discovery cleanup; it closes without acknowledgement or a new transport; discovery can still log after manager disposal, and cleanup then disposes its logger and detaches its store
+- [ ] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P12` — the replacement transport for a closed eligible peer appears no sooner than one second after the close
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P13` — an inbound reconnect inside the cooldown is held by the accepting peer server, admitted once the cooldown has passed, and blacklists neither side
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P14` — a dial whose handshake is still pending when its runtime begins shutdown schedules no retry and logs no retry warning
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P15` — a replacement endpoint advertised during the old endpoint handshake is retained; after the old socket closes, real retry authenticates a new transport with no blacklist
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P16` — the same replacement advertisement while the old authenticated transport is live is retained and used after its close
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P17` — after a topic leave, a rejoin dials the announced peer again while the left topic's closed dial socket has not finished closing
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P18` — after the left topic's old dial socket finishes closing, the rejoined topic's pending dial still deduplicates a second topic's announcement of the same peer
+- [x] `UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P19` — a rejoin dials the announced peer again while the pending, unauthenticated dial its leave closed has not finished closing

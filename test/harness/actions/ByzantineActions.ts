@@ -1,0 +1,544 @@
+// @spec-test-coverage-ignore: typed raw-RPC harness actions exercised by mapped lobby E2E declarations
+import { Block } from "@/models";
+import StateSnapshot from "@/models/StateSnapshot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type Rpc from "@/rpc/Rpc";
+import type { Address } from "@/types/types";
+import { ForkId, Bytes, BlockHeight, Hash } from "@/types/types";
+import { Codec, Logger, Type } from "@/utils";
+import * as factory from "@test/factory";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    LobbyRawMethod,
+    NegotiationRawMethod
+} from "@test/fixtures/customRpc/harnessControl/services/byzantine/ByzantineService";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import {
+    DisputeTampering,
+    DisputeTamper,
+    ConstructDisputeTamper
+} from "@test/harness/actions/DisputeTamperingActions";
+import type { TestPeer } from "@test/harness/core/types";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ethers, Signer } from "ethers";
+
+export class ByzantineActions<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(
+        protected harness: PeerTestHarness<THost>,
+        protected logger: Logger
+    ) {}
+
+    /** `snapshot` committing the application state `stateMachineStateHash` instead of its own. */
+    withStateHash(
+        snapshot: StateSnapshot,
+        stateMachineStateHash: StateSnapshot["stateMachineStateHash"]
+    ): StateSnapshotStruct {
+        const struct = snapshot.toStruct();
+        return {
+            ...struct,
+            snapshotData: { ...struct.snapshotData, stateMachineStateHash }
+        };
+    }
+
+    async sendRawLobbyRpc(
+        peerIndex: number,
+        targetPeerIndex: number,
+        method: LobbyRawMethod,
+        params: Rpc["params"]
+    ): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .byzantine.sendRawLobbyRpc(
+                this.harness.getPeer(targetPeerIndex).address,
+                method,
+                params
+            )
+            .request();
+    }
+
+    async sendRawNegotiationRpc(
+        peerIndex: number,
+        targetPeerIndex: number,
+        method: NegotiationRawMethod,
+        params: Rpc["params"]
+    ): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .byzantine.sendRawNegotiationRpc(
+                this.harness.getPeer(targetPeerIndex).address,
+                method,
+                params
+            )
+            .request();
+    }
+
+    /**
+     * Submit a double-signed block (two blocks at the same height that differ
+     * only by timestamp). The block is built, signed and broadcast host-side
+     * by the Byzantine RPC service; `forkId` is omitted to let the host use its
+     * live head fork unless a specific fork is requested.
+     */
+    async submitDoubleSignBlock(
+        peerIndex: number,
+        options?: { forkId?: ForkId }
+    ): Promise<{
+        conflictingBlockHash: string;
+        conflictingBlockHeight: BlockHeight;
+        originalBlockHash: string;
+        originalBlockHeight: BlockHeight;
+    }> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+
+        const result = await this.harness
+            .control(peer)
+            .byzantine.submitDoubleSignBlock({
+                forkId: options?.forkId
+            })
+            .request();
+
+        this.logger.info(`Double-sign block broadcasted by peer ${peerIndex}`);
+        return result as {
+            conflictingBlockHash: string;
+            conflictingBlockHeight: BlockHeight;
+            originalBlockHash: string;
+            originalBlockHeight: BlockHeight;
+        };
+    }
+
+    /**
+     * Post junk calldata on-chain with an invalid signature (built and signed
+     * host-side by the Byzantine RPC service).
+     */
+    async postJunkCalldataOnChain(
+        peerIndex: number,
+        options: {
+            height: BlockHeight;
+            forkId?: ForkId;
+            encodedData?: Bytes;
+            authentic?: boolean;
+            previousBlockHash?: Hash;
+        }
+    ): Promise<{ block: BlockStruct; encodedSignedBlock: string }> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+
+        const { encodedBlock, encodedSignedBlock } = await this.harness
+            .control(peer)
+            .byzantine.postJunkCalldataOnChain({
+                height: options.height,
+                forkId: options.forkId,
+                encodedData: options.encodedData,
+                authentic: options.authentic,
+                previousBlockHash: options.previousBlockHash
+            })
+            .request();
+
+        this.logger.info(`Junk calldata posted on-chain by peer ${peerIndex}`);
+        return {
+            block: Codec.decode(encodedBlock, Type.Block),
+            encodedSignedBlock
+        };
+    }
+
+    async postTamperedDisputeWith(
+        peerIndex: number,
+        tamperFn: DisputeTamper
+    ): Promise<DisputeStruct> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const { dispute } = await this.harness.tamper.postTamperedDispute(
+            peerIndex,
+            tamperFn,
+            { forkId }
+        );
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        return dispute;
+    }
+
+    async postTamperedDisputeAuditingData(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperAuditingDataHash
+        );
+    }
+
+    async tamperedDisputePartialAuditing(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperPartialAuditing
+        );
+    }
+
+    async tamperedDisputeDoubleFault(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperDoubleFault
+        );
+    }
+
+    async stubDisputeConstruction(options: {
+        peerIndex: number;
+        tamperFn: ConstructDisputeTamper;
+    }): Promise<void> {
+        await this.harness.tamper.stubConstructDispute(
+            options.peerIndex,
+            options.tamperFn
+        );
+    }
+
+    async restoreDisputeConstruction(peerIndex: number): Promise<void> {
+        await this.harness.tamper.restoreConstructDispute(peerIndex);
+    }
+
+    async blacklistAndDisconnect(peerIndex: number): Promise<void> {
+        await this.harness.network.blacklistAndDisconnectPeer(peerIndex);
+    }
+
+    async stubCalldataHandler(peerIndex: number): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.stubCalldataPosting().request();
+    }
+
+    async restoreCalldataHandler(peerIndex: number): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.restoreCalldataPosting()
+            .request();
+    }
+
+    /**
+     * Make this peer omit pending inbound messages from authored blocks. Returns
+     * an async teardown that restores the original behavior.
+     */
+    async stubPendingInboundInclusion(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubPendingInboundInclusion()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restorePendingInboundInclusion()
+                .request();
+        };
+    }
+
+    async stubBroadcast(peerIndex: number): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.stubBroadcast().request();
+    }
+
+    /**
+     * Craft an authentic height-0 block on a fork nobody has: real channel,
+     * real participant author signature — the fork mismatch must be the only
+     * reason a receiver treats it specially.
+     */
+    /**
+     * A linked next block authored by a peer whose turn it isn't - validating
+     * it yields a real InvalidStateTransition fraud proof for its author.
+     */
+    async craftInvalidTransitionBlock(
+        observerIndex: number,
+        options: { offenderIndex?: number } = {}
+    ): Promise<{ offender: TestPeer<THost>; encodedBlock: string }> {
+        const observer = this.harness.getPeer(observerIndex);
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "storeInvalidTransitionFraudProof: no active fork ID"
+            );
+        }
+        const [nextHeight, nextWriter] = await Promise.all([
+            this.harness
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request(),
+            this.harness.control(observer).query.getNextToWrite().request()
+        ]);
+        const offender =
+            options.offenderIndex === undefined
+                ? this.harness.peers.find(
+                      (p) =>
+                          p.index !== observerIndex &&
+                          p.address.toLowerCase() !== nextWriter.toLowerCase()
+                  )
+                : this.harness.getPeer(options.offenderIndex);
+        if (!offender) {
+            throw new Error(
+                "craftInvalidTransitionBlock: no non-leader offender available"
+            );
+        }
+        const previousHeight = Number(nextHeight) - 1;
+        const previous = await this.harness
+            .control(observer)
+            .query.getBlockByHeight(forkId, previousHeight)
+            .request();
+        if (!previous) {
+            throw new Error(
+                `craftInvalidTransitionBlock: no block at height ${previousHeight}`
+            );
+        }
+        const encodedBlock = await factory.buildAndEncodeBlock(
+            offender.signer,
+            {
+                header: {
+                    channelId: this.harness.channelId,
+                    forkId,
+                    transactionCnt: nextHeight,
+                    participant: offender.address
+                },
+                previousBlockHash: previous.hash
+            }
+        );
+        return { offender, encodedBlock };
+    }
+
+    /**
+     * Craft that block and run it through `observerIndex`'s live validation, so
+     * a real InvalidStateTransition fraud proof lands in its storage. Returns
+     * the offender the proof names.
+     */
+    async storeInvalidTransitionFraudProof(
+        observerIndex: number,
+        options: { offenderIndex?: number } = {}
+    ): Promise<TestPeer<THost>> {
+        const { offender, encodedBlock } =
+            await this.craftInvalidTransitionBlock(observerIndex, options);
+        const validation = await this.harness
+            .control(this.harness.getPeer(observerIndex))
+            .validation.runBlockValidation(encodedBlock)
+            .request();
+        if (validation.fraudProofType === null) {
+            throw new Error(
+                `storeInvalidTransitionFraudProof: no fraud proof stored (${validation.resultName})`
+            );
+        }
+        return offender;
+    }
+
+    async craftBogusForkBlockZero(authorIndex: number): Promise<{
+        bogusBlock: Block;
+        blockConfirmation: BlockConfirmationStruct;
+    }> {
+        const author = this.harness.getPeer(authorIndex);
+        const bogusBlock = factory.block({
+            transaction: factory.transaction({
+                header: factory.transactionHeader({
+                    forkId: ethers.hexlify(ethers.randomBytes(32)),
+                    transactionCnt: 0,
+                    channelId: this.harness.channelId,
+                    participant: author.address as Address
+                })
+            })
+        });
+        return {
+            bogusBlock,
+            blockConfirmation: {
+                signedBlock: {
+                    encodedBlock: bogusBlock.encode(),
+                    signature: await author.signer.signMessage(
+                        ethers.getBytes(bogusBlock.hash)
+                    )
+                },
+                signatures: []
+            }
+        };
+    }
+
+    /**
+     * An authentic-looking block the author's lineage does not carry: real
+     * channel, the current fork, a real participant author signature, at a
+     * height the author either holds a different block at or never reached.
+     * It queues as a future block on a peer behind that height; a sync probe
+     * toward the author then proves a lineage without it.
+     */
+    async craftUnbackedFutureBlockConfirmation(
+        authorIndex: number,
+        forkId: ForkId,
+        height: number
+    ): Promise<{ hash: string; encodedBlockConfirmation: string }> {
+        const author = this.harness.getPeer(authorIndex);
+        const block = factory.block({
+            transaction: factory.transaction({
+                header: factory.transactionHeader({
+                    forkId,
+                    transactionCnt: height,
+                    channelId: this.harness.channelId,
+                    participant: author.address as Address
+                })
+            })
+        });
+        return {
+            hash: String(block.hash),
+            encodedBlockConfirmation: Codec.encode(
+                {
+                    signedBlock: {
+                        encodedBlock: block.encode(),
+                        signature: await author.signer.signMessage(
+                            ethers.getBytes(block.hash)
+                        )
+                    },
+                    signatures: []
+                },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
+
+    /**
+     * Take a source peer's real latest block and re-sign it with a throwaway
+     * outsider key: the block body is authentic, only the author signature is
+     * forged, so authentication fails on the signature alone.
+     */
+    async craftJunkBlockConfirmation(
+        sourcePeerIndex: number,
+        forkId: ForkId
+    ): Promise<{ encodedBlockConfirmation: string }> {
+        const bundle = await this.harness
+            .control(this.harness.getPeer(sourcePeerIndex))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const signedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        const outsider = ethers.Wallet.createRandom();
+        const forgedSignature = await outsider.signMessage(
+            ethers.getBytes(bundle!.hash)
+        );
+        return {
+            encodedBlockConfirmation: Codec.encode(
+                {
+                    signedBlock: {
+                        encodedBlock: signedBlock.encodedBlock,
+                        signature: forgedSignature
+                    },
+                    signatures: []
+                },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
+
+    /**
+     * Craft the next block (head height + 1) authored + signed by `author` - a
+     * peer connected to the channel's p2p network but not a channel participant
+     * (a spectator that never joined). A new block position, so it is validated
+     * fresh rather than CRDT-merged into the head. Authentication passes (the
+     * signature matches the declared author) but the author is not a participant,
+     * and membership is checked before linkage -> reaches
+     * blockAuthorIsNotParticipant (the connected-outsider DoS vector).
+     */
+    async craftOutsiderAuthoredBlockConfirmation(
+        sourcePeerIndex: number,
+        forkId: ForkId,
+        author: Signer
+    ): Promise<{ encodedBlockConfirmation: string }> {
+        const bundle = await this.harness
+            .control(this.harness.getPeer(sourcePeerIndex))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const head = Block.fromSignedBlock(
+            Codec.decode(bundle!.encodedSignedBlock, Type.SignedBlock)
+        );
+        const authorAddress = (await author.getAddress()) as Address;
+        const nextBlockStruct = {
+            ...factory.blockStructWithTransactionHeader(head.blockStruct, {
+                participant: authorAddress,
+                transactionCnt: Number(head.height) + 1
+            }),
+            previousBlockHash: bundle!.hash
+        };
+        const outsiderSignedBlock = (
+            await Block.fromBlockStruct(nextBlockStruct, author)
+        ).signedBlock;
+        return {
+            encodedBlockConfirmation: Codec.encode(
+                { signedBlock: outsiderSignedBlock, signatures: [] },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
+
+    /**
+     * Craft the next block authored + signed by `author`, but declaring the
+     * state-snapshot hash of the block at `staleSnapshotHeight` instead of the
+     * head's.
+     */
+    async craftStaleMembershipBlockConfirmation(
+        sourcePeerIndex: number,
+        forkId: ForkId,
+        author: Signer,
+        staleSnapshotHeight: BlockHeight
+    ): Promise<{ encodedBlockConfirmation: string }> {
+        const source = this.harness.control(
+            this.harness.getPeer(sourcePeerIndex)
+        );
+        const headBundle = await source.query
+            .getLatestBlockBundle(forkId)
+            .request();
+        const staleBundle = await source.query
+            .getBlockByHeight(forkId, staleSnapshotHeight)
+            .request();
+        if (!headBundle) throw new Error("missing head block");
+        if (!staleBundle)
+            throw new Error(
+                `missing block at stale height ${staleSnapshotHeight}`
+            );
+
+        const head = Block.fromSignedBlock(
+            Codec.decode(headBundle.encodedSignedBlock, Type.SignedBlock)
+        );
+        const stale = Block.fromSignedBlock(
+            Codec.decode(staleBundle.encodedSignedBlock, Type.SignedBlock)
+        );
+        const authorAddress = (await author.getAddress()) as Address;
+        const nextBlockStruct = {
+            ...factory.blockStructWithTransactionHeader(head.blockStruct, {
+                participant: authorAddress,
+                transactionCnt: Number(head.height) + 1
+            }),
+            previousBlockHash: headBundle.hash,
+            // the lever: a snapshot whose participant set still contains `author`
+            stateSnapshotHash: stale.stateSnapshotHash
+        };
+        const staleSignedBlock = (
+            await Block.fromBlockStruct(nextBlockStruct, author)
+        ).signedBlock;
+        return {
+            encodedBlockConfirmation: Codec.encode(
+                { signedBlock: staleSignedBlock, signatures: [] },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
+}

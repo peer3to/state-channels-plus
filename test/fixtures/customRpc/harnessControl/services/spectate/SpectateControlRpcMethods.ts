@@ -1,0 +1,150 @@
+// @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
+import type { SpectateControlService } from "./SpectateControlService";
+import Block from "@/models/Block";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { Address, ChannelId, ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { ZeroHash } from "ethers";
+
+/**
+ * Spectator-flow endpoints, executed host-side. `SyncPayload` carries model
+ * instances, so it crosses the port encoded (`Type.SyncPayload`) — the harness
+ * decodes/inspects it on the main thread. Helpers/accessors are on
+ * {@link SpectateControlService}.
+ */
+export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateControlService> {
+    constructor(transport: NetworkTransport, service: SpectateControlService) {
+        super(transport, service);
+    }
+
+    /** True when the spectate sync succeeded. */
+    public async sync(
+        peerAddress: Address,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<boolean> {
+        const result = await this.service.spectate.requestSync(
+            peerAddress,
+            this.service.sm.channelId,
+            forkId,
+            blockHeight
+        );
+        return result === SyncResult.Synced;
+    }
+
+    /** Generate a sync payload, returned encoded (or null if not provable). */
+    public async generateSyncPayload(
+        channelId: ChannelId,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<{ encodedSyncPayload: string } | null> {
+        const payload = await this.service.spectate.generateSyncPayload(
+            channelId,
+            forkId,
+            blockHeight
+        );
+        // `Codec.encode` returns an ABI hex string (serializable across the port).
+        return payload
+            ? {
+                  encodedSyncPayload: Codec.encode(
+                      payload,
+                      Type.SyncPayload
+                  ) as string
+              }
+            : null;
+    }
+
+    /**
+     * Start a real local spectate sync toward `peerAddress`, targeting the
+     * host peer's own channel. Fire-and-forget: returns once the request is launched — tests wait on observable
+     * convergence / blacklist state, not this return.
+     */
+    public startSync(
+        peerAddress: Address,
+        forkId?: ForkId,
+        blockHeight?: number,
+        timeoutMs?: number
+    ): boolean {
+        const channelId = this.service.sm.channelId;
+        if (channelId === ZeroHash) {
+            throw new Error(
+                "startSync - host peer has no channel; cannot start sync"
+            );
+        }
+        // Omitted optionals cross the port as null; the service treats only
+        // undefined as "not requested".
+        void this.service.spectate.requestSync(
+            peerAddress,
+            channelId,
+            forkId ?? undefined,
+            blockHeight ?? undefined,
+            timeoutMs ?? undefined
+        );
+        return true;
+    }
+
+    public async applySyncResponse(
+        responderAddress: Address,
+        forkId: ForkId,
+        blockHeight: number,
+        encodedSyncPayload: string
+    ): Promise<boolean> {
+        const { synced } = await this.service.spectate.applySyncResponse(
+            String(responderAddress),
+            this.service.buildSyncRequest(forkId, blockHeight),
+            encodedSyncPayload
+        );
+        return synced;
+    }
+
+    /**
+     * Run the real `reduceAndFinalizeLocally` on one window of an encoded sync
+     * payload, expecting its `reducedForkId`; true when this call committed it.
+     */
+    public async reduceSyncWindowLocally(
+        encodedSyncPayload: string,
+        windowIndex: number
+    ): Promise<boolean> {
+        const window = Codec.decode(encodedSyncPayload, Type.SyncPayload)
+            .disputeWindows[windowIndex];
+        if (!window) throw new Error("No dispute window at this index");
+        return this.service.sm.diamondStateMachine.reduceAndFinalizeLocally(
+            window.disputeConfirmations.map((disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+            ),
+            window.latestStateSnapshot,
+            window.latestEncodedStateMachineState,
+            window.inboundMessageBlocksAppliedInReduce,
+            window.reducedForkId
+        );
+    }
+
+    /** Store a block straight into storage (`justPersist`); returns its hash. */
+    public storeBlockJustPersist(encodedSignedBlock: string): string {
+        const block = Block.fromSignedBlock(
+            Codec.decode(encodedSignedBlock, Type.SignedBlock)
+        );
+        return String(
+            this.service.sm.storage.blocks.storeBlock(block, {
+                justPersist: true
+            })
+        );
+    }
+
+    /** Replace the stored block at the block's height with it; returns its hash. */
+    public replaceStoredBlock(encodedSignedBlock: string): string {
+        const block = Block.fromSignedBlock(
+            Codec.decode(encodedSignedBlock, Type.SignedBlock)
+        );
+        const blocks = this.service.sm.storage.blocks;
+        blocks.deleteBlock(block.forkId, block.height);
+        return String(blocks.storeBlock(block));
+    }
+}
+
+export default SpectateControlRpcMethods;

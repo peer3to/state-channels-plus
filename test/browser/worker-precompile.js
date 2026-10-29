@@ -1,0 +1,63 @@
+// @spec-test-coverage-ignore: browser page fixture driven by the mapped browser worker gate
+import { ethers } from "ethers";
+
+export default function createBrowserWorkerAnswerPrecompile(options) {
+    if (options.crashSignal) {
+        const signal = new BroadcastChannel(options.crashSignal);
+        signal.onmessage = () => {
+            signal.close();
+            throw new Error("browser worker answer precompile async crash");
+        };
+    }
+    // Each message lets a failure with no Error escape this worker: an
+    // error event that carries no error object, or a thrown string.
+    if (options.nonErrorSignal) {
+        const signal = new BroadcastChannel(options.nonErrorSignal);
+        signal.onmessage = (event) => {
+            if (event.data === "error-event-without-error") {
+                self.dispatchEvent(
+                    new ErrorEvent("error", {
+                        message: "browser worker error event without error",
+                        filename: "worker-precompile.js",
+                        lineno: 3,
+                        colno: 7
+                    })
+                );
+                return;
+            }
+            throw "browser worker thrown string";
+        };
+    }
+    return async function browserWorkerAnswerPrecompile(input) {
+        const calldata = ethers.hexlify(input.data);
+        if (calldata !== options.expectedData) {
+            throw new Error(
+                `Unexpected precompile calldata: ${calldata}, expected ${options.expectedData}`
+            );
+        }
+
+        // an unhandled rejection on a timer -> a genuine crash of this realm
+        if (options.crashAsync) {
+            setTimeout(() => {
+                void Promise.reject(
+                    new Error("browser worker answer precompile async crash")
+                );
+            }, 0);
+        }
+
+        const isWorker =
+            typeof WorkerGlobalScope !== "undefined" &&
+            globalThis instanceof WorkerGlobalScope &&
+            typeof document === "undefined";
+
+        return {
+            executionGasUsed: 0n,
+            returnValue: ethers.getBytes(
+                ethers.AbiCoder.defaultAbiCoder().encode(
+                    ["uint256", "bool"],
+                    [BigInt(options.value), isWorker]
+                )
+            )
+        };
+    };
+}

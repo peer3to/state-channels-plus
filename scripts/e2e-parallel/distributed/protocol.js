@@ -1,0 +1,431 @@
+const { EventEmitter } = require("events");
+const { TASK_RUNNERS, runnersNeededByTask } = require("../shared/taskRunners");
+const { closeStream } = require("./connectionLifecycle");
+
+const PROTOCOL_VERSION = 2;
+// The runner protocol this checkout speaks. 15 adds task resource measurements
+// and cost-aware admission; 14 added the browser tier. Older hosts remain leased.
+const DISTRIBUTED_PROTOCOL_VERSION = 15;
+// The oldest worker host protocol the orchestrator still leases. A host
+// between it and the current version runs only the runners it knows, so a pool
+// can upgrade one host at a time.
+const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 13;
+// What each accepted worker protocol can execute. The orchestrator schedules a
+// task only on a worker whose protocol lists the task's runner.
+const ALL_RUNNERS = new Set(Object.values(TASK_RUNNERS));
+const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
+    [13, new Set([TASK_RUNNERS.HARDHAT, TASK_RUNNERS.FORGE])],
+    [14, ALL_RUNNERS],
+    [15, ALL_RUNNERS]
+]);
+// A frame carries a whole source manifest; 2 MB fits about 10k files.
+const DEFAULT_MAX_FRAME = 2 * 1024 * 1024;
+const REVIEW_KINDS = new Set([
+    "REVIEW_HELLO",
+    "REVIEW_READY",
+    "REVIEW_START",
+    "REVIEW_CHUNK",
+    "REVIEW_END",
+    "REVIEW_PROGRESS"
+]);
+const MESSAGE_KINDS = new Set([
+    ...REVIEW_KINDS,
+    "AUTH_HELLO",
+    "AUTH_CHALLENGE",
+    "AUTH_PROOF",
+    "AUTH_OK",
+    "AUTH_ERROR",
+    "SERVER_READY",
+    "HEARTBEAT",
+    "LEASE_REQUEST",
+    "LEASE_GRANTED",
+    "BUSY",
+    "QUEUE_FULL",
+    "FAULTED",
+    "WORKSPACE_OFFER",
+    "WORKSPACE_NEED",
+    "BUNDLE_META",
+    "BUNDLE_CHUNK",
+    "BUNDLE_END",
+    "PREPARED",
+    "RUN_CONFIG",
+    "RUN_PROGRESS",
+    "WORKER_READY",
+    "TASK_REQUEST",
+    "TASK_ASSIGNMENT",
+    "NO_TASK_AVAILABLE",
+    "WORK_AVAILABLE",
+    "LOG_CHUNK",
+    "LOG_END",
+    "LOG_COMMITTED",
+    "ATTEMPT_RESULT",
+    "INFRA_LOG",
+    "INFRA_PROCESS_LOG",
+    "WORKER_STATUS",
+    "WORKER_STATS",
+    "PREPARATION_ERROR",
+    "WORKER_ERROR",
+    "RUN_COMPLETE",
+    "CANCEL",
+    "RELEASE",
+    "LEASE_CLEAN",
+    "RESOURCE_ALLOCATION_REJECTED",
+    "RESOURCE_LIMIT_EXCEEDED",
+    "AUTHORIZATION_LIST",
+    "AUTHORIZATION_ADD",
+    "AUTHORIZATION_REMOVE",
+    "AUTHORIZATION_POLICY_SET",
+    "AUTHORIZATION_RESULT"
+]);
+const HEADER_FIELDS = {
+    REVIEW_HELLO: ["reviewVersion"],
+    REVIEW_READY: ["reviewVersion"],
+    REVIEW_START: [
+        "reviewVersion",
+        "requestId",
+        "attemptId",
+        "operation",
+        "byteCount",
+        "sha256"
+    ],
+    REVIEW_CHUNK: ["reviewVersion", "requestId", "attemptId", "sequence"],
+    REVIEW_END: [
+        "reviewVersion",
+        "requestId",
+        "attemptId",
+        "sequence",
+        "byteCount",
+        "sha256"
+    ],
+    REVIEW_PROGRESS: [
+        "reviewVersion",
+        "requestId",
+        "attemptId",
+        "executionId",
+        "activity"
+    ],
+    AUTH_HELLO: ["nonce", "publicKey"],
+    AUTH_CHALLENGE: ["nonce", "publicKey", "proof"],
+    AUTH_PROOF: ["proof"],
+    SERVER_READY: ["name", "capabilities"],
+    LEASE_REQUEST: ["sessionId", "executionProfile", "extensions"],
+    LEASE_GRANTED: ["capabilities"],
+    FAULTED: ["message"],
+    BUSY: [
+        "state",
+        "position",
+        "status",
+        "completedTasks",
+        "totalTasks",
+        "estimatedWaitMs"
+    ],
+    WORKSPACE_OFFER: ["manifest"],
+    BUNDLE_META: ["manifest"],
+    BUNDLE_CHUNK: ["sequence"],
+    BUNDLE_END: ["byteCount", "sha256"],
+    RUN_CONFIG: ["baseEnv", "taskCount", "extensions"],
+    RUN_PROGRESS: ["completedTasks", "totalTasks"],
+    // costBudget: protocol 15, sent only by a worker under --schedule cost
+    TASK_REQUEST: ["requestId", "costBudget"],
+    TASK_ASSIGNMENT: ["requestId", "assignment"],
+    NO_TASK_AVAILABLE: ["requestId"],
+    LOG_CHUNK: [
+        "worker",
+        "taskId",
+        "attemptId",
+        "requestId",
+        "stream",
+        "sequence"
+    ],
+    LOG_END: [
+        "worker",
+        "taskId",
+        "attemptId",
+        "requestId",
+        "sequence",
+        "byteCount",
+        "sha256"
+    ],
+    LOG_COMMITTED: ["requestId", "attemptId"],
+    ATTEMPT_RESULT: [
+        "requestId",
+        "assignment",
+        "result",
+        "logTransferred",
+        "isolatedRuntime"
+    ],
+    INFRA_LOG: ["stream"],
+    INFRA_PROCESS_LOG: [
+        "processKind",
+        "slotId",
+        "trigger",
+        "processFailure",
+        "uploadId",
+        "sequence",
+        "chunkCount"
+    ],
+    WORKER_STATUS: ["status"],
+    WORKER_STATS: ["stats"],
+    PREPARATION_ERROR: ["message"],
+    WORKER_ERROR: ["message"],
+    RUN_COMPLETE: ["collectInfraLogs"],
+    RESOURCE_ALLOCATION_REJECTED: [
+        "resource",
+        "requested",
+        "permitted",
+        "message"
+    ],
+    RESOURCE_LIMIT_EXCEEDED: ["resource", "limit", "phase", "message"],
+    AUTHORIZATION_LIST: ["targetWorker", "requestId"],
+    AUTHORIZATION_ADD: [
+        "targetWorker",
+        "requestId",
+        "publicKey",
+        "note",
+        "role"
+    ],
+    AUTHORIZATION_REMOVE: ["targetWorker", "requestId", "publicKey"],
+    AUTHORIZATION_POLICY_SET: [
+        "targetWorker",
+        "requestId",
+        "publicKeyAuthorizationRequired"
+    ],
+    AUTHORIZATION_RESULT: [
+        "requestId",
+        "accepted",
+        "message",
+        "entries",
+        "authorizationPolicy"
+    ]
+};
+
+function validateHeader(kind, header) {
+    const allowed = new Set([
+        "version",
+        "kind",
+        ...(HEADER_FIELDS[kind] || [])
+    ]);
+    for (const key of Object.keys(header)) {
+        if (!allowed.has(key))
+            throw new Error(`Unknown ${kind} header field: ${key}`);
+    }
+}
+
+class ProtocolPeer extends EventEmitter {
+    constructor(stream, options = {}) {
+        super();
+        this.stream = stream;
+        this.review = options.review === true;
+        this.failed = false;
+        this.buffer = Buffer.alloc(0);
+        this.pendingMessages = [];
+        this.maxFrame = options.maxFrame || DEFAULT_MAX_FRAME;
+        this.writeChain = Promise.resolve();
+        stream.on("data", (chunk) => this.consume(chunk));
+        stream.on("end", () => {
+            if (this.buffer.length) this.fail(new Error("EOF inside frame"));
+            else this.emit("close");
+        });
+        stream.on("close", () => this.emit("close"));
+        stream.on("error", (error) => this.emit("protocolError", error));
+    }
+
+    send(kind, header = {}, body = Buffer.alloc(0)) {
+        if (
+            !MESSAGE_KINDS.has(kind) ||
+            (REVIEW_KINDS.has(kind) && !this.review)
+        ) {
+            return Promise.reject(new Error(`Invalid message kind: ${kind}`));
+        }
+        try {
+            validateHeader(kind, header);
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        const binary = Buffer.isBuffer(body) ? body : Buffer.from(body);
+        const headerBytes = Buffer.from(
+            JSON.stringify({ version: PROTOCOL_VERSION, kind, ...header })
+        );
+        if (headerBytes.length > 64 * 1024) {
+            return Promise.reject(new Error("Protocol header is too large"));
+        }
+        const payload = Buffer.allocUnsafe(
+            4 + headerBytes.length + binary.length
+        );
+        payload.writeUInt32BE(headerBytes.length, 0);
+        headerBytes.copy(payload, 4);
+        binary.copy(payload, 4 + headerBytes.length);
+        if (payload.length > this.maxFrame) {
+            return Promise.reject(new Error("Protocol frame is too large"));
+        }
+        const frame = Buffer.allocUnsafe(4 + payload.length);
+        frame.writeUInt32BE(payload.length, 0);
+        payload.copy(frame, 4);
+        const write = this.writeChain.then(
+            () =>
+                new Promise((resolve, reject) => {
+                    if (this.stream.destroyed) {
+                        reject(new Error("Protocol stream is closed"));
+                        return;
+                    }
+                    const onError = (error) => {
+                        this.stream.off("drain", onDrain);
+                        reject(error);
+                    };
+                    const onDrain = () => {
+                        this.stream.off("error", onError);
+                        resolve();
+                    };
+                    this.stream.once("error", onError);
+                    if (this.stream.write(frame)) onDrain();
+                    else this.stream.once("drain", onDrain);
+                })
+        );
+        this.writeChain = write.catch(() => {});
+        return write;
+    }
+
+    close(reason = "protocol peer closed by application") {
+        closeStream(this.stream, reason);
+    }
+
+    consume(chunk) {
+        if (this.failed) return;
+        this.buffer = Buffer.concat([this.buffer, chunk]);
+        while (!this.failed && this.buffer.length >= 4) {
+            const length = this.buffer.readUInt32BE(0);
+            if (length > this.maxFrame) {
+                this.fail(new Error("Protocol frame is too large"));
+                return;
+            }
+            if (this.buffer.length < 4 + length) return;
+            const payload = this.buffer.subarray(4, 4 + length);
+            this.buffer = this.buffer.subarray(4 + length);
+            this.decode(payload);
+        }
+    }
+
+    decode(payload) {
+        if (payload.length < 4) return this.fail(new Error("Malformed frame"));
+        const headerLength = payload.readUInt32BE(0);
+        if (headerLength > 64 * 1024 || headerLength > payload.length - 4) {
+            return this.fail(new Error("Malformed protocol header"));
+        }
+        let header;
+        try {
+            header = JSON.parse(payload.subarray(4, 4 + headerLength));
+        } catch {
+            return this.fail(new Error("Malformed protocol JSON"));
+        }
+        if (!header || typeof header !== "object" || Array.isArray(header)) {
+            return this.fail(new Error("Malformed protocol header"));
+        }
+        if (
+            header.version !== PROTOCOL_VERSION ||
+            !MESSAGE_KINDS.has(header.kind) ||
+            (REVIEW_KINDS.has(header.kind) && !this.review)
+        ) {
+            return this.fail(new Error("Unsupported protocol message"));
+        }
+        try {
+            validateHeader(header.kind, header);
+        } catch (error) {
+            return this.fail(error);
+        }
+        const message = {
+            kind: header.kind,
+            header,
+            body: payload.subarray(4 + headerLength)
+        };
+        if (this.listenerCount("message")) this.emit("message", message);
+        else this.pendingMessages.push(message);
+    }
+
+    takePending(kind) {
+        const index = this.pendingMessages.findIndex(
+            (message) => message.kind === kind
+        );
+        if (index === -1) return null;
+        return this.pendingMessages.splice(index, 1)[0];
+    }
+
+    fail(error) {
+        if (this.failed) return;
+        this.failed = true;
+        this.buffer = Buffer.alloc(0);
+        this.pendingMessages = [];
+        this.emit("protocolError", error);
+        closeStream(this.stream, `protocol rejected stream: ${error.message}`);
+    }
+}
+
+/**
+ * The runners a worker host speaking `version` can execute, or null when this
+ * orchestrator does not lease that version at all.
+ */
+function runnersForDistributedProtocol(version) {
+    if (
+        !Number.isInteger(version) ||
+        version < MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL ||
+        version > DISTRIBUTED_PROTOCOL_VERSION
+    ) {
+        return null;
+    }
+    return RUNNERS_BY_DISTRIBUTED_PROTOCOL.get(version) ?? null;
+}
+
+/** Whether a worker whose protocol lists `runners` can execute `task`. */
+function workerCanRunTask(runners, task) {
+    return runnersNeededByTask(task).every((runner) => runners.has(runner));
+}
+
+/** The oldest accepted worker protocol that can run `task`, or null. */
+function minimumProtocolForTask(task) {
+    for (
+        let version = MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL;
+        version <= DISTRIBUTED_PROTOCOL_VERSION;
+        version++
+    ) {
+        const runners = runnersForDistributedProtocol(version);
+        if (runners && workerCanRunTask(runners, task)) return version;
+    }
+    return null;
+}
+
+function waitForMessage(peer, kind, timeoutMs = 10000) {
+    const pending = peer.takePending(kind);
+    if (pending) return Promise.resolve(pending);
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(
+            () => done(new Error(`Timed out waiting for ${kind}`)),
+            timeoutMs
+        );
+        const onMessage = (message) => {
+            if (message.kind === kind) done(null, message);
+        };
+        const onClose = () =>
+            done(new Error(`Connection closed waiting for ${kind}`));
+        const done = (error, message) => {
+            clearTimeout(timer);
+            peer.off("message", onMessage);
+            peer.off("close", onClose);
+            if (error) reject(error);
+            else resolve(message);
+        };
+        peer.on("message", onMessage);
+        peer.once("close", onClose);
+    });
+}
+
+module.exports = {
+    DISTRIBUTED_PROTOCOL_VERSION,
+    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
+    PROTOCOL_VERSION,
+    MESSAGE_KINDS,
+    ProtocolPeer,
+    minimumProtocolForTask,
+    runnersNeededByTask,
+    workerCanRunTask,
+    runnersForDistributedProtocol,
+    waitForMessage
+};

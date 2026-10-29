@@ -1,0 +1,2197 @@
+pragma solidity ^0.8.8;
+
+import {DiamondHarness} from "../harness/DiamondHarness.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
+import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
+import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
+import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
+import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
+import {StateChannelCommon} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol";
+import {
+    ErrorDisputeChallengePeriodExpired,
+    ErrorDisputeCommitmentNotAvailable,
+    ErrorDisputeCommitmentNotFound,
+    ErrorDisputeInboundMessageBlocksInvalid,
+    ErrorDisputeStateMachineInboundProcessingFailed,
+    ErrorInboundMessageBlockAlreadyPersisted,
+    ErrorInvalidStateSnapshotHash,
+    ErrorOutboundMessageBalanceMismatch,
+    ErrorSnapshotDataForkMismatch,
+    INBOUND_FAILURE_FINAL_TARGET,
+    INBOUND_FAILURE_HASH_LINK,
+    INBOUND_FAILURE_HEIGHT_SEQUENCE,
+    RaceConditionDisputeAlreadyReduced,
+    RaceConditionDisputeKillPeriodExpired,
+    RaceConditionDisputeKillPeriodNotExpired,
+    RaceConditionDisputeTimeoutWindowCreatedTooEarly,
+    RaceConditionDisputeWindowNotOpen,
+    RaceConditionOnChainSlashes
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
+import {_delegatecall} from "../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol";
+import {
+    DisputeBlockAuthorNotParticipant,
+    DisputeConflictsWithFinalState,
+    DisputeInboundAnchorBehindLatestState,
+    DisputeInvalidBalanceInvariant,
+    DisputeInvalidBlockInStateProofApplyFraudProof,
+    DisputeInvalidBlockStructure,
+    DisputeInvalidOutboundRun,
+    DisputeInvalidOutputState,
+    DisputeInvalidStateProof,
+    DisputeNotLatestState,
+    InvalidDisputeReason,
+    TimeoutCalldataPosted,
+    TimeoutParticipantNotNext,
+    TimeoutSupersededByFinalState,
+    TimeoutThreshold,
+    TimeoutTooEarly
+} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
+import {BlockInvalidStateTransitionProof, BlockDoubleSignProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
+import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
+import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
+import {LocalDiamond} from "../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol";
+import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
+import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol";
+import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol";
+import {ErrorDisputeExecutionOutOfGas} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
+import "../../../contracts/V1/types/DataTypes.sol";
+
+contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
+    constructor() {
+        evidenceTime = 10;
+        disputeVerificationFacetAddress = address(this);
+        stateProofFacetAddress = address(new StateProofFacet());
+        utilityFacetAddress = address(new UtilityFacet());
+    }
+
+    /// routes StateProofFacet self-calls (`isMilestoneFinal`) like the proxy fallback does
+    fallback() external {
+        bytes memory result = _delegatecall(stateProofFacetAddress, msg.data);
+        assembly ("memory-safe") {
+            return(add(result, 32), mload(result))
+        }
+    }
+
+    function seedDispute(Dispute memory dispute, uint256 lastEvidenceSubmissionTimestamp) external {
+        DisputeWindow storage window = _seedDisputeWindow(
+            dispute.input.channelId,
+            dispute.input.forkId,
+            lastEvidenceSubmissionTimestamp,
+            lastEvidenceSubmissionTimestamp
+        );
+        window.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
+    }
+
+    function observeWindow(bytes32 channelId, bytes32 forkId)
+        external
+        view
+        returns (bool windowExists, bool isExpired)
+    {
+        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
+        windowExists = window.evidence.creationTimestamp != 0;
+        (isExpired,) = _isKillPeriodExpired(window, _getEvidenceTime());
+    }
+
+    function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
+        return disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.length;
+    }
+
+    /// Opens a dispute window the way `DisputeManagerFacet.uploadDispute` does,
+    /// including the window's own fork id, so a reduced-result guard can report
+    /// a window fork distinct from the reduced forks it compares.
+    function seedDisputeWindow(bytes32 channelId, bytes32 windowForkId, uint256 creationTimestamp) external {
+        _seedDisputeWindow(channelId, windowForkId, creationTimestamp, creationTimestamp);
+    }
+
+    /// Drives the reduced-result commit against an arbitrary window slot, so the
+    /// missing-window branch is reachable; every production caller creates the
+    /// window or checks it first.
+    function commitReducedResult(bytes32 channelId, bytes32 forkId, bytes32 reducedForkId) external {
+        _commitToDisputeReducedResult(
+            channelId, disputeData[channelId].disputeWindowMap[forkId], reducedForkId, block.timestamp
+        );
+    }
+
+    function handleBlockAuthorNotParticipant(bytes memory encodedProof, Dispute memory dispute)
+        external
+        returns (address)
+    {
+        return _handleDisputeBlockAuthorNotParticipant(encodedProof, dispute);
+    }
+
+    /// the chain snapshot a block challenge's region is established against
+    function seedSnapshot(bytes32 channelId, StateSnapshot memory snapshot) external {
+        stateSnapshots[channelId] = snapshot;
+    }
+
+    /// Exposes the internal slash-window read so the shrink behaviour can be asserted directly.
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        external
+        view
+        returns (address[] memory)
+    {
+        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
+    }
+
+    /// Seeds a channel whose posted snapshot already dropped a joiner: one
+    /// consumed inbound block holds every signer's JOIN, the snapshot lists
+    /// only `survivor`, and `slashed` carries an on-chain slash inside the
+    /// fork's dispute window.
+    function seedReducedChannel(
+        bytes32 channelId,
+        bytes32 forkId,
+        bytes32 inboundHead,
+        address survivor,
+        address slashed,
+        uint256 slashTimestamp
+    ) external {
+        MessageBlock storage inbound = inboundMessageBlockMap[channelId][inboundHead];
+        inbound.blockHeight = 1;
+        inbound.timestamp = slashTimestamp;
+        inbound.messages.push(_joinMessage(channelId, survivor));
+        inbound.messages.push(_joinMessage(channelId, slashed));
+        channelBalances[channelId].latestInboundMessageBlockHash = inboundHead;
+        SnapshotData storage snapshot = stateSnapshots[channelId].snapshotData;
+        snapshot.participants.push(survivor);
+        snapshot.latestInboundMessageBlockHash = inboundHead;
+        disputeData[channelId].onChainSlashes.push(OnChainSlash({participant: slashed, timestamp: slashTimestamp}));
+        _seedDisputeWindow(channelId, forkId, slashTimestamp, slashTimestamp);
+    }
+
+    function pendingParticipants(bytes32 channelId) external view returns (address[] memory) {
+        return _getPendingParticipants(channelId);
+    }
+
+    /// Seeds only the channel's recorded on-chain slash set, so the slash-subset
+    /// handler can be driven against an exact set without the rest of a channel.
+    function seedOnChainSlashes(bytes32 channelId, address[] memory slashedParticipants) external {
+        for (uint256 i = 0; i < slashedParticipants.length; i++) {
+            disputeData[channelId].onChainSlashes
+                .push(OnChainSlash({participant: slashedParticipants[i], timestamp: block.timestamp}));
+        }
+    }
+
+    function handleOnChainSlashesNotSubset(bytes memory encodedProof, Dispute memory dispute)
+        external
+        view
+        returns (address)
+    {
+        return _handleDisputeOnChainSlashesNotSubset(encodedProof, dispute);
+    }
+
+    function handleInvalidDisputeReason(bytes memory encodedProof, Dispute memory dispute)
+        external
+        pure
+        returns (address)
+    {
+        return _handleInvalidDisputeReason(encodedProof, dispute);
+    }
+
+    function _joinMessage(bytes32 channelId, address participant) private pure returns (Message memory) {
+        Balance memory balance = Balance({amount: 0, data: ""});
+        return Message({
+            messageType: MESSAGE_TYPE_JOIN,
+            participant: participant,
+            balance: balance,
+            data: abi.encode(
+                JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
+            )
+        });
+    }
+}
+
+/// Exposes the internal inbound walk so its report can be asserted directly.
+contract InboundVerificationHarness is StateChannelCommon {
+    function verifyInboundMessageBlocks(
+        bytes32 previousInboundMessageBlockHash,
+        bytes32 latestInboundMessageBlockHash,
+        MessageBlock[] memory inboundMessageBlocks
+    ) external pure returns (bool, bytes32, uint256, uint8) {
+        return _verifyInboundMessageBlocks(
+            previousInboundMessageBlockHash, latestInboundMessageBlockHash, inboundMessageBlocks
+        );
+    }
+
+    /// Drives the inbound-block store directly, so the already-persisted guard
+    /// is reachable without an append flow that recomputes the block hash.
+    function persistInboundMessageBlock(bytes32 channelId, bytes32 blockHash, MessageBlock memory messageBlock)
+        external
+    {
+        _persistInboundMessageBlock(channelId, blockHash, messageBlock);
+    }
+}
+
+/// Wires SM + Utility so public computeDisputeOutputState can be exercised.
+contract DisputeOutputStateHarness is DisputeVerificationFacet {
+    constructor(AStateMachine sm, address util) {
+        stateMachineImplementation = sm;
+        utilityFacetAddress = util;
+    }
+
+    /// Exposes the outbound dispatch so its balance agreement check can be
+    /// driven without a full snapshot-application flow.
+    function processOutboundMessage(Message memory message) external returns (bool) {
+        return _processOutboundMessage(message);
+    }
+}
+
+// test naming: test_<targetFunction>_<property>
+contract DisputeVerificationFacetTest is DiamondHarness {
+    StateChannelManagerInterface internal diamond;
+    InboundVerificationHarness internal verificationHarness;
+    DisputeOutputStateHarness internal outputHarness;
+
+    bytes32 internal constant CHANNEL_ID = keccak256("dv-channel");
+    bytes32 internal constant FORK_ID = keccak256("dv-fork");
+    bytes32 internal constant SNAPSHOT_HEAD = keccak256("dv-inbound-head");
+    /// Absolute base for the kill-period cases. A local copy of `block.timestamp`
+    /// is not safe to reuse across `vm.warp`: the optimizer may re-read TIMESTAMP
+    /// after the warp, so the expected operands are derived from this constant.
+    uint256 internal constant KILL_PERIOD_BASE_TIMESTAMP = 1_000;
+
+    function setUp() public {
+        diamond = deployDiamond();
+        verificationHarness = new InboundVerificationHarness();
+        outputHarness = new DisputeOutputStateHarness(stateMachine, address(utilityFacet));
+    }
+
+    // reduce() reads no participant set: the disputes' listed slashes stay candidates, deduplicated, even with no
+    // channel; only the output transition decides which of them are participants.
+    function test_reduce_listedSlashesWithoutChannel_keptAsDedupedCandidates() public {
+        Dispute[] memory disputes = new Dispute[](2);
+        address[] memory fakeSlashes = new address[](20);
+        for (uint256 i = 0; i < 20; i++) {
+            fakeSlashes[i] = address(uint160(i + 1));
+        }
+        for (uint256 i = 0; i < 2; i++) {
+            disputes[i].input.channelId = CHANNEL_ID;
+            disputes[i].input.forkId = FORK_ID;
+            disputes[i].input.onChainSlashes = fakeSlashes;
+        }
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+        assertEq(abi.encode(out.slashedParticipants), abi.encode(fakeSlashes));
+    }
+
+    // A reduction already mined for the fork moves the channel snapshot past the
+    // slashed signer; a late reducer must still fold that signer's on-chain
+    // slash, or its output diverges from the reduction on chain. The fold reads
+    // no snapshot, so the channel snapshot cannot change it.
+    function test_reduce_snapshotAlreadyPastSlashedSigner_stillFoldsOnChainSlash() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address survivor = address(0xA11CE);
+        address slashed = address(0xB0B);
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, survivor, slashed, 100);
+        assertEq(harness.pendingParticipants(CHANNEL_ID).length, 0);
+
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0].input.channelId = CHANNEL_ID;
+        disputes[0].input.forkId = FORK_ID;
+
+        ReduceOutput memory out = harness.reduce(disputes);
+        assertEq(out.slashedParticipants.length, 1);
+        assertEq(out.slashedParticipants[0], slashed);
+    }
+
+    // The candidate set is the deduplicated union of every dispute's listed slashes, whatever their count.
+    function testFuzz_reduce_listedSlashCandidatesAreDeduplicated(uint8 slashCount) public {
+        vm.assume(slashCount > 0);
+
+        address[] memory fakeSlashes = new address[](slashCount);
+        for (uint256 i = 0; i < slashCount; i++) {
+            fakeSlashes[i] = address(uint160(i + 1));
+        }
+        Dispute[] memory disputes = new Dispute[](2);
+        for (uint256 i = 0; i < 2; i++) {
+            disputes[i].input.channelId = CHANNEL_ID;
+            disputes[i].input.forkId = FORK_ID;
+            disputes[i].input.onChainSlashes = fakeSlashes;
+        }
+
+        ReduceOutput memory out = diamond.reduce(disputes);
+        assertEq(abi.encode(out.slashedParticipants), abi.encode(fakeSlashes));
+    }
+
+    // ---- public computeDisputeOutputState (removals + exit shrink) ----
+    // Participants include address(0) as a sentinel: a removal list with trailing address(0)
+    // slots would strip the sentinel, so these tests go red if such slots reach removeParticipant.
+
+    function test_computeDisputeOutputState_noRemoval_keepsAllParticipantsAndNoExits() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        // no selfRemoval, no timeout, no onChainSlashes
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        assertEq(result.participants.length, 4);
+        assertEq(result.participants[0], participants[0]);
+        assertEq(result.participants[1], participants[1]);
+        assertEq(result.participants[2], participants[2]);
+        assertEq(result.participants[3], address(0));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    function test_removePresentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(false, false, false);
+    }
+
+    function test_removeAbsentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(false, true, false);
+    }
+
+    function test_removeRepeatedRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(false, false, true);
+    }
+
+    function test_slashPresentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(true, false, false);
+    }
+
+    function test_slashAbsentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(true, true, false);
+    }
+
+    function test_slashRepeatedRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(true, false, true);
+    }
+
+    function _assertWrapperExit(bool slash, bool absent, bool repeated) internal {
+        MathState memory initial;
+        initial.participants = _participantsWithZeroSentinel();
+        initial.balances = _participantBalances(initial.participants.length);
+        MathStateMachine machine = new MathStateMachine(10_000_000, MAX_CHANNEL_PARTICIPANTS);
+        machine.setState(abi.encode(initial));
+        address target = absent ? address(0xBAD) : initial.participants[0];
+        (bool changed, ExitChannel memory returnedExit) =
+            slash ? machine.slashParticipant(target) : machine.removeParticipant(target);
+        assertEq(changed, !absent);
+        MathState memory afterState = abi.decode(machine.getState(), (MathState));
+        assertEq(afterState.participants.length, absent ? 4 : 3);
+        assertEq(afterState.balances.length, absent ? 4 : 3);
+        for (uint256 i; i < afterState.participants.length; i++) {
+            assertEq(afterState.participants[i], initial.participants[i + (absent ? 0 : 1)]);
+            assertEq(afterState.balances[i], initial.balances[i + (absent ? 0 : 1)]);
+        }
+        Message[] memory messages = machine.getOutboundMessages();
+        assertEq(messages.length, absent ? 0 : 1);
+        assertEq(returnedExit.participant, absent ? address(0) : target);
+        assertEq(returnedExit.balance.amount, absent ? 0 : 10);
+        if (!absent) {
+            assertEq(messages[0].messageType, MESSAGE_TYPE_EXIT);
+            assertEq(messages[0].participant, returnedExit.participant);
+            assertEq(messages[0].balance.amount, returnedExit.balance.amount);
+        }
+        if (repeated) {
+            bytes memory beforeRepeat = machine.getState();
+            (bool changedAgain, ExitChannel memory again) =
+                slash ? machine.slashParticipant(target) : machine.removeParticipant(target);
+            assertFalse(changedAgain);
+            assertEq(again.participant, address(0));
+            assertEq(again.balance.amount, 0);
+            assertEq(machine.getState(), beforeRepeat);
+            assertEq(machine.getOutboundMessages().length, 1);
+        }
+    }
+
+    function test_computeDisputeOutputState_selfRemovalOnly_removesDisputerAndEmitsExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.selfRemoval = true;
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        assertEq(result.participants.length, 3);
+        assertEq(result.participants[0], participants[1]);
+        assertEq(result.participants[1], participants[2]);
+        assertEq(result.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[0]), _oneAmount(10));
+    }
+
+    function test_computeDisputeOutputState_timeoutOnly_removesTimedOutParticipantAndEmitsExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.timeout.participant = participants[2];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        assertEq(result.participants.length, 3);
+        assertEq(result.participants[0], participants[0]);
+        assertEq(result.participants[1], participants[1]);
+        assertEq(result.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[2]), _oneAmount(30));
+    }
+
+    // ---- LocalDiamond gas-capped dispute computation ----
+
+    function test_computeDisputeOutputState_localDiamondBudgetUsedUp_revertsDisputeExecutionOutOfGas() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.timeout.participant = participants[2];
+        LocalDiamond localDiamond = _deployLocalDiamond(30_000);
+
+        vm.expectPartialRevert(ErrorDisputeExecutionOutOfGas.selector);
+        localDiamond.computeDisputeOutputState(input, snapshot, encodedState, new MessageBlock[](0));
+    }
+
+    // The out-of-gas happens inside the state machine's `setState`; the facet keeps the 1/64 that the nested call
+    // leaves it and bubbles an empty revert.
+    function test_computeDisputeOutputState_localDiamondNestedCallUsesUpBudget_revertsDisputeExecutionOutOfGas()
+        public
+    {
+        address[] memory participants = new address[](150);
+        for (uint256 i = 0; i < participants.length; i++) {
+            participants[i] = address(uint160(0xA000 + i));
+        }
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        LocalDiamond localDiamond = _deployLocalDiamond(3_000_000);
+
+        vm.expectPartialRevert(ErrorDisputeExecutionOutOfGas.selector);
+        localDiamond.computeDisputeOutputState(input, snapshot, encodedState, new MessageBlock[](0));
+    }
+
+    function test_computeDisputeOutputState_localDiamondFacetRevertWithinBudget_keepsRevertBytes() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](1);
+        inboundMessageBlocks[0].messages = new Message[](1);
+        inboundMessageBlocks[0].messages[0].messageType = unsupportedMessageType;
+        inboundMessageBlocks[0].messages[0].participant = participants[1];
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        LocalDiamond localDiamond = _deployLocalDiamond(3_000_000);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeStateMachineInboundProcessingFailed.selector,
+                uint256(0),
+                uint256(0),
+                participants[1],
+                unsupportedMessageType,
+                keccak256(encodedState)
+            )
+        );
+        localDiamond.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    // A state the state machine cannot decode reverts without data long before the budget is used up.
+    function test_computeDisputeOutputState_localDiamondEmptyRevertWithinBudget_staysEmpty() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        LocalDiamond localDiamond = _deployLocalDiamond(3_000_000);
+
+        vm.expectRevert(bytes(""));
+        localDiamond.computeDisputeOutputState(input, snapshot, hex"01", new MessageBlock[](0));
+    }
+
+    function test_computeDisputeOutputSnapshotData_localDiamondWithinBudget_readsParticipantsOfOutputState() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.timeout.participant = participants[2];
+        LocalDiamond localDiamond = _deployLocalDiamond(0);
+
+        DisputeOutputState memory out =
+            localDiamond.computeDisputeOutputState(input, snapshot, encodedState, new MessageBlock[](0));
+        SnapshotData memory outputSnapshot =
+            localDiamond.computeDisputeOutputSnapshotData(input, snapshot, encodedState, new MessageBlock[](0));
+
+        assertEq(outputSnapshot.stateMachineStateHash, keccak256(out.encodedModifiedState));
+        assertEq(outputSnapshot.participants.length, 3);
+        assertEq(outputSnapshot.participants[0], participants[0]);
+        assertEq(outputSnapshot.participants[1], participants[1]);
+        assertEq(outputSnapshot.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[2]), _oneAmount(30));
+    }
+
+    function test_computeDisputeOutputState_selfRemovalAndTimeout_removesBothInOrderAndEmitsExits() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.selfRemoval = true;
+        input.timeout.participant = participants[1];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        // removal order: selfRemoval first, then timeout
+        assertEq(result.participants.length, 2);
+        assertEq(result.participants[0], participants[2]);
+        assertEq(result.participants[1], address(0));
+        address[] memory expectedExits = new address[](2);
+        expectedExits[0] = participants[0];
+        expectedExits[1] = participants[1];
+        uint256[] memory expectedAmounts = new uint256[](2);
+        expectedAmounts[0] = 10;
+        expectedAmounts[1] = 20;
+        _assertExactExitMessages(out, expectedExits, expectedAmounts);
+    }
+
+    function test_computeDisputeOutputState_slashSuppressesTimeout_keepsTimeoutTargetAndExitsSlashOnly() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.onChainSlashes = _oneAddress(participants[0]);
+        input.timeout.participant = participants[2];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        // the slash removes a participant → the timeout is not applied; only the slash exits
+        assertEq(result.participants.length, 3);
+        assertEq(result.participants[0], participants[1]);
+        assertEq(result.participants[1], participants[2]);
+        assertEq(result.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[0]), _oneAmount(10));
+    }
+
+    function test_staleSnapshotRecordsSlashThenAbsentStateApplicationIsNoOp() public {
+        address[] memory chainParticipants = new address[](3);
+        for (uint256 i; i < 3; i++) {
+            chainParticipants[i] = vm.addr(i + 1);
+        }
+        _openChannel(chainParticipants);
+        BlockDoubleSignProof memory proof = BlockDoubleSignProof({
+            block1: _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 1, 10, bytes32(0)),
+            block2: _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 1, 11, bytes32(0))
+        });
+        FraudProof[] memory proofs = new FraudProof[](1);
+        proofs[0] = FraudProof(FraudProofType.BlockDoubleSign, chainParticipants[0], abi.encode(proof));
+        diamond.applyFraudProofs(proofs, FraudProofVerificationContext({channelId: CHANNEL_ID}));
+        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, chainParticipants[0]));
+        address[] memory remaining = new address[](2);
+        remaining[0] = chainParticipants[1];
+        remaining[1] = chainParticipants[2];
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = remaining[0];
+        input.onChainSlashes = _oneAddress(chainParticipants[0]);
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(remaining, input);
+        assertEq(abi.encode(result.participants), abi.encode(remaining));
+        assertEq(abi.encode(result.balances), abi.encode(_participantBalances(remaining.length)));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    function test_computeDisputeOutputState_absentSlashPreservesStateAndEmitsNoExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.onChainSlashes = _oneAddress(address(0xDEAD));
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+        assertEq(abi.encode(result.participants), abi.encode(participants));
+        assertEq(abi.encode(result.balances), abi.encode(_participantBalances(participants.length)));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    function test_computeDisputeOutputState_absentRemovalPreservesStateAndEmitsNoExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = address(0xDEAD);
+        input.selfRemoval = true;
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+        assertEq(abi.encode(result.participants), abi.encode(participants));
+        assertEq(abi.encode(result.balances), abi.encode(_participantBalances(participants.length)));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    // reduceOutput path (keeps prior coverage of reduceOutputToSnapshotData)
+    function test_reduceOutputToSnapshotData_timeoutOnly_removesTimedOutParticipant() public {
+        address[] memory participants = _participants();
+        ReduceOutput memory reducedOutput;
+        reducedOutput.timeout.participant = participants[2];
+
+        address[] memory output = _outputParticipants(reducedOutput, participants);
+
+        assertEq(output.length, 2);
+        assertEq(output[0], participants[0]);
+        assertEq(output[1], participants[1]);
+    }
+
+    function test_reduceOutputToSnapshotData_slashOnly_removesSlashedParticipant() public {
+        address[] memory participants = _participants();
+        ReduceOutput memory reducedOutput;
+        reducedOutput.slashedParticipants = new address[](1);
+        reducedOutput.slashedParticipants[0] = participants[0];
+
+        address[] memory output = _outputParticipants(reducedOutput, participants);
+
+        assertEq(output.length, 2);
+        assertEq(output[0], participants[1]);
+        assertEq(output[1], participants[2]);
+    }
+
+    function test_reduceOutputToSnapshotData_slashAndTimeout_ignoresTimeout() public {
+        address[] memory participants = _participants();
+        ReduceOutput memory reducedOutput;
+        reducedOutput.slashedParticipants = new address[](1);
+        reducedOutput.slashedParticipants[0] = participants[0];
+        reducedOutput.timeout.participant = participants[2];
+
+        address[] memory output = _outputParticipants(reducedOutput, participants);
+
+        assertEq(output.length, 2);
+        assertEq(output[0], participants[1]);
+        assertEq(output[1], participants[2]);
+    }
+
+    function test_reduceOutputToSnapshotData_slashTimeoutAndSelfRemoval_ignoresTimeout() public {
+        address[] memory participants = _participants();
+        ReduceOutput memory reducedOutput;
+        reducedOutput.slashedParticipants = new address[](1);
+        reducedOutput.slashedParticipants[0] = participants[0];
+        reducedOutput.timeout.participant = participants[2];
+        reducedOutput.selfRemovals = new address[](1);
+        reducedOutput.selfRemovals[0] = participants[1];
+
+        address[] memory output = _outputParticipants(reducedOutput, participants);
+
+        assertEq(output.length, 1);
+        assertEq(output[0], participants[2]);
+    }
+
+    // Fork F1 reduces a slash of `slashed` into F2. The F2 window still sees the
+    // same on-chain slash as a candidate, but `slashed` is no participant of F2:
+    // the slash is not applied and does not suppress F2's timeout of `timedOut`.
+    function test_reduceOutputToSnapshotData_ancestorSlashInChildFork_appliesTimeout() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory participants = _participants();
+        address slashed = participants[0];
+        address timedOut = participants[1];
+        bytes32 childForkId = keccak256("dv-child-fork");
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, timedOut, slashed, 100);
+
+        Dispute[] memory parentDisputes = new Dispute[](1);
+        parentDisputes[0].input.channelId = CHANNEL_ID;
+        parentDisputes[0].input.forkId = FORK_ID;
+        address[] memory childParticipants = _outputParticipants(harness.reduce(parentDisputes), participants);
+        assertEq(childParticipants.length, 2);
+        assertEq(childParticipants[0], timedOut);
+        assertEq(childParticipants[1], participants[2]);
+
+        harness.seedDisputeWindow(CHANNEL_ID, childForkId, 200);
+        Dispute[] memory childDisputes = new Dispute[](1);
+        childDisputes[0].input.channelId = CHANNEL_ID;
+        childDisputes[0].input.forkId = childForkId;
+        childDisputes[0].input.timeout.participant = timedOut;
+        ReduceOutput memory childOutput = harness.reduce(childDisputes);
+        assertEq(childOutput.slashedParticipants.length, 1);
+        assertEq(childOutput.slashedParticipants[0], slashed);
+
+        address[] memory output = _outputParticipants(childOutput, childParticipants);
+        assertEq(output.length, 1);
+        assertEq(output[0], participants[2]);
+    }
+
+    // A dispute of F2 that lists the on-chain slash of `slashed`, a participant only of the ancestor F1, is
+    // provably invalid whatever its other reasons: InvalidDisputeReason slashes its disputer. Listing a
+    // participant of F2's latest state is not.
+    function test_handleInvalidDisputeReason_slashOfAncestorForkParticipant_slashesDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory participants = _participants();
+        address slashed = participants[0];
+        StateSnapshot memory childGenesis;
+        childGenesis.snapshotData.originForkId = FORK_ID;
+        childGenesis.snapshotData.participants = new address[](2);
+        childGenesis.snapshotData.participants[0] = participants[1];
+        childGenesis.snapshotData.participants[1] = participants[2];
+        childGenesis.forkId = keccak256(abi.encode(childGenesis.snapshotData));
+
+        Dispute memory dispute;
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = childGenesis.forkId;
+        dispute.input.disputer = participants[2];
+        dispute.input.timeout.participant = participants[1];
+        dispute.input.onChainSlashes = _oneAddress(slashed);
+        bytes memory proof = abi.encode(InvalidDisputeReason({latestStateSnapshot: childGenesis}));
+
+        assertEq(harness.handleInvalidDisputeReason(proof, dispute), participants[2]);
+        dispute.input.onChainSlashes = _oneAddress(participants[1]);
+        assertEq(harness.handleInvalidDisputeReason(proof, dispute), address(0));
+    }
+
+    // ---- getOnChainSlashedParticipantsUpToTimestamp (hits _shrinkAddressArray) ----
+
+    function test_getOnChainSlashedParticipantsUpToTimestamp_returnsStrictPrefixByCutoff() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address first = address(0xB1);
+        address second = address(0xB2);
+
+        // known timestamps so cutoffs are unambiguous
+        uint256 t1 = 1000;
+        uint256 t2 = 2000;
+
+        vm.warp(t1);
+        Dispute memory d1 = _structurallyInvalidDispute(keccak256("slash-cutoff-1"), first);
+        harness.seedDispute(d1, t1);
+        harness.killDispute(d1);
+
+        vm.warp(t2);
+        Dispute memory d2 = _structurallyInvalidDispute(keccak256("slash-cutoff-2"), second);
+        harness.seedDispute(d2, t2);
+        harness.killDispute(d2);
+
+        // (a) cutoff before any slash -> empty
+        address[] memory beforeAny = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t1 - 1);
+        assertEq(beforeAny.length, 0);
+
+        // (b) cutoff between slashes -> strict prefix of first only
+        address[] memory between = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t1);
+        assertEq(between.length, 1);
+        assertEq(between[0], first);
+
+        address[] memory stillBetween = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t2 - 1);
+        assertEq(stillBetween.length, 1);
+        assertEq(stillBetween[0], first);
+
+        // (c) cutoff after all -> every slash, order preserved
+        address[] memory afterAll = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t2);
+        assertEq(afterAll.length, 2);
+        assertEq(afterAll[0], first);
+        assertEq(afterAll[1], second);
+    }
+
+    // the structure predicate addresses the submitted block index of the last milestone
+    function test_isInvalidBlockStructure_validOneMilestoneChain_returnsFalse() public {
+        StateProof memory stateProof = _twoBlockStateProof();
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 0));
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 2), "past the milestone");
+    }
+
+    function test_isInvalidBlockStructure_invalidSignature_returnsTrue() public {
+        StateProof memory stateProof = _twoBlockStateProof();
+        stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
+        assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
+    }
+
+    function test_isInvalidBlockStructure_brokenLink_returnsTrue() public {
+        StateProof memory stateProof = _twoBlockStateProof();
+        stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256("wrong"));
+        assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
+    }
+
+    function test_isInvalidBlockStructure_skippedHeight_returnsTrue() public {
+        StateProof memory stateProof = _twoBlockStateProof();
+        stateProof.milestones[0].blockConfirmations[1].signedBlock = _makeSignedBlock(
+            2,
+            CHANNEL_ID,
+            FORK_ID,
+            2,
+            2,
+            keccak256(stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock)
+        );
+        assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
+    }
+
+    function test_disputeWindowObservation_distinguishesAbsentActiveAndExpired() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("window"), address(0xA1));
+
+        (bool exists, bool expired) = harness.observeWindow(CHANNEL_ID, dispute.input.forkId);
+        assertFalse(exists);
+        assertFalse(expired);
+
+        harness.seedDispute(dispute, block.timestamp);
+        (exists, expired) = harness.observeWindow(CHANNEL_ID, dispute.input.forkId);
+        assertTrue(exists);
+        assertFalse(expired);
+
+        vm.warp(block.timestamp + 10);
+        (exists, expired) = harness.observeWindow(CHANNEL_ID, dispute.input.forkId);
+        assertTrue(exists);
+        assertTrue(expired);
+    }
+
+    function test_applyDisputeFraudProofs_expiredDispute_reverts() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-apply"), address(0xA1));
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDispute(dispute, seededAt);
+        // the harness kill period is 10s, so warping to its end expires it
+        vm.warp(seededAt + 10);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 10)
+        );
+        harness.applyDisputeFraudProofs(proofs);
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+    }
+
+    function test_applyDisputeFraudProofs_validNonzeroVerdict_killsDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("valid-verdict"), address(0xA1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 0);
+        address[] memory slashed =
+            harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP);
+        assertEq(slashed.length, 1);
+        assertEq(slashed[0], dispute.input.disputer);
+    }
+
+    // an outsider names target zero on an invalid proof -> the handler's zero
+    // verdict must not count as a match against an honest dispute
+    function test_applyDisputeFraudProofs_zeroTargetOnHonestDispute_doesNotKill() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyValidDispute(keccak256("zero-target"), address(0xA1));
+        // the block-structure proof must fail on this dispute -> handler verdict is zero
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        proofs[0].participant = address(0);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+        assertEq(harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length, 0);
+    }
+
+    // every family with a well-formed failing payload: a zero target never kills an honest
+    // dispute or records a slash; the slash-subset family reverts by design
+    function test_applyDisputeFraudProofs_zeroTargetEveryFamily_neverKills() public {
+        for (uint8 i = 0; i <= uint8(type(DisputeFraudProofType).max); i++) {
+            DisputeFraudProofType proofType = DisputeFraudProofType(i);
+            DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+            Dispute memory dispute = _structurallyValidDispute(keccak256(abi.encode("zero-target", i)), address(0xA1));
+            vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+            harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+            DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+            proofs[0].dispute = dispute;
+            proofs[0].proofType = proofType;
+            proofs[0].encodedProof = _defaultDisputeFraudPayload(proofType, dispute);
+            proofs[0].participant = address(0);
+            if (proofType == DisputeFraudProofType.DisputeOnChainSlashesNotSubset) {
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        RaceConditionOnChainSlashes.selector, CHANNEL_ID, new address[](0), new address[](0)
+                    )
+                );
+            }
+            vm.prank(address(0xBEEF));
+            harness.applyDisputeFraudProofs(proofs);
+
+            assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1, "dispute stays committed");
+            assertEq(
+                harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length,
+                0,
+                "nobody slashed"
+            );
+        }
+    }
+
+    function test_killDispute_expiredDispute_reverts() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-kill"), address(0xA1));
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDispute(dispute, seededAt);
+        // the harness kill period is 10s, so it ended at seededAt + 10 and the
+        // call lands 5s later: the two reported timestamps are distinct
+        vm.warp(seededAt + 15);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 15)
+        );
+        harness.killDispute(dispute);
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+    }
+
+    function test_applyDisputeFraudProofs_mixedBatchWithExpiredItem_revertsAtomically() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory active = _structurallyInvalidDispute(keccak256("active"), address(0xA1));
+        Dispute memory expired = _structurallyInvalidDispute(keccak256("expired"), address(0xA2));
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDispute(expired, seededAt);
+        // the second dispute is seeded 5s later, so its kill period ends at
+        // seededAt + 15 and it is still live when the batch runs at seededAt + 12
+        vm.warp(seededAt + 5);
+        harness.seedDispute(active, seededAt + 5);
+        vm.warp(seededAt + 12);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](2);
+        proofs[0] = _structuralProof(active);
+        proofs[1] = _structuralProof(expired);
+        // only the second entry is past its kill period
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 12)
+        );
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, active.input.forkId), 1);
+        assertEq(harness.commitmentCount(CHANNEL_ID, expired.input.forkId), 1);
+    }
+
+    function test_uploadDispute_timeoutWindowCreatedBeforeEligibility_reverts() public {
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(1);
+        participants[1] = vm.addr(2);
+        _openChannel(participants);
+        (, StateSnapshot memory snapshot) = diamond.isChannelOpen(CHANNEL_ID);
+
+        Dispute memory firstDispute;
+        firstDispute.input.channelId = CHANNEL_ID;
+        firstDispute.input.forkId = snapshot.forkId;
+        firstDispute.input.disputer = participants[0];
+        // anchored at the consumed inbound so the upload reaches the race checks
+        firstDispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        firstDispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
+        vm.prank(participants[0]);
+        diamond.uploadDispute(_confirmation(firstDispute));
+
+        uint256 eligibleAt = block.timestamp + 1;
+        vm.warp(eligibleAt);
+        Dispute memory timeoutDispute;
+        timeoutDispute.input.channelId = CHANNEL_ID;
+        timeoutDispute.input.forkId = snapshot.forkId;
+        timeoutDispute.input.disputer = participants[1];
+        timeoutDispute.input.timeout.participant = participants[0];
+        timeoutDispute.input.timeout.minTimeStamp = eligibleAt;
+        timeoutDispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        timeoutDispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
+
+        vm.prank(participants[1]);
+        // the error now carries (windowCreationTimestamp, minTimestamp); this case
+        // pins the identity only -- the argument values are asserted end to end.
+        vm.expectPartialRevert(RaceConditionDisputeTimeoutWindowCreatedTooEarly.selector);
+        diamond.uploadDispute(_confirmation(timeoutDispute));
+    }
+
+    function test_validateTimeoutCalldataPostedProof_validProof_returnsTrueAndPreservesOriginForkId() public {
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) = _timeoutCalldataPostedProof();
+
+        assertNotEq(proof.latestStateSnapshot.forkId, proof.latestStateSnapshot.snapshotData.originForkId);
+        assertTrue(diamond.validateTimeoutCalldataPostedProof(proof, dispute));
+    }
+
+    function test_validateTimeoutCalldataPostedProof_wrongOriginForkId_returnsFalse() public {
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) = _timeoutCalldataPostedProof();
+        proof.latestStateSnapshot.snapshotData.originForkId = keccak256("wrong-origin");
+
+        assertFalse(diamond.validateTimeoutCalldataPostedProof(proof, dispute));
+    }
+
+    // A height-0 author gets an extra evidenceTime of grace on the calldata-posted
+    // defense. graceWindow = p2p+agreement+chainFallback + evidenceTime; a post at
+    // this edge is beyond the no-grace window and only validates because of the
+    // +evidenceTime first-block grace. (Separate tests: each opens the channel once.)
+    function _firstBlockGraceWindow() internal view returns (uint256) {
+        return
+            diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
+                + diamond.getChainFallbackTime();
+    }
+
+    function test_validateTimeoutCalldataPostedProof_firstBlockGraceEdge_valid() public {
+        require(diamond.getEvidenceTime() > 0, "evidenceTime is 0 - grace not observable");
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) =
+            _timeoutCalldataPostedProofPostedAfter(_firstBlockGraceWindow());
+        assertTrue(diamond.validateTimeoutCalldataPostedProof(proof, dispute), "first-block grace edge rejected");
+    }
+
+    function test_validateTimeoutCalldataPostedProof_pastFirstBlockGrace_invalid() public {
+        require(diamond.getEvidenceTime() > 0, "evidenceTime is 0 - grace not observable");
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) =
+            _timeoutCalldataPostedProofPostedAfter(_firstBlockGraceWindow() + 1);
+        assertFalse(
+            diamond.validateTimeoutCalldataPostedProof(proof, dispute), "calldata posted past the grace window accepted"
+        );
+    }
+
+    function test_disputeBlockAuthorNotParticipant_validOutsiderBlock_killsDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof();
+
+        // The signature and block chain are structurally valid. The dedicated
+        // proof is needed because the author is absent from both snapshots.
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 1));
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
+    function test_disputeBlockAuthorNotParticipant_forgedResultingSnapshot_rejected() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof();
+        proof.resultingStateSnapshot.snapshotData.stateMachineStateHash = keccak256("forged");
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
+    }
+
+    function test_disputeBlockAuthorNotParticipant_authorInEitherSnapshot_rejected() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address signer = vm.addr(1);
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        previousSnapshot.snapshotData.participants[0] = signer;
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
+
+        (previousSnapshot, resultingSnapshot) = _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = signer;
+        (dispute, proof,) = _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
+    }
+
+    function test_disputeBlockAuthorNotParticipant_authorInStaleResultingSnapshot_valid() public {
+        // The author is in the block's declared resulting snapshot, but that
+        // snapshot's coordinates do not match the block (a departed member
+        // naming a stale snapshot). The coordinate binding must not count it, so
+        // the author is not a participant and the proof is valid - matching the
+        // off-chain author gate so an honest auditor is never slashed.
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = vm.addr(1);
+        // stale: the resulting snapshot belongs to a later height, not this block
+        resultingSnapshot.blockHeight = 5;
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
+    function test_disputeBlockAuthorNotParticipant_authorInWrongForkResultingSnapshot_valid() public {
+        // The author is in the block's declared resulting snapshot, and the
+        // height matches, but the snapshot's forkId does not (a departed
+        // member naming a stale snapshot from a different fork at the same
+        // height). The coordinate binding must not count it, so the author is
+        // not a participant and the proof is valid - matching the off-chain
+        // author gate so an honest auditor is never slashed.
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = vm.addr(1);
+        // stale: the resulting snapshot belongs to a different fork, not this block's
+        resultingSnapshot.forkId = keccak256("other-fork");
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
+    function test_disputeBlockAuthorNotParticipant_indexOutsideUnfinalTail_rejected() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof();
+        // control: with the chain snapshot at block 0's height, block 1 is in the unfinal tail and the proof holds
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+
+        // the chain snapshot at block 1's height makes block 1 finalized history: the same proof is rejected
+        StateSnapshot memory atBlockOne = abi.decode(abi.encode(proof.previousStateSnapshot), (StateSnapshot));
+        atBlockOne.blockHeight = 1;
+        harness.seedSnapshot(CHANNEL_ID, atBlockOne);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0), "final block");
+
+        // an index past the last milestone is not eligible either
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        proof.blockIndex = 2;
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0), "past the run");
+    }
+
+    function test_blockInvalidStateTransition_wrongTurnWithCorrectSnapshot_slashesSigner() public {
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(1);
+        participants[1] = vm.addr(2);
+        _openChannel(participants);
+
+        MathState memory previousState;
+        previousState.participants = participants;
+        previousState.balances = new uint256[](2);
+        previousState.currentTurnIndex = 0;
+        bytes memory encodedPreviousState = abi.encode(previousState);
+
+        StateSnapshot memory previousSnapshot;
+        previousSnapshot.forkId = FORK_ID;
+        previousSnapshot.snapshotData.stateMachineStateHash = keccak256(encodedPreviousState);
+        previousSnapshot.snapshotData.participants = participants;
+
+        MathState memory resultingState = previousState;
+        resultingState.number = 1;
+        resultingState.currentTurnIndex = 1;
+        // the snapshot the replay builds for a correct-turn first block
+        StateSnapshot memory resultingSnapshot = abi.decode(abi.encode(previousSnapshot), (StateSnapshot));
+        resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
+        resultingSnapshot.blockHeight = 0;
+        resultingSnapshot.timestamp = 1;
+        bytes32 resultingSnapshotHash = keccak256(abi.encode(resultingSnapshot));
+
+        // control: the turn holder's block with this snapshot is honest -> nobody slashed
+        diamond.applyFraudProofs(
+            _addOneProof(1, previousSnapshot, encodedPreviousState, resultingSnapshotHash),
+            FraudProofVerificationContext({channelId: CHANNEL_ID})
+        );
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), "turn holder kept standing");
+
+        // the same snapshot signed out of turn -> only the turn guard can slash
+        diamond.applyFraudProofs(
+            _addOneProof(2, previousSnapshot, encodedPreviousState, resultingSnapshotHash),
+            FraudProofVerificationContext({channelId: CHANNEL_ID})
+        );
+        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]));
+    }
+
+    /// invalid-transition proof over an `add(1)` first block by `authorPk` committing to `resultingSnapshotHash`
+    function _addOneProof(
+        uint256 authorPk,
+        StateSnapshot memory previousSnapshot,
+        bytes memory encodedPreviousState,
+        bytes32 resultingSnapshotHash
+    ) internal pure returns (FraudProof[] memory proofs) {
+        Block memory addBlock;
+        addBlock.transaction.header.channelId = CHANNEL_ID;
+        addBlock.transaction.header.participant = vm.addr(authorPk);
+        addBlock.transaction.header.forkId = FORK_ID;
+        addBlock.transaction.header.timestamp = 1;
+        addBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
+        addBlock.previousBlockHash = keccak256(abi.encode(previousSnapshot));
+        addBlock.stateSnapshotHash = resultingSnapshotHash;
+        bytes memory encodedBlock = abi.encode(addBlock);
+
+        BlockInvalidStateTransitionProof memory invalidTransition = BlockInvalidStateTransitionProof({
+            invalidBlock: SignedBlock({encodedBlock: encodedBlock, signature: _sign(authorPk, encodedBlock)}),
+            previousBlock: SignedBlock({encodedBlock: "", signature: ""}),
+            previousBlockStateSnapshot: previousSnapshot,
+            previousStateStateMachineState: encodedPreviousState
+        });
+        proofs = new FraudProof[](1);
+        proofs[0] = FraudProof({
+            proofType: FraudProofType.BlockInvalidStateTransition,
+            encodedProof: abi.encode(invalidTransition),
+            participant: vm.addr(authorPk)
+        });
+    }
+
+    /// one milestone of two linked blocks
+    function _twoBlockStateProof() internal pure returns (StateProof memory stateProof) {
+        stateProof.milestones = new MilestoneProof[](1);
+        stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        stateProof.milestones[0].blockConfirmations[0].signedBlock =
+            _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 0, 1, bytes32(0));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock = _makeSignedBlock(
+            2,
+            CHANNEL_ID,
+            FORK_ID,
+            1,
+            2,
+            keccak256(stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock)
+        );
+    }
+
+    /// a one-milestone dispute of two linked, signed blocks, so the structure proof at (0, 1) fails
+    function _structurallyValidDispute(bytes32 forkId, address disputer)
+        internal
+        pure
+        returns (Dispute memory dispute)
+    {
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = forkId;
+        dispute.input.disputer = disputer;
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        SignedBlock memory first = _makeSignedBlock(1, CHANNEL_ID, forkId, 0, 1, bytes32(0));
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = first;
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            _makeSignedBlock(1, CHANNEL_ID, forkId, 1, 2, keccak256(first.encodedBlock));
+    }
+
+    /// a one-milestone dispute whose second block is unsigned, so the structure proof at (0, 1) holds
+    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+        internal
+        pure
+        returns (Dispute memory dispute)
+    {
+        dispute = _structurallyValidDispute(forkId, disputer);
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
+    }
+
+    // a well-formed payload per family, default fields -> fails against an honest dispute
+    function _defaultDisputeFraudPayload(DisputeFraudProofType proofType, Dispute memory dispute)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        SignedBlock memory disputedBlock = dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock;
+        if (proofType == DisputeFraudProofType.DisputeNotLatestState) {
+            // the disputed block itself -> not newer
+            return abi.encode(
+                DisputeNotLatestState({encodedBlock: disputedBlock.encodedBlock, signature: disputedBlock.signature})
+            );
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutputState) {
+            DisputeInvalidOutputState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProof) {
+            DisputeInvalidStateProof memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBalanceInvariant) {
+            DisputeInvalidBalanceInvariant memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutThreshold) {
+            TimeoutThreshold memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutCalldataPosted) {
+            TimeoutCalldataPosted memory payload;
+            payload.postedBlock = disputedBlock;
+            payload.previousBlockcalldata = disputedBlock;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutParticipantNotNext) {
+            TimeoutParticipantNotNext memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutTooEarly) {
+            TimeoutTooEarly memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof) {
+            DisputeInvalidBlockInStateProofApplyFraudProof memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
+            InvalidDisputeReason memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInboundAnchorBehindLatestState) {
+            DisputeInboundAnchorBehindLatestState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockStructure) {
+            DisputeInvalidBlockStructure memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeBlockAuthorNotParticipant) {
+            DisputeBlockAuthorNotParticipant memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutSupersededByFinalState) {
+            TimeoutSupersededByFinalState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutboundRun) {
+            DisputeInvalidOutboundRun memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
+            DisputeConflictsWithFinalState memory payload;
+            return abi.encode(payload);
+        }
+        // the remaining families carry a single unused bool
+        return abi.encode(false);
+    }
+
+    function _structuralProof(Dispute memory dispute) internal pure returns (DisputeFraudProof memory proof) {
+        proof.dispute = dispute;
+        proof.proofType = DisputeFraudProofType.DisputeInvalidBlockStructure;
+        DisputeInvalidBlockStructure memory payload;
+        payload.blockIndex = 1;
+        proof.encodedProof = abi.encode(payload);
+        proof.participant = dispute.input.disputer;
+    }
+
+    function _confirmation(Dispute memory dispute) internal pure returns (DisputeConfirmation memory confirmation) {
+        confirmation.signedDispute.encodedDispute = abi.encode(dispute);
+        confirmation.signatures = new bytes[](0);
+    }
+
+    function _timeoutCalldataPostedProof()
+        internal
+        returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
+    {
+        return _timeoutCalldataPostedProofPostedAfter(0);
+    }
+
+    function _timeoutCalldataPostedProofPostedAfter(uint256 postDelay)
+        internal
+        returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
+    {
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(1);
+        participants[1] = vm.addr(2);
+        _openChannel(participants);
+        // genesis timestamp is fixed at channel open; warp forward so the calldata
+        // is posted `postDelay` seconds after genesis - exercises the first-block
+        // grace band on the timeout-calldata-posted defense.
+        vm.warp(block.timestamp + postDelay);
+        (, StateSnapshot memory latestSnapshot) = diamond.isChannelOpen(CHANNEL_ID);
+
+        MathState memory latestState;
+        latestState.participants = participants;
+        latestState.balances = new uint256[](participants.length);
+        bytes memory encodedLatestState = abi.encode(latestState);
+
+        MathState memory resultingState = latestState;
+        resultingState.number = 1;
+        resultingState.currentTurnIndex = 1;
+        StateSnapshot memory resultingSnapshot = abi.decode(abi.encode(latestSnapshot), (StateSnapshot));
+        resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
+        // the first block keeps the genesis height 0, as clients number it
+        resultingSnapshot.blockHeight = 0;
+        resultingSnapshot.timestamp = block.timestamp;
+
+        Block memory postedBlock;
+        postedBlock.transaction.header.channelId = CHANNEL_ID;
+        postedBlock.transaction.header.participant = participants[0];
+        postedBlock.transaction.header.forkId = latestSnapshot.forkId;
+        postedBlock.transaction.header.timestamp = block.timestamp;
+        postedBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
+        postedBlock.previousBlockHash = keccak256(abi.encode(latestSnapshot));
+        postedBlock.stateSnapshotHash = keccak256(abi.encode(resultingSnapshot));
+        bytes memory encodedPostedBlock = abi.encode(postedBlock);
+        SignedBlock memory signedPostedBlock =
+            SignedBlock({encodedBlock: encodedPostedBlock, signature: _sign(1, encodedPostedBlock)});
+
+        vm.prank(participants[0]);
+        diamond.postBlockCalldata(signedPostedBlock, block.timestamp);
+
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = latestSnapshot.forkId;
+        dispute.input.disputer = participants[1];
+        dispute.input.timeout.blockHeight = 0;
+        dispute.input.timeout.participant = participants[0];
+
+        proof.genesisStateSnapshotData = latestSnapshot.snapshotData;
+        proof.latestStateSnapshot = latestSnapshot;
+        proof.latestStateStateMachineState = encodedLatestState;
+        proof.postedBlock = signedPostedBlock;
+        proof.onChainTimestamp = block.timestamp;
+    }
+
+    function _disputeBlockAuthorNotParticipantProof()
+        internal
+        pure
+        returns (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer)
+    {
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        return _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+    }
+
+    /// participants that exclude the signer on both sides; the resulting snapshot is block 1's own
+    function _authorNotParticipantSnapshots()
+        internal
+        pure
+        returns (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot)
+    {
+        previousSnapshot.snapshotData.participants = new address[](1);
+        previousSnapshot.snapshotData.participants[0] = address(0xA1);
+        // the chain snapshot of this fork that block 0 commits: the challenged block 1 is after it
+        previousSnapshot.forkId = FORK_ID;
+        resultingSnapshot.snapshotData.participants = new address[](1);
+        resultingSnapshot.snapshotData.participants[0] = address(0xA2);
+        // the resulting snapshot is this block's own -> coordinate-bound
+        resultingSnapshot.forkId = FORK_ID;
+        resultingSnapshot.blockHeight = 1;
+    }
+
+    /// a one-milestone dispute [block 0 committing `previousSnapshot`, the signer's block 1 committing
+    /// `resultingSnapshot`]; the proof names block 1 with block 0 as its predecessor, and the chain snapshot
+    /// `previousSnapshot` as the anchor its eligibility is decided from
+    function _disputeBlockAuthorNotParticipantProof(
+        StateSnapshot memory previousSnapshot,
+        StateSnapshot memory resultingSnapshot
+    ) internal pure returns (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) {
+        signer = vm.addr(1);
+        Block memory previousBlock;
+        previousBlock.transaction.header.channelId = CHANNEL_ID;
+        previousBlock.transaction.header.participant = vm.addr(2);
+        previousBlock.transaction.header.forkId = FORK_ID;
+        previousBlock.stateSnapshotHash = keccak256(abi.encode(previousSnapshot));
+        bytes memory encodedPreviousBlock = abi.encode(previousBlock);
+        SignedBlock memory signedPreviousBlock =
+            SignedBlock({encodedBlock: encodedPreviousBlock, signature: _sign(2, encodedPreviousBlock)});
+
+        Block memory invalidBlock;
+        invalidBlock.transaction.header.channelId = CHANNEL_ID;
+        invalidBlock.transaction.header.participant = signer;
+        invalidBlock.transaction.header.forkId = FORK_ID;
+        invalidBlock.transaction.header.transactionCnt = 1;
+        invalidBlock.previousBlockHash = keccak256(encodedPreviousBlock);
+        invalidBlock.stateSnapshotHash = keccak256(abi.encode(resultingSnapshot));
+        bytes memory encodedBlock = abi.encode(invalidBlock);
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = FORK_ID;
+        dispute.input.disputer = address(0xD1);
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = signedPreviousBlock;
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            SignedBlock({encodedBlock: encodedBlock, signature: _sign(1, encodedBlock)});
+        proof = DisputeBlockAuthorNotParticipant({
+            blockIndex: 1,
+            previousBlock: signedPreviousBlock,
+            previousStateSnapshot: previousSnapshot,
+            resultingStateSnapshot: resultingSnapshot
+        });
+    }
+
+    function _openChannel(address[] memory participants) internal {
+        OpenChannel memory openChannel;
+        openChannel.channelId = CHANNEL_ID;
+        openChannel.participants = participants;
+        openChannel.balances = new Balance[](participants.length);
+        openChannel.deadlineTimestamp = block.timestamp + 1 days;
+        openChannel.isAtomic = true;
+        bytes memory encodedOpenChannel = abi.encode(openChannel);
+        bytes[] memory signatures = new bytes[](participants.length);
+        for (uint256 i = 0; i < participants.length; i++) {
+            signatures[i] = _sign(i + 1, encodedOpenChannel);
+        }
+        diamond.open(OpenChannelConfirmation({encodedOpenChannel: encodedOpenChannel, signatures: signatures}));
+    }
+
+    function _participants() internal pure returns (address[] memory participants) {
+        participants = new address[](3);
+        participants[0] = address(0xA1);
+        participants[1] = address(0xA2);
+        participants[2] = address(0xA3);
+    }
+
+    /// A local diamond over the suite's machine; `gasLimit` 0 keeps the default dispute budget.
+    function _deployLocalDiamond(uint256 gasLimit) internal returns (LocalDiamond) {
+        return new LocalDiamond(
+            address(stateMachine),
+            address(new DisputeManagerFacet()),
+            address(new DisputeVerificationFacet()),
+            address(fraudProofFacet),
+            address(new DisputeFraudProofFacet()),
+            address(new StateSnapshotFacet()),
+            address(new JoinChannelFacet()),
+            address(new StateProofFacet()),
+            address(utilityFacet),
+            P2P_TIME,
+            0,
+            0,
+            0,
+            gasLimit,
+            MAX_CHANNEL_PARTICIPANTS
+        );
+    }
+
+    /// Three real members + address(0) sentinel.
+    function _participantsWithZeroSentinel() internal pure returns (address[] memory participants) {
+        participants = new address[](4);
+        participants[0] = address(0xA1);
+        participants[1] = address(0xA2);
+        participants[2] = address(0xA3);
+        participants[3] = address(0);
+    }
+
+    /// Fixed non-zero balances so exit amounts pin which participant was removed.
+    /// Index matches _participantsWithZeroSentinel (sentinel gets amount 40).
+    function _participantBalances(uint256 length) internal pure returns (uint256[] memory balances) {
+        balances = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            balances[i] = 10 * (i + 1);
+        }
+    }
+
+    function _oneAddress(address a) internal pure returns (address[] memory arr) {
+        arr = new address[](1);
+        arr[0] = a;
+    }
+
+    function _oneAmount(uint256 amount) internal pure returns (uint256[] memory arr) {
+        arr = new uint256[](1);
+        arr[0] = amount;
+    }
+
+    function _joinInboundMessage(address participant) internal view returns (Message memory message) {
+        Balance memory balance = Balance({amount: 0, data: ""});
+        message.messageType = MESSAGE_TYPE_JOIN;
+        message.participant = participant;
+        message.balance = balance;
+        message.data = abi.encode(
+            JoinChannel({
+                channelId: CHANNEL_ID,
+                participant: participant,
+                deadlineTimestamp: block.timestamp + 1,
+                balance: balance
+            })
+        );
+    }
+
+    /// The math state a walk is seeded with, next to the snapshot that commits
+    /// to it: the snapshot's state hash is the hash of `encodedState`, so the
+    /// walk starts from a state the snapshot vouches for.
+    function _seededMathState(address[] memory participants)
+        internal
+        pure
+        returns (bytes memory encodedState, StateSnapshot memory snapshot)
+    {
+        MathState memory state;
+        state.participants = participants;
+        state.balances = _participantBalances(participants.length);
+        encodedState = abi.encode(state);
+
+        snapshot.forkId = FORK_ID;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.participants = participants;
+    }
+
+    function _computeDisputeOutputState(address[] memory participants, DisputeInput memory input)
+        internal
+        returns (DisputeOutputState memory out, MathState memory result)
+    {
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
+        out = outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+        result = abi.decode(out.encodedModifiedState, (MathState));
+    }
+
+    function _assertExactExitMessages(
+        DisputeOutputState memory out,
+        address[] memory expectedParticipants,
+        uint256[] memory expectedAmounts
+    ) internal pure {
+        Message[] memory messages = out.outboundMessageBlock.messages;
+        assertEq(messages.length, expectedParticipants.length);
+        uint256 total;
+        for (uint256 i = 0; i < expectedParticipants.length; i++) {
+            total += expectedAmounts[i];
+            assertEq(messages[i].messageType, MESSAGE_TYPE_EXIT);
+            assertEq(messages[i].participant, expectedParticipants[i]);
+            assertEq(messages[i].balance.amount, expectedAmounts[i]);
+        }
+        assertEq(out.totalWithdrawals.amount, total);
+    }
+
+    function _outputParticipants(ReduceOutput memory reducedOutput, address[] memory participants)
+        internal
+        returns (address[] memory)
+    {
+        MathState memory state;
+        state.participants = participants;
+        state.balances = new uint256[](participants.length);
+        StateSnapshot memory snapshot;
+        bytes memory encodedState = abi.encode(state);
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        // the snapshot already consumed the reduced inbound head: no inbound blocks to apply
+        snapshot.snapshotData.latestInboundMessageBlockHash = reducedOutput.latestInboundMessageBlockHash;
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
+        (, bytes memory encodedModifiedState,) = diamond.reduceOutputToSnapshotData(
+            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, inboundMessageBlocks
+        );
+        return abi.decode(encodedModifiedState, (MathState)).participants;
+    }
+
+    // ---- inbound message block walk ----
+
+    function test_verifyInboundMessageBlocks_linkedChainMatchingTarget_isValid() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 target = _chainHead(blocks);
+
+        (bool isValid,,,) = verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, target, blocks);
+
+        assertTrue(isValid);
+    }
+
+    function test_verifyInboundMessageBlocks_firstBlockNotChainedToSnapshotHead_reportsHashLinkAtZero() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 2, 0);
+        blocks[0].previousBlockHash = keccak256("not the snapshot head");
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, 0);
+        assertEq(runningHash, SNAPSHOT_HEAD);
+        assertEq(reason, INBOUND_FAILURE_HASH_LINK);
+    }
+
+    function test_verifyInboundMessageBlocks_midChainLinkBroken_reportsHashLinkAtBreakIndex() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 headBeforeBreak = keccak256(abi.encode(blocks[0]));
+        blocks[1].previousBlockHash = keccak256("wrong link");
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, 1);
+        assertEq(runningHash, headBeforeBreak);
+        assertEq(reason, INBOUND_FAILURE_HASH_LINK);
+    }
+
+    // the case the reason code exists for: hashes chain correctly, so a report
+    // without a reason looks like a consistent chain that broke for no visible
+    // cause. Only the height sequence is wrong.
+    function test_verifyInboundMessageBlocks_skippedHeight_reportsHeightSequenceWithIntactHashLink() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 headBeforeBreak = keccak256(abi.encode(blocks[0]));
+        blocks[1].blockHeight = blocks[0].blockHeight + 2;
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, 1);
+        assertEq(reason, INBOUND_FAILURE_HEIGHT_SEQUENCE);
+        // the hash link at the break is intact - this is exactly what a bare
+        // (runningHash, breakIndex) report could not distinguish
+        assertEq(runningHash, headBeforeBreak);
+        assertEq(runningHash, blocks[1].previousBlockHash);
+    }
+
+    function test_verifyInboundMessageBlocks_allLinkedButWrongTarget_reportsFinalTargetAtBlockCount() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 computedHead = _chainHead(blocks);
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, keccak256("some other target"), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, blocks.length);
+        assertEq(runningHash, computedHead);
+        assertEq(reason, INBOUND_FAILURE_FINAL_TARGET);
+    }
+
+    function test_verifyInboundMessageBlocks_noBlocks_comparesSnapshotHeadAgainstTarget() public {
+        MessageBlock[] memory blocks = new MessageBlock[](0);
+
+        (bool matching,, uint256 matchingBreakIndex, uint8 matchingReason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, SNAPSHOT_HEAD, blocks);
+        (bool mismatched, bytes32 runningHash,, uint8 mismatchedReason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, keccak256("other"), blocks);
+
+        assertTrue(matching);
+        assertEq(matchingBreakIndex, blocks.length);
+        assertEq(matchingReason, INBOUND_FAILURE_FINAL_TARGET);
+        assertFalse(mismatched);
+        assertEq(runningHash, SNAPSHOT_HEAD);
+        assertEq(mismatchedReason, INBOUND_FAILURE_FINAL_TARGET);
+    }
+
+    // proves the walk's report actually reaches the revert payload callers decode
+    function test_reduceOutputToSnapshotData_unlinkedInboundBlocks_revertsCarryingComparedHashes() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = new uint256[](state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 2, 0);
+        blocks[0].previousBlockHash = keccak256("not the snapshot head");
+
+        ReduceOutput memory reducedOutput;
+        reducedOutput.latestInboundMessageBlockHash = keccak256("target");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeInboundMessageBlocksInvalid.selector,
+                SNAPSHOT_HEAD,
+                reducedOutput.latestInboundMessageBlockHash,
+                SNAPSHOT_HEAD,
+                uint256(0),
+                uint256(blocks.length),
+                INBOUND_FAILURE_HASH_LINK
+            )
+        );
+        diamond.reduceOutputToSnapshotData(
+            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, blocks
+        );
+    }
+
+    // genesis branch: no block in the reduced output, so the snapshot data has
+    // to hash to the disputed fork itself
+    function test_reduceOutputToSnapshotData_genesisSnapshotDataNotLinkedToFork_revertsCarryingBothForkIds() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = new uint256[](state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        ReduceOutput memory reducedOutput;
+        reducedOutput.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        bytes32 expectedForkId = keccak256("a fork the snapshot data does not hash to");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorSnapshotDataForkMismatch.selector, expectedForkId, keccak256(abi.encode(snapshot.snapshotData))
+            )
+        );
+        diamond.reduceOutputToSnapshotData(expectedForkId, reducedOutput, snapshot, encodedState, new MessageBlock[](0));
+    }
+
+    // block branch: the reduced output has a block, so the block's
+    // stateSnapshotHash has to be the hash of the supplied snapshot
+    function test_reduceOutputToSnapshotData_latestBlockNotLinkedToSnapshot_revertsCarryingBothSnapshotHashes() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = new uint256[](state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        bytes32 claimedStateSnapshotHash = keccak256("a snapshot the block links to instead");
+        ReduceOutput memory reducedOutput;
+        reducedOutput.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+        reducedOutput.latestBlock.transaction.header.forkId = FORK_ID;
+        reducedOutput.latestBlock.stateSnapshotHash = claimedStateSnapshotHash;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorInvalidStateSnapshotHash.selector, claimedStateSnapshotHash, keccak256(abi.encode(snapshot))
+            )
+        );
+        diamond.reduceOutputToSnapshotData(
+            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, new MessageBlock[](0)
+        );
+    }
+
+    function test_killDispute_disputeNotInWindowCommitments_revertsCarryingCommitment() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory committed = _structurallyInvalidDispute(keccak256("kill-committed"), address(0xA1));
+        // same window, different dispute -> its commitment was never pushed
+        Dispute memory uncommitted = _structurallyInvalidDispute(keccak256("kill-committed"), address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotFound.selector,
+                CHANNEL_ID,
+                uncommitted.input.forkId,
+                keccak256(abi.encode(uncommitted))
+            )
+        );
+        harness.killDispute(uncommitted);
+        assertEq(harness.commitmentCount(CHANNEL_ID, committed.input.forkId), 1);
+    }
+
+    function test_reduceAndFinalize_uncommittedDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, address(0xA1));
+        // same window, a different disputer -> a commitment that was never pushed
+        Dispute memory submitted = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = submitted;
+
+        // equal lengths, so only the hashes themselves distinguish the two sets
+        bytes32[] memory expectedCommittedHashes = new bytes32[](1);
+        expectedCommittedHashes[0] = keccak256(abi.encode(committed));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](1);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(submitted));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
+    function test_reduceAndFinalize_committedSetPlusExtraDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, address(0xA1));
+        Dispute memory extra = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+
+        // every committed dispute is present, plus one that was never committed
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = committed;
+        disputes[1] = extra;
+
+        bytes32[] memory expectedCommittedHashes = new bytes32[](1);
+        expectedCommittedHashes[0] = keccak256(abi.encode(committed));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](2);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(committed));
+        expectedSubmittedHashes[1] = keccak256(abi.encode(extra));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
+    function test_reduceAndFinalize_committedSetMissingOneDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory first = _structurallyInvalidDispute(FORK_ID, address(0xA1));
+        Dispute memory second = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(first, block.timestamp);
+        harness.seedDispute(second, block.timestamp);
+        assertEq(harness.commitmentCount(CHANNEL_ID, FORK_ID), 2);
+
+        // one committed dispute and nothing else -> the second commitment is left out
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = first;
+
+        bytes32[] memory expectedCommittedHashes = new bytes32[](2);
+        expectedCommittedHashes[0] = keccak256(abi.encode(first));
+        expectedCommittedHashes[1] = keccak256(abi.encode(second));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](1);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(first));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
+    function test_challengeDisputeReduction_extraSubmittedDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address challenger = address(0xA1);
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, challenger);
+        Dispute memory extra = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+        // makes `challenger` the channel's one eligible participant so the
+        // commitment comparison, not the participation guard, is what rejects
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, challenger, address(0xB0B), block.timestamp);
+
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = committed;
+        disputes[1] = extra;
+
+        bytes32[] memory expectedCommittedHashes = new bytes32[](1);
+        expectedCommittedHashes[0] = keccak256(abi.encode(committed));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](2);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(committed));
+        expectedSubmittedHashes[1] = keccak256(abi.encode(extra));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        vm.prank(challenger);
+        harness.challengeDisputeReduction(disputes, snapshot, "", new MessageBlock[](0));
+    }
+
+    function test_handleDisputeOnChainSlashesNotSubset_listedSlashesAreSubsetRevertsCarryingBothSlashSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory recordedSlashes = new address[](3);
+        recordedSlashes[0] = address(0xA1);
+        recordedSlashes[1] = address(0xA2);
+        recordedSlashes[2] = address(0xA3);
+        harness.seedOnChainSlashes(CHANNEL_ID, recordedSlashes);
+
+        // a strict subset, in a different order: every listed slash is recorded,
+        // so the proof fails and the revert has to name both sets - the counts
+        // alone (2 and 3) say nothing about which slash the dispute omitted
+        Dispute memory dispute;
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.onChainSlashes = new address[](2);
+        dispute.input.onChainSlashes[0] = address(0xA3);
+        dispute.input.onChainSlashes[1] = address(0xA1);
+
+        address[] memory expectedDisputeSlashes = new address[](2);
+        expectedDisputeSlashes[0] = address(0xA3);
+        expectedDisputeSlashes[1] = address(0xA1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionOnChainSlashes.selector, CHANNEL_ID, expectedDisputeSlashes, recordedSlashes
+            )
+        );
+        harness.handleOnChainSlashesNotSubset("", dispute);
+    }
+
+    function test_computeDisputeOutputState_unsupportedInboundMessageRevertsCarryingSeedStateHash() public {
+        address[] memory participants = _participants();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+
+        // message 0 is a real join and is applied before message 1 fails, so the
+        // reported hash can only be the state the walk was seeded with - a hash
+        // of the live state machine after the join would be a different value
+        bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](1);
+        inboundMessageBlocks[0].messages = new Message[](2);
+        inboundMessageBlocks[0].messages[0] = _joinInboundMessage(address(0xB0B));
+        inboundMessageBlocks[0].messages[1].messageType = unsupportedMessageType;
+        inboundMessageBlocks[0].messages[1].participant = participants[1];
+
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeStateMachineInboundProcessingFailed.selector,
+                uint256(0),
+                uint256(1),
+                participants[1],
+                unsupportedMessageType,
+                keccak256(encodedState)
+            )
+        );
+        outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    // the sibling case above fails at block 0 / message 1, where a zero index
+    // cannot prove the two indices are not swapped or confused. Here the refusal
+    // is at block 1 / message 2: two distinct non-zero indices.
+    function test_computeDisputeOutputState_refusedMessageInLaterBlockRevertsCarryingBothIndices() public {
+        address[] memory participants = _participants();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+
+        bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
+        // Heights and the previous-block link are kept consistent for realism
+        // only - this path applies the blocks directly and never walks the chain.
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](2);
+        inboundMessageBlocks[0].blockHeight = 1;
+        inboundMessageBlocks[0].messages = new Message[](1);
+        inboundMessageBlocks[0].messages[0] = _joinInboundMessage(address(0xB0B));
+        inboundMessageBlocks[1].blockHeight = 2;
+        inboundMessageBlocks[1].previousBlockHash = keccak256(abi.encode(inboundMessageBlocks[0]));
+        inboundMessageBlocks[1].messages = new Message[](3);
+        inboundMessageBlocks[1].messages[0] = _joinInboundMessage(address(0xB0C));
+        inboundMessageBlocks[1].messages[1] = _joinInboundMessage(address(0xB0D));
+        inboundMessageBlocks[1].messages[2].messageType = unsupportedMessageType;
+        inboundMessageBlocks[1].messages[2].participant = participants[1];
+
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+
+        // three joins were applied before the refusal, so the reported hash can
+        // only be the seed the walk started from
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeStateMachineInboundProcessingFailed.selector,
+                uint256(1),
+                uint256(2),
+                participants[1],
+                unsupportedMessageType,
+                keccak256(encodedState)
+            )
+        );
+        outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    function test_processOutboundMessage_exitAmountDisagreesWithMessageRevertsCarryingBothAmounts() public {
+        address exiting = address(0xEE17);
+        // the embedded exit amount, the message amount and the participant are
+        // three mutually distinguishable values
+        Balance memory messageBalance = Balance({amount: 17, data: ""});
+        Balance memory exitBalance = Balance({amount: 41, data: ""});
+        Message memory message = Message({
+            messageType: MESSAGE_TYPE_EXIT,
+            participant: exiting,
+            balance: messageBalance,
+            data: abi.encode(ExitChannel({participant: exiting, balance: exitBalance}))
+        });
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorOutboundMessageBalanceMismatch.selector, exiting, exitBalance.amount, messageBalance.amount
+            )
+        );
+        outputHarness.processOutboundMessage(message);
+    }
+
+    function test_persistInboundMessageBlock_repeatedBlockRevertsNamingChannelAndBlockHash() public {
+        bytes32 channelId = keccak256("persist-channel");
+        bytes32 blockHash = keccak256("persist-block");
+        MessageBlock memory messageBlock;
+        messageBlock.previousBlockHash = SNAPSHOT_HEAD;
+        messageBlock.blockHeight = 1;
+        messageBlock.timestamp = 1234;
+
+        verificationHarness.persistInboundMessageBlock(channelId, blockHash, messageBlock);
+
+        // the channel and the block hash are unrelated values, so a payload that
+        // reported the same identifier twice cannot pass
+        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockAlreadyPersisted.selector, channelId, blockHash));
+        verificationHarness.persistInboundMessageBlock(channelId, blockHash, messageBlock);
+    }
+
+    function test_commitToDisputeReducedResult_killPeriodStillRunningRevertsCarryingDeadlineAndCurrentTime() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        bytes32 windowForkId = keccak256("kill-period-active-fork");
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDisputeWindow(CHANNEL_ID, windowForkId, seededAt);
+        // the harness kill period is 10s, so it ends at seededAt + 10 and this
+        // call lands 4s in, while the window is still open
+        vm.warp(seededAt + 4);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodNotExpired.selector, seededAt + 10, seededAt + 4)
+        );
+        harness.commitReducedResult(CHANNEL_ID, windowForkId, keccak256("kill-period-active-reduced-fork"));
+    }
+
+    function test_commitToDisputeReducedResult_windowAlreadyReducedRevertsCarryingAllThreeForkIds() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        // three distinct forks: the window's own, the one already committed, and
+        // the one submitted now
+        bytes32 windowForkId = keccak256("already-reduced-window-fork");
+        bytes32 existingReducedForkId = keccak256("already-reduced-existing-fork");
+        bytes32 submittedReducedForkId = keccak256("already-reduced-submitted-fork");
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDisputeWindow(CHANNEL_ID, windowForkId, seededAt);
+        // the harness kill period is 10s, so the first commit is accepted here
+        vm.warp(seededAt + 10);
+        harness.commitReducedResult(CHANNEL_ID, windowForkId, existingReducedForkId);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionDisputeAlreadyReduced.selector, windowForkId, existingReducedForkId, submittedReducedForkId
+            )
+        );
+        harness.commitReducedResult(CHANNEL_ID, windowForkId, submittedReducedForkId);
+    }
+
+    function test_challengeDisputeReduction_afterChallengePeriodRevertsCarryingDeadlineAndCurrentTime() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address challenger = address(0xA1);
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, challenger);
+        harness.seedDispute(committed, seededAt);
+        // makes `challenger` the channel's one eligible participant, so the
+        // challenge-period gate is what rejects, not the participation guard
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, challenger, address(0xB0B), seededAt);
+
+        // the harness kill period is 10s, so the reduced result can be committed
+        // at seededAt + 10, and its reduce-challenge period runs 10s from there
+        uint256 reducedAt = seededAt + 10;
+        vm.warp(reducedAt);
+        harness.commitReducedResult(CHANNEL_ID, FORK_ID, keccak256("challenge-period-reduced-fork"));
+
+        // the challenge lands 5s past the deadline, so the two reported
+        // timestamps are distinct
+        uint256 challengePeriodEnd = reducedAt + 10;
+        uint256 challengedAt = challengePeriodEnd + 5;
+        vm.warp(challengedAt);
+
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = committed;
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorDisputeChallengePeriodExpired.selector, challengePeriodEnd, challengedAt)
+        );
+        vm.prank(challenger);
+        harness.challengeDisputeReduction(disputes, snapshot, "", new MessageBlock[](0));
+    }
+
+    function test_commitToDisputeReducedResult_noDisputeWindow_revertsNamingTheMissingWindow() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        bytes32 channelId = keccak256("commit-no-window-channel");
+        bytes32 forkId = keccak256("commit-no-window-fork");
+
+        // A window that was never created carries no fork id of its own, so the
+        // revert reports the zero fork next to the channel it was looked up in -
+        // never a kill-period deadline derived from an empty slot.
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeWindowNotOpen.selector, channelId, bytes32(0)));
+        harness.commitReducedResult(channelId, forkId, keccak256("commit-no-window-reduced-fork"));
+    }
+
+    /// `count` blocks each chained to the previous, heights ascending from
+    /// `firstHeight`, the first anchored to `startHash`.
+    function _linkedInboundBlocks(bytes32 startHash, uint256 count, uint256 firstHeight)
+        internal
+        pure
+        returns (MessageBlock[] memory blocks)
+    {
+        blocks = new MessageBlock[](count);
+        bytes32 runningHash = startHash;
+        for (uint256 i = 0; i < count; i++) {
+            blocks[i].previousBlockHash = runningHash;
+            blocks[i].blockHeight = firstHeight + i;
+            blocks[i].timestamp = 1000 + i;
+            runningHash = keccak256(abi.encode(blocks[i]));
+        }
+    }
+
+    function _chainHead(MessageBlock[] memory blocks) internal pure returns (bytes32 head) {
+        head = blocks.length == 0 ? bytes32(0) : keccak256(abi.encode(blocks[blocks.length - 1]));
+    }
+}

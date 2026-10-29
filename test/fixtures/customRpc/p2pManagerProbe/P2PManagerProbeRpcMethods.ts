@@ -1,0 +1,641 @@
+// @spec-test-coverage-ignore: loopback endpoints for mapped P2PManager component cases
+import type {
+    DispatchHeadProbe,
+    DispatchOutcomeProbe,
+    FrameByteBoundaryProbe,
+    ForeignResponseProbe,
+    LifecycleProbe,
+    P2PManagerProbeService,
+    ConcurrentSettlementProbe,
+    DisposalProbe,
+    RequestRaceProbe,
+    RequestRegistryProbe,
+    RequestSettlementProbe,
+    TimeoutSelectionProbe,
+    DisconnectCleanupProbe,
+    TransportRetirementProbe,
+    RemoteRetirementProbe,
+    BulkPenaltyProbe,
+    ConnectedPeerFallbackProbe,
+    ConnectionsChangedProbe,
+    BanPolicyProbe,
+    HolepunchSocketErrorProbe,
+    DisconnectPolicyProbe,
+    SuspendPolicyProbe,
+    RetryTierProbe,
+    ExclusionScopeProbe,
+    UnauthenticatedRetryProbe,
+    HandshakeRequestSkewProbe,
+    HandshakeResponseTimingKind,
+    HandshakeResponseTimingProbe,
+    HandshakeAckTimeoutProbe,
+    DualIdentitySuspensionProbe,
+    BlacklistStorageProbe,
+    AddressStrikeProbe,
+    NegotiationAbortScenario,
+    NegotiationAbortProbe,
+    RelayAdmissionProbe,
+    UpgradeBanPolicyProbe,
+    WebRTCConnectionStatesProbe,
+    WebRTCConnectionStatesScenario,
+    UnblacklistBanPolicyProbe,
+    UnblacklistBanPolicyScenario,
+    HolepunchTopicProbe,
+    HolepunchAnnounceScenario,
+    HolepunchAnnounceLookupProbe,
+    HolepunchBanReleaseProbe,
+    HolepunchConnectionAttemptProbe,
+    HolepunchSwarmProbe,
+    LateHandshakeProbe,
+    ReplacementHandshakeProbe,
+    ProfileDisconnectLifecycleProbe,
+    LobbyProtocolProbe,
+    LobbyHandoffExit,
+    LobbyHandoffExitProbe,
+    LobbyRecoveryProbe,
+    LobbyRecoveryBoundProbe,
+    LobbyCommitCancellationProbe,
+    LobbySessionCleanupProbe,
+    MatchedNegotiationAdmissionProbe,
+    AttemptClearedDuringTermsProbe,
+    InvalidNegotiationAmountProbe,
+    LowerTermsPendingProbe,
+    NegotiationFailureProbe,
+    NegotiationFailureScenario,
+    SignedAttemptObservationProbe,
+    TargetedNegotiationRaceProbe,
+    LobbyBootstrapValidationProbe,
+    LobbyRoleTimerProbe,
+    LobbyRetryEpochProbe,
+    LobbySessionRestartProbe,
+    LobbyExhaustionTimerProbe,
+    LobbyLatePickProbe
+} from "./P2PManagerProbeService";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
+
+export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProbeService> {
+    constructor(transport: NetworkTransport, service: P2PManagerProbeService) {
+        super(transport, service);
+    }
+
+    public holdNetworkReply(token: string): Promise<string> {
+        return this.service.holdNetworkReply(token);
+    }
+    public releaseNetworkReply(token: string): boolean {
+        return this.service.releaseNetworkReply(token);
+    }
+    public networkReplyState(token: string, foreignAddress: string) {
+        return this.service.networkReplyState(token, foreignAddress);
+    }
+    public sendNetworkReply(peerAddress: string, requestId: string): void {
+        this.service.sendNetworkReply(peerAddress, requestId);
+    }
+
+    public recordDispatch(): void {
+        this.service.recordDispatch();
+    }
+
+    public probeDispatchHead(): Promise<DispatchHeadProbe> {
+        return this.service.probeDispatchHead();
+    }
+
+    public probeDispatchOutcomes(): Promise<DispatchOutcomeProbe> {
+        return this.service.probeDispatchOutcomes();
+    }
+
+    public probeFrameByteBoundaries(): Promise<FrameByteBoundaryProbe> {
+        return this.service.probeFrameByteBoundaries();
+    }
+
+    public probeRequestSettlement(): Promise<RequestSettlementProbe> {
+        return this.service.probeRequestSettlement();
+    }
+
+    public probeTimeoutSelection(): Promise<TimeoutSelectionProbe> {
+        return this.service.probeTimeoutSelection();
+    }
+
+    public probeResponseTimeoutRace(
+        responseFirst: boolean
+    ): Promise<RequestRaceProbe> {
+        return this.service.probeResponseTimeoutRace(responseFirst);
+    }
+
+    public probeRemoteErrorTimeoutRace(
+        errorFirst: boolean
+    ): Promise<RequestRaceProbe> {
+        return this.service.probeRemoteErrorTimeoutRace(errorFirst);
+    }
+
+    public probeResponseRemoteErrorRace(
+        responseFirst: boolean
+    ): Promise<RequestRaceProbe> {
+        return this.service.probeResponseRemoteErrorRace(responseFirst);
+    }
+
+    public probeResponseDisconnectRace(
+        responseFirst: boolean
+    ): Promise<RequestRaceProbe> {
+        return this.service.probeResponseDisconnectRace(responseFirst);
+    }
+
+    public probeRemoteErrorDisconnectRace(
+        errorFirst: boolean
+    ): Promise<RequestRaceProbe> {
+        return this.service.probeRemoteErrorDisconnectRace(errorFirst);
+    }
+
+    public probeTimeoutDisconnectRace(
+        timeoutFirst: boolean
+    ): Promise<RequestRaceProbe> {
+        return this.service.probeTimeoutDisconnectRace(timeoutFirst);
+    }
+
+    public probeConcurrentSettlement(): Promise<ConcurrentSettlementProbe> {
+        return this.service.probeConcurrentSettlement();
+    }
+
+    public probeDisposalFailure() {
+        return this.service.probeDisposalFailure();
+    }
+
+    public probeDisposal(): Promise<DisposalProbe> {
+        return this.service.probeDisposal();
+    }
+
+    public probeDisconnectCleanup(
+        address: string
+    ): Promise<DisconnectCleanupProbe> {
+        return this.service.probeDisconnectCleanup(address);
+    }
+
+    public probeTransportRetirement(
+        address: string
+    ): Promise<TransportRetirementProbe> {
+        return this.service.probeTransportRetirement(address);
+    }
+
+    public probeRemoteRetirement(address: string): RemoteRetirementProbe {
+        return this.service.probeRemoteRetirement(address);
+    }
+
+    public probeBulkPenalty(
+        firstAddress: string,
+        secondAddress: string
+    ): BulkPenaltyProbe {
+        return this.service.probeBulkPenalty(firstAddress, secondAddress);
+    }
+
+    public probeConnectedPeerPrecedence(
+        profileAddress: string,
+        transportAddress: string
+    ) {
+        return this.service.probeConnectedPeerPrecedence(
+            profileAddress,
+            transportAddress
+        );
+    }
+
+    public probeLobbyFilterOrder(peerAddress: string) {
+        return this.service.probeLobbyFilterOrder(peerAddress);
+    }
+
+    public probeLobbyFilterBoundary(
+        peerAddress: string,
+        mode: "self" | "unknown" | "throw"
+    ) {
+        return this.service.probeLobbyFilterBoundary(peerAddress, mode);
+    }
+
+    public probeCommitmentComparison(
+        peerAddress: string,
+        mismatch: "selector" | "advertiser" | "absent" | "malformed"
+    ) {
+        return this.service.probeCommitmentComparison(peerAddress, mismatch);
+    }
+
+    public probeConnectedPeerFallback(
+        address: string
+    ): ConnectedPeerFallbackProbe {
+        return this.service.probeConnectedPeerFallback(address);
+    }
+
+    public probeConnectionsChanged(
+        holepunchAddress: string,
+        webRtcAddress: string
+    ): ConnectionsChangedProbe {
+        return this.service.probeConnectionsChanged(
+            holepunchAddress,
+            webRtcAddress
+        );
+    }
+
+    public probeForeignResponse(
+        intendedAddress: string,
+        foreignAddress: string
+    ): Promise<ForeignResponseProbe> {
+        return this.service.probeForeignResponse(
+            intendedAddress,
+            foreignAddress
+        );
+    }
+
+    public probeRequestRegistry(
+        address: string
+    ): Promise<RequestRegistryProbe> {
+        return this.service.probeRequestRegistry(address);
+    }
+
+    public probeLifecycle(
+        firstAddress: string,
+        secondAddress: string,
+        missingAddress: string
+    ): Promise<LifecycleProbe> {
+        return this.service.probeLifecycle(
+            firstAddress,
+            secondAddress,
+            missingAddress
+        );
+    }
+
+    public probeUnauthenticatedBlacklist(): BanPolicyProbe {
+        return this.service.probeUnauthenticatedBlacklist();
+    }
+
+    public probeHolepunchSocketErrors(): HolepunchSocketErrorProbe {
+        return this.service.probeHolepunchSocketErrors();
+    }
+
+    public probeUnauthenticatedClose(): BanPolicyProbe {
+        return this.service.probeUnauthenticatedClose();
+    }
+
+    public probeDisconnectPolicyAllow(address: string): DisconnectPolicyProbe {
+        return this.service.probeDisconnectPolicyAllow(address);
+    }
+
+    public probeDisconnectPolicyBlacklist(
+        address: string
+    ): DisconnectPolicyProbe {
+        return this.service.probeDisconnectPolicyBlacklist(address);
+    }
+
+    public probeDisconnectPolicySuspend(address: string): SuspendPolicyProbe {
+        return this.service.probeDisconnectPolicySuspend(address);
+    }
+
+    public probeRetryTier(
+        address: string,
+        maxRetries: number,
+        closes: number
+    ): RetryTierProbe {
+        return this.service.probeRetryTier(address, maxRetries, closes);
+    }
+
+    public probeUnauthenticatedRetryTier(
+        publicKey: string,
+        maxRetries: number,
+        closes: number
+    ): UnauthenticatedRetryProbe {
+        return this.service.probeUnauthenticatedRetryTier(
+            publicKey,
+            maxRetries,
+            closes
+        );
+    }
+
+    public probeSuspensionBarsBothIdentities(
+        address: string,
+        publicKey: string
+    ): DualIdentitySuspensionProbe {
+        return this.service.probeSuspensionBarsBothIdentities(
+            address,
+            publicKey
+        );
+    }
+
+    public probeBlacklistStorage(address: string): BlacklistStorageProbe {
+        return this.service.probeBlacklistStorage(address);
+    }
+
+    public probeAddressStrikeWithoutProfile(
+        address: string,
+        maxRetries: number
+    ): AddressStrikeProbe {
+        return this.service.probeAddressStrikeWithoutProfile(
+            address,
+            maxRetries
+        );
+    }
+
+    public probeHandshakeRequestSkew(
+        publicKey: string,
+        offsetSeconds: number,
+        authenticatedAddress: string | null
+    ): Promise<HandshakeRequestSkewProbe> {
+        return this.service.probeHandshakeRequestSkew(
+            publicKey,
+            offsetSeconds,
+            authenticatedAddress
+        );
+    }
+
+    public probeHandshakeResponseTiming(
+        publicKey: string,
+        kind: HandshakeResponseTimingKind,
+        offsetSeconds: number
+    ): Promise<HandshakeResponseTimingProbe> {
+        return this.service.probeHandshakeResponseTiming(
+            publicKey,
+            kind,
+            offsetSeconds
+        );
+    }
+
+    public probeHandshakeAckTimeout(
+        publicKey: string,
+        rounds: number
+    ): Promise<HandshakeAckTimeoutProbe> {
+        return this.service.probeHandshakeAckTimeout(publicKey, rounds);
+    }
+
+    public probeNegotiationAbort(
+        scenario: NegotiationAbortScenario
+    ): Promise<NegotiationAbortProbe> {
+        return this.service.probeNegotiationAbort(scenario);
+    }
+
+    public probeSuspensionScope(address: string): ExclusionScopeProbe {
+        return this.service.probeSuspensionScope(address);
+    }
+
+    public probeBlacklistScope(address: string): ExclusionScopeProbe {
+        return this.service.probeBlacklistScope(address);
+    }
+
+    public probeExpectedCloseDisconnectPolicy(
+        address: string
+    ): DisconnectPolicyProbe {
+        return this.service.probeExpectedCloseDisconnectPolicy(address);
+    }
+
+    public probeAllowReleasesUpgradeBan(
+        address: string
+    ): DisconnectPolicyProbe {
+        return this.service.probeAllowReleasesUpgradeBan(address);
+    }
+
+    public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
+        return this.service.probeUpgradeBanPolicy(address);
+    }
+
+    public probeWebRTCConnectionStates(
+        address: string,
+        scenario: WebRTCConnectionStatesScenario
+    ): Promise<WebRTCConnectionStatesProbe> {
+        return this.service.probeWebRTCConnectionStates(address, scenario);
+    }
+
+    public probeExplicitBlacklist(address: string): BanPolicyProbe {
+        return this.service.probeExplicitBlacklist(address);
+    }
+
+    public probeUnblacklistBanPolicy(
+        address: string,
+        scenario: UnblacklistBanPolicyScenario
+    ): UnblacklistBanPolicyProbe {
+        return this.service.probeUnblacklistBanPolicy(address, scenario);
+    }
+
+    public probeHealthyWebRtcRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeHealthyWebRtcRejectsHolepunch(address);
+    }
+
+    public probeWebRtcCloseAcceptsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeWebRtcCloseAcceptsHolepunch(address);
+    }
+
+    public probeBlacklistRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeBlacklistRejectsHolepunch(address);
+    }
+
+    public probeHolepunchJoinAndEqualLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchJoinAndEqualLeave();
+    }
+
+    public probeHolepunchDuplicateLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchDuplicateLeave();
+    }
+
+    public probeHolepunchAbsentLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchAbsentLeave();
+    }
+
+    public probeHolepunchLeaveBeforeSwarm(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchLeaveBeforeSwarm();
+    }
+
+    public probeHolepunchRejoinAfterLeave(
+        duplicate = false
+    ): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchRejoinAfterLeave(duplicate);
+    }
+
+    public probeHolepunchAnnounceLookup(
+        scenario: HolepunchAnnounceScenario
+    ): Promise<HolepunchAnnounceLookupProbe> {
+        return this.service.probeHolepunchAnnounceLookup(scenario);
+    }
+
+    public probeHolepunchConnectionAttempts(): Promise<HolepunchConnectionAttemptProbe> {
+        return this.service.probeHolepunchConnectionAttempts();
+    }
+
+    public probeHolepunchBanReleaseLookup(
+        value: boolean
+    ): Promise<HolepunchBanReleaseProbe> {
+        return this.service.probeHolepunchBanReleaseLookup(value);
+    }
+
+    public async joinHolepunchOnLocalDht(
+        channelId: string,
+        bootstrapPort: number
+    ): Promise<boolean> {
+        await this.service.joinHolepunchOnLocalDht(channelId, bootstrapPort);
+        return true;
+    }
+
+    public async lookUpHolepunchTopics(): Promise<boolean> {
+        await this.service.lookUpHolepunchTopics();
+        return true;
+    }
+
+    public async waitForHolepunchAnnounced(): Promise<boolean> {
+        await this.service.waitForHolepunchAnnounced();
+        return true;
+    }
+
+    public async leaveHolepunchOnLocalDht(channelId: string): Promise<boolean> {
+        await this.service.leaveHolepunchOnLocalDht(channelId);
+        return true;
+    }
+
+    public async closeHolepunchSwarmConnections(): Promise<boolean> {
+        await this.service.closeHolepunchSwarmConnections();
+        return true;
+    }
+
+    public async waitForOpenSwarmConnections(count: number): Promise<boolean> {
+        await this.service.waitForOpenSwarmConnections(count);
+        return true;
+    }
+
+    public lookUpHolepunchPeerKeys(channelId: string): Promise<string[]> {
+        return this.service.lookUpHolepunchPeerKeys(channelId);
+    }
+
+    public holdIncomingUntilOwnDial(): boolean {
+        this.service.holdIncomingUntilOwnDial();
+        return true;
+    }
+
+    public waitForFirewallVerdicts(count: number): Promise<boolean[]> {
+        return this.service.waitForFirewallVerdicts(count);
+    }
+
+    public holepunchSwarmState(peerAddress: string): HolepunchSwarmProbe {
+        return this.service.holepunchSwarmState(peerAddress);
+    }
+
+    public requestSumFrom(peerAddress: string): Promise<number> {
+        return this.service.requestSumFrom(peerAddress);
+    }
+
+    public async closeChainProvider(): Promise<boolean> {
+        await this.service.closeChainProvider();
+        return true;
+    }
+
+    public abortOnNextHandshake(): boolean {
+        this.service.abortOnNextHandshake();
+        return true;
+    }
+
+    public probeMissingHandshake(address: string): Promise<LateHandshakeProbe> {
+        return this.service.probeMissingHandshake(address);
+    }
+
+    public probeClosedHandshake(address: string): Promise<LateHandshakeProbe> {
+        return this.service.probeClosedHandshake(address);
+    }
+
+    public probeDisposedHandshake(
+        address: string
+    ): Promise<LateHandshakeProbe> {
+        return this.service.probeDisposedHandshake(address);
+    }
+
+    public probeReplacementHandshake(
+        address: string
+    ): Promise<ReplacementHandshakeProbe> {
+        return this.service.probeReplacementHandshake(address);
+    }
+
+    public probeProfileDisconnectLifecycle(
+        address: string
+    ): ProfileDisconnectLifecycleProbe {
+        return this.service.probeProfileDisconnectLifecycle(address);
+    }
+
+    public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
+        return this.service.probeLobbyProtocol();
+    }
+
+    public probeLobbyHandoffExit(
+        exit: LobbyHandoffExit,
+        withReplacement: boolean
+    ): Promise<LobbyHandoffExitProbe> {
+        return this.service.probeLobbyHandoffExit(exit, withReplacement);
+    }
+
+    public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
+        return this.service.probeLobbyRecovery();
+    }
+
+    public probeLobbyRecoveryBound(): LobbyRecoveryBoundProbe {
+        return this.service.probeLobbyRecoveryBound();
+    }
+
+    public probeLobbyCommitCancellation(): Promise<LobbyCommitCancellationProbe> {
+        return this.service.probeLobbyCommitCancellation();
+    }
+
+    public probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
+        return this.service.probeLobbyBootstrapAndValidation();
+    }
+
+    public probeLobbyRoleTimers(): Promise<LobbyRoleTimerProbe> {
+        return this.service.probeLobbyRoleTimers();
+    }
+
+    public probeLobbySessionCleanup(): Promise<LobbySessionCleanupProbe> {
+        return this.service.probeLobbySessionCleanup();
+    }
+
+    public probeLobbyRetryEpoch(): Promise<LobbyRetryEpochProbe> {
+        return this.service.probeLobbyRetryEpoch();
+    }
+
+    public probeLobbyExhaustionTimer(): Promise<LobbyExhaustionTimerProbe> {
+        return this.service.probeLobbyExhaustionTimer();
+    }
+
+    public probeLobbyLatePick(): Promise<LobbyLatePickProbe> {
+        return this.service.probeLobbyLatePick();
+    }
+
+    public probeMatchedNegotiationAdmission(): Promise<MatchedNegotiationAdmissionProbe> {
+        return this.service.probeMatchedNegotiationAdmission();
+    }
+
+    public probeInvalidNegotiationAmount(
+        zeroBalance = false
+    ): Promise<InvalidNegotiationAmountProbe> {
+        return this.service.probeInvalidNegotiationAmount(zeroBalance);
+    }
+
+    public probeAttemptClearedDuringTerms(
+        phase: "balance" | "selection"
+    ): Promise<AttemptClearedDuringTermsProbe> {
+        return this.service.probeAttemptClearedDuringTerms(phase);
+    }
+
+    public probeLowerSelectionDuringTerms(): Promise<LowerTermsPendingProbe> {
+        return this.service.probeLowerSelectionDuringTerms();
+    }
+
+    public probeNegotiationFailure(
+        scenario: NegotiationFailureScenario
+    ): Promise<Partial<NegotiationFailureProbe>> {
+        return this.service.probeNegotiationFailure(scenario);
+    }
+
+    public probeLobbySessionRestart(): Promise<LobbySessionRestartProbe> {
+        return this.service.probeLobbySessionRestart();
+    }
+
+    public probeSignedAttemptObservation(): Promise<SignedAttemptObservationProbe> {
+        return this.service.probeSignedAttemptObservation();
+    }
+
+    public probeTargetedNegotiationRaces(): Promise<TargetedNegotiationRaceProbe> {
+        return this.service.probeTargetedNegotiationRaces();
+    }
+}

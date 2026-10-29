@@ -1,0 +1,539 @@
+// @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
+import {
+    evidencePeriodWaitMs,
+    participantTimeoutWaitMs,
+    protocolEventTimeoutMs,
+    resolveTestTimeConfig
+} from "../core/testTimeConfig";
+import { EventSpies } from "../core/types";
+import Clock from "@/Clock";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
+import { Status } from "@/types";
+import { Hash } from "@/types/types";
+import { Logger, sleep } from "@/utils";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
+
+/** How long a host handler call takes to reach its main-thread spy. */
+const SPY_FORWARD_WINDOW_MS = 500;
+
+/**
+ * EventActions handles all event spy management and queries.
+ * Responsibilities:
+ * - Query event call counts and arguments
+ * - Wait for specific event count conditions
+ * - Reset event spy history
+ * - Assert event calls
+ */
+export class EventActions<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(
+        private harness: PeerTestHarness<THost>,
+        private logger: Logger
+    ) {}
+
+    /**
+     * Get the number of times an event was called for a peer
+     */
+    getEventCallCount(peerIndex: number, eventName: keyof EventSpies): number {
+        const peer = this.harness.getPeer(peerIndex);
+        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
+        const spy = peer.eventSpies[eventName];
+        const count = spy ? spy.callCount : 0;
+        return count;
+    }
+
+    /** The summed call counts of several event spies of one peer. */
+    getEventCallCounts(
+        peerIndex: number,
+        eventNames: readonly (keyof EventSpies)[]
+    ): number {
+        return eventNames.reduce(
+            (total, eventName) =>
+                total + this.getEventCallCount(peerIndex, eventName),
+            0
+        );
+    }
+
+    /**
+     * Wait until every contract event the peer scheduled has settled, then
+     * for the handler calls to reach the spies: the host forwards them over
+     * the runtime port, and they may arrive just after the drain returns.
+     */
+    async settleContractEvents(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .validation.drainScheduledEvents()
+            .request();
+        // time is the input: the forwarding delay of the spied handler calls
+        await sleep(SPY_FORWARD_WINDOW_MS);
+    }
+
+    /**
+     * Wait for specific event counts across multiple peers
+     */
+    async waitForEventCounts(
+        eventName: keyof EventSpies,
+        expectedCounts: Array<{ peerId: number; expectedCount: number }>,
+        timeoutMs?: number,
+        { mode = "exact" }: { mode?: "exact" | "atLeast" } = { mode: "exact" }
+    ): Promise<boolean> {
+        const waitTimeoutMs = timeoutMs ?? this.protocolEventTimeoutMs();
+        const condition = () => {
+            for (const { peerId, expectedCount } of expectedCounts) {
+                const actualCount = this.getEventCallCount(peerId, eventName);
+                if (
+                    (mode === "exact" && actualCount !== expectedCount) ||
+                    (mode === "atLeast" && actualCount < expectedCount)
+                ) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: waitTimeoutMs,
+            timeoutMessageFn: () => {
+                const actualCounts: Array<{
+                    peerId: number;
+                    actualCount: number;
+                }> = [];
+                for (const { peerId, expectedCount } of expectedCounts) {
+                    const actualCount = this.getEventCallCount(
+                        peerId,
+                        eventName
+                    );
+                    actualCounts.push({ peerId, actualCount });
+                }
+                return `${String(eventName)} counts not reached within ${waitTimeoutMs}ms, expected: ${JSON.stringify(expectedCounts)}, actual: ${JSON.stringify(actualCounts)}`;
+            }
+        });
+        return true;
+    }
+
+    /**
+     * Reset event spy history for one peer or all peers
+     */
+    resetEventSpies(peerIndex?: number): void {
+        const peers = this.harness.getFilteredPeers(
+            peerIndex !== undefined ? [peerIndex] : undefined
+        );
+
+        peers.forEach((peer) => {
+            const eventNames = Object.keys(peer.eventSpies) as Array<
+                keyof EventSpies
+            >;
+
+            const eventCounts = eventNames.map((eventName) => ({
+                eventName: String(eventName),
+                count: peer.eventSpies[eventName]?.callCount ?? 0
+            }));
+
+            const nonZeroEventCounts = eventCounts.filter(
+                ({ count }) => count > 0
+            );
+
+            peer.logger.verbose(
+                `resetEventSpies - peer ${peer.index} current event counts`,
+                {
+                    peerIndex: peer.index,
+                    eventCounts: nonZeroEventCounts
+                }
+            );
+
+            eventNames.forEach((eventName) => {
+                peer.eventSpies[eventName]?.resetHistory();
+            });
+        });
+    }
+
+    async waitUntilTimestamp(timestamp: number): Promise<void> {
+        const remainingSeconds = timestamp - Clock.getTimeInSeconds();
+        if (remainingSeconds > 0) {
+            await sleep(remainingSeconds * 1000);
+        }
+    }
+
+    /**
+     * Wait until `peerIndex`'s protocol clock is more than `agreementTime` past
+     * `blockTimestamp`, returning the observed gap in seconds. Puts a block
+     * outside the subjective validation window without guessing a sleep.
+     */
+    async waitPastAgreementTime(
+        peerIndex: number,
+        blockTimestamp: number
+    ): Promise<number> {
+        const agreementTime = resolveTestTimeConfig(
+            this.harness.options.timeConfig
+        ).agreementTime;
+        const peer = this.harness.getPeer(peerIndex);
+
+        await this.waitUntilTimestamp(blockTimestamp + agreementTime + 1);
+        // The main thread and the peer's worker sync their chain-clock
+        // adjustments independently, so their clocks can disagree by a
+        // second. The wait above used OUR clock; the assertion below uses the
+        // PEER's. Wait the measured residual out against the peer's own clock
+        // instead of failing on the boundary.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const now = await this.harness
+                .control(peer)
+                .query.getClockTimeInSeconds()
+                .request();
+            const gap = Math.abs(now - blockTimestamp);
+            if (gap > agreementTime) {
+                return gap;
+            }
+            await sleep((agreementTime - gap + 1) * 1000);
+        }
+        const now = await this.harness
+            .control(peer)
+            .query.getClockTimeInSeconds()
+            .request();
+        const gap = Math.abs(now - blockTimestamp);
+        if (gap <= agreementTime) {
+            throw new Error(
+                `Peer ${peerIndex} clock is still within agreementTime of ${blockTimestamp} (gap ${gap})`
+            );
+        }
+        return gap;
+    }
+
+    /**
+     * Wait until the chain's own clock is past `timestamp`. E2E nodes are
+     * interval-mined, so this only reads the latest block. Peer clocks only
+     * estimate chain time, so a deadline they report as passed may not be on
+     * chain yet.
+     */
+    async waitForChainTimeAfter(
+        timestamp: number,
+        timeoutMs = this.protocolEventTimeoutMs()
+    ): Promise<void> {
+        await waitFor(
+            async () =>
+                ((await this.harness.provider.getBlock("latest"))?.timestamp ??
+                    0) > timestamp,
+            timeoutMs
+        );
+    }
+
+    hostExecTimeoutMs(): number {
+        return this.protocolEventTimeoutMs({ withFirstBlockGrace: true }) * 2;
+    }
+
+    protocolEventTimeoutMs({
+        withFirstBlockGrace = false,
+        settlementMarginSeconds
+    }: {
+        withFirstBlockGrace?: boolean;
+        settlementMarginSeconds?: number;
+    } = {}): number {
+        return protocolEventTimeoutMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            { withFirstBlockGrace, settlementMarginSeconds }
+        );
+    }
+
+    participantTimeoutWaitMs(
+        blockHeight: number,
+        settlementMarginSeconds?: number
+    ): number {
+        return participantTimeoutWaitMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            blockHeight,
+            settlementMarginSeconds
+        );
+    }
+
+    evidencePeriodWaitMs(settlementMarginSeconds?: number): number {
+        return evidencePeriodWaitMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            settlementMarginSeconds
+        );
+    }
+
+    async waitUntilEventOccurs(
+        eventName: keyof EventSpies,
+        timeoutMs?: number,
+        peerIndices?: number[]
+    ): Promise<void> {
+        const waitTimeoutMs = timeoutMs ?? this.protocolEventTimeoutMs();
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+        const condition = () => {
+            return peers.every(
+                (peer) => this.getEventCallCount(peer.index, eventName) > 0
+            );
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: waitTimeoutMs,
+            timeoutMessage: `Event ${String(eventName)} did not occur within ${waitTimeoutMs}ms`
+        });
+    }
+
+    async waitForBlockConfirmationProcessed(options: {
+        peerIndex: number;
+        blockHash: Hash;
+        keepConnection?: boolean;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            peerIndex,
+            blockHash,
+            keepConnection,
+            timeoutMs = this.protocolEventTimeoutMs()
+        } = options;
+        const peer = this.harness.getPeer(peerIndex);
+
+        await this.harness.eventCountsBarrier.waitFor(
+            () => {
+                return (
+                    peer.eventSpies.onBlockConfirmationProcessed
+                        ?.getCalls()
+                        .some((call) => {
+                            const [
+                                processedBlockHash,
+                                processedKeepConnection
+                            ] = call.args;
+                            return (
+                                processedBlockHash === blockHash &&
+                                (keepConnection === undefined ||
+                                    processedKeepConnection === keepConnection)
+                            );
+                        }) ?? false
+                );
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `Block confirmation ${blockHash} was not processed by peer ${peerIndex} within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    /** Calls the peer's leave and waits for the `onLeftChannel` that leave emits. */
+    async leaveChannelWait(peerIndex: number): Promise<void> {
+        // an earlier membership of this runtime may have emitted one already
+        const previousCount = this.getEventCallCount(
+            peerIndex,
+            "onLeftChannel"
+        );
+        await this.harness
+            .getPeer(peerIndex)
+            .p2pInstance.p2pSigner.leaveChannel();
+        await this.waitUntilLeftChannel(peerIndex, previousCount);
+    }
+
+    /**
+     * Waits for an `onLeftChannel` of the peer after the `previousCount` it
+     * had emitted, whatever ended its membership. Read `previousCount` before
+     * the action that ends a membership when the runtime may have emitted
+     * one for an earlier membership (a failed join, a removal).
+     */
+    async waitUntilLeftChannel(
+        peerIndex: number,
+        previousCount = 0
+    ): Promise<void> {
+        const timeoutMs = this.protocolEventTimeoutMs();
+        await this.harness.eventCountsBarrier.waitFor(
+            () =>
+                this.getEventCallCount(peerIndex, "onLeftChannel") >
+                previousCount,
+            {
+                timeoutMs,
+                timeoutMessage: `Peer ${peerIndex} did not leave the channel within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    /** Waits until the peer's instance disposed itself after its leave. */
+    async waitUntilDisposed(peerIndex: number): Promise<void> {
+        const signer = this.harness.getPeer(peerIndex).p2pInstance.p2pSigner;
+        await waitFor(
+            () =>
+                signer.getChannelStatus().then(
+                    () => false,
+                    (error: Error) => {
+                        if (error.message.includes("disposed")) return true;
+                        throw error;
+                    }
+                ),
+            this.protocolEventTimeoutMs()
+        );
+    }
+
+    /** Waits until a flag of the peer's exit is set. */
+    async waitUntilLeaveState(
+        peerIndex: number,
+        flag: Exclude<keyof LeaveChannelState, "forkId">
+    ): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        // Exit flags have no event of their own to wake the event barrier.
+        await waitFor(
+            async () =>
+                (
+                    await this.harness
+                        .control(peer)
+                        .query.getLeaveChannelState()
+                        .request()
+                )?.[flag] === true,
+            this.protocolEventTimeoutMs()
+        );
+    }
+
+    async waitUntilPeerStatus(
+        peerIndex: number,
+        expectedStatus: Status,
+        options?: { timeoutMs?: number; timeoutMessage?: string }
+    ): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+        const { timeoutMs = this.protocolEventTimeoutMs(), timeoutMessage } =
+            options ?? {};
+        const statusName = Status[expectedStatus] ?? String(expectedStatus);
+        await this.harness.eventCountsBarrier.waitFor(
+            async () =>
+                (await this.harness
+                    .control(peer)
+                    .query.getStatus()
+                    .request()) === expectedStatus,
+            {
+                timeoutMs,
+                timeoutMessage:
+                    timeoutMessage ??
+                    `Peer ${peerIndex} did not reach ${statusName} within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    async waitForAllPeers(
+        eventName: keyof EventSpies,
+        expectedCountPerPeer: number,
+        options?: { timeoutMs?: number; mode?: "exact" | "atLeast" }
+    ): Promise<void> {
+        const expectedCounts = this.harness.peers.map((peer) => ({
+            peerId: peer.index,
+            expectedCount: expectedCountPerPeer
+        }));
+
+        await this.waitForEventCounts(
+            eventName,
+            expectedCounts,
+            options?.timeoutMs ??
+                this.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+            { mode: options?.mode }
+        );
+    }
+
+    async waitForPeers(
+        eventName: keyof EventSpies,
+        peerIds: number[],
+        expectedCountPerPeer: number,
+        options?: { timeoutMs?: number; mode?: "exact" | "atLeast" }
+    ): Promise<void> {
+        const expectedCounts = peerIds.map((peerId) => ({
+            peerId,
+            expectedCount: expectedCountPerPeer
+        }));
+
+        await this.waitForEventCounts(
+            eventName,
+            expectedCounts,
+            options?.timeoutMs ??
+                this.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+            { mode: options?.mode }
+        );
+    }
+
+    async waitForPeerDisputes(
+        peerIndex: number,
+        minCount: number,
+        options?: { timeoutMs?: number }
+    ): Promise<void> {
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.protocolEventTimeoutMs({ withFirstBlockGrace: true });
+        const condition = () => {
+            const count = this.getEventCallCount(
+                peerIndex,
+                "onInitiatingDispute"
+            );
+            return count >= minCount;
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Peer ${peerIndex} did not initiate ${minCount} disputes within ${timeoutMs}ms`
+        });
+    }
+
+    async waitForDisputeFromAnyPeer(
+        peerIndices: number[],
+        options?: { timeoutMs?: number }
+    ): Promise<void> {
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.protocolEventTimeoutMs({ withFirstBlockGrace: true });
+        const condition = () => {
+            for (const peerIndex of peerIndices) {
+                if (
+                    this.getEventCallCount(peerIndex, "onInitiatingDispute") > 0
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `None of peers ${peerIndices.join(", ")} initiated a dispute within ${timeoutMs}ms`
+        });
+    }
+
+    async waitWhileEventCountsStayAtMost(
+        eventName: keyof EventSpies,
+        peerIds: number[],
+        options: { durationMs: number; maxCount?: number }
+    ): Promise<void> {
+        const maxCount = options.maxCount ?? 0;
+        const { durationMs } = options;
+        let durationElapsed = false;
+
+        const deadlineTimer = setTimeout(() => {
+            durationElapsed = true;
+            void this.harness.eventCountsBarrier.signal();
+        }, durationMs);
+
+        try {
+            await this.harness.eventCountsBarrier.waitFor(
+                () => {
+                    for (const peerId of peerIds) {
+                        const c = this.getEventCallCount(peerId, eventName);
+                        if (c > maxCount) {
+                            throw new Error(
+                                `peer ${peerId} ${String(eventName)} count ${c} > ${maxCount}`
+                            );
+                        }
+                    }
+                    return durationElapsed;
+                },
+                {
+                    timeoutMs: durationMs + 500,
+                    timeoutMessageFn: () =>
+                        `Within ${durationMs}ms, ${String(eventName)} for peers [${peerIds.join(", ")}] did not stay at <= ${maxCount}`
+                }
+            );
+        } finally {
+            clearTimeout(deadlineTimer);
+        }
+    }
+}

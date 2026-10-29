@@ -1,0 +1,132 @@
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { randomAddress } from "@test/factory";
+import { MathTestSession as TestSession } from "@test/harness";
+
+describe("E2E: dispute validation / disputeInputFields / onChainSlashes", function () {
+    it("dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
+
+        const fakeSlashedAddress = h.getPeer(0).address;
+        await h.tamper.stubConstructDispute(
+            1,
+            async (dispute, _sm, args) => {
+                dispute.input.onChainSlashes = [
+                    ...dispute.input.onChainSlashes,
+                    args.fakeSlashedAddress as string
+                ];
+            },
+            { args: { fakeSlashedAddress } }
+        );
+
+        await h.byzantine.submitForgedInboundMessageBlock(2);
+
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [1],
+            initiatedWithAuditingData: false
+        });
+
+        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+            mode: "atLeast"
+        });
+
+        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            disputeFraudProofType:
+                DisputeFraudProofType.DisputeOnChainSlashesNotSubset
+        });
+        // This case proves that the malformed on-chain-slash claim is killed.
+        // It does not control which later counter-dispute wins, so it cannot
+        // require every peer marked malicious by the setup to be evicted.
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            assertMaliciousRemoved: false
+        });
+    });
+
+    it("dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason", async function () {
+        const h = TestSession.getHarness();
+
+        await h.lifecycle.start(4, 2, {
+            timeConfig: { evidenceTime: 8 }
+        });
+
+        // peer 1 misbehaves and gets slashed. After fork resolution, peer 1's
+        // address is in the on-chain onChainSlashes registry, but NOT in
+        // the new snapshot's participants.
+        const slashedAddress = h.getPeer(1).address;
+        const forkBeforeResolution = h.activeForkId!;
+        await h.scenario.disputeAndResolve({
+            maliciousPeerIndex: 1
+        });
+        await h.assert.snapshot.localSnapshotsChangedWait({
+            previousForkId: forkBeforeResolution
+        });
+
+        await h.transition.advanceState({
+            waitForPeers: [0, 2, 3]
+        });
+        h.event.resetEventSpies();
+        h.contextApi.captureOriginalFork();
+
+        await h.tamper.stubConstructDispute(
+            3,
+            async (dispute, sm, args) => {
+                dispute.input.timeout.participant =
+                    sm.p2pManager.localRpc.dispute.zeroAddress;
+                dispute.input.selfRemoval = false;
+                dispute.input.requireExistingDisputeWindow = false;
+                dispute.input.onChainSlashes = [args.slashedAddress as string];
+                // the committed list drops peer 1 from the historic set -> final, no auditing data owed
+                dispute.postedAuditingData = false;
+            },
+            { args: { slashedAddress } }
+        );
+
+        await h.byzantine.submitInvalidStateTransitionBlock(2);
+
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [3],
+            initiatedWithAuditingData: false
+        });
+
+        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+            mode: "atLeast"
+        });
+        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            disputeFraudProofType: DisputeFraudProofType.InvalidDisputeReason
+        });
+        await h.dispute.resolveDisputeWait({
+            forkId: h.context.originalForkId!
+        });
+    });
+
+    it("dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup({ peerCount: 4 });
+        const forkId = h.activeForkId!;
+
+        const junkSlashes = Array.from({ length: 8 }, randomAddress);
+        await h.tamper.stubConstructDispute(
+            1,
+            (dispute, _sm, args) => {
+                dispute.input.onChainSlashes = args.junkSlashes as string[];
+            },
+            { args: { junkSlashes } }
+        );
+
+        await h.byzantine.submitForgedInboundMessageBlock(2);
+
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [1],
+            initiatedWithAuditingData: false
+        });
+
+        await h.dispute.resolveDisputeWait({ forkId });
+
+        await h.assert.dispute.slashedOnChainExactly([
+            h.getPeer(1).address,
+            h.getPeer(2).address
+        ]);
+    });
+});

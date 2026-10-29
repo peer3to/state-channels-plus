@@ -1,0 +1,215 @@
+pragma solidity ^0.8.8;
+
+import "./StateChannelCommon.sol";
+import "../types/DataTypes.sol";
+import "./UtilityFacet.sol";
+import "./Errors.sol";
+
+contract StateSnapshotFacet is StateChannelCommon {
+    function updateStateSnapshotFork(
+        bytes32 channelId,
+        StateSnapshot memory newStateSnapshot,
+        MessageBlock[] memory outboundMessageBlocks
+    ) external {
+        StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
+        DisputeData storage disputeData = disputeData[channelId];
+        bytes32 targetForkId = newStateSnapshot.forkId;
+        if (currentStateSnapshot.forkId == targetForkId) return; // already on the correct fork
+        // error args are evaluated eagerly, so the snapshot-data hash is raised
+        // inside the failure branch and never computed on the happy path
+        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot)) {
+            revert ErrorNotGenesisSnapshot(
+                keccak256(abi.encode(newStateSnapshot.snapshotData)),
+                newStateSnapshot.forkId,
+                newStateSnapshot.blockHeight
+            );
+        }
+        bytes32 originForkId = newStateSnapshot.snapshotData.originForkId;
+        (bool hasGenesis, uint256 genesisTimestamp) = _getGenesisTimestamp(channelId, originForkId, targetForkId);
+        require(hasGenesis, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, targetForkId));
+        require(
+            newStateSnapshot.timestamp == genesisTimestamp,
+            ErrorSnapshotGenesisTimestampMismatch(genesisTimestamp, newStateSnapshot.timestamp)
+        );
+        mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        bytes32 latestForkId = currentStateSnapshot.forkId;
+        bool reachable = false;
+        DisputeWindow storage disputeWindow = disputeWindowMap[latestForkId];
+        while (disputeWindow.reducedResult.forkId != bytes32(0)) {
+            (bool challengePeriodExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+            if (!challengePeriodExpired) break;
+            latestForkId = disputeWindow.reducedResult.forkId;
+            if (latestForkId == targetForkId) reachable = true;
+            disputeWindow = disputeWindowMap[latestForkId];
+        }
+        require(reachable, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        // adoption changes the current state -> only the latest fork, and never a disputed one
+        require(targetForkId == latestForkId, RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId));
+        require(
+            !_isForkDisputed(channelId, targetForkId), RaceConditionSnapshotUpdateDisputedFork(channelId, targetForkId)
+        );
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
+    }
+
+    function updateStateSnapshotSameFork(
+        bytes32 channelId,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        MessageBlock[] memory outboundMessageBlocks
+    ) external {
+        require(milestoneSnapshots.length > 0, ErrorSnapshotsNotProvided());
+
+        StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
+        StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
+        require(
+            currentStateSnapshot.forkId == newStateSnapshot.forkId,
+            RaceConditionSnapshotForkMismatch(currentStateSnapshot.forkId, newStateSnapshot.forkId)
+        );
+        require(
+            UtilityFacet(utilityFacetAddress).isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
+            RaceConditionBlockHeightTooOld(currentStateSnapshot.blockHeight, newStateSnapshot.blockHeight)
+        );
+        require(
+            _isNewSnapshotProvenByThreshold(
+                channelId, currentStateSnapshot, milestoneProofs, milestoneSnapshots, newStateSnapshot
+            ),
+            ErrorInvalidStateProof(currentStateSnapshot.forkId, milestoneProofs.length, milestoneSnapshots.length)
+        );
+        require(
+            newStateSnapshot.snapshotData.latestInboundMessageBlockHash
+                == channelBalances[channelId].latestInboundMessageBlockHash,
+            RaceConditionPendingInboundNotConsumed(
+                newStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+                channelBalances[channelId].latestInboundMessageBlockHash
+            )
+        );
+        if (_isForkDisputed(channelId, currentStateSnapshot.forkId)) {
+            revert RaceConditionSnapshotUpdateDisputedFork(channelId, currentStateSnapshot.forkId);
+        }
+
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
+    }
+
+    function _updateStateSnapshot(
+        bytes32 channelId,
+        StateSnapshot memory currentOnChainSnapshot,
+        StateSnapshot memory newSnapshot,
+        MessageBlock[] memory outboundMessageBlocks,
+        bool shouldClearStorage
+    ) internal {
+        outboundMessageBlocks = _pruneOutboundMessageBlocks(
+            outboundMessageBlocks, currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHash
+        );
+        require(
+            _verifyOutboundMessageBlocks(
+                outboundMessageBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData
+            ),
+            ErrorOutboundMessageBlocksInvalid(
+                currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHeight,
+                outboundMessageBlocks.length
+            )
+        );
+        _applyOutboundMessageBlocks(channelId, outboundMessageBlocks, newSnapshot.snapshotData);
+
+        // Update the state snapshot
+        stateSnapshots[channelId] = newSnapshot;
+
+        // Check if channel should be closed (0 participants remaining)
+        if (newSnapshot.snapshotData.participants.length == 0) {
+            _removeOpenChannel(channelId);
+            // Clear storage when channel is closed (0 participants)
+            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
+            // Clear the state snapshot
+            delete stateSnapshots[channelId];
+            // TODO! send all remaining funds to the treasury
+        }
+
+        //check if last fork -> clearStorage
+        if (
+            disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0
+                && shouldClearStorage
+        ) {
+            _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
+        }
+        emit StateSnapshotUpdated(channelId, newSnapshot);
+    }
+
+    /// The walk from the on-chain snapshot finalizes `newStateSnapshot`: the snapshot the last milestone's first
+    /// block commits to, proven by threshold. `isSnapshotNewer` already rejected the on-chain snapshot itself.
+    function _isNewSnapshotProvenByThreshold(
+        bytes32 channelId,
+        StateSnapshot memory currentStateSnapshot,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory newStateSnapshot
+    ) internal view returns (bool) {
+        // a genesis start happens only while the on-chain snapshot is that genesis
+        ProofWalkInput memory input = ProofWalkInput(
+            channelId,
+            currentStateSnapshot.forkId,
+            StateProof(milestoneProofs),
+            currentStateSnapshot.snapshotData,
+            milestoneSnapshots
+        );
+        ProofWalkResult memory result = StateChannelManagerInterface(address(this)).verifyMilestones(input);
+        return
+            result.valid && keccak256(abi.encode(result.finalizedSnapshot)) == keccak256(abi.encode(newStateSnapshot));
+    }
+
+    function _applyOutboundMessageBlocks(
+        bytes32 channelId,
+        MessageBlock[] memory outboundMessageBlocks,
+        SnapshotData memory newSnapshotData
+    ) internal {
+        ChannelBalance storage cb = channelBalances[channelId];
+        Balance memory totalDeposits = _resolveTotalDeposits(channelId, newSnapshotData.latestInboundMessageBlockHash);
+        Balance memory totalWithdrawals = cb.totalWithdrawals;
+        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+            for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
+                bool success = _processOutboundMessage(outboundMessageBlocks[i].messages[j]);
+                require(success, ErrorWithdrawalFailed(i, j, outboundMessageBlocks[i].messages[j].participant));
+
+                totalWithdrawals = stateMachineImplementation.addBalance(
+                    totalWithdrawals, outboundMessageBlocks[i].messages[j].balance
+                );
+                //require withdrawals <= deposits
+                bool isLessThan = stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, totalDeposits);
+                bool isEqual = stateMachineImplementation.areBalancesEqual(totalWithdrawals, totalDeposits);
+                require(
+                    isLessThan || isEqual, CantWithdrawMoreThanDeposits(totalDeposits.amount, totalWithdrawals.amount)
+                );
+            }
+        }
+        cb.totalWithdrawals = totalWithdrawals;
+        cb.latestOutboundMessageBlockHeight = newSnapshotData.latestOutboundMessageBlockHeight;
+        emit WithdrawalsUpdated(channelId, totalWithdrawals);
+    }
+
+    function _clearStorage(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
+        _clearDisputeData(channelId);
+        _clearOldInboundMessageBlocks(channelId, snapshotLatestInboundMessageBlockHash);
+        emit ChannelStorageCleared(channelId, snapshotLatestInboundMessageBlockHash);
+    }
+
+    function _clearDisputeData(bytes32 channelId) internal {
+        DisputeData storage disputeData = disputeData[channelId];
+        delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
+        mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
+        for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
+            delete disputeWindowMap[disputeData.disputedForks[i]];
+        }
+        delete disputeData.disputedForks;
+    }
+
+    function _clearOldInboundMessageBlocks(bytes32 channelId, bytes32 snapshotLatestInboundMessageBlockHash) internal {
+        // start from the snapshot head (prune it too) and walk backwards
+        bytes32 keyToDelete = snapshotLatestInboundMessageBlockHash;
+        bytes32 prev;
+        while (keyToDelete != bytes32(0)) {
+            prev = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
+            delete inboundMessageBlockMap[channelId][keyToDelete];
+            keyToDelete = prev;
+        }
+    }
+}

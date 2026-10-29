@@ -1,0 +1,559 @@
+import type ReductionComputationService from "./ReductionComputationService";
+import type { ReductionComputation } from "./ReductionComputationService";
+import type StateManager from "../StateManager";
+import Clock from "@/Clock";
+import { StateSnapshot } from "@/models";
+import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import type { ForkId, Timestamp } from "@/types/types";
+import { DetachedPromises, Logger, Mutex } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import {
+    type ContractErrorName,
+    type CustomEvmError,
+    type EvmErrorHandlers,
+    tryDecodeCustomError,
+    tryHandleEvmError
+} from "@/utils/evmErrorHandler";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { TransactionResponse } from "ethers";
+
+type KillPeriodObservation = {
+    windowExists: boolean;
+    isExpired: boolean;
+    killPeriodEnd: Timestamp;
+};
+
+type LocalReductionCandidate = ReductionComputation & {
+    disputes: DisputeStruct[];
+    reducedGenesisSnapshot: StateSnapshot;
+    genesisTimestamp: Timestamp;
+};
+
+type ReductionCacheKey = string;
+type ReductionSubmissionStatus = "submit" | "already-reduced" | "superseded";
+// Which call site is reporting the failure. "simulation" has installed nothing
+// yet; "detached" already installed the candidate before submitting.
+type ReductionSubmissionPath = "simulation" | "detached";
+
+const REDUCTION_RACE_ERRORS = [
+    "RaceConditionDisputeAlreadyReduced",
+    "RaceConditionBlockHeightTooOld",
+    "RaceConditionReductionExpectationDoesntMatch"
+] as const;
+type ReductionRaceErrorName = (typeof REDUCTION_RACE_ERRORS)[number];
+
+function isReductionRaceErrorName(
+    errorName: ContractErrorName | undefined
+): errorName is ReductionRaceErrorName {
+    return REDUCTION_RACE_ERRORS.some((candidate) => candidate === errorName);
+}
+
+/**
+ * Reverts of a fork adoption post (`updateStateSnapshotFork`) that leave
+ * nothing to adopt: a later reduction is already final (the next post adopts
+ * it), the target fork is disputed, or another post of a fork with no
+ * participant already closed the channel. Another post that adopted the fork
+ * first and left the channel open is no revert: the call returns on the
+ * adopted fork.
+ */
+const SETTLED_ADOPTION_ERRORS = [
+    "RaceConditionSnapshotUpdateNotLatestFork",
+    "RaceConditionSnapshotUpdateDisputedFork",
+    "RaceConditionGenesisTimestampNotAvailable"
+] as const;
+
+function isSettledAdoptionError(error: unknown): boolean {
+    const name = tryDecodeCustomError(error)?.name;
+    return SETTLED_ADOPTION_ERRORS.some((candidate) => candidate === name);
+}
+
+export default class ReductionExecutor {
+    // Every ordinary trigger enters through tryReduce, including timers and
+    // reschedules. Serialize the attempt itself, then release this mutex before
+    // callers resume waiting on ReductionManager's shared completion promise.
+    private readonly attemptMutex: Mutex;
+    // Memoized `isKillPeriodExpired` per (channel, fork). A junk-fork flood then
+    // costs O(1) chain reads per window instead of one per block: a "not expired
+    // until killPeriodEnd" answer is reused until that time; an "expired" answer
+    // is terminal.
+    private readonly killPeriodExpiryCache = new Map<
+        ReductionCacheKey,
+        KillPeriodObservation
+    >();
+    private readonly logger: Logger;
+
+    constructor(
+        private readonly stateManager: StateManager,
+        private readonly reductionComputationService: ReductionComputationService,
+        logger: Logger
+    ) {
+        this.logger = logger.child({ component: "ReductionExecutor" });
+        this.attemptMutex = new Mutex(
+            this.logger.child({ component: "ReductionAttemptMutex" })
+        );
+    }
+
+    public dispose(): void {
+        this.killPeriodExpiryCache.clear();
+    }
+
+    public async getSyncedForkDisputes(
+        forkId: ForkId
+    ): Promise<DisputeStruct[] | undefined> {
+        const commitments =
+            await this.stateManager.eventSyncService.loadSynchronizedWindowCommitments(
+                this.stateManager.channelId,
+                forkId
+            );
+        if (!commitments) return undefined;
+        return this.stateManager.agreementManager.getForkDisputes(commitments);
+    }
+
+    public async isKillPeriodExpiredCached(
+        forkId: ForkId
+    ): Promise<KillPeriodObservation> {
+        const key = `${this.stateManager.channelId}:${forkId}`;
+        const cached = this.killPeriodExpiryCache.get(key);
+        if (
+            cached &&
+            (cached.isExpired ||
+                Clock.getTimeInSeconds() < cached.killPeriodEnd)
+        ) {
+            return cached;
+        }
+
+        // TODO: production must use redundant provider infrastructure. Reduction
+        // treats provider failure as fatal and currently assumes the configured
+        // provider remains available for these reads.
+        const fresh =
+            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
+                this.stateManager.channelId,
+                forkId
+            );
+        const observation = {
+            windowExists: fresh.windowExists,
+            isExpired: fresh.isExpired,
+            killPeriodEnd: Number(fresh.killPeriodEnd)
+        };
+        this.killPeriodExpiryCache.set(key, observation);
+        return observation;
+    }
+
+    public async tryReduce(forkId: ForkId): Promise<void> {
+        await this.attemptMutex.lock({
+            taskName: `ReductionExecutor.tryReduce-${forkId}`
+        });
+        try {
+            await this.tryReduceLocked(forkId);
+        } finally {
+            this.attemptMutex.unlock();
+        }
+    }
+
+    private async tryReduceLocked(forkId: ForkId): Promise<void> {
+        if (this.isStale(forkId)) return;
+
+        const { windowExists, isExpired, killPeriodEnd } =
+            await this.isKillPeriodExpiredCached(forkId);
+        // A final dispute can transition the fork while this attempt is waiting
+        // on any provider call. Its completion is authoritative, so the stale
+        // ordinary attempt simply stands down.
+        if (this.isStale(forkId)) return;
+        if (!windowExists) return;
+        if (!isExpired) {
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                killPeriodEnd,
+                true
+            );
+            return;
+        }
+
+        const disputes = await this.getSyncedForkDisputes(forkId);
+        if (this.isStale(forkId)) return;
+        if (!disputes) {
+            // the window's disputes are on-chain but not locally readable yet ->
+            // retry, never abort: the peer would lose its turns and be slashed
+            this.logger.warn("Reduction deferred: dispute window unavailable", {
+                forkId
+            });
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Clock.getTimeInSeconds() +
+                    this.stateManager.timeConfig.chainFallbackTime,
+                true
+            );
+            return;
+        }
+        if (this.isStale(forkId)) return;
+        const freshExpiry =
+            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
+                this.stateManager.channelId,
+                forkId
+            );
+        if (this.isStale(forkId)) return;
+        const freshObservation = {
+            windowExists: freshExpiry.windowExists,
+            isExpired: freshExpiry.isExpired,
+            killPeriodEnd: Number(freshExpiry.killPeriodEnd)
+        };
+        this.killPeriodExpiryCache.set(
+            `${this.stateManager.channelId}:${forkId}`,
+            freshObservation
+        );
+        if (!freshObservation.windowExists) return;
+        if (!freshObservation.isExpired) {
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                freshObservation.killPeriodEnd,
+                true
+            );
+            return;
+        }
+
+        if (disputes.length === 0) {
+            this.logger.warn(
+                `No disputes found while reducing disputed fork ${forkId}; initiating local dispute`
+            );
+            await this.stateManager.disputeManager.dispute(forkId);
+            return;
+        }
+
+        if (this.isStale(forkId)) return;
+        const candidate = await this.prepareLocalCandidate(
+            forkId,
+            freshObservation.killPeriodEnd,
+            disputes
+        );
+        if (this.isStale(forkId)) return;
+        if (!candidate) {
+            // our inbound view cannot back the chain's reduced head yet -> retry,
+            // never abort: the peer would lose its turns and be slashed for it
+            this.logger.warn("Reduction deferred: reduce data unavailable", {
+                forkId
+            });
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Clock.getTimeInSeconds() +
+                    this.stateManager.timeConfig.chainFallbackTime,
+                true
+            );
+            return;
+        }
+        if (this.isStale(forkId)) return;
+        const submission = await this.prepareSubmission(candidate);
+        if (this.isStale(forkId)) return;
+        // A full-threshold final dispute records the window's reduced fork at
+        // upload. An ordinary attempt that computed the same result converges
+        // on it: the local install stands, and the chain write is redundant
+        // (the simulation would accept it, so the race classifier never sees
+        // it). The fork's snapshot moves with the next snapshot post's walk.
+        const submissionStatus =
+            (await this.readReducedForkOnChain(forkId)) ===
+            candidate.reducedForkId
+                ? "already-reduced"
+                : await this.simulateSubmission(forkId, candidate, submission);
+        if (submissionStatus === "superseded") return;
+        if (this.isStale(forkId)) return;
+
+        await this.complete(forkId, candidate, submission, submissionStatus);
+    }
+
+    /**
+     * One guard for every stage of an attempt: the fork moved on (a final
+     * dispute or another reduction completed first) or the runtime is
+     * disposed. Either way this attempt stands down without writing anything.
+     */
+    private isStale(forkId: ForkId): boolean {
+        return !this.stateManager.isActiveFork(forkId);
+    }
+
+    private async complete(
+        forkId: ForkId,
+        candidate: LocalReductionCandidate,
+        submission: { calldata: string[] },
+        submissionStatus: ReductionSubmissionStatus
+    ): Promise<void> {
+        const wasMember = isCommittedParticipantStatus(
+            this.stateManager.status
+        );
+        const installed =
+            await this.stateManager.reductionManager.completeWithGenesis(
+                forkId,
+                candidate.reducedForkId,
+                {
+                    genesisSnapshot:
+                        candidate.reducedGenesisSnapshot.toStruct(),
+                    encodedState: candidate.reducedEncodedStateMachineState,
+                    outboundMessageBlock: candidate.reducedOutboundMessageBlock
+                }
+            );
+        // After an install the active fork is the reduced one, so only
+        // disposal can make the submission stale here. A member the install
+        // dropped to SYNCED left the channel and submits nothing.
+        const hasLeft = wasMember && this.stateManager.status === Status.SYNCED;
+        if (
+            installed &&
+            !this.stateManager.isDisposed &&
+            submissionStatus === "submit" &&
+            !hasLeft
+        ) {
+            this.submitDetached(forkId, candidate, submission);
+        }
+    }
+
+    private async prepareLocalCandidate(
+        forkId: ForkId,
+        genesisTimestamp: Timestamp,
+        disputes: DisputeStruct[]
+    ): Promise<LocalReductionCandidate | undefined> {
+        this.logger.debug(
+            `Performing local reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
+            {
+                disputes: disputes.map((dispute) =>
+                    LoggerUtils.getDisputeMetadata(dispute)
+                )
+            }
+        );
+        try {
+            const computation = await this.reductionComputationService.compute(
+                forkId,
+                disputes
+            );
+            // The terminal outbound write below is reduction-owned: a fork
+            // change or disposal during the computation cancels it here,
+            // before anything is persisted.
+            if (this.isStale(forkId)) return undefined;
+            if (!computation) return undefined;
+            const { genesisSnapshot: reducedGenesisSnapshot } =
+                this.stateManager.reductionManager.prepareReducedGenesis(
+                    computation,
+                    genesisTimestamp
+                );
+
+            return {
+                ...computation,
+                disputes,
+                reducedGenesisSnapshot,
+                genesisTimestamp
+            };
+        } catch (error) {
+            this.logger.error("Error computing reduced snapshot data", {
+                customError: LoggerUtils.getCustomEvmErrorMetadata(
+                    tryDecodeCustomError(error)
+                ),
+                error: errorMessage(error)
+            });
+            throw error;
+        }
+    }
+
+    // the reduce lands alone; adopting the reduced fork is a separate post
+    private async prepareSubmission(candidate: LocalReductionCandidate) {
+        const reduceCalldata =
+            this.reductionComputationService.buildReduceAndFinalizeCalldata(
+                candidate.disputes,
+                candidate.reduceData.latestStateSnapshot,
+                candidate.reduceData.encodedStateMachineState,
+                candidate.reduceData.inboundMessageBlocks,
+                candidate.reducedForkId
+            );
+        return { calldata: [reduceCalldata] };
+    }
+
+    // a failed adoption post is retried once; a settled one is final
+    private adoptReducedFork(forkId: ForkId, retries: number): void {
+        DetachedPromises.collect(
+            this.stateManager.snapshotUpdateService
+                .postStateSnapshotWait(forkId, { forkAdoptionOnly: true })
+                .catch((error) => {
+                    if (isSettledAdoptionError(error)) {
+                        this.logger.info("Fork adoption post settled", {
+                            forkId,
+                            error: errorMessage(error)
+                        });
+                        return;
+                    }
+                    if (retries === 0 || this.stateManager.isDisposed)
+                        throw error;
+                    this.logger.warn(
+                        "Fork adoption post failed, retrying once",
+                        {
+                            forkId,
+                            error: errorMessage(error)
+                        }
+                    );
+                    this.stateManager.timeoutManager.scheduleTask(
+                        () => this.adoptReducedFork(forkId, retries - 1),
+                        this.stateManager.timeConfig.chainFallbackTime * 1000,
+                        `adoptReducedFork-${forkId}`
+                    );
+                })
+        );
+    }
+
+    private async simulateSubmission(
+        forkId: ForkId,
+        candidate: LocalReductionCandidate,
+        submission: { calldata: string[] }
+    ): Promise<ReductionSubmissionStatus> {
+        try {
+            await this.stateManager.stateChannelManagerContract.multicall.staticCall(
+                submission.calldata
+            );
+            return "submit";
+        } catch (error) {
+            const customError = tryDecodeCustomError(error);
+            const status = await this.classifyReductionRace(
+                customError?.name,
+                forkId,
+                candidate.disputes
+            );
+            if (status) return status;
+            this.logUnclassifiedSubmissionFailure(
+                customError,
+                forkId,
+                candidate,
+                "simulation"
+            );
+            throw customError ?? error;
+        }
+    }
+
+    private submitDetached(
+        forkId: ForkId,
+        candidate: LocalReductionCandidate,
+        submission: { calldata: string[] }
+    ): void {
+        this.logger.info("Reduction transaction submit", {
+            forkId,
+            channelId: this.stateManager.channelId
+        });
+        let txResponse: TransactionResponse | undefined;
+        // the reduce is mined -> adopt the latest undisputed fork
+        const onMined = () => {
+            if (!this.stateManager.isDisposed)
+                this.adoptReducedFork(candidate.reducedForkId, 1);
+        };
+        // Gas comes from the signer's estimate: the dispute execution limit
+        // bounds one dispute computation, not the reduce transaction, whose
+        // calldata and on-chain checks grow with the disputes it carries.
+        // The disposal check in `complete` runs before the send starts; a
+        // disposal during the send does not stop the broadcast, only the
+        // adoption after it.
+        const transaction = this.stateManager.stateChannelManagerContract
+            .multicall(submission.calldata)
+            .then(async (tx) => {
+                txResponse = tx;
+                await tx.wait();
+                onMined();
+            })
+            .catch(async (error) => {
+                let raceErrorName: ReductionRaceErrorName | undefined;
+                const handlers: EvmErrorHandlers = {};
+                for (const errorName of REDUCTION_RACE_ERRORS) {
+                    handlers[errorName] = () => {
+                        raceErrorName = errorName;
+                    };
+                }
+                const handled = await tryHandleEvmError(error, {
+                    tx: txResponse,
+                    forkId,
+                    logger: this.logger,
+                    signer: this.stateManager.signer,
+                    handlers
+                });
+                // handled without a race: its resend of the reduce was mined
+                if (handled && !raceErrorName) {
+                    onMined();
+                    return;
+                }
+                if (handled && raceErrorName) {
+                    const status = await this.classifyReductionRace(
+                        raceErrorName,
+                        forkId,
+                        candidate.disputes
+                    );
+                    if (status) return;
+                }
+                const customError = tryDecodeCustomError(error);
+                this.logUnclassifiedSubmissionFailure(
+                    customError,
+                    forkId,
+                    candidate,
+                    "detached"
+                );
+                throw customError ?? error;
+            });
+        DetachedPromises.collect(transaction);
+    }
+
+    /**
+     * A reduction submission failed with something we do not classify as a
+     * race, so it is about to be rethrown. Record what the failing call
+     * carried before it goes: whatever the revert itself reported, next to the
+     * inbound chain this candidate submitted.
+     */
+    private logUnclassifiedSubmissionFailure(
+        customError: CustomEvmError | null,
+        forkId: ForkId,
+        candidate: LocalReductionCandidate,
+        submissionPath: ReductionSubmissionPath
+    ): void {
+        this.logger.warn("Reduction submission failed unclassified", {
+            customError: LoggerUtils.getCustomEvmErrorMetadata(customError),
+            forkId,
+            candidateForkId: candidate.reducedForkId,
+            channelId: this.stateManager.channelId,
+            submissionPath,
+            inboundChain: LoggerUtils.getReductionInboundMetadata(
+                candidate.reduceData
+            )
+        });
+    }
+
+    private async classifyReductionRace(
+        errorName: ContractErrorName | undefined,
+        forkId: ForkId,
+        disputes: DisputeStruct[]
+    ): Promise<ReductionSubmissionStatus | undefined> {
+        if (!isReductionRaceErrorName(errorName)) return undefined;
+        if (
+            errorName === "RaceConditionDisputeAlreadyReduced" ||
+            errorName === "RaceConditionBlockHeightTooOld"
+        ) {
+            // These races happen only once the evidence period is over, when no
+            // new final dispute can be submitted. Reduction is deterministic,
+            // so another successful reducer necessarily installed the same
+            // result; querying it again would not add a meaningful check.
+            return "already-reduced";
+        }
+
+        const reducedForkId = await this.readReducedForkOnChain(forkId);
+        const finalDispute = disputes.find(
+            (dispute) =>
+                String(dispute.outputSnapshotDataHash) === String(reducedForkId)
+        );
+        if (!finalDispute) return undefined;
+
+        this.logger.info("Ordinary reduction superseded by a final dispute", {
+            forkId,
+            reducedForkId,
+            disputer: finalDispute.input.disputer
+        });
+        return "superseded";
+    }
+
+    /** The reduced fork the chain records for `forkId`, or the zero hash. */
+    private async readReducedForkOnChain(forkId: ForkId): Promise<ForkId> {
+        const reducedResult =
+            await this.stateManager.stateChannelManagerContract.getReducedResult(
+                this.stateManager.channelId,
+                forkId
+            );
+        return String(reducedResult.reducedForkId);
+    }
+}

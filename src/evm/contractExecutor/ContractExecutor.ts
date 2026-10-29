@@ -1,0 +1,278 @@
+import AContractExecutor, {
+    type ContractExecutionLog,
+    type ContractExecutionResult
+} from "./AContractExecutor";
+import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils";
+import {
+    LOCAL_EVM_EXECUTION_FAILED,
+    Mutex,
+    toEthereumJsEvmAddress,
+    tryDecodeCustomError
+} from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import { EVM } from "@ethereumjs/evm";
+import { Address as EthjsAddress } from "@ethereumjs/util";
+import { ethers } from "ethers";
+
+// Jumpdest scan cost: profiling showed Interpreter._getValidJumpDests
+// re-scanning the full contract bytecode on EVERY message call at ~25% of all
+// EVM CPU for large viaIR facets behind a diamond. Verified that
+// @ethereumjs/evm 10.x still re-scans per call (analysis is only skipped for
+// jump-free code), so upgrading does not fix it — the code-keyed cache in
+// @platform/evmJumpdestCache (installed by createEvm) does.
+
+// The EVM's default call gas (0xffffff, about 16.7M). A local EVM call gets at
+// least this much; see localEvmCallGasLimit for the full rule.
+export const DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT = 0xffffffn;
+
+/**
+ * Gas granted to every local EVM call: the EVM default, raised to the
+ * manager's dispute-execution budget and to twice the manager's replay
+ * requirement. The requirement funds the transition's budget and the fixed
+ * setup only; deleting the previous transition's outbound messages and
+ * copying the input come on top, and cost at most about one more budget (they
+ * undo or move what one budgeted run wrote). With twice the requirement a
+ * local transition is not refused where a funded chain replay runs it, as far
+ * as the chain's block gas limit lets such a replay be sent (a block whose
+ * input alone exceeds that limit cannot be replayed on-chain either). The
+ * requirement is a funding baseline, not a bound on the surrounding work of a
+ * dispute call (proof checks, state restoration); a local out-of-gas there
+ * falls back to the chain.
+ */
+export function localEvmCallGasLimit(
+    disputeExecutionGasLimit: bigint,
+    stateTransitionReplayGas: bigint
+): bigint {
+    let gasLimit = DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
+    if (disputeExecutionGasLimit > gasLimit)
+        gasLimit = disputeExecutionGasLimit;
+    if (2n * stateTransitionReplayGas > gasLimit)
+        gasLimit = 2n * stateTransitionReplayGas;
+    return gasLimit;
+}
+
+export default class ContractExecutor extends AContractExecutor {
+    private readonly evm: EVM;
+    private readonly logger?: Logger;
+    // Canonical calls and simulations share one mutex so a simulation's
+    // checkpoint/revert cannot overlap a canonical write.
+    private readonly mutex: Mutex;
+
+    /**
+     * Seconds of estimated chain time for the next call, or undefined for
+     * an executor with no clock (ambient block time stays zero).
+     */
+    private clock?: () => number;
+
+    // Gas granted to every call (see localEvmCallGasLimit).
+    private callGasLimit: bigint = DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
+
+    constructor(
+        evm: EVM,
+        logger?: Logger,
+        options?: { clock?: () => number; callGasLimit?: bigint }
+    ) {
+        super();
+        if (options) this.configure(options);
+        this.evm = evm;
+        this.logger = logger?.child({
+            component: "ContractExecutor"
+        });
+        this.mutex = new Mutex();
+    }
+
+    /**
+     * Sets the clock and call gas of later calls. A runtime builds its EVM
+     * before it has read either from the chain, and sets them before any call.
+     */
+    public configure(options: {
+        clock?: () => number;
+        callGasLimit?: bigint;
+    }): void {
+        this.clock = options.clock;
+        this.callGasLimit =
+            options.callGasLimit ?? DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
+    }
+
+    // AContractExecutor.dispose releases this executor's own logger.
+    public override dispose(): void {
+        this.logger?.dispose();
+    }
+
+    async deploy(data: Bytes): Promise<ContractExecutionResult> {
+        await this.mutex.lock({
+            taskName: "deploy",
+            logMeta: LoggerUtils.getContractCallMetadata(data)
+        });
+
+        try {
+            const startedAtMs = Date.now();
+            const deployment = await this.deployOn(this.evm, data);
+            // A slow runtime setup separates the EVM's own time from the deploy's thread crossings.
+            this.logger?.debug("Local contract deployed", {
+                evmMs: Date.now() - startedAtMs,
+                initCodeKB: Math.round(ethers.dataLength(data) / 1024)
+            });
+            return deployment;
+        } finally {
+            this.release();
+        }
+    }
+
+    async executeCall(
+        data: Bytes,
+        contractAddress: Address
+    ): Promise<ContractExecutionResult> {
+        await this.mutex.lock({
+            taskName: "executeCall",
+            logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
+        });
+
+        try {
+            return await this.executeCallOn(this.evm, data, contractAddress);
+        } finally {
+            this.release();
+        }
+    }
+
+    async simulateCall(
+        data: Bytes,
+        contractAddress: Address
+    ): Promise<ContractExecutionResult> {
+        await this.mutex.lock({
+            taskName: "simulateCall",
+            logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
+        });
+
+        // The mutex makes the canonical EVM the single owner of local state.
+        // Checkpointing here lets a simulation use that exact committed state
+        // while the outer revert keeps all of its mutations ephemeral.
+        const evm = this.evm;
+        try {
+            await evm.journal.checkpoint();
+            try {
+                return await this.executeCallOn(evm, data, contractAddress);
+            } finally {
+                await evm.journal.revert();
+            }
+        } finally {
+            this.release();
+        }
+    }
+
+    /**
+     * Frees the executor on the next timer turn, never in the current one.
+     * A burst of requests reaches this worker as queued port messages, and
+     * the port drains them in one event-loop callback. A call runs to its end
+     * in microtasks, so with an immediate release each queued request found
+     * the mutex free and ran in that same callback: a dispute audit burst
+     * (about 30 calls) then blocks the loop for its whole sum. Holding the
+     * mutex until a later timer turn queues those requests, and each one
+     * starts in its own loop iteration.
+     */
+    private release(): void {
+        setTimeout(() => this.mutex.unlock(), 0);
+    }
+
+    private deployOn(evm: EVM, data: Bytes): Promise<ContractExecutionResult> {
+        return this.runCall(evm, data, {});
+    }
+
+    private executeCallOn(
+        evm: EVM,
+        data: Bytes,
+        contractAddress: Address
+    ): Promise<ContractExecutionResult> {
+        return this.runCall(evm, data, {
+            to: toEthereumJsEvmAddress(contractAddress)
+        });
+    }
+
+    private async runCall(
+        evm: EVM,
+        data: Bytes,
+        options: Parameters<EVM["runCall"]>[0]
+    ): Promise<ContractExecutionResult> {
+        const result = await evm.runCall({
+            data: ethers.getBytes(data),
+            gasLimit: this.callGasLimit,
+            ...(this.clock ? { block: this.ambientBlock() } : {}),
+            ...options
+        });
+
+        if (result.execResult.exceptionError) {
+            const exceptionError = result.execResult.exceptionError;
+            const errorData = result.execResult.returnValue
+                ? ethers.hexlify(result.execResult.returnValue)
+                : null;
+            const custom = tryDecodeCustomError({ data: errorData });
+            const errorMessage = `${LOCAL_EVM_EXECUTION_FAILED}: ${custom?.name || exceptionError.error || exceptionError}`;
+
+            // Create error with structured data for the proxy to handle
+            const error = new Error(errorMessage);
+            (error as any).data = errorData;
+
+            this.logger?.warn("Contract call execution failed", {
+                errors: error,
+                custom: custom
+            });
+            throw error;
+        }
+
+        return {
+            returnValue: ethers.hexlify(result.execResult.returnValue),
+            logs: this.toRpcLogs(result.execResult.logs),
+            createdAddress: result.createdAddress?.toString().toLowerCase()
+        };
+    }
+
+    /**
+     * The EVM's default block with the runtime's current estimated chain time
+     * as `block.timestamp`: manager and protocol views defined against
+     * current time see it; state transitions read `_tx.header.timestamp`.
+     */
+    private ambientBlock(): NonNullable<
+        Parameters<EVM["runCall"]>[0]["block"]
+    > {
+        // The EVM's own default block, with the timestamp set.
+        return {
+            header: {
+                number: 0n,
+                cliqueSigner: () => EthjsAddress.zero(),
+                coinbase: EthjsAddress.zero(),
+                timestamp: BigInt(this.clock!()),
+                difficulty: 0n,
+                prevRandao: new Uint8Array(32),
+                gasLimit: 0n,
+                baseFeePerGas: undefined,
+                getBlobGasPrice: () => undefined
+            }
+        };
+    }
+
+    private toRpcLogs(logs?: any[]): ContractExecutionLog[] | undefined {
+        return logs?.map((log) => ({
+            address: this.toRpcAddress(log[0]),
+            topics: log[1].map((topic: Uint8Array) => ethers.hexlify(topic)),
+            data: ethers.hexlify(log[2])
+        }));
+    }
+
+    private toRpcAddress(address: any): Address {
+        const stringValue = address?.toString?.();
+        const hexAddress =
+            typeof address === "string"
+                ? address
+                : address?.bytes
+                  ? ethers.hexlify(address.bytes)
+                  : typeof stringValue === "string" &&
+                      stringValue.startsWith("0x")
+                    ? stringValue
+                    : ethers.hexlify(address);
+
+        return EthjsAddress.fromString(hexAddress.toLowerCase())
+            .toString()
+            .toLowerCase();
+    }
+}

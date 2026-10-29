@@ -1,5 +1,5 @@
-import { ethers } from "hardhat";
 import { HardhatEthersHelpers } from "@nomicfoundation/hardhat-ethers/types";
+import { ethers } from "hardhat";
 
 export async function getSimpleNumberStorageDeploymentTransaction(
     _ethers: typeof ethers & HardhatEthersHelpers

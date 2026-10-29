@@ -1,0 +1,209 @@
+# Guarded Channel-Term Negotiation
+
+> **Agent status:** Maintained protocol specification.
+> **Engineer verification:** Pending.
+> **Status:** Maintained.
+> **Scope:** Two-party terms, negotiated channel identity, signatures, deterministic submission, and
+> chain-observed completion after an acknowledged lobby match.
+
+## Contents
+
+- [Purpose and observable contract](#purpose-and-observable-contract)
+- [Committed attempt and channel identity](#committed-attempt-and-channel-identity)
+- [Algorithm](#algorithm)
+- [Admission and lifecycle](#admission-and-lifecycle)
+- [Failure outcomes](#failure-outcomes)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and observable contract
+
+Two authenticated peers that already committed to one lobby attempt agree on their opening deposits,
+derive one fresh channel ID, and produce the unanimously signed opening required by enforcement. Lobby
+matching selects the peer pair and fresh transcript. Negotiation owns terms, channel-ID derivation,
+signatures, deterministic submission, and chain observation.
+
+The guarantee is negotiated-terms-only signing. A node signs only the exact opening rebuilt from its own
+committed attempt and local deposit intention. A peer message is never enough to declare success; the
+channel must be observed open on-chain.
+
+## Committed attempt and channel identity
+
+The committed attempt contains the authenticated peer pair, fresh attempt nonce, and one fresh 32-byte
+challenge contributed by each peer. It contains no channel ID. Negotiation canonically orders the peers
+by address and derives:
+
+`channelId = keccak256(domainTag, lowerAddress, higherAddress, lowerChallenge, higherChallenge)`
+
+The domain tag separates channel-ID derivation from every other signature or commitment domain. Challenges
+are aligned with their address owners before hashing. The derived ID must be nonzero. The same acknowledged
+transcript produces the same ID on both peers; another attempt between the same pair uses fresh challenges
+and therefore produces another ID.
+
+If the derived ID is already open before proposal, the attempt fails as a protocol collision. It is not
+reported as a successful opening and no new proposal is signed.
+
+## Algorithm
+
+1. **Arm from commitment.** Both peers record the authenticated counterparty, attempt nonce, and ordered
+   challenge pair before the internal lobby match resolves. The host-owned join workflow immediately starts
+   negotiation. Admission may defer a correctly authenticated early request while the other host finishes
+   local matched-attempt setup.
+2. **Start.** The lower canonical address sends the first correlated term request. The higher address waits
+   at most two agreement windows for that request. No other peer or attempt may enter this negotiation.
+3. **Exchange terms.** Each peer supplies its local deposit intention. Correlated responses bind the terms to
+   the committed attempt. Duplicates with identical data are idempotent; stale, conflicting, or malformed
+   terms fail the attempt.
+4. **Derive identity.** Both peers derive the channel ID from the committed transcript. Neither trusts a
+   remote-supplied channel ID. The ID becomes selected only after the transcript and terms pass validation.
+5. **Deterministic proposal.** The lower address builds the canonical opening with ordered participants,
+   aligned balances, a deadline 60 seconds after its current time, and atomic-deposit semantics, then
+   signs it.
+6. **Re-derive, never adopt.** The higher address rebuilds the expected opening from local state, requires
+   field-exact equality, verifies the lower signature, and requires the deadline to lie between 30 and 120
+   seconds after its own current time, both bounds inclusive. A deadline that leaves less than 30 seconds
+   is invalid: it leaves too little time to mine the submission, so the proposer could make the higher
+   peer pay for an `open` that reverts as expired
+   ([`OQ-SPEC-OPEN-2-YQTTTB` (Minimum remaining window for an opening proposal)](../open-questions.md#oq-spec-open-2-yqtttb)). It then signs the exact encoding and directly submits that
+   exact payload with both signatures. The correlated proposal response reports only that submission
+   returned; there is no separate submission-acknowledgement operation.
+7. **Confirm by chain observation.** Both peers enter the ordinary channel lifecycle only after observing the
+   derived ID open on-chain. A duplicate submission race for the same signed attempt defers to that evidence.
+
+## Admission and lifecycle
+
+Negotiation admission is installed before an attempt is armed. An authenticated request from the expected
+peer may wait in arrival order for at most two agreement windows while local committed-attempt readiness is
+established. The expected peer is the handed-off peer, or the advertiser a selector's commit is in flight
+to: the advertiser's acknowledgement and its first term request can arrive together, so that request can
+run before the selector reads the acknowledgement. Only the committed peer, attempt, and challenge transcript pass after readiness. An unrelated
+peer, ineligible request, expired request, or mismatch is rejected through the negotiation failure policy.
+
+Discovery and channel roles do not overlap. A committed match stops lobby advertisement and selection but
+keeps the caller topic connected during negotiation. Before any local opening signature exists, failure
+clears the selected ID and attempt and returns the host workflow to matching on the same topic, unless the
+caller has left the lobby, which ends the join. After a local
+signature exists, counterparty abandonment excludes that peer immediately, but the signed attempt remains
+observed until the channel opens or the opening deadline expires. After that deadline the chain rejects the
+signed terms ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)).
+This also applies to an honest submission sent before the deadline but mined after it: `open` reverts with
+`RaceConditionOpenChannelExpired`, and the attempt ends through the existing failed-opening-receipt path
+(ordinary mode closes the peer with reconnect allowed, no strike, and retries unless the caller has left the lobby; targeted mode follows the
+targeted receipt-failure rule below). Public lobby leave cancels only matching: after commitment it does
+not cancel negotiation or chain observation but waits for their outcome. An outcome other than opening
+then ends the join instead of retrying and the leave reports true; an opened channel makes it report false. Successful chain observation leaves the caller topic before the opened-channel result is
+returned to the client.
+
+Channel-open observation reuses the participant's single chain-event pipeline
+([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)): the attempt learns of the opening from a
+runtime-internal event published only after the ordinary chain-event handling has completed, so
+negotiation adds no second chain subscription with its own filter lifetime, replay, ordering, or
+cleanup races. That internal subscription is scoped to the attempt and removed on failure cleanup or
+successful opening.
+
+Final loss of the matched profile before signing is a neutral abort without exclusion. Timeout, malformed
+or mismatched protocol input, admission violation, or abandonment after commitment excludes the peer before
+recovery. A healthy transport replacement is not profile loss.
+
+## Failure outcomes
+
+Ordinary negotiation derives its channel ID from the authenticated transcript. An already-open derived ID
+therefore represents transcript disclosure or reuse, not a harmless collision: the peer is punished, the
+ID and provider listener are cleared, raw discovery and sync do not start, and only the ordinary wrapper
+may rematch. Ordinary terms carry a full encoded balance and preserve both `amount` and `data`.
+
+Targeted negotiation binds both peers to their independently selected fixed ID and never accepts an ID from
+a peer message. Authoritative evidence that this ID opened at preflight, during negotiation or signing, or
+after receipt failure resolves one observed-open outcome without excluding either matched loser. The
+connect wrapper leaves the derived topic and enters its selected-channel post-open branch once. A late local
+signature is discarded after an attempt-identity and handoff-state check immediately before submission.
+If a targeted receipt fails while the target is still unopened, the original error remains an unexpected
+failure. Targeted unsigned failure keeps the ID and provider listener and returns terminal `false`; another
+attempt begins only after a fresh explicit same-ID connect.
+
+Every received balance is canonically decoded, compared with repeated terms by exact `amount` and `data`,
+and accepted only after `getZeroBalance` plus `isBalanceLesserThan(zero, received)`. Invalid or non-positive
+remote terms are rejected and blacklisted. Opening deadlines are assigned internally.
+
+| Failure                                                                                                                                                       | Outcome                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Request arrives before local attempt readiness from the committed peer                                                                                        | Queue in arrival order for at most two agreement windows, then replay when ready.                                                                                                                                                                                                                                                      |
+| Wrong peer, attempt, transcript, role, or malformed input                                                                                                     | Reject, exclude where the authenticated peer violated the committed protocol, clear unsigned attempt.                                                                                                                                                                                                                                  |
+| Remote abort — the peer ends the negotiation with the protocol's own abort message                                                                            | Not a violation: close with reconnect allowed and no strike, clear the unsigned attempt; a signed attempt keeps observing the chain.                                                                                                                                                                                                   |
+| Lower peer does not initiate within two agreement windows                                                                                                     | Counted close against the lower peer and release of the unsigned attempt; a burned window is a liveness fault, not a wire fault.                                                                                                                                                                                                       |
+| Derived ID is zero or already open before proposal                                                                                                            | Fail the attempt; do not sign and do not report success.                                                                                                                                                                                                                                                                               |
+| Proposal differs from locally rebuilt terms or has an invalid signature/deadline (less than 30 or more than 120 seconds after the higher peer's current time) | Exclude proposer before signing or submitting, and clear the unsigned attempt.                                                                                                                                                                                                                                                         |
+| Final profile loss before a local signature                                                                                                                   | Neutral abort without exclusion; clear attempt and selected ID.                                                                                                                                                                                                                                                                        |
+| Counterparty abandonment after commitment but before local signature                                                                                          | Counted close against the absent peer, clear attempt, return to discovery when still active.                                                                                                                                                                                                                                           |
+| Counterparty abandonment after local signature                                                                                                                | Counted close against the absent peer; observe chain until open or payload expiry.                                                                                                                                                                                                                                                     |
+| Derived ID already open at the peer's match, or an opening receipt this node could not complete                                                               | The peer's view may be stale and the failure may be local: close with reconnect allowed and no strike, never exclude.                                                                                                                                                                                                                  |
+| Higher-peer local submission failure                                                                                                                          | Neither peer immediately excludes the lower proposer. Both signed attempts remain observed until chain open or payload expiry. If no open exists at expiry, only the lower peer counts a close against the higher peer for failing its submission obligation; the higher peer does not blame the lower for its own local send failure. |
+| Duplicate submission of the same valid attempt                                                                                                                | Chain observation decides; at most one opening becomes authoritative.                                                                                                                                                                                                                                                                  |
+
+## Requirements and invariants
+
+**<a id="inv-neg-1-6fw90p"></a>`INV-NEG-1-6FW90P` — Negotiated-terms-only signing.** A node signs only an opening
+that equals the struct rebuilt from its committed attempt and local term intention. The counterparty is bound
+to the authenticated session, and no remote-supplied channel ID or local deposit replaces local derivation.
+The application opening data is part of those terms: the runtime's RPC root derives it as a pure function
+of the agreed channel ID, participants, and balances (empty by default), the lower peer proposes with it, the
+higher peer rebuilds it independently, and a proposal whose data differs is rejected without signing.
+
+**<a id="req-neg-1-rtkpt1"></a>`REQ-NEG-1-RTKPT1` — Deterministic proposer and submitter.** Canonical address
+order selects the lower peer to initiate, construct, and first-sign the proposal and the higher peer to
+validate, co-sign, and submit that exact payload. No second identity-order rule may produce a different
+election.
+
+**<a id="req-neg-2-ed48tz"></a>`REQ-NEG-2-ED48TZ` — Chain-observed completion.** Success is established only by
+observing the derived channel ID open on-chain. An already-open derived ID detected before proposal is a
+failed new attempt, while a submission race for the exact signed attempt defers to chain evidence.
+
+**<a id="req-neg-4-zq0985"></a>`REQ-NEG-4-ZQ0985` — Committed-attempt admission and recovery.** Negotiation accepts
+only the authenticated peer, attempt, and challenge transcript acknowledged by lobby commitment. Correct
+early requests may wait up to two agreement windows. Every failure has the signed/unsigned and profile-loss
+recovery outcome defined above. The two failure classes MUST be kept apart. A step the peer got wrong —
+wrong peer, attempt, transcript, or role, malformed input, or an invalid proposal — is an objective
+violation and excludes the identity with a recorded verdict. A liveness failure the peer is
+accountable for — a lower peer that stays silent past its initiation deadline, a committed peer lost
+mid-negotiation, a burned opening window at expiry — MUST take the counted close of
+[`REQ-RPC-6-E60S4J` (Ordered ingress verification)](rpc.md#req-rpc-6-e60s4j) and MUST NOT record a
+verdict. An abort the peer sends through the protocol's own abort message, a match into a channel
+already open, and an opening receipt this node could not complete are not the peer's fault: they MUST
+close with reconnect allowed and no strike.
+
+## Assumptions and constraints
+
+- Two-party openings only; multi-party negotiation is future work.
+- Both peers hold the same acknowledged lobby transcript and use canonical address ordering.
+- Signature and chain-observation guarantees rely on the protocol trust model and configured agreement and
+  opening-deadline bounds.
+- Progress expects partial synchrony inside the two-window readiness and initiation grace.
+- A locally issued signature cannot be revoked. Recovery after signing is therefore chain-or-expiry based.
+
+## Security considerations
+
+The protected assets are opening-signature intent, channel identity, deposit terms, and one-time submission.
+The primary attacks are term substitution, channel-ID injection, cross-attempt replay, early-message races,
+wrong-peer admission, silent initiation, abandonment after signature, false success from an old channel, and
+a too-close deadline that would make the higher peer pay for an `open` that reverts as expired.
+Transcript-derived identity, authenticated committed-attempt admission, deterministic election, field-exact
+reconstruction, signature verification, the 30-second minimum deadline window, bounded readiness, and
+chain-observed completion contain those attacks. Residual risks are griefing for one bounded attempt, a collision in the underlying hash assumption,
+chain/RPC observation delay, and the unavoidable validity of a signature until its payload expires.
+
+## Verification and test plan
+
+| Plan item                                             | Requirements / invariants                                     | Setup and stimulus                                                                                                                                                                                                                                                       | Expected result                                                                                                                                                                                                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-neg-1-6fw90p.t1"></a>`INV-NEG-1-6FW90P.T1` | [`INV-NEG-1-6FW90P`](channel-negotiation.md#inv-neg-1-6fw90p) | Deliver exact and altered proposals after a committed attempt, including remote channel-ID and amount substitution.                                                                                                                                                      | Only the exact locally rebuilt opening is signed; every mismatch fails without signing.                                                                                                                                                            | <a id="inv-neg-1-6fw90p.t1.p1"></a>`INV-NEG-1-6FW90P.T1.P1` — exact match; <a id="inv-neg-1-6fw90p.t1.p2"></a>`INV-NEG-1-6FW90P.T1.P2` — altered amount; <a id="inv-neg-1-6fw90p.t1.p3"></a>`INV-NEG-1-6FW90P.T1.P3` — cold/unsolicited proposal; <a id="inv-neg-1-6fw90p.t1.p4"></a>`INV-NEG-1-6FW90P.T1.P4` — deadline outside bounds; <a id="inv-neg-1-6fw90p.t1.p5"></a>`INV-NEG-1-6FW90P.T1.P5` — altered participants; <a id="inv-neg-1-6fw90p.t1.p6"></a>`INV-NEG-1-6FW90P.T1.P6` — altered deadline; <a id="inv-neg-1-6fw90p.t1.p7"></a>`INV-NEG-1-6FW90P.T1.P7` — altered atomicity; <a id="inv-neg-1-6fw90p.t1.p8"></a>`INV-NEG-1-6FW90P.T1.P8` — remote channel ID ignored; <a id="inv-neg-1-6fw90p.t1.p9"></a>`INV-NEG-1-6FW90P.T1.P9` — altered application opening data; <a id="inv-neg-1-6fw90p.t1.p10"></a>`INV-NEG-1-6FW90P.T1.P10` — locally derived non-empty opening data accepted; <a id="inv-neg-1-6fw90p.t1.p11"></a>`INV-NEG-1-6FW90P.T1.P11` — deadline too close: a deadline less than 30 seconds after the higher peer's current time is rejected and the proposer excluded before any signature or submission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| <a id="req-neg-1-rtkpt1.t1"></a>`REQ-NEG-1-RTKPT1.T1` | [`REQ-NEG-1-RTKPT1`](channel-negotiation.md#req-neg-1-rtkpt1) | Start from both caller sides and inject wrong-role proposals or submissions.                                                                                                                                                                                             | Lower always initiates and first-signs; higher validates, co-signs, and submits the exact payload; wrong-role traffic fails.                                                                                                                       | <a id="req-neg-1-rtkpt1.t1.p1"></a>`REQ-NEG-1-RTKPT1.T1.P1` — lower caller starts; <a id="req-neg-1-rtkpt1.t1.p2"></a>`REQ-NEG-1-RTKPT1.T1.P2` — higher caller starts; <a id="req-neg-1-rtkpt1.t1.p3"></a>`REQ-NEG-1-RTKPT1.T1.P3` — wrong proposer; <a id="req-neg-1-rtkpt1.t1.p4"></a>`REQ-NEG-1-RTKPT1.T1.P4` — higher submits exact validated payload with both signatures; <a id="req-neg-1-rtkpt1.t1.p5"></a>`REQ-NEG-1-RTKPT1.T1.P5` — proposer signature recovery; <a id="req-neg-1-rtkpt1.t1.p6"></a>`REQ-NEG-1-RTKPT1.T1.P6` — no submission-acknowledgement RPC and completion remains chain-observed; <a id="req-neg-1-rtkpt1.t1.p7"></a>`REQ-NEG-1-RTKPT1.T1.P7` — against the deployed manager, the higher participant sends exactly one opening transaction, the lower sends none, and the channel opens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| <a id="req-neg-2-ed48tz.t1"></a>`REQ-NEG-2-ED48TZ.T1` | [`REQ-NEG-2-ED48TZ`](channel-negotiation.md#req-neg-2-ed48tz) | Derive IDs from equal and distinct attempts, open normally, race a duplicate submission, collide with an already-open ID, fail higher-side submission, and expire.                                                                                                       | Equal transcripts agree, fresh attempts differ, success is chain-observed, and role-specific expiry accountability never blames the lower peer for the higher peer's local send failure.                                                           | <a id="req-neg-2-ed48tz.t1.p1"></a>`REQ-NEG-2-ED48TZ.T1.P1` — same transcript equality; <a id="req-neg-2-ed48tz.t1.p2"></a>`REQ-NEG-2-ED48TZ.T1.P2` — fresh attempt distinct ID; <a id="req-neg-2-ed48tz.t1.p3"></a>`REQ-NEG-2-ED48TZ.T1.P3` — normal completion; <a id="req-neg-2-ed48tz.t1.p4"></a>`REQ-NEG-2-ED48TZ.T1.P4` — exact-attempt race; <a id="req-neg-2-ed48tz.t1.p5"></a>`REQ-NEG-2-ED48TZ.T1.P5` — pre-open collision fails; <a id="req-neg-2-ed48tz.t1.p6"></a>`REQ-NEG-2-ED48TZ.T1.P6` — local submission failure causes no immediate exclusion; <a id="req-neg-2-ed48tz.t1.p7"></a>`REQ-NEG-2-ED48TZ.T1.P7` — deadline without open applies lower-to-higher submission accountability only, as a counted close.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| <a id="req-neg-4-zq0985.t1"></a>`REQ-NEG-4-ZQ0985.T1` | [`REQ-NEG-4-ZQ0985`](channel-negotiation.md#req-neg-4-zq0985) | Deliver correct early, late, wrong-peer, wrong-attempt, malformed, duplicate, silent-initiation, disconnect, remote-abort, abandonment, post-handoff leave, late-mined opening, and disposal paths around commitment and signing, checking identity standing after each. | Only the committed attempt enters; early valid traffic replays; each path applies its exact exclusion, counted-close, no-strike, neutral-abort, retry, chain-observation, disposal, or phase-boundary outcome, and only a step violation excludes. | <a id="req-neg-4-zq0985.t1.p1"></a>`REQ-NEG-4-ZQ0985.T1.P1` — early request queued/replayed; <a id="req-neg-4-zq0985.t1.p2"></a>`REQ-NEG-4-ZQ0985.T1.P2` — readiness expiry; <a id="req-neg-4-zq0985.t1.p3"></a>`REQ-NEG-4-ZQ0985.T1.P3` — lower initiation deadline; <a id="req-neg-4-zq0985.t1.p4"></a>`REQ-NEG-4-ZQ0985.T1.P4` — wrong peer/attempt/transcript; <a id="req-neg-4-zq0985.t1.p5"></a>`REQ-NEG-4-ZQ0985.T1.P5` — stale/duplicate/malformed; <a id="req-neg-4-zq0985.t1.p6"></a>`REQ-NEG-4-ZQ0985.T1.P6` — final profile loss before signing; <a id="req-neg-4-zq0985.t1.p7"></a>`REQ-NEG-4-ZQ0985.T1.P7` — abandonment before signing counts a close; <a id="req-neg-4-zq0985.t1.p8"></a>`REQ-NEG-4-ZQ0985.T1.P8` — abandonment after signing counts a close and keeps observing; <a id="req-neg-4-zq0985.t1.p9"></a>`REQ-NEG-4-ZQ0985.T1.P9` — post-handoff leave cannot cancel; <a id="req-neg-4-zq0985.t1.p10"></a>`REQ-NEG-4-ZQ0985.T1.P10` — fresh discovery join after unsigned failure; <a id="req-neg-4-zq0985.t1.p11"></a>`REQ-NEG-4-ZQ0985.T1.P11` — runtime disposal settles a locally signed join as cancelled; <a id="req-neg-4-zq0985.t1.p12"></a>`REQ-NEG-4-ZQ0985.T1.P12` — a remote abort closes with no strike and leaves its identity standing intact; <a id="req-neg-4-zq0985.t1.p13"></a>`REQ-NEG-4-ZQ0985.T1.P13` — a step violation on the same transcript still excludes the identity; <a id="req-neg-4-zq0985.t1.p15"></a>`REQ-NEG-4-ZQ0985.T1.P15` — a burned opening window counts a close against the higher peer without excluding; <a id="req-neg-4-zq0985.t1.p16"></a>`REQ-NEG-4-ZQ0985.T1.P16` — a match into an already open channel closes with no strike; <a id="req-neg-4-zq0985.t1.p17"></a>`REQ-NEG-4-ZQ0985.T1.P17` — a silent lower initiator counts a close at its deadline without excluding; <a id="req-neg-4-zq0985.t1.p18"></a>`REQ-NEG-4-ZQ0985.T1.P18` — a failed opening receipt closes with no strike; <a id="req-neg-4-zq0985.t1.p19"></a>`REQ-NEG-4-ZQ0985.T1.P19` — an honest opening sent before the deadline but mined after it reverts as expired, closes with no strike, and retries. |
+
+## Future Work
+
+_Non-normative._ Multi-party term negotiation and a formally versioned channel-ID derivation registry may
+be added without changing the two-party committed-attempt boundary.

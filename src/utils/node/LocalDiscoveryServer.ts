@@ -1,0 +1,1464 @@
+import { DisconnectPolicy } from "@/DisconnectPolicy";
+import type P2PManager from "@/P2PManager";
+import { LocalTransport } from "@/transport";
+import LocalPeerInfo from "@/transport/LocalPeerInfo";
+import type { Address, ChecksumAddress } from "@/types/types";
+import { createLogger, type Logger } from "@/utils";
+import { addressesEqual, getChecksumAddress } from "@/utils/address";
+import { config } from "@/utils/config";
+import { ethers } from "ethers";
+import WebSocket, { WebSocketServer, AddressInfo } from "ws";
+
+const MAX_PORT_RETRIES = 20;
+const LOCAL_WS_HOST = "127.0.0.1";
+// The dialer's own address follows the prefix; the acceptor keys its
+// reconnect cooldown by it.
+const LOCAL_TRANSPORT_CLIENT_READY_PREFIX =
+    "peer3:local-transport-client-ready:v2:";
+const LOCAL_TRANSPORT_SERVER_READY_MESSAGE =
+    "peer3:local-transport-server-ready:v1";
+const WS_CONNECT_TIMEOUT_MS = 750;
+const LOCAL_TRANSPORT_READY_TIMEOUT_MS = 2000;
+const REGISTRY_CONNECT_MAX_RETRIES = 10;
+const MAX_PEER_RETRY_BACKOFF_STEP = 5;
+// A closed peer socket used to be redialed after 100ms, so one peer could dial
+// five times inside the first second while its counterpart was still starting
+// up; that burst competes for the CPU the starting peer needs. A real network
+// adds reconnect latency of its own (routing, hole punching), so this local
+// emulation adds it here and the SDK never sees it: the dialer waits this long
+// before its first redial, and the accepting peer server holds an inbound
+// reconnect from a peer whose previous accepted socket closed less than this
+// long ago until the cooldown has passed.
+const PEER_RECONNECT_COOLDOWN_MS = 1000;
+
+type DiscoveryMode = "registry" | "peer";
+
+type Port = number;
+type PeerConnectionKey = `${Port}->${Port}`;
+type RendezvousKey = string;
+
+type DiscoveryInfo = {
+    port: Port;
+    rendezvousKey: RendezvousKey;
+    channelId?: string;
+    peerAddress: string;
+};
+
+type DiscoverySession = {
+    server: WebSocketServer;
+    discoveryWs?: WebSocket;
+    activeDials: Set<PeerConnectionKey>;
+    connectionKeys: Set<PeerConnectionKey>;
+    pendingDials: Set<WebSocket>;
+    retryTimers: Set<ReturnType<typeof setTimeout>>;
+    // Latest advertised endpoint for each peer in this exact topic session.
+    peerPorts: Map<ChecksumAddress, Port>;
+    // When the last accepted socket from each dialer (checksum address) closed.
+    inboundClosedAt: Map<ChecksumAddress, number>;
+    // Peers this session has an outbound dial in flight to. They end with the
+    // session, so a rejoin can dial before a left dial's socket finishes closing.
+    dialingPeers: Set<ChecksumAddress>;
+};
+
+/**
+ * LocalDiscoveryServer - Manages local P2P mesh formation.
+ *
+ * ROLES:
+ * 1. REGISTRY (One per process):
+ *    - Listens on a random available local port.
+ *    - Stores list of active peers.
+ *    - Broadcasts new peers to everyone.
+ *
+ * 2. PEER (Many per process):
+ *    - Listens on a random port (PeerServer).
+ *    - Connects to Registry to announce itself.
+ *    - Connects directly to other Peers upon receiving announcements.
+ */
+export class LocalDiscoveryServer {
+    private static cleanupPromise?: Promise<void>;
+    private static _logger?: Logger;
+
+    // --- Registry State ---
+    private static discoveryServer: WebSocketServer | null = null;
+    private static discoveryPort: number | null = null;
+    private static registeredPeers: DiscoveryInfo[] = [];
+
+    // --- Peer State ---
+    /** Server instances listening for peer-to-peer connections */
+    private static peerServers: Set<WebSocketServer> = new Set();
+
+    /** Active connections from Peers to the Registry */
+    private static activeClientConnections: Set<WebSocket> = new Set();
+
+    /** Tracks active connections for any server (Registry or Peer) */
+    private static serverConnections: Map<WebSocketServer, Set<WebSocket>> =
+        new Map();
+
+    /** Retry count per outbound local-port to peer-port connection. */
+    private static _peerRetryCount: Map<PeerConnectionKey, number> = new Map();
+
+    /** Discovery and primary peer-dial retries owned by this server. */
+    private static pendingTimers: Set<ReturnType<typeof setTimeout>> =
+        new Set();
+
+    private static discoverySessions: WeakMap<
+        P2PManager,
+        Map<RendezvousKey, DiscoverySession>
+    > = new WeakMap();
+
+    /** In-progress listener startup per runtime and exact observed topic. */
+    private static discoveryJoins: WeakMap<
+        P2PManager,
+        Map<RendezvousKey, Promise<void>>
+    > = new WeakMap();
+
+    /** Prevent reconnect loops during/after cleanup */
+    private static _cleanupRequested: boolean = false;
+
+    public static setLogger(logger: Logger): void {
+        this._logger?.dispose();
+        // Discovery outlives individual state managers in this physical thread.
+        this._logger = createLogger(
+            { ...logger.getSharedContext() },
+            { component: "LocalDiscovery" },
+            { loggerService: logger.loggerService }
+        );
+    }
+
+    private static get logger(): Logger {
+        if (!this._logger) {
+            throw new Error("LocalDiscoveryServer logger not initialized");
+        }
+        return this._logger;
+    }
+    private constructor() {}
+
+    private static scheduleTimer(callback: () => void, delayMs: number): void {
+        const timer = setTimeout(() => {
+            this.pendingTimers.delete(timer);
+            callback();
+        }, delayMs);
+        this.pendingTimers.add(timer);
+    }
+
+    private static scheduleSessionTimer(
+        session: DiscoverySession,
+        callback: () => void,
+        delayMs: number
+    ): void {
+        const timer = setTimeout(() => {
+            this.pendingTimers.delete(timer);
+            session.retryTimers.delete(timer);
+            callback();
+        }, delayMs);
+        this.pendingTimers.add(timer);
+        session.retryTimers.add(timer);
+    }
+
+    private static getDiscoverySession(
+        p2pManager: P2PManager,
+        rendezvousKey: RendezvousKey
+    ): DiscoverySession | undefined {
+        return this.discoverySessions.get(p2pManager)?.get(rendezvousKey);
+    }
+
+    private static parseClientReadyFrame(
+        message: Buffer
+    ): ChecksumAddress | undefined {
+        const frame = message.toString();
+        if (!frame.startsWith(LOCAL_TRANSPORT_CLIENT_READY_PREFIX)) {
+            return undefined;
+        }
+        const address = frame.slice(LOCAL_TRANSPORT_CLIENT_READY_PREFIX.length);
+        return ethers.isAddress(address)
+            ? getChecksumAddress(address)
+            : undefined;
+    }
+
+    private static inboundReconnectHoldMs(
+        session: DiscoverySession,
+        dialerAddress: ChecksumAddress
+    ): number {
+        const closedAt = session.inboundClosedAt.get(dialerAddress);
+        if (closedAt === undefined) return 0;
+        return PEER_RECONNECT_COOLDOWN_MS - (Date.now() - closedAt);
+    }
+
+    private static getExternalRegistryUrl(): string | undefined {
+        const url = config.LOCAL_DISCOVERY_REGISTRY_URL?.trim();
+        return url ? url : undefined;
+    }
+
+    private static createOutboundWebSocket(options: {
+        url: string;
+        purpose: "registry" | "peer";
+        connectTimeoutMs?: number;
+        log: Record<string, unknown>;
+        onOpen: (ws: WebSocket, openedAtMs: number) => void;
+        onMessage?: (ws: WebSocket, message: Buffer) => void;
+        onClose?: (ws: WebSocket, code: number, reason: Buffer) => void;
+        onError?: (ws: WebSocket, err: Error) => void;
+        onConnectFailure: (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => void;
+    }): WebSocket {
+        const {
+            url,
+            purpose,
+            connectTimeoutMs = WS_CONNECT_TIMEOUT_MS,
+            log,
+            onOpen,
+            onMessage,
+            onClose,
+            onError,
+            onConnectFailure
+        } = options;
+
+        const startMs = Date.now();
+        let opened = false;
+        let connectFailureHandled = false;
+
+        this.logger.debug("WebSocket dial", {
+            ...log,
+            url,
+            purpose,
+            timeoutMs: connectTimeoutMs
+        });
+
+        const ws = new WebSocket(url);
+        this.activeClientConnections.add(ws);
+
+        const failOnce = (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => {
+            if (opened || connectFailureHandled) {
+                return;
+            }
+            connectFailureHandled = true;
+            onConnectFailure(reason, details);
+        };
+
+        const connectTimeoutId = setTimeout(() => {
+            if (opened || this._cleanupRequested) {
+                return;
+            }
+
+            // Force an event if the OS/socket stack never errors.
+            try {
+                ws.terminate();
+            } catch {
+                // ignore
+            }
+
+            failOnce("timeout", {
+                durationMs: Date.now() - startMs
+            });
+        }, connectTimeoutMs);
+
+        ws.on("open", () => {
+            opened = true;
+            clearTimeout(connectTimeoutId);
+            onOpen(ws, Date.now());
+        });
+
+        ws.on("message", (message: Buffer) => {
+            if (onMessage) {
+                onMessage(ws, message);
+            }
+        });
+
+        ws.on("close", (code: number, reason: Buffer) => {
+            this.activeClientConnections.delete(ws);
+            clearTimeout(connectTimeoutId);
+
+            // If we never opened, treat it as a connect failure.
+            if (!opened && !this._cleanupRequested) {
+                failOnce("close", {
+                    code,
+                    reason: reason?.toString?.() || "",
+                    durationMs: Date.now() - startMs
+                });
+            }
+
+            if (onClose) {
+                onClose(ws, code, reason);
+            }
+        });
+
+        ws.on("error", (err: Error) => {
+            clearTimeout(connectTimeoutId);
+
+            // ws sometimes emits error without ever opening; treat as connect failure.
+            if (!opened && !this._cleanupRequested) {
+                failOnce("error", {
+                    message: err?.message,
+                    durationMs: Date.now() - startMs
+                });
+            }
+
+            if (onError) {
+                onError(ws, err);
+            }
+        });
+
+        return ws;
+    }
+
+    private static createServer(options: {
+        port: number;
+        mode: DiscoveryMode;
+        myPeerAddress?: string;
+        onConnection?: (ws: WebSocket) => void;
+        onError?: (err: Error) => void;
+    }): { server: WebSocketServer; connections: Set<WebSocket> } {
+        const { port, onConnection, onError, mode, myPeerAddress } = options;
+
+        // Listen on the same IPv4 loopback address used by every local dial.
+        // An unspecified host may bind IPv6 while another parallel slot owns
+        // the same port on IPv4, sending the dial to the wrong WebSocket server.
+        const server = new WebSocketServer({ port, host: LOCAL_WS_HOST });
+        const connections = new Set<WebSocket>();
+
+        this.serverConnections.set(server, connections);
+
+        this.logger.debug("Server created", {
+            mode,
+            port,
+            ...(myPeerAddress ? { myPeerAddress } : {})
+        });
+
+        // Register connection handler
+        server.on("connection", (ws: WebSocket) => {
+            this.logger.debug(`New connection established to ${mode}`, {
+                ...(myPeerAddress ? { myPeerAddress } : {})
+            });
+            connections.add(ws);
+
+            // Clean up on close
+            ws.on("close", () => {
+                this.logger.debug(`Connection closed to ${mode}`, {
+                    ...(myPeerAddress ? { myPeerAddress } : {})
+                });
+                connections.delete(ws);
+            });
+
+            // Swallow per-socket errors
+            ws.on("error", () => {
+                // Silent per-socket error handling
+                this.logger.error(`Connection error to ${mode}`, {
+                    ...(myPeerAddress ? { myPeerAddress } : {})
+                });
+            });
+
+            // Call custom connection handler if provided
+            if (onConnection) {
+                onConnection(ws);
+            }
+        });
+
+        // Register error handler
+        server.on("error", (err: Error) => {
+            this.logger.warn("Server error", {
+                mode,
+                port,
+                ...(myPeerAddress ? { myPeerAddress } : {}),
+                message: err.message
+            });
+            if (onError) {
+                onError(err);
+            }
+        });
+
+        return { server, connections };
+    }
+
+    /**
+     * Wraps createServer with retry logic.
+     * Retries port binding on EADDRINUSE.
+     */
+    private static async createServerWithRetry(options: {
+        port?: number;
+        mode: DiscoveryMode;
+        myPeerAddress?: string;
+        onConnection?: (ws: WebSocket) => void;
+        onError?: (err: Error) => void;
+    }): Promise<{
+        server: WebSocketServer;
+        connections: Set<WebSocket>;
+        port: number;
+    }> {
+        const attempts = MAX_PORT_RETRIES;
+
+        let lastError: Error | null = null;
+
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            const port =
+                typeof options.port === "number" && attempt === 0
+                    ? options.port
+                    : 0;
+
+            let serverReady = false;
+            let result: {
+                server: WebSocketServer;
+                connections: Set<WebSocket>;
+            } | null = null;
+
+            try {
+                result = this.createServer({
+                    port,
+                    mode: options.mode,
+                    myPeerAddress: options.myPeerAddress,
+                    onConnection: options.onConnection,
+                    onError: (err: Error) => {
+                        if (serverReady && options.onError) {
+                            options.onError(err);
+                        }
+                    }
+                });
+
+                await this.waitForServerReady(result.server);
+                serverReady = true;
+
+                this.logger.debug("Server ready", {
+                    mode: options.mode,
+                    requestedPort: port,
+                    ...(options.myPeerAddress
+                        ? { myPeerAddress: options.myPeerAddress }
+                        : {})
+                });
+
+                const resolvedPort = this.getServerPort(result.server);
+                this.logger.debug("Server bound", {
+                    mode: options.mode,
+                    requestedPort: port,
+                    resolvedPort,
+                    ...(options.myPeerAddress
+                        ? { myPeerAddress: options.myPeerAddress }
+                        : {}),
+                    attempt
+                });
+                return { ...result, port: resolvedPort };
+            } catch (error: any) {
+                lastError = error;
+
+                if (result) {
+                    await this.closeServer(result.server);
+                }
+
+                this.logger.warn("Server bind failed", {
+                    mode: options.mode,
+                    requestedPort: port,
+                    attempt,
+                    ...(options.myPeerAddress
+                        ? { myPeerAddress: options.myPeerAddress }
+                        : {}),
+                    message: error?.message
+                });
+
+                if (!this.isPortConflictError(error)) {
+                    // Non-port error, rethrow immediately
+                    this.logger.error("Non-retryable server error", {
+                        mode: options.mode,
+                        requestedPort: port,
+                        ...(options.myPeerAddress
+                            ? { myPeerAddress: options.myPeerAddress }
+                            : {}),
+                        message: error?.message
+                    });
+                    throw error;
+                }
+                // Port conflict, try again
+                continue;
+            }
+        }
+
+        throw new Error(
+            `Failed to create WebSocketServer after ${attempts} attempts. Last error: ${lastError?.message}`
+        );
+    }
+
+    private static isPortConflictError(error: any): boolean {
+        const errorCode = error?.code;
+        const errorMessage = error?.message ?? "";
+
+        return (
+            errorCode === "EADDRINUSE" ||
+            (typeof errorMessage === "string" &&
+                (errorMessage.includes("address already in use") ||
+                    errorMessage.includes("EADDRINUSE")))
+        );
+    }
+
+    private static getServerPort(server: WebSocketServer): number {
+        const address = server.address();
+        if (typeof address === "object" && address) {
+            return (address as AddressInfo).port;
+        }
+        throw new Error("Unable to determine server port");
+    }
+
+    /**
+     * Waits for the WebSocket server to be ready (listening) or error.
+     * Returns a promise that resolves when the server is listening, or rejects on error.
+     */
+    private static waitForServerReady(server: WebSocketServer): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Remove event listeners once we get a result (success or error)
+            const cleanup = () => {
+                server.off("listening", onListening);
+                server.off("error", onError);
+            };
+
+            const onListening = () => {
+                cleanup();
+                resolve();
+            };
+
+            const onError = (err: Error) => {
+                cleanup();
+                reject(err);
+            };
+
+            // Listen for server ready or error events (once each)
+            server.once("listening", onListening);
+            server.once("error", onError);
+        });
+    }
+
+    private static closeServer(server: WebSocketServer): Promise<void> {
+        return new Promise((resolve) => {
+            server.clients.forEach((client) => client.terminate());
+            server.close(() => resolve());
+        });
+    }
+
+    /**
+     * Starts the central Registry Server.
+     *
+     * Flow:
+     * - Binds to a port.
+     * - When a peer connects: routes to handleIncomingRegistration().
+     */
+    public static async tryStart(): Promise<boolean> {
+        const externalRegistryUrl = this.getExternalRegistryUrl();
+        if (externalRegistryUrl) {
+            this.logger.debug("Using external discovery registry", {
+                mode: "registry",
+                registryUrl: externalRegistryUrl
+            });
+            return false;
+        }
+
+        if (this.discoveryServer) {
+            return false; // Already started
+        }
+
+        this._cleanupRequested = false;
+
+        let lastError: Error | null = null;
+        const maxRetries = 30;
+
+        try {
+            const { server, port } = await this.createServerWithRetry({
+                mode: "registry",
+                onConnection: (ws: WebSocket) => {
+                    this.handleIncomingRegistration(ws);
+                },
+                onError: (_err: Error) => {
+                    // Silent error handling for discovery server
+                }
+            });
+
+            this.discoveryServer = server;
+            this.discoveryPort = port;
+
+            this.logger.debug("Discovery server started", {
+                mode: "registry",
+                registryPort: port
+            });
+
+            return true;
+        } catch (err: any) {
+            lastError = err;
+            this.logger.error("Discovery server start failed", {
+                mode: "registry",
+                message: err?.message
+            });
+        }
+
+        throw new Error(
+            `Failed to start discovery server after ${maxRetries} attempts. Last error: ${lastError?.message}`
+        );
+    }
+
+    /**
+     * Registry Logic: Handles a new Peer connecting to the Registry.
+     *
+     * Flow:
+     * 1. Receives {port, rendezvousKey, peerAddress} from new peer.
+     * 2. Adds to registeredPeers list.
+     * 3. Sends FULL list of existing peers to the new peer.
+     * 4. Broadcasts the NEW peer to all other connected peers.
+     */
+    private static handleIncomingRegistration(ws: WebSocket): void {
+        ws.on("message", (message: Buffer) => {
+            try {
+                const { port, rendezvousKey, peerAddress } = JSON.parse(
+                    message.toString()
+                ) as DiscoveryInfo;
+                if (!peerAddress) {
+                    throw new Error("Registration is missing peerAddress");
+                }
+
+                this.logger.debug("Registration received", {
+                    mode: "registry",
+                    port,
+                    rendezvousKey,
+                    peerAddress,
+                    totalPeers: this.registeredPeers.length + 1
+                });
+
+                // Append to discovery list
+                this.registeredPeers.push({
+                    port,
+                    rendezvousKey,
+                    peerAddress
+                });
+
+                // Send all known discovery entries back to this client
+                for (const entry of this.registeredPeers) {
+                    ws.send(JSON.stringify(entry));
+                }
+
+                // Broadcast new entry to all other discovery clients
+                const connections = this.serverConnections.get(
+                    this.discoveryServer!
+                );
+                if (connections) {
+                    for (const conn of connections) {
+                        if (conn !== ws) {
+                            conn.send(message);
+                        }
+                    }
+                }
+            } catch {
+                // Ignore malformed messages
+                this.logger.warn("Malformed registration message", {
+                    mode: "registry",
+                    raw: message.toString()
+                });
+            }
+        });
+    }
+
+    /**
+     * Peer Logic: Join the mesh.
+     *
+     * Flow:
+     * 1. Start a PeerServer to listen for connections from other peers.
+     * 2. Connect to the Registry to announce presence.
+     * 3. Listen for Registry announcements (other peers) → handlePeerAnnouncement.
+     */
+    public static async connectToPeers(
+        p2pManager: P2PManager,
+        rendezvousKey: RendezvousKey,
+        myPeerAddress: string
+    ): Promise<void> {
+        const joins =
+            this.discoveryJoins.get(p2pManager) ??
+            new Map<RendezvousKey, Promise<void>>();
+        const pending = joins.get(rendezvousKey);
+        if (pending) return pending;
+        if (this.getDiscoverySession(p2pManager, rendezvousKey)) return;
+        this.discoveryJoins.set(p2pManager, joins);
+        const started = this.startDiscoverySession(
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        );
+        joins.set(rendezvousKey, started);
+        try {
+            await started;
+        } finally {
+            joins.delete(rendezvousKey);
+        }
+    }
+
+    private static async startDiscoverySession(
+        p2pManager: P2PManager,
+        rendezvousKey: RendezvousKey,
+        myPeerAddress: string
+    ): Promise<void> {
+        const externalRegistryUrl = this.getExternalRegistryUrl();
+        if (!externalRegistryUrl && !this.discoveryPort) {
+            throw new Error(
+                "Discovery server not started. Call tryStart() before connectToPeers()."
+            );
+        }
+        const registryPort = this.discoveryPort;
+        const registryUrl =
+            externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
+
+        const peerLog = {
+            mode: "peer" as const,
+            rendezvousKey,
+            myPeerAddress
+        };
+
+        // 1. Start PeerServer (Listens for incoming connections)
+        const { server, port } = await this.createServerWithRetry({
+            mode: "peer",
+            myPeerAddress,
+            onConnection: (ws: WebSocket) => {
+                // Accepted a direct connection from another peer
+                ws.once("message", (message: Buffer) => {
+                    // A peer retrying a failed connection can deliver its
+                    // ready frame while the session tears down; starting a
+                    // handshake then runs against disposed runtimes (Clock,
+                    // state managers).
+                    const dialerAddress = this.parseClientReadyFrame(message);
+                    const session = this.getDiscoverySession(
+                        p2pManager,
+                        rendezvousKey
+                    );
+                    if (
+                        this._cleanupRequested ||
+                        p2pManager.isDisposed ||
+                        !session ||
+                        session.server !== server ||
+                        !dialerAddress ||
+                        LocalPeerInfo.isBanned(p2pManager, dialerAddress)
+                    ) {
+                        ws.close();
+                        return;
+                    }
+                    const admit = () => {
+                        if (
+                            this._cleanupRequested ||
+                            p2pManager.isDisposed ||
+                            ws.readyState !== WebSocket.OPEN ||
+                            LocalPeerInfo.isBanned(p2pManager, dialerAddress)
+                        ) {
+                            ws.close();
+                            return;
+                        }
+                        // Acknowledge the raw socket before either endpoint
+                        // sends handshake RPCs. WebSocket ordering then
+                        // guarantees both LocalTransport listeners are
+                        // installed first.
+                        ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
+                        const lt = new LocalTransport(ws, p2pManager.rpcRouter);
+                        p2pManager.profileManager.setBannablePeerInfo(
+                            lt,
+                            new LocalPeerInfo(p2pManager, dialerAddress)
+                        );
+                        if (lt.isClosed) return;
+                        ws.once("close", () =>
+                            session.inboundClosedAt.set(
+                                dialerAddress,
+                                Date.now()
+                            )
+                        );
+                        p2pManager.localRpc.initHandshakeService.initHandshake(
+                            lt
+                        );
+                        this.logger.debug("Inbound peer connection accepted", {
+                            ...peerLog,
+                            myPeerPort: port,
+                            peerAddress: dialerAddress
+                        });
+                    };
+                    // The network, not the SDK, spaces reconnects: hold the
+                    // socket until the dialer's cooldown has passed.
+                    const holdMs = this.inboundReconnectHoldMs(
+                        session,
+                        dialerAddress
+                    );
+                    if (holdMs <= 0) {
+                        admit();
+                        return;
+                    }
+                    this.logger.debug("Holding an inbound reconnect", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        peerAddress: dialerAddress,
+                        holdMs
+                    });
+                    this.scheduleSessionTimer(session, admit, holdMs);
+                });
+            },
+            onError: (err: Error) => {
+                const errorCode = (err as any)?.code;
+                if (errorCode === "EADDRINUSE") {
+                    this.logger.warn("Peer server port became in use", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        message: err.message
+                    });
+                } else {
+                    this.logger.error("Peer server error", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        message: err.message
+                    });
+                }
+            }
+        });
+
+        this.peerServers.add(server);
+        const sessions = this.discoverySessions.get(p2pManager) ?? new Map();
+        const session: DiscoverySession = {
+            server,
+            activeDials: new Set(),
+            connectionKeys: new Set(),
+            pendingDials: new Set(),
+            retryTimers: new Set(),
+            peerPorts: new Map(),
+            inboundClosedAt: new Map(),
+            dialingPeers: new Set()
+        };
+        sessions.set(rendezvousKey, session);
+        this.discoverySessions.set(p2pManager, sessions);
+
+        this.logger.info("Peer server started", {
+            ...peerLog,
+            myPeerPort: port
+        });
+
+        // 2. Connect to Registry
+
+        const connectRegistry = (attempt: number) => {
+            if (
+                this._cleanupRequested ||
+                this.getDiscoverySession(p2pManager, rendezvousKey) !== session
+            ) {
+                return;
+            }
+            if (!externalRegistryUrl && !this.discoveryPort) {
+                this.logger.warn(
+                    "Discovery server port missing; cannot connect",
+                    {
+                        ...peerLog,
+                        registryUrl,
+                        myPeerPort: port,
+                        registryPort: this.discoveryPort
+                    }
+                );
+                return;
+            }
+
+            if (attempt > REGISTRY_CONNECT_MAX_RETRIES) {
+                this.logger.error(
+                    "Discovery registry connect retries exhausted",
+                    {
+                        ...peerLog,
+                        registryUrl,
+                        myPeerPort: port,
+                        registryPort: this.discoveryPort,
+                        attempts: attempt - 1
+                    }
+                );
+                return;
+            }
+
+            const log = {
+                ...peerLog,
+                registryUrl,
+                myPeerPort: port,
+                registryPort: this.discoveryPort,
+                attempt
+            };
+
+            const discoveryWs = this.createOutboundWebSocket({
+                url: registryUrl,
+                purpose: "registry",
+                log,
+                onOpen: (ws) => {
+                    ws.send(
+                        JSON.stringify({
+                            port,
+                            rendezvousKey,
+                            // Compatibility with the standalone local relay protocol.
+                            channelId: rendezvousKey,
+                            peerAddress: myPeerAddress
+                        })
+                    );
+                    this.logger.debug("Connected to discovery registry", {
+                        ...peerLog,
+                        registryUrl,
+                        registryPort: this.discoveryPort,
+                        myPeerPort: port,
+                        attempt
+                    });
+                },
+                onMessage: (_ws, message: Buffer) => {
+                    const msg = message.toString();
+                    this.handlePeerAnnouncement(
+                        msg,
+                        server,
+                        port,
+                        p2pManager,
+                        rendezvousKey,
+                        myPeerAddress
+                    );
+                    this.logger.debug("Discovery announcement received", {
+                        ...peerLog,
+                        myPeerPort: port,
+                        msg
+                    });
+                },
+                onClose: () => {
+                    this.logger.debug("Discovery connection closed", {
+                        ...peerLog,
+                        registryUrl,
+                        registryPort: this.discoveryPort,
+                        myPeerPort: port
+                    });
+                },
+                onError: (_ws, err: Error) => {
+                    // Note: connect failures are handled via onConnectFailure; this is for post-open errors.
+                    this.logger.warn("Discovery connection error", {
+                        ...peerLog,
+                        registryUrl,
+                        registryPort: this.discoveryPort,
+                        myPeerPort: port,
+                        message: err?.message
+                    });
+                },
+                onConnectFailure: (reason, details) => {
+                    this.logger.warn(
+                        "Discovery registry connect failed; retrying",
+                        {
+                            ...peerLog,
+                            registryUrl,
+                            myPeerPort: port,
+                            registryPort: this.discoveryPort,
+                            attempt,
+                            reason,
+                            ...(details ?? {})
+                        }
+                    );
+                    this.scheduleSessionTimer(
+                        session,
+                        () => connectRegistry(attempt + 1),
+                        Math.min(100 * attempt, 1000)
+                    );
+                }
+            });
+
+            const activeSession = this.getDiscoverySession(
+                p2pManager,
+                rendezvousKey
+            );
+            if (activeSession === session)
+                activeSession.discoveryWs = discoveryWs;
+        };
+
+        connectRegistry(1);
+    }
+
+    public static async leave(
+        rendezvousKey: string,
+        p2pManager?: P2PManager
+    ): Promise<void> {
+        if (!p2pManager) return;
+        await this.discoveryJoins.get(p2pManager)?.get(rendezvousKey);
+        const sessions = this.discoverySessions.get(p2pManager);
+        const session = sessions?.get(rendezvousKey);
+        if (!session) return;
+        sessions?.delete(rendezvousKey);
+        for (const timer of session.retryTimers) {
+            clearTimeout(timer);
+            this.pendingTimers.delete(timer);
+        }
+        session.retryTimers.clear();
+        session.activeDials.clear();
+        for (const ws of session.pendingDials) ws.close();
+        session.pendingDials.clear();
+        for (const connectionKey of session.connectionKeys)
+            this._peerRetryCount.delete(connectionKey);
+        session.connectionKeys.clear();
+        session.discoveryWs?.close();
+        // Stop accepting peers for this rendezvous without closing transports
+        // that the channel lifecycle now owns. cleanup() closes those sockets.
+        session.server.close();
+    }
+
+    /**
+     * Peer Logic: Process a peer announcement from the Registry.
+     *
+     * Strategy:
+     * - The lower EVM address is the primary dialer.
+     * - The other peer waits for the primary peer's owned retry loop.
+     */
+    private static handlePeerAnnouncement(
+        msg: string,
+        myServer: WebSocketServer,
+        myPort: Port,
+        p2pManager: P2PManager,
+        myRendezvousKey: RendezvousKey,
+        myPeerAddress: string
+    ): void {
+        try {
+            const announcement = JSON.parse(msg) as DiscoveryInfo;
+            const peerPort = announcement.port;
+            const peerAddress = announcement.peerAddress;
+            const peerRendezvousKey =
+                announcement.rendezvousKey ?? announcement.channelId;
+            if (!peerAddress) {
+                throw new Error("Announcement is missing peerAddress");
+            }
+            if (!peerRendezvousKey) {
+                throw new Error("Announcement is missing rendezvous key");
+            }
+
+            const logBase = {
+                mode: "peer" as const,
+                myPeerAddress,
+                myPeerPort: myPort,
+                peerAddress,
+                peerPort,
+                peerRendezvousKey
+            };
+
+            if (addressesEqual(myPeerAddress, peerAddress)) {
+                this.logger.debug("Announcement ignored (self)", logBase);
+                return;
+            }
+
+            const rendezvousMatches = myRendezvousKey === peerRendezvousKey;
+
+            if (!rendezvousMatches) {
+                this.logger.debug(
+                    "Announcement ignored (rendezvous mismatch)",
+                    {
+                        ...logBase,
+                        myRendezvousKey
+                    }
+                );
+                return;
+            }
+
+            const session = this.getDiscoverySession(
+                p2pManager,
+                myRendezvousKey
+            );
+            if (!session || session.server !== myServer) return;
+
+            // A restart can announce a replacement while the old dial is still
+            // active. Retain it even when duplicate-dial admission skips it.
+            session.peerPorts.set(getChecksumAddress(peerAddress), peerPort);
+
+            if (this.isPeerExcluded(p2pManager, peerAddress)) {
+                this.logger.debug("Announcement ignored (blacklisted)", {
+                    ...logBase,
+                    myRendezvousKey
+                });
+                return;
+            }
+
+            const isPrimaryDialer =
+                myPeerAddress.toLowerCase() < peerAddress.toLowerCase();
+            if (!isPrimaryDialer) {
+                this.logger.debug("Waiting for primary peer dial", {
+                    ...logBase,
+                    myRendezvousKey
+                });
+                return;
+            }
+
+            this.connectToSinglePeer(
+                peerPort,
+                peerAddress,
+                p2pManager,
+                myRendezvousKey,
+                myPeerAddress,
+                myPort
+            );
+            this.logger.debug("Connecting to announced peer", {
+                ...logBase,
+                myRendezvousKey
+            });
+        } catch {
+            // Ignore malformed messages
+            this.logger.warn("Malformed peer announcement", {
+                mode: "peer",
+                raw: msg
+            });
+        }
+    }
+
+    /**
+     * One live connection per unique peer, across every observed topic. This
+     * mirrors the Hyperswarm behavior production relies on during the
+     * derived-to-raw topic handoff: a peer already authenticated on one topic,
+     * or already being dialed on another, is not dialed again.
+     */
+    private static isPeerConnected(
+        p2pManager: P2PManager,
+        peerAddress: string
+    ): boolean {
+        if (
+            p2pManager.openConnections.some(
+                (transport) =>
+                    transport.peerAddress !== undefined &&
+                    addressesEqual(transport.peerAddress, peerAddress)
+            )
+        ) {
+            return true;
+        }
+        const profile = p2pManager.profileManager.getProfileByEvmAddress(
+            peerAddress as Address
+        );
+        if (profile && profile.getLiveTransports().length > 0) return true;
+        // An outbound dial in flight on any observed topic.
+        const sessions = this.discoverySessions.get(p2pManager)?.values() ?? [];
+        return [...sessions].some((session) =>
+            session.dialingPeers.has(getChecksumAddress(peerAddress))
+        );
+    }
+
+    /** A recorded verdict or a session suspension: do not dial this peer again. */
+    private static isPeerExcluded(
+        p2pManager: P2PManager,
+        peerAddress: string
+    ): boolean {
+        return (
+            p2pManager.isBlacklisted(peerAddress as Address) ||
+            LocalPeerInfo.isBanned(p2pManager, peerAddress)
+        );
+    }
+
+    /**
+     * Peer Logic: Connects to a specific peer.
+     * Retries with capped backoff while the owning topic session remains active.
+     */
+    private static connectToSinglePeer(
+        peerPort: Port,
+        peerAddress: string,
+        p2pManager: P2PManager,
+        rendezvousKey: RendezvousKey,
+        myPeerAddress: string,
+        myPeerPort: Port
+    ): void {
+        const session = this.getDiscoverySession(p2pManager, rendezvousKey);
+        if (!session) return;
+        // Retry callbacks may have captured a port belonging to an old runtime.
+        peerPort =
+            session.peerPorts.get(getChecksumAddress(peerAddress)) ?? peerPort;
+        const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
+        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
+        const skipReason = this._cleanupRequested
+            ? "cleanup-requested"
+            : p2pManager.isDisposed
+              ? "disposed"
+              : session.activeDials.has(connectionKey)
+                ? "dial-active"
+                : this.isPeerConnected(p2pManager, peerAddress)
+                  ? "peer-connected"
+                  : this.isPeerExcluded(p2pManager, peerAddress)
+                    ? "excluded"
+                    : undefined;
+        if (skipReason) {
+            // A skipped retry is the end of the road for this key: no
+            // announcement follows it, so the reason must be visible.
+            if (retryCount > 0) {
+                this.logger.debug("Peer retry skipped", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerAddress,
+                    peerPort,
+                    rendezvousKey,
+                    attempt: retryCount + 1,
+                    skipReason
+                });
+            }
+            return;
+        }
+
+        session.activeDials.add(connectionKey);
+        session.connectionKeys.add(connectionKey);
+        session.dialingPeers.add(getChecksumAddress(peerAddress));
+
+        const attempt = retryCount + 1;
+        const peerUrl = `ws://${LOCAL_WS_HOST}:${peerPort}`;
+
+        const log = {
+            mode: "peer" as const,
+            myPeerAddress,
+            myPeerPort,
+            peerAddress,
+            peerPort,
+            rendezvousKey,
+            attempt
+        };
+
+        let retryScheduled = false;
+        let handshakeCompleted = false;
+        let transport: LocalTransport | undefined;
+        let transportReadyTimeout: ReturnType<typeof setTimeout> | undefined;
+
+        const scheduleRetry = (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => {
+            if (
+                retryScheduled ||
+                this._cleanupRequested ||
+                p2pManager.isDisposed ||
+                this.getDiscoverySession(p2pManager, rendezvousKey) !==
+                    session ||
+                this.isPeerExcluded(p2pManager, peerAddress)
+            ) {
+                return;
+            }
+            retryScheduled = true;
+            session.activeDials.delete(connectionKey);
+
+            this._peerRetryCount.set(connectionKey, attempt);
+            this.logger.warn("Peer connection failed; retrying", {
+                ...log,
+                reason,
+                ...(details ?? {})
+            });
+
+            this.scheduleSessionTimer(
+                session,
+                () =>
+                    this.connectToSinglePeer(
+                        peerPort,
+                        peerAddress,
+                        p2pManager,
+                        rendezvousKey,
+                        myPeerAddress,
+                        myPeerPort
+                    ),
+                Math.min(
+                    Math.max(
+                        PEER_RECONNECT_COOLDOWN_MS,
+                        100 * 2 ** (attempt - 1)
+                    ),
+                    100 * 2 ** (MAX_PEER_RETRY_BACKOFF_STEP - 1)
+                )
+            );
+        };
+
+        const dialWs = this.createOutboundWebSocket({
+            url: peerUrl,
+            purpose: "peer",
+            log,
+            onOpen: (ws) => {
+                if (
+                    p2pManager.isDisposed ||
+                    this.getDiscoverySession(p2pManager, rendezvousKey) !==
+                        session
+                ) {
+                    ws.close();
+                    return;
+                }
+                ws.send(LOCAL_TRANSPORT_CLIENT_READY_PREFIX + myPeerAddress);
+                // This frame only confirms local socket-listener setup. Keep
+                // its retry bound independent of the protocol agreement time.
+                transportReadyTimeout = setTimeout(() => {
+                    if (transport || this._cleanupRequested) return;
+                    ws.close();
+                    scheduleRetry("transport-ready-timeout");
+                }, LOCAL_TRANSPORT_READY_TIMEOUT_MS);
+            },
+            onMessage: (ws, message) => {
+                if (
+                    p2pManager.isDisposed ||
+                    this.getDiscoverySession(p2pManager, rendezvousKey) !==
+                        session ||
+                    transport ||
+                    message.toString() !== LOCAL_TRANSPORT_SERVER_READY_MESSAGE
+                ) {
+                    if (!transport) ws.close();
+                    return;
+                }
+
+                clearTimeout(transportReadyTimeout);
+                const lt = new LocalTransport(ws, p2pManager.rpcRouter);
+                transport = lt;
+                p2pManager.profileManager.setBannablePeerInfo(
+                    lt,
+                    new LocalPeerInfo(p2pManager, peerAddress)
+                );
+                const handshakeService =
+                    p2pManager.localRpc.initHandshakeService;
+                handshakeService.initHandshake(lt);
+                void handshakeService
+                    .waitForHandshakeCompleted(
+                        lt,
+                        p2pManager.stateManager.timeConfig.agreementTime * 1000
+                    )
+                    .then((completed) => {
+                        // Shutdown settles every pending handshake wait with
+                        // false before the P2P manager itself is disposed; that
+                        // is not a failed handshake, so nothing is retried.
+                        if (!completed && p2pManager.stateManager.isDisposed)
+                            return;
+                        if (!completed) {
+                            p2pManager.disconnectConnection(
+                                lt,
+                                DisconnectPolicy.ALLOW
+                            );
+                            scheduleRetry("handshake-timeout");
+                            return;
+                        }
+
+                        // Socket open only proves transport availability. The
+                        // authenticated handshake completes peer discovery.
+                        handshakeCompleted = true;
+                        session.pendingDials.delete(ws);
+                        this.logger.info("Connected to peer", {
+                            ...log
+                        });
+                    });
+            },
+            onClose: (_ws, code: number, reason: Buffer) => {
+                clearTimeout(transportReadyTimeout);
+                session.pendingDials.delete(_ws);
+                session.activeDials.delete(connectionKey);
+                session.dialingPeers.delete(getChecksumAddress(peerAddress));
+                this.logger.debug("Peer connection closed", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerPort,
+                    rendezvousKey,
+                    code,
+                    reason: reason?.toString?.() || ""
+                });
+                scheduleRetry(
+                    handshakeCompleted
+                        ? "closed-after-handshake"
+                        : "closed-before-handshake",
+                    {
+                        code,
+                        reason: reason?.toString?.() || ""
+                    }
+                );
+            },
+            onError: (_ws, err: Error) => {
+                // Post-open errors are noisy but useful in debug.
+                this.logger.debug("Peer connection error", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerPort,
+                    rendezvousKey,
+                    message: err?.message
+                });
+            },
+            onConnectFailure: (reason, details) => {
+                session.pendingDials.delete(dialWs);
+                session.dialingPeers.delete(getChecksumAddress(peerAddress));
+                scheduleRetry(reason, details);
+            }
+        });
+        session.pendingDials.add(dialWs);
+
+        // If we never open and never fail, the helper will time out.
+        // If we do open, we keep the ws alive for LocalTransport.
+    }
+
+    public static cleanup(): Promise<void> {
+        return (this.cleanupPromise ??= this.cleanupOwnedResources().finally(
+            () => {
+                this.cleanupPromise = undefined;
+            }
+        ));
+    }
+
+    private static async cleanupOwnedResources(): Promise<void> {
+        if (!this._logger) return;
+        this._cleanupRequested = true;
+        const closePromises: Promise<void>[] = [];
+
+        // 1. Close all peer servers
+        for (const server of this.peerServers) {
+            closePromises.push(
+                new Promise<void>((resolve) => {
+                    // Close all connections first
+                    const connections = this.serverConnections.get(server);
+                    connections?.forEach((ws) => {
+                        if (ws.readyState === WebSocket.CLOSED) return;
+                        closePromises.push(
+                            new Promise<void>((closed) => {
+                                ws.prependOnceListener("close", closed);
+                                ws.terminate();
+                            })
+                        );
+                    });
+                    connections?.clear();
+                    this.serverConnections.delete(server);
+
+                    // Close the server
+                    server.close(() => resolve());
+                })
+            );
+        }
+        this.peerServers.clear();
+
+        this.logger.debug("Peer servers closing", {
+            mode: "peer",
+            count: closePromises.length
+        });
+
+        // 2. Close all outgoing discovery and peer connections before releasing the logger.
+        this.activeClientConnections.forEach((ws) => {
+            if (ws.readyState === WebSocket.CLOSED) return;
+            closePromises.push(
+                new Promise<void>((resolve) => {
+                    ws.prependOnceListener("close", () => resolve());
+                    ws.terminate();
+                })
+            );
+        });
+        this.activeClientConnections.clear();
+
+        for (const timer of this.pendingTimers) {
+            clearTimeout(timer);
+        }
+        this.pendingTimers.clear();
+
+        this.logger.debug("Discovery connections terminated", { mode: "peer" });
+
+        // 3. Close the central discovery server
+        if (this.discoveryServer) {
+            closePromises.push(
+                new Promise<void>((resolve) => {
+                    this.discoveryServer!.clients.forEach((client) =>
+                        client.terminate()
+                    );
+                    this.discoveryServer!.close(() => {
+                        this.discoveryServer = null;
+                        this.discoveryPort = null;
+                        resolve();
+                    });
+                })
+            );
+            this.logger.debug("Discovery server closing", { mode: "registry" });
+        }
+
+        // 4. Clear internal state
+        this._peerRetryCount.clear();
+        this.discoverySessions = new WeakMap();
+        this.registeredPeers = [];
+
+        this.logger.debug("LocalDiscovery cleanup complete", {
+            mode: "registry"
+        });
+
+        // Wait for everything to close
+        await Promise.all(closePromises);
+
+        this._cleanupRequested = false;
+        this._logger.dispose({ cascadeChildren: true });
+        this._logger = undefined;
+    }
+}

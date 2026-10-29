@@ -1,0 +1,591 @@
+import { Status } from "@/types";
+import {
+    connectLobbyPeers,
+    probeLobbyCleanupOrdering,
+    probeLobbyCleanupOverlap,
+    probeLobbyFailedLeave,
+    probeLobbyHandoffOrdering
+} from "@test/fixtures/LobbyCleanupStaging";
+import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
+
+describe("LobbyMatchingService", function () {
+    let fixture: P2PManagerFixture;
+    /** The selected peer of `probeLobbyHandoffExit`. */
+    const handedOffPeer = ethers.getAddress(
+        "0xffffffffffffffffffffffffffffffffffffffff"
+    );
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("does not call the configured filter for its own address", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyFilterBoundary(
+                fixture.address(1),
+                "self"
+            )
+            .request();
+        expect(result).to.deep.equal({ calls: 0, sameError: false });
+    });
+
+    it("does not call the configured filter for an unknown transport", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyFilterBoundary(
+                fixture.address(1),
+                "unknown"
+            )
+            .request();
+        expect(result).to.deep.equal({ calls: 0, sameError: false });
+    });
+
+    it("propagates the configured filter error unchanged for a foreign peer", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyFilterBoundary(
+                fixture.address(1),
+                "throw"
+            )
+            .request();
+        expect(result).to.deep.equal({ calls: 1, sameError: true });
+    });
+
+    it("checks malformed availability and missing reservations before the configured filter", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyFilterOrder(fixture.address(1))
+            .request();
+        expect(result).to.deep.equal({
+            beforeValid: 0,
+            afterValid: 1,
+            afterPick: 2,
+            pick: "rejected"
+        });
+    });
+
+    it("rejects zero lobby balance before changing the selected channel or status", async function () {
+        const h = fixture.getHarness();
+        const peer = h.getPeer(0);
+        const result = await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                const channelId = sm.channelId;
+                const status = sm.status;
+                let message = "";
+                try {
+                    await sm.p2pManager.p2pSigner.joinLobby(args.topic, {
+                        balance: { amount: 0n, data: "0x1234" }
+                    });
+                } catch (error) {
+                    message =
+                        error instanceof Error ? error.message : String(error);
+                }
+                return {
+                    message,
+                    unchanged:
+                        channelId === sm.channelId && status === sm.status
+                };
+            },
+            { topic: ethers.id("zero-lobby-balance") }
+        );
+        expect(result.message).to.equal("Balance must be greater than zero");
+        expect(result.unchanged).to.equal(true);
+    });
+
+    it("bootstraps an advertiser, reserves one picker, and resolves only after valid commitment", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.role).to.equal("advertiser");
+        expect(result.firstStatus).to.equal("accepted");
+        expect(result.concurrentStatus).to.equal("busy");
+        expect(result.malformedCommitStatus).to.equal("rejected");
+        expect(result.validCommitStatus).to.equal("acknowledged");
+        expect(result.candidateCountAfterSameEpochUnavailable).to.equal(0);
+        expect(result.candidateCountAfterSameEpochReadvertisement).to.equal(1);
+        expect(result.candidateCountAfterStaleAvailability).to.equal(1);
+        expect(result.matchPeer.toLowerCase()).to.equal(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        expect(result.matchHasChannelId).to.equal(false);
+        expect(result.localChannelId).to.equal(ethers.ZeroHash);
+        expect(result.lobbyTransportsExcludedBeforeCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeCommit).to.equal(0);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+        expect(result.selectedTransportConnectedAfterCompletion).to.equal(true);
+        expect(result.nonSelectedTransportClosed).to.equal(true);
+        expect(result.ordinaryHookCountAfterCommit).to.equal(1);
+        expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
+        expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
+        expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
+    });
+
+    it("removes the promoted peer from the connection set on handoff release", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("release", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("removes the promoted peer from the connection set on handoff disconnect", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("disconnect", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("removes the promoted peer from the connection set on handoff dispose", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("dispose", false)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(1);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+        expect(result.reportedConnectionsAfterCommit).to.include(handedOffPeer);
+        expect(result.reportsDuringExit).to.be.greaterThan(0);
+        expect(result.lastReportedConnections).to.not.include(handedOffPeer);
+    });
+
+    it("promotes a replacement transport once during the handoff and closes it on release", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyHandoffExit("release", true)
+            .request();
+
+        expect(result.selectedPromotedAtCommit).to.equal(true);
+        expect(result.replacementPromoted).to.equal(true);
+        expect(result.ordinaryHookCountBeforeExit).to.equal(2);
+        expect(result.handedOffTransportsRemovedAfterExit).to.equal(true);
+    });
+
+    it("keeps a reservation through final profile loss, strikes at its bound, and bounds rejected lobby traffic", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyRecovery()
+            .request();
+
+        expect(result.reservationAccepted).to.equal(true);
+        expect(result.reservedAfterFinalLoss).to.equal(true);
+        expect(result.matchingAfterFinalLoss).to.equal(true);
+        expect(result.disconnectedPeerBlacklisted).to.equal(false);
+        expect(result.disconnectedPeerStrikes).to.equal(0);
+        // The reservation bound is one agreement window; the absent selector
+        // takes one strike when it fires and the reservation is released. A
+        // burned window is never a fault ban.
+        await waitFor(
+            async () =>
+                !(
+                    await fixture
+                        .control()
+                        .p2pManagerProbe.probeLobbyRecoveryBound()
+                        .request()
+                ).reserved,
+            fixture.getHarness().event.protocolEventTimeoutMs(),
+            100
+        );
+        const afterBound = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyRecoveryBound()
+            .request();
+        expect(afterBound.reserved).to.equal(false);
+        expect(afterBound.matching).to.equal(true);
+        expect(afterBound.disconnectedPeerBlacklisted).to.equal(false);
+        expect(afterBound.disconnectedPeerStrikes).to.equal(1);
+        expect(result.openAtRejectionLimit).to.equal(true);
+        expect(result.notificationReplies).to.equal(0);
+        expect(result.abusiveTransportClosed).to.equal(true);
+        expect(result.abusivePeerBlacklisted).to.equal(true);
+    });
+
+    it("settles cancellation when the selected peer disconnects during commit", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyCommitCancellation()
+            .request();
+
+        expect(result).to.deep.equal({
+            cancellationResult: true,
+            matchResultMissing: true,
+            topicCleared: true,
+            matchingCleared: true,
+            selectionCleared: true,
+            candidateCount: 0,
+            transportClosed: true,
+            // A peer that vanished mid-commit takes a strike, not a fault ban.
+            peerBlacklisted: false
+        });
+    });
+
+    it("assigns opposite bootstrap roles and rejects invalid lobby candidates", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyBootstrapAndValidation()
+            .request();
+
+        expect(result.bothNoneRole).to.equal(result.bothNoneExpectedRole);
+        expect(result.oneNoneRole).to.equal("selector");
+        expect(result.malformedCandidateCount).to.equal(0);
+        expect(result.wrongTopicCandidateCount).to.equal(0);
+        expect(result.unauthenticatedCandidateCount).to.equal(0);
+        expect(result.filteredCandidateCount).to.equal(0);
+        expect(result.filteredPickStatus).to.equal("rejected");
+    });
+
+    it("uses bounded role jitter and defers a role transition while reserved", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyRoleTimers()
+            .request();
+
+        expect(result.defaultRoleDelayMs).to.be.at.least(1000);
+        expect(result.defaultRoleDelayMs).to.be.at.most(2000);
+        expect(result.configuredRoleDelayMs).to.equal(37);
+        expect(result.roleWhileReservedAfterTimer).to.equal("advertiser");
+        expect(result.commitAfterTimerStatus).to.equal("acknowledged");
+        // The reservation bound strikes the absent selector; it does not
+        // blacklist it.
+        expect(result.reservationExpiryBlacklisted).to.equal(false);
+        expect(result.reservationExpiryStrikes).to.equal(1);
+        expect(result.roleTimerScheduleCount).to.equal(1);
+        expect(result.availabilityFramesAfterExpiry).to.be.greaterThan(
+            result.availabilityFramesBeforeExpiry
+        );
+    });
+
+    it("settles replacement, leave, timeout, and disposal through one cleanup path", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result).to.deep.equal({
+            defaultTimeoutScheduled: false,
+            nullTimeoutScheduled: false,
+            replacementResolvedUndefined: true,
+            replacementTopicActive: true,
+            replacementResolvedOnLeave: true,
+            timeoutResolvedUndefined: true,
+            timeoutClearedTopic: true,
+            timeoutStatus: Status.NOT_OPENED,
+            disposeResolvedUndefined: true,
+            disposeClearedTopic: true,
+            replacementClosedOldTransport: true,
+            leaveClosedSessionTransport: true,
+            timeoutClosedSessionTransport: true,
+            disposeClosedSessionTransport: true,
+            ordinaryCancellationSucceeded: true,
+            targetedCancellationSucceeded: true,
+            cancellationNoopAfterHandoff: true,
+            handedOffTransportPreservedByCancellationNoop: true,
+            negotiationHandoffReleased: true,
+            selectedTargetRetainedAfterRelease: true
+        });
+    });
+
+    it("returns a committed match without starting negotiation", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.matchHasChannelId).to.equal(false);
+        expect(result.localChannelId).to.equal(ethers.ZeroHash);
+    });
+
+    it("unmatched finite timeout cleans only matcher-owned resources", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.timeoutResolvedUndefined).to.equal(true);
+        expect(result.timeoutClearedTopic).to.equal(true);
+        expect(result.timeoutStatus).to.equal(Status.NOT_OPENED);
+    });
+
+    it("accepted match cancels timeout before resolving", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+    });
+
+    it("accepted match disarms finite timeout before negotiation", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+    });
+
+    it("accepted match has no matchmaking timeout during negotiation", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
+    });
+
+    it("finite matchmaking timeout returns false while unmatched", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.timeoutResolvedUndefined).to.equal(true);
+        expect(result.timeoutClearedTopic).to.equal(true);
+    });
+
+    it("completeLobby preserves the handed-off transport after targeted completion", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportPromotedAtCommit).to.equal(true);
+        expect(result.selectedTransportConnectedAfterCompletion).to.equal(true);
+        expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
+        expect(result.nonSelectedTransportClosed).to.equal(true);
+    });
+
+    it("default lobby matching allows an authenticated peer without a filter", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.matchPeer).to.equal(
+            ethers.getAddress("0xffffffffffffffffffffffffffffffffffffffff")
+        );
+    });
+
+    it("ordinary and targeted callers share one unmatched cancellation owner", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.ordinaryCancellationSucceeded).to.equal(true);
+        expect(result.targetedCancellationSucceeded).to.equal(true);
+    });
+
+    it("matcher cancellation is a no-op after handoff", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.cancellationNoopAfterHandoff).to.equal(true);
+        expect(result.handedOffTransportPreservedByCancellationNoop).to.equal(
+            true
+        );
+    });
+
+    it("pre-open targeted lobby frames do not reach peers on the raw channel key", async function () {
+        const h = fixture.getHarness();
+        const target = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ["string"],
+                [h.options.channelId]
+            )
+        );
+        const rawPeerIndex = h.peers.length;
+        await h.createPeer(
+            rawPeerIndex,
+            h.signerFor(slotAccountIndex(rawPeerIndex))
+        );
+        await h.network.joinSelectedKey([rawPeerIndex], target);
+        const releases = await Promise.all(
+            [0, 1].map((index) => h.rpcStub.holdMatchedNegotiation(index))
+        );
+        const connects = [0, 1].map((index) =>
+            h.getPeer(index).p2pInstance.p2pSigner.connectToChannel(target, {
+                autoOpen: true
+            })
+        );
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            [0, 1].map((index) =>
+                                h
+                                    .control(h.getPeer(index))
+                                    .stub.getHeldMatchedNegotiationCount()
+                                    .request()
+                            )
+                        )
+                    ).every((count) => count === 1),
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(await h.query.getConnectionCount(rawPeerIndex)).to.equal(0);
+            expect(
+                await h
+                    .control(h.getPeer(rawPeerIndex))
+                    .query.getLobbyAvailability()
+                    .request()
+            ).to.include({ matching: false });
+            await Promise.all(releases.map((release) => release()));
+            expect(await Promise.all(connects)).to.deep.equal([true, true]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
+        }
+    });
+
+    it("pre-open routing probe settles after the raw-topic peer receives no frame", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
+        expect(result.selectedPeerReceivedOrdinaryBroadcast).to.equal(true);
+    });
+
+    it("observed-open loser releases matching ownership for the selected channel", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.negotiationHandoffReleased).to.equal(true);
+        expect(result.selectedTargetRetainedAfterRelease).to.equal(true);
+    });
+
+    it("keeps the local role epoch monotonic across same-topic retries", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyRetryEpoch()
+            .request();
+
+        expect(result.firstRoleEpoch).to.be.greaterThan(0);
+        expect(result.secondRoleEpoch).to.be.greaterThan(result.firstRoleEpoch);
+        expect(result.observerCandidateCountAfterFirstSession).to.equal(1);
+        expect(result.observerCandidateCountAfterRetry).to.equal(1);
+    });
+
+    it("bootstraps roles again when the same peers meet in a later session", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionRestart()
+            .request();
+
+        expect(result.firstRoles).to.not.include("none");
+        expect(result.secondRoles).to.not.include("none");
+    });
+
+    it("schedules only one advertiser switch while candidates stay exhausted", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyExhaustionTimer()
+            .request();
+
+        expect(result.scheduledAfterExhaustion).to.be.greaterThan(0);
+        expect(result.scheduledAfterRepeatedAvailability).to.equal(
+            result.scheduledAfterExhaustion
+        );
+    });
+
+    it("leaves the lobby topic before closing a non-selected transport", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyHandoffOrdering(fixture);
+
+        expect(result.matchedPeer).to.equal(fixture.address(1));
+        expect(result.topicJoinedBeforeCommit).to.equal(true);
+        expect(result.nonSelectedClosed).to.equal(true);
+        expect(result.topicJoinedWhenNonSelectedClosed).to.equal(false);
+        expect(result.topicJoinedAfterHandoff).to.equal(false);
+    });
+
+    it("leaves the lobby topic before a cancelled session closes its transports", async function () {
+        await connectLobbyPeers(fixture, 2);
+        const result = await probeLobbyCleanupOrdering(fixture);
+
+        expect(result.cancelled).to.equal(true);
+        expect(result.matched).to.equal(false);
+        expect(result.topicJoinedBeforeCancel).to.equal(true);
+        expect(result.sessionTransportClosed).to.equal(true);
+        expect(result.topicJoinedWhenSessionTransportClosed).to.equal(false);
+        expect(result.topicJoinedAfterCancel).to.equal(false);
+    });
+
+    it("starts a new session only after the cancelled session's held cleanup finished", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyCleanupOverlap(fixture);
+
+        expect(result.cancelled).to.equal(true);
+        expect(result.firstMatched).to.equal(false);
+        expect(result.secondStartedBeforeRelease).to.equal(false);
+        expect(result.firstTransportClosedBeforeRelease).to.equal(false);
+        expect(result.firstTransportClosed).to.equal(true);
+        expect(result.secondTransportClosedByFirstCleanup).to.equal(false);
+        expect(result.statusAfterSecondStart).to.equal(Status.DISCOVERING);
+        expect(result.secondCancelled).to.equal(true);
+        expect(result.secondMatched).to.equal(false);
+    });
+
+    it("completes the handoff when the discovery leave fails", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyFailedLeave(fixture);
+
+        expect(result.matchedPeer).to.equal(fixture.address(1));
+        expect(result.leaveAttempts).to.equal(1);
+        expect(result.topicJoinedAfterHandoff).to.equal(false);
+        expect(result.nonSelectedClosed).to.equal(true);
+        expect(result.selectedClosedAfterHandoff).to.equal(false);
+        expect(result.selectedHandedOff).to.equal(true);
+    });
+
+    it("keeps the selected transport through the handoff", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyHandoffOrdering(fixture);
+
+        expect(result.selectedClosedAfterHandoff).to.equal(false);
+        expect(result.selectedHandedOff).to.equal(true);
+    });
+
+    it("rejects a late pick after commitment without blacklisting its requester", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyLatePick()
+            .request();
+
+        expect(result.responseStatus).to.equal("rejected");
+        expect(result.requesterBlacklisted).to.equal(false);
+    });
+});

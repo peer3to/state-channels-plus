@@ -1,0 +1,353 @@
+// @spec-test-coverage-ignore: shared lobby transport actions exercised by owning mapped E2E declarations
+import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { compareAddresses } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Codec, Logger, Type } from "@/utils";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+
+/**
+ * Handles network connectivity and P2P connections between peers.
+ *
+ * All peer-internal connection work runs host-side via the harness-control
+ * `network` RPC (the live `p2pManager` is behind the runtime port). Discovery
+ * `autoConnect: false` is implemented by not calling the public connection
+ * operation. Channel and lobby joins remain self-contained SDK operations.
+ */
+export class NetworkController<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(
+        private harness: PeerTestHarness<THost>,
+        private logger: Logger
+    ) {}
+
+    lobbyRoleIndices(): [advertiserIndex: number, selectorIndex: number] {
+        return compareAddresses(
+            this.harness.peers[0].address,
+            this.harness.peers[1].address
+        ) < 0
+            ? [0, 1]
+            : [1, 0];
+    }
+
+    /**
+     * Connect all peers to each other via P2P
+     */
+    async connectAllPeers(): Promise<void> {
+        this.logger.debug("Connecting peers...");
+        const peerIndices = this.harness.getFilteredPeers().map((p) => p.index);
+        await this.connectPeers(peerIndices);
+        this.logger.debug("All peers connected successfully");
+    }
+
+    /**
+     * Connect a subset of peers
+     */
+    async connectPeers(
+        peerIndices: number[],
+        options?: ConnectToChannelOptions
+    ): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        const channelId = this.harness.channelId!.toString();
+
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.connectToChannel(
+                        channelId,
+                        options
+                            ? {
+                                  autoOpen: options.autoOpen,
+                                  shouldJoin: options.shouldJoin,
+                                  timeoutMs: options.timeoutMs,
+                                  encodedBalance: options.balance
+                                      ? String(
+                                            Codec.encode(
+                                                options.balance,
+                                                Type.Balance
+                                            )
+                                        )
+                                      : undefined
+                              }
+                            : undefined
+                    )
+                    .request()
+            )
+        );
+    }
+
+    /** Reconnect peers after persistent harness isolation. */
+    async reconnectPeers(
+        peerIndices: number[],
+        options?: ConnectToChannelOptions
+    ): Promise<void> {
+        await this.clearPeerIsolation(peerIndices);
+        await this.connectPeers(peerIndices, options);
+    }
+
+    /** Resume transport discovery without starting another channel lifecycle. */
+    async restorePeerDiscovery(peerIndices: number[]): Promise<void> {
+        await this.clearPeerIsolation(peerIndices);
+        await this.joinSelectedKey(
+            peerIndices,
+            this.harness.channelId!.toString()
+        );
+    }
+
+    /**
+     * Resume discovery between two peers only; every other blacklist entry
+     * either peer holds stays in place.
+     */
+    async restorePairDiscovery(indexA: number, indexB: number): Promise<void> {
+        const peerA = this.harness.getPeer(indexA);
+        const peerB = this.harness.getPeer(indexB);
+        await this.leaveSelectedKey([indexA, indexB]);
+        await Promise.all([
+            this.harness
+                .control(peerA)
+                .network.unblacklistPeerByAddress(peerB.address)
+                .request(),
+            this.harness
+                .control(peerB)
+                .network.unblacklistPeerByAddress(peerA.address)
+                .request()
+        ]);
+        await this.joinSelectedKey(
+            [indexA, indexB],
+            this.harness.channelId!.toString()
+        );
+    }
+
+    async joinLobby(peerIndices: number[], rendezvousTopic: string) {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.joinLobby(rendezvousTopic)
+                    .request()
+            )
+        );
+    }
+
+    async leaveLobby(peerIndices: number[], rendezvousTopic: string) {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveLobby(rendezvousTopic)
+                    .request({
+                        timeoutMs: this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        })
+                    })
+            )
+        );
+    }
+
+    /** Waits until each peer's host has marked its lobby join on the topic as left. */
+    async waitForLeftLobbyJoins(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await this.harness.connectionBarrier.waitFor(
+            async () =>
+                (
+                    await Promise.all(
+                        peers.map((peer) =>
+                            this.harness
+                                .control(peer)
+                                .query.getLeftLobbyJoinCount(rendezvousTopic)
+                                .request()
+                        )
+                    )
+                ).every((count) => count > 0),
+            {
+                timeoutMs: this.harness.event.protocolEventTimeoutMs(),
+                timeoutMessage: `lobby leaves of ${rendezvousTopic} never reached the hosts`
+            }
+        );
+    }
+
+    /**
+     * Leaves the lobby while the matched negotiations are parked at the
+     * handoff: once every host has marked its join, `release` lets the
+     * negotiations go on. Resolves with each peer's leave result.
+     */
+    async leaveLobbyAtHeldHandoff(
+        peerIndices: number[],
+        rendezvousTopic: string,
+        release: () => Promise<void>
+    ): Promise<boolean[]> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        const leaves = Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveLobby(rendezvousTopic)
+                    .request({
+                        timeoutMs: this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        })
+                    })
+            )
+        );
+        // the caller awaits the result; this only keeps an early rejection handled
+        leaves.catch(() => undefined);
+        try {
+            await this.waitForLeftLobbyJoins(peerIndices, rendezvousTopic);
+        } finally {
+            await release();
+        }
+        return leaves;
+    }
+
+    /**
+     * Joins the lobby and returns once every peer's matched negotiation is
+     * parked at the handoff. The returned release fails those negotiations
+     * unsigned, the outcome after which a join rematches.
+     */
+    async joinLobbyHeldAtHandoff(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<() => Promise<void>> {
+        const releases = await Promise.all(
+            peerIndices.map((index) =>
+                this.harness.rpcStub.holdMatchedNegotiation(index, true)
+            )
+        );
+        const release = async () => {
+            await Promise.all(releases.map((releaseOne) => releaseOne()));
+        };
+        try {
+            await this.joinLobby(peerIndices, rendezvousTopic);
+            await this.harness.rpcStub.waitForHeldMatchedNegotiation(
+                peerIndices
+            );
+        } catch (error) {
+            await release();
+            throw error;
+        }
+        return release;
+    }
+
+    async joinSelectedKey(
+        peerIndices: number[],
+        channelId: string
+    ): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.joinSelectedKey(channelId)
+                    .request()
+            )
+        );
+    }
+
+    /**
+     * Wait for P2P connections to establish
+     */
+    async waitForP2PConnections(timeoutMs?: number): Promise<void> {
+        const actualTimeout =
+            timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
+
+        const condition = async () => {
+            const connectedAddressesByPeer = await Promise.all(
+                this.harness.peers.map((peer) =>
+                    this.harness
+                        .control(peer)
+                        .query.getConnectedPeerAddresses()
+                        .request()
+                )
+            );
+
+            return this.harness.peers.every((peer, peerIndex) => {
+                const connectedAddresses = connectedAddressesByPeer[peerIndex];
+                return this.harness.peers.every(
+                    (expectedPeer) =>
+                        expectedPeer.index === peer.index ||
+                        connectedAddresses.some(
+                            (connectedAddress) =>
+                                connectedAddress.toLowerCase() ===
+                                expectedPeer.address.toLowerCase()
+                        )
+                );
+            });
+        };
+
+        if (await condition()) return;
+
+        await this.harness.connectionBarrier.waitFor(condition, {
+            timeoutMs: actualTimeout,
+            timeoutMessage: `P2P connections not established within ${actualTimeout}ms`
+        });
+    }
+
+    /** Persistently isolate one peer from every other peer. */
+    async blacklistAndDisconnectPeer(peerIndex: number): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        const otherPeers = this.harness.peers.filter(
+            (other) => other.index !== peer.index
+        );
+        await Promise.all(
+            otherPeers.flatMap((other) => [
+                this.harness
+                    .control(peer)
+                    .network.blacklistAndDisconnectPeerByAddress(other.address)
+                    .request(),
+                this.harness
+                    .control(other)
+                    .network.blacklistAndDisconnectPeerByAddress(peer.address)
+                    .request()
+            ])
+        );
+        peer.logger.warn("Blacklisted and disconnected to simulate timeout");
+    }
+
+    private async leaveSelectedKey(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        // Isolation can stop discovery's retry loop. Restart this observation
+        // explicitly; joining an already observed topic is idempotent.
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveSelectedKey(
+                        this.harness.channelId!.toString()
+                    )
+                    .request()
+            )
+        );
+    }
+
+    private async clearPeerIsolation(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await this.leaveSelectedKey(peerIndices);
+        await Promise.all(
+            peers.flatMap((peer) =>
+                this.harness.peers
+                    .filter((other) => other.index !== peer.index)
+                    .flatMap((other) => [
+                        this.harness
+                            .control(peer)
+                            .network.unblacklistPeerByAddress(other.address)
+                            .request(),
+                        this.harness
+                            .control(other)
+                            .network.unblacklistPeerByAddress(peer.address)
+                            .request()
+                    ])
+            )
+        );
+    }
+}

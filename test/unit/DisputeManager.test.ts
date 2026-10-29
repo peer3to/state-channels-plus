@@ -1,0 +1,2870 @@
+import StateSnapshot from "@/models/StateSnapshot";
+import {
+    EARLY_TIMEOUT_RECHECK_REASON,
+    MISMATCH_TIMEOUT_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import type { Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
+import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
+import { REPLAY_GAS_READ_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
+import {
+    assertDisputeRefreshPolicy,
+    assertBackgroundDisputeFailure,
+    assertInboundHeadMovedDuringUpload,
+    assertInboundRefusalAtOwnAnchor,
+    assertInboundRefusalOfKillCarryingDispute,
+    assertInboundRetryRefusedAtSameHead
+} from "@test/fixtures/DisputeRefreshStaging";
+import { assertDisputedForkDoesNotSign } from "@test/fixtures/DisputeSigningStaging";
+import {
+    assertAdmittedBlockPrecedesDispute,
+    assertBlockWorkAfterDisputeRollback
+} from "@test/fixtures/DisputeSigningStaging";
+import {
+    MISMATCH_TIMEOUT_ERROR,
+    mismatchRefusalArgs
+} from "@test/fixtures/EarlyTimeoutRetryStaging";
+import { waitForCommittedDisputeOf } from "@test/fixtures/EvidenceComparisonStaging";
+import { stageOutboundAroundAnchor } from "@test/fixtures/HistoricSyncStaging";
+import {
+    runKillSentAfterKillPeriod,
+    runKillWithApplyRace,
+    runKillWithUnrecognizedApplyFailure
+} from "@test/fixtures/KillDisputeApplyStaging";
+import { constructDisputeWithLatestStateProof } from "@test/fixtures/LatestStateProofStaging";
+import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import {
+    disputeAndKillSharingHeldRead,
+    disputeOnHost,
+    disputeThenKillRecordingReads,
+    disputeWithScaledEstimate,
+    killStoredDisputeOnHost,
+    killTimeoutCalldataRefutationWithScaledEstimate,
+    killWithScaledEstimate
+} from "@test/fixtures/ReplayGasLimitStaging";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ZeroAddress } from "ethers";
+
+describe("Unit: DisputeManager", function () {
+    it("dispute admission refuses disposal while waiting for the state mutex", async function () {
+        await assertDisputeAdmissionRefuses(
+            TestSession.getHarness(),
+            "dispose"
+        );
+    });
+    it("dispute admission refuses a changed fork before construction", async function () {
+        await assertDisputeAdmissionRefuses(TestSession.getHarness(), "fork");
+    });
+    it("inline background fraud dispute reports an unexpected recovery error to top-level handling", async function () {
+        const h = TestSession.getHarness();
+        await assertBackgroundDisputeFailure(h, false);
+        await TestSession.expectFirstDetachedError({
+            includes: "authoritative slash read failed",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "authoritative slash read failed"
+        });
+    });
+    it("worker background fraud dispute reports an unexpected recovery error to top-level handling", async function () {
+        const h = TestSession.getHarness();
+        await assertBackgroundDisputeFailure(h, true);
+        await TestSession.expectFirstDetachedError({
+            includes: "authoritative slash read failed",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "authoritative slash read failed"
+        });
+    });
+    it("a live fork change during a refused upload prevents obsolete recovery and re-entry", async function () {
+        await assertRefusalAfterLiveForkSwitch(TestSession.getHarness());
+    });
+    it("a refused contribution does not turn an already removed on-chain slash into a reason", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "ineligible"
+        );
+    });
+
+    it("an existing-window refusal with no new slashes stops after one attempt", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "empty");
+    });
+    it("repeated existing-window refusals with unchanged slashes do not spin", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "repeat");
+    });
+    it("concurrent existing-window refusals release the dispute mutex before recovery", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "concurrent"
+        );
+    });
+    it("a failed authoritative slash read remains visible after marker rollback", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "read-failure"
+        );
+    });
+    it("an unrelated upload error does not enter slash recovery", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "unrelated");
+    });
+    it("disposal during a refused upload prevents slash recovery and re-entry", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "disposed");
+    });
+
+    it("authoring already admitted finishes before a dispute task captures its state", async function () {
+        await assertAdmittedBlockPrecedesDispute(
+            TestSession.getHarness(),
+            "authoring"
+        );
+    });
+    it("a block admitted to commit finishes before a dispute task captures its state", async function () {
+        await assertAdmittedBlockPrecedesDispute(
+            TestSession.getHarness(),
+            "commit"
+        );
+    });
+    it("a counter-signature already requested finishes before a dispute task captures its state", async function () {
+        await assertAdmittedBlockPrecedesDispute(
+            TestSession.getHarness(),
+            "signature"
+        );
+    });
+    it("a refused dispute reopens own-turn authoring before a retry", async function () {
+        await assertBlockWorkAfterDisputeRollback(
+            TestSession.getHarness(),
+            true
+        );
+    });
+    it("a refused dispute reopens counter-signing before a retry", async function () {
+        await assertBlockWorkAfterDisputeRollback(
+            TestSession.getHarness(),
+            false
+        );
+    });
+    it("a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const peer = h.getPeer(0);
+        const tasks = await h.rpcStub.recordScheduledTasks(peer.index);
+        const recorder = await h.rpcStub.recordDisputeSubmissions(peer.index, {
+            failWith: {
+                customError: MISMATCH_TIMEOUT_ERROR,
+                customErrorArgs: mismatchRefusalArgs(ZeroAddress, 0, {
+                    expectedPosted: false,
+                    foundPosted: true
+                }),
+                at: "send",
+                times: 1
+            }
+        });
+        try {
+            await h
+                .control(peer)
+                .dispute.startSelfRemovalDispute(h.activeForkId!)
+                .request();
+            expect(await recorder.submissions()).to.have.length(1);
+            const dispute = Codec.decode(
+                (await recorder.submissions())[0].encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
+            expect(
+                (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith(MISMATCH_TIMEOUT_RECHECK_REASON)
+                )
+            ).to.have.length(0);
+            expect(
+                await h.execOnHost(peer, async (sm) =>
+                    sm.storage.disputes.didIDispute(sm.forkId)
+                )
+            ).to.equal(false);
+        } finally {
+            await recorder.restore();
+            await tasks.restore();
+        }
+    });
+    describe("constructDispute", function () {
+        it("successor fork: the ancestor fork's slash, also one a kill lands first, is not listed", async function () {
+            const h = TestSession.getHarness();
+            const { newForkId, maliciousPeerIndices, honestPeerIndices } =
+                await h.scenario.fourPeersDisputeResolution();
+            const removed = h.getPeer(maliciousPeerIndices[0]!).address;
+
+            const r = await h.execOnHost(
+                h.getPeer(honestPeerIndices[0]!),
+                async (sm, args) => {
+                    const onChain =
+                        await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                            sm.channelId
+                        );
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId, {
+                            expectedSlashes: [args.removed]
+                        });
+                    return {
+                        onChain: onChain.map(String),
+                        listed: dispute.input.onChainSlashes.map(String)
+                    };
+                },
+                { forkId: newForkId, removed }
+            );
+            expect(r.onChain).to.include(removed);
+            expect(r.listed).to.not.include(removed);
+        });
+        it("successor fork while the chain anchor is still on the parent fork (no successor snapshot posted) → the dispute built on the successor is accepted by an honest auditor, and the chain accepts its proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 2);
+            await h.assert.sync.peersInSyncWait();
+            // A peer whose reduction is mined adopts the reduced fork on chain
+            // at once; parked, the chain anchor stays on the parent fork. The
+            // parked posts are sent once the test is done.
+            const adoptionHolds = [];
+            for (const peer of h.peers)
+                adoptionHolds.push(
+                    await h.rpcStub.holdSnapshotPostSend(peer.index, {
+                        adoptionOnly: true
+                    })
+                );
+            try {
+                const { newForkId, honestPeerIndices } =
+                    await h.scenario.disputeWithReduction({
+                        maliciousPeerIndex: (await h.query.getNextPeerToWrite())
+                            .index
+                    });
+                const [disputerIndex, auditorIndex] = honestPeerIndices;
+                await h.transition.fromHonestPeersOnly((c) => c.add(1));
+                expect(
+                    StateSnapshot.from(
+                        await h.channelManager.getStateSnapshot(h.channelId)
+                    ).forkID,
+                    "the chain anchor is on the parent fork"
+                ).to.not.equal(newForkId);
+
+                const { dispute, auditingData } =
+                    await h.dispute.fetchConstructedDispute(
+                        disputerIndex!,
+                        newForkId
+                    );
+                expect(dispute.input.forkId).to.equal(newForkId);
+                expect(
+                    await chainAcceptsDisputeProof(
+                        h.channelManager,
+                        dispute,
+                        auditingData
+                    )
+                ).to.equal(true);
+                // Conditional admission supplies a reason, never an exception to proof validation.
+                dispute.input.requireExistingDisputeWindow = true;
+                dispute.postedAuditingData = true;
+                const run = await h.dispute.auditDispute(
+                    auditorIndex!,
+                    dispute,
+                    auditingData
+                );
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                expect(run.disputeFraudProofCount).to.equal(0);
+            } finally {
+                await Promise.all(adoptionHolds.map((hold) => hold.release()));
+            }
+        });
+        it("healthy fork → well-formed dispute, the chain accepts its proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3); // fully-signed -> milestone proof
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const { dispute, auditingData, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // real oracle: the chain's live views accept the proof: the full walk from
+                    // its start and the latest state the proof commits to
+                    const chain = sm.stateChannelManagerContract;
+                    const walk = await chain.verifyMilestones.staticCall({
+                        channelId: dispute.input.channelId,
+                        forkId: dispute.input.forkId,
+                        stateProof: dispute.input.stateProof,
+                        genesisStateSnapshotData:
+                            auditingData.genesisStateSnapshotData,
+                        milestoneSnapshots: auditingData.milestoneSnapshots
+                    });
+                    const verified =
+                        walk.valid &&
+                        (await chain.isCorrectLatestState.staticCall(
+                            dispute,
+                            auditingData.genesisStateSnapshotData
+                        ));
+                    return {
+                        verified,
+                        forkId: String(dispute.input.forkId),
+                        channelId: String(dispute.input.channelId),
+                        disputer: String(dispute.input.disputer),
+                        signerAddress: String(sm.signerAddress),
+                        channelIdField: String(sm.channelId),
+                        fraudProofCount: fraudProofsToApply.length,
+                        postedAuditingData: dispute.postedAuditingData,
+                        timeoutParticipant: String(
+                            dispute.input.timeout.participant
+                        )
+                    };
+                },
+                { forkId }
+            );
+
+            expect(r.verified).to.equal(true);
+            expect(r.forkId).to.equal(forkId);
+            expect(r.channelId).to.equal(r.channelIdField);
+            expect(r.disputer.toLowerCase()).to.equal(
+                r.signerAddress.toLowerCase()
+            );
+            // no faults staged -> nothing to slash, latest is final -> no calldata
+            expect(r.fraudProofCount).to.equal(0);
+            expect(r.postedAuditingData).to.equal(false);
+            // no timeout planted -> empty timeout struct (getEmptyTimeoutStruct)
+            expect(r.timeoutParticipant).to.equal(
+                "0x0000000000000000000000000000000000000000"
+            );
+        });
+
+        it("no blocks written yet → a genesis-based dispute with an empty state proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0); // channel open, nothing written
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const { dispute, auditingData, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // the chain's live views accept the proof: the full walk from
+                    // its start and the latest state the proof commits to
+                    const chain = sm.stateChannelManagerContract;
+                    const walk = await chain.verifyMilestones.staticCall({
+                        channelId: dispute.input.channelId,
+                        forkId: dispute.input.forkId,
+                        stateProof: dispute.input.stateProof,
+                        genesisStateSnapshotData:
+                            auditingData.genesisStateSnapshotData,
+                        milestoneSnapshots: auditingData.milestoneSnapshots
+                    });
+                    const verified =
+                        walk.valid &&
+                        (await chain.isCorrectLatestState.staticCall(
+                            dispute,
+                            auditingData.genesisStateSnapshotData
+                        ));
+                    const genesis =
+                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            args.forkId
+                        )!;
+                    return {
+                        verified,
+                        latestBlockHeight:
+                            Number(
+                                sm.storage.blocks.getNextBlockHeight(
+                                    args.forkId
+                                )
+                            ) - 1,
+                        milestoneCount:
+                            dispute.input.stateProof.milestones.length,
+                        fraudProofCount: fraudProofsToApply.length,
+                        latestStateSnapshotHash:
+                            dispute.input.latestStateSnapshotHash,
+                        genesisHash: genesis.hash,
+                        timeoutParticipant: dispute.input.timeout.participant,
+                        timeoutBlockHeight: Number(
+                            dispute.input.timeout.blockHeight
+                        ),
+                        selfRemoval: dispute.input.selfRemoval,
+                        onChainSlashCount: dispute.input.onChainSlashes.length,
+                        inboundHash:
+                            dispute.input.latestInboundMessageBlockHash,
+                        inboundHeight: Number(
+                            dispute.input.lastInboundMessageBlockHeight
+                        ),
+                        storedInboundHash:
+                            sm.storage.inboundMessages.getLatestBlockHash(),
+                        storedInboundHeight: Number(
+                            sm.storage.inboundMessages.getLatestBlockHeight()
+                        )
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // the pre-first-block boundary: latestBlockHeight is -1
+            expect(r.latestBlockHeight).to.equal(-1);
+            expect(r.verified).to.equal(true);
+            expect(r.milestoneCount).to.equal(0);
+            expect(r.fraudProofCount).to.equal(0);
+            // the head is genesis -> the dispute pins the genesis snapshot
+            expect(r.latestStateSnapshotHash).to.equal(r.genesisHash);
+            expect(r.timeoutParticipant).to.equal(ZeroAddress);
+            expect(r.timeoutBlockHeight).to.equal(0);
+            expect(r.selfRemoval).to.equal(false);
+            expect(r.onChainSlashCount).to.equal(0);
+            // the channel-open join already left an inbound head - the dispute
+            // copies it verbatim rather than defaulting to zero
+            expect(r.inboundHash).to.equal(r.storedInboundHash);
+            expect(r.inboundHeight).to.equal(r.storedInboundHeight);
+        });
+
+        it("inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            // held from before the channel opens -> peer 2's inbound store head
+            // never moves while ingest advances its snapshot to inbound block 2
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.lifecycle.openChannel();
+            const forkId = h.activeForkId!;
+
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            // writers are peers 0 and 1 -> the lagging peer only ingests
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const { dispute, auditingData } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // real oracle: the honest peer's own dispute must not be
+                    // provably slashable by the proof the auditors run
+                    const slashable =
+                        await sm.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
+                            dispute,
+                            auditingData.latestStateSnapshot
+                        );
+                    const snapshotData =
+                        auditingData.latestStateSnapshot.snapshotData;
+                    return {
+                        slashable,
+                        inboundHash:
+                            dispute.input.latestInboundMessageBlockHash,
+                        inboundHeight: Number(
+                            dispute.input.lastInboundMessageBlockHeight
+                        ),
+                        snapshotInboundHash:
+                            snapshotData.latestInboundMessageBlockHash,
+                        snapshotInboundHeight: Number(
+                            snapshotData.latestInboundMessageBlockHeight
+                        ),
+                        storedInboundHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // premise - the chain event never landed, so the store head is
+            // behind the snapshot the dispute pins
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(r.storedInboundHash).to.equal(null);
+            expect(r.snapshotInboundHeight).to.equal(2);
+            expect(r.slashable).to.equal(false);
+            // the anchor is copied from the pinned snapshot, not defaulted to
+            // zero by the empty store
+            expect(r.inboundHash).to.equal(r.snapshotInboundHash);
+            expect(r.inboundHeight).to.equal(r.snapshotInboundHeight);
+        });
+
+        it("a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes", async function () {
+            const h = TestSession.getHarness();
+            const lagging = 3;
+            const attacker = 1;
+            await h.scenario.preDisputeSetup({
+                peerCount: 4,
+                timeConfig: { evidenceTime: 12 }
+            });
+            const forkId = h.activeForkId!;
+
+            // held after the channel-open inbound block landed -> the lagging
+            // peer keeps that block as its store head and learns nothing after it
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            // its held store cannot reach the chain's inbound head, so its own
+            // upload would fail fatally; the scenario needs only its audit
+            await h.dispute.suppressDisputeInitiation([lagging]);
+            // no block consumes the join -> only the reduce moves the inbound
+            // head, into a genesis snapshot the lagging peer never ingested.
+            // a pending joiner also keeps the head not-final-by-everyone, so
+            // disputes post auditing data and the lagging peer can still audit
+            await h.join.forceInboundJoinWait({
+                observePeerIndices: [0, 1, 2]
+            });
+
+            // the invalid block carries no inbound run of its own, so the only
+            // inbound movement in this scenario is the reduce's
+            await h.byzantine.submitInvalidStateTransitionBlock(attacker);
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
+                // the pending joiner the reduce admits is not one of the peers
+                syntheticOnChainParticipants: 1
+            });
+            // the reducer posts the new fork's genesis as the on-chain anchor.
+            // The outbound run starts at that anchor, so both builds read it
+            // after the post.
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+
+            const disputer = h.control(h.getPeer(lagging));
+            const genesis = Codec.decode(
+                (await disputer.dispute
+                    .getGenesisSnapshotStruct(newForkId)
+                    .request())!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+            const storedHead = await disputer.query
+                .getLatestInboundMessageHash()
+                .request();
+            const storedHeight = await disputer.query
+                .getInboundLatestHeight()
+                .request();
+
+            // premise - a non-empty store head, strictly below the inbound head
+            // the new fork's genesis snapshot sits on. an empty store hides the
+            // divergence: both bounds yield []
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(storedHead).to.not.equal(null);
+            expect(storedHeight).to.equal(1);
+            expect(
+                Number(genesis.snapshotData.latestInboundMessageBlockHeight)
+            ).to.equal(2);
+
+            const { encodedDispute } = await disputer.dispute
+                .constructDispute(newForkId)
+                .request();
+            const dispute = Codec.decode(encodedDispute, Type.Dispute);
+            const statedInboundHash = dispute.input
+                .latestInboundMessageBlockHash as Hash;
+            expect(statedInboundHash).to.equal(
+                genesis.snapshotData.latestInboundMessageBlockHash
+            );
+            const lastConfirmation = dispute.input.stateProof.milestones
+                .at(-1)
+                ?.blockConfirmations.at(-1);
+            const proofHeight = lastConfirmation
+                ? Number(
+                      Codec.decode(
+                          lastConfirmation.signedBlock.encodedBlock,
+                          Type.Block
+                      ).transaction.header.transactionCnt
+                  )
+                : -1;
+
+            // a synced auditor recomputes from the hash the dispute states
+            const audited = await h
+                .control(h.getPeer(0))
+                .dispute.buildOwnAuditingData(newForkId, proofHeight, {
+                    disputeLatestInboundMessageBlockHash: statedInboundHash
+                })
+                .request();
+            expect(hash(audited.encodedAuditingData)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+
+            // An unbounded read also refuses to start below the pinned
+            // snapshot head, so it produces the same complete bytes.
+            const unbounded = await disputer.dispute
+                .buildOwnAuditingData(newForkId, proofHeight)
+                .request();
+            expect(hash(unbounded.encodedAuditingData)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+        });
+
+        it("a peer behind the head → constructDispute builds a complete dispute over what it has", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                h.getPeer(2),
+                async (sm, args) => {
+                    const { dispute, auditingData } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // the proof is whole for this peer, and the on-chain
+                    // verifier accepts it
+                    // the chain's live views accept the proof: the full walk from
+                    // its start and the latest state the proof commits to
+                    const chain = sm.stateChannelManagerContract;
+                    const walk = await chain.verifyMilestones.staticCall({
+                        channelId: dispute.input.channelId,
+                        forkId: dispute.input.forkId,
+                        stateProof: dispute.input.stateProof,
+                        genesisStateSnapshotData:
+                            auditingData.genesisStateSnapshotData,
+                        milestoneSnapshots: auditingData.milestoneSnapshots
+                    });
+                    const verified =
+                        walk.valid &&
+                        (await chain.isCorrectLatestState.staticCall(
+                            dispute,
+                            auditingData.genesisStateSnapshotData
+                        ));
+                    return {
+                        verified,
+                        ownHeight:
+                            Number(
+                                sm.storage.blocks.getNextBlockHeight(
+                                    args.forkId
+                                )
+                            ) - 1
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            expect(r.verified).to.equal(true);
+            // behind the peers that kept writing, yet still self-consistent
+            expect(r.ownHeight).to.be.lessThan(2);
+        });
+
+        it("a latest-state proof at the latest height → constructDispute reuses it, builds none, and the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({ count: 2 });
+            const r = await constructDisputeWithLatestStateProof(h, 0, 0);
+            expect(r.builds).to.equal(0);
+            expect(r.verified).to.equal(true);
+        });
+
+        it("a latest-state proof one block behind → constructDispute builds its own, and the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({ count: 2 });
+            const r = await constructDisputeWithLatestStateProof(h, 0, 1);
+            expect(r.builds).to.equal(1);
+            expect(r.verified).to.equal(true);
+        });
+
+        it("a failed latest-state proof build → constructDispute builds its own, and the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({ count: 2 });
+            const r = await constructDisputeWithLatestStateProof(h, 0, null);
+            expect(r.builds).to.equal(1);
+            expect(r.verified).to.equal(true);
+        });
+
+        it("a participant has a stored fraud proof → constructDispute bundles it + marks them slashed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+                observer.index
+            );
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    const slashes = dispute.input.onChainSlashes.map((a) =>
+                        String(a).toLowerCase()
+                    );
+                    return {
+                        fraudProofCount: fraudProofsToApply.length,
+                        offenderSlashed: slashes.includes(
+                            args.offender.toLowerCase()
+                        )
+                    };
+                },
+                { forkId, offender: offender.address }
+            );
+
+            expect(r.fraudProofCount).to.equal(1);
+            expect(r.offenderSlashed).to.equal(true);
+        });
+
+        it("latest block final by everyone → postedAuditingData false", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3); // fully-signed latest -> final
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return { postedAuditingData: dispute.postedAuditingData };
+                },
+                { forkId }
+            );
+
+            expect(r.postedAuditingData).to.equal(false);
+        });
+
+        it("unfinalized inbound join at the head → postedAuditingData true (calldata needed)", async function () {
+            const h = TestSession.getHarness();
+            // a pending inbound join leaves the head not-final-by-everyone, so
+            // the last milestone isn't final -> auditing data must be posted
+            await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return { postedAuditingData: dispute.postedAuditingData };
+                },
+                { forkId }
+            );
+
+            expect(r.postedAuditingData).to.equal(true);
+        });
+
+        it("a fresh timeout planted for the next writer → carried into dispute.input.timeout", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const nextWriter = await h
+                .control(peer)
+                .query.getNextToWrite()
+                .request();
+            await h
+                .control(peer)
+                .dispute.plantFreshTimeout(forkId, nextWriter)
+                .request();
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        timeoutParticipant: String(
+                            dispute.input.timeout.participant
+                        )
+                    };
+                },
+                { forkId }
+            );
+
+            expect(r.timeoutParticipant.toLowerCase()).to.equal(
+                nextWriter.toLowerCase()
+            );
+        });
+        it("a stored timeout at a height a later accepted block passed → the next dispute carries no timeout, drops it, and no auditor kills it", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            for (const p of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(p.index);
+            const nextWriter = await h
+                .control(peer)
+                .query.getNextToWrite()
+                .request();
+            // left stored at height 2, as after a failed timeout upload
+            await h
+                .control(peer)
+                .dispute.plantFreshTimeout(forkId, nextWriter)
+                .request();
+            await h.transition.advanceState();
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            try {
+                await h.execOnHost(
+                    peer,
+                    (sm, args) => sm.disputeManager.dispute(args.forkId),
+                    { forkId },
+                    { timeoutMs: h.event.hostExecTimeoutMs() }
+                );
+
+                const [submission] = await probe.submissions();
+                const dispute = Codec.decode(
+                    submission.encodedDispute,
+                    Type.Dispute
+                );
+                expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
+                expect(
+                    await h.control(peer).query.getTimeout(forkId).request()
+                ).to.equal(null);
+                const run = await h.dispute.auditDispute(
+                    1,
+                    dispute,
+                    submission.encodedAuditingData
+                        ? Codec.decode(
+                              submission.encodedAuditingData,
+                              Type.DisputeAuditingData
+                          )
+                        : undefined
+                );
+                expect(run.storedProof?.disputeFraudProofType).to.not.equal(
+                    DisputeFraudProofType.TimeoutNotLinkedToLatestState
+                );
+                expect(run.disputeFraudProofCount).to.equal(0);
+            } finally {
+                await probe.restore();
+            }
+        });
+
+        it("a stored timeout above the proof's next height → not attached and kept stored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const nextWriter = await h
+                .control(peer)
+                .query.getNextToWrite()
+                .request();
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    // stored for height 3, as when block 2 lands during the
+                    // construction that read height 1 as latest
+                    sm.storage.timeout.storeTimeout(args.forkId, {
+                        participant: args.nextWriter,
+                        blockHeight: 3n,
+                        minTimeStamp: 0n,
+                        isForced: false,
+                        previousBlockProducer: args.zero,
+                        previousBlockProducerPostedCalldata: false,
+                        participantSignatureOnPreviousBlock: "0x"
+                    });
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        attached: String(dispute.input.timeout.participant),
+                        stored: Number(
+                            sm.storage.timeout.getTimeout(args.forkId)
+                                ?.blockHeight ?? -1
+                        )
+                    };
+                },
+                { forkId, nextWriter, zero: ZeroAddress }
+            );
+
+            expect(r.attached).to.equal(ZeroAddress);
+            expect(r.stored).to.equal(3);
+        });
+    });
+
+    describe("auditing data", function () {
+        it("own fully-synced fork proof → one milestoneSnapshot per proof milestone", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3); // fully-signed -> milestone proof
+
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(0);
+
+            const proofMilestoneCount =
+                dispute.input.stateProof.milestones.length;
+            expect(proofMilestoneCount).to.be.greaterThan(0);
+            expect(auditingData.milestoneSnapshots.length).to.equal(
+                proofMilestoneCount
+            );
+        });
+
+        it("the chain anchor holds the fork's first outbound block and a later exit sits above it → the outbound run is only the block above the anchor, the chain accepts the dispute", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, anchor, remaining } =
+                await stageOutboundAroundAnchor(h, { finalBlocks: 2 });
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(remaining[0], forkId);
+            expect(
+                auditingData.outboundMessageBlocks.map((block) => ({
+                    previousBlockHash: block.previousBlockHash,
+                    blockHeight: Number(block.blockHeight)
+                }))
+            ).to.deep.equal([
+                {
+                    previousBlockHash: anchor.latestOutboundMessageBlockHash,
+                    blockHeight: 2
+                }
+            ]);
+            expect(
+                await chainAcceptsDisputeProof(
+                    h.channelManager,
+                    dispute,
+                    auditingData
+                )
+            ).to.equal(true);
+        });
+
+        // the inbound run the dispute names is rebuilt from the auditor's own
+        // store, so an auditor that never received the log has to recover it
+        describe("inbound run", function () {
+            /**
+             * A settled-path dispute from `disputerIndex` whose stated inbound
+             * head the lagging peer does not hold. Returns what an auditor needs
+             * to recompute the run.
+             */
+            const stageStatedInboundHead = async (
+                h: ReturnType<typeof TestSession.getHarness>,
+                laggingIndex: number,
+                disputerIndex: number
+            ) => {
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(disputerIndex).address,
+                    observePeerIndices: h.peers
+                        .map((peer) => peer.index)
+                        .filter((index) => index !== laggingIndex)
+                });
+                const forkId = h.activeForkId!;
+                const { encodedDispute } = await h
+                    .control(h.getPeer(disputerIndex))
+                    .dispute.constructDispute(forkId)
+                    .request();
+                const dispute = Codec.decode(encodedDispute, Type.Dispute);
+                const statedInboundHash = dispute.input
+                    .latestInboundMessageBlockHash as Hash;
+                // premise - the lagging peer cannot walk to the stated head
+                expect(
+                    await h
+                        .control(h.getPeer(laggingIndex))
+                        .query.getInboundMessageBlock(statedInboundHash)
+                        .request()
+                ).to.equal(null);
+                const lastConfirmation = dispute.input.stateProof.milestones
+                    .at(-1)
+                    ?.blockConfirmations.at(-1);
+                return {
+                    forkId,
+                    dispute,
+                    statedInboundHash,
+                    proofHeight: lastConfirmation
+                        ? Number(
+                              Codec.decode(
+                                  lastConfirmation.signedBlock.encodedBlock,
+                                  Type.Block
+                              ).transaction.header.transactionCnt
+                          )
+                        : -1
+                };
+            };
+
+            it("recoverable gap → complete, and the hash still agrees with the disputer's", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+                const { forkId, dispute, statedInboundHash, proofHeight } =
+                    await stageStatedInboundHead(h, lagging, 0);
+                await dropped.waitUntilDropped();
+
+                const audited = await h
+                    .control(h.getPeer(lagging))
+                    .dispute.buildOwnAuditingData(forkId, proofHeight, {
+                        disputeLatestInboundMessageBlockHash: statedInboundHash
+                    })
+                    .request();
+
+                // recovery restores the agreement, not just liveness
+                expect(hash(audited.encodedAuditingData)).to.equal(
+                    dispute.input.disputeAuditingDataHash
+                );
+                await dropped.release();
+            });
+
+            it("unrecoverable gap → the auditing-data build throws", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                // the handler is held, so the recovery's re-dispatch is lost too
+                const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+                const { forkId, statedInboundHash, proofHeight } =
+                    await stageStatedInboundHead(h, lagging, 0);
+
+                const failure = await h
+                    .control(h.getPeer(lagging))
+                    .dispute.buildOwnAuditingData(forkId, proofHeight, {
+                        disputeLatestInboundMessageBlockHash: statedInboundHash
+                    })
+                    .request()
+                    .then(
+                        () => null,
+                        (error: unknown) =>
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    );
+
+                // missing own data is fatal: no partial auditing data
+                expect(failure).to.contain(
+                    "the inbound run is unavailable after event recovery"
+                );
+                await held.release({ replay: false });
+            });
+
+            it("own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const forkId = h.activeForkId!;
+                // exactly one log is lost, so the next one lands and moves the
+                // store head above the hole
+                const dropped = await h.rpcStub.dropInboundMessageLogs(
+                    lagging,
+                    {
+                        dropCount: 1
+                    }
+                );
+                for (const participantIndex of [0, 1]) {
+                    await h.join.forceInboundJoinWait({
+                        participant: h.getPeer(participantIndex).address,
+                        observePeerIndices: [0, 1]
+                    });
+                }
+                await dropped.waitUntilDropped();
+
+                const laggingCtl = h.control(h.getPeer(lagging));
+                await laggingCtl.stub.stubHideChainLogs().request();
+                const r = await h.execOnHost(
+                    h.getPeer(lagging),
+                    async (sm, args) => {
+                        let threw = "";
+                        try {
+                            await sm.disputeManager.constructDispute(
+                                args.forkId
+                            );
+                        } catch (e) {
+                            threw = e instanceof Error ? e.message : String(e);
+                        }
+                        return {
+                            threw,
+                            storedHead:
+                                sm.storage.inboundMessages.getLatestBlockHash() ??
+                                null
+                        };
+                    },
+                    { forkId },
+                    {
+                        timeoutMs: h.event.hostExecTimeoutMs()
+                    }
+                );
+                await laggingCtl.stub.restoreChainLogQueries().request();
+
+                // premise - the head moved even though a log below it is missing
+                expect(r.storedHead).to.not.equal(null);
+                // the auditing-data build names the missing run, and not the
+                // storage walk's throw
+                expect(r.threw).to.contain(
+                    "the inbound run is unavailable after event recovery"
+                );
+                expect(r.threw).to.not.contain("not found in storage");
+                await dropped.release();
+            });
+
+            it("own head above a recoverable mid-gap → the self-removal dispute names that head, recovers the missing block and lands on chain", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const forkId = h.activeForkId!;
+                // exactly one log is lost, so the next one lands and moves the
+                // store head above the hole
+                const dropped = await h.rpcStub.dropInboundMessageLogs(
+                    lagging,
+                    {
+                        dropCount: 1
+                    }
+                );
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(0).address,
+                    observePeerIndices: [0, 1]
+                });
+                await dropped.waitUntilDropped();
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(1).address,
+                    observePeerIndices: [0, 1, lagging]
+                });
+                const observedInboundHead =
+                    await h.query.getLatestInboundMessageHash(0);
+                const laggingCtl = h.control(h.getPeer(lagging));
+                const before = await h.execOnHost(h.getPeer(lagging), (sm) => ({
+                    storedHead:
+                        sm.storage.inboundMessages.getLatestBlockHash() ?? null,
+                    missingBlockHash:
+                        sm.storage.inboundMessages.tryGetMessageBlocksInRange()
+                            .missingBlockHash ?? null
+                }));
+                // premise - the head is the one the other peers hold, above a
+                // block this peer never received
+                expect(before.storedHead).to.equal(observedInboundHead);
+                expect(before.missingBlockHash).to.not.equal(null);
+
+                const started = await laggingCtl.dispute
+                    .startSelfRemovalDispute(forkId)
+                    .request();
+                expect(started).to.equal(true);
+                const committed = await waitForCommittedDisputeOf(
+                    h,
+                    0,
+                    h.getPeer(lagging).address
+                );
+
+                expect(committed.input.latestInboundMessageBlockHash).to.equal(
+                    observedInboundHead
+                );
+                // the run was recovered from the base layer, not skipped
+                expect(
+                    await laggingCtl.query
+                        .getInboundMessageBlock(before.missingBlockHash!)
+                        .request()
+                ).to.not.equal(null);
+                await dropped.release();
+            });
+        });
+
+        it("an empty state proof → latest state snapshot falls back to genesis", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0); // no blocks -> empty genesis proof
+            const forkId = h.activeForkId!;
+            const ctl = h.control(h.getPeer(0));
+
+            const built = await ctl.dispute
+                .buildOwnAuditingData(forkId, -1)
+                .request();
+            const stateProof = Codec.decode(
+                built.encodedStateProof,
+                Type.StateProof
+            );
+            const auditingData = Codec.decode(
+                built.encodedAuditingData,
+                Type.DisputeAuditingData
+            );
+            const genesis = Codec.decode(
+                (await ctl.dispute.getGenesisSnapshotStruct(forkId).request())!
+                    .encodedSnapshot,
+                Type.StateSnapshot
+            );
+
+            expect(stateProof.milestones.length).to.equal(0);
+            // no block in the proof -> latest resolves to genesis
+            expect(
+                auditingData.latestStateSnapshot.snapshotData
+                    .stateMachineStateHash
+            ).to.equal(genesis.snapshotData.stateMachineStateHash);
+        });
+    });
+
+    // the four submission branches dispute() picks between: fraud-proof or not
+    // (multicall or a bare upload) x calldata or not (which upload). the uploads
+    // are recorded instead of sent - a real one posts an on-chain dispute
+    // against a healthy fork and derails the session; the e2e dispute flows
+    // cover the sends for real.
+    describe("dispute → submission branch", function () {
+        it("no fraud proof, settled fork → uploadDispute alone", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3); // fully-signed head -> no calldata
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const replayReads = await h.rpcStub.recordReplayGasReads(
+                peer.index
+            );
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("uploadDispute");
+            expect(submission.encodedAuditingData).to.equal(null);
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
+            // Without a fraud proof nothing is replayed: no requirement read.
+            expect(await replayReads.reads()).to.deep.equal([]);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.input.forkId).to.equal(forkId);
+            expect(dispute.input.disputer).to.equal(peer.address);
+            expect(dispute.postedAuditingData).to.equal(false);
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
+        it("no fraud proof, unfinalized fork → uploadDisputeWithCalldata alone", async function () {
+            const h = TestSession.getHarness();
+            // a pending inbound join leaves the head not-final-by-everyone
+            await h.scenario.preDisputeSetupCalldataPath();
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const replayReads = await h.rpcStub.recordReplayGasReads(
+                peer.index
+            );
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("uploadDisputeWithCalldata");
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
+            // Without a fraud proof nothing is replayed: no requirement read.
+            expect(await replayReads.reads()).to.deep.equal([]);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.postedAuditingData).to.equal(true);
+            // the auditing data uploaded is the one the dispute commits to
+            expect(hash(submission.encodedAuditingData!)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
+        it("a fraud proof, settled fork → multicall of applyFraudProofs + uploadDispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+                peer.index
+            );
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("multicallBestEffortLast");
+            // A fraud-proof replay is funded upfront: estimate plus the
+            // manager's replay requirement.
+            expect(
+                BigInt(submission.gasLimit!) >
+                    (await h.channelManager.getStateTransitionReplayGas())
+            ).to.equal(true);
+            expect(submission.innerMethods).to.deep.equal([
+                "applyFraudProofs",
+                "uploadDispute"
+            ]);
+            expect(submission.fraudProofParticipants).to.deep.equal([
+                offender.address
+            ]);
+            expect(submission.encodedAuditingData).to.equal(null);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.postedAuditingData).to.equal(false);
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
+        it("a fraud proof, unfinalized fork → multicall of applyFraudProofs + uploadDisputeWithCalldata", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+                peer.index
+            );
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("multicallBestEffortLast");
+            // A fraud-proof replay is funded upfront: estimate plus the
+            // manager's replay requirement.
+            expect(
+                BigInt(submission.gasLimit!) >
+                    (await h.channelManager.getStateTransitionReplayGas())
+            ).to.equal(true);
+            expect(submission.innerMethods).to.deep.equal([
+                "applyFraudProofs",
+                "uploadDisputeWithCalldata"
+            ]);
+            expect(submission.fraudProofParticipants).to.deep.equal([
+                offender.address
+            ]);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.postedAuditingData).to.equal(true);
+            expect(hash(submission.encodedAuditingData!)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+    });
+
+    // how dispute() reacts to a failing upload. the failures are injected at the
+    // contract boundary as the real 4-byte custom-error revert data, so the
+    // SDK's own decoder + handler table decide the outcome.
+    describe("dispute → upload failure policy", function () {
+        it("ErrorCantParticipateInDispute → dispute() resolves and the fork stays undisputed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError: "ErrorCantParticipateInDispute",
+                    at: "send"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // the handler consumes the error -> no rejection, marker cleared
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("an inbound block landing after construction refuses the upload → the retry loads the inbound run and lands at the chain's head", async function () {
+            await assertInboundHeadMovedDuringUpload(
+                TestSession.getHarness(),
+                "recoverable"
+            );
+        });
+
+        it("an inbound block landing after construction refuses the upload and the run cannot be loaded → the dispute fails fatally and rolls back", async function () {
+            await assertInboundHeadMovedDuringUpload(
+                TestSession.getHarness(),
+                "unrecoverable"
+            );
+        });
+
+        it("a retry refused again at the same chain inbound head → fatal, marker rolled back, no third upload", async function () {
+            await assertInboundRetryRefusedAtSameHead(TestSession.getHarness());
+        });
+
+        it("an inbound refusal naming the dispute's own anchor as the chain head → fatal, no retry", async function () {
+            await assertInboundRefusalAtOwnAnchor(TestSession.getHarness());
+        });
+
+        it("an inbound refusal of a kill-carrying dispute → the kill lands alone and the retry lands without it", async function () {
+            await assertInboundRefusalOfKillCarryingDispute(
+                TestSession.getHarness()
+            );
+        });
+
+        it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const scheduled = await h.rpcStub.recordScheduledTasks(peer.index);
+
+            // the send lands but the window predates the timeout deadline, so
+            // the revert surfaces from tx.wait() - after the marker was stored
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError:
+                        "RaceConditionDisputeTimeoutWindowCreatedTooEarly",
+                    at: "wait"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+            expect(
+                (await scheduled.tasks()).filter((task) =>
+                    task.taskName.startsWith(EARLY_TIMEOUT_RECHECK_REASON)
+                )
+            ).to.deep.equal([]);
+            await scheduled.restore();
+        });
+
+        it("RaceConditionDisputeTimeoutCalldataPosted → the refused timeout is dropped and the posted block our marker withheld is stored, with no recheck", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            // no timeout check runs -> only the refusal can hand the block back
+            await h.rpcStub.suppressTimeoutCheck(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeTimeoutCalldataPosted",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                // the plain timeout upload holds the marker while the post lands
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { authored, startHeight } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the handler finished: its ingest met the marker and dropped the block
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                const inPipeline = async () =>
+                    await h.execOnHost(
+                        observer,
+                        (sm, args) =>
+                            sm.storage.queues.getQueuedEntry(args.blockHash) !==
+                                undefined ||
+                            sm.storage.blocks.getBlock(args.blockHash) !==
+                                undefined,
+                        { blockHash: authored.hash }
+                    );
+                expect(await inPipeline()).to.equal(false);
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.deep.equal({ isForced: false, participant: writer });
+
+                await recorder.release();
+                await refused;
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.equal(null);
+                // the refusal handed it back: it lands within a task tick.
+                // Timeout checks are suppressed, and any chain redelivery is
+                // seconds away, so this short bound is the attribution.
+                await waitFor(async () => await inPipeline(), 3000);
+                const timeouts = (await recorder.submissions()).map(
+                    (submission) =>
+                        Codec.decode(submission.encodedDispute, Type.Dispute)
+                            .input.timeout
+                );
+                expect(timeouts.map((t) => t.isForced)).to.deep.equal([false]);
+                expect(
+                    (await tasks.tasks()).filter(
+                        (task) =>
+                            task.taskName.startsWith(
+                                EARLY_TIMEOUT_RECHECK_REASON
+                            ) ||
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterPostedBlockRejected"
+                            )
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("a refusal other than the posted-calldata race while a posted block lands → the withheld block is handed back and stored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            // no timeout check runs -> only the failed upload can hand the block back
+            await h.rpcStub.suppressTimeoutCheck(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // a refusal the contract raises before its posted-calldata check
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError: "ErrorCantParticipateInDispute",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { authored } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the handler finished: its ingest met the marker and dropped the block
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                const inPipeline = async () =>
+                    await h.execOnHost(
+                        observer,
+                        (sm, args) =>
+                            sm.storage.queues.getQueuedEntry(args.blockHash) !==
+                                undefined ||
+                            sm.storage.blocks.getBlock(args.blockHash) !==
+                                undefined,
+                        { blockHash: authored.hash }
+                    );
+                expect(await inPipeline()).to.equal(false);
+
+                await recorder.release();
+                await refused;
+                // the failed upload handed it back: it lands within a task tick.
+                // Timeout checks are suppressed, and any chain redelivery is
+                // seconds away, so this short bound is the attribution.
+                await waitFor(async () => await inPipeline(), 3000);
+                expect(
+                    (await tasks.tasks()).filter(
+                        (task) =>
+                            task.taskName.startsWith(
+                                EARLY_TIMEOUT_RECHECK_REASON
+                            ) ||
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterPostedBlockRejected"
+                            )
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("RaceConditionDisputeTimeoutNotMinTimestamp while a posted block lands → the refusal re-arms the check and the withheld block is stored", async function () {
+            // outcome test: the re-armed check hands the block back. A chain
+            // event redelivery would store it too, so the stored block alone
+            // is not attribution - the re-arm task assertion below is.
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeTimeoutNotMinTimestamp",
+                        customErrorArgs: ["2", "1"],
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { startHeight } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHeight(forkId, startHeight)
+                        .request()
+                ).to.equal(null);
+
+                await recorder.release();
+                await refused;
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getBlockByHeight(forkId, startHeight)
+                            .request()) !== null,
+                    h.event.hostExecTimeoutMs()
+                );
+                expect(
+                    (await recorder.submissions()).map(
+                        (submission) =>
+                            Codec.decode(
+                                submission.encodedDispute,
+                                Type.Dispute
+                            ).input.timeout.isForced
+                    )
+                ).to.deep.equal([false]);
+                // the early-refusal re-arm is what carries this fork forward
+                expect(
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.startsWith(EARLY_TIMEOUT_RECHECK_REASON)
+                    )
+                ).to.not.have.length(0);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("RaceConditionDisputeTimeoutCalldataPosted, then an authentic block failing its state transition → the fraud-proof dispute carries no timeout", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            const writerPeer = h.peers.find((p) => p.address === writer)!;
+            await h.dispute.suppressDisputeInitiation([1, 2]);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeTimeoutCalldataPosted",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                await h.byzantine.postJunkCalldataOnChain(writerPeer.index, {
+                    height: 2,
+                    authentic: true
+                });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                await recorder.release();
+                await refused;
+
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const [plain, fraud] = await recorder.submissions();
+                expect(
+                    Codec.decode(plain.encodedDispute, Type.Dispute).input
+                        .timeout.participant
+                ).to.equal(writer);
+                expect(
+                    Codec.decode(fraud.encodedDispute, Type.Dispute).input
+                        .timeout.participant
+                ).to.equal(ZeroAddress);
+                expect(fraud.fraudProofParticipants).to.deep.equal([writer]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+            }
+        });
+
+        it("RaceConditionDisputeEvidencePeriodExpired at send → resolves as a no-op and the marker rolls back", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError: "RaceConditionDisputeEvidencePeriodExpired",
+                    at: "send"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // a lost evidence race is a no-op, and the failed send rolls the
+            // signing marker back
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("RaceConditionDisputeEvidencePeriodExpired at wait → resolves as a no-op and the marker rolls back", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError: "RaceConditionDisputeEvidencePeriodExpired",
+                    at: "wait"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // a lost evidence race is a no-op, but no dispute landed: the
+            // marker stored before the await rolls back like every other
+            // failure
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("after a late revert on the wait, a retry submits replacement evidence, and the fork is closed to our signing while it holds", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // The kill of a winning commitment retries dispute() on the same
+            // fork. The rolled-back marker lets the retry submit, and the
+            // marker it leaves behind keeps this peer's block work off the
+            // fork.
+            const failing = await h.rpcStub.recordDisputeSubmissions(
+                peer.index,
+                {
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeEvidencePeriodExpired",
+                        at: "wait"
+                    }
+                }
+            );
+            const first = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            expect(first.rejected).to.equal("");
+            expect(first.disputed).to.equal(false);
+            await failing.restore();
+
+            const retry = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const second = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return {
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            expect(second.disputed).to.equal(true);
+            expect(await retry.submissions()).to.have.length(1);
+            await retry.restore();
+
+            // Peer 0 is the next writer after three blocks; its turn produces
+            // no block on the closed fork.
+            const heightBefore = await h
+                .control(peer)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            await h.transition.submit(peer, (contract) => contract.add(1), {
+                waitForSync: false
+            });
+            expect(
+                await h
+                    .control(peer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore);
+        });
+
+        it("dispute start closes the fork: our turn produces no block", async function () {
+            const h = TestSession.getHarness();
+            // Three blocks: writers 0, 1, 2 → peer 0 is next.
+            await h.lifecycle.start(3, 3);
+            const disputer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // The upload parks, so the dispute is in flight for the rest of
+            // the case; the marker is set before construction.
+            const held = await h.rpcStub.recordDisputeSubmissions(
+                disputer.index,
+                { hold: true }
+            );
+            const inFlight = h.execOnHost(
+                disputer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            try {
+                await held.waitUntilHeld();
+                const heightBefore = await h
+                    .control(disputer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request();
+                await h.transition.submit(
+                    disputer,
+                    (contract) => contract.add(1),
+                    { waitForSync: false }
+                );
+                expect(
+                    await h
+                        .control(disputer)
+                        .query.getLatestBlockHeight(forkId)
+                        .request()
+                ).to.equal(heightBefore);
+            } finally {
+                await held.release();
+                await held.restore();
+            }
+            expect(await inFlight).to.equal(true);
+        });
+
+        it("dispute start closes the fork: a delivered block gets no signature of ours", async function () {
+            await assertDisputedForkDoesNotSign(TestSession.getHarness());
+        });
+
+        it("the full ingest pipeline stores a block without signing when dispute admission precedes commit", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+            await h.execOnHost(observer, (sm) => {
+                const validate =
+                    sm.validationService.validateBlockConfirmation.bind(
+                        sm.validationService
+                    );
+                sm.validationService.validateBlockConfirmation = async (
+                    ...args
+                ) => {
+                    const result = await validate(...args);
+                    // Stage dispute admission at the validation/commit boundary;
+                    // all validation and commit behavior remains real.
+                    sm.storage.disputes.storeDisputedFork(sm.forkId, true);
+                    return result;
+                };
+            });
+            const result = await h
+                .control(observer)
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request();
+            expect(result.resultName).to.equal("SUCCESS");
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHash(authored.hash)
+                .request();
+            expect(stored).to.not.equal(null);
+            const signed = await h.execOnHost(
+                observer,
+                (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.hash);
+                    if (!block)
+                        throw new Error("Ingest did not commit the block");
+                    return block.allSignerAddresses.has(sm.signerAddress);
+                },
+                { hash: authored.hash }
+            );
+            expect(signed).to.equal(false);
+        });
+
+        it("an unrecognized send failure → dispute() rejects with it, fork left undisputed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: { message: "upload rejected by the node", at: "send" }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // no handler matches -> logged, marker cleared, rethrown as fatal
+            expect(r.rejected).to.equal("upload rejected by the node");
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("an unrecognized wait() failure → dispute() rejects with it, the stored marker is cleared", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: { message: "receipt reverted", at: "wait" }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // the marker was already stored true here, so the catch's
+            // storeDisputedFork(false) is what has to undo it before the
+            // failure is rethrown as fatal
+            expect(r.rejected).to.equal("receipt reverted");
+            expect(r.disputed).to.equal(false);
+        });
+    });
+
+    describe("dispute", function () {
+        it("already-disputed fork → dispute() short-circuits before constructDispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    // mark the fork disputed via the same setter dispute() uses,
+                    // then re-enter: the didIDispute guard must skip everything
+                    sm.storage.disputes.storeDisputedFork(args.forkId, true);
+                    const dm = sm.disputeManager;
+                    let constructCalls = 0;
+                    const original = dm.constructDispute.bind(dm);
+                    dm.constructDispute = async (f) => {
+                        constructCalls += 1;
+                        return original(f);
+                    };
+                    try {
+                        await dm.dispute(args.forkId);
+                    } finally {
+                        dm.constructDispute = original;
+                    }
+                    return {
+                        constructCalls,
+                        stillDisputed: sm.storage.disputes.didIDispute(
+                            args.forkId
+                        )
+                    };
+                },
+                { forkId }
+            );
+
+            expect(r.constructCalls).to.equal(0);
+            expect(r.stillDisputed).to.equal(true);
+        });
+
+        it("two concurrent dispute() calls → the mutex serializes them, only the first uploads", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                hold: true
+            });
+
+            // the first caller holds the mutex, parked at its upload
+            const first = h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return {
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            await probe.waitUntilHeld();
+
+            // the second caller queues behind the mutex; when it finally runs it
+            // must see didIDispute=true and return before constructing anything
+            const second = h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const dm = sm.disputeManager;
+                    let constructCalls = 0;
+                    const original = dm.constructDispute.bind(dm);
+                    dm.constructDispute = async (f) => {
+                        constructCalls += 1;
+                        return original(f);
+                    };
+                    try {
+                        await dm.dispute(args.forkId);
+                    } finally {
+                        dm.constructDispute = original;
+                    }
+                    return {
+                        constructCalls,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            await h.rpcStub.waitUntilDisputeMutexContended(peer.index);
+            // still parked -> the waiter reached no upload of its own
+            expect((await probe.submissions()).length).to.equal(1);
+
+            await probe.release();
+            const [firstResult, secondResult] = await Promise.all([
+                first,
+                second
+            ]);
+
+            const submissions = await probe.submissions();
+            expect(submissions.length).to.equal(1);
+            expect(submissions[0].method).to.equal("uploadDispute");
+            expect(submissions[0].waited).to.equal(true);
+            expect(firstResult.disputed).to.equal(true);
+            // the waiter short-circuited on the marker the first call stored
+            expect(secondResult.constructCalls).to.equal(0);
+            expect(secondResult.disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+    });
+
+    describe("killDispute", function () {
+        it("no stored fraud proof → killDispute rejects, nothing is submitted", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                peer.index
+            );
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    // a locally constructed dispute nobody audited -> no proof
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        threw,
+                        storedProofs:
+                            sm.storage.disputeFraudProofs.getDisputeFraudProofs()
+                                .length
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            // a missing stored proof is no recognized race -> fatal, and the
+            // method rejects before it reaches a submission
+            expect(r.storedProofs).to.equal(0);
+            expect(r.threw).to.equal(
+                "No dispute fraud proof found for dispute"
+            );
+            expect(await probe.applies()).to.deep.equal([]);
+        });
+
+        it("a stored proof whose dispute window a later same-fork snapshot cleared → killDispute returns before submitting", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const killer = h.getPeer(0);
+
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.stateProof.milestones = [];
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait({ forkId });
+            // a same-fork post on the reduced fork clears the old windows
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+            await h.transition.advanceState();
+            expect(
+                await h.transition.postSnapshotWait({ peerIndex: 0 })
+            ).to.not.equal(undefined);
+            const period = await h.query.killPeriod(forkId);
+            expect(period.windowExists).to.equal(false);
+            expect(period.isExpired).to.equal(false);
+
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+            const r = await h.execOnHost(
+                killer,
+                async (sm, args) => {
+                    const proofs = sm.storage.disputeFraudProofs
+                        .getDisputeFraudProofs()
+                        .filter(
+                            (proof) =>
+                                String(proof.dispute.input.forkId) ===
+                                args.forkId
+                        );
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return { proofCount: proofs.length, threw };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            expect(r.proofCount).to.be.greaterThan(0);
+            expect(r.threw).to.equal("");
+            expect(await probe.applies()).to.deep.equal([]);
+        });
+
+        it("expired kill window → killDispute returns before submitting anything", async function () {
+            const h = TestSession.getHarness();
+            const { killer, forkId } =
+                await h.scenario.stageUnkilledSpamDispute({
+                    timeConfig: { evidenceTime: 6 }
+                });
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+
+            // let the kill period lapse while the stored proof sits unused
+            const { killPeriodEnd } = await h.query.killPeriod(forkId);
+            await h.event.waitUntilTimestamp(killPeriodEnd + 2);
+            const period = await h.query.killPeriod(forkId);
+            expect(period.windowExists).to.equal(true);
+            expect(period.isExpired).to.equal(true);
+
+            const r = await h.execOnHost(
+                killer,
+                async (sm) => {
+                    const proofs =
+                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return { threw };
+                },
+                {},
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            expect(r.threw).to.equal("");
+            expect(await probe.applies()).to.deep.equal([]);
+        });
+
+        it("a kill sent after the real kill period ends → the chain reverts it with RaceConditionDisputeKillPeriodExpired and killDispute rejects with it", async function () {
+            const h = TestSession.getHarness();
+            const { threw, spammer, periodAtRelease, applies, slashed } =
+                await runKillSentAfterKillPeriod(h);
+
+            expect(periodAtRelease.isExpired).to.equal(true);
+            expect(threw).to.contain("RaceConditionDisputeKillPeriodExpired");
+            expect(applies).to.have.length(1);
+            expect(applies[0].customError).to.equal(
+                "RaceConditionDisputeKillPeriodExpired"
+            );
+            expect(applies[0].waited).to.equal(false);
+            expect(slashed).to.not.include(spammer.address);
+            await TestSession.settleDetached();
+        });
+
+        // the races killDispute consumes, each injected at the contract
+        // boundary as the real 4-byte custom-error revert data, so the SDK's
+        // own decoder + handler table decide the outcome
+        it("RaceConditionOnChainSlashes on the apply → consumed, no rejection, no detached error", async function () {
+            const h = TestSession.getHarness();
+            const { threw, applies, hostErrors } = await runKillWithApplyRace(
+                h,
+                "RaceConditionOnChainSlashes"
+            );
+            expect(threw).to.equal("");
+            expect(applies[0].customError).to.equal(
+                "RaceConditionOnChainSlashes"
+            );
+            expect(hostErrors).to.deep.equal([]);
+        });
+
+        it("RaceConditionGenesisTimestampNotAvailable on the apply → consumed, no rejection, no detached error", async function () {
+            const h = TestSession.getHarness();
+            const { threw, applies, hostErrors } = await runKillWithApplyRace(
+                h,
+                "RaceConditionGenesisTimestampNotAvailable"
+            );
+            expect(threw).to.equal("");
+            expect(applies[0].customError).to.equal(
+                "RaceConditionGenesisTimestampNotAvailable"
+            );
+            expect(hostErrors).to.deep.equal([]);
+        });
+
+        it("RaceConditionUnexpectedBlockCalldataPosted on the apply → consumed, no rejection, no detached error", async function () {
+            const h = TestSession.getHarness();
+            const { threw, applies, hostErrors } = await runKillWithApplyRace(
+                h,
+                "RaceConditionUnexpectedBlockCalldataPosted"
+            );
+            expect(threw).to.equal("");
+            expect(applies[0].customError).to.equal(
+                "RaceConditionUnexpectedBlockCalldataPosted"
+            );
+            expect(hostErrors).to.deep.equal([]);
+        });
+
+        // no handler matches -> logged and rethrown as fatal, nothing resent;
+        // the apply never landed, so the spammer is still unslashed
+        it("an unrecognized apply failure at send → killDispute rejects with it, nothing retried", async function () {
+            const h = TestSession.getHarness();
+            const { threw, spammer, applies, hostErrors, slashed } =
+                await runKillWithUnrecognizedApplyFailure(
+                    h,
+                    "send",
+                    "apply rejected by the node"
+                );
+            expect(threw).to.equal("apply rejected by the node");
+            expect(applies).to.have.length(1);
+            expect(applies[0].customError).to.equal(null);
+            expect(hostErrors).to.deep.equal([]);
+            expect(slashed).to.not.include(spammer.address);
+        });
+
+        it("an unrecognized apply failure at wait → killDispute rejects with it, nothing retried", async function () {
+            const h = TestSession.getHarness();
+            const { threw, spammer, applies, hostErrors, slashed } =
+                await runKillWithUnrecognizedApplyFailure(
+                    h,
+                    "wait",
+                    "apply rejected by the node"
+                );
+            expect(threw).to.equal("apply rejected by the node");
+            expect(applies).to.have.length(1);
+            expect(applies[0].customError).to.equal(null);
+            expect(hostErrors).to.deep.equal([]);
+            expect(slashed).to.not.include(spammer.address);
+        });
+
+        it("live kill window → the stored proof is submitted and its transaction awaited", async function () {
+            const h = TestSession.getHarness();
+            const { killer, spammer } =
+                await h.scenario.stageUnkilledSpamDispute();
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+
+            const r = await h.execOnHost(
+                killer,
+                async (sm) => {
+                    const proofs =
+                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                    await sm.disputeManager.killDispute(proofs[0].dispute);
+                    return {
+                        proofCount: proofs.length,
+                        participant: proofs[0].participant
+                    };
+                },
+                {},
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+
+            expect(r.proofCount).to.equal(1);
+            const applies = await probe.applies();
+            expect(applies.length).to.equal(1);
+            expect(applies[0].participants).to.deep.equal([r.participant]);
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(await h.query.onChainSlashedParticipants()).to.include(
+                spammer.address
+            );
+        });
+
+        it("two killDispute calls inside one live kill window → one slash, the loser lands as a no-op", async function () {
+            const h = TestSession.getHarness();
+            const { killer, spammer } =
+                await h.scenario.stageUnkilledSpamDispute();
+            // both kills park before they reach the chain, so the window stays
+            // live for both of them
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index,
+                { hold: true }
+            );
+
+            const kill = () =>
+                h.execOnHost(
+                    killer,
+                    async (sm) => {
+                        const proofs =
+                            sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                        if (proofs.length === 0) return { hadProof: false };
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                        return { hadProof: true };
+                    },
+                    {},
+                    {
+                        timeoutMs: h.event.hostExecTimeoutMs()
+                    }
+                );
+            const first = kill();
+            await probe.waitUntilHeld(1);
+            const second = kill();
+            await probe.waitUntilHeld(2);
+
+            const before = await h.query.onChainSlashedParticipants();
+            await probe.release();
+            expect(await first).to.deep.equal({ hadProof: true });
+            expect(await second).to.deep.equal({ hadProof: true });
+            expect(
+                (await h.quiesceHosts()).map((e) => e.message)
+            ).to.deep.equal([]);
+
+            // both applies were sent while the window was live; the loser found
+            // the dispute already uncommitted -> it lands without an error and
+            // slashes nobody a second time
+            const applies = await probe.applies();
+            expect(applies.length).to.equal(2);
+            expect(applies.map((a) => a.error)).to.deep.equal([null, null]);
+            const after = await h.query.onChainSlashedParticipants();
+            expect(after.length).to.equal(before.length + 1);
+            expect(after).to.include(spammer.address);
+        });
+    });
+
+    // DisputeManager.replayGasLimit through both fraud-proof send paths: the
+    // chain signer's estimate plus the manager's replay requirement. The
+    // estimate is the real one, answered scaled down to stand in for an
+    // estimator that reports only the gas a run spends.
+    describe("fraud-proof replay gas limit", function () {
+        it("a dispute sends the multicall at its estimate plus the replay requirement", async function () {
+            const { submissions, estimates, replayGas } =
+                await disputeWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 1,
+                    denominator: 10
+                });
+            expect(estimates.map((e) => e.method)).to.deep.equal(["multicall"]);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+        });
+
+        it("a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement", async function () {
+            const { applies, estimates, replayGas, slashed, spammer } =
+                await killWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 1,
+                    denominator: 10
+                });
+            expect(estimates.map((e) => e.method)).to.deep.equal([
+                "applyDisputeFraudProofs"
+            ]);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill with the real estimate lands at the estimate plus the replay requirement", async function () {
+            const { applies, estimates, replayGas, slashed, spammer } =
+                await killWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 1,
+                    denominator: 1
+                });
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill whose estimate plus the replay requirement exceeds the block gas limit is sent at the block gas limit", async function () {
+            const h = TestSession.getHarness();
+            const { applies, estimates, replayGas } =
+                // above both node configs' block gas limits (30M, 1B)
+                await killWithScaledEstimate(h, {
+                    numerator: 100_000,
+                    denominator: 1
+                });
+            const { gasLimit } =
+                (await h.channelManager.runner!.provider!.getBlock("latest"))!;
+            expect(BigInt(estimates[0].answer) + replayGas > gasLimit).to.equal(
+                true
+            );
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(String(gasLimit));
+        });
+
+        it("a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer", async function () {
+            const {
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                spammer,
+                blockReadFailures
+            } = await killWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 },
+                { failBlockRead: true }
+            );
+            expect(blockReadFailures).to.equal(1);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement", async function () {
+            const {
+                storedProofTypes,
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                disputer,
+                committedAfterKill
+            } = await killTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 }
+            );
+            // the kill sends the refutation that replays a transition
+            expect(storedProofTypes[0]).to.equal(
+                toSolidityDisputeFraudProofType(
+                    DisputeFraudProofType.TimeoutCalldataPosted
+                )
+            );
+            expect(estimates.map((e) => e.method)).to.deep.equal([
+                "applyDisputeFraudProofs"
+            ]);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].participants).to.deep.equal([disputer]);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].customError).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            // the replay was funded: the timeout dispute is killed on-chain
+            expect(slashed).to.include(disputer);
+            expect(committedAfterKill).to.equal(false);
+        });
+
+        it("the dispute and kill sends share one replay requirement read", async function () {
+            const { reads, submissions, applies, replayGas } =
+                await disputeThenKillRecordingReads(TestSession.getHarness());
+            expect(reads).to.deep.equal([
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.not.equal(null);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.not.equal(null);
+            expect(applies[0].error).to.equal(null);
+        });
+
+        it("concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement", async function () {
+            const {
+                whileHeld,
+                reads,
+                submissions,
+                applies,
+                estimates,
+                replayGas
+            } = await disputeAndKillSharingHeldRead(TestSession.getHarness());
+            // both sends asked for their limit; one read, still pending, and
+            // nothing sent
+            expect(whileHeld.reads).to.deep.equal([
+                { outcome: "pending", replayGas: null }
+            ]);
+            expect(whileHeld.submissions).to.deep.equal([]);
+            expect(whileHeld.applies).to.deep.equal([]);
+
+            expect(reads).to.deep.equal([
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            const estimateOf = (method: string) => {
+                const matching = estimates.filter((e) => e.method === method);
+                expect(matching.length, method).to.equal(1);
+                return BigInt(matching[0].answer);
+            };
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(
+                String(estimateOf("multicall") + replayGas)
+            );
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(estimateOf("applyDisputeFraudProofs") + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+        });
+
+        it("a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            await h.byzantine.storeInvalidTransitionFraudProof(peer.index);
+            const reads = await h.rpcStub.recordReplayGasReads(peer.index, {
+                failFirst: 1
+            });
+            const recorded = await h.rpcStub.recordDisputeSubmissions(
+                peer.index
+            );
+
+            await expect(disputeOnHost(h, peer.index)).to.be.rejectedWith(
+                REPLAY_GAS_READ_STUB_FAILURE
+            );
+            expect(await recorded.submissions()).to.deep.equal([]);
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null }
+            ]);
+
+            await disputeOnHost(h, peer.index);
+            const replayGas =
+                await h.channelManager.getStateTransitionReplayGas();
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null },
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            const submissions = await recorded.submissions();
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicallBestEffortLast"
+            ]);
+            expect(submissions[0].gasLimit).to.not.equal(null);
+        });
+
+        it("a rejected replay requirement read rejects the kill without sending it and the next kill reads again", async function () {
+            const h = TestSession.getHarness();
+            const { killer, spammer } =
+                await h.scenario.stageUnkilledSpamDispute();
+            const reads = await h.rpcStub.recordReplayGasReads(killer.index, {
+                failFirst: 1
+            });
+            const applies = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+
+            await expect(
+                killStoredDisputeOnHost(h, killer.index)
+            ).to.be.rejectedWith(REPLAY_GAS_READ_STUB_FAILURE);
+            expect(await applies.applies()).to.deep.equal([]);
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null }
+            ]);
+
+            await killStoredDisputeOnHost(h, killer.index);
+            const replayGas =
+                await h.channelManager.getStateTransitionReplayGas();
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null },
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            const [apply] = await applies.applies();
+            expect(apply.gasLimit).to.not.equal(null);
+            expect(apply.error).to.equal(null);
+            expect(await h.query.onChainSlashedParticipants()).to.include(
+                spammer.address
+            );
+        });
+    });
+
+    describe("constructDispute → concurrency", function () {
+        it("fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            // crafted only - nothing is stored until it is validated below
+            const { offender, encodedBlock } =
+                await h.byzantine.craftInvalidTransitionBlock(observer.index);
+
+            // park the construction after it started but before it reads the
+            // stored fraud proofs - the on-chain slash set is already being read
+            const hold = await h.rpcStub.holdConstructDisputeAtStateProof(
+                observer.index,
+                forkId
+            );
+            const constructing = h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        onChainSlashes: dispute.input.onChainSlashes,
+                        fraudProofCount: fraudProofsToApply.length
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            // the park is scoped to constructDispute, so this pins that call
+            await hold.waitUntilParked();
+            expect(await hold.parkedCount()).to.equal(1);
+
+            // store the proof inside the window, then let the construction finish
+            const validation = await h
+                .control(observer)
+                .validation.runBlockValidation(encodedBlock)
+                .request();
+            expect(validation.fraudProofType).to.not.be.null;
+
+            await hold.release();
+            const r = await constructing;
+
+            // nothing is slashed on-chain, so the proof stored mid-flight must
+            // account for exactly one claimed slash - no more, no less
+            expect(r.fraudProofCount).to.equal(1);
+            expect(r.onChainSlashes).to.deep.equal([offender.address]);
+        });
+    });
+});

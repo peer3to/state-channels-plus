@@ -1,14 +1,24 @@
-import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
-import { HardhatEthersHelpers } from "hardhat/types/runtime";
-import {
-    MathStateChannelManagerProxy,
-    MathStateMachine,
-    StateChannelUtilLibrary
-} from "@typechain-types";
-
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/DataTypes";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
+// @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
 import Clock from "@/Clock";
-import P2pEventHooks from "@/P2pEventHooks";
+import { hash } from "@/utils";
+import { routedFacets } from "@/utils/routedFacets";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import {
+    StateChannelManagerInterface,
+    MathStateMachine
+} from "@typechain-types";
+import {
+    JoinChannelStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, AddressLike } from "ethers";
+import { HardhatEthersHelpers } from "hardhat/types/runtime";
+
+export type TestObjectOptions = {
+    channelId?: string;
+    initialBalance?: number;
+};
 
 export const createJoinChannelTestObject = (
     address: AddressLike,
@@ -17,10 +27,10 @@ export const createJoinChannelTestObject = (
     let currentTime = 0;
     try {
         currentTime = Clock.getTimeInSeconds();
-    } catch (e) {
+    } catch {
         currentTime = Math.floor(Date.now() / 1000);
     }
-    let jc: JoinChannelStruct = {
+    const jc: JoinChannelStruct = {
         participant: address,
         channelId: channelId
             ? ethers.keccak256(
@@ -30,111 +40,140 @@ export const createJoinChannelTestObject = (
                   )
               )
             : ethers.keccak256("0x2371"),
-        amount: 500,
-        deadlineTimestamp: currentTime + 120, // 2 minutes from now
-        data: "0x00"
+        balance: {
+            amount: 500,
+            data: "0x00"
+        },
+        deadlineTimestamp: currentTime + 120 // 2 minutes from now
     };
     return jc;
 };
 
-export const getCurrentBlockTime = async (
-    provider: ethers.Provider
-): Promise<number> => {
-    const block = await provider.getBlock("latest");
-    return block!.timestamp;
-};
-export const getCurrentTimeSeconds = (): number => {
-    return Math.floor(Date.now() / 1000);
+export const createOpenChannelTestObject = (
+    participants: AddressLike[],
+    options?: TestObjectOptions
+): OpenChannelStruct => {
+    const { channelId, initialBalance } = options ?? {};
+    let currentTime = 0;
+    try {
+        currentTime = Clock.getTimeInSeconds();
+    } catch {
+        currentTime = Math.floor(Date.now() / 1000);
+    }
+
+    const balances = participants.map(() => ({
+        amount: initialBalance === undefined ? 500 : initialBalance,
+        data: "0x00"
+    }));
+
+    const oc: OpenChannelStruct = {
+        channelId: channelId
+            ? hash(
+                  ethers.AbiCoder.defaultAbiCoder().encode(
+                      ["string"],
+                      [channelId]
+                  )
+              )
+            : hash("0x2371"),
+        participants: participants,
+        balances: balances,
+        deadlineTimestamp: currentTime + 120, // 2 minutes from now
+        isAtomic: true,
+        data: "0x00"
+    };
+    return oc;
 };
 
-export async function deployLibraryTestContract(
-    _ethers: typeof ethers & HardhatEthersHelpers
-): Promise<StateChannelUtilLibrary> {
-    //Deploy library
-    let stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
+/** Facet contract name -> deployed address of that facet behind the diamond. */
+export type DeployedFacetAddresses = Record<string, string>;
 
-    //Deploy DisputeManagerFacet
-    let libraryTestContractFactory = await _ethers.getContractFactory(
-        "LibraryTestContract"
-    );
-    let libraryTestContract =
-        await libraryTestContractFactory.deploy(libraryAddress);
-    let proxy = stateChannelUtilLibraryFactory.attach(
-        await libraryTestContract.getAddress()
-    );
-    return proxy as StateChannelUtilLibrary;
-}
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
-    mathChannelManager: MathStateChannelManagerProxy & {
-        deploymentTransaction(): ContractTransactionResponse;
-    };
+    mathChannelManager: StateChannelManagerInterface;
     mathInstance: MathStateMachine;
+    facetAddresses: DeployedFacetAddresses;
+    consumerFacetAddress: string;
 }> {
-    //Deploy library
-    let stateChannelUtilLibraryFactory = await _ethers.getContractFactory(
-        "StateChannelUtilLibrary"
-    );
-    let stateChannelUtilLibrary = await stateChannelUtilLibraryFactory.deploy();
-    let libraryAddress = await stateChannelUtilLibrary.getAddress();
+    // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
+    // typescipt needs to know the keys and the order of the array
+    async function deployFacets<T extends readonly any[]>(
+        configs: T
+    ): Promise<{ [K in keyof T]: string }> {
+        const addresses = await Promise.all(
+            configs.map(async (config) => {
+                const factory = await _ethers.getContractFactory(
+                    config.facetName
+                );
+                const facet = await factory.deploy();
+                return await facet.getAddress();
+            })
+        );
+        return addresses as { [K in keyof T]: string };
+    }
 
-    //Deploy DisputeManagerFacet
-    let disputeManagerFacetFactory = await _ethers.getContractFactory(
-        "DisputeManagerFacet",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
-    );
-    let disputeManagerFacet = await disputeManagerFacetFactory.deploy();
-    let disputeManagerFacetAddress = await disputeManagerFacet.getAddress();
+    // Deploy all facets in parallel and get addresses in order
+    const facetAddresses = await deployFacets(routedFacets);
+
+    const mathConsumerFactory =
+        await _ethers.getContractFactory("MathConsumerFacet");
+    const mathConsumerFacet = await mathConsumerFactory.deploy();
 
     //State machine logic
-    let mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
-    let mathContactInstance = await mathSmFactory.deploy();
-
-    //Deploy MathStateChannelManager
-    let mathSmcFactory = await _ethers.getContractFactory(
-        "MathStateChannelManagerProxy",
-        { libraries: { StateChannelUtilLibrary: libraryAddress } }
+    const mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
+    const mathContactInstance = await mathSmFactory.deploy(
+        500000,
+        DEFAULT_MAX_CHANNEL_PARTICIPANTS
     );
-    let mathStateChannelContactInstance = await mathSmcFactory.deploy(
+
+    //Deploy MathStateChannelManager with all facet addresses
+    const mathSmcFactory = await _ethers.getContractFactory(
+        "StateChannelManagerProxy"
+    );
+    const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
-        disputeManagerFacetAddress
+        ...facetAddresses,
+        await mathConsumerFacet.getAddress(),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
     );
 
+    // The proxy only implements a handful of selectors itself and routes the
+    // rest to facets, so bind the diamond's full surface at its address.
     return {
-        mathChannelManager: mathStateChannelContactInstance,
-        mathInstance: mathContactInstance
+        mathChannelManager: connectStateChannelManager(
+            await mathStateChannelContactInstance.getAddress(),
+            mathStateChannelContactInstance.runner
+        ),
+        mathInstance: mathContactInstance,
+        facetAddresses: Object.fromEntries(
+            routedFacets.map((config, index) => [
+                config.facetName,
+                facetAddresses[index]
+            ])
+        ),
+        consumerFacetAddress: await mathConsumerFacet.getAddress()
     };
 }
-export async function getMathDeploymentTransaction(
+
+export async function deployUtilityFacetTestContract(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {
-    const MathStateMachineFactory =
-        await _ethers.getContractFactory("MathStateMachine");
-    return await MathStateMachineFactory.getDeployTransaction();
+    const UtilityFacetFactory =
+        await _ethers.getContractFactory("UtilityFacet");
+    return await UtilityFacetFactory.deploy();
 }
 
-export function getMathP2pEventHooks(
-    onTurnCallback: () => void,
-    myAddress: string
-) {
-    let hooks: P2pEventHooks = {
-        onTurn(address: string): void {
-            address == myAddress && onTurnCallback();
-        }
-    };
-    return hooks;
-}
 export async function getSigners(
     _ethers: typeof ethers & HardhatEthersHelpers
 ) {
     const signers = await _ethers.getSigners();
-    let firstSigner = signers[0];
-    let secondSigner = signers[1];
-    let thirdSigner = signers[2];
+    const firstSigner = signers[0];
+    const secondSigner = signers[1];
+    const thirdSigner = signers[2];
     return { firstSigner, secondSigner, thirdSigner, signers };
 }

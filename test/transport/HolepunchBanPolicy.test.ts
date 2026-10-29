@@ -1,0 +1,444 @@
+import { TransportType } from "@/transport";
+import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { expect } from "chai";
+
+describe("ProfileManager Holepunch ban policy", function () {
+    let fixture: P2PManagerFixture;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("bans an explicitly blacklisted unauthenticated Holepunch profile", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedBlacklist()
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(true);
+    });
+
+    it("drops an ordinary unauthenticated Holepunch profile without banning it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedClose()
+            .request();
+
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+    });
+
+    it("logs a dropped duplicate connection as debug, a peer's connection reset as a warning and any other socket error as an error, closing every transport", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchSocketErrors()
+            .request();
+
+        expect(result.debugs).to.include(
+            "Holepunch dropped a duplicate connection"
+        );
+        expect(result.warnings).to.include(
+            "Holepunch peer reset the connection"
+        );
+        expect(result.errors).to.deep.equal(["Holepunch socket error"]);
+        expect(result.closed).to.deep.equal([true, true, true, true]);
+    });
+
+    it("logs a peer reset that carries only the message as a warning, not an error, and closes the transport", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchSocketErrors()
+            .request();
+
+        // The coded reset and the message-only reset each warn once; only
+        // the unrelated socket error reaches the error level.
+        expect(result.warnings).to.deep.equal([
+            "Holepunch peer reset the connection",
+            "Holepunch peer reset the connection"
+        ]);
+        expect(result.errors).to.deep.equal(["Holepunch socket error"]);
+        expect(result.closed[2]).to.equal(true);
+    });
+
+    it("bans the Holepunch fallback after a WebRTC upgrade", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterUpgrade).to.deep.equal([true]);
+    });
+
+    it("does not release the fallback ban when a replaced WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterStaleClose).to.deep.equal([true]);
+    });
+
+    it("releases the fallback ban when the current WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterCurrentClose).to.deep.equal([true, false]);
+    });
+
+    it("releases the fallback ban when WebRTC falls back to Holepunch", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterFallback).to.deep.equal([
+            true,
+            false,
+            false
+        ]);
+    });
+
+    it("keeps an explicit blacklist banned when the current WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeExplicitBlacklist(fixture.address(1))
+            .request();
+
+        expect(result.profileBlacklisted).to.equal(true);
+        expect(result.banCalls).to.deep.equal([true]);
+    });
+
+    it("unblacklisting with selected WebRTC keeps the Holepunch ban", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnblacklistBanPolicy(
+                fixture.address(1),
+                "selected-webrtc"
+            )
+            .request();
+
+        expect(result.selectedTransportType).to.equal(TransportType.WEBRTC);
+        expect(result.liveWebRtcCount).to.equal(1);
+        expect(result.profileBlacklistedAfterBlacklist).to.equal(true);
+        expect(result.profileBlacklistedAfterUnblacklist).to.equal(false);
+        expect(result.banCalls).to.deep.equal([true]);
+    });
+
+    it("unblacklisting with selected Holepunch and live WebRTC keeps the Holepunch ban", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnblacklistBanPolicy(
+                fixture.address(1),
+                "selected-holepunch-with-live-webrtc"
+            )
+            .request();
+
+        expect(result.selectedTransportType).to.equal(TransportType.HOLEPUNCH);
+        expect(result.liveWebRtcCount).to.equal(1);
+        expect(result.profileBlacklistedAfterBlacklist).to.equal(true);
+        expect(result.profileBlacklistedAfterUnblacklist).to.equal(false);
+        expect(result.banCalls).to.deep.equal([true]);
+    });
+
+    it("unblacklisting with selected Holepunch and no live WebRTC releases the Holepunch ban", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnblacklistBanPolicy(
+                fixture.address(1),
+                "selected-holepunch-without-live-webrtc"
+            )
+            .request();
+
+        expect(result.selectedTransportType).to.equal(TransportType.HOLEPUNCH);
+        expect(result.liveWebRtcCount).to.equal(0);
+        expect(result.profileBlacklistedAfterBlacklist).to.equal(true);
+        expect(result.profileBlacklistedAfterUnblacklist).to.equal(false);
+        expect(result.banCalls).to.deep.equal([true, false]);
+    });
+
+    it("rejects an authenticated Holepunch fallback while WebRTC is healthy", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHealthyWebRtcRejectsHolepunch(
+                fixture.address(1)
+            )
+            .request();
+
+        expect(result.admitted).to.equal(false);
+        expect(result.attemptedClosed).to.equal(true);
+        expect(result.attemptedSocketDestroyed).to.equal(true);
+        expect(result.currentTransportType).to.equal(TransportType.WEBRTC);
+        expect(result.activePeerConnections).to.equal(1);
+        expect(result.originalBanCalls).to.deep.equal([true]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.handshakeCompleted).to.equal(false);
+        expect(result.disconnectionHookCalls).to.equal(0);
+        expect(result.usableTrafficSent).to.equal(false);
+    });
+
+    it("accepts an authenticated usable Holepunch fallback after current WebRTC closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeWebRtcCloseAcceptsHolepunch(
+                fixture.address(1)
+            )
+            .request();
+
+        expect(result.admitted).to.equal(true);
+        expect(result.attemptedClosed).to.equal(false);
+        expect(result.attemptedSocketDestroyed).to.equal(false);
+        expect(result.currentTransportType).to.equal(TransportType.HOLEPUNCH);
+        expect(result.activePeerConnections).to.equal(1);
+        expect(result.originalBanCalls).to.deep.equal([true, false]);
+        expect(result.attemptedBanCalls).to.deep.equal([]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.handshakeCompleted).to.equal(true);
+        expect(result.disconnectionHookCalls).to.equal(0);
+        expect(result.usableTrafficSent).to.equal(true);
+    });
+
+    it("rejects and bans a later Holepunch fallback for an excluded identity", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBlacklistRejectsHolepunch(fixture.address(1))
+            .request();
+
+        expect(result.admitted).to.equal(false);
+        expect(result.attemptedClosed).to.equal(true);
+        expect(result.attemptedSocketDestroyed).to.equal(true);
+        expect(result.activePeerConnections).to.equal(0);
+        expect(result.originalBanCalls).to.deep.equal([true, true]);
+        expect(result.attemptedBanCalls).to.deep.equal([true]);
+        expect(result.profileBlacklisted).to.equal(true);
+        expect(result.handshakeCompleted).to.equal(false);
+        expect(result.disconnectionHookCalls).to.equal(0);
+        expect(result.usableTrafficSent).to.equal(false);
+    });
+});
+
+describe("P2PManager disconnect policy", function () {
+    let fixture: P2PManagerFixture;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("closes an ALLOW disconnect without blacklisting or banning the peer", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeDisconnectPolicyAllow(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("blacklists and fault-bans the peer on a BLACKLIST disconnect", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeDisconnectPolicyBlacklist(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.profileBlacklisted).to.equal(true);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("uses ALLOW for an expected transport close", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeExpectedCloseDisconnectPolicy(
+                fixture.address(1)
+            )
+            .request();
+
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("releases the Holepunch upgrade ban when an ALLOW disconnect closes the WebRTC transport", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeAllowReleasesUpgradeBan(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true, false]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("fault-bans the peer on a SUSPEND disconnect without blacklisting it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeDisconnectPolicySuspend(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.profileSuspended).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("leaves a peer reconnectable while its retry-tier closes stay below the bound", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRetryTier(fixture.address(1), 3, 2)
+            .request();
+
+        expect(result.suspended).to.equal(false);
+        expect(result.readmitted).to.equal(true);
+        expect(result.banCalls).to.deep.equal([]);
+    });
+
+    it("suspends a peer on the retry-tier close that reaches its bound", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRetryTier(fixture.address(1), 3, 3)
+            .request();
+
+        expect(result.suspended).to.equal(true);
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.blacklisted).to.equal(false);
+    });
+
+    it("refuses a suspended peer's reconnect for the rest of the session", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRetryTier(fixture.address(1), 3, 3)
+            .request();
+
+        expect(result.readmitted).to.equal(false);
+    });
+
+    it("forgets a suspension in a fresh session holding the same profile", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeSuspensionScope(fixture.address(1))
+            .request();
+
+        expect(result.barredInCurrentSession).to.equal(true);
+        expect(result.barredInFreshSession).to.equal(false);
+    });
+
+    it("keeps a blacklist in a fresh session holding the same profile", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBlacklistScope(fixture.address(1))
+            .request();
+
+        expect(result.barredInCurrentSession).to.equal(true);
+        expect(result.barredInFreshSession).to.equal(true);
+    });
+});
+
+describe("P2PManager disconnect policy before authentication", function () {
+    let fixture: P2PManagerFixture;
+    const peerKey = `0x${"5a".repeat(32)}`;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("counts retry-tier closes against the Hyperswarm key of a transport that never authenticated", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedRetryTier(peerKey, 3, 2)
+            .request();
+
+        expect(result.strikes).to.equal(2);
+        expect(result.suspended).to.equal(false);
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.refusedAtRegistration).to.equal(false);
+    });
+
+    it("bans the handle and refuses the same key at registration once the bound is reached", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedRetryTier(peerKey, 3, 3)
+            .request();
+
+        expect(result.suspended).to.equal(true);
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.refusedAtRegistration).to.equal(true);
+    });
+
+    it("suspends both the EVM address and the Hyperswarm key of a proven peer", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeSuspensionBarsBothIdentities(
+                fixture.address(1),
+                peerKey
+            )
+            .request();
+
+        expect(result.addressSuspended).to.equal(true);
+        expect(result.keySuspended).to.equal(true);
+        expect(result.sameKeyRefusedAtRegistration).to.equal(true);
+        expect(result.sameAddressRefusedAtAuthentication).to.equal(true);
+    });
+
+    it("counts retry-tier closes addressed to an identity with no profile and bars it at the bound", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeAddressStrikeWithoutProfile(
+                fixture.address(1),
+                3
+            )
+            .request();
+
+        expect(result.strikesBelowBound).to.equal(2);
+        expect(result.suspendedAtBound).to.equal(true);
+        expect(result.laterAuthenticationRefused).to.equal(true);
+    });
+});
+
+describe("P2PManager blacklist storage", function () {
+    let fixture: P2PManagerFixture;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("records the verdict with its reason and refuses the identity from a fresh manager sharing the store", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBlacklistStorage(fixture.address(1))
+            .request();
+
+        expect(result.recordedReason).to.equal("probe verdict");
+        expect(result.freshManagerRefuses).to.equal(true);
+        expect(result.entryRemovedAfterUnblacklist).to.equal(true);
+        expect(result.freshManagerAdmitsAfterUnblacklist).to.equal(true);
+    });
+});

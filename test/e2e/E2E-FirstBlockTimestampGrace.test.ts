@@ -1,0 +1,244 @@
+import Clock from "@/Clock";
+import { Block, StateSnapshot } from "@/models";
+import { timeoutWaitTime } from "@/types";
+import { Codec, Type } from "@/utils";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
+import { expect } from "chai";
+
+const TIME = MIN_TEST_TIME_CONFIG;
+
+// This test deliberately starts authoring after the ordinary deadline. Keep
+// enough grace for interval mining and three-peer signature collection under
+// parallel load; the default three-second evidence window is too narrow for
+// that boundary scenario.
+const FIRST_BLOCK_AUTHORING_TIME = {
+    ...MIN_TEST_TIME_CONFIG,
+    evidenceTime: 12
+};
+
+describe("E2E: First block timestamp grace", function () {
+    it("adds evidenceTime only to the height 0 participant timeout", async function () {
+        // the arithmetic half
+        const normalWindow =
+            TIME.p2pTime + TIME.agreementTime + TIME.chainFallbackTime;
+        expect(timeoutWaitTime(TIME, 0)).to.equal(
+            normalWindow + TIME.evidenceTime
+        );
+        expect(timeoutWaitTime(TIME, 1)).to.equal(normalWindow);
+
+        // the integration half: the scheduled participant-timeout check for
+        // height 0 really carries the evidenceTime the function computes.
+        // Re-apply the latest state at height 0 and at height 1 with a fixed
+        // snapshot timestamp, so the recorded delays differ only by the grace.
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0, { timeConfig: TIME });
+        const forkId = h.activeForkId!;
+
+        const recorder = await h.rpcStub.recordScheduledTasks(0, {
+            suppressPrefix: "participantTimeout("
+        });
+        // next height 0 -> grace applies. Re-apply on BOTH peers with one
+        // shared timestamp: the override is part of the snapshot hash, so a
+        // peer left on the original genesis would reject peer 0's height-0
+        // block as WrongGenesis and dispute the fork.
+        const heightZeroTimestamp = Clock.getTimeInSeconds();
+        await h.transition.runSetLatestState({
+            peerIndex: 0,
+            forkId,
+            timestampOverride: heightZeroTimestamp
+        });
+        await h.transition.runSetLatestState({
+            peerIndex: 1,
+            forkId,
+            timestampOverride: heightZeroTimestamp
+        });
+        await h.transition.advanceState({ count: 1 });
+        // next height 1 -> no grace
+        await h.transition.runSetLatestState({
+            peerIndex: 0,
+            forkId,
+            timestampOverride: Clock.getTimeInSeconds()
+        });
+
+        const scheduled = (await recorder.tasks()).filter((t) =>
+            t.taskName.startsWith("participantTimeout(setState)")
+        );
+        await recorder.restore();
+        expect(scheduled.length).to.equal(2);
+        // height 0 window minus height 1 window == evidenceTime (± the clock
+        // seconds the two applies straddled)
+        const graceMs = scheduled[0].delayMs - scheduled[1].delayMs;
+        expect(graceMs).to.be.greaterThan((TIME.evidenceTime - 3) * 1000);
+        expect(graceMs).to.be.lessThan((TIME.evidenceTime + 3) * 1000);
+    });
+
+    it("authors height 0 after the old participant deadline and every peer finalizes it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0, {
+            timeConfig: FIRST_BLOCK_AUTHORING_TIME
+        });
+
+        const forkId = h.activeForkId!;
+        const genesisResult = await h
+            .control(h.peers[0])
+            .dispute.getGenesisSnapshotStruct(forkId)
+            .request();
+        expect(genesisResult).to.not.be.null;
+        const genesis = StateSnapshot.decode(genesisResult!.encodedSnapshot);
+        const normalTimestampCap =
+            genesis.timestamp + FIRST_BLOCK_AUTHORING_TIME.p2pTime;
+        const normalParticipantDeadline =
+            genesis.timestamp +
+            FIRST_BLOCK_AUTHORING_TIME.p2pTime +
+            FIRST_BLOCK_AUTHORING_TIME.agreementTime +
+            FIRST_BLOCK_AUTHORING_TIME.chainFallbackTime;
+        const targetTimestamp = normalParticipantDeadline + 1;
+        const graceDeadline =
+            genesis.timestamp +
+            FIRST_BLOCK_AUTHORING_TIME.p2pTime +
+            FIRST_BLOCK_AUTHORING_TIME.agreementTime +
+            FIRST_BLOCK_AUTHORING_TIME.chainFallbackTime +
+            FIRST_BLOCK_AUTHORING_TIME.evidenceTime;
+
+        expect(
+            Clock.getTimeInSeconds(),
+            "setup consumed the first-block grace window"
+        ).to.be.lessThan(graceDeadline - 1);
+        await h.event.waitUntilTimestamp(targetTimestamp);
+        await h.transition.advanceState({
+            count: 1,
+            waitForFinalization: true
+        });
+        await h.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2],
+            waitForFinalization: true
+        });
+
+        const bundles = await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).query.getLatestBlockBundle(forkId).request()
+            )
+        );
+        expect(bundles.every((bundle) => bundle !== null)).to.equal(true);
+        const blocks = bundles.map((bundle) =>
+            Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            })
+        );
+        expect(blocks.every((block) => block.hash === blocks[0].hash)).to.equal(
+            true
+        );
+        expect(blocks[0].height).to.equal(0);
+        expect(blocks[0].timestamp).to.be.greaterThan(normalTimestampCap);
+        expect(blocks[0].timestamp).to.be.at.most(
+            genesis.timestamp +
+                FIRST_BLOCK_AUTHORING_TIME.evidenceTime +
+                FIRST_BLOCK_AUTHORING_TIME.p2pTime
+        );
+        expect(
+            blocks.every((block) => block.allSignerAddresses.size === 3)
+        ).to.equal(true);
+        await h.assert.dispute.didNotInitiate({ peers: [0, 1, 2] });
+    });
+
+    it("caps height 1 without evidenceTime grace and every peer finalizes it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+
+        await h.transition.advanceState({
+            count: 1,
+            waitForFinalization: true
+        });
+        const forkId = h.activeForkId!;
+        const heightZeroBundle = await h
+            .control(h.peers[0])
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        expect(heightZeroBundle).to.not.be.null;
+        const heightZeroBlock = Block.fromBlockConfirmation({
+            signedBlock: Codec.decode(
+                heightZeroBundle!.encodedSignedBlock,
+                Type.SignedBlock
+            ),
+            signatures: heightZeroBundle!.confirmationSignatures
+        });
+
+        const heightOneCap = heightZeroBlock.timestamp + TIME.p2pTime;
+        await h.event.waitUntilTimestamp(heightOneCap + 1);
+        await h.transition.advanceState({
+            count: 1,
+            waitForFinalization: true
+        });
+        await h.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2],
+            waitForFinalization: true
+        });
+        const heightOneBundles = await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).query.getLatestBlockBundle(forkId).request()
+            )
+        );
+        const heightOneBlocks = heightOneBundles.map((bundle) =>
+            Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            })
+        );
+        expect(heightOneBlocks.every((block) => block.height === 1)).to.equal(
+            true
+        );
+        expect(
+            heightOneBlocks.every((block) => block.timestamp === heightOneCap)
+        ).to.equal(true);
+        expect(
+            heightOneBlocks.every(
+                (block) => block.allSignerAddresses.size === 3
+            )
+        ).to.equal(true);
+    });
+
+    it("does not time out height 0 inside the grace window and times out after it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.timeoutSetup(3, 0);
+
+        const forkId = h.activeForkId!;
+        const genesisResult = await h
+            .control(h.peers[0])
+            .dispute.getGenesisSnapshotStruct(forkId)
+            .request();
+        expect(genesisResult).to.not.be.null;
+        const genesis = StateSnapshot.decode(genesisResult!.encodedSnapshot);
+        const graceParticipantDeadline =
+            genesis.timestamp +
+            TIME.p2pTime +
+            TIME.agreementTime +
+            TIME.chainFallbackTime +
+            TIME.evidenceTime;
+
+        expect(
+            Clock.getTimeInSeconds(),
+            "setup consumed the height-0 grace window"
+        ).to.be.lessThan(graceParticipantDeadline - 2);
+        // Past the normal deadline, two seconds before the grace deadline: no
+        // dispute yet. The peers' clocks follow chain time and can sit a
+        // second ahead of the harness clock, so the checkpoint keeps that
+        // second of margin.
+        await h.event.waitUntilTimestamp(graceParticipantDeadline - 2);
+        await h.assert.dispute.didNotInitiate({ peers: [0, 1, 2] });
+
+        await h.assert.dispute.initiatedWait({
+            peersIndices: [1, 2]
+        });
+        await h.assert.dispute.didNotInitiate({ peers: [0] });
+    });
+});

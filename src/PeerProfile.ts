@@ -1,20 +1,43 @@
-import { AddressLike } from "ethers";
-import { ATransport } from "@/transport";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import { Address } from "@/types/types";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { Logger } from "@/utils/logging/Logger";
 
-//TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, eventhough PeerProfile sounds better
+export interface BannablePeerInfo {
+    /** The remote's Hyperswarm public key, known before any handshake. */
+    readonly publicKey?: Uint8Array | string;
+    ban(value?: boolean): void;
+}
+
+export type ProfileDisconnectedListener = (
+    profile: PeerProfile,
+    finalTransport: NetworkTransport
+) => void;
+
+//TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, even though PeerProfile sounds better
 class PeerProfile {
-    transport: ATransport | undefined;
-    evmAddress: AddressLike; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
+    private readonly logger: Logger;
+    transport: NetworkTransport | undefined;
+    evmAddress: Address | undefined; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
-    isHandshakeCompleted = false;
+    private readonly liveTransports = new Set<NetworkTransport>();
+    private readonly disconnectedListeners =
+        new Set<ProfileDisconnectedListener>();
+    // This handle belongs to the profile before and after authentication.
+    private holepunchPeerInfo: BannablePeerInfo | undefined;
+
     constructor(
-        transport: ATransport,
-        evmAddress: AddressLike,
+        transport: NetworkTransport,
+        evmAddress?: Address,
         hpAddress?: string | undefined
     ) {
+        this.logger = transport.p2pManager.logger.child({
+            component: "PeerProfile"
+        });
         this.transport = transport;
+        this.liveTransports.add(transport);
         this.evmAddress = evmAddress;
         this.hpAddress = hpAddress;
         this.isLeader = false;
@@ -22,25 +45,109 @@ class PeerProfile {
     }
 
     public blacklist() {
+        this.logger.warn(
+            "Blacklisting peer profile",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
         this.isBlackListed = true;
     }
     public unblacklist() {
+        this.logger.info(
+            "Clearing peer profile blacklist",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
         this.isBlackListed = false;
     }
     public getTransport() {
+        if (this.transport && !this.transport.isClosed) return this.transport;
+        this.transport = this.findLiveTransport();
         return this.transport;
     }
-    public setTransport(transport: ATransport) {
-        this.transport = transport;
+    public attachTransport(
+        transport: NetworkTransport,
+        preferred = true
+    ): void {
+        if (!transport.isClosed) this.liveTransports.add(transport);
+        if (preferred || !this.getTransport()) this.transport = transport;
+        this.logger.debug("Attached peer transport", {
+            ...LoggerUtils.getTransportMetadata(transport),
+            preferred,
+            remainingTransports: this.liveTransports.size
+        });
     }
-    public removeTransport() {
-        this.transport = undefined;
+    public detachTransport(transport: NetworkTransport): void {
+        const wasLive = this.liveTransports.delete(transport);
+        this.logger.debug("Detached peer transport", {
+            ...LoggerUtils.getTransportMetadata(transport),
+            wasLive,
+            remainingTransports: this.liveTransports.size
+        });
+        if (!wasLive) return;
+        if (this.transport === transport) {
+            this.transport = this.findLiveTransport();
+        }
+        if (this.liveTransports.size !== 0) return;
+        this.logger.info(
+            "Peer profile lost its last transport",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
+        for (const listener of [...this.disconnectedListeners]) {
+            listener(this, transport);
+        }
+    }
+    public hasLiveTransport(transport: NetworkTransport): boolean {
+        return this.liveTransports.has(transport) && !transport.isClosed;
+    }
+    public getLiveTransports(): NetworkTransport[] {
+        return [...this.liveTransports].filter(
+            (transport) => !transport.isClosed
+        );
+    }
+    public isPreferredTransport(transport: NetworkTransport): boolean {
+        return this.transport === transport;
+    }
+    public onDisconnected(listener: ProfileDisconnectedListener): () => void {
+        this.disconnectedListeners.add(listener);
+        return () => this.disconnectedListeners.delete(listener);
+    }
+    public absorbLifecycleFrom(profile: PeerProfile): void {
+        for (const listener of profile.disconnectedListeners) {
+            this.disconnectedListeners.add(listener);
+        }
+        profile.disconnectedListeners.clear();
+        const peerInfo = profile.takeHolepunchPeerInfo();
+        if (peerInfo) this.setHolepunchPeerInfo(peerInfo);
+        if (profile.isBlackListed) this.blacklist();
+    }
+    public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
+        this.holepunchPeerInfo = peerInfo;
+    }
+    public removeHolepunchPeerInfo() {
+        this.holepunchPeerInfo = undefined;
+    }
+    public takeHolepunchPeerInfo(): BannablePeerInfo | undefined {
+        const peerInfo = this.holepunchPeerInfo;
+        this.holepunchPeerInfo = undefined;
+        return peerInfo;
+    }
+    public getHolepunchPeerInfo(): BannablePeerInfo | undefined {
+        return this.holepunchPeerInfo;
     }
     public getEvmAddress() {
         return this.evmAddress;
     }
+    public setEvmAddress(evmAddress: Address) {
+        this.logger.debug("Authenticated peer profile", {
+            previousAddress: this.evmAddress,
+            peerAddress: evmAddress
+        });
+        this.evmAddress = evmAddress;
+    }
     public getHpAddress() {
         return this.hpAddress;
+    }
+    public setHpAddress(hpAddress: string) {
+        this.hpAddress = hpAddress;
     }
     public setIsLeader(value: boolean) {
         this.isLeader = value;
@@ -48,11 +155,12 @@ class PeerProfile {
     public getIsLeader() {
         return this.isLeader;
     }
-    public setIsHandshakeCompleted(value: boolean) {
-        this.isHandshakeCompleted = value;
-    }
-    public getIsHandshakeCompleted() {
-        return this.isHandshakeCompleted;
+
+    private findLiveTransport(): NetworkTransport | undefined {
+        for (const transport of this.liveTransports) {
+            if (!transport.isClosed) return transport;
+        }
+        return undefined;
     }
 }
 

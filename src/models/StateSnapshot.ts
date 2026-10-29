@@ -1,0 +1,109 @@
+import { Codec, Type } from "../utils/Codec";
+
+import { BlockHeight, Bytes, ForkId, Hash, Timestamp } from "@/types/types";
+import {
+    StateSnapshotStruct,
+    StateSnapshotStructOutput,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers } from "ethers";
+
+export default class StateSnapshot {
+    private constructor(private readonly snapshot: StateSnapshotStruct) {}
+
+    static from(snapshot: StateSnapshotStruct): StateSnapshot;
+    static from(snapshot: StateSnapshotStructOutput): StateSnapshot;
+    static from(
+        snapshot: StateSnapshotStruct | StateSnapshotStructOutput
+    ): StateSnapshot {
+        return new StateSnapshot(snapshot);
+    }
+
+    static decode(encoded: Bytes): StateSnapshot {
+        const snapshot = Codec.decode(encoded, Type.StateSnapshot);
+        return StateSnapshot.from(snapshot);
+    }
+
+    static empty(): StateSnapshot {
+        const emptyBalance = { amount: 0n, data: "0x" };
+        return StateSnapshot.from({
+            forkId: ethers.ZeroHash,
+            blockHeight: 0n,
+            timestamp: 0n,
+            snapshotData: {
+                originForkId: ethers.ZeroHash,
+                stateMachineStateHash: ethers.ZeroHash,
+                participants: [],
+                latestInboundMessageBlockHash: ethers.ZeroHash,
+                latestInboundMessageBlockHeight: 0n,
+                latestOutboundMessageBlockHash: ethers.ZeroHash,
+                latestOutboundMessageBlockHeight: 0n,
+                totalDeposits: emptyBalance,
+                totalWithdrawals: emptyBalance
+            }
+        });
+    }
+
+    toStruct(): StateSnapshotStruct {
+        return this.snapshot;
+    }
+
+    encode(): Bytes {
+        return Codec.encode(this.snapshot, Type.StateSnapshot);
+    }
+
+    get hash(): Hash {
+        return ethers.keccak256(this.encode()) as Hash;
+    }
+
+    get latestInboundMessageBlockHash(): Hash {
+        return this.snapshot.snapshotData.latestInboundMessageBlockHash as Hash;
+    }
+
+    get latestInboundMessageBlockHeight(): BlockHeight {
+        return Number(
+            this.snapshot.snapshotData.latestInboundMessageBlockHeight ?? 0n
+        );
+    }
+
+    get latestOutboundMessageBlockHash(): Hash {
+        return this.snapshot.snapshotData
+            .latestOutboundMessageBlockHash as Hash;
+    }
+
+    get latestOutboundMessageBlockHeight(): BlockHeight {
+        return Number(
+            this.snapshot.snapshotData.latestOutboundMessageBlockHeight ?? 0n
+        );
+    }
+
+    get forkID(): ForkId {
+        return this.snapshot.forkId as ForkId;
+    }
+
+    get timestamp(): Timestamp {
+        return Number(this.snapshot.timestamp);
+    }
+
+    get blockHeight(): BlockHeight {
+        return Number(this.snapshot.blockHeight);
+    }
+
+    get snapshotData(): SnapshotDataStruct {
+        return this.snapshot.snapshotData;
+    }
+
+    get snapshotDataHash(): Hash {
+        return ethers.keccak256(
+            Codec.encode(this.snapshot.snapshotData, Type.SnapshotData)
+        ) as Hash;
+    }
+
+    get stateMachineStateHash(): Hash {
+        return this.snapshot.snapshotData.stateMachineStateHash;
+    }
+
+    get isGenesis(): boolean {
+        return this.forkID === this.snapshotDataHash;
+    }
+}

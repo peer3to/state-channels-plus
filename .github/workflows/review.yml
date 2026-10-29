@@ -1,0 +1,196 @@
+name: PR Review Bot
+
+on:
+    pull_request:
+        types:
+            - opened
+            - synchronize
+            - reopened
+
+concurrency:
+    group: review-${{ github.event.pull_request.number }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+jobs:
+    approve:
+        needs: [review-model, review-publish]
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        concurrency:
+            group: review-approval-${{ github.event.pull_request.number }}
+            cancel-in-progress: false
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            pull-requests: write
+            issues: read
+            actions: read
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - name: Approve only confirmed resolved reviews with successful CI
+              run: node scripts/bot/final-approval.js
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-approval
+
+    review-model:
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        runs-on: ubuntu-latest
+        timeout-minutes: 110
+        permissions:
+            contents: read
+            pull-requests: read
+            issues: read
+            actions: read
+        outputs:
+            caller: ${{ steps.request.outputs.caller }}
+            artifact: ${{ steps.result.outputs.artifact-id }}
+            digest: ${{ steps.result-digest.outputs.digest }}
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - name: Check current PR head
+              id: admit
+              run: node scripts/bot/head-check.js
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+            - name: Bind review request
+              id: request
+              if: steps.admit.outputs.current == 'true'
+              run: |
+                  node scripts/bot/resolved-threads.js temp/review-resolved-threads.json
+                  node scripts/bot/request.js temp/review-handoff/request.json temp/review-resolved-threads.json
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+            - name: Request source-only review
+              id: model
+              if: steps.admit.outputs.current == 'true'
+              run: yarn review-bot:review temp/review-handoff/request.json temp/review-handoff/result.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+            - name: Bind result file digest
+              id: result-digest
+              if: ${{ !cancelled() && (steps.model.outcome == 'success' || steps.model.outcome == 'failure') && hashFiles('temp/review-handoff/result.json') != '' }}
+              run: node scripts/bot/handoff.js digest temp/review-handoff >> "$GITHUB_OUTPUT"
+            - name: Preserve validated result or failure outcome
+              id: result
+              if: ${{ !cancelled() && steps.result-digest.outcome == 'success' && (steps.model.outcome == 'success' || steps.model.outcome == 'failure') && hashFiles('temp/review-handoff/result.json') != '' }}
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+              with:
+                  name: review-${{ github.run_id }}-${{ github.run_attempt }}-result
+                  path: temp/review-handoff/
+                  retention-days: 1
+                  if-no-files-found: error
+
+    review-publish:
+        needs: review-model
+        if: ${{ !cancelled() && needs.review-model.outputs.artifact != '' && (needs.review-model.result == 'success' || needs.review-model.result == 'failure') }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 110
+        permissions:
+            # GitHub requires repository write access to resolve review threads.
+            contents: write
+            pull-requests: write
+            issues: write
+            actions: read
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+              with:
+                  artifact-ids: ${{ needs.review-model.outputs.artifact }}
+                  path: temp/review-download
+            - name: Validate result handoff ownership
+              run: node scripts/bot/handoff.js result '${{ needs.review-model.outputs.artifact }}' temp/review-download temp/review-handoff
+              env:
+                  REVIEW_HANDOFF_DIGEST: ${{ needs.review-model.outputs.digest }}
+                  GITHUB_TOKEN: ${{ github.token }}
+            - name: Inspect required accounting
+              id: inspect
+              if: needs.review-model.result == 'success'
+              run: yarn review-bot:publish inspect temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/inspection.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
+                  REVIEW_ELIGIBLE: 'true'
+            - name: Request one fixed IDs-only correction
+              id: correction
+              if: steps.inspect.outputs.status == 'correction-required'
+              run: yarn review-bot:review temp/review-handoff/request.json temp/review-handoff/result.json correction temp/review-handoff/inspection.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+            - name: Publish validated review or failure notice
+              if: ${{ !cancelled() && (steps.inspect.outcome == 'success' || needs.review-model.result == 'failure') }}
+              id: publish
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
+                  REVIEW_ELIGIBLE: 'true'
+                  MODEL_STATUS: ${{ needs.review-model.result }}
+              run: |
+                  mode=publish
+                  if [ "$MODEL_STATUS" = failure ]; then mode=notice; fi
+                  yarn review-bot:publish "$mode" temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/publication.json
+            - name: Correct an item first observed at publication
+              id: correction-final
+              if: steps.publish.outputs.status == 'correction-required'
+              run: yarn review-bot:review temp/review-handoff/request.json temp/review-handoff/result.json correction temp/review-handoff/publication.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+            - name: Publish corrected result or its failure notice
+              id: publish-final
+              if: ${{ !cancelled() && (steps.correction-final.outcome == 'success' || steps.correction-final.outcome == 'failure') }}
+              run: yarn review-bot:publish publish temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/publication.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
+                  REVIEW_ELIGIBLE: 'true'
+            - name: Return confirmed receipt
+              if: ${{ !cancelled() && (steps.publish.outputs.receipt == 'true' || steps.publish-final.outputs.receipt == 'true' || steps.publish.outputs.status == 'superseded' || steps.publish-final.outputs.status == 'superseded') }}
+              run: node scripts/bot/persist.js temp/review-handoff
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client

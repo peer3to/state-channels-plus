@@ -1,0 +1,52 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "declaration": false,
+        "module": "es2020",
+        "moduleResolution": "node",
+        "outDir": "./dist/browser",
+        "paths": {
+            "@/*": ["src/*"],
+            "@platform/createLogger": [
+                "src/utils/logging/browser/createLogger"
+            ],
+            "@platform/contractExecutorRootUrl": [
+                "src/rpc/internal/browser/ContractExecutorRootUrl"
+            ],
+            "@platform/p2pRuntimeHostRootUrl": [
+                "src/rpc/internal/browser/P2pRuntimeHostRootUrl"
+            ],
+            "@platform/rootWorkerRuntime": [
+                "src/rpc/internal/browser/RootWorkerRuntime"
+            ],
+            "@platform/p2pRuntimeChannel": [
+                "src/transport/browser/RuntimeChannel"
+            ],
+            "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
+            "@platform/LocalDiscoveryServer": [
+                "src/utils/browser/LocalDiscoveryServer"
+            ],
+            "@platform/evmJumpdestCache": ["src/evm/browser/evmJumpdestCache"],
+            "@platform/moduleLoader": [
+                "src/utils/moduleLoader/browser/importModuleFromManifest"
+            ],
+            "@test/*": ["test/*"],
+            "@typechain-types/*": ["typechain-types/*"],
+            "@typechain-types": ["typechain-types/index"]
+        }
+    },
+    "exclude": [
+        "src/utils/moduleLoader/node",
+        "src/rpc/internal/node",
+        "src/transport/node",
+        "examples",
+        "dist",
+        "logs",
+        "temp",
+        "node_modules",
+        "src/evm/node",
+        "src/utils/node",
+        "src/utils/logging/node",
+        "test/evm/workers/node"
+    ]
+}

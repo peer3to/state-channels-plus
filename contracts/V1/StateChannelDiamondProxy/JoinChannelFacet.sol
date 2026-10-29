@@ -1,0 +1,110 @@
+pragma solidity ^0.8.8;
+
+import "./StateChannelCommon.sol";
+import "./Errors.sol";
+import "./UtilityFacet.sol";
+
+contract JoinChannelFacet is StateChannelCommon {
+    /**
+     * @notice Joins participants to the channel by submitting a complete join channel request
+     *
+     * @param joinChannelConfirmation Join channel confirmation to process
+     * @param expectedSnapshotHash Latest snapshot the submitter is comfortable joining
+     * @param expectedForkId Latest fork the submitter is comfortable joining
+     */
+    function joinChannel(
+        JoinChannelConfirmation memory joinChannelConfirmation,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) external {
+        _processJoinChannel(joinChannelConfirmation, expectedSnapshotHash, expectedForkId, false);
+    }
+
+    function topUpBalance(
+        JoinChannelConfirmation memory joinChannelConfirmation,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) external {
+        _processJoinChannel(joinChannelConfirmation, expectedSnapshotHash, expectedForkId, true);
+    }
+
+    function _processJoinChannel(
+        JoinChannelConfirmation memory joinChannelConfirmation,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId,
+        bool isTopUp
+    ) internal {
+        SignedJoinChannel memory sjc = joinChannelConfirmation.signedJoinChannel;
+        JoinChannel memory jc = abi.decode(sjc.encodedJoinChannel, (JoinChannel));
+        bytes32 channelId = jc.channelId;
+        require(channelId != bytes32(0), ErrorInvalidChannelId());
+        require(msg.sender == jc.participant, ErrorJoinChannelInvalidSubmitter(jc.participant, msg.sender));
+
+        // Check deadline
+        require(
+            jc.deadlineTimestamp >= block.timestamp,
+            RaceConditionJoinChannelExpired(jc.deadlineTimestamp, block.timestamp)
+        );
+        StateSnapshot memory currentSnapshot = _getStateSnapshot(channelId);
+        require(
+            expectedForkId == currentSnapshot.forkId,
+            RaceConditionSnapshotForkMismatch(currentSnapshot.forkId, expectedForkId)
+        );
+        bytes32 currentSnapshotHash = keccak256(abi.encode(currentSnapshot));
+        require(
+            expectedSnapshotHash == currentSnapshotHash,
+            RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, expectedSnapshotHash)
+        );
+
+        address[] memory participantUnion = UtilityFacet(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(_getSnapshotParticipants(channelId), _getPendingParticipants(channelId));
+        bool isExistingParticipant =
+            UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
+        require(
+            !_isForkDisputed(channelId, expectedForkId), RaceConditionJoinChannelForkDisputed(channelId, expectedForkId)
+        );
+        if (isTopUp) {
+            require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound(channelId, jc.participant));
+            require(
+                !_isParticipantSlashedOnChain(channelId, jc.participant),
+                ErrorTopUpBalanceParticipantSlashed(jc.participant)
+            );
+        } else {
+            require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists(channelId, jc.participant));
+            // A join adds one to the union, so the bound is checked against the
+            // result rather than the current size.
+            require(
+                participantUnion.length + 1 <= _getMaxChannelParticipants(),
+                ErrorTooManyParticipants(participantUnion.length + 1, _getMaxChannelParticipants())
+            );
+        }
+
+        //verify original signature
+        (address retrievedAddress, bool isValidSignature) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature);
+        require(
+            jc.participant == retrievedAddress && isValidSignature,
+            ErrorJoinChannelInvalidSignature(jc.participant, retrievedAddress)
+        );
+
+        // Check threshold from the current eligibility set
+        address[] memory thresholdParticipants = _getOnChainThresholdSet(channelId);
+        (bool isValid,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures);
+        // `if (!isValid) revert` so the signer set is only recovered on the
+        // failure path - `require` would recover on every successful join.
+        if (!isValid) {
+            revert ErrorJoinChannelConfirmationNotThresholdSigned(
+                jc.participant,
+                thresholdParticipants,
+                UtilityFacet(utilityFacetAddress)
+                    .retrieveSignerAddresses(sjc.encodedJoinChannel, joinChannelConfirmation.signatures)
+            );
+        }
+
+        // Deposit funds
+        JoinChannel[] memory jcs = new JoinChannel[](1);
+        jcs[0] = jc;
+        StateChannelManagerInterface(address(this)).depositAssetsComposable(jcs, true);
+    }
+}

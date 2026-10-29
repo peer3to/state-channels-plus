@@ -1,23 +1,26 @@
-import { ethers, Wallet, NonceManager, Signer } from "ethers";
 import {
+    ethers,
     EvmStateMachine,
     P2pEventHooks,
-    P2pSigner,
-    EvmUtils
+    connectStateChannelManager
+} from "@peer3/state-channels-plus";
+import type {
+    Signer,
+    StateChannelManagerInterface
 } from "@peer3/state-channels-plus";
 import {
-    TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,
     TicTacToeStateMachine__factory
 } from "./typechain-types";
-import TempSingleton from "./TempSingleton";
 import TicTacToeStateMachineJSON from "../TicTacToeStateMachine.json";
 import ContractsJSON from "../contracts.json";
+import { TicTacToeRpc } from "./CustomRpc";
+import peer3Config from "../peer3.config";
 
 const PROVIDER_URL = "http://localhost:8545";
 const WSS_PROVIDER_URL = "ws://localhost:8545";
 export const getRandomSigner = () => {
-    let randomSinger: Signer = Wallet.createRandom(
+    let randomSinger: Signer = ethers.Wallet.createRandom(
         new ethers.WebSocketProvider(WSS_PROVIDER_URL)
         // new ethers.JsonRpcProvider(PROVIDER_URL)
     );
@@ -31,33 +34,59 @@ export const getDltContracts = async (signer: Signer) => {
         signer
     ) as unknown as TicTacToeStateMachine;
 
-    let TicTacToeStateChannelManagerInstance = new ethers.Contract(
+    // The proxy implements only a few selectors itself and routes the rest to
+    // facets, so bind the diamond's full surface instead of the proxy ABI.
+    let TicTacToeStateChannelManagerInstance = connectStateChannelManager(
         ContractsJSON.TicTacToeStateChannelManagerProxy.address,
-        ContractsJSON.TicTacToeStateChannelManagerProxy.abi,
         signer
-    ) as unknown as TicTacToeStateChannelManagerProxy;
+    );
     return { TicTacToeStateChannelManagerInstance, TicTacToeSmInstance };
 };
 
 export const p2pSetup = async (
-    TicTacToeStateChannelManagerInstance: TicTacToeStateChannelManagerProxy,
+    TicTacToeStateChannelManagerInstance: StateChannelManagerInterface,
     TicTacToeSmInstance: TicTacToeStateMachine,
     p2pEventHooks: P2pEventHooks = {}
 ) => {
     //P2P setup;
-    let factory = new ethers.ContractFactory(
-        TicTacToeStateMachineJSON.abi,
-        TicTacToeStateMachineJSON.bytecode,
-        TicTacToeStateChannelManagerInstance.runner
-    ) as TicTacToeStateMachine__factory;
-    let deployTx = await factory.getDeployTransaction(); // this deployes the contract locally
+    const deployStateMachine = async (signer: Signer) => {
+        const factory = new ethers.ContractFactory(
+            TicTacToeStateMachineJSON.abi,
+            TicTacToeStateMachineJSON.bytecode,
+            signer
+        ) as TicTacToeStateMachine__factory;
+        const response = await signer.sendTransaction(
+            await factory.getDeployTransaction(1_000_000)
+        );
+        const receipt = await response.wait();
+        if (!receipt?.contractAddress) {
+            throw new Error(
+                "Local TicTacToeStateMachine deployment failed: missing contractAddress"
+            );
+        }
+        return receipt.contractAddress;
+    };
 
-    let p2p = await EvmStateMachine.p2pSetup(
+    let p2p = await EvmStateMachine.p2pSetup<
+        TicTacToeStateMachine,
+        TicTacToeRpc
+    >(
         TicTacToeStateChannelManagerInstance.runner as Signer,
-        deployTx,
         TicTacToeStateChannelManagerInstance,
         TicTacToeSmInstance,
-        p2pEventHooks
+        deployStateMachine,
+        {
+            customRpc: TicTacToeRpc,
+            config: peer3Config
+        }
     );
+
+    // Event hooks are now registered as listeners on the instance.
+    for (const [name, fn] of Object.entries(p2pEventHooks)) {
+        if (typeof fn === "function") {
+            p2p.on(name as Parameters<typeof p2p.on>[0], fn as never);
+        }
+    }
+
     return p2p;
 };

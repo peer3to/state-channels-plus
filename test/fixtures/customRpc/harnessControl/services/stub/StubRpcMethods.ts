@@ -1,0 +1,4147 @@
+// @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
+import type {
+    EvidenceComparisonFault,
+    HeldEvidenceComparisonRelease,
+    RecordedEvidenceAudit,
+    RecordedEvidenceComparison
+} from "./node/EvidenceComparisonRecorder";
+import type { RecordedLiveBlockDelivery } from "./node/LiveBlockRetentionRecorder";
+import {
+    REDUCTION_ATTEMPT_STUB_FAILURE,
+    UNEXPECTED_SNAPSHOT_POST_FAILURE
+} from "./StubService";
+import type {
+    DisputeSubmissionFailureSpec,
+    PausedConstructDisputeState,
+    PausedConstructDisputeStatus,
+    PausedReductionStatus,
+    RecordedBestEffortEstimate,
+    RecordedDisputeSubmission,
+    RecordedFraudProofApply,
+    RecordedGasEstimate,
+    RecordedReplayGasRead,
+    ReductionSimulationErrorName,
+    RefusedUploadKind,
+    ReplayGasEstimateMethod,
+    HeldLobbyReplyKind,
+    HeldNegotiationReplyKind,
+    HeldMembershipReceiptKind,
+    HeldOpenedStatusRead,
+    ParticipantCheckAnswer,
+    ReductionApplicationControl,
+    ReductionAttemptHoldPoint,
+    ReductionAttemptResume,
+    DetachedCallOutcome,
+    BlockWorkHoldPoint,
+    StubService,
+    SignatureBlockMatch,
+    SnapshotPostHoldPoint,
+    SpectateSyncSettle,
+    StateMutexStateHold,
+    StopDuringAssemblyRecord,
+    FailedRestoreRecord
+} from "./StubService";
+
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { HandshakeCompletedGuard } from "@/rpc/network/guards";
+import InitHandshakeRpcMethods from "@/rpc/network/services/initHandshake/InitHandshakeRpcMethods";
+import type IsForkDisputedRpcMethods from "@/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods";
+import type JoinChannelRpcMethods from "@/rpc/network/services/joinChannel/JoinChannelRpcMethods";
+import {
+    OPEN_CHANNEL_DEADLINE_SECONDS,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
+import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
+import {
+    type SyncRequest,
+    SyncResult
+} from "@/rpc/network/services/spectate/SpectateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { Status } from "@/types";
+import type {
+    Address,
+    BlockHeight,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
+import {
+    Codec,
+    DetachedPromises,
+    sleep,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import { encodedCustomErrorRevert } from "@test/factory";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import type { ContractTransactionResponse } from "ethers";
+
+/** Marks a snapshot service whose posts `stubPostStateSnapshot` suppressed, the harness's included. */
+export const HARNESS_POST_SUPPRESSED = "isHarnessPostSuppressed";
+
+/**
+ * Concrete method stub/restore sites. Each `stubX` saves the live original in
+ * the service registry (once) and installs a fault behavior; each `restoreX`
+ * reinstalls the saved original. Returns `false` from `restoreX` when nothing
+ * was stubbed.
+ *
+ * The registry holds heterogeneous originals as `unknown`, so `restoreX` casts
+ * each back to its concrete member type — the only casts here.
+ */
+export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
+    constructor(transport: NetworkTransport, service: StubService) {
+        super(transport, service);
+    }
+
+    public observeDoubleSignatureLogs(): boolean {
+        this.service.observeDoubleSignatureLogs();
+        return true;
+    }
+    public getDoubleSignatureLogs() {
+        return this.service.getDoubleSignatureLogs();
+    }
+    public restoreDoubleSignatureLogs(): boolean {
+        this.service.restoreDoubleSignatureLogs();
+        return true;
+    }
+    public stubBlacklistWriteFailure(): boolean {
+        this.service.stubBlacklistWriteFailure();
+        return true;
+    }
+    public restoreBlacklistWriteFailure(): boolean {
+        this.service.restoreBlacklistWriteFailure();
+        return true;
+    }
+
+    public observeDisputeParticipation(): boolean {
+        this.service.observeDisputeParticipation();
+        return true;
+    }
+    public getDisputeParticipationObservation() {
+        return this.service.getDisputeParticipationObservation();
+    }
+    public restoreDisputeParticipationObservation(): boolean {
+        this.service.restoreDisputeParticipationObservation();
+        return true;
+    }
+
+    public observeAdmission(
+        options?: Parameters<StubService["observeAdmission"]>[0]
+    ): boolean {
+        this.service.observeAdmission(options);
+        return true;
+    }
+    public getAdmissionObservation() {
+        return this.service.getAdmissionObservation();
+    }
+    public releaseAdmissionMembership(): boolean {
+        this.service.releaseAdmissionMembership();
+        return true;
+    }
+    public releaseAdmissionGossip(): boolean {
+        this.service.releaseAdmissionGossip();
+        return true;
+    }
+    public restoreAdmissionObservation(): boolean {
+        this.service.restoreAdmissionObservation();
+        return true;
+    }
+
+    public scheduleProbe(taskName: string): Promise<boolean> {
+        return this.service.scheduleProbe(taskName);
+    }
+
+    public holdBlockWork(point: BlockWorkHoldPoint): boolean {
+        if (
+            ![
+                "queueDequeue",
+                "authoring",
+                "authoringStart",
+                "commit",
+                "signature",
+                "confirmation",
+                "confirmationValidation",
+                "proofConfirmationValidation",
+                "storedMerge",
+                "stateApplicationInspection"
+            ].includes(point)
+        )
+            throw new Error("Invalid block-work hold point");
+        this.service.installBlockWorkHold(point);
+        return true;
+    }
+
+    public getBlockWorkHoldEntered(): number {
+        return this.service.blockWorkEntered;
+    }
+
+    public releaseBlockWorkHold(): boolean {
+        this.service.releaseBlockWorkHold();
+        return true;
+    }
+
+    public getStateMutexWaiterCount(): number {
+        const queue = Reflect.get(this.service.sm.mutex, "queue");
+        if (!Array.isArray(queue))
+            throw new Error("Expected a mutex waiter queue");
+        return queue.length;
+    }
+
+    /** Suppress all outbound block-confirmation broadcasts from this peer. */
+    public stubBroadcast(): boolean {
+        const service = this.p2pManager.remoteRpc.stateTransitionService;
+        if (!this.service.stubOriginals.has("broadcast")) {
+            this.service.stubOriginals.set(
+                "broadcast",
+                service.onBlockConfirmation
+            );
+        }
+        // No-op delivery handler (test double for the real RpcHandler).
+        service.onBlockConfirmation = (() => ({
+            broadcast: () => {},
+            sendOne: () => {},
+            sendMultiple: () => {}
+        })) as unknown as typeof service.onBlockConfirmation;
+        return true;
+    }
+
+    public restoreBroadcast(): boolean {
+        const original = this.service.stubOriginals.get("broadcast");
+        if (original === undefined) return false;
+        const service = this.p2pManager.remoteRpc.stateTransitionService;
+        service.onBlockConfirmation =
+            original as typeof service.onBlockConfirmation;
+        this.service.stubOriginals.delete("broadcast");
+        return true;
+    }
+
+    /** Prevent this peer from acting on on-chain calldata-posted events. */
+    public stubCalldataPosting(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("calldataPosting")) {
+            this.service.stubOriginals.set(
+                "calldataPosting",
+                eventHandler.onBlockCalldataPosted
+            );
+        }
+        eventHandler.onBlockCalldataPosted = async () => {};
+        return true;
+    }
+
+    public restoreCalldataPosting(): boolean {
+        const original = this.service.stubOriginals.get("calldataPosting");
+        if (original === undefined) return false;
+        const eventHandler = this.service.sm.eventHandler;
+        eventHandler.onBlockCalldataPosted =
+            original as typeof eventHandler.onBlockCalldataPosted;
+        this.service.stubOriginals.delete("calldataPosting");
+        return true;
+    }
+
+    /** Make authored blocks omit pending inbound messages. */
+    public stubPendingInboundInclusion(): boolean {
+        // This is deliberately scoped to block authoring. Stubbing the inbound
+        // storage head also corrupts disputes constructed while the stub is
+        // active.
+        const production = this.service.sm.blockProductionService;
+        if (!this.service.stubOriginals.has("pendingInboundInclusion")) {
+            this.service.stubOriginals.set(
+                "pendingInboundInclusion",
+                production["getPendingInboundMessageBlocks"]
+            );
+        }
+        production["getPendingInboundMessageBlocks"] = () => [];
+        return true;
+    }
+
+    public restorePendingInboundInclusion(): boolean {
+        const original = this.service.stubOriginals.get(
+            "pendingInboundInclusion"
+        );
+        if (original === undefined) return false;
+        const production = this.service.sm.blockProductionService;
+        production["getPendingInboundMessageBlocks"] =
+            original as (typeof production)["getPendingInboundMessageBlocks"];
+        this.service.stubOriginals.delete("pendingInboundInclusion");
+        return true;
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message: its
+     * `processInboundMessage` answers false, as a state machine that rejects
+     * the message would.
+     */
+    public stubRefuseInboundMessages(): boolean {
+        const stateMachine = this.service.sm.diamondStateMachine;
+        if (!this.service.stubOriginals.has("inboundMessageRefusal")) {
+            this.service.stubOriginals.set(
+                "inboundMessageRefusal",
+                stateMachine.processInboundMessage
+            );
+        }
+        stateMachine.processInboundMessage = async () => false;
+        return true;
+    }
+
+    /**
+     * Make this peer's state machine refuse every inbound message and start
+     * the runtime's real stop while it refuses, as a shutdown that overtakes
+     * an assembly in flight. Record-only from then on: local state writes and
+     * the snapshot assembly's error logs still run unchanged. No restore: the
+     * runtime is stopping and dies with the peer.
+     */
+    public stubRefuseInboundAndStartStop(): boolean {
+        const sm = this.service.sm;
+        const stateMachine = sm.diamondStateMachine;
+        const record: StopDuringAssemblyRecord = {
+            restoreAttempts: 0,
+            restoreErrors: []
+        };
+        this.service.stopDuringAssembly = record;
+        const setState = stateMachine.setState.bind(stateMachine);
+        stateMachine.setState = async (serializedState) => {
+            if (sm.isDisposed) record.restoreAttempts += 1;
+            return setState(serializedState);
+        };
+        const logger = sm.snapshotAssemblyService["logger"];
+        const logError = logger.error.bind(logger);
+        logger.error = (message, meta) => {
+            if (sm.isDisposed) record.restoreErrors.push(String(message));
+            return logError(message, meta);
+        };
+        stateMachine.processInboundMessage = async () => {
+            // The root's disposal awaits this same stop and surfaces its
+            // failure there.
+            sm.stop().catch(() => undefined);
+            return false;
+        };
+        return true;
+    }
+
+    public getStopDuringAssembly(): StopDuringAssemblyRecord | null {
+        const record = this.service.stopDuringAssembly;
+        return record
+            ? { ...record, restoreErrors: [...record.restoreErrors] }
+            : null;
+    }
+
+    /**
+     * Fail this peer's next local state write, as a VM that cannot be
+     * restored, and hold the runtime abort it triggers so the record stays
+     * readable. Records the snapshot assembly's error logs. Release the abort
+     * with `releaseHeldAbort`.
+     */
+    public stubFailNextRestoreAndHoldAbort(): boolean {
+        const sm = this.service.sm;
+        const stateMachine = sm.diamondStateMachine;
+        const record: FailedRestoreRecord = {
+            restoreErrors: [],
+            heldAborts: 0
+        };
+        this.service.failedRestore = record;
+        const setState = stateMachine.setState;
+        stateMachine.setState = async () => {
+            stateMachine.setState = setState;
+            throw new Error("stubbed local state restore failure");
+        };
+        const logger = sm.snapshotAssemblyService["logger"];
+        const logError = logger.error.bind(logger);
+        logger.error = (message, meta) => {
+            record.restoreErrors.push(String(message));
+            return logError(message, meta);
+        };
+        // One-shot by flag, not by reassigning `sm.abort`: another wrapper
+        // (the validation probe's) may reinstall this one when it restores.
+        const abort = sm.abort.bind(sm);
+        let held = false;
+        sm.abort = () => {
+            if (held) return abort();
+            held = true;
+            record.heldAborts += 1;
+            this.service.heldAbort = abort;
+        };
+        return true;
+    }
+
+    /**
+     * Make this peer's next `leaveChannelService.onBlockCommitted` throw once,
+     * as a post-commit side effect that fails after the block is stored. The
+     * real method is back in place before the throw.
+     */
+    public stubThrowOnceFromLeaveOnBlockCommitted(): boolean {
+        const leave = this.service.sm.leaveChannelService;
+        const onBlockCommitted = leave.onBlockCommitted;
+        leave.onBlockCommitted = () => {
+            leave.onBlockCommitted = onBlockCommitted;
+            throw new Error("stubbed post-commit failure");
+        };
+        return true;
+    }
+
+    public getFailedRestore(): FailedRestoreRecord | null {
+        const record = this.service.failedRestore;
+        return record
+            ? { ...record, restoreErrors: [...record.restoreErrors] }
+            : null;
+    }
+
+    /** Run the held runtime abort on the next tick so this request answers. */
+    public releaseHeldAbort(): boolean {
+        const abort = this.service.heldAbort;
+        if (abort === undefined) return false;
+        this.service.heldAbort = undefined;
+        setTimeout(abort, 0);
+        return true;
+    }
+
+    public restoreInboundMessageProcessing(): boolean {
+        const original = this.service.stubOriginals.get(
+            "inboundMessageRefusal"
+        );
+        if (original === undefined) return false;
+        const stateMachine = this.service.sm.diamondStateMachine;
+        stateMachine.processInboundMessage =
+            original as typeof stateMachine.processInboundMessage;
+        this.service.stubOriginals.delete("inboundMessageRefusal");
+        return true;
+    }
+
+    /**
+     * Suppress this peer's `disconnectAndBlacklistPeerByEvmAddress` for a single
+     * allowed address (the peer won't disconnect/blacklist `allowedAddress`).
+     * Used to keep a fake-dispute requester connected while others react.
+     */
+    public stubSelectiveDisconnect(allowedAddress: Address): boolean {
+        const pm = this.p2pManager;
+        if (!this.service.stubOriginals.has("selectiveDisconnect")) {
+            this.service.stubOriginals.set(
+                "selectiveDisconnect",
+                pm.disconnectAndBlacklistPeerByEvmAddress
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "selectiveDisconnect"
+        ) as typeof pm.disconnectAndBlacklistPeerByEvmAddress;
+        const allowed = String(allowedAddress).toLowerCase();
+        pm.disconnectAndBlacklistPeerByEvmAddress = (addr) => {
+            if (String(addr).toLowerCase() === allowed) return;
+            return original.call(pm, addr);
+        };
+        return true;
+    }
+
+    /**
+     * Suppress this peer posting its own block on-chain (forces the on-chain
+     * calldata path).
+     */
+    public stubSuppressMaybePostBlockOnChain(): boolean {
+        const posting = this.service.sm.calldataPostingService;
+        if (!this.service.stubOriginals.has("maybePostBlockOnChain")) {
+            this.service.stubOriginals.set(
+                "maybePostBlockOnChain",
+                posting.maybePostBlockOnChain
+            );
+        }
+        posting.maybePostBlockOnChain = () => {};
+        return true;
+    }
+
+    public restoreSuppressMaybePostBlockOnChain(): boolean {
+        const original = this.service.stubOriginals.get(
+            "maybePostBlockOnChain"
+        );
+        if (original === undefined) return false;
+        const posting = this.service.sm.calldataPostingService;
+        posting.maybePostBlockOnChain =
+            original as typeof posting.maybePostBlockOnChain;
+        this.service.stubOriginals.delete("maybePostBlockOnChain");
+        return true;
+    }
+
+    /**
+     * Stop this peer running the participant-timeout check, so a staged
+     * scenario is not cut short by a real timeout dispute.
+     */
+    public stubSuppressTimeoutCheck(): boolean {
+        this.service.suppressTimeoutCheck();
+        return true;
+    }
+
+    public restoreSuppressTimeoutCheck(): boolean {
+        return this.service.restoreSuppressTimeoutCheck();
+    }
+
+    /**
+     * Make this peer reject every ingested block confirmation, as if the
+     * queue refused it.
+     */
+    public stubRejectIngestedConfirmations(): boolean {
+        const queue = this.service.sm.blockQueueManager;
+        if (!this.service.stubOriginals.has("ingestConfirmations")) {
+            this.service.stubOriginals.set(
+                "ingestConfirmations",
+                queue.ingestBlockConfirmation
+            );
+        }
+        queue.ingestBlockConfirmation = async () => false;
+        return true;
+    }
+
+    public restoreRejectIngestedConfirmations(): boolean {
+        const original = this.service.stubOriginals.get("ingestConfirmations");
+        if (original === undefined) return false;
+        const queue = this.service.sm.blockQueueManager;
+        queue.ingestBlockConfirmation =
+            original as typeof queue.ingestBlockConfirmation;
+        this.service.stubOriginals.delete("ingestConfirmations");
+        return true;
+    }
+
+    /**
+     * Drop every block confirmation the network delivers to this peer while
+     * the harness control port still ingests. The peer stays blind to gossip
+     * with every transport live, so a sync probe toward a source can run.
+     */
+    public stubDropNetworkConfirmations(): boolean {
+        const queue = this.service.sm.blockQueueManager;
+        if (this.service.stubOriginals.has("networkConfirmations")) return true;
+        const original = queue.ingestBlockConfirmation;
+        this.service.stubOriginals.set("networkConfirmations", original);
+        const context = this.service.controlIngestContext;
+        queue.ingestBlockConfirmation = async (blockConfirmation, options) =>
+            context.getStore()
+                ? await Reflect.apply(original, queue, [
+                      blockConfirmation,
+                      options
+                  ])
+                : true;
+        return true;
+    }
+
+    /**
+     * Hold this peer's own sync at its application step, so the sync stays
+     * in flight toward its responder after the response arrived. With
+     * `responderAddress`, only the responses of that responder are held.
+     * With `fail`, a held application fails at release without applying.
+     * With `holdAfterApply`, the application runs first and its result is
+     * held before the sync acts on it. Each held application's result is
+     * recorded.
+     */
+    public stubHoldSpectateSyncApplication(
+        responderAddress?: Address,
+        fail = false,
+        holdAfterApply = false
+    ): boolean {
+        this.restoreHoldSpectateSyncApplication();
+        const spectate = this.p2pManager.localRpc.spectateService;
+        const original = spectate.applySyncResponse;
+        this.service.stubOriginals.set("spectateSyncApplication", original);
+        const gate = this.service.createGate();
+        this.service.spectateSyncApplicationGate = gate;
+        const results: boolean[] = [];
+        this.service.spectateSyncApplicationResults = results;
+        Reflect.set(
+            spectate,
+            "applySyncResponse",
+            async (
+                ...parameters: Parameters<SpectateService["applySyncResponse"]>
+            ) => {
+                const apply = () => original.apply(spectate, parameters);
+                if (responderAddress && parameters[0] !== responderAddress)
+                    return apply();
+                const applied = holdAfterApply ? await apply() : undefined;
+                gate.entered += 1;
+                await gate.gate;
+                const result =
+                    applied ?? (fail ? { synced: false } : await apply());
+                results.push(result.synced);
+                return result;
+            }
+        );
+        return true;
+    }
+
+    public getHeldSpectateSyncApplicationCount(): number {
+        return this.service.spectateSyncApplicationGate?.entered ?? 0;
+    }
+
+    /** Results of the held applications that finished after their release. */
+    public getHeldSpectateSyncApplicationResults(): boolean[] {
+        return this.service.spectateSyncApplicationResults;
+    }
+
+    public restoreHoldSpectateSyncApplication(): boolean {
+        const original = this.service.stubOriginals.get(
+            "spectateSyncApplication"
+        );
+        this.service.spectateSyncApplicationGate?.release();
+        this.service.spectateSyncApplicationGate = undefined;
+        if (original === undefined) return false;
+        Reflect.set(
+            this.p2pManager.localRpc.spectateService,
+            "applySyncResponse",
+            original
+        );
+        this.service.stubOriginals.delete("spectateSyncApplication");
+        return true;
+    }
+
+    public restoreDropNetworkConfirmations(): boolean {
+        const original = this.service.stubOriginals.get("networkConfirmations");
+        if (original === undefined) return false;
+        const queue = this.service.sm.blockQueueManager;
+        queue.ingestBlockConfirmation =
+            original as typeof queue.ingestBlockConfirmation;
+        this.service.stubOriginals.delete("networkConfirmations");
+        return true;
+    }
+
+    /**
+     * Record the label and delay of every scheduled task; tasks whose label
+     * starts with `suppressPrefix` are recorded and never run.
+     */
+    public stubRecordScheduledTasks(suppressPrefix?: string): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        if (!this.service.stubOriginals.has("scheduledTasks")) {
+            this.service.stubOriginals.set(
+                "scheduledTasks",
+                timeoutManager.scheduleTask.bind(timeoutManager)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "scheduledTasks"
+        ) as typeof timeoutManager.scheduleTask;
+        this.service.recordedScheduledTasks.length = 0;
+        timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
+            this.service.recordedScheduledTasks.push({ taskName, delayMs });
+            if (suppressPrefix && taskName.startsWith(suppressPrefix)) {
+                return {} as ReturnType<typeof setTimeout>;
+            }
+            return original(task, delayMs, taskName);
+        };
+        return true;
+    }
+
+    public getRecordedScheduledTasks(): {
+        tasks: { taskName: string; delayMs: number }[];
+    } {
+        return {
+            tasks: this.service.recordedScheduledTasks.map((entry) => ({
+                ...entry
+            }))
+        };
+    }
+
+    public restoreRecordScheduledTasks(): boolean {
+        const original = this.service.stubOriginals.get("scheduledTasks");
+        if (original === undefined) return false;
+        const timeoutManager = this.service.sm.timeoutManager;
+        timeoutManager.scheduleTask =
+            original as typeof timeoutManager.scheduleTask;
+        this.service.stubOriginals.delete("scheduledTasks");
+        return true;
+    }
+
+    /**
+     * Suppress this peer's snapshot posting (it stays dispute-eligible
+     * on-chain): its runtime posts and the harness's posts from it send
+     * nothing, as if nothing could be posted yet. A reduction's adoption
+     * post still runs.
+     */
+    public stubPostStateSnapshot(): boolean {
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        const original = snapshotUpdateService.postStateSnapshotWait;
+        if (!this.service.stubOriginals.has("postStateSnapshotWait"))
+            this.service.stubOriginals.set("postStateSnapshotWait", original);
+        snapshotUpdateService.postStateSnapshotWait = async (
+            forkId,
+            options
+        ) =>
+            options?.forkAdoptionOnly
+                ? original.call(snapshotUpdateService, forkId, options)
+                : undefined;
+        Reflect.set(snapshotUpdateService, HARNESS_POST_SUPPRESSED, true);
+        return true;
+    }
+
+    public restorePostStateSnapshot(): boolean {
+        Reflect.deleteProperty(
+            this.service.sm.snapshotUpdateService,
+            HARNESS_POST_SUPPRESSED
+        );
+        return this.restoreStateSnapshotPost();
+    }
+
+    /**
+     * Every state snapshot post of this peer is refused and lands nothing;
+     * with `failure: "error"` each post instead fails with
+     * `UNEXPECTED_SNAPSHOT_POST_FAILURE`, an error that is no chain refusal.
+     */
+    public failStateSnapshotPost(
+        failure: "refusal" | "error" = "refusal"
+    ): boolean {
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        if (!this.service.stubOriginals.has("postStateSnapshotWait")) {
+            this.service.stubOriginals.set(
+                "postStateSnapshotWait",
+                snapshotUpdateService.postStateSnapshotWait
+            );
+        }
+        // the chain refuses every runtime post with a real refusal: it lands
+        // nothing; a reduction's adoption post sends nothing. The harness's
+        // own post (transition.postStateSnapshot) is not stubbed.
+        snapshotUpdateService.postStateSnapshotWait = async (_, options) => {
+            if (options?.forkAdoptionOnly) return undefined;
+            if (failure === "error")
+                throw new Error(UNEXPECTED_SNAPSHOT_POST_FAILURE);
+            // a chain refusal the exit post expects: it lands nothing
+            throw {
+                data: encodedCustomErrorRevert(
+                    "RaceConditionPendingInboundNotConsumed"
+                )
+            };
+        };
+        return true;
+    }
+
+    public restoreStateSnapshotPost(): boolean {
+        const original = this.service.stubOriginals.get(
+            "postStateSnapshotWait"
+        );
+        if (original === undefined) return false;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        snapshotUpdateService.postStateSnapshotWait =
+            original as typeof snapshotUpdateService.postStateSnapshotWait;
+        this.service.stubOriginals.delete("postStateSnapshotWait");
+        return true;
+    }
+
+    /**
+     * Wrap `unsafeSetLatestState` so it records when it fires (queried via
+     * `wasUnsafeSetLatestStateCalled`) but still runs the original.
+     */
+    public stubRecordUnsafeSetLatestState(): boolean {
+        const stateApplication = this.service.sm.stateApplicationService;
+        if (!this.service.stubOriginals.has("unsafeSetLatestState")) {
+            this.service.stubOriginals.set(
+                "unsafeSetLatestState",
+                stateApplication.unsafeSetLatestState
+            );
+        }
+        this.service.unsafeSetLatestStateCalled = false;
+        const original = this.service.stubOriginals.get(
+            "unsafeSetLatestState"
+        ) as typeof stateApplication.unsafeSetLatestState;
+        const stubService = this.service;
+        stateApplication.unsafeSetLatestState = async (...args) => {
+            stubService.unsafeSetLatestStateCalled = true;
+            return original.apply(stateApplication, args);
+        };
+        return true;
+    }
+
+    public wasUnsafeSetLatestStateCalled(): boolean {
+        return this.service.unsafeSetLatestStateCalled;
+    }
+
+    public restoreUnsafeSetLatestState(): boolean {
+        const original = this.service.stubOriginals.get("unsafeSetLatestState");
+        if (original === undefined) return false;
+        const stateApplication = this.service.sm.stateApplicationService;
+        stateApplication.unsafeSetLatestState =
+            original as typeof stateApplication.unsafeSetLatestState;
+        this.service.stubOriginals.delete("unsafeSetLatestState");
+        return true;
+    }
+
+    // ===== RPC-method stubs (wrap a service's createRPCMethods) =====
+
+    /**
+     * Make `spectateService.onSpectateRequest` always answer with a proof at
+     * `staleBlockHeight`, regardless of what was requested (stale-proof guard).
+     */
+    public async stubSpectateStaleProof(
+        staleBlockHeight: number
+    ): Promise<boolean> {
+        const service = this.p2pManager.localRpc.spectateService;
+        const syncPayload = await service.generateSyncPayload(
+            this.p2pManager.stateManager.channelId,
+            undefined,
+            staleBlockHeight
+        );
+        if (!syncPayload)
+            throw new Error("stubSpectateStaleProof - no payload");
+        const snapshot =
+            syncPayload.milestoneSnapshots.at(-1) ??
+            syncPayload.latestForkGenesisSnapshot;
+        if (Number(snapshot.blockHeight) !== staleBlockHeight) {
+            throw new Error(
+                "Capture the stale proof before advancing beyond its height"
+            );
+        }
+        // Capture a real proof now; later chain progress makes it stale.
+        return this.stubSpectatePayload(
+            Codec.encode(syncPayload, Type.SyncPayload) as string
+        );
+    }
+
+    /**
+     * Make `spectateService.onSpectateRequest` always answer with
+     * `encodedSyncPayload` (a crafted proof); restore with restoreSpectateStaleProof.
+     */
+    public stubSpectatePayload(encodedSyncPayload: string): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "spectateCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.onSpectateRequest = async () => ({ encodedSyncPayload });
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreSpectateStaleProof(): boolean {
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.spectateService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("spectateCreateRpcMethods");
+        return true;
+    }
+
+    /**
+     * Make `spectateService.onSpectateRequest` answer with bytes that are NOT a
+     * valid `Codec.encode(SyncPayload)`, so the spectator's decode throws and it
+     * must abort/disconnect (junk-payload handling).
+     */
+    public stubSpectateJunkPayload(): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "spectateCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.onSpectateRequest = async function (
+                this: SpectateServiceRpcMethods
+            ) {
+                return { encodedSyncPayload: "0xdeadbeef" };
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreSpectateJunkPayload(): boolean {
+        return this.restoreSpectateStaleProof();
+    }
+
+    /**
+     * Count incoming `onSpectateRequest` calls (still running the real handler),
+     * resetting the counter on install. Lets a test assert that two concurrent
+     * `sync()` calls for the same peer collapse to a single on-the-wire request.
+     */
+    public stubCountSpectateRequests(): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "spectateCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.spectateRequestCount = 0;
+        // Count the installed response behavior, including a staged invalid response.
+        const original = service.createRPCMethods.bind(service);
+        const stubService = this.service;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            const realOnSpectateRequest =
+                methods.onSpectateRequest.bind(methods);
+            methods.onSpectateRequest = (syncRequest: SyncRequest) => {
+                stubService.spectateRequestCount++;
+                return realOnSpectateRequest(syncRequest);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public getSpectateRequestCount(): number {
+        return this.service.spectateRequestCount;
+    }
+
+    public restoreCountSpectateRequests(): boolean {
+        return this.restoreSpectateStaleProof();
+    }
+
+    /** Make join-signature requests fail at the responder. */
+    public stubFailJoinSignatureRequests(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.requestJoinSignature = async function (
+                this: JoinChannelRpcMethods
+            ) {
+                throw new Error("stubbed join-signature failure");
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Return the joiner's signature instead of the responder's signature. */
+    public stubWrongJoinSignatureSigner(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.requestJoinSignature = async (
+                encodedSignedJoinChannel: string
+            ) => {
+                const signedJoinChannel = Codec.decode(
+                    encodedSignedJoinChannel,
+                    Type.SignedJoinChannel
+                );
+                return { signature: String(signedJoinChannel.signature) };
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Count join-signature requests while still running the real handler. */
+    public stubCountJoinSignatureRequests(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.joinSignatureRequestCount = 0;
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const stubService = this.service;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            const realRequest = methods.requestJoinSignature.bind(methods);
+            methods.requestJoinSignature = (...args) => {
+                stubService.joinSignatureRequestCount++;
+                return realRequest(...args);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public getJoinSignatureRequestCount(): number {
+        return this.service.joinSignatureRequestCount;
+    }
+
+    public restoreJoinSignatureRequests(): boolean {
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.joinChannelService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("joinSignatureCreateRpcMethods");
+        return true;
+    }
+
+    /**
+     * Replace `isForkDisputedService.onDisputeAcknowledgmentRequest` with a
+     * no-op that records it was called (queried via `wasDisputeAckRequestCalled`).
+     */
+    public stubRecordDisputeAckRequest(): boolean {
+        const service = this.p2pManager.localRpc.isForkDisputedService;
+        if (!this.service.stubOriginals.has("disputeAckCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "disputeAckCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.disputeAckRequestCalled = false;
+        const original = this.service.stubOriginals.get(
+            "disputeAckCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const stubService = this.service;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.onDisputeAcknowledgmentRequest = async function (
+                this: IsForkDisputedRpcMethods
+            ): Promise<boolean> {
+                stubService.disputeAckRequestCalled = true;
+                return false;
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public wasDisputeAckRequestCalled(): boolean {
+        return this.service.disputeAckRequestCalled;
+    }
+
+    public restoreRecordDisputeAckRequest(): boolean {
+        const original = this.service.stubOriginals.get(
+            "disputeAckCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.isForkDisputedService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("disputeAckCreateRpcMethods");
+        return true;
+    }
+
+    /**
+     * Make handshake never complete, and install a recording
+     * `HandshakeCompletedGuard` on this peer's `spectateService` so an incoming
+     * spectate RPC is blocked (queried via `wasSpectateGuardBlocked`).
+     */
+    public stubBlockHandshakeAndRecordSpectateGuard(): boolean {
+        const initHandshakeService =
+            this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("blockedInitHandshake")) {
+            this.service.stubOriginals.set(
+                "blockedInitHandshake",
+                initHandshakeService.initHandshake
+            );
+        }
+        initHandshakeService.initHandshake = () => {};
+
+        const spectateService = this.p2pManager.localRpc.spectateService;
+        this.service.spectateGuardBlocked = false;
+        const stubService = this.service;
+        // `guards` is protected on ANetworkRpcService; cast to install a test guard.
+        (spectateService as unknown as { guards: unknown[] }).guards = [
+            new HandshakeCompletedGuard(spectateService, {
+                onFailure: () => {
+                    stubService.spectateGuardBlocked = true;
+                }
+            })
+        ];
+        return true;
+    }
+
+    public wasSpectateGuardBlocked(): boolean {
+        return this.service.spectateGuardBlocked;
+    }
+
+    public async sendSpectateRequestOverCapturedHandshakeTransport(
+        channelId: string,
+        initTime: number
+    ): Promise<string> {
+        const transport = this.service.capturedInitHandshakeTransport;
+        if (!transport) throw new Error("no captured handshake transport");
+        try {
+            await this.p2pManager.rpcRouter.sendRpcRequest(
+                {
+                    service: "spectateService",
+                    method: "onSpectateRequest",
+                    params: [{ channelId, initTime }]
+                },
+                transport,
+                {
+                    timeoutMs: protocolEventTimeoutMs(
+                        this.p2pManager.stateManager.timeConfig
+                    )
+                }
+            );
+            return "resolved";
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+    }
+
+    public restoreBlockedHandshake(): boolean {
+        const original = this.service.stubOriginals.get("blockedInitHandshake");
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.initHandshake = original as typeof service.initHandshake;
+        this.service.stubOriginals.delete("blockedInitHandshake");
+        return true;
+    }
+
+    /** Record calls to the runtime abort owner while preserving its behavior. */
+    public stubRecordAbort(): boolean {
+        const stateManager = this.p2pManager.stateManager;
+        if (!this.service.stubOriginals.has("stateManagerAbort")) {
+            this.service.stubOriginals.set(
+                "stateManagerAbort",
+                stateManager.abort.bind(stateManager)
+            );
+        }
+        this.service.abortCalled = false;
+        const original = this.service.stubOriginals.get(
+            "stateManagerAbort"
+        ) as typeof stateManager.abort;
+        const stubService = this.service;
+        stateManager.abort = () => {
+            stubService.abortCalled = true;
+            return original();
+        };
+        return true;
+    }
+
+    public wasAbortCalled(): boolean {
+        return this.service.abortCalled;
+    }
+
+    /**
+     * Capture the transport this peer initiates a handshake over (its outbound
+     * `initHandshake`), recording it on the service so a test can send an RPC
+     * over a pre-handshake transport (read via `execOnHost`). Runs the original.
+     */
+    public stubCaptureInitHandshakeTransport(): boolean {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("captureInitHandshake")) {
+            this.service.stubOriginals.set(
+                "captureInitHandshake",
+                service.initHandshake
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "captureInitHandshake"
+        ) as typeof service.initHandshake;
+        const stubService = this.service;
+        service.initHandshake = (transport) => {
+            stubService.capturedInitHandshakeTransport = transport;
+            return original.call(service, transport);
+        };
+        return true;
+    }
+
+    /**
+     * Make this peer answer handshake challenges (`onInitHandshakeRequest`) with
+     * a faulty response so the *initiator* rejects it:
+     * - `responseTimeOffsetSeconds` skews the returned `responseTime` so the
+     *   initiator's response-timestamp check fails.
+     * - `delayMs` delays the reply; only a delay that exceeds the initiator's
+     *   request window (agreementTime) makes its `.request(...)` time out — a
+     *   small delay just slows a still-successful response.
+     * - `corruptSignature` replaces the signature with undecodable bytes so the
+     *   initiator's `ethers.verifyMessage` throws.
+     * The real handler still runs first (validates + signs), so only the reply
+     * is corrupted.
+     */
+    public stubHandshakeResponse(
+        delayMs: number,
+        responseTimeOffsetSeconds: number,
+        corruptSignature: boolean
+    ): boolean {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("initHandshakeCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "initHandshakeCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "initHandshakeCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const realRequest =
+            InitHandshakeRpcMethods.prototype.onInitHandshakeRequest;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.onInitHandshakeRequest = async function (
+                this: InitHandshakeRpcMethods,
+                challengeHash: Hash,
+                time: Timestamp
+            ) {
+                const response = await realRequest.call(
+                    this,
+                    challengeHash,
+                    time
+                );
+                if (responseTimeOffsetSeconds) {
+                    response.responseTime += responseTimeOffsetSeconds;
+                }
+                if (corruptSignature) {
+                    response.signature = "0x00";
+                }
+                if (delayMs > 0) {
+                    await sleep(delayMs);
+                }
+                return response;
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /**
+     * Skew the request time this peer sends in its own handshake challenges by
+     * `offsetSeconds`, as a peer with a wrong clock would. Only the outgoing
+     * request is touched; the local clock stays correct.
+     */
+    public stubHandshakeRequestSkew(offsetSeconds: number): boolean {
+        const p2pManager = this.p2pManager;
+        if (!this.service.stubOriginals.has("handshakeRequestSkew")) {
+            this.service.stubOriginals.set(
+                "handshakeRequestSkew",
+                p2pManager.remoteRpc
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "handshakeRequestSkew"
+        ) as typeof p2pManager.remoteRpc;
+        // Own-property overrides over the real proxy: every other service and
+        // endpoint still resolves through the original.
+        const handshake = original.initHandshakeService;
+        const skewedHandshake = Object.create(handshake, {
+            onInitHandshakeRequest: {
+                value: (challengeHash: Hash, time: Timestamp) =>
+                    handshake.onInitHandshakeRequest(
+                        challengeHash,
+                        time + offsetSeconds
+                    )
+            }
+        }) as typeof handshake;
+        p2pManager.remoteRpc = Object.create(original, {
+            initHandshakeService: { value: skewedHandshake }
+        }) as typeof original;
+        return true;
+    }
+
+    public restoreHandshakeRequestSkew(): boolean {
+        const original = this.service.stubOriginals.get("handshakeRequestSkew");
+        if (original === undefined) return false;
+        this.p2pManager.remoteRpc =
+            original as typeof this.p2pManager.remoteRpc;
+        this.service.stubOriginals.delete("handshakeRequestSkew");
+        return true;
+    }
+
+    /**
+     * Ignore every handshake acknowledgement this peer receives, so its own
+     * acknowledgement timeout fires for each handshake it verified.
+     */
+    public stubDropHandshakeAcks(): boolean {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("dropHandshakeAcks")) {
+            this.service.stubOriginals.set(
+                "dropHandshakeAcks",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "dropHandshakeAcks"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.onInitHandshakeAck = async () => {};
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreDropHandshakeAcks(): boolean {
+        const original = this.service.stubOriginals.get("dropHandshakeAcks");
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("dropHandshakeAcks");
+        return true;
+    }
+
+    /**
+     * Park this peer's opening submission after it signed the opening, so a
+     * signed attempt can be aborted before the channel lands on chain.
+     */
+    public stubHoldOpeningSubmission(): boolean {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        // `submitOpening` is private on the service; the stub patches it by name.
+        const target = service as unknown as {
+            submitOpening: (
+                ...parameters: unknown[]
+            ) => Promise<ContractTransactionResponse>;
+        };
+        if (!this.service.stubOriginals.has("openingSubmission")) {
+            this.service.stubOriginals.set(
+                "openingSubmission",
+                target.submitOpening
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "openingSubmission"
+        ) as typeof target.submitOpening;
+        const stubService = this.service;
+        target.submitOpening = async (...parameters: unknown[]) => {
+            await new Promise<void>((resolve) => {
+                stubService.heldOpeningSubmissions.push(resolve);
+            });
+            // Record-only: the real submission and its outcome still reach
+            // the service unchanged.
+            try {
+                const tx = await original.apply(service, parameters);
+                DetachedPromises.collect(
+                    stubService.recordMinedOpeningRejection(tx.hash)
+                );
+                return tx;
+            } catch (error) {
+                stubService.openingSubmissionRejections.push(
+                    tryDecodeCustomError(error)?.name ?? "undecoded"
+                );
+                throw error;
+            }
+        };
+        return true;
+    }
+
+    public getHeldOpeningSubmissionCount(): number {
+        return this.service.heldOpeningSubmissions.length;
+    }
+
+    public getShortOpeningDeadline(): Timestamp | null {
+        return this.service.shortOpeningDeadline;
+    }
+
+    public getOpeningSubmissionRejections(): string[] {
+        return [...this.service.openingSubmissionRejections];
+    }
+
+    /**
+     * Make this proposer's next opening terms expire `remainingSeconds` from
+     * now instead of the full opening window. The clock read that derives the
+     * deadline directly follows `buildOpeningData`, so the offset applies to
+     * that one read only; the peer's expiry observation runs on the real clock.
+     */
+    public stubShortOpeningDeadline(remainingSeconds: number): boolean {
+        const stubService = this.service;
+        this.service.shiftClockReadAfterOpeningData(
+            remainingSeconds - OPEN_CHANNEL_DEADLINE_SECONDS,
+            (shiftedNow) => {
+                stubService.shortOpeningDeadline =
+                    shiftedNow + OPEN_CHANNEL_DEADLINE_SECONDS;
+            }
+        );
+        return true;
+    }
+
+    /**
+     * Make this receiver accept, for its next opening proposal only, a
+     * deadline that leaves `minimumSeconds` instead of the protocol minimum.
+     * The clock read that sets the deadline bounds directly follows
+     * `buildOpeningData`, so the offset applies to that one read only; the
+     * peer's expiry observation runs on the real clock.
+     */
+    public stubLowerOpeningMinimumWindow(minimumSeconds: number): boolean {
+        this.service.shiftClockReadAfterOpeningData(
+            minimumSeconds - OPEN_CHANNEL_MIN_REMAINING_SECONDS
+        );
+        return true;
+    }
+
+    /** Restore the real submission and let the parked ones proceed. */
+    public releaseOpeningSubmission(): number {
+        const original = this.service.stubOriginals.get("openingSubmission");
+        const held = this.service.heldOpeningSubmissions.splice(0);
+        if (original !== undefined) {
+            const service =
+                this.p2pManager.localRpc.openChannelNegotiationService;
+            (
+                service as unknown as {
+                    submitOpening: unknown;
+                }
+            ).submitOpening = original;
+            this.service.stubOriginals.delete("openingSubmission");
+        }
+        for (const release of held) release();
+        return held.length;
+    }
+
+    public restoreHandshakeResponse(): boolean {
+        const original = this.service.stubOriginals.get(
+            "initHandshakeCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("initHandshakeCreateRpcMethods");
+        return true;
+    }
+
+    // Reduction-race staging (hold / release / record).
+    // Staging for tests that must outrun a peer's own fork transition: hold
+    // all three reduction entry points (the reduction-* timers, the
+    // StateSnapshotUpdated handler, and the DisputeReducedResultCommitted
+    // handler — the latter reduces on the spot once the challenge period has
+    // expired), then release/replay once the race is staged.
+
+    /**
+     * Capture timer tasks whose name starts with `prefix` instead of
+     * scheduling them. Holds for different prefixes chain; each is released
+     * by its own restore call.
+     */
+    public stubHoldScheduledTasks(prefix: string): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        if (this.service.heldScheduledTasks.has(prefix)) return false;
+        this.service.heldScheduledTasks.set(prefix, []);
+        if (this.service.heldScheduledTaskBase) return true;
+        // One dispatcher for every active prefix: a task is held by the first
+        // prefix it matches, everything else reaches the real scheduler.
+        const base = timeoutManager.scheduleTask.bind(timeoutManager);
+        const cancelBase = timeoutManager.cancelTask.bind(timeoutManager);
+        this.service.heldScheduledTaskBase = base;
+        this.service.heldScheduledTaskCancelBase = cancelBase;
+        timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
+            for (const [held, tasks] of this.service.heldScheduledTasks) {
+                if (taskName.startsWith(held)) {
+                    const handle = {} as ReturnType<typeof setTimeout>;
+                    tasks.push({ taskName, task, handle, isCancelled: false });
+                    return handle;
+                }
+            }
+            return base(task, delayMs, taskName);
+        };
+        // A cancel of a held task is recorded; the task stays held.
+        timeoutManager.cancelTask = (timeoutId) => {
+            for (const tasks of this.service.heldScheduledTasks.values()) {
+                const held = tasks.find((entry) => entry.handle === timeoutId);
+                if (held) {
+                    held.isCancelled = true;
+                    return;
+                }
+            }
+            cancelBase(timeoutId);
+        };
+        return true;
+    }
+
+    /** Held task count for `prefix` so far. */
+    public getHeldScheduledTaskCount(prefix: string): number {
+        return this.service.heldScheduledTasks.get(prefix)?.length ?? 0;
+    }
+
+    /** Held tasks for `prefix` their owner cancelled so far. */
+    public getCancelledHeldScheduledTaskCount(prefix: string): number {
+        return (
+            this.service.heldScheduledTasks
+                .get(prefix)
+                ?.filter((entry) => entry.isCancelled).length ?? 0
+        );
+    }
+
+    /**
+     * Restore scheduling for `prefix`; optionally run the held tasks
+     * (fire-and-forget).
+     */
+    public restoreHeldScheduledTasks(
+        prefix: string,
+        runHeld: boolean
+    ): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        const held = this.service.heldScheduledTasks.get(prefix);
+        if (held === undefined) return false;
+        this.service.heldScheduledTasks.delete(prefix);
+        if (
+            this.service.heldScheduledTasks.size === 0 &&
+            this.service.heldScheduledTaskBase
+        ) {
+            timeoutManager.scheduleTask = this.service.heldScheduledTaskBase;
+            this.service.heldScheduledTaskBase = undefined;
+            if (this.service.heldScheduledTaskCancelBase)
+                timeoutManager.cancelTask =
+                    this.service.heldScheduledTaskCancelBase;
+            this.service.heldScheduledTaskCancelBase = undefined;
+        }
+        if (runHeld) for (const { task } of held) void task();
+        return true;
+    }
+
+    /**
+     * Restore scheduling for `prefix`, run its held tasks and wait for each to
+     * finish. Like TimeoutManager.scheduleTask, a failing task does not reject
+     * the call; its error is returned so the caller can require a clean run.
+     */
+    public async runHeldScheduledTasks(
+        prefix: string
+    ): Promise<{ ran: number; errors: string[] }> {
+        const held = this.service.heldScheduledTasks.get(prefix) ?? [];
+        this.restoreHeldScheduledTasks(prefix, false);
+        const errors: string[] = [];
+        for (const { task } of held) {
+            try {
+                await task();
+            } catch (error) {
+                errors.push(errorMessage(error));
+            }
+        }
+        return { ran: held.length, errors };
+    }
+
+    /** Hold one running timeout-manager task until that manager's dispose starts. */
+    public holdScheduledTaskUntilDispose(): boolean {
+        this.service.holdScheduledTaskUntilDispose();
+        return true;
+    }
+
+    public getDisposeWaitTask(): { entered: number; running: number } {
+        return this.service.getDisposeWaitTask();
+    }
+
+    public holdNextSignature(match?: SignatureBlockMatch): boolean {
+        this.service.holdNextSignature(match);
+        return true;
+    }
+    public getNextSignatureEntered(): number {
+        return this.service.getNextSignatureEntered();
+    }
+    public releaseNextSignature(): boolean {
+        this.service.releaseNextSignature();
+        return true;
+    }
+
+    public holdJoinThresholdRead(): boolean {
+        this.service.holdJoinThresholdRead();
+        return true;
+    }
+    public getJoinThresholdReadEntered(): number {
+        return this.service.getJoinThresholdReadEntered();
+    }
+    public failNextJoinThresholdRead(): boolean {
+        this.service.failNextJoinThresholdRead();
+        return true;
+    }
+
+    public holdJoinSignatureResponses(): boolean {
+        this.service.holdJoinSignatureResponses();
+        return true;
+    }
+    public getJoinSignatureResponsesEntered(): number {
+        return this.service.getJoinSignatureResponsesEntered();
+    }
+    public releaseJoinSignatureResponses(): boolean {
+        this.service.releaseJoinSignatureResponses();
+        return true;
+    }
+    public releaseJoinThresholdRead(): boolean {
+        this.service.releaseJoinThresholdRead();
+        return true;
+    }
+
+    public recordCollectAndJoinEntries(): boolean {
+        this.service.recordCollectAndJoinEntries();
+        return true;
+    }
+    public getCollectAndJoinEntered(): number {
+        return this.service.getCollectAndJoinEntered();
+    }
+
+    public holdJoinRetryEligibilityRead(): boolean {
+        this.service.holdJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public holdJoinCollectionResult(): boolean {
+        this.service.holdJoinCollectionResult();
+        return true;
+    }
+    public getJoinCollectionResultEntered(): number {
+        return this.service.getJoinCollectionResultEntered();
+    }
+    /**
+     * Abort the runtime after this request answers, then release the held
+     * join collection result into the disposed runtime; the teardown waits
+     * for the recorded top-up to settle.
+     */
+    public abortReleasingJoinCollectionResult(): boolean {
+        this.service.abortReleasingJoinCollectionResult();
+        return true;
+    }
+    public getJoinRetryEligibilityReadEntered(): number {
+        return this.service.getJoinRetryEligibilityReadEntered();
+    }
+    public releaseJoinRetryEligibilityRead(): boolean {
+        this.service.releaseJoinRetryEligibilityRead();
+        return true;
+    }
+
+    public holdJoinRetryDecision(): boolean {
+        this.service.holdJoinRetryDecision();
+        return true;
+    }
+    public getJoinRetryDecisionRefusals(): (string | null)[] {
+        return this.service.getJoinRetryDecisionRefusals();
+    }
+    public releaseJoinRetryDecision(): boolean {
+        this.service.releaseJoinRetryDecision();
+        return true;
+    }
+
+    public recordPublishedSnapshots(): boolean {
+        this.service.recordPublishedSnapshots();
+        return true;
+    }
+    public getLastPublishedSnapshotHash(): Hash | null {
+        return this.service.getLastPublishedSnapshotHash();
+    }
+    public restorePublishedSnapshots(): boolean {
+        this.service.restorePublishedSnapshots();
+        return true;
+    }
+
+    public holdSyncReductionResult(): boolean {
+        this.service.holdSyncReductionResult();
+        return true;
+    }
+
+    public releaseSyncReductionResult(): boolean {
+        this.service.releaseSyncReductionResult();
+        return true;
+    }
+
+    public recordSyncRejections(): boolean {
+        this.service.recordSyncRejections();
+        return true;
+    }
+
+    public restoreRecordedSyncRejections(): string[] {
+        return this.service.restoreRecordedSyncRejections();
+    }
+
+    public recordSyncFinalityReads(): boolean {
+        this.service.recordSyncFinalityReads();
+        return true;
+    }
+
+    public restoreSyncFinalityReads(): boolean {
+        this.service.restoreSyncFinalityReads();
+        return true;
+    }
+
+    public getSyncReductionEntered(): number {
+        return this.service.getSyncReductionEntered();
+    }
+
+    public getSyncFinalityReadWidths(): number[] {
+        return this.service.getSyncFinalityReadWidths();
+    }
+
+    public recordChainCalls(): boolean {
+        this.service.recordChainCalls();
+        return true;
+    }
+
+    public getRecordedChainCalls(): string[] {
+        return this.service.getRecordedChainCalls();
+    }
+
+    public restoreChainCalls(): boolean {
+        this.service.restoreChainCalls();
+        return true;
+    }
+
+    public recordChainMembershipReads(): boolean {
+        this.service.recordChainMembershipReads();
+        return true;
+    }
+
+    public getChainMembershipReadCount(): number {
+        return this.service.getChainMembershipReadCount();
+    }
+
+    public restoreChainMembershipReads(): boolean {
+        this.service.restoreChainMembershipReads();
+        return true;
+    }
+
+    /** Hold a sync's chain-window step before its fetch or after its persist. */
+    public holdSyncWindowPersistence(
+        at: "beforeFetch" | "afterPersist"
+    ): boolean {
+        if (at !== "beforeFetch" && at !== "afterPersist")
+            throw new Error("Invalid sync window hold point");
+        this.service.holdSyncWindowPersistence(at);
+        return true;
+    }
+
+    public getSyncWindowPersistenceEntered(): number {
+        return this.service.getSyncWindowPersistenceEntered();
+    }
+
+    public releaseSyncWindowPersistence(): boolean {
+        this.service.releaseSyncWindowPersistence();
+        return true;
+    }
+
+    public holdSyncInstall(): boolean {
+        this.service.holdSyncInstall();
+        return true;
+    }
+
+    public getSyncInstallEntered(): number {
+        return this.service.getSyncInstallEntered();
+    }
+
+    public releaseSyncInstall(): boolean {
+        this.service.releaseSyncInstall();
+        return true;
+    }
+
+    public recordSyncReductionWindows(): boolean {
+        this.service.recordSyncReductionWindows();
+        return true;
+    }
+
+    public getSyncReductionWindows() {
+        return this.service.getSyncReductionWindows();
+    }
+
+    public restoreSyncReductionWindows(): boolean {
+        this.service.restoreSyncReductionWindows();
+        return true;
+    }
+
+    /** Capture `reduction-*` timer tasks instead of scheduling them. */
+    public stubHoldReductionTasks(): boolean {
+        return this.stubHoldScheduledTasks("reduction-");
+    }
+
+    /** Restore scheduling; optionally run the held tasks (fire-and-forget). */
+    public restoreReductionTasks(runHeld: boolean): boolean {
+        return this.restoreHeldScheduledTasks("reduction-", runHeld);
+    }
+
+    // Reduction genesis application control: pause or fail one VM call made by
+    // the real reduction-specific application. The wrapped application raises
+    // an "active" flag for its duration so the general application path stays
+    // untouched; every other collaborator is real.
+
+    public holdReductionGenesisApplication(
+        control: ReductionApplicationControl
+    ): boolean {
+        // The control arrives as JSON over the RPC port; the discriminants
+        // are checked here, before any wrapper is restored or installed.
+        const keys =
+            typeof control === "object" && control !== null
+                ? Object.keys(control).sort()
+                : [];
+        const validAt =
+            control?.outcome === "hold"
+                ? ["setState", "getParticipants", "getNextToWrite"]
+                : control?.outcome === "reject"
+                  ? ["getParticipants", "getNextToWrite"]
+                  : [];
+        if (keys.join(",") !== "at,outcome" || !validAt.includes(control.at)) {
+            throw new Error(
+                `Invalid reduction application control: ${JSON.stringify(control)}`
+            );
+        }
+        this.service.restoreReductionApplication();
+        const sm = this.service.sm;
+        const application = sm.stateApplicationService;
+        const diamond = sm.diamondStateMachine;
+        const gate = this.service.createGate();
+        this.service.reductionApplicationGate = gate;
+        this.service.reductionApplicationControl = control;
+        this.service.reductionApplicationEntered = 0;
+
+        const originalApplication =
+            application.unsafeApplyReductionGenesis.bind(application);
+        this.service.stubOriginals.set(
+            "reductionApplication",
+            originalApplication
+        );
+        const context = this.service.reductionApplicationContext;
+        application.unsafeApplyReductionGenesis = (...parameters) =>
+            context.run(true, () => originalApplication(...parameters));
+
+        const intercept = async (at: ReductionApplicationControl["at"]) => {
+            const active = this.service.reductionApplicationControl;
+            if (!context.getStore() || !active || active.at !== at) {
+                return;
+            }
+            gate.entered += 1;
+            this.service.reductionApplicationEntered += 1;
+            if (active.outcome === "reject") {
+                // One-shot: the next call of the same read runs for real.
+                this.service.reductionApplicationControl = undefined;
+                throw new Error("Stubbed reduction genesis read failure");
+            }
+            await gate.gate;
+        };
+
+        const originalSetState = diamond.setState.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationSetState",
+            originalSetState
+        );
+        diamond.setState = async (...parameters) => {
+            const result = await originalSetState(...parameters);
+            await intercept("setState");
+            return result;
+        };
+        const originalGetParticipants = diamond.getParticipants.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationGetParticipants",
+            originalGetParticipants
+        );
+        diamond.getParticipants = async () => {
+            await intercept("getParticipants");
+            return originalGetParticipants();
+        };
+        const originalGetNextToWrite = diamond.getNextToWrite.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationGetNextToWrite",
+            originalGetNextToWrite
+        );
+        diamond.getNextToWrite = async () => {
+            await intercept("getNextToWrite");
+            return originalGetNextToWrite();
+        };
+        return true;
+    }
+
+    public getHeldReductionGenesisApplicationCount(): number {
+        return this.service.reductionApplicationEntered;
+    }
+
+    /** Whether the reduction application wrappers are currently installed. */
+    public isReductionGenesisApplicationHeld(): boolean {
+        return this.service.stubOriginals.has("reductionApplication");
+    }
+
+    public restoreReductionGenesisApplication(): boolean {
+        this.service.restoreReductionApplication();
+        return true;
+    }
+
+    /**
+     * Pause one reduction attempt after its completion exists: at the
+     * executor attempt (before any executor work) or at candidate computation
+     * (before the terminal outbound block is persisted).
+     */
+    public holdReductionAttempt(
+        at: ReductionAttemptHoldPoint,
+        resumeWith: ReductionAttemptResume = "original"
+    ): boolean {
+        this.service.restoreReductionAttempt();
+        const manager = this.service.sm.reductionManager;
+        const executor = manager["reductionExecutor"];
+        const observed = executor.tryReduce;
+        this.service.stubOriginals.set("reductionObservedAttempt", observed);
+        executor.tryReduce = async (...args) => {
+            this.service.reductionAttemptsInFlight += 1;
+            try {
+                return await observed.apply(executor, args);
+            } finally {
+                this.service.reductionAttemptsInFlight -= 1;
+            }
+        };
+        const gate = this.service.createGate();
+        this.service.reductionAttemptGate = gate;
+        const resume = async <T>(original: () => Promise<T>) => {
+            gate.entered += 1;
+            await gate.gate;
+            if (resumeWith === "throw") {
+                throw new Error(REDUCTION_ATTEMPT_STUB_FAILURE);
+            }
+            if (resumeWith === "undefined") return undefined as T;
+            return original();
+        };
+        if (at === "admission") {
+            const contract = this.service.sm.stateChannelManagerContract;
+            const original = contract.isForkDisputed;
+            this.service.stubOriginals.set("reductionAdmission", original);
+            Reflect.set(
+                contract,
+                "isForkDisputed",
+                async (...args: unknown[]) => {
+                    const result = await Reflect.apply(
+                        original,
+                        contract,
+                        args
+                    );
+                    // One pending caller is enough; sync verification retains real reads.
+                    Reflect.set(contract, "isForkDisputed", original);
+                    gate.entered += 1;
+                    await gate.gate;
+                    return result;
+                }
+            );
+            return true;
+        }
+        if (at === "attempt") {
+            const original = executor.tryReduce.bind(executor);
+            this.service.stubOriginals.set("reductionAttempt", original);
+            executor.tryReduce = (forkId) => resume(() => original(forkId));
+            return true;
+        }
+        if (at === "disputes") {
+            const original = executor.getSyncedForkDisputes.bind(executor);
+            this.service.stubOriginals.set("reductionDisputes", original);
+            executor.getSyncedForkDisputes = (forkId) =>
+                resume(() => original(forkId));
+            return true;
+        }
+        if (at === "submit") {
+            const contract = this.service.sm.stateChannelManagerContract;
+            const multicall = contract.multicall;
+            this.service.stubOriginals.set(
+                "reductionSubmitMulticall",
+                multicall
+            );
+            this.service.reductionSubmitCalls = 0;
+            // Hold the reduce's chain write (a multicall carrying
+            // `reduceAndFinalize`) and count every chain write, keeping the
+            // method's static-call and estimation faces for the simulation.
+            const held = async (...parameters: unknown[]) => {
+                const calls = parameters[0] as string[];
+                const isReduce = calls.some(
+                    (data) =>
+                        contract.interface.parseTransaction({ data })?.name ===
+                        "reduceAndFinalize"
+                );
+                const send = () => {
+                    this.service.reductionSubmitCalls += 1;
+                    return Reflect.apply(multicall, contract, parameters);
+                };
+                if (!isReduce) return send();
+                // The send has no result to replace: anything but "throw"
+                // releases it as is.
+                gate.entered += 1;
+                await gate.gate;
+                if (resumeWith === "throw") {
+                    throw new Error(REDUCTION_ATTEMPT_STUB_FAILURE);
+                }
+                return send();
+            };
+            for (const key of Object.getOwnPropertyNames(multicall)) {
+                if (key in held) continue;
+                Object.defineProperty(
+                    held,
+                    key,
+                    Object.getOwnPropertyDescriptor(multicall, key)!
+                );
+            }
+            Reflect.set(contract, "multicall", held);
+            return true;
+        }
+        const computation = manager["reductionComputationService"];
+        const original = computation.compute.bind(computation);
+        this.service.stubOriginals.set("reductionCompute", original);
+        computation.compute = (...parameters) =>
+            resume(() => original(...parameters));
+        return true;
+    }
+
+    /** Make this host deny its writer turn until restored (harness helper staging). */
+    public stubDenyTurn(): boolean {
+        this.restoreDenyTurn();
+        const production = this.service.sm.blockProductionService;
+        const original = production["isMyTurn"].bind(production);
+        this.service.stubOriginals.set("denyTurn", original);
+        production["isMyTurn"] = async () => false;
+        return true;
+    }
+
+    public restoreDenyTurn(): boolean {
+        const production = this.service.sm.blockProductionService;
+        const original = this.service.stubOriginals.get("denyTurn");
+        if (original) {
+            production["isMyTurn"] =
+                original as (typeof production)["isMyTurn"];
+            this.service.stubOriginals.delete("denyTurn");
+        }
+        return true;
+    }
+
+    public stubRecordForkLeave(forkId: ForkId): boolean {
+        this.service.recordForkLeave(forkId);
+        return true;
+    }
+
+    public getForkLeaveObservation(): {
+        scheduled: number;
+        cancelled: number;
+    } {
+        return { ...this.service.forkLeaveObservation };
+    }
+
+    public restoreForkLeave(): boolean {
+        this.service.restoreForkLeave();
+        return true;
+    }
+
+    public getCollectedDetachedPromiseCount(): number {
+        return DetachedPromises.size();
+    }
+
+    public getReductionAttemptsInFlight(): number {
+        return this.service.reductionAttemptsInFlight;
+    }
+
+    public getHeldReductionAttemptCount(): number {
+        return this.service.reductionAttemptGate?.entered ?? 0;
+    }
+
+    /** Chain writes attempted by a reduction submission since the submit hold was installed. */
+    public getReductionSubmitCallCount(): number {
+        return this.service.reductionSubmitCalls;
+    }
+
+    public restoreReductionAttempt(): boolean {
+        this.service.restoreReductionAttempt();
+        return true;
+    }
+
+    /** Start a real reduction attempt host-side and keep its outcome. */
+    public startTryReduce(forkId: ForkId): boolean {
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.tryReduceOutcome = outcome;
+        void this.service.sm.reductionManager.tryReduce(forkId).then(
+            (reduction) => {
+                outcome.settled = true;
+                outcome.result = reduction
+                    ? String(reduction.reducedForkId)
+                    : null;
+            },
+            (error) => {
+                outcome.settled = true;
+                outcome.rejected =
+                    error instanceof Error ? error.message : String(error);
+            }
+        );
+        return true;
+    }
+
+    public getTryReduceOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.tryReduceOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /** Hold the state-manager mutex until released. */
+    public holdStateMutex(): boolean {
+        this.service.releaseStateMutex();
+        const gate = this.service.createGate();
+        this.service.stateMutexGate = gate;
+        void this.service.sm.withMutex(
+            async () => {
+                gate.entered += 1;
+                await gate.gate;
+            },
+            { taskName: "stub.holdStateMutex" }
+        );
+        return true;
+    }
+
+    /** Hold the state mutex with the fork's state at `height` installed. */
+    public holdStateMutexOnState(height: number): boolean {
+        this.service.holdStateMutexOnState(height);
+        return true;
+    }
+
+    /** The installed state's next writer and the overwritten writes, while held. */
+    public getStateMutexStateHold(): StateMutexStateHold | null {
+        const hold = this.service.stateMutexStateHold;
+        return hold ? { ...hold } : null;
+    }
+
+    public getStateMutexHeldCount(): number {
+        return this.service.stateMutexGate?.entered ?? 0;
+    }
+
+    public releaseStateMutex(): boolean {
+        this.service.releaseStateMutex();
+        return true;
+    }
+
+    /** Tasks parked on the state mutex behind its current holder. */
+    public getStateMutexWaitingCount(): number {
+        return this.service.sm.mutex["queue"].length;
+    }
+
+    /**
+     * Hold the runtime disposal that a real abort starts, so the control RPC
+     * stays reachable after the abort. Release with `releaseRuntimeDisposal`.
+     */
+    public stubHoldRuntimeDisposal(): boolean {
+        // the state manager's private disposal callback
+        const host = this.service.sm as unknown as {
+            disposeRuntime: () => Promise<void>;
+        };
+        const dispose = host.disposeRuntime;
+        const gate = this.service.createGate();
+        this.service.runtimeDisposalGate = gate;
+        host.disposeRuntime = async () => {
+            gate.entered += 1;
+            await gate.gate;
+            return dispose();
+        };
+        return true;
+    }
+
+    public releaseRuntimeDisposal(): boolean {
+        const gate = this.service.runtimeDisposalGate;
+        if (gate === undefined) return false;
+        this.service.runtimeDisposalGate = undefined;
+        // next tick, so this request answers before the disposal runs
+        setTimeout(gate.release, 0);
+        return true;
+    }
+
+    /**
+     * Start a direct `completeWithGenesis` for the current fork host-side,
+     * using the fork's own genesis snapshot and state as the reduced genesis,
+     * and keep its outcome.
+     */
+    public startCompleteWithGenesis(reducedForkId: ForkId): boolean {
+        const sm = this.service.sm;
+        const genesisSnapshot =
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(sm.forkId);
+        if (!genesisSnapshot) {
+            throw new Error("No genesis snapshot for the current fork");
+        }
+        const snapshot = genesisSnapshot.toStruct();
+        const encodedState = sm.storage.stateMachineStates.getStateMachineState(
+            snapshot.snapshotData.stateMachineStateHash as Hash
+        );
+        if (!encodedState) {
+            throw new Error("No state machine state for the current fork");
+        }
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.completeWithGenesisOutcome = outcome;
+        void sm.reductionManager
+            .completeWithGenesis(sm.forkId, reducedForkId, {
+                genesisSnapshot: snapshot,
+                encodedState
+            })
+            .then(
+                (installed) => {
+                    outcome.settled = true;
+                    outcome.result = String(installed);
+                },
+                (error) => {
+                    outcome.settled = true;
+                    outcome.rejected =
+                        error instanceof Error ? error.message : String(error);
+                }
+            );
+        return true;
+    }
+
+    public getCompleteWithGenesisOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.completeWithGenesisOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /** Abort the runtime on the next tick so this request still answers. */
+    public abortDetached(repeat = false): boolean {
+        const sm = this.service.sm;
+        setTimeout(() => {
+            sm.abort();
+            if (repeat) sm.abort();
+        }, 0);
+        return true;
+    }
+
+    /**
+     * Stop applying processed inbound messages to the local diamond -> its
+     * in-memory EVM falls behind the RPC node while storage stays whole.
+     */
+    public stubLocalDiamondInboundMessages(): boolean {
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        if (!this.service.stubOriginals.has("localDiamondInboundMessages")) {
+            this.service.stubOriginals.set(
+                "localDiamondInboundMessages",
+                localDiamond.onInboundMessagesProcessed
+            );
+        }
+        localDiamond.onInboundMessagesProcessed = (async () =>
+            undefined) as unknown as typeof localDiamond.onInboundMessagesProcessed;
+        return true;
+    }
+
+    /** Park this peer's audit proof walks before the walk and its persistence. */
+    public stubHoldProofWalks(): boolean {
+        this.service.installProofWalkHold();
+        return true;
+    }
+
+    /** Latest block hashes of the proofs whose walks are parked. */
+    public getHeldProofWalkBlockHashes(): string[] {
+        return this.service.heldProofWalks.map((walk) => walk.latestBlockHash);
+    }
+
+    /** Release the parked walk of the proof ending at `latestBlockHash`. */
+    public releaseHeldProofWalk(latestBlockHash: string): boolean {
+        return this.service.releaseHeldProofWalk(latestBlockHash);
+    }
+
+    /** Release every parked walk and restore the real walk. */
+    public restoreProofWalks(): boolean {
+        return this.service.restoreProofWalkHold();
+    }
+
+    public stubHoldAuditingDataRebuild(
+        at: "output" | "auditingData" = "output"
+    ): boolean {
+        this.service.installAuditingDataRebuildHold(at);
+        return true;
+    }
+
+    /** Release parked rebuilds and restore the real method. */
+    public restoreAuditingDataRebuild(): boolean {
+        return this.service.releaseAuditingDataRebuildHold();
+    }
+
+    /** Resolves once a rebuild is parked at the hold; parked count. */
+    public waitForHeldAuditingDataRebuild(): Promise<number> {
+        return this.service.waitForHeldAuditingDataRebuild();
+    }
+
+    /** Hold the discovery join for `holdMs` so an abort can land inside it. */
+    public stubHoldDiscoveryJoin(holdMs: number): boolean {
+        this.service.installDiscoveryJoinHold(holdMs);
+        return true;
+    }
+
+    public async joinAndLeavePendingLocalDiscovery(
+        topic: string
+    ): Promise<boolean> {
+        await this.service.joinAndLeavePendingLocalDiscovery(topic);
+        return true;
+    }
+
+    public getLocalDiscoveryListenerCount(): number {
+        return this.service.getLocalDiscoveryListenerCount();
+    }
+
+    /** Broadcast a real calldata post with an expired deadline; its receipt reverts. */
+    public stubExpireCalldataPost(): boolean {
+        this.service.expireCalldataPost();
+        return true;
+    }
+
+    public restoreCalldataPost(): boolean {
+        return this.service.restoreCalldataPost();
+    }
+
+    /** Park this peer's snapshot post at its contract send (or, with `at: "broadcast"`, after its estimate) until restored. */
+    public stubHoldSnapshotPostSend(
+        adoptionOnly?: boolean,
+        at?: SnapshotPostHoldPoint
+    ): boolean {
+        this.service.installSnapshotPostSendHold(adoptionOnly, at);
+        return true;
+    }
+
+    /** Release the parked send and restore the real contract method; the first released send's revert name, or null. */
+    public async restoreSnapshotPostSend(): Promise<string | null> {
+        const outcome = this.service.snapshotPostSendOutcome;
+        this.service.releaseSnapshotPostSendHold();
+        return (await outcome) ?? null;
+    }
+
+    /** Fail this peer's first `failures` adopt-only snapshot posts at their send; record every multicall's call names. */
+    public stubFailFirstAdoptionPost(failures: number = 1): boolean {
+        this.service.installAdoptionPostFailure(failures);
+        return true;
+    }
+
+    /** Send the first reduce underfunded, so it is mined and reverts out of gas. */
+    public stubUnderfundFirstReducePost(): boolean {
+        this.service.installUnderfundedReducePost();
+        return true;
+    }
+
+    public restoreUnderfundedReducePost(): boolean {
+        this.service.restoreUnderfundedReducePost();
+        return true;
+    }
+
+    /** Mined status of each reduce send recorded by the underfunded-reduce stub, in send order. */
+    public getReduceSendStatuses(): Promise<(number | null)[]> {
+        return this.service.getReduceSendStatuses();
+    }
+
+    /** The multicall call names recorded so far by the adoption-post failure stub. */
+    public getRecordedMulticallNames(): string[][] {
+        return this.service.recordedMulticallNames;
+    }
+
+    /** Restore the real send; the recorded multicall call names. */
+    public restoreAdoptionPost(): string[][] {
+        return this.service.restoreAdoptionPostFailure();
+    }
+
+    /** Resolves once a post is parked at its send; parked count. */
+    public waitForHeldSnapshotPostSend(): Promise<number> {
+        return this.service.waitForHeldSnapshotPostSend();
+    }
+
+    /**
+     * Prune this peer's stored blocks of `forkId` below `anchorHeight` (the
+     * anchor block is kept), so a test can reconstruct a proof from pruned
+     * history. Irreversible: the session teardown discards the peer.
+     */
+    public pruneStoredBlocksBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): { prunedHeights: BlockHeight[] } {
+        return {
+            prunedHeights: this.service.pruneStoredBlocksBelowAnchor(
+                forkId,
+                anchorHeight
+            )
+        };
+    }
+
+    /**
+     * The next execution of the block at `forkId:height` throws a genuine
+     * internal error (one-shot; see `StubService.failBlockReplayAt`).
+     */
+    public stubFailBlockReplayAt(forkId: ForkId, height: BlockHeight): boolean {
+        this.service.failBlockReplayAt(forkId, height);
+        return true;
+    }
+
+    /** Record instead of start this peer's force-join disputes. */
+    public stubSuppressForceJoinDispute(): boolean {
+        this.service.suppressForceJoinDispute();
+        return true;
+    }
+
+    public getSuppressedForceJoinTriggers(): string[] {
+        return this.service.getSuppressedForceJoinTriggers();
+    }
+
+    public didBlockReplayFaultFire(): boolean {
+        return this.service.didBlockReplayFaultFire();
+    }
+
+    public restoreBlockReplayFault(): boolean {
+        return this.service.restoreBlockReplayFault();
+    }
+
+    /**
+     * Remove `signer`'s confirmation signature from this peer's stored block
+     * at `height` (test-harness staging of missing signature evidence).
+     */
+    public stripStoredBlockSignature(
+        forkId: ForkId,
+        height: BlockHeight,
+        signer: Address
+    ): boolean {
+        this.service.stripStoredBlockSignature(forkId, height, signer);
+        return true;
+    }
+
+    /**
+     * Remove one stored state snapshot by hash (test-harness pruning of a
+     * required snapshot). Irreversible: the session teardown discards the peer.
+     */
+    public deleteStoredSnapshot(snapshotHash: Hash): boolean {
+        this.service.deleteStoredSnapshot(snapshotHash);
+        return true;
+    }
+
+    public deleteStoredState(stateHash: Hash): boolean {
+        return this.service.deleteStoredState(stateHash);
+    }
+
+    /**
+     * Prune this peer's snapshots and application states below `anchorHeight`
+     * (the anchor's are kept); call it before pruning the blocks.
+     */
+    public pruneStoredSnapshotsBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): { prunedSnapshotHashes: Hash[] } {
+        return {
+            prunedSnapshotHashes: this.service.pruneStoredSnapshotsBelowAnchor(
+                forkId,
+                anchorHeight
+            )
+        };
+    }
+
+    public stubHoldOnChainSlashesQuery(): boolean {
+        this.service.installOnChainSlashesQueryHold();
+        return true;
+    }
+
+    /** Release parked audits and restore the real query. */
+    public restoreOnChainSlashesQuery(): boolean {
+        return this.service.releaseOnChainSlashesQueryHold();
+    }
+
+    /** Resolves once a caller is parked at the hold; parked count. */
+    public waitForHeldOnChainSlashesQuery(): Promise<number> {
+        return this.service.waitForHeldOnChainSlashesQuery();
+    }
+
+    public getHeldReductionTaskCount(): number {
+        return this.getHeldScheduledTaskCount("reduction-");
+    }
+
+    public dropHeldReductionTasks(): boolean {
+        this.service.heldScheduledTasks.get("reduction-")?.splice(0);
+        return true;
+    }
+
+    public cancelScheduledReductions(): boolean {
+        this.service.sm.reductionManager["cancelScheduledReductions"]();
+        return true;
+    }
+
+    /** Pause a real reduction once it enters its kill-period lookup. */
+    public stubPauseReductionAtKillPeriod(forkId: ForkId): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        const contract = this.service.sm.stateChannelManagerContract;
+
+        if (!this.service.stubOriginals.has("pausedReduction")) {
+            this.service.stubOriginals.set(
+                "pausedReduction",
+                reductionManager.tryReduce.bind(reductionManager)
+            );
+        }
+        if (!this.service.stubOriginals.has("pausedReductionKillPeriod")) {
+            this.service.stubOriginals.set(
+                "pausedReductionKillPeriod",
+                contract.isKillPeriodExpired.bind(contract)
+            );
+        }
+
+        const prior = this.service.pausedReduction;
+        if (prior && prior.entered && !prior.settled) prior.release?.();
+
+        this.service.pausedReduction = {
+            targetForkId: forkId,
+            entered: false,
+            released: false,
+            settled: false,
+            inside: false
+        };
+
+        const originalReduce = this.service.stubOriginals.get(
+            "pausedReduction"
+        ) as typeof reductionManager.tryReduce;
+        const originalKillPeriod = this.service.stubOriginals.get(
+            "pausedReductionKillPeriod"
+        ) as typeof contract.isKillPeriodExpired;
+
+        reductionManager.tryReduce = ((requestedForkId: ForkId) => {
+            const state = this.service.pausedReduction;
+            if (!state || requestedForkId !== state.targetForkId) {
+                return originalReduce(requestedForkId);
+            }
+
+            state.inside = true;
+            const promise = originalReduce(requestedForkId).finally(() => {
+                state.inside = false;
+            });
+            state.promise = promise;
+            void promise.then(
+                () => {
+                    state.settled = true;
+                },
+                (error: unknown) => {
+                    state.settled = true;
+                    state.error =
+                        error instanceof Error ? error.message : String(error);
+                }
+            );
+            return promise;
+        }) as typeof reductionManager.tryReduce;
+
+        contract.isKillPeriodExpired = (async (channelId, requestedForkId) => {
+            const state = this.service.pausedReduction;
+            if (
+                state &&
+                state.inside &&
+                !state.entered &&
+                !state.released &&
+                requestedForkId === state.targetForkId
+            ) {
+                state.entered = true;
+                await new Promise<void>((resolve) => {
+                    state.release = resolve;
+                });
+            }
+            return originalKillPeriod(channelId, requestedForkId);
+        }) as typeof contract.isKillPeriodExpired;
+        return true;
+    }
+
+    public releasePausedReduction(): boolean {
+        const state = this.service.pausedReduction;
+        if (!state) return false;
+        state.released = true;
+        state.release?.();
+        return true;
+    }
+
+    public getPausedReductionStatus(): PausedReductionStatus {
+        const state = this.service.pausedReduction;
+        const status: PausedReductionStatus = {
+            entered: state?.entered ?? false,
+            released: state?.released ?? false,
+            settled: state?.settled ?? false
+        };
+        if (state?.error !== undefined) status.error = state.error;
+        return status;
+    }
+
+    public restorePausedReduction(): boolean {
+        this.releasePausedReduction();
+        const reductionManager = this.service.sm.reductionManager;
+        const contract = this.service.sm.stateChannelManagerContract;
+        let restored = false;
+
+        const originalReduce =
+            this.service.stubOriginals.get("pausedReduction");
+        if (originalReduce !== undefined) {
+            reductionManager.tryReduce =
+                originalReduce as typeof reductionManager.tryReduce;
+            this.service.stubOriginals.delete("pausedReduction");
+            restored = true;
+        }
+
+        const originalKillPeriod = this.service.stubOriginals.get(
+            "pausedReductionKillPeriod"
+        );
+        if (originalKillPeriod !== undefined) {
+            contract.isKillPeriodExpired =
+                originalKillPeriod as typeof contract.isKillPeriodExpired;
+            this.service.stubOriginals.delete("pausedReductionKillPeriod");
+            restored = true;
+        }
+
+        this.service.pausedReduction = undefined;
+        return restored;
+    }
+    public recordLeaveWatchdog(): boolean {
+        this.service.recordLeaveWatchdog();
+        return true;
+    }
+
+    public getLeaveWatchdogObservation() {
+        return { ...this.service.leaveWatchdogObservation };
+    }
+
+    public restoreLeaveWatchdog(): boolean {
+        this.service.restoreLeaveWatchdog();
+        return true;
+    }
+
+    public recordSlashRecoveries(): boolean {
+        this.service.recordSlashRecoveries();
+        return true;
+    }
+
+    public getSlashRecoveryCount(): number {
+        return this.service.getSlashRecoveryCount();
+    }
+
+    public restoreSlashRecoveries(): boolean {
+        this.service.restoreSlashRecoveries();
+        return true;
+    }
+
+    /**
+     * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
+     * each recorded send until `releaseDisputeSubmissions`; `failure` makes the
+     * send (or its `wait()`) fail with a real custom-error revert.
+     */
+    public stubRecordDisputeSubmissions(
+        holdSubmissions: boolean,
+        failure?: DisputeSubmissionFailureSpec,
+        forward = false,
+        refuseUpload?: RefusedUploadKind
+    ): boolean {
+        this.service.installDisputeSubmissionRecorder(
+            holdSubmissions,
+            failure,
+            forward,
+            refuseUpload
+        );
+        return true;
+    }
+
+    public getRecordedDisputeSubmissions(): {
+        submissions: RecordedDisputeSubmission[];
+        held: number;
+    } {
+        return {
+            submissions: this.service.recordedDisputeSubmissions.map(
+                (submission) => ({ ...submission })
+            ),
+            held: this.service.disputeSubmissionHold?.held ?? 0
+        };
+    }
+
+    public releaseDisputeSubmissions(): boolean {
+        const hold = this.service.disputeSubmissionHold;
+        if (!hold) return false;
+        this.service.disputeSubmissionHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreDisputeSubmissions(): boolean {
+        return this.service.restoreDisputeSubmissions();
+    }
+
+    /**
+     * Record `killDispute`'s on-chain apply and how it settled (the real
+     * transaction still runs). `holdApplies` parks each send until
+     * `releaseDisputeFraudProofApplies`.
+     */
+    public stubRecordDisputeFraudProofApplies(
+        holdApplies: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): boolean {
+        this.service.installDisputeFraudProofApplyRecorder(
+            holdApplies,
+            failure
+        );
+        return true;
+    }
+
+    public getRecordedDisputeFraudProofApplies(): {
+        applies: RecordedFraudProofApply[];
+        held: number;
+    } {
+        return {
+            applies: this.service.recordedFraudProofApplies.map((apply) => ({
+                ...apply
+            })),
+            held: this.service.fraudProofApplyHold?.held ?? 0
+        };
+    }
+
+    public releaseDisputeFraudProofApplies(): boolean {
+        const hold = this.service.fraudProofApplyHold;
+        if (!hold) return false;
+        this.service.fraudProofApplyHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreDisputeFraudProofApplies(): boolean {
+        return this.service.restoreDisputeFraudProofApplies();
+    }
+
+    /**
+     * Answer this peer's chain-signer estimates for `methods` scaled by
+     * `numerator / denominator`, recording each real estimate.
+     */
+    public stubScaleReplayGasEstimates(
+        methods: ReplayGasEstimateMethod[],
+        numerator: number,
+        denominator: number
+    ): boolean {
+        this.service.installReplayGasEstimateScale(
+            methods,
+            numerator,
+            denominator
+        );
+        return true;
+    }
+
+    public getRecordedReplayGasEstimates(): RecordedGasEstimate[] {
+        return this.service.recordedGasEstimates.map((estimate) => ({
+            ...estimate
+        }));
+    }
+
+    public restoreScaleReplayGasEstimates(): boolean {
+        return this.service.restoreReplayGasEstimateScale();
+    }
+
+    /** Answer the best-effort dispute multicall estimate with the least gas. */
+    public stubMinimumBestEffortEstimate(): boolean {
+        this.service.installMinimumBestEffortEstimate();
+        return true;
+    }
+
+    public getRecordedBestEffortEstimates(): RecordedBestEffortEstimate[] {
+        return this.service.recordedBestEffortEstimates.map((estimate) => ({
+            ...estimate
+        }));
+    }
+
+    public restoreMinimumBestEffortEstimate(): boolean {
+        return this.service.restoreMinimumBestEffortEstimate();
+    }
+
+    /** Count, hold or fault the local outbound-run verdict of a dispute audit. */
+    public stubOutboundRunVerification(
+        holdFirst: boolean,
+        answerInvalid: boolean
+    ): boolean {
+        this.service.installOutboundRunVerificationProbe(
+            holdFirst,
+            answerInvalid
+        );
+        return true;
+    }
+
+    public getOutboundRunVerificationCount(): number {
+        return this.service.outboundRunVerificationProbe?.calls ?? 0;
+    }
+
+    public releaseOutboundRunVerification(): boolean {
+        this.service.outboundRunVerificationProbe?.release();
+        return true;
+    }
+
+    public restoreOutboundRunVerification(): boolean {
+        return this.service.restoreOutboundRunVerificationProbe();
+    }
+
+    /**
+     * Record the manager's replay-requirement reads (forwarded); the first
+     * `failFirst` reads reject instead. `hold` parks each read until
+     * `releaseReplayGasReads`.
+     */
+    public stubRecordReplayGasReads(failFirst: number, hold: boolean): boolean {
+        this.service.installReplayGasReadRecorder(failFirst, hold);
+        return true;
+    }
+
+    /** Reads parked at the replay-gas read hold so far. */
+    public getHeldReplayGasReadCount(): number {
+        return this.service.replayGasReadHold?.held ?? 0;
+    }
+
+    public releaseReplayGasReads(): boolean {
+        return this.service.releaseReplayGasReads();
+    }
+
+    public getRecordedReplayGasReads(): RecordedReplayGasRead[] {
+        return this.service.recordedReplayGasReads.map((read) => ({
+            ...read
+        }));
+    }
+
+    public restoreReplayGasReads(): boolean {
+        return this.service.restoreReplayGasReads();
+    }
+
+    /**
+     * Keep this peer out of a kill race (counts the kills it skipped): both
+     * the lone kill and the kill-then-dispute multicall, which the audit uses
+     * while this peer has not disputed yet, are skipped whole.
+     */
+    public stubSuppressDisputeKill(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("disputeKill")) {
+            this.service.stubOriginals.set(
+                "disputeKill",
+                disputeManager.killDispute.bind(disputeManager)
+            );
+            this.service.stubOriginals.set(
+                "disputeKillMulticall",
+                disputeManager.dispute.bind(disputeManager)
+            );
+        }
+        const dispute = this.service.stubOriginals.get(
+            "disputeKillMulticall"
+        ) as typeof disputeManager.dispute;
+        this.service.suppressedDisputeKillCount = 0;
+        disputeManager.killDispute = (async () => {
+            this.service.suppressedDisputeKillCount += 1;
+        }) as typeof disputeManager.killDispute;
+        disputeManager.dispute = (async (forkId, options) => {
+            if (!options?.kill) return dispute(forkId, options);
+            this.service.suppressedDisputeKillCount += 1;
+            return {};
+        }) as typeof disputeManager.dispute;
+        return true;
+    }
+
+    public getSuppressedDisputeKillCount(): number {
+        return this.service.suppressedDisputeKillCount;
+    }
+
+    /**
+     * Record-only: count this peer's full state-proof builds (finalized-only
+     * reads are not counted). `failFirst` rejects the first counted build.
+     */
+    public stubCountStateProofBuilds(options: { failFirst: boolean }): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("stateProofBuilds"))
+            this.service.stubOriginals.set(
+                "stateProofBuilds",
+                agreementManager.buildStateProof.bind(agreementManager)
+            );
+        const build = this.service.stubOriginals.get(
+            "stateProofBuilds"
+        ) as typeof agreementManager.buildStateProof;
+        this.service.stateProofBuildCount = 0;
+        agreementManager.buildStateProof = async (
+            forkId,
+            blockHeight,
+            buildOptions
+        ) => {
+            if (buildOptions?.finalizedOnly)
+                return build(forkId, blockHeight, buildOptions);
+            this.service.stateProofBuildCount += 1;
+            if (options.failFirst && this.service.stateProofBuildCount === 1)
+                throw new Error("stubbed state proof build failure");
+            return build(forkId, blockHeight, buildOptions);
+        };
+        return true;
+    }
+
+    public getStateProofBuildCount(): number {
+        return this.service.stateProofBuildCount;
+    }
+
+    public getReplayGasBlockReadFailures(): number {
+        return this.service.replayGasBlockReadFailures;
+    }
+
+    /**
+     * Reject the next latest-block read made by the dispute manager's gas
+     * limit (`replayGasLimit`); every other read of the shared provider passes.
+     */
+    public stubFailReplayGasBlockRead(): boolean {
+        const provider =
+            this.service.sm.stateChannelManagerContract.runner?.provider;
+        if (!provider) throw new Error("the manager contract has no provider");
+        const getBlock = provider.getBlock.bind(provider);
+        let failed = false;
+        Reflect.set(
+            provider,
+            "getBlock",
+            (...args: Parameters<typeof getBlock>) => {
+                if (!failed && new Error().stack?.includes("replayGasLimit")) {
+                    failed = true;
+                    this.service.replayGasBlockReadFailures += 1;
+                    return Promise.reject(
+                        new Error("stubbed block read failure")
+                    );
+                }
+                return getBlock(...args);
+            }
+        );
+        return true;
+    }
+
+    public restoreDisputeKill(): boolean {
+        const original = this.service.stubOriginals.get("disputeKill");
+        if (original === undefined) return false;
+        const disputeManager = this.service.sm.disputeManager;
+        disputeManager.killDispute =
+            original as typeof disputeManager.killDispute;
+        disputeManager.dispute = this.service.stubOriginals.get(
+            "disputeKillMulticall"
+        ) as typeof disputeManager.dispute;
+        this.service.stubOriginals.delete("disputeKill");
+        this.service.stubOriginals.delete("disputeKillMulticall");
+        return true;
+    }
+
+    /**
+     * No `dispute()` holds or waits on the dispute mutex (its state is
+     * private) and no dispute event is still being handled.
+     */
+    public isDisputeMutexIdle(): boolean {
+        const mutex = this.service.sm.disputeManager.mutex as unknown as {
+            isLocked: boolean;
+            queue: unknown[];
+        };
+        return (
+            !mutex.isLocked &&
+            mutex.queue.length === 0 &&
+            this.service.sm.eventHandler["disputeHandlingPromises"].size === 0
+        );
+    }
+
+    /** Callers queued behind the dispute mutex (its queue is private). */
+    public getDisputeMutexWaiterCount(): number {
+        return (
+            this.service.sm.disputeManager.mutex as unknown as {
+                queue: unknown[];
+            }
+        ).queue.length;
+    }
+
+    /**
+     * Park `constructDispute` for `forkId` at its `buildStateProof` await -
+     * the first async boundary inside it, so a construction parked there has
+     * started but has not yet read the stored fraud proofs. The park is scoped
+     * to a running `constructDispute`, so an unrelated `buildStateProof`
+     * caller can never take it instead and leave the test's race unstaged.
+     */
+    public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
+            this.service.stubOriginals.set(
+                "constructDisputeStateProof",
+                agreementManager.buildStateProof.bind(agreementManager)
+            );
+        }
+        if (!this.service.stubOriginals.has("constructDisputeEntry")) {
+            this.service.stubOriginals.set(
+                "constructDisputeEntry",
+                disputeManager.constructDispute.bind(disputeManager)
+            );
+        }
+        const originalStateProof = this.service.stubOriginals.get(
+            "constructDisputeStateProof"
+        ) as typeof agreementManager.buildStateProof;
+        const originalConstruct = this.service.stubOriginals.get(
+            "constructDisputeEntry"
+        ) as typeof disputeManager.constructDispute;
+
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const state: PausedConstructDisputeState = {
+            targetForkId: forkId,
+            entered: 0,
+            uploadConstructions: 0,
+            released: false,
+            inside: false,
+            gate,
+            release
+        };
+        this.service.pausedConstructDispute = state;
+
+        disputeManager.constructDispute = (requestedForkId, options) => {
+            if (requestedForkId !== state.targetForkId) {
+                return originalConstruct(requestedForkId, options);
+            }
+            state.inside = true;
+            // only the upload passes expectedSlashes; the evidence comparison does not
+            if (options?.expectedSlashes) state.uploadConstructions += 1;
+            // the audit's proof is dropped -> construction builds its own and parks
+            return originalConstruct(
+                requestedForkId,
+                options && { ...options, latestStateProof: undefined }
+            ).finally(() => {
+                state.inside = false;
+            });
+        };
+
+        agreementManager.buildStateProof = async (
+            requestedForkId,
+            blockHeight,
+            options
+        ) => {
+            if (
+                state.inside &&
+                requestedForkId === state.targetForkId &&
+                !state.released
+            ) {
+                state.entered += 1;
+                await state.gate;
+            }
+            return originalStateProof(requestedForkId, blockHeight, options);
+        };
+        return true;
+    }
+
+    public releasePausedConstructDispute(): boolean {
+        const state = this.service.pausedConstructDispute;
+        if (!state) return false;
+        state.released = true;
+        state.release();
+        return true;
+    }
+
+    public getPausedConstructDisputeStatus(): PausedConstructDisputeStatus {
+        const state = this.service.pausedConstructDispute;
+        return {
+            entered: state?.entered ?? 0,
+            uploadConstructions: state?.uploadConstructions ?? 0,
+            released: state?.released ?? false
+        };
+    }
+
+    public restorePausedConstructDispute(): boolean {
+        this.releasePausedConstructDispute();
+        const originalStateProof = this.service.stubOriginals.get(
+            "constructDisputeStateProof"
+        );
+        if (originalStateProof === undefined) return false;
+        const agreementManager = this.service.sm.agreementManager;
+        agreementManager.buildStateProof =
+            originalStateProof as typeof agreementManager.buildStateProof;
+        this.service.stubOriginals.delete("constructDisputeStateProof");
+
+        const originalConstruct = this.service.stubOriginals.get(
+            "constructDisputeEntry"
+        );
+        if (originalConstruct !== undefined) {
+            const disputeManager = this.service.sm.disputeManager;
+            disputeManager.constructDispute =
+                originalConstruct as typeof disputeManager.constructDispute;
+            this.service.stubOriginals.delete("constructDisputeEntry");
+        }
+        this.service.pausedConstructDispute = undefined;
+        return true;
+    }
+
+    /** Hold StateSnapshotUpdated events instead of handling them. */
+    public stubHoldSnapshotUpdatedEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("snapshotUpdatedEvents")) {
+            this.service.stubOriginals.set(
+                "snapshotUpdatedEvents",
+                eventHandler.onStateSnapshotUpdated.bind(eventHandler)
+            );
+        }
+        eventHandler.onStateSnapshotUpdated = (async (...args: unknown[]) => {
+            this.service.heldSnapshotUpdatedArgs.push(args);
+        }) as typeof eventHandler.onStateSnapshotUpdated;
+        return true;
+    }
+
+    /** Restore the handler; optionally replay the held events through it. */
+    public restoreSnapshotUpdatedEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get(
+            "snapshotUpdatedEvents"
+        );
+        if (original === undefined) return false;
+        const restored = original as typeof eventHandler.onStateSnapshotUpdated;
+        eventHandler.onStateSnapshotUpdated = restored;
+        this.service.stubOriginals.delete("snapshotUpdatedEvents");
+        const held = this.service.heldSnapshotUpdatedArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    public getHeldSnapshotUpdatedCount(): number {
+        return this.service.heldSnapshotUpdatedArgs.length;
+    }
+
+    /** Hold InboundMessagesProcessed events instead of handling them. */
+    public stubHoldInboundMessageEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("inboundMessageEvents")) {
+            this.service.stubOriginals.set(
+                "inboundMessageEvents",
+                eventHandler.onInboundMessagesProcessed.bind(eventHandler)
+            );
+        }
+        eventHandler.onInboundMessagesProcessed = (async (
+            ...args: unknown[]
+        ) => {
+            this.service.heldInboundMessageArgs.push(args);
+        }) as typeof eventHandler.onInboundMessagesProcessed;
+        return true;
+    }
+
+    /** Restore the handler; optionally replay the held events through it. */
+    public restoreInboundMessageEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get("inboundMessageEvents");
+        if (original === undefined) return false;
+        const restored =
+            original as typeof eventHandler.onInboundMessagesProcessed;
+        eventHandler.onInboundMessagesProcessed = restored;
+        this.service.stubOriginals.delete("inboundMessageEvents");
+        const held = this.service.heldInboundMessageArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    public getHeldInboundMessageCount(): number {
+        return this.service.heldInboundMessageArgs.length;
+    }
+
+    /**
+     * Hold only the inbound storage write of InboundMessagesProcessed: the
+     * local diamond still applies the event, while inbound storage lags it.
+     */
+    public stubHoldInboundMessageStorage(): boolean {
+        const sm = this.service.sm;
+        if (!this.service.stubOriginals.has("inboundMessageStorage")) {
+            this.service.stubOriginals.set(
+                "inboundMessageStorage",
+                sm.onInboundMessage.bind(sm)
+            );
+        }
+        sm.onInboundMessage = (async (
+            ...args: Parameters<typeof sm.onInboundMessage>
+        ) => {
+            this.service.heldInboundStorageArgs.push(args);
+        }) as typeof sm.onInboundMessage;
+        return true;
+    }
+
+    /** Restore the storage write; optionally replay the held writes through it. */
+    public async restoreInboundMessageStorage(
+        replay: boolean
+    ): Promise<boolean> {
+        const sm = this.service.sm;
+        const original = this.service.stubOriginals.get(
+            "inboundMessageStorage"
+        );
+        if (original === undefined) return false;
+        const restored = original as typeof sm.onInboundMessage;
+        sm.onInboundMessage = restored;
+        this.service.stubOriginals.delete("inboundMessageStorage");
+        const held = this.service.heldInboundStorageArgs.splice(0);
+        if (replay) for (const args of held) await restored(...args);
+        return true;
+    }
+
+    /**
+     * Drop selected subscribed logs before the scheduler records their key.
+     * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
+     * only loses the delivery - an explicit query of the same log still reaches
+     * the real scheduler, so recovery can heal it. `dropCount` caps how many
+     * distinct keys are lost (default: all).
+     */
+    public stubDropEventLogs(
+        eventNames: (
+            | "InboundMessagesProcessed"
+            | "ChainSlashed"
+            | "DisputeKilled"
+        )[],
+        dropCount?: number
+    ): boolean {
+        if (
+            !Array.isArray(eventNames) ||
+            eventNames.some(
+                (name) =>
+                    ![
+                        "InboundMessagesProcessed",
+                        "ChainSlashed",
+                        "DisputeKilled"
+                    ].includes(name)
+            )
+        )
+            throw new Error("Invalid event log drop selection");
+        const eventSyncService = this.service.sm.eventSyncService;
+        // an omitted arg crosses the port as null -> normalize to "no limit"
+        this.service.eventLogDropLimit = dropCount ?? undefined;
+        if (!this.service.stubOriginals.has("eventLogs")) {
+            this.service.stubOriginals.set(
+                "eventLogs",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "eventLogs"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed && eventNames.some((name) => name === parsed.name)) {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                const limit = this.service.eventLogDropLimit;
+                const dropped = this.service.droppedEventLogKeys;
+                if (
+                    !dropped.has(eventKey) &&
+                    (limit === undefined || dropped.size < limit)
+                ) {
+                    dropped.add(eventKey);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    /** Restore scheduling. Dropped subscription payloads are recovered by query. */
+    public restoreEventLogs(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get("eventLogs");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("eventLogs");
+        this.service.droppedEventLogKeys.clear();
+        this.service.eventLogDropLimit = undefined;
+        return true;
+    }
+
+    public getDroppedEventLogCount(): number {
+        return this.service.droppedEventLogKeys.size;
+    }
+
+    public stubFailOnChainSlashesRead(): boolean {
+        this.service.failOnChainSlashesRead();
+        return true;
+    }
+
+    public restoreOnChainSlashesRead(): boolean {
+        return this.service.restoreOnChainSlashesRead();
+    }
+
+    /** Make every provider getLogs answer no logs, so no recovery query finds a missing log. */
+    public stubHideChainLogs(): boolean {
+        this.service.hideChainLogs();
+        return true;
+    }
+
+    /** Record every provider getLogs span and forward it. */
+    public stubCountChainLogQueries(): boolean {
+        this.service.countChainLogQueries();
+        return true;
+    }
+
+    public getChainLogQueryCount(): number {
+        return this.service.chainLogQueries.length;
+    }
+
+    public restoreChainLogQueries(): boolean {
+        return this.service.restoreChainLogQueries();
+    }
+
+    /** Make onDisputeCommitted throw for every dispatched dispute log. */
+    public stubFailDisputeCommittedHandler(): boolean {
+        this.service.failDisputeCommittedHandler();
+        return true;
+    }
+
+    public restoreDisputeCommittedHandler(): boolean {
+        return this.service.restoreDisputeCommittedHandler();
+    }
+
+    public getFailedDisputeCommittedHandlerCallCount(): number {
+        return this.service.failedDisputeCommittedHandlerCalls;
+    }
+
+    /** Hold onDisputeCommitted until the next dispute log query answered. */
+    public stubHoldDisputeCommittedHandlingUntilLogQuery(): boolean {
+        this.service.holdDisputeCommittedHandlingUntilLogQuery();
+        return true;
+    }
+
+    public releaseDisputeCommittedHandling(): boolean {
+        return this.service.releaseDisputeCommittedHandling();
+    }
+
+    public getHeldDisputeCommittedHandlingCount(): number {
+        return this.service.disputeCommittedHandlingGate?.entered ?? 0;
+    }
+
+    /** Drop subscribed dispute logs before the scheduler records their key. */
+    public stubHoldDisputeCommittedEvents(passFirst = true): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        this.service.passFirstDisputeCommittedEvent = passFirst;
+        if (!this.service.stubOriginals.has("disputeCommittedEvents")) {
+            this.service.stubOriginals.set(
+                "disputeCommittedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "disputeCommittedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (
+                parsed?.name === "DisputeCommitted" ||
+                parsed?.name === "DisputeCommittedWithAuditingData"
+            ) {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (
+                    this.service.passFirstDisputeCommittedEvent &&
+                    this.service.passedDisputeCommittedEventKeys.size === 0
+                ) {
+                    // Let the dispute under validation arrive, then model a
+                    // missed subscription delivery for replacement evidence.
+                    this.service.passedDisputeCommittedEventKeys.add(eventKey);
+                    return original(...args);
+                }
+                const wasAlreadyDropped =
+                    this.service.heldDisputeCommittedArgs.some(
+                        ([heldKey]) => heldKey === eventKey
+                    );
+                if (!wasAlreadyDropped) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.service.heldDisputeCommittedArgs.push([eventKey]);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    /** Restore scheduling. Dropped subscription payloads are recovered by query. */
+    public restoreDisputeCommittedEvents(replay: boolean): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get(
+            "disputeCommittedEvents"
+        );
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("disputeCommittedEvents");
+        this.service.heldDisputeCommittedArgs.splice(0);
+        this.service.passedDisputeCommittedEventKeys.clear();
+        this.service.passFirstDisputeCommittedEvent = true;
+        void replay;
+        return true;
+    }
+
+    public getHeldDisputeCommittedCount(): number {
+        return this.service.heldDisputeCommittedArgs.length;
+    }
+
+    /** Hold subscribed calldata logs before the scheduler records their key. */
+    public stubHoldCalldataPostedEvents(): boolean {
+        this.service.holdCalldataPostedEvents();
+        return true;
+    }
+
+    public restoreCalldataPostedEvents(): boolean {
+        return this.service.restoreCalldataPostedEvents();
+    }
+
+    /** Resolves once a subscribed calldata log has been held. */
+    public waitForHeldCalldataPostedEvent(): Promise<boolean> {
+        return this.service.waitForHeldCalldataPostedEvent();
+    }
+
+    /** Reserve this participant as a later evidence author. */
+    public stubSuppressDisputeInitiation(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("disputeInitiation")) {
+            this.service.stubOriginals.set(
+                "disputeInitiation",
+                disputeManager.dispute.bind(disputeManager)
+            );
+        }
+        // the dispute is suppressed; a kill it would carry still lands alone
+        disputeManager.dispute = (async (_forkId, options) => {
+            if (options?.kill) await disputeManager.killDispute(options.kill);
+            return {};
+        }) as typeof disputeManager.dispute;
+        return true;
+    }
+
+    public restoreDisputeInitiation(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        const original = this.service.stubOriginals.get("disputeInitiation");
+        if (original === undefined) return false;
+        disputeManager.dispute = original as typeof disputeManager.dispute;
+        this.service.stubOriginals.delete("disputeInitiation");
+        return true;
+    }
+
+    /** Fail the next final-dispute output preparation, then restore immediately. */
+    public stubFailNextFinalDisputePreparation(): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("finalDisputePreparation")) {
+            this.service.stubOriginals.set(
+                "finalDisputePreparation",
+                agreementManager.getLatestSnapshotFromStateProof.bind(
+                    agreementManager
+                )
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "finalDisputePreparation"
+        ) as typeof agreementManager.getLatestSnapshotFromStateProof;
+        agreementManager.getLatestSnapshotFromStateProof = ((...args) => {
+            agreementManager.getLatestSnapshotFromStateProof = original;
+            this.service.stubOriginals.delete("finalDisputePreparation");
+            void args;
+            throw new Error("Forced final-dispute output preparation failure");
+        }) as typeof agreementManager.getLatestSnapshotFromStateProof;
+        return true;
+    }
+
+    public restoreFinalDisputePreparation(): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        const original = this.service.stubOriginals.get(
+            "finalDisputePreparation"
+        );
+        if (original === undefined) return false;
+        agreementManager.getLatestSnapshotFromStateProof =
+            original as typeof agreementManager.getLatestSnapshotFromStateProof;
+        this.service.stubOriginals.delete("finalDisputePreparation");
+        return true;
+    }
+
+    /** Hold DisputeReducedResultCommitted events instead of handling them. */
+    public stubHoldReducedCommitEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("reducedCommitEvents")) {
+            this.service.stubOriginals.set(
+                "reducedCommitEvents",
+                eventHandler.onDisputeReducedResultCommitted.bind(eventHandler)
+            );
+        }
+        eventHandler.onDisputeReducedResultCommitted = (async (
+            ...args: unknown[]
+        ) => {
+            this.service.heldReducedCommitArgs.push(args);
+        }) as typeof eventHandler.onDisputeReducedResultCommitted;
+        return true;
+    }
+
+    public restoreReducedCommitEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get("reducedCommitEvents");
+        if (original === undefined) return false;
+        const restored =
+            original as typeof eventHandler.onDisputeReducedResultCommitted;
+        eventHandler.onDisputeReducedResultCommitted = restored;
+        this.service.stubOriginals.delete("reducedCommitEvents");
+        const held = this.service.heldReducedCommitArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    /** `ReductionManager.tryReduce` counts calls and resolves as a no-op. */
+    public stubReduceNoop(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("reduce")) {
+            this.service.stubOriginals.set(
+                "reduce",
+                reductionManager.tryReduce.bind(reductionManager)
+            );
+        }
+        this.service.reduceCallCount = 0;
+        reductionManager.tryReduce = (async () => {
+            this.service.reduceCallCount += 1;
+            return undefined;
+        }) as typeof reductionManager.tryReduce;
+        return true;
+    }
+
+    /** `ReductionManager.tryReduce` counts calls and forwards to the real method. */
+    public stubRecordReduce(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("reduce")) {
+            this.service.stubOriginals.set(
+                "reduce",
+                reductionManager.tryReduce.bind(reductionManager)
+            );
+        }
+        this.service.reduceCallCount = 0;
+        const original = this.service.stubOriginals.get(
+            "reduce"
+        ) as typeof reductionManager.tryReduce;
+        reductionManager.tryReduce = ((forkId) => {
+            this.service.reduceCallCount += 1;
+            return original(forkId);
+        }) as typeof reductionManager.tryReduce;
+        return true;
+    }
+
+    public restoreReduce(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        const original = this.service.stubOriginals.get("reduce");
+        if (original === undefined) return false;
+        reductionManager.tryReduce =
+            original as typeof reductionManager.tryReduce;
+        this.service.stubOriginals.delete("reduce");
+        return true;
+    }
+
+    public getReduceCallCount(): number {
+        return this.service.reduceCallCount;
+    }
+
+    /** Make the next reduction simulation fail with a selected contract error. */
+    public stubNextReductionSimulationError(
+        errorName: ReductionSimulationErrorName
+    ): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.call) {
+            throw new Error(
+                "Reduction simulation runner does not support call"
+            );
+        }
+        if (!this.service.stubOriginals.has("reductionSimulation")) {
+            this.service.stubOriginals.set(
+                "reductionSimulation",
+                runner.call.bind(runner)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "reductionSimulation"
+        ) as NonNullable<typeof runner.call>;
+        const multicallSelector =
+            contract.interface.getFunction("multicall")!.selector;
+        // Built from the error's own ABI fragment, so an error that takes
+        // arguments still yields revert data the client can decode. A
+        // hand-hashed `Name()` selector decodes to nothing once the error
+        // gains a parameter.
+        const encodedRevert = encodedCustomErrorRevert(errorName);
+        runner.call = async (transaction) => {
+            if (!String(transaction.data).startsWith(multicallSelector)) {
+                return await original(transaction);
+            }
+            runner.call = original;
+            this.service.stubOriginals.delete("reductionSimulation");
+            throw { data: encodedRevert };
+        };
+        return true;
+    }
+
+    /**
+     * Record each `spectateService.requestSync` call (`syncBlockSource`
+     * calls it too)
+     * and its selected peer. A
+     * forwarded call also records its start, settle time, result and the
+     * timeout of the request it started; with
+     * `holdResults`, its result is parked after that record until
+     * `restoreSpectateSync`.
+     */
+    public stubRecordSpectateSync(
+        forward: boolean,
+        holdResults = false
+    ): boolean {
+        const spectate = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateSync")) {
+            this.service.stubOriginals.set(
+                "spectateSync",
+                spectate.requestSync.bind(spectate)
+            );
+        }
+        this.service.spectateSyncCallCount = 0;
+        this.service.spectateSyncTargets.length = 0;
+        this.service.spectateSyncSettles.length = 0;
+        this.service.spectateSyncResultGate?.release();
+        const resultGate = holdResults ? this.service.createGate() : undefined;
+        this.service.spectateSyncResultGate = resultGate;
+        const original = this.service.stubOriginals.get(
+            "spectateSync"
+        ) as typeof spectate.requestSync;
+        // A call that starts its own request reaches `runSync` before its
+        // first await; the wrap reads the timeout that request got.
+        if (!this.service.stubOriginals.has("spectateRunSync")) {
+            this.service.stubOriginals.set(
+                "spectateRunSync",
+                Reflect.get(spectate, "runSync")
+            );
+        }
+        const runSync = this.service.stubOriginals.get("spectateRunSync") as (
+            ...args: unknown[]
+        ) => Promise<SyncResult>;
+        let requestTimeoutMs: number | undefined;
+        Reflect.set(spectate, "runSync", (...args: unknown[]) => {
+            requestTimeoutMs = args[2] as number;
+            return Reflect.apply(runSync, spectate, args);
+        });
+        spectate.requestSync = (
+            ...args: Parameters<typeof spectate.requestSync>
+        ) => {
+            this.service.recordSpectateSyncCall(String(args[0]));
+            if (!forward) return Promise.resolve(SyncResult.Synced);
+            const callNumber = this.service.spectateSyncCallCount;
+            const startedAt = Date.now();
+            requestTimeoutMs = undefined;
+            const pending = original(...args);
+            const startedRequestTimeoutMs = requestTimeoutMs;
+            return pending.then(async (result) => {
+                this.service.spectateSyncSettles.push({
+                    callNumber,
+                    startedAt,
+                    settledAt: Date.now(),
+                    result,
+                    ...(startedRequestTimeoutMs !== undefined && {
+                        requestTimeoutMs: startedRequestTimeoutMs
+                    })
+                });
+                if (resultGate) {
+                    resultGate.entered += 1;
+                    await resultGate.gate;
+                }
+                return result;
+            });
+        };
+        return true;
+    }
+
+    public getSpectateSyncSettles(): SpectateSyncSettle[] {
+        return this.service.spectateSyncSettles;
+    }
+
+    public restoreSpectateSync(): boolean {
+        const spectate = this.p2pManager.localRpc.spectateService;
+        this.service.spectateSyncResultGate?.release();
+        this.service.spectateSyncResultGate = undefined;
+        const runSync = this.service.stubOriginals.get("spectateRunSync");
+        if (runSync !== undefined) {
+            Reflect.set(spectate, "runSync", runSync);
+            this.service.stubOriginals.delete("spectateRunSync");
+        }
+        const original = this.service.stubOriginals.get("spectateSync");
+        if (original === undefined) return false;
+        spectate.requestSync = original as typeof spectate.requestSync;
+        this.service.stubOriginals.delete("spectateSync");
+        return true;
+    }
+
+    public getSpectateSyncCallCount(): number {
+        return this.service.spectateSyncCallCount;
+    }
+
+    /** Resolves with the sync targets once `count` sync calls have been made. */
+    public waitForSpectateSyncCalls(count: number): Promise<string[]> {
+        return this.service.waitForSpectateSyncCalls(count);
+    }
+
+    /** Staging: force this peer's session status (fault injection). */
+    public setPeerStatus(status: Status): boolean {
+        this.service.sm.setStatus(status);
+        return true;
+    }
+
+    public holdLobbyReply(
+        kind: HeldLobbyReplyKind,
+        rejectOnRelease = false
+    ): boolean {
+        this.service.holdLobbyReply(kind, rejectOnRelease);
+        return true;
+    }
+
+    public releaseLobbyReply(): number {
+        return this.service.releaseLobbyReply();
+    }
+
+    public delayCommitReplyUntilNegotiation(): boolean {
+        this.service.delayCommitReplyUntilNegotiation();
+        return true;
+    }
+
+    public holdNegotiationReply(kind: HeldNegotiationReplyKind): boolean {
+        this.service.holdNegotiationReply(kind);
+        return true;
+    }
+
+    public releaseNegotiationReply(): number {
+        return this.service.releaseNegotiationReply();
+    }
+
+    public getHeldNegotiationReplyCount(): number {
+        return this.service.getHeldNegotiationReplyCount();
+    }
+
+    public holdMatchedNegotiation(fail = false): boolean {
+        this.service.holdMatchedNegotiation(fail);
+        return true;
+    }
+
+    public releaseMatchedNegotiation(): number {
+        return this.service.releaseMatchedNegotiation();
+    }
+
+    public getHeldMatchedNegotiationCount(): number {
+        return this.service.getHeldMatchedNegotiationCount();
+    }
+
+    public holdLobbyCompletion(): boolean {
+        this.service.holdLobbyCompletion();
+        return true;
+    }
+
+    public releaseLobbyCompletion(): number {
+        return this.service.releaseLobbyCompletion();
+    }
+
+    public failNextMatchedNegotiation(): boolean {
+        this.service.failNextMatchedNegotiation();
+        return true;
+    }
+
+    public holdSpectateResponses(fail = false, beforeAnswer = false): boolean {
+        this.service.holdSpectateResponses(fail, beforeAnswer);
+        return true;
+    }
+
+    public releaseSpectateResponses(): number {
+        return this.service.releaseSpectateResponses();
+    }
+
+    public getHeldSpectateResponseCount(): number {
+        return this.service.getHeldSpectateResponseCount();
+    }
+
+    public holdOpenedStatusRefresh(
+        heldRead: HeldOpenedStatusRead,
+        autoReleaseMs?: number
+    ): boolean {
+        this.service.holdOpenedStatusRefresh(heldRead, autoReleaseMs);
+        return true;
+    }
+
+    public releaseOpenedStatusRefresh(): number {
+        return this.service.releaseOpenedStatusRefresh();
+    }
+
+    public holdParticipantCheck(): boolean {
+        this.service.holdParticipantCheck();
+        return true;
+    }
+
+    public releaseParticipantCheck(answer: ParticipantCheckAnswer): number {
+        return this.service.releaseParticipantCheck(answer);
+    }
+
+    public releaseOneParticipantCheck(answer: ParticipantCheckAnswer): boolean {
+        return this.service.releaseOneParticipantCheck(answer);
+    }
+
+    public getHeldParticipantCheckCount(): number {
+        return this.service.getHeldParticipantCheckCount();
+    }
+
+    public getHeldOpenedStatusRefreshCount(): number {
+        return this.service.getHeldOpenedStatusRefreshCount();
+    }
+
+    public holdMembershipReceipt(
+        kind: HeldMembershipReceiptKind,
+        fail = false
+    ): boolean {
+        this.service.holdMembershipReceipt(kind, fail);
+        return true;
+    }
+
+    public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
+        this.service.holdMembershipSubmission(kind);
+        return true;
+    }
+
+    public holdFirstJoinSendAfterEstimate(
+        kind?: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.holdFirstJoinSendAfterEstimate(kind);
+        return true;
+    }
+
+    public getHeldJoinSendAfterEstimateCount(): number {
+        return this.service.getHeldJoinSendAfterEstimateCount();
+    }
+
+    public releaseJoinSendAfterEstimate(): number {
+        return this.service.releaseJoinSendAfterEstimate();
+    }
+
+    /** Releases the submissions held so far and keeps holding later ones. */
+    public releaseOneMembershipSubmission(): number {
+        return this.service.releaseOneMembershipSubmission();
+    }
+
+    /**
+     * Abort the runtime after this request answers, then release the held
+     * submissions into the disposed runtime; the teardown waits for their outcome.
+     */
+    public abortReleasingMembershipSubmission(): boolean {
+        this.service.abortReleasingMembershipSubmission();
+        return true;
+    }
+
+    public holdQueueProbe(): boolean {
+        this.service.holdQueueProbe();
+        return true;
+    }
+    public getQueueProbeObservation() {
+        return this.service.getQueueProbeObservation();
+    }
+    public releaseQueueProbe(): boolean {
+        this.service.releaseQueueProbe();
+        return true;
+    }
+
+    public async startTimeoutConstruction(
+        writer: string,
+        height?: BlockHeight
+    ): Promise<boolean> {
+        return this.service.startTimeoutConstruction(writer, height);
+    }
+
+    public holdTimeoutBuild(seam: "chain" | "mirror" = "chain"): boolean {
+        this.service.holdTimeoutBuild(seam);
+        return true;
+    }
+
+    public getTimeoutBuildObservation(): { entered: number; stored: number } {
+        return this.service.getTimeoutBuildObservation();
+    }
+
+    public releaseTimeoutBuild(): boolean {
+        this.service.releaseTimeoutBuild();
+        return true;
+    }
+
+    public restoreTimeoutBuildRecording(): boolean {
+        this.service.restoreTimeoutBuildRecording();
+        return true;
+    }
+
+    public stubFailChainReads(
+        method:
+            | "getBlockCallDataCommitment"
+            | "getDisputeWindowCreationTimestamp"
+            | "getReducedResult",
+        times: number
+    ): boolean {
+        this.service.stubFailChainReads(method, times);
+        return true;
+    }
+
+    public getChainReadObservation(): { failed: number; passed: number } {
+        return this.service.getChainReadObservation();
+    }
+
+    public restoreChainReadFailures(): boolean {
+        this.service.restoreChainReadFailures();
+        return true;
+    }
+
+    public stubFailDisputedForkChecks(times: number): boolean {
+        this.service.stubFailDisputedForkChecks(times);
+        return true;
+    }
+
+    public getDisputedForkCheckObservation(): {
+        failed: number;
+        passed: number;
+    } {
+        return this.service.getDisputedForkCheckObservation();
+    }
+
+    public restoreDisputedForkCheckFailures(): boolean {
+        this.service.restoreDisputedForkCheckFailures();
+        return true;
+    }
+
+    public stubFailKillPeriodReads(times: number): boolean {
+        this.service.stubFailKillPeriodReads(times);
+        return true;
+    }
+
+    public getKillPeriodReadObservation(): {
+        failed: number;
+        passed: number;
+    } {
+        return this.service.getKillPeriodReadObservation();
+    }
+
+    public restoreKillPeriodReadFailures(): boolean {
+        this.service.restoreKillPeriodReadFailures();
+        return true;
+    }
+
+    public recordIngestOutcomes(): boolean {
+        this.service.recordIngestOutcomes();
+        return true;
+    }
+
+    public getIngestOutcomeRecords(): {
+        senderAddress: string;
+        blockHash: string;
+        outcome: string;
+    }[] {
+        return this.service.getIngestOutcomeRecords();
+    }
+
+    public restoreIngestOutcomeRecording(): boolean {
+        this.service.restoreIngestOutcomeRecording();
+        return true;
+    }
+
+    public stubThrowSyncApplication(): boolean {
+        this.service.stubThrowSyncApplication();
+        return true;
+    }
+
+    public getSyncApplicationObservation(): { thrown: number } {
+        return this.service.getSyncApplicationObservation();
+    }
+
+    public restoreSyncApplicationStub(): boolean {
+        this.service.restoreSyncApplicationStub();
+        return true;
+    }
+
+    public holdInitHandshakes(): boolean {
+        this.service.holdInitHandshakes();
+        return true;
+    }
+
+    public getHeldHandshakeCount(): number {
+        return this.service.getHeldHandshakeCount();
+    }
+
+    public releaseInitHandshakes(): boolean {
+        this.service.releaseInitHandshakes();
+        return true;
+    }
+
+    public holdInitHandshakesAndCompletionWaits(): boolean {
+        this.service.holdInitHandshakesAndCompletionWaits();
+        return true;
+    }
+
+    public releaseInitHandshakesAndCompletionWaits(): boolean {
+        this.service.releaseInitHandshakesAndCompletionWaits();
+        return true;
+    }
+
+    public recordConfirmationOperations(): boolean {
+        this.service.recordConfirmationOperations();
+        return true;
+    }
+
+    public async settleConfirmationOperations(
+        blockHashes: Hash[]
+    ): Promise<boolean> {
+        await this.service.settleConfirmationOperations(blockHashes);
+        return true;
+    }
+
+    /** Drop a proven peer's profile; its open transports keep their address. */
+    public stubUnregisterPeerProfile(peerAddress: Address): boolean {
+        return this.service.unregisterPeerProfile(peerAddress);
+    }
+
+    /** Drop the profile of every transport the handshake hold parked. */
+    public stubUnregisterHeldHandshakeProfiles(): number {
+        return this.service.unregisterHeldHandshakeProfiles();
+    }
+
+    public restoreUnregisteredProfiles(): number {
+        return this.service.restoreUnregisteredProfiles();
+    }
+
+    /** Record inbound request frames for `service` with their connection. */
+    public stubCaptureInboundRequestFrames(service: string): boolean {
+        this.service.captureInboundRequestFrames(service);
+        return true;
+    }
+
+    /** Deliver a captured frame again on the connection it arrived on. */
+    public injectCapturedRequestFrame(
+        index: number
+    ): Promise<{ transportClosed: boolean }> {
+        return this.service.injectCapturedRequestFrame(index);
+    }
+
+    public restoreInboundRequestFrames(): boolean {
+        this.service.restoreInboundRequestFrames();
+        return true;
+    }
+
+    public countInitHandshakeCalls(): boolean {
+        this.service.countInitHandshakeCalls();
+        return true;
+    }
+
+    public getInitHandshakeCallCount(): number {
+        return this.service.getInitHandshakeCallCount();
+    }
+
+    /** Fail `kind` submissions with a failed receipt (only the first with `once`; a passing replay with `isReplayPassing`); counted, never held. */
+    public failMembershipReceipt(
+        kind: HeldMembershipReceiptKind,
+        once?: boolean,
+        isReplayPassing?: boolean
+    ): boolean {
+        this.service.failMembershipReceipt(kind, once, isReplayPassing);
+        return true;
+    }
+
+    public landMembershipSubmissionThenFail(
+        kind: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.landMembershipSubmissionThenFail(kind);
+        return true;
+    }
+
+    public failMembershipSubmissionUncertain(
+        kind: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.failMembershipSubmissionUncertain(kind);
+        return true;
+    }
+
+    public releaseMembershipReceipt(): number {
+        return this.service.releaseMembershipReceipt();
+    }
+
+    public getHeldMembershipReceiptCount(): number {
+        return this.service.getHeldMembershipReceiptCount();
+    }
+
+    public holdSetChannelId(): boolean {
+        this.service.holdSetChannelId();
+        return true;
+    }
+
+    public releaseSetChannelId(): number {
+        return this.service.releaseSetChannelId();
+    }
+
+    public getHeldSetChannelIdCount(): number {
+        return this.service.getHeldSetChannelIdCount();
+    }
+
+    public holdEventListenerRemoval(): boolean {
+        this.service.holdEventListenerRemoval();
+        return true;
+    }
+
+    public releaseEventListenerRemoval(): number {
+        return this.service.releaseEventListenerRemoval();
+    }
+
+    public getHeldEventListenerRemovalCount(): number {
+        return this.service.getHeldEventListenerRemovalCount();
+    }
+
+    public overrideLobbyRoleDuration(durationMs: number): boolean {
+        this.service.overrideLobbyRoleDuration(durationMs);
+        return true;
+    }
+
+    public restoreLobbyRoleDuration(): boolean {
+        return this.service.restoreLobbyRoleDuration();
+    }
+
+    /**
+     * Record every `shouldAddOwnEvidence` audit and the evidence comparison
+     * `constructDispute` call inside it, count the other `constructDispute`
+     * calls, and forward all. `fault` applies only to the next comparison.
+     */
+    public stubRecordEvidenceComparisons(
+        fault?: EvidenceComparisonFault
+    ): boolean {
+        this.service.evidenceComparisons.install(this.service.sm, fault);
+        return true;
+    }
+
+    public getRecordedEvidenceComparisons(): {
+        comparisons: RecordedEvidenceComparison[];
+        audits: RecordedEvidenceAudit[];
+        disputeBuilds: number;
+        isHolding: boolean;
+    } {
+        const recorder = this.service.evidenceComparisons;
+        return {
+            comparisons: recorder.comparisons.map((comparison) => ({
+                ...comparison
+            })),
+            audits: recorder.audits.map((audit) => ({ ...audit })),
+            disputeBuilds: recorder.disputeBuilds,
+            isHolding: recorder.isHolding
+        };
+    }
+
+    public releaseHeldEvidenceComparison(
+        release: HeldEvidenceComparisonRelease
+    ): boolean {
+        return this.service.evidenceComparisons.releaseHeldComparison(release);
+    }
+
+    /** Ask `shouldAddOwnEvidence` again with the last audited dispute. */
+    public repeatLastEvidenceAudit(): Promise<RecordedEvidenceAudit> {
+        return this.service.evidenceComparisons.repeatLastAudit();
+    }
+
+    public restoreEvidenceComparisons(): boolean {
+        return this.service.evidenceComparisons.restore();
+    }
+
+    /**
+     * Record every live `onBlockConfirmation` RPC run (arrival and guard
+     * re-runs), the queue intake each run reaches and each response sent
+     * for it; forward all.
+     */
+    public stubRecordLiveBlockRetention(): boolean {
+        this.service.liveBlockRetention.install(this.service.sm);
+        return true;
+    }
+
+    public getRecordedLiveBlockRetention(): {
+        deliveries: RecordedLiveBlockDelivery[];
+        retainedCount: number;
+    } {
+        const recorder = this.service.liveBlockRetention;
+        return {
+            deliveries: recorder.deliveries.map((delivery) => ({
+                ...delivery,
+                intakes: delivery.intakes.map((intake) => ({ ...intake })),
+                responses: delivery.responses.map((response) => ({
+                    ...response
+                }))
+            })),
+            retainedCount: recorder.retainedCount
+        };
+    }
+
+    public restoreLiveBlockRetention(): boolean {
+        return this.service.liveBlockRetention.restore();
+    }
+}
+
+export default StubRpcMethods;

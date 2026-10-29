@@ -1,15 +1,13 @@
 .github
 .vscode
-artifacts
 cache
 examples
 node_modules
-scripts
-src
-test
+/scripts
+/src
+/test
 .env
 contracts.json
-hardhat.config.ts
 
 # Ignore all .tgz files
 *.tgz

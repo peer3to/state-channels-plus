@@ -1,0 +1,28 @@
+# run-p2p-webrtc-e2e.mjs
+
+Test file: [test/browser/run-p2p-webrtc-e2e.mjs](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs)
+
+## Overview
+
+The browser job in the CI workflow runs this gate inside the distributed runner image, under the environment's container limits (read-only root, no capabilities, a 256 MB `/tmp`), after installing and compiling in that same container, and reports the peak `/tmp` use. Local runs remain available through the package script. CI execution itself is established only after the workflow runs on a pull request.
+
+The runner behind package script `test:browser:webrtc` stands up a hardhat node (switched to
+interval mining so the browser's parallel HTTP nonce ordering works), a local-discovery relay
+hub, and a Vite dev server with browser platform aliases plus a same-origin `/rpc` proxy, then
+drives `test/browser/p2p-webrtc-e2e.html` in headless Chromium via Playwright. The page runs two
+REAL `p2pSetup` peers (full SDK + EVM stack deployed with `deployFullStack`) through two paths:
+(1) `p2pSetup` on the main thread with `RUN_SDK_IN_THREAD`, where each SDK worker surfaces a
+WebRTC bridge port that `p2pSetup` auto-installs; (2) `p2pSetup` inside app workers, whose bridge
+ports are bubbled up and installed by hand with `installWebRTCMainThreadBridge`. Oracles per
+path: both peers surface/install bridge ports, each peer's `onConnection` fires for the other's
+address, and a spied main-thread `RTCPeerConnection` reaches connected state — proof WebRTC
+negotiation was delegated up from workers that cannot drive it themselves; any page or worker
+error fails the run. This is the browser half of the dual-environment coverage for the SDK's
+peer-communication stack (discovery, handshake, transport upgrade to WebRTC). It proves the
+browser upgrade path works end to end but asserts no cutover-continuity, initiator-selection, or
+failure-path oracles, so the transport-upgrade and WebRTC-setup permutations (which each carry
+such oracles) remain with the targeted Node suites and none is assigned here.
+
+## Tests
+
+- `package script test:browser:webrtc`: INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1

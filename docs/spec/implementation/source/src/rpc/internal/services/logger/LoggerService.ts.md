@@ -1,0 +1,73 @@
+# LoggerService.ts
+
+> **Source:** [LoggerService.ts](../../../../../../../../../src/rpc/internal/services/logger/LoggerService.ts)
+
+## Requirements
+
+- [`INV-LOG-1-P4WT6R` (A collection reaches connected roots)](../../../../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r)
+- [`INV-LOG-2-C7KZ9M` (Collections never wait on one another)](../../../../../../../specification/runtime/log-collection.md#inv-log-2-c7kz9m)
+- [`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../../../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)
+- [`REQ-LOG-2-N6BJ3D` (The caller receives its local upload outcome)](../../../../../../../specification/runtime/log-collection.md#req-log-2-n6bj3d)
+- [`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)
+- [`REQ-LOG-8-B7VN3J` (Works wherever the runtime works)](../../../../../../../specification/runtime/log-collection.md#req-log-8-b7vn3j)
+- [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)
+- [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
+
+## UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0
+
+Optional store coordination, generations, cleanup and context
+
+- Setup: Actual SDK roots, real ports and HTTP receiver
+- Oracle: Local outcomes and actual receiver entries; no global completion claims
+
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P1` — attaches one shared store and preserves children until final disposal
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P2` — rejects attaching a logger family to a second service
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P3` — detaches surviving loggers when the service is disposed
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P4` — a standalone logger uploads without collecting an unrelated SDK
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P5` — uploads a connected realm's logger
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P6` — reaches a realm two ports away
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P7` — a leaf upload reaches its parent roots
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P8` — returns the local result while a remote POST is still pending
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P9` — coalesces nearby local triggers into one gossip generation
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P10` — advances for a fresh local trigger after the window
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P11` — ignores equal and older generations after the window
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P12` — ignores an old frame released after a newer generation and delay
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P13` — adopts a higher generation without incrementing it
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P14` — synchronizes a newly connected root before its first local trigger
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P15` — rejects invalid upload generations through the RPC boundary
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P16` — does not wrap an exhausted upload index
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P17` — terminates gossip across a cycle of real root connections
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P18` — concurrent roots upload without waiting on one another
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P19` — keeps at most one follow-up when higher generations arrive during a POST
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P20` — cancels a pending service upload on disposal
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P21` — a disabled store still relays uploads to enabled neighbours
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P22` — a child logger does not add a second upload
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P23` — an attached error triggers local and remote uploads
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P24` — a failed local upload preserves entries for a later attempt
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P25` — a synchronous post failure does not block the local upload
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P26` — context set after connecting reaches the leaf before its first upload
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P27` — does not apply a peer address arriving from a child
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P28` — a second root in the same realm follows the channel
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P29` — reaches a VM worker owned by an inline SDK
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P30` — connected SDK roots share the caller store without registering it twice
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P31` — a leaf crash retains late channel identity and triggers its client upload
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P32` — does not pass peer identity between inline roots
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P33` — rapid channel changes at a worker root reach parent and child with the final value and produce no context echo to the sender
+- [x] `UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P34` — updates the channel of every local store attached to the service
+
+## UNIT-TEST-LOGGER-FLUSH-1-GW82M3
+
+Abort flush across connected realms
+
+- Setup: Actual SDK roots, real ports, HTTP receiver with held responses
+- Oracle: Settlement time against the shared deadline, reported errors, receiver entries and pending requests
+
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P1` — a flush settles only once every connected realm has posted its logs
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P2` — a flush across a cycle of real root connections settles once and leaves no request pending
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P3` — a flush skips a neighbour that closes while its upload is held, reports no error, and settles soon after the closure
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P4` — a flush reports a neighbour's failure that is not a closure through the root error channel at once, still resolves, and waits for a held local upload until it arrives or the bound passes
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P5` — a flush ends at its bound when a neighbour never answers
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P6` — a realm that gets the flush request late still answers at the origin's deadline, not at a deadline of its own
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P7` — a realm asked to flush after the deadline answers at once while its own upload is still held
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P8` — a realm whose logger service was disposed answers a flush at once and asks no neighbour
+- [x] `UNIT-TEST-LOGGER-FLUSH-1-GW82M3.P9` — with no upload endpoint, a flush asks no realm and settles at once

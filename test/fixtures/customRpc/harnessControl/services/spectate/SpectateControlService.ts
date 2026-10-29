@@ -1,0 +1,64 @@
+// @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
+import SpectateControlRpcMethods from "./SpectateControlRpcMethods";
+import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
+import type P2PManager from "@/P2PManager";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { SyncPayload } from "@/types/spectate";
+import type { ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
+
+/**
+ * Spectator-flow operations for white-box tests, executed host-side. The live
+ * `spectateService` and storage are behind the runtime port; this exposes the
+ * pieces tests drive directly (generate/persist sync payload, just-persist a
+ * block). Accessors/state live here, not on the routable RpcMethods class.
+ *
+ * Typing `p2pManager` as `P2PManager<HarnessControlRpcShape>` gives fully-typed
+ * access to `localRpc` (the SDK's own services included) with no casts.
+ */
+export class SpectateControlService extends ANetworkRpcService<
+    SpectateControlRpcMethods,
+    P2PManager<HarnessControlRpcShape>
+> {
+    constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
+        super(
+            p2pManager.rpcRouter,
+            p2pManager.stateManager.logger.child({
+                component: "HarnessSpectateService"
+            })
+        );
+    }
+
+    get sm() {
+        return this.p2pManager.stateManager;
+    }
+
+    /** Decode an encoded sync payload host-side (for `execOnHost` bodies). */
+    decodeSyncPayload(encoded: string): SyncPayload {
+        return Codec.decode(encoded, Type.SyncPayload);
+    }
+
+    /** The SDK's live spectate service on this peer's local RPC. */
+    get spectate() {
+        return this.p2pManager.localRpc.spectateService;
+    }
+
+    /** An exact recovery request for this peer's own channel. */
+    buildSyncRequest(forkId: ForkId, blockHeight: number): SyncRequest {
+        return {
+            channelId: this.sm.channelId,
+            forkId,
+            blockHeight
+        };
+    }
+
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): SpectateControlRpcMethods {
+        return new SpectateControlRpcMethods(transport, this);
+    }
+}
+
+export default SpectateControlService;

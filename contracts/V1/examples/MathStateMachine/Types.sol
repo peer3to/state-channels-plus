@@ -8,6 +8,6 @@ contract MathTypes {
 struct JoinChannel {
     address participant;
     bytes32 channelId;
-    uint amount;
-    uint timestampDeadline;
+    uint256 amount;
+    uint256 timestampDeadline;
 }

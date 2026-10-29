@@ -1,0 +1,100 @@
+import { hexString } from "../../factory";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import { Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { expect } from "chai";
+
+describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", function () {
+    it("unlinked genesisStateSnapshotData against a valid genesis dispute → submitter slashed, honest disputer survives", async function () {
+        const h = TestSession.getHarness();
+
+        const honestDisputerIndex = 1;
+        const byzantineIndex = 2;
+
+        await h.lifecycle.timeoutSetup(4);
+
+        await h.assert.dispute.initiatedWait({
+            peersIndices: [honestDisputerIndex]
+        });
+        // peers 1,2,3 dispute the timed-out peer 0 -> 3 commitments (peer 0 is the defendant)
+        await h.assert.dispute.committedWait({
+            expectedCount: 3,
+            mode: "atLeast"
+        });
+
+        const dispute = h.getPeer(honestDisputerIndex).eventSpies
+            .onInitiatingDispute!.lastCall.args[1] as DisputeStruct;
+
+        expect(
+            dispute.input.stateProof.milestones.length === 0 &&
+                dispute.postedAuditingData === false,
+            "expected a non-posted genesis dispute (empty stateProof)"
+        ).to.equal(true);
+
+        // real auditing data for the empty genesis stateProof (correct genesis), then
+        // corrupt the genesis so keccak256(genesisStateSnapshotData) != forkId -> unlinked
+        const { encodedAuditingData } = await h
+            .control(h.getPeer(byzantineIndex))
+            .dispute.buildOwnAuditingData(h.activeForkId!, -1, {
+                disputeLatestInboundMessageBlockHash: dispute.input
+                    .latestInboundMessageBlockHash as Hash
+            })
+            .request();
+        const auditingData = Codec.decode(
+            encodedAuditingData,
+            Type.DisputeAuditingData
+        );
+        auditingData.genesisStateSnapshotData.stateMachineStateHash =
+            hexString(32);
+
+        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: byzantineIndex });
+
+        const proof = {
+            proofType: toSolidityDisputeFraudProofType(
+                DisputeFraudProofType.DisputeInvalidStateProof
+            ),
+            participant: dispute.input.disputer,
+            dispute,
+            encodedProof: Codec.encode(
+                {
+                    milestoneIndex: 0,
+                    hasBlockIndex: false,
+                    blockIndex: 0,
+                    auditingData,
+                    previousStateSnapshot: auditingData.latestStateSnapshot,
+                    resultingStateSnapshot: auditingData.latestStateSnapshot
+                },
+                DisputeFraudProofType.DisputeInvalidStateProof
+            )
+        };
+
+        const tx = await h
+            .getPeer(byzantineIndex)
+            .p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs([
+                proof
+            ]);
+        await tx.wait();
+
+        // The honest disputer must NOT be slashed by the bogus proof,
+        // and the bogus-proof submitter must be slashed instead.
+        const slashed = await h.channelManager.getOnChainSlashedParticipants(
+            h.channelId
+        );
+        const disputerAddr = h
+            .getPeer(honestDisputerIndex)
+            .address.toLowerCase();
+        expect(
+            slashed.some((a) => a.toLowerCase() === disputerAddr),
+            "honest disputer must NOT be slashed"
+        ).to.equal(false);
+        await h.assert.dispute.slashedOnChain(
+            h.getPeer(byzantineIndex).address,
+            "byzantine bad-proof submitter must be on-chain slashed"
+        );
+    });
+});

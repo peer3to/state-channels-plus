@@ -1,8 +1,8 @@
 export class DebugProxy {
-    public static createProxy<T extends Object>(original: T) {
+    public static createProxy<T extends object>(original: T) {
         return new Proxy(original, {
             get(target, prop, receiver) {
-                let original = Reflect.get(target, prop, receiver);
+                const original = Reflect.get(target, prop, receiver);
                 if (typeof original === "function") {
                     return function (...args: any[]) {
                         console.log(
@@ -11,11 +11,7 @@ export class DebugProxy {
                                 prop
                             )} - ${args.toString().replace(/,/g, ",\n")}`
                         );
-                        return Reflect.apply(
-                            original as Function,
-                            target,
-                            args
-                        );
+                        return Reflect.apply(original, target, args);
                     };
                 }
                 return original;
@@ -23,19 +19,3 @@ export class DebugProxy {
         });
     }
 }
-
-class A {
-    a = 2;
-    public someFunction(firstArg: string, secondArg: number) {
-        firstArg + "1";
-        secondArg + 1;
-    }
-}
-const main = () => {
-    let original = new A();
-    let proxy = DebugProxy.createProxy(original);
-    proxy.someFunction("a", 1);
-    console.log(proxy.a);
-};
-
-main();

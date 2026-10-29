@@ -1,0 +1,187 @@
+const assert = require("node:assert/strict");
+const {
+    canonicalFindings,
+    findingActions,
+    accountingSet
+} = require("../../reconcile");
+const previous = {
+    id: "R1TO1",
+    threadId: "thread1",
+    status: "continued",
+    body: "The public boundary permits an invalid value.",
+    evidence: ["src/input.ts:12"],
+    human: null
+};
+const observed = { threads: [{ id: "thread1", isResolved: false }] };
+describe("review finding reconciliation", function () {
+    it("retains a stable ID when the model references its existing thread", function () {
+        assert.equal(
+            canonicalFindings([previous], [{ ...previous, id: "TO2" }])[0].id,
+            previous.id
+        );
+    });
+    it("keeps the published destination when the model relocates an existing finding", function () {
+        const general = {
+            ...previous,
+            id: "R1OO2",
+            threadId: null,
+            path: null,
+            line: null
+        };
+        const inline = { ...previous, path: "src/input.ts", line: 12 };
+        const [relocatedGeneral, relocatedInline] = canonicalFindings(
+            [general, inline],
+            [
+                {
+                    ...general,
+                    status: "fixed",
+                    path: ".github/workflows/ci.yml",
+                    line: 167
+                },
+                { ...inline, path: "src/other.ts", line: 40 }
+            ]
+        );
+        assert.deepEqual(
+            [
+                relocatedGeneral.path,
+                relocatedGeneral.line,
+                relocatedGeneral.threadId
+            ],
+            [null, null, null]
+        );
+        assert.deepEqual(
+            [
+                relocatedInline.path,
+                relocatedInline.line,
+                relocatedInline.threadId
+            ],
+            ["src/input.ts", 12, "thread1"]
+        );
+    });
+    it("takes the model's new location for an inline finding that was saved but never posted", function () {
+        // Saved before an interrupted batch: a location, but no thread yet.
+        const unposted = {
+            ...previous,
+            threadId: null,
+            path: "README.md",
+            line: 1
+        };
+        const [moved] = canonicalFindings(
+            [unposted],
+            [{ ...unposted, threadId: null, line: 3 }]
+        );
+        const [action] = findingActions([unposted], [moved], {
+            threads: []
+        });
+        assert.deepEqual(
+            [moved.path, moved.line, action.kind, action.finding.line],
+            ["README.md", 3, "new", 3]
+        );
+    });
+    it("rejects a foreign or conflicting thread reference", function () {
+        assert.throws(
+            () =>
+                canonicalFindings(
+                    [previous],
+                    [{ ...previous, threadId: "foreign" }]
+                ),
+            { code: "INVALID_RESULT" }
+        );
+        assert.throws(
+            () =>
+                canonicalFindings(
+                    [
+                        previous,
+                        { ...previous, id: "R2TO2", threadId: "thread2" }
+                    ],
+                    [{ ...previous, threadId: "thread2" }]
+                ),
+            { code: "INVALID_RESULT" }
+        );
+    });
+    it("leaves unchanged evidence on the existing thread without another comment", function () {
+        assert.deepEqual(findingActions([previous], [previous], observed), []);
+    });
+    it("posts changed evidence on its existing thread", function () {
+        const actions = findingActions(
+            [previous],
+            [{ ...previous, evidence: ["src/input.ts:13"] }],
+            observed
+        );
+        assert.equal(actions.length, 1);
+        assert.equal(actions[0].kind, "evidence");
+        assert.equal(actions[0].thread.id, "thread1");
+    });
+    it("resolves only with current inspected evidence", function () {
+        assert.equal(
+            findingActions(
+                [previous],
+                [{ ...previous, status: "fixed" }],
+                observed
+            )[0].kind,
+            "resolve"
+        );
+        assert.throws(
+            () =>
+                findingActions(
+                    [previous],
+                    [{ ...previous, status: "fixed", evidence: [] }],
+                    observed
+                ),
+            { code: "INVALID_RESULT" }
+        );
+    });
+    it("reopens a recurring finding and resolves it without a separate Human gate", function () {
+        const resolved = { threads: [{ id: "thread1", isResolved: true }] };
+        assert.equal(
+            findingActions(
+                [previous],
+                [{ ...previous, status: "recurred" }],
+                resolved
+            )[0].kind,
+            "reopen"
+        );
+        assert.equal(
+            findingActions(
+                [previous],
+                [{ ...previous, status: "fixed" }],
+                observed
+            )[0].kind,
+            "resolve"
+        );
+    });
+    it("requires explicit thread state instead of inferring absence means unresolved", function () {
+        assert.throws(
+            () => findingActions([previous], [previous], { threads: [] }),
+            { code: "CONTEXT_UNAVAILABLE" }
+        );
+    });
+    it("excludes bot control containers while retaining external replies", function () {
+        const required = accountingSet(
+            {
+                findings: [
+                    previous,
+                    { ...previous, id: "R1CLOSED", status: "fixed" },
+                    { ...previous, id: "R1DISAGREED", status: "disagreement" },
+                    {
+                        ...previous,
+                        id: "R1HUMAN",
+                        status: "disagreement",
+                        human: { required: true }
+                    }
+                ],
+                comments: [
+                    { id: 2, user: { id: 9 }, body: "control" },
+                    { id: 3, user: { id: 7 }, body: "Please explain." }
+                ],
+                inline: [],
+                reviews: []
+            },
+            9
+        );
+        assert.deepEqual(
+            required.map((entry) => entry.id),
+            ["comment:3", "finding:R1TO1"]
+        );
+    });
+});

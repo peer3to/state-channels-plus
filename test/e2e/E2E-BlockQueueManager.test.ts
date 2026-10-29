@@ -1,0 +1,2820 @@
+import { Block } from "@/models";
+import { BlockOrigin } from "@/storage/QueueStorage";
+import { BlockValidationResult, Status } from "@/types";
+import type { Address } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import * as factory from "@test/factory";
+import { assertStoredTipCopyDrainsNextBlock } from "@test/fixtures/QueueDrainStaging";
+import {
+    assertStoredCopyQuota,
+    assertPendingJoinAdmission,
+    assertIndependentNetworkAllowances,
+    assertStoredMalformedNetworkCopy,
+    assertOutsiderProofDoesNotAdmitCopy
+} from "@test/fixtures/QueueNetworkRetentionFixture";
+import {
+    assertSlashAdmission,
+    assertSlashPreservesHonestWork
+} from "@test/fixtures/QueueSlashFixture";
+import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
+
+/**
+ * Unit-scope harness tests for BlockQueueManager's ingest guards and the
+ * queue-timeout stored-merge branch. Real sessions, real blocks, real
+ * signatures — the component is poked host-side through the control RPC.
+ */
+
+describe("E2E: BlockQueueManager", function () {
+    it("known slashes reject network contributions even when slash log recovery fails", async () => {
+        await assertSlashAdmission("failed-recovery");
+    });
+
+    it("an existing sync handles an unknown-source copy without another wire request", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("busy");
+    });
+    it("failed ingress sync ends intake with a counted close of its sender, no blacklist and no queued triggering block", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("failure");
+    });
+    it("a real slash rejects the next supplier copy without changing held honest work", async () => {
+        await assertSlashPreservesHonestWork();
+    });
+
+    it("stored network copies are bounded before each ordinary merge", async () => {
+        await assertStoredCopyQuota(true);
+    });
+
+    it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {
+        await assertIndependentNetworkAllowances(true);
+    });
+
+    it("observed slash removes cached eligibility before the next stored network copy", async () => {
+        await assertSlashAdmission("observed");
+    });
+    it("an authoritative slash refresh discards a cache-miss copy without sync", async () => {
+        await assertSlashAdmission("refresh");
+    });
+
+    it("a pending join cache miss refreshes from chain before stored-copy admission without sync", async () => {
+        await assertPendingJoinAdmission(true);
+    });
+    it("a delivered pending join event admits the first network copy without another read", async () => {
+        await assertPendingJoinAdmission(false);
+    });
+
+    it("successful ingress sync ends the request without queueing the triggering copy", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy();
+    });
+    it("independent source allowances preserve honest signatures for ordinary processing", async () => {
+        await assertIndependentNetworkAllowances();
+    });
+    it("stored block survives malformed confirmations from one eligible network supplier", async () => {
+        await assertStoredMalformedNetworkCopy();
+    });
+    it("ingest rejects a block confirmation with a forged author signature", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        const observer = h.getPeer(0);
+        const bundle = await h
+            .control(observer)
+            .query.getLatestBlockBundle(forkId!)
+            .request();
+        expect(bundle).to.not.be.null;
+
+        // Same block bytes, but the author signature recovers to an outsider
+        // instead of header.participant — authentication must fail.
+        const signedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        const outsider = ethers.Wallet.createRandom();
+        const forgedSignature = await outsider.signMessage(
+            ethers.getBytes(bundle!.hash)
+        );
+
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(1).address
+            },
+            blockConfirmation: {
+                signedBlock: {
+                    encodedBlock: signedBlock.encodedBlock,
+                    signature: forgedSignature
+                },
+                signatures: []
+            },
+            keepConnection: false
+        });
+
+        const storedBlock = await h
+            .control(observer)
+            .query.getBlockByHash(bundle!.hash)
+            .request();
+        expect(storedBlock).to.not.be.null;
+        expect(storedBlock!.confirmationSignatures).to.deep.equal(
+            bundle!.confirmationSignatures
+        );
+        expect(
+            storedBlock!.confirmationSignatures.includes(forgedSignature)
+        ).to.equal(false);
+    });
+
+    it("ingest refuses author signature encodings the contracts reject, then commits the canonically signed block", async function () {
+        const h = TestSession.getHarness();
+        // wide windows: nobody times out the held-back author mid-test
+        await h.lifecycle.start(3, 1, {
+            timeConfig: {
+                p2pTime: 2,
+                agreementTime: 8,
+                chainFallbackTime: 10,
+                evidenceTime: 20
+            }
+        });
+        await h.assert.sync.peersInSyncWait();
+        const forkId = h.activeForkId!;
+        const observer = h.getPeer(0);
+        const author = h.getPeer(1);
+        const relayer = h.getPeer(2);
+
+        // The author keeps its next block to itself.
+        await h.byzantine.stubBroadcast(author.index);
+        await h.transition.advanceState({ waitForSync: false });
+        await h.assert.sync.peerBlockHeightGreaterThan(
+            author.index,
+            observer.index
+        );
+        const bundle = await h
+            .control(author)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const signedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        const confirmation = (signature: string) => ({
+            signedBlock: { encodedBlock: signedBlock.encodedBlock, signature },
+            signatures: []
+        });
+
+        for (const signature of Object.values(
+            contractRejectedEncodings(String(signedBlock.signature))
+        )) {
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: relayer.address
+                },
+                blockConfirmation: confirmation(signature),
+                keepConnection: false
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(bundle!.hash)
+                    .request()
+            ).to.be.null;
+        }
+
+        // The same block with the author's canonical signature is committed
+        // and countersigned.
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: author.address
+            },
+            blockConfirmation: confirmation(String(signedBlock.signature)),
+            keepConnection: true
+        });
+        const stored = await h
+            .control(observer)
+            .query.getBlockByHash(bundle!.hash)
+            .request();
+        expect(stored).to.not.be.null;
+        expect(
+            stored!.confirmationSignatures.map((signature) =>
+                ethers.verifyMessage(ethers.getBytes(bundle!.hash), signature)
+            )
+        ).to.include(observer.address);
+    });
+
+    it("ingest drops a wrong-channel block and cuts the transport when the sender is known", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+
+        const observer = h.getPeer(0);
+
+        // An authentic block (author signature recovers to header.participant)
+        // for a channel this peer is not in.
+        const outsider = ethers.Wallet.createRandom();
+        const foreignBlock = factory.block({
+            transaction: factory.transaction({
+                header: factory.transactionHeader({
+                    channelId: ethers.hexlify(ethers.randomBytes(32)),
+                    participant: outsider.address as Address
+                })
+            })
+        });
+        const blockConfirmation = {
+            signedBlock: {
+                encodedBlock: foreignBlock.encode(),
+                signature: await outsider.signMessage(
+                    ethers.getBytes(foreignBlock.hash)
+                )
+            },
+            signatures: []
+        };
+
+        // Explicit internal proof input has no transport to punish.
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            blockConfirmation,
+            ingestOptions: { origin: BlockOrigin.PROOF },
+            keepConnection: true,
+            waitForProcessed: false
+        });
+
+        // Sent over the real state-transition RPC, the observer rejects it
+        // and cuts + blacklists the sending transport.
+        const sender = h.getPeer(1);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(sender.address)
+                .request()
+        ).to.equal(false);
+        await h
+            .control(sender)
+            .byzantine.sendBlockConfirmation(
+                Codec.encode(
+                    blockConfirmation,
+                    Type.BlockConfirmation
+                ) as string,
+                observer.address
+            )
+            .request();
+
+        await waitFor(
+            async () =>
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(sender.address)
+                    .request(),
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            await h
+                .control(observer)
+                .query.isConnectedTo(sender.address)
+                .request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(foreignBlock.hash)
+                .request()
+        ).to.be.null;
+    });
+
+    it("a block confirmation whose block bytes do not decode still cuts its sender", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        await h.assert.sync.peersInSyncWait();
+
+        const observer = h.getPeer(0);
+        const sender = h.getPeer(1);
+
+        // A real confirmation, but the signed block's bytes are truncated:
+        // decoding them inside intake fails, which must remain the explicit
+        // authentication verdict against the sender — not a swallowed
+        // local fault.
+        const bundle = await h
+            .control(sender)
+            .query.getLatestBlockBundle(h.activeForkId!)
+            .request();
+        expect(bundle, "expected a stored block").to.not.be.null;
+        const confirmation = Codec.decode(
+            bundle!.encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const encodedBlock = confirmation.signedBlock.encodedBlock as string;
+        confirmation.signedBlock.encodedBlock = encodedBlock.slice(
+            0,
+            encodedBlock.length - 64
+        );
+
+        await h.control(observer).stub.recordIngestOutcomes().request();
+        try {
+            await h
+                .control(sender)
+                .byzantine.sendBlockConfirmation(
+                    Codec.encode(
+                        confirmation,
+                        Type.BlockConfirmation
+                    ) as string,
+                    observer.address
+                )
+                .request();
+
+            // The frame was judged inside intake (not dropped at the
+            // router): its record is the undecodable judgment, and it
+            // resolved to the rejecting verdict.
+            let judged: { outcome: string } | undefined;
+            await waitFor(async () => {
+                const records = await h
+                    .control(observer)
+                    .stub.getIngestOutcomeRecords()
+                    .request();
+                judged = records.find(
+                    (record) =>
+                        record.senderAddress === sender.address &&
+                        record.blockHash === ""
+                );
+                return judged !== undefined;
+            }, h.event.protocolEventTimeoutMs());
+            expect(judged, "delivered frame was never judged").to.not.be
+                .undefined;
+            expect(judged!.outcome).to.equal("false");
+            await waitFor(
+                async () =>
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(sender.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await h
+                    .control(observer)
+                    .query.isConnectedTo(sender.address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await h
+                .control(observer)
+                .stub.restoreIngestOutcomeRecording()
+                .request();
+        }
+    });
+    it("ingest cuts both an eligible relayer and the author of an outsider-authored block", async function () {
+        const h = TestSession.getHarness();
+        // short windows so the two spectators converge on the victim inside the
+        // connection barrier below
+        await h.lifecycle.start(3, 1, {
+            timeConfig: { ...MIN_TEST_TIME_CONFIG, chainFallbackTime: 12 }
+        });
+        const forkId = h.activeForkId!;
+
+        const victim = h.getPeer(0);
+        expect(
+            await h.control(victim).query.getStatus().request(),
+            "victim is an active participant"
+        ).to.equal(Status.PARTICIPATING);
+
+        // An eligible participant forwards a connected outsider's signed block.
+        // Keep authoring while the outsider synchronizes.
+        const { peer: author } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        const relayer = h.getPeer(1);
+        await h.connectionBarrier.waitFor(
+            async () =>
+                (await h
+                    .control(relayer)
+                    .query.isConnectedTo(victim.address)
+                    .request()) &&
+                (await h
+                    .control(author)
+                    .query.isConnectedTo(victim.address)
+                    .request()),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage: "relayer/author never both connected to victim"
+            }
+        );
+
+        h.event.resetEventSpies();
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                victim.index,
+                forkId,
+                author.signer
+            );
+        await h
+            .control(relayer)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: relayer,
+            expectedStatus: Status.PARTICIPATING
+        });
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: author,
+            expectedStatus: Status.PARTICIPATING
+        });
+        h.assert.dispute.noDisputes();
+    });
+
+    describe("queue timeout probe", function () {
+        // The probe's sync replays the source's unfinalized blocks through
+        // live validation, whose subjective time window is the agreement
+        // time; two seconds let farm clock skew reject an honest replay as
+        // "in the future".
+        const timeConfig = {
+            p2pTime: 3,
+            agreementTime: 4,
+            chainFallbackTime: 30,
+            evidenceTime: 8
+        };
+        const observerIndex = 3;
+        const supplierIndex = 1;
+
+        it("future block whose source proves its lineage at queue timeout is applied and the source kept", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, { timeConfig });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            const supplier = h.getPeer(supplierIndex);
+            // Blind to gossip but fully connected: the probe toward the source
+            // runs over a live transport, and the blind peer times nobody out.
+            const restoreDrop =
+                await h.rpcStub.dropNetworkConfirmations(observerIndex);
+            const restoreTimeouts =
+                await h.rpcStub.suppressTimeoutCheck(observerIndex);
+            try {
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: [0, 1, 2],
+                    waitForFinalization: false
+                });
+                const block1 = await h
+                    .control(supplier)
+                    .query.getBlockByHeight(forkId, 1)
+                    .request();
+                expect(block1).to.not.be.null;
+                // Future block (height 1 > the blind peer's next height 0).
+                await h.transition.ingestBlockConfirmationWait({
+                    peerIndex: observerIndex,
+                    blockConfirmation: Codec.decode(
+                        block1!.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    ),
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
+                    keepConnection: true,
+                    waitForProcessed: false
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(block1!.hash)
+                        .request()
+                ).to.equal(true);
+
+                // At expiry the source proves a lineage that carries the
+                // block: it lands through the sync, and the source stays.
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getBlockByHash(block1!.hash)
+                            .request()) !== null,
+                    (timeConfig.agreementTime + 5) * 1000
+                );
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(block1!.hash)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request()
+                ).to.equal(false);
+            } finally {
+                await restoreDrop();
+                await restoreTimeouts();
+            }
+        });
+
+        it("future block at a height its source holds a different block at queue timeout is dropped and the source excluded", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, { timeConfig });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            const supplier = h.getPeer(supplierIndex);
+            const restoreDrop =
+                await h.rpcStub.dropNetworkConfirmations(observerIndex);
+            const restoreTimeouts =
+                await h.rpcStub.suppressTimeoutCheck(observerIndex);
+            try {
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: [0, 1, 2],
+                    waitForFinalization: false
+                });
+                // Height 1 exists in the source's lineage as a different
+                // block, so the probe succeeds and proves the junk is junk.
+                const junk =
+                    await h.byzantine.craftUnbackedFutureBlockConfirmation(
+                        supplierIndex,
+                        forkId,
+                        1
+                    );
+                await h.transition.ingestBlockConfirmationWait({
+                    peerIndex: observerIndex,
+                    blockConfirmation: Codec.decode(
+                        junk.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    ),
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
+                    keepConnection: true,
+                    waitForProcessed: false
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(junk.hash)
+                        .request()
+                ).to.equal(true);
+
+                // At expiry the source proves its lineage up to height 1; the
+                // block is not in it, so the source supplied junk and is
+                // excluded.
+                await h.assert.rpc.peerBlacklistedAndDisconnected({
+                    observer,
+                    target: supplier,
+                    expectedStatus: Status.PARTICIPATING
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(junk.hash)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHash(junk.hash)
+                        .request()
+                ).to.be.null;
+                // The probe itself succeeded: the blind peer now holds the
+                // source's lineage (its replayed blocks apply a beat after
+                // the exclusion), so the exclusion was for junk, not for a
+                // failed sync.
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getNextBlockHeight(forkId)
+                            .request()) >= 2
+                );
+            } finally {
+                await restoreDrop();
+                await restoreTimeouts();
+            }
+        });
+
+        it("junk supplier is excluded even when another sync toward it is in flight at queue timeout", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, { timeConfig });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            const supplier = h.getPeer(supplierIndex);
+            const restoreDrop =
+                await h.rpcStub.dropNetworkConfirmations(observerIndex);
+            const restoreTimeouts =
+                await h.rpcStub.suppressTimeoutCheck(observerIndex);
+            const hold =
+                await h.rpcStub.holdSpectateSyncApplication(observerIndex);
+            try {
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: [0, 1, 2],
+                    waitForFinalization: false
+                });
+                // An unrelated valid sync toward the source is held at its
+                // application step, so it stays in flight past the expiry.
+                await h
+                    .control(observer)
+                    .spectate.startSync(
+                        supplier.address,
+                        undefined,
+                        undefined,
+                        h.event.protocolEventTimeoutMs()
+                    )
+                    .request();
+                await waitFor(async () => (await hold.entered()) === 1);
+                const junk =
+                    await h.byzantine.craftUnbackedFutureBlockConfirmation(
+                        supplierIndex,
+                        forkId,
+                        1
+                    );
+                await h.transition.ingestBlockConfirmationWait({
+                    peerIndex: observerIndex,
+                    blockConfirmation: Codec.decode(
+                        junk.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    ),
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
+                    keepConnection: true,
+                    waitForProcessed: false
+                });
+                // The entry expires behind the held sync: the probe waits for
+                // it instead of taking its answer, so nothing is decided yet.
+                await waitFor(
+                    async () =>
+                        !(await h
+                            .control(observer)
+                            .query.isBlockQueued(junk.hash)
+                            .request()),
+                    (timeConfig.agreementTime + 5) * 1000
+                );
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request()
+                ).to.equal(false);
+
+                // The held sync lands the source's lineage; the probe then
+                // proves the junk against it and excludes the source.
+                await hold.release();
+                await h.assert.rpc.peerBlacklistedAndDisconnected({
+                    observer,
+                    target: supplier,
+                    expectedStatus: Status.PARTICIPATING
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHash(junk.hash)
+                        .request()
+                ).to.be.null;
+                // The held sync's replayed blocks apply a beat after the
+                // exclusion.
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getNextBlockHeight(forkId)
+                            .request()) >= 2
+                );
+            } finally {
+                await hold.release();
+                await restoreDrop();
+                await restoreTimeouts();
+            }
+        });
+
+        it("future block at a height its source never reached at queue timeout is dropped and the source struck", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, { timeConfig });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            const supplier = h.getPeer(supplierIndex);
+            const restoreDrop =
+                await h.rpcStub.dropNetworkConfirmations(observerIndex);
+            const restoreTimeouts =
+                await h.rpcStub.suppressTimeoutCheck(observerIndex);
+            try {
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: [0, 1, 2],
+                    waitForFinalization: false
+                });
+                const junk =
+                    await h.byzantine.craftUnbackedFutureBlockConfirmation(
+                        supplierIndex,
+                        forkId,
+                        7
+                    );
+                await h.transition.ingestBlockConfirmationWait({
+                    peerIndex: observerIndex,
+                    blockConfirmation: Codec.decode(
+                        junk.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    ),
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
+                    keepConnection: true,
+                    waitForProcessed: false
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(junk.hash)
+                        .request()
+                ).to.equal(true);
+
+                // The source cannot prove a height it never reached: the
+                // probe fails, which closes the source with one strike and no
+                // verdict.
+                await h.assert.rpc.peerStruckWithoutBlacklist({
+                    observer,
+                    target: supplier
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(junk.hash)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHash(junk.hash)
+                        .request()
+                ).to.be.null;
+            } finally {
+                await restoreDrop();
+                await restoreTimeouts();
+            }
+        });
+    });
+
+    it("a spectator whose sync stores a queued tip copy applies the next gossiped block without its queue timeout", async function () {
+        await assertStoredTipCopyDrainsNextBlock(
+            TestSession.getHarness(),
+            "gossiped"
+        );
+    });
+
+    it("queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted", async function () {
+        const h = TestSession.getHarness();
+        const timeConfig = {
+            p2pTime: 3,
+            agreementTime: 2,
+            chainFallbackTime: 30,
+            evidenceTime: 8
+        };
+        await h.lifecycle.start(4, 0, { timeConfig });
+
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        // Keep the observer blind so the block stays queued as a future block.
+        const observerIndex = 3;
+        const observer = h.getPeer(observerIndex);
+        await h.network.blacklistAndDisconnectPeer(observerIndex);
+
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: false
+        });
+
+        const source = await h.peerWithHighestBlock(forkId!);
+        const block1 = await h
+            .control(source)
+            .query.getBlockByHeight(forkId!, 1)
+            .request();
+        expect(block1).to.not.be.null;
+        // Isolation blacklisted observer→all peers. Restore only peer 1 so
+        // the bad-signature path, not harness setup, owns its later blacklist.
+        expect(
+            await h
+                .control(observer)
+                .network.unblacklistPeerByAddress(h.getPeer(1).address)
+                .request()
+        ).to.equal(true);
+
+        // Tainted copy of h1 queues (height 1 > observer's nextHeight 0) with
+        // the stray signature attributed to its supplier.
+        const outsider = ethers.Wallet.createRandom();
+        const badSignature = await outsider.signMessage(
+            ethers.getBytes(block1!.hash)
+        );
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observerIndex,
+            blockConfirmation: {
+                signedBlock: Codec.decode(
+                    block1!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [...block1!.confirmationSignatures, badSignature]
+            },
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(1).address
+            },
+            keepConnection: true,
+            waitForProcessed: false
+        });
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(block1!.hash)
+                .request()
+        ).to.be.null;
+
+        // The block becomes stored out-of-band (as state-proof persistence
+        // does) while the entry still sits in the queue — the queue timeout
+        // must merge it immediately with the entry's attribution intact.
+        await h
+            .control(observer)
+            .transition.storeBlock(block1!.encodedBlockConfirmation)
+            .request();
+
+        await waitFor(
+            async () =>
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(h.getPeer(1).address)
+                    .request(),
+            (timeConfig.agreementTime + 5) * 1000
+        );
+        const storedBlock = await h
+            .control(observer)
+            .query.getBlockByHash(block1!.hash)
+            .request();
+        expect(storedBlock).to.not.be.null;
+        expect(
+            storedBlock!.confirmationSignatures.includes(badSignature)
+        ).to.equal(false);
+    });
+
+    describe("wrong-fork blocks", function () {
+        const forkTimeConfig = {
+            p2pTime: 3,
+            agreementTime: 4,
+            chainFallbackTime: 2,
+            evidenceTime: 3
+        };
+
+        it("recovers the first reduced-fork block by reducing locally at ingest", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+            const reducingHonestPeers = [0, 3];
+
+            // 2 = warm-up transitions the dispute staging needs, not the peer index.
+            await h.lifecycle.start(4, 2, {
+                timeConfig: forkTimeConfig
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+
+            const race = await h.rpcStub.holdReductionRace(targetPeerIndex);
+
+            h.event.resetEventSpies();
+            const { newForkId } = await h.scenario.disputeAndResolve({
+                maliciousPeerIndex,
+                forkId: originalForkId,
+                honestPeerIndices: reducingHonestPeers,
+                resetEventSpies: false
+            });
+
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(
+                0,
+                "target peer should not reduce before the first-block race"
+            );
+            expect(
+                await h.control(targetPeer).query.getForkId().request()
+            ).to.equal(originalForkId);
+
+            // The reduced-snapshot event must be held (staged race) before
+            // the first-block delivery.
+            await waitFor(
+                async () => (await race.heldSnapshotEventCount()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+
+            const sourcePeer = h.getPeer(reducingHonestPeers[0]);
+            const nextWriterAddress = await h
+                .control(sourcePeer)
+                .query.getNextToWrite()
+                .request();
+            const writerPeer = h.peers.find(
+                (p) => p.address === nextWriterAddress
+            );
+            // Not `.equal(undefined)`: hardhat-chai-matchers probes .equal
+            // operands with ethers getAddress, and a failed probe stringifies
+            // the whole TestPeer graph (contract proxies included) into the
+            // discarded error - a multi-second main-thread stall.
+            expect(writerPeer, "no writer peer found").to.not.be.undefined;
+            expect(writerPeer!.index).not.to.equal(
+                targetPeerIndex,
+                "test setup requires a different peer to write the first reduced-fork block"
+            );
+
+            await writerPeer!.p2pInstance.p2pContractInstance.add(1);
+
+            await waitFor(async () => {
+                const block = await h
+                    .control(sourcePeer)
+                    .query.getBlockByHeight(newForkId, 0)
+                    .request();
+                return Boolean(block?.encodedBlockConfirmation);
+            }, h.event.protocolEventTimeoutMs());
+
+            const firstBlock = await h
+                .control(sourcePeer)
+                .query.getBlockByHeight(newForkId, 0)
+                .request();
+            expect(firstBlock).not.to.equal(null);
+
+            // The wrong-fork gate sees a disputed current fork, reduces
+            // locally in place and accepts the block on the reduced fork.
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: targetPeerIndex,
+                blockConfirmation: Codec.decode(
+                    firstBlock!.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                ),
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: writerPeer!.address
+                },
+                keepConnection: true,
+                processedKeepConnection: true
+            });
+
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(targetPeer)
+                        .query.getForkId()
+                        .request()) === newForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(1, "ingest-time local reduction should set state once");
+            expect(
+                await h
+                    .control(targetPeer)
+                    .query.getBlockByHeight(newForkId, 0)
+                    .request()
+            ).to.not.equal(
+                null,
+                "target peer should store the reduced-fork block"
+            );
+
+            await race.release();
+
+            await h.event.waitWhileEventCountsStayAtMost(
+                "onSetState",
+                [targetPeerIndex],
+                { durationMs: 2000, maxCount: 1 }
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(1, "replayed snapshot events must not set state again");
+
+            const expectedSum = await h
+                .getPeer(reducingHonestPeers[0])
+                .contractInstance.getSum();
+            expect(
+                await h.getPeer(targetPeerIndex).contractInstance.getSum()
+            ).to.equal(
+                expectedSum,
+                "target peer state must converge with the reducing peers"
+            );
+        });
+        it("a local disputed-fork check failure during ingest does not blacklist the honest sender", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+            const reducingHonestPeers = [0, 3];
+
+            await h.lifecycle.start(4, 2, {
+                timeConfig: forkTimeConfig
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+
+            const race = await h.rpcStub.holdReductionRace(targetPeerIndex);
+
+            const { newForkId } = await h.scenario.disputeAndResolve({
+                maliciousPeerIndex,
+                forkId: originalForkId,
+                honestPeerIndices: reducingHonestPeers,
+                resetEventSpies: false
+            });
+            expect(
+                await h.control(targetPeer).query.getForkId().request()
+            ).to.equal(originalForkId);
+
+            await waitFor(
+                async () => (await race.heldSnapshotEventCount()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+
+            const sourcePeer = h.getPeer(reducingHonestPeers[0]);
+
+            // A fresh bogus-fork block, so the delivered copy always
+            // reaches the disputed-fork check: a real reduced-fork block
+            // could already be stored on the target through ordinary
+            // gossip or sync, and a stored copy settles as past before
+            // the check runs (the recovery test above covers real
+            // reduced-fork ingest).
+            const { bogusBlock, blockConfirmation: networkConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
+
+            // The target's disputed-fork check fails on its own local
+            // diamond while it ingests the wrong-fork block: a local
+            // fault, not evidence against the sender. The fault is
+            // installed before the ingest probe, so every recorded
+            // judgment of this block took the faulted path.
+            await h
+                .control(targetPeer)
+                .stub.stubFailDisputedForkChecks(Number.MAX_SAFE_INTEGER)
+                .request();
+            await h.control(targetPeer).stub.recordIngestOutcomes().request();
+            await h
+                .control(targetPeer)
+                .stub.observeAdmission({ source: sourcePeer.address })
+                .request();
+            try {
+                // Production gossip is fire-and-forget: the sender's verdict
+                // mapping runs in the receiver's async handler, so a local
+                // fault must not disconnect or blacklist the sender there.
+                await h
+                    .control(sourcePeer)
+                    .byzantine.sendBlockConfirmation(
+                        Codec.encode(
+                            networkConfirmation,
+                            Type.BlockConfirmation
+                        ) as string,
+                        targetPeer.address
+                    )
+                    .request();
+                let judged: { outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(targetPeer)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === sourcePeer.address &&
+                            record.blockHash === bogusBlock.hash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "delivered frame was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+                // The frame took the faulted path: the disputed-fork check
+                // failed, and no queue entry was created for it (a fault-free
+                // intake of this block would have queued it).
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(targetPeer)
+                                .stub.getDisputedForkCheckObservation()
+                                .request()
+                        ).failed > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).networkEntries
+                ).to.equal(0);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isBlacklisted(sourcePeer.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isConnectedTo(sourcePeer.address)
+                        .request()
+                ).to.equal(true);
+                // The bogus block exists on no honest peer, so no sync
+                // can install it: only the faulted copy could have
+                // stored it.
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHash(bogusBlock.hash)
+                        .request()
+                ).to.be.null;
+
+                // The same local fault on the calldata origin: no sender
+                // exists to punish, the copy is dropped, nothing is queued.
+                // A fresh bogus-fork block always reaches the disputed-fork
+                // check (a real block could settle as past once a sync has
+                // stored it). The synchronous ingest must hit the fault.
+                const { bogusBlock: calldataBlock, blockConfirmation } =
+                    await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
+                const failuresBeforeCalldata = (
+                    await h
+                        .control(targetPeer)
+                        .stub.getDisputedForkCheckObservation()
+                        .request()
+                ).failed;
+                const calldataResult = await h
+                    .control(targetPeer)
+                    .transition.ingestBlockConfirmation(
+                        Codec.encode(
+                            blockConfirmation,
+                            Type.BlockConfirmation
+                        ) as string,
+                        {
+                            origin: BlockOrigin.CALLDATA,
+                            onChainTimestamp: Number(calldataBlock.timestamp)
+                        }
+                    )
+                    .request();
+                expect(calldataResult).to.equal(true);
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getDisputedForkCheckObservation()
+                            .request()
+                    ).failed
+                ).to.be.greaterThan(failuresBeforeCalldata);
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).calldataEntries
+                ).to.equal(0);
+                const calldataRecords = await h
+                    .control(targetPeer)
+                    .stub.getIngestOutcomeRecords()
+                    .request();
+                expect(
+                    calldataRecords.some(
+                        (record) =>
+                            record.senderAddress === "" &&
+                            record.blockHash === calldataBlock.hash &&
+                            record.outcome === "true"
+                    ),
+                    "calldata copy was never judged"
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHash(calldataBlock.hash)
+                        .request()
+                ).to.be.null;
+            } finally {
+                await h
+                    .control(targetPeer)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreDisputedForkCheckFailures()
+                    .request();
+                await race.release();
+            }
+        });
+
+        it("a kill-period chain read failure while scheduling fork recovery does not blacklist the honest sender", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+
+            await h.lifecycle.start(4, 2, {
+                timeConfig: forkTimeConfig
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+            const sourcePeer = h.getPeer(0);
+
+            await h.control(targetPeer).stub.recordIngestOutcomes().request();
+            await h
+                .control(targetPeer)
+                .stub.stubFailKillPeriodReads(Number.MAX_SAFE_INTEGER)
+                .request();
+            try {
+                // Open a dispute window on the target's current fork, then
+                // deliver a block on another fork: scheduling fork recovery
+                // for it reads the kill period from the chain, and that
+                // read fails on the target's own provider.
+                await h.dispute.createInvalidStateTransitionDispute(
+                    maliciousPeerIndex,
+                    { forkId: originalForkId, resetEventSpies: false }
+                );
+                await waitFor(
+                    async () =>
+                        h.event.getEventCallCount(
+                            targetPeerIndex,
+                            "onDisputeCommitted"
+                        ) > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+
+                const { bogusBlock, blockConfirmation } =
+                    await h.byzantine.craftBogusForkBlockZero(sourcePeer.index);
+                await h
+                    .control(targetPeer)
+                    .stub.observeAdmission({ source: sourcePeer.address })
+                    .request();
+                const failuresBeforeDelivery = (
+                    await h
+                        .control(targetPeer)
+                        .stub.getKillPeriodReadObservation()
+                        .request()
+                ).failed;
+                await h
+                    .control(sourcePeer)
+                    .byzantine.sendBlockConfirmation(
+                        Codec.encode(
+                            blockConfirmation,
+                            Type.BlockConfirmation
+                        ) as string,
+                        targetPeer.address
+                    )
+                    .request();
+
+                let judged: { outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(targetPeer)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === sourcePeer.address &&
+                            record.blockHash === bogusBlock.hash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "delivered frame was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getKillPeriodReadObservation()
+                            .request()
+                    ).failed
+                ).to.be.greaterThan(failuresBeforeDelivery);
+                expect(
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).networkEntries
+                ).to.equal(0);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isBlacklisted(sourcePeer.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.isConnectedTo(sourcePeer.address)
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(targetPeer)
+                        .query.getBlockByHash(bogusBlock.hash)
+                        .request()
+                ).to.equal(null);
+            } finally {
+                await h
+                    .control(targetPeer)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreKillPeriodReadFailures()
+                    .request();
+                await h
+                    .control(targetPeer)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
+            }
+        });
+
+        it("a local failure during the sender's eligibility refresh does not blacklist the honest sender", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            await h.assert.sync.peersInSyncWait();
+
+            const receiver = h.getPeer(0);
+
+            // Rotate once if the receiver would author the next block
+            // itself: the faulted copy must arrive from another peer.
+            let nextWriterAddress = await h
+                .control(receiver)
+                .query.getNextToWrite()
+                .request();
+            if (nextWriterAddress === receiver.address) {
+                await h.transition.advanceState({ count: 1 });
+                nextWriterAddress = await h
+                    .control(receiver)
+                    .query.getNextToWrite()
+                    .request();
+            }
+            const author = h.peers.find((p) => p.address === nextWriterAddress);
+            expect(author, "no author peer found").to.not.be.undefined;
+            expect(author!.index).not.to.equal(receiver.index);
+
+            await h.control(receiver).stub.recordIngestOutcomes().request();
+            await h
+                .control(receiver)
+                .stub.observeAdmission({ failMembership: true })
+                .request();
+            try {
+                // Clear the receiver's eligibility caches, so the author's
+                // next copy must run the authoritative refresh — whose
+                // pinned chain read now fails on the receiver's side.
+                await h.execOnHost(receiver, async (sm) => {
+                    sm.membershipService.resetEligibility();
+                    return true;
+                });
+                await author!.p2pInstance.p2pContractInstance.add(1);
+
+                // Judge only the copy of the block the author just made,
+                // never a late growth copy of an already-stored block.
+                const authored = await h
+                    .control(author!)
+                    .query.getLatestBlockBundle(h.activeForkId!)
+                    .request();
+                expect(authored, "author produced no block").to.not.be.null;
+                const authoredHash = Block.fromBlockConfirmation(
+                    Codec.decode(
+                        authored!.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    )
+                ).hash;
+                let judged: { blockHash: string; outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(receiver)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === author!.address &&
+                            record.blockHash === authoredHash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "author's copy was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+
+                const admission = await h
+                    .control(receiver)
+                    .stub.getAdmissionObservation()
+                    .request();
+                expect(admission.chainReads).to.be.greaterThan(0);
+                expect(admission.completedSyncs).to.equal(0);
+                expect(admission.networkEntries).to.equal(0);
+                expect(
+                    await h
+                        .control(receiver)
+                        .query.isBlacklisted(author!.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(receiver)
+                        .query.isConnectedTo(author!.address)
+                        .request()
+                ).to.equal(true);
+                // No "not stored" assertion: an honest sync may install
+                // the author's block independently of the faulted copy.
+            } finally {
+                await h
+                    .control(receiver)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(receiver)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
+            }
+        });
+
+        it("an absent sender whose intake-gate sync fails on our side gets no verdict", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
+            const { peer: outsider } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
+            await h.assert.sync.peersInSyncWait({
+                waitForFinalization: true
+            });
+
+            const observer = h.getPeer(0);
+            const stored = await h
+                .control(outsider)
+                .query.getLatestBlockBundle(h.activeForkId!)
+                .request();
+            expect(stored, "expected a verified spectator block").to.not.be
+                .null;
+            const storedHash = Block.fromBlockConfirmation(
+                Codec.decode(
+                    stored!.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                )
+            ).hash;
+
+            await h.control(observer).stub.recordIngestOutcomes().request();
+            await h.control(observer).stub.stubThrowSyncApplication().request();
+            await h
+                .control(observer)
+                .stub.observeAdmission({ source: outsider.address })
+                .request();
+            try {
+                // The outsider is absent from the observer's membership, so
+                // intake syncs from it — and applying that payload now
+                // throws on the observer's own side.
+                await h
+                    .control(outsider)
+                    .byzantine.sendBlockConfirmation(
+                        stored!.encodedBlockConfirmation,
+                        observer.address
+                    )
+                    .request();
+
+                let judged: { outcome: string } | undefined;
+                await waitFor(async () => {
+                    const records = await h
+                        .control(observer)
+                        .stub.getIngestOutcomeRecords()
+                        .request();
+                    judged = records.find(
+                        (record) =>
+                            record.senderAddress === outsider.address &&
+                            record.blockHash === storedHash
+                    );
+                    return judged !== undefined;
+                }, h.event.protocolEventTimeoutMs());
+                expect(judged, "delivered frame was never judged").to.not.be
+                    .undefined;
+                expect(judged!.outcome).to.equal("true");
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getSyncApplicationObservation()
+                            .request()
+                    ).thrown
+                ).to.be.greaterThan(0);
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).networkEntries
+                ).to.equal(0);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(outsider.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isConnectedTo(outsider.address)
+                        .request()
+                ).to.equal(true);
+            } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreSyncApplicationStub()
+                    .request();
+                await h
+                    .control(observer)
+                    .stub.restoreAdmissionObservation()
+                    .request();
+                await h
+                    .control(observer)
+                    .stub.restoreIngestOutcomeRecording()
+                    .request();
+            }
+        });
+
+        it("queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier", async function () {
+            const h = TestSession.getHarness();
+            const timeConfig = {
+                p2pTime: 3,
+                // 4, not 2: the immediate isBlockQueued check below must not
+                // race the entry's own eviction timer under parallel-load stall.
+                agreementTime: 4,
+                chainFallbackTime: 30,
+                evidenceTime: 8
+            };
+            await h.lifecycle.start(3, 0, { timeConfig });
+
+            const observer = h.getPeer(0);
+            const originalForkId = await h
+                .control(observer)
+                .query.getForkId()
+                .request();
+
+            const observerStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
+
+            // Record (and forward) sync requests + reduction attempts.
+            const restoreSync = await h.rpcStub.recordSpectateSync(0, {
+                forward: true
+            });
+            const restoreReduce = await h.rpcStub.recordReduce(0);
+
+            const author = h.getPeer(1);
+            const { bogusBlock, blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: author.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+
+            // Queued unscheduled: the pipeline never ran, and there is NO
+            // arrival-time sync - the queue timeout is the sole sync probe now.
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request()
+            ).to.equal(true);
+            expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(0);
+            // Current fork is not disputed - no reduction probe fired.
+            expect(await h.rpcStub.reduceCallCount(0)).to.equal(0);
+            expect(
+                await h.control(observer).query.getForkId().request()
+            ).to.equal(originalForkId);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(bogusBlock.hash)
+                    .request()
+            ).to.be.null;
+
+            // The consequence arrives through the sync flow, not the queue: the
+            // supplier cannot prove the fork, so the failed sync closes the
+            // connection with one strike and no verdict. `queueTimeout` removes
+            // the block before it issues that sync probe, so once the strike
+            // lands the eviction has already happened - asserted synchronously
+            // below.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer,
+                target: author
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request(),
+                "bogus block still queued after the deadline"
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(bogusBlock.hash)
+                    .request()
+            ).to.be.null;
+            expect(
+                await h.control(observer).query.getForkId().request()
+            ).to.equal(originalForkId);
+
+            await restoreSync();
+            await restoreReduce();
+        });
+
+        // Supplier != author, so the recorded probes separate them: the timeout
+        // asks the sender, never the author.
+        it("a queue timeout accepts a proved successor fork without excluding the supplier or author", async function () {
+            const h = TestSession.getHarness();
+            let queuedHash = "";
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork({
+                    beforeDispute: async () => {
+                        const observer = h.getPeer(2);
+                        const supplier = h.getPeer(3);
+                        await h
+                            .control(observer)
+                            .stub.holdQueueProbe()
+                            .request();
+                        const nextHeight = await h
+                            .control(observer)
+                            .query.getNextBlockHeight(h.activeForkId!)
+                            .request();
+                        const future =
+                            await h.byzantine.craftUnbackedFutureBlockConfirmation(
+                                0,
+                                h.activeForkId!,
+                                nextHeight + 1
+                            );
+                        queuedHash = future.hash;
+                        await h.transition.ingestBlockConfirmationWait({
+                            peerIndex: observer.index,
+                            blockConfirmation: Codec.decode(
+                                future.encodedBlockConfirmation,
+                                Type.BlockConfirmation
+                            ),
+                            ingestOptions: {
+                                origin: BlockOrigin.NETWORK,
+                                senderAddress: supplier.address
+                            },
+                            keepConnection: true,
+                            waitForProcessed: false
+                        });
+                        await waitFor(
+                            async () =>
+                                (
+                                    await h
+                                        .control(observer)
+                                        .stub.getQueueProbeObservation()
+                                        .request()
+                                ).entered === 1
+                        );
+                    }
+                });
+            const observer = h.getPeer(2);
+            const supplier = h.getPeer(3);
+            const submit = await h.rpcStub.holdReductionAttempt(
+                supplier.index,
+                "submit"
+            );
+            const authorSubmit = await h.rpcStub.holdReductionAttempt(
+                0,
+                "submit"
+            );
+            try {
+                await h
+                    .control(h.getPeer(0))
+                    .stub.startTryReduce(sourceForkId)
+                    .request();
+                await waitFor(async () => (await authorSubmit.entered()) === 1);
+                await h
+                    .control(supplier)
+                    .stub.startTryReduce(sourceForkId)
+                    .request();
+                await waitFor(async () => (await submit.entered()) === 1);
+                const successor = await h
+                    .control(supplier)
+                    .query.getForkId()
+                    .request();
+                expect(successor).to.not.equal(sourceForkId);
+                await h.control(observer).stub.releaseQueueProbe().request();
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(observer)
+                                .stub.getQueueProbeObservation()
+                                .request()
+                        ).completed === 1
+                );
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getQueueProbeObservation()
+                            .request()
+                    ).succeeded
+                ).to.equal(1);
+                expect(
+                    await h.control(observer).query.getForkId().request()
+                ).to.equal(successor);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHash(queuedHash)
+                        .request()
+                ).to.equal(null);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(h.getPeer(0).address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(supplier)
+                        .query.isBlacklisted(observer.address)
+                        .request()
+                ).to.equal(false);
+            } finally {
+                await h.control(observer).stub.releaseQueueProbe().request();
+                await submit.release();
+                await authorSubmit.release();
+            }
+        });
+
+        it("unknown-fork timeout asks only the sender to sync, never the author", async function () {
+            const h = TestSession.getHarness();
+            const timeConfig = {
+                p2pTime: 3,
+                agreementTime: 4,
+                chainFallbackTime: 30,
+                evidenceTime: 8
+            };
+            await h.lifecycle.start(3, 0, { timeConfig });
+
+            const observer = h.getPeer(0);
+            const author = h.getPeer(1);
+            const supplier = h.getPeer(2);
+
+            const restoreSync = await h.rpcStub.recordSpectateSync(0, {
+                forward: false
+            });
+
+            const { bogusBlock, blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request()
+            ).to.equal(true);
+
+            // the record stub releases this once the queue timeout has asked -
+            // a signal, not a poll. The timeout starts every probe in one pass,
+            // so an author probe would already be recorded beside it
+            expect(
+                await h.rpcStub.spectateSyncTargetsWait(
+                    0,
+                    1,
+                    (timeConfig.agreementTime + 20) * 1000
+                )
+            ).to.deep.equal([supplier.address]);
+            expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(1);
+
+            await restoreSync();
+        });
+
+        it("unknown fork: only the sender is asked and cut; the author keeps the observer", async function () {
+            const h = TestSession.getHarness();
+            const timeConfig = {
+                p2pTime: 3,
+                agreementTime: 4,
+                chainFallbackTime: 30,
+                evidenceTime: 8
+            };
+            await h.lifecycle.start(3, 0, { timeConfig });
+
+            const observer = h.getPeer(0);
+            const author = h.getPeer(1);
+            const supplier = h.getPeer(2);
+            const originalForkId = await h
+                .control(observer)
+                .query.getForkId()
+                .request();
+            const observerStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
+
+            const { blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+
+            // The sender cannot prove the fork: its failed sync probe is one
+            // strike, not a verdict. The author is never asked.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer,
+                target: supplier
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.getStrikes(author.address)
+                    .request()
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(author)
+                    .query.isBlacklisted(observer.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h.control(observer).query.getForkId().request()
+            ).to.equal(originalForkId);
+            expect(
+                await h.control(observer).query.getStatus().request()
+            ).to.equal(observerStatus);
+        });
+
+        it("a later spectator asks only the sender of a replayed old-fork block: its genuine author is never asked and does not blacklist the spectator", async function () {
+            const h = TestSession.getHarness();
+            const { originalForkId, newForkId, honestPeers } =
+                await h.scenario.fourPeersDisputeResolution();
+            const honestIndices = honestPeers.map((peer) => peer.index);
+            // a snapshot on the successor -> a later sync starts after the
+            // dispute, so the spectator never learns the old fork was disputed
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: honestIndices,
+                waitForFinalization: true
+            });
+            await h.transition.postSnapshotWait({ forkId: String(newForkId) });
+            // the post waits for the reduction to settle on chain
+            await waitFor(
+                async () =>
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId === newForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            const { peer: spawned } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: honestIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20
+            });
+            const spectator = h.getPeer(spawned.index);
+            const [author, replayer] = honestPeers;
+
+            // a genuine old-fork block the author signed
+            const oldTip = await h
+                .control(author)
+                .query.getLatestBlockHeight(originalForkId)
+                .request();
+            let oldBlock = null;
+            for (let height = oldTip!; height >= 0 && !oldBlock; height--) {
+                const bundle = await h
+                    .control(author)
+                    .query.getBlockByHeight(originalForkId, height)
+                    .request();
+                if (bundle?.author === author.address) oldBlock = bundle;
+            }
+            expect(oldBlock, "author signed no old-fork block").to.not.equal(
+                null
+            );
+            expect(
+                (
+                    await h
+                        .control(spectator)
+                        .validation.probeIsDisputedFork(originalForkId, false)
+                        .request()
+                ).disputed,
+                "premise: the spectator's mirror does not know the old fork was disputed"
+            ).to.equal(false);
+
+            const restoreSync = await h.rpcStub.recordSpectateSync(
+                spectator.index,
+                { forward: true }
+            );
+            await h
+                .control(replayer)
+                .byzantine.sendBlockConfirmation(
+                    oldBlock!.encodedBlockConfirmation,
+                    spectator.address
+                )
+                .request();
+            await waitFor(
+                async () =>
+                    await h
+                        .control(spectator)
+                        .query.isBlockQueued(oldBlock!.hash)
+                        .request()
+            );
+            // the queue timeout asks the sender, the replayer, and nobody else:
+            // the failed sync is its counted close
+            expect(
+                await h.rpcStub.spectateSyncTargetsWait(spectator.index, 1)
+            ).to.deep.equal([replayer.address]);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: spectator,
+                target: replayer
+            });
+            expect(
+                await h.rpcStub.spectateSyncCallCount(spectator.index)
+            ).to.equal(1);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.isBlockQueued(oldBlock!.hash)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getStrikes(author.address)
+                    .request()
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(author)
+                    .query.isBlacklisted(spectator.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getBlockByHash(oldBlock!.hash)
+                    .request()
+            ).to.be.null;
+            await restoreSync();
+        });
+
+        it("still recovers via local reduction when the raced block is on yet another unknown fork", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+            const reducingHonestPeers = [0, 3];
+
+            // 2 = warm-up transitions the dispute staging needs, not the peer index.
+            await h.lifecycle.start(4, 2, {
+                timeConfig: forkTimeConfig
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+
+            const race = await h.rpcStub.holdReductionRace(targetPeerIndex);
+
+            h.event.resetEventSpies();
+            const { newForkId } = await h.scenario.disputeAndResolve({
+                maliciousPeerIndex,
+                forkId: originalForkId,
+                honestPeerIndices: reducingHonestPeers,
+                resetEventSpies: false
+            });
+
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(0, "target peer should not reduce before the race");
+
+            // Not the reduced-fork block: an authentic block-0 on a fork
+            // nobody has. The mismatch still triggers the local reduction
+            // (the current fork is disputed), but the block itself must be
+            // quarantined for sync, not accepted.
+            const author = h.getPeer(reducingHonestPeers[0]);
+            const { bogusBlock, blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: targetPeerIndex,
+                blockConfirmation,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: author.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+
+            // Gate on onSetState, not getForkId: unsafeSetLatestState sets
+            // this.forkId ~2 awaits before it fires onSetState, so waiting on
+            // the fork id lets the count assertion race in and read 0.
+            await h.event.waitForEventCounts(
+                "onSetState",
+                [{ peerId: targetPeerIndex, expectedCount: 1 }],
+                10000
+            );
+            expect(
+                await h.control(targetPeer).query.getForkId().request()
+            ).to.equal(
+                newForkId,
+                "the local reduction should land the target on the reduced fork"
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(
+                1,
+                "the wrong-fork block should trigger exactly one local reduction"
+            );
+
+            // The bogus block sits queued for sync until eviction - never
+            // validated, never stored.
+            expect(
+                await h
+                    .control(targetPeer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request()
+            ).to.equal(true);
+            await waitFor(
+                async () =>
+                    !(await h
+                        .control(targetPeer)
+                        .query.isBlockQueued(bogusBlock.hash)
+                        .request()),
+                (forkTimeConfig.agreementTime + 5) * 1000
+            );
+            expect(
+                await h
+                    .control(targetPeer)
+                    .query.getBlockByHash(bogusBlock.hash)
+                    .request()
+            ).to.be.null;
+            // The supplier cannot prove the bogus fork - the failed sync
+            // strikes them without a verdict.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: targetPeer,
+                target: author
+            });
+
+            await race.release();
+            await h.event.waitWhileEventCountsStayAtMost(
+                "onSetState",
+                [targetPeerIndex],
+                { durationMs: 2000, maxCount: 1 }
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(1, "replayed snapshot events must not set state again");
+        });
+
+        it("drains an early reduced-fork block once the fork transition catches up", async function () {
+            const h = TestSession.getHarness();
+            const targetPeerIndex = 1;
+            const maliciousPeerIndex = 2;
+            const reducingHonestPeers = [0, 3];
+
+            // 2 = warm-up transitions the dispute staging needs, not the peer index.
+            await h.lifecycle.start(4, 2, {
+                // Long queue window: the early block must survive queued
+                // until the release below drains it.
+                timeConfig: { ...forkTimeConfig, agreementTime: 10 }
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const originalForkId = h.activeForkId!;
+            const targetPeer = h.getPeer(targetPeerIndex);
+
+            const race = await h.rpcStub.holdReductionRace(targetPeerIndex);
+            // Simulate "kill period not expired yet": the ingest-time
+            // recovery finds nothing to reduce and must queue for sync. The
+            // sync flow itself stays quiet - this test isolates the
+            // queue-drain-after-transition property.
+            const restoreReduce = await h.rpcStub.reduceNoop(targetPeerIndex);
+            const restoreSync = await h.rpcStub.recordSpectateSync(
+                targetPeerIndex,
+                { forward: false }
+            );
+
+            h.event.resetEventSpies();
+            const { newForkId } = await h.scenario.disputeAndResolve({
+                maliciousPeerIndex,
+                forkId: originalForkId,
+                honestPeerIndices: reducingHonestPeers,
+                resetEventSpies: false
+            });
+
+            const sourcePeer = h.getPeer(reducingHonestPeers[0]);
+            const nextWriterAddress = await h
+                .control(sourcePeer)
+                .query.getNextToWrite()
+                .request();
+            const writerPeer = h.peers.find(
+                (p) => p.address === nextWriterAddress
+            );
+            // See the recovery test: no `.equal(undefined)` on a TestPeer.
+            expect(writerPeer, "no writer peer found").to.not.be.undefined;
+            expect(writerPeer!.index).not.to.equal(targetPeerIndex);
+
+            await writerPeer!.p2pInstance.p2pContractInstance.add(1);
+
+            await waitFor(async () => {
+                const block = await h
+                    .control(sourcePeer)
+                    .query.getBlockByHeight(newForkId, 0)
+                    .request();
+                return Boolean(block?.encodedBlockConfirmation);
+            }, h.event.protocolEventTimeoutMs());
+            const firstBlock = await h
+                .control(sourcePeer)
+                .query.getBlockByHeight(newForkId, 0)
+                .request();
+
+            // With nothing reducible the block queues for sync instead.
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: targetPeerIndex,
+                blockConfirmation: Codec.decode(
+                    firstBlock!.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                ),
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: writerPeer!.address
+                },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(targetPeer)
+                        .query.isBlockQueued(firstBlock!.hash)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await h.control(targetPeer).query.getForkId().request()
+            ).to.equal(
+                originalForkId,
+                "target peer must not transition while nothing is reducible"
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(0);
+
+            // The reduced-snapshot event must be held before releasing, so
+            // the replay below is what drives the transition.
+            await waitFor(
+                async () => (await race.heldSnapshotEventCount()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+
+            // Release: real reduction back first, then the replayed snapshot
+            // event reduces on the spot and the post-transition queue drain
+            // executes the early block.
+            await restoreReduce();
+            await race.release();
+
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(targetPeer)
+                        .query.getForkId()
+                        .request()) === newForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(targetPeer)
+                        .query.getBlockByHeight(newForkId, 0)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(1);
+            // The queued block was drained by the transition BEFORE its timeout,
+            // so it was never synced at all (arrival-time sync is gone; the
+            // timeout is the sole sync probe and the transition beat it). The
+            // honest supplier is never punished.
+            expect(
+                await h.rpcStub.spectateSyncCallCount(targetPeerIndex)
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(targetPeer)
+                    .query.isBlacklisted(writerPeer!.address)
+                    .request()
+            ).to.equal(false);
+
+            await restoreSync();
+        });
+
+        // Unit scope for the strategy fallback: the queue gate keeps unknown
+        // forks out of validation, so drive the real strategy directly on a
+        // real queued entry (host-side, all collaborators live).
+        describe("wrongGenesisDetected (host-side unit scope)", function () {
+            it("missing genesis: no proof to build, sources blacklisted, no dispute", async function () {
+                const h = TestSession.getHarness();
+                await h.lifecycle.start(3, 0, {
+                    timeConfig: {
+                        p2pTime: 3,
+                        agreementTime: 10,
+                        chainFallbackTime: 30,
+                        evidenceTime: 8
+                    }
+                });
+
+                const observer = h.getPeer(0);
+                const author = h.getPeer(1);
+                const supplier = h.getPeer(2);
+
+                // Hold the sync flow so the strategy call is the only thing
+                // that can punish the supplier (the ingest quarantine would
+                // otherwise blacklist them through the failed sync as well).
+                const restoreSync = await h.rpcStub.recordSpectateSync(0, {
+                    forward: false
+                });
+
+                const { bogusBlock, blockConfirmation } =
+                    await h.byzantine.craftBogusForkBlockZero(author.index);
+                await h.transition.ingestBlockConfirmationWait({
+                    peerIndex: observer.index,
+                    blockConfirmation,
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
+                    keepConnection: true,
+                    waitForProcessed: false
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(bogusBlock.hash)
+                        .request()
+                ).to.equal(true);
+
+                const r = await h.execOnHost(
+                    observer,
+                    async (sm, args) => {
+                        const entry = sm.storage.queues.getQueuedEntry(
+                            args.hash as any
+                        );
+                        if (!entry) return null;
+                        const strategy =
+                            sm.getActiveValidationStrategy() as any;
+                        const fraudProofService =
+                            strategy.fraudProofService as any;
+                        const disputeManager = strategy.disputeManager as any;
+
+                        // The proof builder itself must refuse a fork with no
+                        // genesis snapshot - descriptively, not via a `!`.
+                        let thrownMessage = "";
+                        try {
+                            fraudProofService.createWrongGenesisProof(
+                                entry.block
+                            );
+                        } catch (e) {
+                            thrownMessage =
+                                e instanceof Error ? e.message : String(e);
+                        }
+
+                        let proofs = 0;
+                        let disputes = 0;
+                        const originalProof =
+                            fraudProofService.createWrongGenesisProof.bind(
+                                fraudProofService
+                            );
+                        const originalDispute =
+                            disputeManager.dispute.bind(disputeManager);
+                        fraudProofService.createWrongGenesisProof = (
+                            ...a: unknown[]
+                        ) => {
+                            proofs += 1;
+                            return originalProof(...a);
+                        };
+                        // Record-only: a real dispute would derail the session.
+                        disputeManager.dispute = async () => {
+                            disputes += 1;
+                            return {};
+                        };
+                        try {
+                            const result =
+                                await strategy.wrongGenesisDetected(entry);
+                            return { result, proofs, disputes, thrownMessage };
+                        } finally {
+                            fraudProofService.createWrongGenesisProof =
+                                originalProof;
+                            disputeManager.dispute = originalDispute;
+                        }
+                    },
+                    { hash: bogusBlock.hash }
+                );
+
+                expect(r).to.not.equal(null);
+                expect(r!.thrownMessage).to.match(
+                    /Missing genesis snapshot for fork/
+                );
+                expect(r!.result).to.equal(BlockValidationResult.DISCONNECT);
+                expect(r!.proofs).to.equal(0);
+                expect(r!.disputes).to.equal(0);
+                // The real p2pManager cut the entry's supplier AND its author.
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(author.address)
+                        .request()
+                ).to.equal(true);
+
+                await restoreSync();
+            });
+
+            it("present genesis: builds the WrongGenesis proof and disputes the fork", async function () {
+                const h = TestSession.getHarness();
+                await h.lifecycle.start(3, 0, {
+                    timeConfig: { agreementTime: 10 }
+                });
+                // Setup only needs block 0 present on the observer - don't
+                // gate on suite-wide finalization (load-flake under parallel).
+                await h.transition.advanceState({
+                    waitForPeers: [0],
+                    waitForFinalization: false
+                });
+
+                const observer = h.getPeer(0);
+                const r = await h.execOnHost(
+                    observer,
+                    async (sm, args) => {
+                        const strategy =
+                            sm.getActiveValidationStrategy() as any;
+                        const disputeManager = strategy.disputeManager as any;
+                        const fraudProofService =
+                            strategy.fraudProofService as any;
+                        const block = sm.storage.blocks.getBlock(sm.forkId, 0)!;
+                        const entry = sm.storage.queues.createEntry(block, {
+                            origin: args.origin
+                        });
+
+                        let proofHash: unknown;
+                        const disputed: unknown[] = [];
+                        const originalProof =
+                            fraudProofService.createWrongGenesisProof.bind(
+                                fraudProofService
+                            );
+                        const originalDispute =
+                            disputeManager.dispute.bind(disputeManager);
+                        fraudProofService.createWrongGenesisProof = (
+                            ...a: unknown[]
+                        ) => {
+                            proofHash = originalProof(...a);
+                            return proofHash;
+                        };
+                        // Record-only: an on-chain dispute against an honest
+                        // block would derail the session; the proof stays real.
+                        let storedBeforeDispute = false;
+                        disputeManager.dispute = async (forkId: unknown) => {
+                            storedBeforeDispute = proofHash
+                                ? !!sm.storage.fraudProofs.getFraudProofByHash(
+                                      proofHash as any
+                                  )
+                                : false;
+                            disputed.push(String(forkId));
+                            return {};
+                        };
+                        try {
+                            const result =
+                                await strategy.wrongGenesisDetected(entry);
+                            return {
+                                result,
+                                disputed,
+                                storedBeforeDispute,
+                                forkId: String(sm.forkId),
+                                proofStored: proofHash
+                                    ? !!sm.storage.fraudProofs.getFraudProofByHash(
+                                          proofHash as any
+                                      )
+                                    : false
+                            };
+                        } finally {
+                            fraudProofService.createWrongGenesisProof =
+                                originalProof;
+                            disputeManager.dispute = originalDispute;
+                        }
+                    },
+                    { origin: BlockOrigin.PROOF as const }
+                );
+
+                expect(r.result).to.equal(BlockValidationResult.DISPUTE);
+                expect(r.disputed).to.deep.equal([r.forkId]);
+                expect(r.storedBeforeDispute).to.equal(true);
+                expect(r.proofStored).to.equal(true);
+            });
+        });
+
+        describe("stale-fork entry gates (host-side unit scope)", function () {
+            it("never validates an entry whose fork is not current", async function () {
+                const h = TestSession.getHarness();
+                await h.lifecycle.start(3, 0, {
+                    timeConfig: {
+                        p2pTime: 3,
+                        agreementTime: 10,
+                        chainFallbackTime: 30,
+                        evidenceTime: 8
+                    }
+                });
+
+                const observer = h.getPeer(0);
+                const author = h.getPeer(1);
+                const supplier = h.getPeer(2);
+
+                // Record-only sync from the start: the gate paths must only
+                // *ask* for sync; the flow itself is covered above.
+                const restoreSync = await h.rpcStub.recordSpectateSync(0, {
+                    forward: false
+                });
+
+                // The real ingest quarantines the wrong-fork block - its
+                // queued entry is the staging material for the gates.
+                const { bogusBlock, blockConfirmation } =
+                    await h.byzantine.craftBogusForkBlockZero(author.index);
+                await h.transition.ingestBlockConfirmationWait({
+                    peerIndex: observer.index,
+                    blockConfirmation,
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
+                    keepConnection: true,
+                    waitForProcessed: false
+                });
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlockQueued(bogusBlock.hash)
+                        .request()
+                ).to.equal(true);
+
+                const r = await h.execOnHost(
+                    observer,
+                    async (sm, args) => {
+                        const manager = sm.blockQueueManager as any;
+                        const timeoutManager = sm.timeoutManager as any;
+                        const stub = sm.p2pManager.localRpc.stub;
+                        const hash = args.hash as any;
+
+                        let queueTimeoutsScheduled = 0;
+                        const syncBase = stub.spectateSyncCallCount;
+                        const originalSchedule =
+                            timeoutManager.scheduleTask.bind(timeoutManager);
+                        timeoutManager.scheduleTask = (
+                            task: () => unknown,
+                            delayMs: number,
+                            taskName = "unnamed"
+                        ) => {
+                            if (
+                                taskName.startsWith(
+                                    "BlockQueueManager.queueTimeout"
+                                )
+                            ) {
+                                queueTimeoutsScheduled += 1;
+                                return { delayMs };
+                            }
+                            return originalSchedule(task, delayMs, taskName);
+                        };
+                        try {
+                            // (a) a stale forkId argument is not authority
+                            await manager.tryExecuteFromQueue(args.forkId);
+                            const staleArgIgnored =
+                                !!sm.storage.queues.getQueuedEntry(hash);
+
+                            // (b) a dequeued entry whose fork is no longer
+                            // current is NEVER validated: the real pipeline sees
+                            // the fork mismatch and, since this bogus fork is
+                            // unknown (not a fork we've moved past), restores it
+                            // for its timeout to sync rather than validating,
+                            // dropping, or syncing inline. "Not validated" is
+                            // observed as the block never reaching storage.
+                            const entry = sm.storage.queues.removeBlock(hash)!;
+                            // The dequeue owns the entry - drop the real
+                            // eviction timer the ingest scheduled.
+                            manager.cancelQueueTimeout(hash);
+
+                            await manager.executeQueuedEntry(entry);
+
+                            const restored =
+                                !!sm.storage.queues.getQueuedEntry(hash);
+                            const stored =
+                                sm.storage.blocks.getBlock(hash) !== undefined;
+                            const syncDelta =
+                                stub.spectateSyncCallCount - syncBase;
+
+                            return {
+                                staleArgIgnored,
+                                restored,
+                                stored,
+                                queueTimeoutsScheduled,
+                                syncDelta
+                            };
+                        } finally {
+                            timeoutManager.scheduleTask = originalSchedule;
+                        }
+                    },
+                    { hash: bogusBlock.hash, forkId: bogusBlock.forkId }
+                );
+
+                expect(r.staleArgIgnored).to.equal(true);
+                // Unknown fork: restored for a timeout sync, re-arming exactly
+                // one queue timeout; never validated (never stored), never
+                // synced inline.
+                expect(r.restored).to.equal(true);
+                expect(r.stored).to.equal(false);
+                expect(r.queueTimeoutsScheduled).to.equal(1);
+                expect(r.syncDelta).to.equal(0);
+
+                await restoreSync();
+            });
+        });
+    });
+
+    describe("committed dispute on the current fork", function () {
+        it("a committed dispute discards the queued block and rejects the leader's genuine next block; the head stays put", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 2);
+            const leaderIndex = (await h.query.getNextPeerToWrite()).index;
+            const observerIndex = h.peers.find(
+                (peer) => peer.index !== leaderIndex
+            )!.index;
+            // the disputed fork stays the observer's current fork, and its
+            // queued block can leave the queue only through the dispute
+            const race = await h.rpcStub.holdReductionRace(observerIndex);
+            const queueTimeouts = await h.rpcStub.holdScheduledTasks(
+                observerIndex,
+                "BlockQueueManager.queueTimeout"
+            );
+            // the leader holds its own next block, so its timeout of the next
+            // writer would dispute with that block in it and the observer's
+            // replay would store it
+            const restoreLeaderTimeouts =
+                await h.rpcStub.suppressTimeoutCheck(leaderIndex);
+
+            // the leader's real next block stays off the wire, so the other
+            // participants time its author out and dispute the fork
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex
+                });
+            const queued = await factory.buildAndEncodeBlock(leader.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: startHeight + 1,
+                    participant: leader.address
+                }
+            });
+            const queuedHash = Block.fromBlockConfirmation(
+                Codec.decode(queued, Type.BlockConfirmation)
+            ).hash;
+            const control = h.control(observer);
+            const fromLeader = {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: leader.address
+            };
+            await control.transition
+                .ingestBlockConfirmation(queued, fromLeader)
+                .request();
+            expect(
+                await control.query.getQueuedRetention(queuedHash).request()
+            ).to.not.equal(null);
+
+            await h.event.waitForPeers(
+                "onDisputeCommitted",
+                [observerIndex],
+                1,
+                { mode: "atLeast" }
+            );
+            await waitFor(
+                async () =>
+                    (await control.query
+                        .getQueuedRetention(queuedHash)
+                        .request()) === null,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(await queueTimeouts.heldCount()).to.be.greaterThan(0);
+
+            // the genuine next block arrives after the commitment: rejected
+            // at intake, so it is never queued for execution and validation
+            const executions = await h.rpcStub.holdScheduledTasks(
+                observerIndex,
+                "BlockQueueManager.tryExecuteFromQueue"
+            );
+            await control.transition
+                .ingestBlockConfirmation(
+                    authored.encodedBlockConfirmation,
+                    fromLeader
+                )
+                .request();
+            expect(
+                await control.query.getQueuedRetention(authored.hash).request()
+            ).to.equal(null);
+            expect(await executions.heldCount()).to.equal(0);
+            await executions.release(false);
+            expect(
+                await control.query
+                    .getBlockByHeight(forkId, startHeight)
+                    .request()
+            ).to.equal(null);
+            expect(
+                await control.query.getNextBlockHeight(forkId).request()
+            ).to.equal(startHeight);
+            expect(await control.query.getForkId().request()).to.equal(forkId);
+
+            await restoreLeaderTimeouts();
+            await queueTimeouts.release(false);
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
+        });
+    });
+
+    describe("queue timeout window (host-side unit scope)", function () {
+        it("schedules the full window fresh, only the remainder after aging, and nothing at the deadline", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 10,
+                    chainFallbackTime: 30,
+                    evidenceTime: 8
+                }
+            });
+            // Setup only needs block 0 present on the observer - don't gate
+            // on suite-wide finalization (load-flake under parallel).
+            await h.transition.advanceState({
+                waitForPeers: [0],
+                waitForFinalization: false
+            });
+
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const manager = sm.blockQueueManager as any;
+                    const timeoutManager = sm.timeoutManager as any;
+                    const agreementTime = sm.timeConfig.agreementTime;
+                    const block = sm.storage.blocks.getBlock(
+                        args.forkId as any,
+                        0
+                    )!;
+
+                    // Capture queue-timeout scheduling; forward the rest.
+                    const scheduled: { delayMs: number }[] = [];
+                    const cancelled: unknown[] = [];
+                    const originalSchedule =
+                        timeoutManager.scheduleTask.bind(timeoutManager);
+                    const originalCancel =
+                        timeoutManager.cancelTask.bind(timeoutManager);
+                    timeoutManager.scheduleTask = (
+                        task: () => unknown,
+                        delayMs: number,
+                        taskName = "unnamed"
+                    ) => {
+                        if (
+                            taskName.startsWith(
+                                "BlockQueueManager.queueTimeout"
+                            )
+                        ) {
+                            const handle = { delayMs };
+                            scheduled.push(handle);
+                            return handle;
+                        }
+                        return originalSchedule(task, delayMs, taskName);
+                    };
+                    timeoutManager.cancelTask = (handle: unknown) => {
+                        if (scheduled.includes(handle as never)) {
+                            cancelled.push(handle);
+                            return;
+                        }
+                        return originalCancel(handle);
+                    };
+                    try {
+                        const hash = sm.storage.queues.queueBlock(block, {
+                            origin: args.origin
+                        })!;
+
+                        const fresh = manager.scheduleQueueTimeout(hash);
+                        const freshDelayMs =
+                            scheduled[scheduled.length - 1]?.delayMs;
+
+                        // Duplicate copies merge into the entry - age it
+                        // precisely instead of sleeping.
+                        const aged =
+                            sm.p2pManager.localRpc.stub.withQueueClockOffset(
+                                4,
+                                () => manager.scheduleQueueTimeout(hash)
+                            );
+                        const agedDelayMs =
+                            scheduled[scheduled.length - 1]?.delayMs;
+                        const cancelledAfterAging = cancelled.length;
+
+                        const atDeadline =
+                            sm.p2pManager.localRpc.stub.withQueueClockOffset(
+                                agreementTime + 4,
+                                () => manager.scheduleQueueTimeout(hash)
+                            );
+                        const cancelledAfterDeadlineAttempt = cancelled.length;
+                        const scheduledCount = scheduled.length;
+
+                        manager.cancelQueueTimeout(hash);
+                        sm.storage.queues.removeBlock(hash);
+                        return {
+                            agreementTime,
+                            fresh,
+                            freshDelayMs,
+                            aged,
+                            agedDelayMs,
+                            cancelledAfterAging,
+                            atDeadline,
+                            cancelledAfterDeadlineAttempt,
+                            scheduledCount
+                        };
+                    } finally {
+                        timeoutManager.scheduleTask = originalSchedule;
+                        timeoutManager.cancelTask = originalCancel;
+                    }
+                },
+                { origin: BlockOrigin.PROOF as const, forkId }
+            );
+
+            const windowMs = r.agreementTime * 1000;
+            expect(r.fresh).to.equal(true);
+            // Full window, minus at most one whole-second clock tick.
+            expect(r.freshDelayMs).to.be.within(windowMs - 1000, windowMs);
+            expect(r.aged).to.equal(true);
+            // Aging by 4s shrinks the delay by exactly 4s (same tick slack).
+            expect(r.agedDelayMs).to.be.within(
+                r.freshDelayMs! - 5000,
+                r.freshDelayMs! - 4000
+            );
+            expect(r.cancelledAfterAging).to.equal(1); // fresh handle replaced
+            expect(r.atDeadline).to.equal(false);
+            expect(r.scheduledCount).to.equal(2); // nothing scheduled at the deadline
+            // The deadline attempt must not cancel the live handle.
+            expect(r.cancelledAfterDeadlineAttempt).to.equal(1);
+        });
+    });
+});

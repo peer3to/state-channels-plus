@@ -1,0 +1,338 @@
+// @spec-test-coverage-ignore: shared harness assertions exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { Status } from "@/types";
+import type { ForkId } from "@/types/types";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+
+export class AssertRPCActions<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(private readonly harness: PeerTestHarness<THost>) {}
+
+    // The observer blacklists and disconnects the target (a byzantine sender it
+    // rejected) without going offline
+    async peerBlacklistedAndDisconnected(options: {
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
+        expectedStatus: Status;
+        timeoutMs?: number;
+    }): Promise<void> {
+        await this.peerExcludedAndDisconnected(options, "isBlacklisted");
+    }
+
+    // The observer suspends and disconnects the target (a peer it could not
+    // agree a clock with) without blacklisting it or going offline
+    async peerSuspendedAndDisconnected(options: {
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
+        expectedStatus: Status;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { observer, target } = options;
+        await this.peerExcludedAndDisconnected(options, "isSuspended");
+        expect(
+            await this.harness
+                .control(observer)
+                .query.isBlacklisted(target.address)
+                .request(),
+            `peer ${observer.index} blacklisted peer ${target.index} instead of suspending it`
+        ).to.equal(false);
+    }
+
+    // The observer closed the target without recording anything against it:
+    // neither the persisted verdict nor the session bar is set.
+    async peerNotExcluded(options: {
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
+    }): Promise<void> {
+        const { observer, target } = options;
+        const query = this.harness.control(observer).query;
+        const [blacklisted, suspended] = await Promise.all([
+            query.isBlacklisted(target.address).request(),
+            query.isSuspended(target.address).request()
+        ]);
+        expect(
+            blacklisted,
+            `peer ${observer.index} blacklisted peer ${target.index}`
+        ).to.equal(false);
+        expect(
+            suspended,
+            `peer ${observer.index} suspended peer ${target.index}`
+        ).to.equal(false);
+    }
+
+    // The observer closed the target with the bounded tier: it recorded
+    // `expectedStrikes` against the target and no verdict. With
+    // `expectedStatus` it also checks the drop left the observer running.
+    async peerStruckWithoutBlacklist(options: {
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
+        expectedStrikes?: number;
+        expectedStatus?: Status;
+        timeoutMs?: number;
+        pollMs?: number;
+    }): Promise<void> {
+        const {
+            observer,
+            target,
+            expectedStrikes = 1,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(),
+            pollMs = 200
+        } = options;
+        const query = this.harness.control(observer).query;
+        await waitFor(
+            async () =>
+                (await query.getStrikes(target.address).request()) ===
+                expectedStrikes,
+            timeoutMs,
+            pollMs
+        );
+        expect(
+            await query.isBlacklisted(target.address).request(),
+            `peer ${observer.index} blacklisted peer ${target.index} instead of striking it`
+        ).to.equal(false);
+        if (options.expectedStatus !== undefined)
+            await this.peerDroppedWithoutStatusChange({
+                observer,
+                target,
+                expectedStatus: options.expectedStatus
+            });
+    }
+
+    // Shared driver of the two exclusion assertions: wait for the exclusion
+    // the observer records against the target, then check the drop.
+    private async peerExcludedAndDisconnected(
+        options: {
+            observer: TestPeer<THost>;
+            target: TestPeer<THost>;
+            expectedStatus: Status;
+            timeoutMs?: number;
+        },
+        exclusion: "isBlacklisted" | "isSuspended"
+    ): Promise<void> {
+        const {
+            observer,
+            target,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
+        const verb = exclusion === "isBlacklisted" ? "blacklist" : "suspend";
+        await this.harness.disconnectionBarrier.waitFor(
+            async () =>
+                await this.harness
+                    .control(observer)
+                    .query[exclusion](target.address)
+                    .request(),
+            {
+                timeoutMs,
+                timeoutMessage: `Expected peer ${observer.index} to ${verb} peer ${target.index} within ${timeoutMs}ms`
+            }
+        );
+        await this.peerDroppedWithoutStatusChange(options);
+    }
+
+    // Shared tail of both exclusion assertions: the target is gone and the
+    // observer itself kept running.
+    private async peerDroppedWithoutStatusChange(options: {
+        observer: TestPeer<THost>;
+        target: TestPeer<THost>;
+        expectedStatus: Status;
+    }): Promise<void> {
+        const { observer, target, expectedStatus } = options;
+        const query = this.harness.control(observer).query;
+        const [connected, status] = await Promise.all([
+            query.isConnectedTo(target.address).request(),
+            query.getStatus().request()
+        ]);
+        expect(
+            connected,
+            `peer ${observer.index} stayed connected to dropped peer ${target.index}`
+        ).to.equal(false);
+        expect(
+            status,
+            `peer ${observer.index} status changed while dropping peer ${target.index}`
+        ).to.equal(expectedStatus);
+    }
+
+    async peerDisconnectedFrom(options: {
+        peerIndex: number;
+        expectedFinalCount: number;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            peerIndex,
+            expectedFinalCount,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
+
+        await this.harness.disconnectionBarrier.waitFor(
+            async () =>
+                (await this.harness.query.getConnectionCount(peerIndex)) ===
+                expectedFinalCount,
+            {
+                timeoutMs,
+                timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    async handshakeCompleted(options: {
+        peer1: number;
+        peer2: number;
+    }): Promise<void> {
+        const { peer1, peer2 } = options;
+        const peer2Obj = this.harness.getPeer(peer2);
+        const isCompleted = await this.harness.rpc.isHandshakeCompleted(
+            peer1,
+            peer2Obj.address
+        );
+
+        if (!isCompleted) {
+            throw new Error(
+                `Expected handshake to be completed between peer ${peer1} and peer ${peer2}, but it is not`
+            );
+        }
+    }
+
+    async allHandshakesCompleted(
+        handshakes: Array<{ peer1: number; peer2: number }>
+    ): Promise<void> {
+        for (const { peer1, peer2 } of handshakes) {
+            await this.handshakeCompleted({ peer1, peer2 });
+        }
+    }
+
+    async allPeersAcknowledgedDispute(options: {
+        requestingPeer: number;
+        forkId?: ForkId;
+        excludePeers?: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            requestingPeer,
+            forkId,
+            excludePeers = [],
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
+
+        const activeForkId = forkId ?? this.harness.activeForkId;
+        if (!activeForkId) {
+            throw new Error("No active fork ID");
+        }
+
+        const totalPeers = this.harness.peers.length;
+        const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
+
+        await this.harness.rpcBarrier.waitFor(
+            async () => {
+                const candidates = this.harness.peers.filter(
+                    (p, i) => !excludePeers.includes(i) && i !== requestingPeer
+                );
+                const acks = await Promise.all(
+                    candidates.map((p) =>
+                        this.harness.rpc.didPeerAcknowledgeDisputedFork(
+                            requestingPeer,
+                            p.address,
+                            activeForkId
+                        )
+                    )
+                );
+                return acks.filter(Boolean).length >= expectedAcknowledgments;
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `Not all peers acknowledged disputed fork ${activeForkId} to peer ${requestingPeer} within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    async duplicateDisputeRequestIgnored(options: {
+        peerIndex: number;
+        forkId?: ForkId;
+    }): Promise<void> {
+        const { peerIndex, forkId } = options;
+        const activeForkId = forkId ?? this.harness.activeForkId;
+        if (!activeForkId) {
+            throw new Error("No active fork ID");
+        }
+
+        const peer = this.harness.getPeer(peerIndex);
+        const disputedForksBefore = await this.harness
+            .control(peer)
+            .handshake.getDisputedForksCount()
+            .request();
+        await this.harness
+            .control(peer)
+            .handshake.requestDisputeAcknowledgment(
+                this.harness.channelId!,
+                activeForkId
+            )
+            .request();
+        const disputedForksAfter = await this.harness
+            .control(peer)
+            .handshake.getDisputedForksCount()
+            .request();
+
+        if (disputedForksAfter !== disputedForksBefore) {
+            throw new Error(
+                `Expected duplicate request to be ignored, but disputedForks changed from ${disputedForksBefore} to ${disputedForksAfter}`
+            );
+        }
+    }
+
+    async firstAcknowledgmentRecorded(options: {
+        respondingPeer: number;
+        requestingPeer: number;
+        forkId?: ForkId;
+    }): Promise<void> {
+        const { respondingPeer, requestingPeer, forkId } = options;
+        const activeForkId = forkId ?? this.harness.activeForkId;
+        if (!activeForkId) {
+            throw new Error("No active fork ID");
+        }
+
+        const requestingPeerObj = this.harness.getPeer(requestingPeer);
+        const respondingPeerObj = this.harness.getPeer(respondingPeer);
+
+        const acknowledged = await this.harness
+            .control(respondingPeerObj)
+            .handshake.didIAcknowledgeDisputedFork(
+                requestingPeerObj.address,
+                activeForkId
+            )
+            .request();
+
+        if (!acknowledged) {
+            throw new Error(
+                `Expected peer ${respondingPeer} to have acknowledged fork ${activeForkId} to peer ${requestingPeer}, but did not`
+            );
+        }
+    }
+
+    async transportClosedOrGone(options: {
+        fromPeer: number;
+        toPeer: number;
+    }): Promise<void> {
+        const { fromPeer, toPeer } = options;
+        const fromPeerObj = this.harness.getPeer(fromPeer);
+        const toAddress = this.harness.getPeer(toPeer).address;
+
+        const closedOrGone = await this.harness
+            .control(fromPeerObj)
+            .query.isTransportClosed(toAddress)
+            .request();
+
+        if (!closedOrGone) {
+            throw new Error(
+                `Expected transport from peer ${fromPeer} to peer ${toPeer} to be closed, but it is still open`
+            );
+        }
+    }
+}

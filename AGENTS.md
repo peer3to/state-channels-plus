@@ -1,0 +1,422 @@
+## Repository Workflow
+
+- Use `yarn` commands in this repository. Do not use `pnpm verify`.
+- For post-edit validation, run the narrowest relevant test first when available.
+- Run `yarn tsc --noEmit -p tsconfig.json` for TypeScript typechecking.
+- Run `yarn compile` for compile-level validation when changes affect the build or exported package surface.
+- Don't disturb the user's working tree or index to inspect another revision.
+  Prefer a throwaway worktree (`git worktree add <tmp> <ref>`) over `git stash`.
+  If you must stash, preserve staging: restore with `git stash pop --index` so
+  files the user had staged come back staged — never leave them re-reviewing
+  files they'd already staged.
+
+## Conventions
+
+These are project rules to follow (and persist any future "remember this" instructions here).
+
+### Questions must wait for a reply
+
+- When asking a Human a question, ask in ordinary chat and end the turn. Do not use
+  timed or asynchronous question prompts, select a default, or continue working
+  while waiting for their answer.
+- Wait until a Human explicitly replies. Elapsed time, silence, a dismissed prompt,
+  or a preselected option is never an answer or permission to proceed.
+
+### Design authority
+
+- Follow the human engineer's plan and the specification. The human engineer owns design decisions; agents implement them. No AI agent may make these design decisions.
+- Do not add architecture, processing changes, or abstractions beyond that design.
+- If the plan or specification leaves a design choice unclear, ask the human engineer before implementing that choice.
+- The human engineer's later clarification overrides an earlier plan. Update the affected plan and documentation to match it.
+
+### PR reviews (AI agents)
+
+When reviewing a PR, verifying adherence to **all** guidelines in this file
+_and_ `test/AGENTS.md` (for anything under `test/`) is part of the review —
+report violations as findings alongside correctness issues. This includes the
+testing-changes rule above (unit + e2e in the same pass), the strategy-pattern
+rules, the type-safety rules, and the test-harness rules (no mocks, fixtures
+trigger src code).
+
+### Specification traceability
+
+For any design, source, contract, or test change that affects specified
+behavior, follow `docs/spec/AGENTS.md` in the same pass. Identify affected
+requirements, planned tests, the file reports' requirement bullets and case lists,
+test traceability, individual test declarations, questions, findings, and audit
+approvals. Planned tests preserve the owning requirement ID, for example
+`INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers and
+rerun related evidence. The layers link through stable IDs, not paths.
+Verification holds one report per test file plus the tool-written
+`verification/requirements.md`; tested status is derived, never typed.
+`yarn spec:refresh` regenerates the reports under `generated/` (it never
+authors the maintained documents). The full rules live in
+`docs/spec/AGENTS.md`. Before a commit run
+`yarn spec:impact` and `yarn spec:impact --staged`; during PR review run
+`yarn spec:impact --base <merge-base-ref>` and semantically recheck every
+reported path. PR reviews report specification drift,
+missing mirrors or links, stale approvals, incomplete black-box/system matrices,
+unclear test names, and unresolved decisions as findings. Agents must not edit
+the engineer-owned approvals register or invoke its approval command. Linked
+changes make the aggregate approval `Reverification required` automatically;
+ask the engineer for clarification only when intent, an oracle, or risk is
+uncertain, and leave final fingerprint approval to the engineer.
+
+### Canonical test command and parallel run logs
+
+`yarn test:parallel:distributed --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
+tiers across the configured distributed workers: all Mocha tests, the forge
+tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
+limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
+
+During development, leave these optional groups disabled unless the changes
+touch their relevant files or dependencies:
+
+- Use `--test-parallel-script` when changing parallel-runner scripts, their
+  configuration, or their self-tests.
+- Use `--test-browser` when changing browser code, browser build/runtime
+  dependencies, or browser tests, including shared code that affects those paths.
+
+Run only the relevant optional group and focused tests for those changes. Do not
+add both flags routinely to development validation; CI runs both groups on every
+full gate so the development cycle stays lean.
+
+Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
+run only on a protocol 14 or newer worker host whose runner image was built with
+`yarn test:parallel:image`. When no such host connects within the discovery
+window, the run skips them with a warning that lists them instead of failing,
+so a green run is not complete until that warning has been checked. A Mocha
+test file that launches Chromium must carry that marker in its leading
+comments. See the README's
+[Browser tests](README.md#browser-tests) section.
+
+Always use the distributed runner, also for
+focused subsets and repeated loops (`--grep <regexp>` works there too); it is
+the only runner that reproduces farm load. Use the local `yarn test:parallel`
+only for a small focused selection of about ten tests or fewer; anything larger
+on the local runner wastes the distributed infrastructure and takes far longer.
+The legacy in-process `yarn test` command is only for rare focused
+compatibility checks. The parallel runner writes each run to a fresh
+`./logs/run-N/` (N
+auto-increments) and never touches earlier `run-*` dirs — error logs persist
+across runs for comparison (`TEST_FAILURES.md` workflow). Only the current
+run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
+cleared) as-is; dirs outside `./logs` additionally need
+`--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
+
+Parallel and distributed test discovery requires static declarations. Define
+every runnable case as a direct `it("literal name", ...)` call in its test file.
+Do not generate tests with loops, `.forEach`, parameter matrices, dynamic names,
+or helper functions that register tests. Put shared test bodies in a separate
+helper or fixture file, then call them with explicit arguments from each `it`.
+
+### Test timeouts
+
+- **Never set `this.timeout(...)` in a test.** The global `timeout` in
+  `.mocharc.json` governs every test. A per-test override is acceptable only when
+  a measurement proves that one test needs longer, and the measurement belongs in
+  the PR description.
+- Never add one pre-emptively "to be safe" -> it gets copy-pasted onto every
+  neighbouring test, and then nothing catches a test that has genuinely gone slow.
+- A test that does not fit the global timeout is doing too much: split it or slim
+  its setup instead of raising its ceiling.
+- A load flake is not a reason for a per-test bump. The parallel runner re-runs
+  tasks it starved, and a starved task carries the starvation signature
+  (watchdog / event-loop-delay / `exit null`), not a real timeout.
+- Hook budgets are separate: the `this.timeout(...)` calls in
+  `test/harness/session/registerTestSessionHooks.ts` size session reset and the
+  detached-promise drain, not a test.
+
+### Test-chain RPC mutations
+
+- **Never call node-wide test RPC methods from a test that may share its node or
+  slot with another test.** This includes `evm_increaseTime`, `evm_mine`,
+  `evm_setNextBlockTimestamp`, snapshot/revert, automine/interval-mining changes,
+  `hardhat_mine`, `hardhat_reset`, impersonation, balance mutation, and similar
+  endpoints. They mutate global node state and can corrupt unrelated concurrent
+  tests.
+- Such methods are allowed only when the test owns a provably isolated node for
+  its entire lifetime. Do not infer isolation from the current command or from
+  tests usually running serially; verify it from the runner/provider setup.
+- Prefer exercising behavior through normal transactions and the harness. If an
+  isolated-node mutation is unavoidable, keep it in an explicitly isolated
+  test runner and restore reversible settings in `finally`.
+
+### Testing changes to `src/`
+
+Every `src/` change ships with tests in the same pass, at the appropriate
+layers:
+
+- **Unit tests treat the component as a black box through its public surface.**
+  Cover every meaningful component-level variation: normal and no-op paths,
+  both sides of boundaries, valid and invalid/missing state, failures,
+  retry/recovery, and relevant concurrency/interleavings. Use no mocks or junk
+  data — see `test/AGENTS.md`: use factory-built domain objects, or a
+  teleported harness session when the component has collaborators.
+- **E2E tests cover how that black box interacts with other systems.** For
+  peer-observable changes (guard/punishment/queue semantics, protocol
+  deviations, sync flows), test each affected integration boundary and
+  representative end-to-end success, failure, recovery, and race workflow.
+  Do not duplicate every unit-level input or boundary permutation in E2E.
+  Separate E2E cases are required only when a variation changes observable
+  system behavior, crosses a different integration boundary, or exercises a
+  materially different system interaction.
+
+Verify with the narrowest targeted run (`--grep` the touched files) before
+handing off.
+
+### RPC services (`*Service` + `*RpcMethods`)
+
+Applies to `src/rpc/network/services/**`, `src/rpc/internal/services/**`,
+`test/fixtures/customRpc/**`, and runtime probe pairs under
+`test/fixtures/runtimeRpc/probe/**`.
+
+- A `*RpcMethods` class must contain **only the public endpoint functions**. At
+  runtime `private` does not exist, and the dispatcher routes by name
+  (`methods[rpc.method](...)`), so any method on a `*RpcMethods` instance — even
+  a `private` one — is callable by a crafted payload.
+- All helpers, accessors (e.g. `sm`/`storage` getters), and shared state belong
+  on the corresponding `*Service` (it is not routable). Endpoints reach them via
+  `this.service.*`. The service is where services coordinate shared state.
+- Each service lives in its own directory: `<name>/<Name>Service.ts` +
+  `<name>/<Name>RpcMethods.ts`.
+
+### Block-validation deviations go through the strategy
+
+Applies to `src/stateManager/validationStrategy/*` and their call sites
+(`StateManager.onBlockConfirmation`, `tryMergeStoredBlockConfirmation`,
+`ValidationService`).
+
+- **Every deviation from the happy path is a method on `AValidationStrategy`**
+  (e.g. `notAllSingersAreParticipants`, `invalidStateTransitionDetected`,
+  `wrongGenesisDetected`). Never handle a deviation inline at the call site —
+  no matter how obvious the handling seems. Two reasons: (1) the strategy
+  interface is the single place to see all deviations; (2) the correct side
+  effect differs per pipeline (live gossip disconnects/blacklists; dispute
+  replay produces fraud-proof evidence against the submitter; spectating
+  drops the feed).
+- **Side effects live inside the strategy implementations**, not at the call
+  site. The call site only computes the inputs (pass precomputed sets — e.g.
+  the unexpected signers/signatures — so strategies don't recompute), calls
+  the hook, logs, and interprets the returned `BlockValidationResult`
+  (`SUCCESS` = continue the pipeline).
+- When adding a deviation, implement it on **all** strategies — a deliberate
+  `throw` ("should not be relevant/called") is a valid implementation when the
+  deviation is impossible for that pipeline.
+- **Exception: double signatures.** Two different signatures by one signer over
+  one message are a signature-level offense for every message type, so they are
+  detected in `SignerRecoveryCache` and punished by `P2PManager`, not through
+  `AValidationStrategy`.
+- **Exception: past blocks.** A block this peer is already past (stored, or an
+  unstored block at or below the local height on its fork) is deduplicated
+  before validation by `BlockQueueManager.isPastBlock` / `settlePastBlock`,
+  not through `AValidationStrategy`: the rule is the same for every live
+  pipeline, and dispute replay (no live gates) treats only a stored block as
+  past.
+- **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
+  block + ad-hoc sender parameter.** Entries merge signatures and
+  `sourcesToSignatures` in QueueStorage until dequeued. Each source has its own
+  maximum-participant-count signature allowance; drop excess contributions.
+  Dequeue removes the entry and normal processing uses its source map to resolve
+  offenders through `getSourcePeers` / `getSignatureSuppliers`. Re-queue through
+  `restoreEntry` so attribution survives a not-ready cycle. Keep the existing
+  processing flow; do not add retained processing records or work handles.
+  Struct-only callers (dispute replay, spectate sync) enter via
+  `onBlockConfirmationStruct`, which wraps into a sourceless entry.
+
+### Class layout
+
+- **All fields at the top, then all methods** — a class is always `{ fields,
+methods }`. Never interleave a field declaration between methods. When adding a
+  new field, put it with the other fields at the top of the class (keep any
+  explanatory comment with it), not next to the method that happens to use it.
+- **Public methods before private ones** — after the fields and the
+  constructor come the public methods and getters, then protected, then
+  private. The interface reads first; the internals follow.
+
+### Import order
+
+- Run `yarn lint:imports` to check source and test imports. Use
+  `yarn lint:imports:fix src test` for the mechanical fix. The shared
+  `import/order` rule sorts module paths alphabetically, ignoring case, in one
+  group; named members and existing blank lines keep their formatting.
+- Keep side-effect imports in place and keep TypeScript suppression comments
+  attached to their original import. Check both TypeScript builds after sorting.
+- Generated artifacts and Solidity enums are excluded. Keep repo-wide ordering
+  changes separate from behavior changes. lint-staged applies the rule to staged
+  files, and CI checks it before running the distributed suite.
+
+### Comments
+
+- When overriding inherited behavior, use TypeScript `override` and add a short
+  comment naming the base member and explaining what changes. Apply this to new
+  or modified overrides; implementing an abstract member is not replacing a default.
+
+- Keep comments simple and to the point. No long essays.
+- When refactoring or moving code (extracting a method, moving a body to another
+  file/service), carry over all original comments verbatim — do not drop or
+  condense them, including large explanatory/strategy blocks and numbered step
+  comments. If a comment genuinely needs to change, call it out rather than
+  dropping it silently; flag stale commented-out dead code instead of removing
+  it without mention.
+
+### Logging metadata
+
+- Reusable log-metadata extraction belongs in `LoggerUtils`, alongside the
+  existing block, dispute, transport, RPC, and contract-call helpers. Call
+  sites should delegate to those helpers instead of assembling selectors,
+  addresses, byte lengths, or other structured log metadata ad hoc.
+
+### Reuse existing code
+
+- Search for an existing implementation before adding logic. When the same
+  operation already exists, reuse it or extract one shared implementation;
+  never copy-paste the behavior into another class or service.
+- Keep one owner for each operation. Callers should delegate to that owner
+  instead of maintaining parallel implementations that can drift.
+
+### Solidity validators shared with the off-chain TS pipeline
+
+- A check that must agree on- and off-chain (dispute fraud-proof handlers) lives
+  **once in Solidity**; TS calls it via typechain — never re-implement it in TS
+  (it drifts → the off-chain pipeline builds a proof the on-chain apply handler
+  rejects). Must run on **both the calldata and non-calldata dispute paths**.
+- **Placement:** pure (no state) → free fn in `utils/DisputeUtils.sol` /
+  `BlockUtils.sol` + a `LocalDiamond` forwarder. State-reading domain logic →
+  `public` on the owning facet (e.g. `StateProofFacet`) + a routing entry (see
+  below) + a `StateChannelManagerInterface` decl; TS calls
+  `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
+  `delegatecall` the facet address (see `isCorrectLatestState`,
+  `verifyMilestones`). Broadly-shared primitive → `internal`
+  `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
+  `public` wrapper on `UtilityFacet` when TS or a test needs to call it
+  (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
+  override it; `LocalDiamond` declares its own `public` entry point for the
+  override, because its declared functions dispatch before the fallback while
+  production routes the selector to `UtilityFacet`.
+- **Never put anything `public` on `StateChannelCommon`:** a `public` base fn (or
+  `public` state var) is in every facet's ABI → its body and dispatcher entry are
+  compiled into all of them, and external callers only ever reach the deployed
+  `StateChannelManagerProxy`. `internal` is dead-code-eliminated to its callers.
+
+### The proxy routes by selector — it has no forwarders
+
+`StateChannelManagerProxy` must stay under the EIP-170 24,576-byte runtime
+limit, so it implements only what needs its own storage and composition (`open`,
+`postBlockCalldata`, the deposit/withdraw composables, `executeStateTransition`,
+`multicall`). Everything else reaches its facet through the fallback.
+
+- **A new externally callable facet function needs three edits**: the `public`
+  function on the facet, a compiler-derived
+  `_registerRoute(Facet.fn.selector, facetAddress)` call in the proxy
+  constructor, and a declaration on `StateChannelManagerInterface`.
+  Never add a typed forwarder body to the proxy — an `abi.encodeCall` /
+  `abi.decode` pair per function is what pushed it over the limit.
+- **Selectors are always written `FacetType.functionName.selector`** so the
+  compiler derives them and a signature change updates the routing with it.
+  Nothing is hand-hashed.
+- **`StateChannelManagerInterface` is a caller-side typing artifact only** —
+  nothing implements it. It is the union of what the proxy implements and what
+  the proxy routes, and it carries `StateChannelManagerEvents`. TS binds it at
+  the proxy address with `connectStateChannelManager`; facets
+  doing typed self-calls cast `StateChannelManagerInterface(address(this))`.
+  Keep each declaration's state mutability identical to the facet's, since that
+  is what decides whether ethers sends a call or a transaction.
+  `LocalDiamond` callers use `connectLocalDiamond` / `LocalDiamondContract`
+  (`src/utils/localDiamond.ts`), which merges its own ABI with the routed one.
+- **A facet function that must stay off the diamond's external surface** (an
+  internal pipeline step such as `killDispute` or `runFraudProof`) gets no
+  routing entry, and an exclusion with a reason in
+  `test/fixtures/ProxySelectorRoutingFixture.ts`. That fixture drives
+  `SelectorRouting.test.ts`, which fails when a facet function has neither a
+  routing entry nor an exclusion.
+
+### Platform-specific code (node / browser)
+
+- **Any platform-specific file must live under the platform dir** — `.../node/…`
+  or `.../browser/…` — never at a shared path. `tsconfig.json` excludes the
+  `browser` dirs and `tsconfig.browser.json` excludes the `node` dirs, so a
+  node-only file (anything importing `node:fs`, `node:perf_hooks`,
+  `node:worker_threads`, `child_process`, etc.) never compiles into or bundles
+  for the browser build, and vice versa. Introducing a platform feature at a
+  shared path leaks that platform's APIs into the other build — don't.
+- **A shared (or browser-compiled) file must not import a platform-only module
+  directly.** Route it through a `@platform/*` alias with a node impl and a
+  browser impl (the browser one can be a no-op), wired in the `paths` of _both_
+  `tsconfig.json` and `tsconfig.browser.json`. Note `.../worker/` dirs are shared
+  (browser-compiled) unless explicitly excluded — treat them as shared.
+- **Validate both builds** after platform changes:
+  `yarn tsc --noEmit -p tsconfig.json` **and**
+  `yarn tsc --noEmit -p tsconfig.browser.json`.
+
+### Type safety
+
+- **Primitive collection types need domain meaning.** Plain `string`, `number`,
+  `boolean`, and similar generic primitives are usually not descriptive enough
+  as `Map` keys/values or `Set` members. Prefer a descriptive alias such as
+  `EventKey`, `ChannelKey`, or `BlockNumber`. A primitive may be used directly
+  only when a concise comment immediately above the collection explains
+  exactly what its keys and values represent.
+- When mirroring another type's signatures (e.g. event listeners that mirror
+  handler methods), derive them with mapped/`infer` types so they stay in sync,
+  rather than hand-restating loosely-typed signatures.
+- **Reuse the real types; no unnecessary casting.** Never write `as unknown as
+{ ... }` structural shapes that re-state an existing type. Reach the real type
+  instead: type the entry point so the concrete type flows through. E.g. a
+  harness-control `*Service`/`*RpcMethods` should declare its `p2pManager` as
+  `P2PManager<HarnessControlRpcShape>` (via the `ANetworkRpcService`/`ANetworkRpcMethods`
+  `TP2PManager` param) — then `localRpc`/`remoteRpc` are fully typed (the SDK's
+  own services included) with no casts. Generic helpers should be generic over
+  their args (e.g. `execOnHost<T, A>(…, args: A)`) so call sites are checked
+  rather than funnelled through `Record<string, unknown>` + `as never`.
+- Casts are only acceptable for genuinely untyped/private internals (e.g.
+  monkey-patching a private SDK member in a stub) — not for public, already-typed
+  surfaces.
+- **No `Awaited<ReturnType<...>>` wrappers for types that have a name.** If a
+  method returns `Promise<ReduceData>`, write `ReduceData` — import/export the
+  named type instead of deriving it through utility-type gymnastics. Derived
+  types are only for signatures that must mirror another surface (first bullet).
+- **Name `Codec`/ethers-encoded values `encoded*`.** When a field or variable
+  holds an ABI/`Codec.encode`d hex string (e.g. crossing the runtime port),
+  name it `encodedDispute`/`encodedSyncPayload`/… — bare `string` isn't
+  descriptive enough to signal it must be `Codec.decode`d before use. This
+  applies to RPC params too: name them `encodedBalanceA`/`encodedBlock`, never
+  `a`/`encodedA`.
+- **Return encoded values inside a named-field object, not bare.** An RPC method
+  that returns an encoded value must return `{ encodedBalanceDelta }` /
+  `{ encodedSnapshot } | null` / `{ encodedDisputes }` — never a bare `string` /
+  `string[]` — so the consumer sees what it's getting (and must decode). Bare
+  encoded returns hide intent; wrap them.
+- **Encode _every_ ethers/typechain struct crossing the RPC port — don't
+  hand-check for bigints.** If a `*RpcMethods` endpoint takes or returns a
+  `*Struct` (`BlockConfirmationStruct`, `StateProofStruct`, `SignedBlockStruct`,
+  `BalanceStruct`, …), it crosses as a `Codec.encode`d `encoded*` value, not the
+  raw struct. Two failure modes motivate the blanket rule: a bigint field throws
+  at `JSON.stringify`, and a `BytesLike` field that is a `Uint8Array` clones to a
+  corrupt object — both avoided by encoding. Add a `Codec.Type` for the struct if
+  one doesn't exist (the `*EthersType` usually already does).
+- **Never shim `BigInt.prototype.toJSON`.** A raw bigint reaching
+  `JSON.stringify` must throw (a contract violation), not coerce to a lossy
+  number — that throw is the backstop that surfaces a missed encoding.
+- **Don't introduce a named type for a one-off.** If a type would be used in a
+  single place and isn't an exported/reused contract, just use the implicit
+  (inferred) type — drop redundant return annotations and let inference flow.
+  Keep it simple; add a named type later only if it actually earns reuse. (And
+  don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
+  that's worse than the type it replaces; it's for generics, not one-offs.)
+- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.
+
+### Required Human review decisions
+
+- When the human makes a review decision in this conversation, record it in the
+  assessment and ready-to-post reply, and update affected decision/finding records.
+  Do not ask for the same decision again. Keep drafts in the review UI’s supported
+  reply section; do not post them without an explicit request.
+
+- When an automated review flags an unresolved design choice, implementing agents
+  must ask their human unless the specification or an existing human decision
+  already settles it. Never invent or post consent on the human's behalf.
+  The label is advisory to humans and implementing agents, not a special bot
+  resolution gate. Reviewers reassess and resolve these findings using the same
+  code, specification and discussion evidence as any other finding; no mandatory
+  human reply or separate consent tracking is required.

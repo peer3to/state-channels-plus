@@ -1,0 +1,45 @@
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+
+describe("E2E: worker shutdown", function () {
+    it("drains and tears down multiple threaded peers promptly", async function () {
+        const harness = TestSession.getHarness();
+        await harness.lifecycle.start(3, 1, {
+            configOverrides: { RUN_SDK_IN_THREAD: true }
+        });
+
+        const startedAt = Date.now();
+        const cleanup = harness.cleanup();
+        expect(harness.cleanup()).to.equal(cleanup);
+        await cleanup;
+        await harness.cleanup();
+
+        expect(Date.now() - startedAt).to.be.lessThan(5_000);
+        expect(harness.peers.length).to.equal(0);
+    });
+
+    it("tears down threaded peers promptly when disposal starts with a scheduled task still running", async function () {
+        const harness = TestSession.getHarness();
+        await harness.lifecycle.start(3, 1, {
+            configOverrides: { RUN_SDK_IN_THREAD: true }
+        });
+        const stub = harness.control(harness.getPeer(0)).stub;
+        // the task runs until the timeout manager's dispose starts its wait
+        await stub.holdScheduledTaskUntilDispose().request();
+        await waitFor(
+            async () =>
+                (await stub.getDisposeWaitTask().request()).entered === 1,
+            harness.event.hostExecTimeoutMs()
+        );
+        const inFlight = await stub.getDisposeWaitTask().request();
+        expect(inFlight.entered).to.equal(1);
+        expect(inFlight.running).to.be.greaterThan(0);
+
+        const startedAt = Date.now();
+        await harness.cleanup();
+
+        expect(Date.now() - startedAt).to.be.lessThan(5_000);
+        expect(harness.peers.length).to.equal(0);
+    });
+});

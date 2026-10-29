@@ -1,42 +1,161 @@
-import P2PManager from "@/P2PManager";
-import ATransport from "./ATransport";
-import { Buffer } from "buffer";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-class WebRTCTransport extends ATransport {
+import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
+import { Buffer } from "buffer";
+
+class WebRTCTransport extends NetworkTransport {
     transportType = TransportType.WEBRTC;
-    p2pManager: P2PManager;
-    webRTCChannel: any;
-    constructor(webRTCChannel: any, p2pManager: P2PManager) {
-        super();
-        this.p2pManager = p2pManager;
+    webRTCChannel: WebRTCDataChannelLike;
+    private hasStartedHandshake = false;
+    private pendingOutboundRpcs: string[] = [];
+
+    constructor(
+        webRTCChannel: WebRTCDataChannelLike,
+        router: NetworkRpcRouter
+    ) {
+        super(router);
         this.webRTCChannel = webRTCChannel;
+
         this.webRTCChannel.onmessage = (event: any) => {
             this.onMessage(event.data);
         };
         this.webRTCChannel.onopen = () => {
-            console.log("WebRTC Channel Opened");
-            this.p2pManager.addConnection(this);
-            //TODO! update peerProfile and close old socket
+            this.onChannelOpen();
         };
         this.webRTCChannel.onclose = () => {
-            console.log("WebRTC Channel Closed");
-            this.p2pManager.removeConnection(this);
+            this.pendingOutboundRpcs = [];
+            this.close();
         };
+        this.webRTCChannel.onerror = (error: Error) => {
+            const connectionState = this.getConnectionState();
+            this.p2pManager.logger.debug("WebRTC channel error", {
+                connectionState,
+                error
+            });
+            this.close();
+        };
+
+        this.p2pManager.logger.debug("WebRTC channel created", {
+            readyState: this.webRTCChannel.readyState
+        });
+
+        if (this.webRTCChannel.readyState === "open") {
+            this.onChannelOpen();
+        }
     }
-    send(serializedRPC: string): void {
-        console.log("WebRTC - SendingRPC", serializedRPC);
+
+    private onChannelOpen(): void {
+        this.p2pManager.logger.debug("WebRTC channel opened");
+        this.flushPendingOutboundRpcs();
+        this.startHandshake();
+    }
+
+    private startHandshake(): void {
+        if (this.hasStartedHandshake) return;
+        this.hasStartedHandshake = true;
+        this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
+    }
+
+    private flushPendingOutboundRpcs(): void {
+        if (
+            this.webRTCChannel.readyState !== "open" ||
+            this.pendingOutboundRpcs.length === 0
+        ) {
+            return;
+        }
+
+        const pendingRpcs = this.pendingOutboundRpcs;
+        this.pendingOutboundRpcs = [];
+        this.p2pManager.logger.debug("Flushing queued WebRTC RPCs", {
+            count: pendingRpcs.length,
+            bytes: pendingRpcs.reduce((sum, rpc) => sum + rpc.length, 0)
+        });
+        pendingRpcs.forEach((serializedRPC) => {
+            this.sendNow(serializedRPC);
+        });
+    }
+
+    private getConnectionState(): {
+        connectionState: string;
+        iceState: string;
+    } {
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(this);
+        const peerAddress =
+            this.peerAddress ||
+            profile?.getEvmAddress()?.toString() ||
+            "unknown";
+
+        let connectionState = "unknown";
+        let iceState = "unknown";
+        try {
+            const webRTCSetupService =
+                this.p2pManager.localRpc?.webRTCSetupService;
+            if (webRTCSetupService?.getWebRTCConnectionState) {
+                const state =
+                    webRTCSetupService.getWebRTCConnectionState(peerAddress);
+                connectionState = state.connectionState;
+                iceState = state.iceState;
+            }
+        } catch {
+            // Ignore errors accessing connection state
+        }
+        return { connectionState, iceState };
+    }
+    private sendNow(serializedRPC: string): void {
+        this.p2pManager.logger.debug("Sending RPC over WebRTC", {
+            bytes: serializedRPC.length,
+            readyState: this.webRTCChannel.readyState
+        });
         this.webRTCChannel.send(serializedRPC);
     }
-    onMessage(data: any): void {
-        this.p2pManager.localRpcService.senderTransport = this;
-        if (data instanceof Uint8Array) data = Buffer.from(data);
-        if (data instanceof Buffer) data = data.toString();
-        let serializedRPC = data;
-        console.log("WebRTC - onMessage", serializedRPC);
-        this.p2pManager.onRpc(serializedRPC);
+
+    // Overrides NetworkTransport.onMessage to handle WebRTC frames.
+    public override onMessage(data: unknown): void {
+        // A closed channel can still deliver a frame; its runtime may be disposed.
+        if (this.isClosed) return;
+        const serializedRpc =
+            data instanceof Uint8Array
+                ? Buffer.from(data).toString()
+                : (data as string);
+        this.p2pManager.logger.debug("Received RPC over WebRTC", {
+            bytes: serializedRpc.length
+        });
+        void this.router.onRpc(serializedRpc, this);
     }
+
+    _send(serializedRPC: string): void {
+        const readyState = this.webRTCChannel.readyState || "unknown";
+        if (readyState === "open") {
+            this.sendNow(serializedRPC);
+            return;
+        }
+
+        if (readyState === "closed" || readyState === "closing") {
+            this.p2pManager.logger.warn(
+                "Dropping RPC because WebRTC channel is not sendable",
+                {
+                    bytes: serializedRPC.length,
+                    readyState
+                }
+            );
+            return;
+        }
+
+        this.pendingOutboundRpcs.push(serializedRPC);
+        this.p2pManager.logger.debug("Queued RPC until WebRTC channel opens", {
+            bytes: serializedRPC.length,
+            readyState,
+            queuedCount: this.pendingOutboundRpcs.length
+        });
+    }
+
     _close(): void {
-        console.log("closing webRTC channel");
+        this.p2pManager.logger.debug("Closing WebRTC channel");
+        this.p2pManager.localRpc?.webRTCSetupService?.closeWebRTCConnection(
+            this
+        );
         this.webRTCChannel.close();
     }
 }

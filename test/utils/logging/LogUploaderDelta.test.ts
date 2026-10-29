@@ -1,0 +1,488 @@
+import { LogUploader } from "@/utils/logging/LogUploader";
+import {
+    messagesOf,
+    createUploaderFixture,
+    decodeUpload,
+    loadSeparateNodeLogUploader,
+    startLogReceiver,
+    type LogReceiver
+} from "@test/fixtures/logging/LogUploader.fixture";
+import { deferred } from "@test/utils/deferred";
+import { expect } from "chai";
+import { ethers } from "ethers";
+
+describe("LogUploader delta uploads", function () {
+    let receiver: LogReceiver | undefined;
+
+    beforeEach(async function () {
+        receiver = undefined;
+        receiver = await startLogReceiver();
+    });
+
+    afterEach(async function () {
+        const started = receiver;
+        receiver = undefined;
+        if (started) await started.close();
+    });
+
+    it("an idle store resolves without paying the jitter", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // every draw from this bound is far above the assertion, so a sleep
+            // that happens before the empty-delta check always trips it
+            jitterMaxMs: 4000
+        });
+        logger.info("first entry");
+        await logUploader.uploadLogs();
+
+        // nothing new -> the empty-delta check must come before the sleep
+        const startedAt = Date.now();
+        const outcome = await logUploader.uploadLogs();
+
+        expect(outcome).to.deep.equal({ ok: true, entries: 0 });
+        expect(Date.now() - startedAt).to.be.lessThan(200);
+    });
+
+    it("sends the whole store on the first upload", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("first");
+        logger.info("second");
+
+        const outcome = await logUploader.uploadLogs();
+
+        expect(outcome).to.deep.equal({ ok: true, entries: 2 });
+        expect(receiver!.requests).to.have.length(1);
+        expect(messagesOf(receiver!, 0)).to.deep.equal(["first", "second"]);
+    });
+
+    it("sends only entries added since the last upload", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("first");
+        await logUploader.uploadLogs();
+
+        logger.info("second");
+        const outcome = await logUploader.uploadLogs();
+
+        expect(outcome).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(2);
+        expect(messagesOf(receiver!, 1)).to.deep.equal(["second"]);
+    });
+
+    it("does not POST when there is nothing new", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("first");
+        await logUploader.uploadLogs();
+
+        const outcome = await logUploader.uploadLogs();
+
+        expect(outcome).to.deep.equal({ ok: true, entries: 0 });
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("ends an upload still running when its thread ends, without a retry or its queued follow-up", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("held");
+        try {
+            const running = logUploader.uploadLogs();
+            await receiver!.waitForRequests(1);
+            logger.info("queued");
+            // Queued behind the running upload: it must not start once the thread ended.
+            const queued = logUploader.uploadLogs();
+            const endedAtMs = Date.now();
+
+            LogUploader.cancelRealmUploads();
+
+            expect(await running).to.deep.equal({ ok: false, entries: 0 });
+            expect(await queued).to.deep.equal({ ok: false, entries: 0 });
+            expect(Date.now() - endedAtMs).to.be.below(500);
+            // No retry and no follow-up after the cancel.
+            expect(receiver!.requests).to.have.length(1);
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("ends an upload in its jitter wait when its thread ends, before it posts", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // Well above the assertion: only a cancel ends the wait in time.
+            jitterMaxMs: 5_000
+        });
+        logger.info("never posted");
+        const running = logUploader.uploadLogs();
+        const endedAtMs = Date.now();
+
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        expect(Date.now() - endedAtMs).to.be.below(500);
+        expect(receiver!.requests).to.have.length(0);
+    });
+
+    // The tests log at info and upload explicitly: an error line starts an upload of its own.
+    it("lets an upload in its jitter wait post before its thread ends", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            jitterMaxMs: 300
+        });
+        logger.info("hit during dispose");
+        const running = logUploader.uploadLogs();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("an ending thread waits for an upload of a second copy of the uploader module in it, and cancels it", async function () {
+        const { logger, logUploader: separateUploader } = createUploaderFixture(
+            {
+                uploadEndpoint: receiver!.url,
+                jitterMaxMs: 300,
+                Uploader: loadSeparateNodeLogUploader()
+            }
+        );
+        logger.info("logged through the separate copy");
+        const posted = separateUploader.uploadLogs();
+
+        // This copy's thread end settles the other copy's upload.
+        await LogUploader.settleRealmUploads(5_000);
+        expect(receiver!.requests).to.have.length(1);
+        expect(await posted).to.deep.equal({ ok: true, entries: 1 });
+
+        logger.info("never posted");
+        const cancelled = separateUploader.uploadLogs();
+        LogUploader.cancelRealmUploads();
+        expect(await cancelled).to.deep.equal({ ok: false, entries: 0 });
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("an ending thread waits for its running upload no longer than its bound", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("held");
+        try {
+            const running = logUploader.uploadLogs();
+            await receiver!.waitForRequests(1);
+            const endingAtMs = Date.now();
+
+            await LogUploader.settleRealmUploads(200);
+            LogUploader.cancelRealmUploads();
+
+            expect(Date.now() - endingAtMs).to.be.below(1_000);
+            expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("an ending thread waits no longer for an upload of an abort flush whose deadline passed", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            // Well above the assertion: only the passed deadline ends the wait in time.
+            jitterMaxMs: 5_000
+        });
+        logger.info("left for the cancel");
+        const running = logUploader.uploadLogs(Date.now() - 1);
+        const endingAtMs = Date.now();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(Date.now() - endingAtMs).to.be.below(500);
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+    });
+
+    it("an ending thread waits again for a later upload once an abort flush's upload finished", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            jitterMaxMs: 300
+        });
+        logger.info("flushed");
+        expect(await logUploader.uploadLogs(Date.now() + 5_000)).to.deep.equal({
+            ok: true,
+            entries: 1
+        });
+        logger.info("hit during dispose, after the flush");
+        const running = logUploader.uploadLogs();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(2);
+    });
+
+    it("an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed", async function () {
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            jitterMaxMs: 300
+        });
+        logger.info("flushed");
+        const flushed = logUploader.uploadLogs(Date.now() - 1);
+        logger.info("hit during dispose, behind the flush");
+        const queued = logUploader.uploadLogs();
+
+        await LogUploader.settleRealmUploads(5_000);
+        LogUploader.cancelRealmUploads();
+
+        // Nothing was cancelled: both lines arrived, whichever upload read the second one.
+        expect((await flushed).ok).to.equal(true);
+        expect((await queued).ok).to.equal(true);
+        expect(
+            receiver!.requests.flatMap((_request, index) =>
+                messagesOf(receiver!, index)
+            )
+        ).to.deep.equal(["flushed", "hit during dispose, behind the flush"]);
+    });
+
+    it("an ending thread waits for an upload queued during a running abort flush only until that flush's deadline", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("flushed");
+        try {
+            // Far enough ahead that the held POST is reached before it passes.
+            const flushDeadlineMs = Date.now() + 2_000;
+            const flushed = logUploader.uploadLogs(flushDeadlineMs);
+            await receiver!.waitForRequests(1);
+            logger.info("hit during the abort");
+            const queued = logUploader.uploadLogs();
+
+            await LogUploader.settleRealmUploads(10_000);
+            LogUploader.cancelRealmUploads();
+
+            // Waited for the flush's deadline, and no longer.
+            expect(Date.now()).to.be.at.least(flushDeadlineMs - 50);
+            expect(Date.now() - flushDeadlineMs).to.be.below(1_000);
+            expect(await flushed).to.deep.equal({ ok: false, entries: 0 });
+            expect(await queued).to.deep.equal({ ok: false, entries: 0 });
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("an ending thread waits for a request during an abort flush queued behind an earlier upload only until that flush's deadline", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async () => {
+                await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("before the abort");
+        try {
+            const earlier = logUploader.uploadLogs();
+            await receiver!.waitForRequests(1);
+            logger.info("flushed");
+            const flushDeadlineMs = Date.now() + 2_000;
+            const flushed = logUploader.uploadLogs(flushDeadlineMs);
+            logger.info("hit during the abort");
+            const during = logUploader.uploadLogs();
+
+            await LogUploader.settleRealmUploads(10_000);
+            LogUploader.cancelRealmUploads();
+
+            expect(Date.now()).to.be.at.least(flushDeadlineMs - 50);
+            expect(Date.now() - flushDeadlineMs).to.be.below(1_000);
+            expect(await earlier).to.deep.equal({ ok: false, entries: 0 });
+            expect(await flushed).to.deep.equal({ ok: false, entries: 0 });
+            expect(await during).to.deep.equal({ ok: false, entries: 0 });
+        } finally {
+            held.resolve();
+        }
+    });
+
+    it("ends an upload in its retry delay when its thread ends, without the retry", async function () {
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: (_received, index) => (index === 0 ? 500 : 200)
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("refused once");
+        // onRetry reads the network snapshot just before the 1 s delay starts.
+        const inDelay = deferred();
+        const snapshot =
+            logUploader["getSyncNetworkSnapshot"].bind(logUploader);
+        logUploader["getSyncNetworkSnapshot"] = (endpoint, uploadError) => {
+            inDelay.resolve();
+            return snapshot(endpoint, uploadError);
+        };
+        const running = logUploader.uploadLogs();
+        await inDelay.promise;
+        const endedAtMs = Date.now();
+
+        LogUploader.cancelRealmUploads();
+
+        expect(await running).to.deep.equal({ ok: false, entries: 0 });
+        expect(Date.now() - endedAtMs).to.be.below(500);
+        // The refused POST only: the retry never starts.
+        expect(receiver!.requests).to.have.length(1);
+    });
+
+    it("re-sends the delta after a failed upload", async function () {
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            // both attempts - the uploader retries once, so failing only the
+            // first would still end in a 2xx
+            respond: (_received, index) => (index < 2 ? 500 : 200)
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("first");
+
+        const failed = await logUploader.uploadLogs();
+        logger.info("second");
+        const succeeded = await logUploader.uploadLogs();
+
+        expect(failed.ok).to.equal(false);
+        expect(succeeded.ok).to.equal(true);
+        // the failed POST left the watermark alone -> its entry rides along
+        const lastBody = receiver!.requests[receiver!.requests.length - 1];
+        expect(decodeUpload(lastBody).map((e) => e.message)).to.deep.equal([
+            "first",
+            "second"
+        ]);
+        expect(lastBody.fromSeq).to.equal(0);
+    });
+
+    it("files an upload under the identity current after the jitter", async function () {
+        const before = ethers.Wallet.createRandom().address;
+        const after = ethers.Wallet.createRandom().address;
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            sharedContext: { channelId: ethers.ZeroHash, peerAddress: before }
+        });
+        logger.info("entry");
+
+        // the peer is set while the upload is already sleeping off its jitter
+        const upload = logUploader.uploadLogs();
+        logger.updateSharedContext({ peerAddress: after });
+        await upload;
+        // nothing new under that identity -> the batch is not sent again
+        const again = await logUploader.uploadLogs();
+
+        expect(receiver!.requests.map((r) => r.peerAddress)).to.deep.equal([
+            after
+        ]);
+        expect(again).to.deep.equal({ ok: true, entries: 0 });
+    });
+
+    it("sends threadName and the sequence range", async function () {
+        const channelId = ethers.id("delta-upload-channel");
+        const peerAddress = ethers.Wallet.createRandom().address;
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            sharedContext: { threadName: "vm", channelId, peerAddress }
+        });
+        logger.info("first");
+        logger.info("second");
+
+        await logUploader.uploadLogs();
+
+        const body = receiver!.requests[0];
+        expect(body.threadName).to.equal("vm");
+        expect(body.channelId).to.equal(channelId);
+        expect(body.peerAddress).to.equal(peerAddress);
+        expect(body.fromSeq).to.equal(0);
+        expect(body.toSeq).to.equal(1);
+    });
+
+    it("a flush requested during an in-flight upload resolves after the second POST", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async (_received, index) => {
+                if (index === 0) await held.promise;
+                return 200;
+            }
+        });
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("first");
+
+        const inFlight = logUploader.uploadLogs();
+        // the first body is already on the wire -> this entry needs its own POST
+        await receiver!.waitForRequests(1);
+        logger.info("second");
+        const queued = logUploader.uploadLogs();
+
+        held.resolve();
+        await inFlight;
+        const outcome = await queued;
+
+        expect(outcome).to.deep.equal({ ok: true, entries: 1 });
+        expect(receiver!.requests).to.have.length(2);
+        expect(messagesOf(receiver!, 1)).to.deep.equal(["second"]);
+    });
+    it("finishes an awaited local upload after its last logger is disposed", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async (_received, index) => {
+                if (index === 0) {
+                    await held.promise;
+                    return 500;
+                }
+                return 200;
+            }
+        });
+        const { logger } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("retain in-flight entries");
+        const upload = logger.upload();
+        try {
+            await receiver!.waitForRequests(1);
+            logger.dispose();
+            held.resolve();
+            expect(await upload).to.deep.equal({ ok: true, entries: 1 });
+            expect(receiver!.requests).to.have.length(2);
+        } finally {
+            held.resolve();
+            logger.dispose();
+        }
+    });
+});

@@ -1,0 +1,40 @@
+// @spec-test-coverage-ignore: harness network observations used by mapped component and E2E declarations
+import NetworkRpcMethods from "./NetworkRpcMethods";
+import type P2PManager from "@/P2PManager";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { Address } from "@/types";
+
+/** Connection / network control operations exposed to the test harness. */
+export class NetworkService extends ANetworkRpcService<NetworkRpcMethods> {
+    private readonly transportTokens = new WeakMap<NetworkTransport, number>();
+    private nextTransportToken = 1;
+
+    constructor(p2pManager: P2PManager) {
+        super(
+            p2pManager.rpcRouter,
+            p2pManager.stateManager.logger.child({
+                component: "HarnessNetworkService"
+            })
+        );
+    }
+
+    public createRPCMethods(transport: NetworkTransport): NetworkRpcMethods {
+        return new NetworkRpcMethods(transport, this);
+    }
+
+    public getTransportToken(peerAddress: Address): number | null {
+        const transport =
+            this.p2pManager.profileManager.getTransportByEvmAddress(
+                peerAddress
+            );
+        if (!transport || transport.isClosed) return null;
+        const existing = this.transportTokens.get(transport);
+        if (existing !== undefined) return existing;
+        const token = this.nextTransportToken++;
+        this.transportTokens.set(transport, token);
+        return token;
+    }
+}
+
+export default NetworkService;

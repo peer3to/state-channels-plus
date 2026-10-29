@@ -1,0 +1,925 @@
+// @spec-test-coverage-ignore: test-harness query support exercised by owning mapped test declarations
+
+import type { QueryService } from "./QueryService";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import { Status } from "@/types/flags";
+import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
+import { Codec, Type, hash } from "@/utils";
+import { getChecksumAddress } from "@/utils/address";
+import { config } from "@/utils/config";
+import { ethers } from "ethers";
+
+/** Serializable inputs needed to assemble a block on top of a fork's head. */
+export interface BlockBuildingContext {
+    nextBlockHeight: BlockHeight;
+    previousBlockHash: string;
+    stateSnapshotHash: string;
+    latestBlockTimestamp: number | null;
+    latestInboundMessageBlockHash: string;
+    latestInboundMessageBlockHeight: string;
+    currentTimestamp: number;
+}
+
+/** Full serializable projection of a stored `Block` (white-box reads). */
+export interface BlockBundle {
+    hash: string;
+    author: string;
+    height: number;
+    stateSnapshotHash: string;
+    encodedSignedBlock: string;
+    encodedBlockConfirmation: string;
+    timestamp: number;
+    onChainTimestamp: number | null;
+    confirmationSignatures: string[];
+    confirmationSignerAddresses: string[];
+}
+
+/**
+ * Projection of this peer's own state proof (AgreementManager.buildStateProof)
+ * plus the chain's verdicts on it (verifyMilestones from the chain's anchor,
+ * isMilestoneFinal).
+ */
+export interface StateProofVerification {
+    /** The block height the proof was built at. */
+    blockHeight: number;
+    milestoneCount: number;
+    /** Height of the proof's latest block, or null for an empty proof. */
+    latestProofHeight: number | null;
+    /** Per milestone: the block height each of its confirmations covers. */
+    milestoneConfirmationHeights: number[][];
+    /** The walk evidence's snapshot per milestone, as the builder supplies it. */
+    milestoneSnapshotHashes: string[];
+    /** The chain's walk from its anchor accepts the proof. */
+    verified: boolean;
+    /** The chain walk's tail start in the last milestone (its length: no tail). */
+    chainReplayBlockIndex: number;
+    /** On-chain isMilestoneFinal for the first milestone from the construction anchor; null when no milestone. */
+    isFinal: boolean | null;
+    /** Snapshot hash isMilestoneFinal finalized; null when no milestone. */
+    onChainFinalizedSnapshotHash: string | null;
+    /** TS extractor: getLatestSnapshotFromStateProof. */
+    latestSnapshotHash: string;
+    /** The builder's final point: the anchor or the last threshold-proven snapshot. */
+    finalizedSnapshotHash: string;
+    /** The construction anchor: the local diamond's same-fork anchor, else the genesis. */
+    startSnapshotHash: string;
+    genesisSnapshotHash: string;
+}
+
+/**
+ * Read-only peer-state queries for the test harness. Every method returns a
+ * serializable projection (status, hash, height, address) — never a live
+ * `Block`/transport/profile instance, which cannot cross the runtime port.
+ */
+export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
+    constructor(transport: NetworkTransport, service: QueryService) {
+        super(transport, service);
+    }
+
+    // ===== Identity / status =====
+
+    public getStatus(): Status {
+        return this.service.sm.status;
+    }
+
+    public getLeaveChannelState() {
+        return this.service.sm.leaveChannelService.state;
+    }
+
+    public getLeaveChannelWatchdogMs(): number {
+        return config.LEAVE_CHANNEL_WATCHDOG_MS;
+    }
+
+    public getForceExit(): boolean {
+        return this.service.storage.forceExit.getForceExit();
+    }
+
+    public getChannelId(): string {
+        return this.service.sm.channelId as string;
+    }
+
+    public getSignerAddress(): string {
+        return this.service.sm.signerAddress as string;
+    }
+
+    /** Aggregated gas of the real-chain transactions this peer sent. */
+    public getGasUsageTable() {
+        return this.service.settledGasUsage();
+    }
+
+    public getLobbyAvailability() {
+        return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
+    }
+
+    /** Ordinary lobby joins on `topic` that a leave has marked. */
+    public getLeftLobbyJoinCount(topic: string): number {
+        const normalizedTopic =
+            this.p2pManager.localRpc.lobbyMatchingService.validateTopic(topic);
+        return [...this.p2pManager.p2pSigner.lobbyJoins].filter(
+            (join) => join.topic === normalizedTopic && join.left
+        ).length;
+    }
+
+    public getJoinedHolepunchTopics(): string[] {
+        return this.p2pManager.holepunch.topics.map(
+            (topic) => `0x${topic.toString("hex")}`
+        );
+    }
+
+    public getNegotiationAttempt(): {
+        peerAddress: string;
+        channelId: string;
+        attemptNonce: string;
+        selectorChallenge: string;
+        advertiserChallenge: string;
+        localOpeningSignatureIssued: boolean;
+    } | null {
+        const attempt =
+            this.p2pManager.localRpc.openChannelNegotiationService.state
+                .attempt;
+        if (!attempt) return null;
+        return {
+            peerAddress: String(attempt.peerAddress),
+            channelId: attempt.channelId,
+            attemptNonce: attempt.attemptNonce,
+            selectorChallenge: attempt.selectorChallenge,
+            advertiserChallenge: attempt.advertiserChallenge,
+            localOpeningSignatureIssued: attempt.localOpeningSignatureIssued
+        };
+    }
+
+    public async isChannelOpen(channelId: string): Promise<boolean> {
+        const [isOpen] =
+            await this.service.sm.stateChannelManagerContract.isChannelOpen(
+                channelId
+            );
+        return isOpen;
+    }
+
+    public async getOpenChannelIds(): Promise<string[]> {
+        const count =
+            await this.service.sm.stateChannelManagerContract.getOpenChannelCount();
+        return (
+            await this.service.sm.stateChannelManagerContract.getOpenChannelIds(
+                0,
+                count
+            )
+        ).map(String);
+    }
+
+    public getForkId(): string {
+        return this.service.sm.forkId as string;
+    }
+
+    public async getParticipants(): Promise<string[]> {
+        return (
+            await this.service.sm.diamondStateMachine.getParticipants()
+        ).map((a) => String(a));
+    }
+
+    public async getOnChainParticipantUnion(): Promise<string[]> {
+        return (
+            await this.service.sm.membershipService.getOnChainParticipantUnion()
+        ).map(String);
+    }
+
+    /** Pending inbound message blocks the next authored block would consume. */
+    public getPendingInboundMessageBlockCount(forkId: ForkId): number {
+        const sm = this.service.sm;
+        const previous =
+            sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow({
+                forkId,
+                height: sm.storage.blocks.getNextBlockHeight(forkId)
+            });
+        return sm.blockProductionService["getPendingInboundMessageBlocks"](
+            previous
+        ).length;
+    }
+
+    public async getOnChainThresholdSet(): Promise<string[]> {
+        return (
+            await this.service.sm.membershipService.getOnChainThresholdSet()
+        ).map(String);
+    }
+
+    /** Participants slashed on-chain for this channel. */
+    public async getOnChainSlashedParticipants(): Promise<string[]> {
+        const sm = this.service.sm;
+        return await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+            sm.channelId
+        );
+    }
+
+    public async getNextToWrite(): Promise<string> {
+        return String(
+            await this.service.sm.diamondStateMachine.getNextToWrite()
+        );
+    }
+
+    /** Hash of the state the local state machine holds right now. */
+    public async getLiveStateMachineStateHash(): Promise<Hash> {
+        return hash(
+            await this.service.sm.diamondStateMachine.getState()
+        ) as Hash;
+    }
+
+    public async isMyTurn(): Promise<boolean> {
+        return await this.service.sm.blockProductionService["isMyTurn"]();
+    }
+
+    // ===== Block / snapshot storage (projections only) =====
+
+    public getLatestBlockHash(forkId: ForkId): Hash | null {
+        return this.service.storage.blocks.getLatestBlock(forkId)?.hash ?? null;
+    }
+
+    public getLatestBlockHeight(forkId: ForkId): BlockHeight | null {
+        return (
+            this.service.storage.blocks.getLatestBlock(forkId)?.height ?? null
+        );
+    }
+
+    public getNextBlockHeight(forkId: ForkId): BlockHeight {
+        return this.service.storage.blocks.getNextBlockHeight(forkId);
+    }
+
+    /** Latest block's confirmation for `forkId`, encoded (`Type.BlockConfirmation`), or null. */
+    public getLatestBlockConfirmation(
+        forkId: ForkId
+    ): { encodedBlockConfirmation: string } | null {
+        const struct =
+            this.service.storage.blocks.getLatestBlock(
+                forkId
+            )?.blockConfirmationStruct;
+        return struct
+            ? {
+                  encodedBlockConfirmation: Codec.encode(
+                      struct,
+                      Type.BlockConfirmation
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Serializable info about the head block of `forkId` (for forged builds). */
+    /**
+     * Latest-block sync state for `forkId`: tip hash/height, whether every
+     * participant signed it, and signature/union counts (for sync diagnostics).
+     */
+    public getSyncTip(forkId: ForkId): {
+        hash: string;
+        height: number;
+        finalized: boolean;
+        signatures: number;
+        union: number;
+        /** Null until the tip's snapshot and state-machine state are stored. */
+        stateHash: string | null;
+    } | null {
+        const block = this.service.storage.blocks.getLatestBlock(forkId);
+        if (!block) return null;
+        const stateHash = this.getLatestStateMachineStateHash(forkId);
+        const finalized =
+            this.service.sm.agreementManager.didEveryoneSignBlock(block);
+        const union = this.service.storage.getParticipantsUnion(
+            block.coordinates,
+            block.stateSnapshotHash
+        ).length;
+        return {
+            hash: String(block.hash),
+            height: Number(block.height),
+            finalized,
+            signatures: block.allSignatures.size,
+            union,
+            stateHash: stateHash === null ? null : String(stateHash)
+        };
+    }
+
+    /** Hash of the block at `forkId:height`, or null if not stored. */
+    public getBlockHashAt(forkId: ForkId, height: BlockHeight): string | null {
+        const block = this.service.storage.blocks.getBlock(forkId, height);
+        return block ? String(block.hash) : null;
+    }
+
+    public getLatestBlockInfo(forkId: ForkId): {
+        encodedBlock: string;
+        hash: string;
+        author: string;
+        stateSnapshotHash: string;
+    } | null {
+        const block = this.service.storage.blocks.getLatestBlock(forkId);
+        if (!block) return null;
+        return {
+            encodedBlock: Codec.encode(block.blockStruct, Type.Block) as string,
+            hash: String(block.hash),
+            author: String(block.author),
+            stateSnapshotHash: String(block.stateSnapshotHash)
+        };
+    }
+
+    /** Full serializable projection of the block at `forkId:height`, or null. */
+    public getBlockByHeight(
+        forkId: ForkId,
+        height: BlockHeight
+    ): BlockBundle | null {
+        const block = this.service.storage.blocks.getBlock(forkId, height);
+        return block ? this.service.toBlockBundle(block) : null;
+    }
+
+    /** Full serializable projection of the block with `blockHash`, or null. */
+    public getBlockByHash(blockHash: Hash): BlockBundle | null {
+        const block = this.service.storage.blocks.getBlock(blockHash);
+        return block ? this.service.toBlockBundle(block) : null;
+    }
+
+    /** Latest block of `forkId` as a full serializable projection, or null. */
+    public getLatestBlockBundle(forkId: ForkId): BlockBundle | null {
+        const block = this.service.storage.blocks.getLatestBlock(forkId);
+        return block ? this.service.toBlockBundle(block) : null;
+    }
+
+    // ===== AgreementManager queries =====
+
+    public async getStateProofVerification(
+        forkId: ForkId,
+        blockHeight?: BlockHeight
+    ): Promise<StateProofVerification | null> {
+        return this.service.buildStateProofVerification(forkId, blockHeight);
+    }
+
+    public getLatestSignedBlockByParticipant(
+        forkId: ForkId,
+        participant: Address
+    ): { height: number; signatureRecoversToParticipant: boolean } | null {
+        const result =
+            this.service.sm.agreementManager.getLatestSignedBlockByParticipant(
+                forkId,
+                participant
+            );
+        if (!result) return null;
+        return {
+            height: Number(result.block.height),
+            signatureRecoversToParticipant:
+                result.block.signatureToAddress(result.signature) ===
+                getChecksumAddress(participant)
+        };
+    }
+    public didEveryoneSignBlockAt(
+        forkId: ForkId,
+        height: BlockHeight
+    ): boolean | null {
+        const block = this.service.storage.blocks.getBlock(forkId, height);
+        return block
+            ? this.service.sm.agreementManager.didEveryoneSignBlock(block)
+            : null;
+    }
+    public getParticipantChangeHeights(forkId: ForkId): BlockHeight[] {
+        return this.service.getParticipantChangeHeights(forkId);
+    }
+
+    /** Whether this peer has blacklisted `evmAddress`. */
+    public isBlacklisted(evmAddress: Address): boolean {
+        return this.p2pManager.isBlacklisted(evmAddress);
+    }
+
+    /** Retry-tier strikes this peer recorded against `key` in this session. */
+    public getStrikes(key: string): number {
+        return this.p2pManager.profileManager.getStrikes(key);
+    }
+
+    /** Whether this peer has suspended `evmAddress` for this session. */
+    public isSuspended(evmAddress: Address): boolean {
+        return this.p2pManager.isSuspended(evmAddress);
+    }
+
+    /** Whether the block confirmation queue holds an entry for `blockHash`. */
+    public isBlockQueued(blockHash: Hash): boolean {
+        return (
+            this.service.storage.queues.getQueuedEntry(blockHash) !== undefined
+        );
+    }
+
+    public getSourceEligibility(source: Address) {
+        return this.service.sm.membershipService.getCachedSourceEligibility(
+            source
+        );
+    }
+
+    /** Plain projection of the queued entry's source contributions. */
+    public getQueuedRetention(blockHash: Hash) {
+        const queues = this.service.storage.queues;
+        const entry = queues.getQueuedEntry(blockHash);
+        if (!entry) return null;
+        return {
+            origin: entry.origin,
+            firstSeenAt: entry.firstSeenAt,
+            onChainTimestamp: entry.block.onChainTimestamp ?? null,
+            confirmationSignatures: entry.block.confirmationSignatures.size,
+            retainedSignatures: new Set(
+                [...entry.sourcesToSignatures.values()].flatMap((values) => [
+                    ...values
+                ])
+            ).size,
+            sourceCount: entry.sourcesToSignatures.size,
+            perSource: [...entry.sourcesToSignatures].map(
+                ([source, values]) => ({ source, count: values.size })
+            ),
+            maxChannelParticipants: queues.maxChannelParticipants
+        };
+    }
+
+    /**
+     * Decode the top block of a dispute state proof on-chain: whether it has a
+     * block and that block's height (`transactionCnt`).
+     */
+    public async getStateProofTopBlockHeight(
+        encodedStateProof: string
+    ): Promise<{ hasBlock: boolean; height: number | null }> {
+        const [hasBlock, block] =
+            await this.service.sm.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+                Codec.decode(encodedStateProof, Type.StateProof)
+            );
+        return {
+            hasBlock,
+            height: hasBlock
+                ? Number(block.transaction.header.transactionCnt)
+                : null
+        };
+    }
+
+    /** On-chain dispute commitment hashes in `forkId`'s dispute window. */
+    public async getDisputeWindowCommitments(
+        forkId: ForkId
+    ): Promise<string[]> {
+        const windows =
+            await this.service.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                this.service.sm.channelId,
+                [forkId]
+            );
+        const window = windows[0];
+        if (!window) return [];
+        return window.evidence.disputeCommitments.map(String);
+    }
+
+    /** Reduced fork the local diamond records for `forkId`'s window (zero hash when unreduced). */
+    public async getLocalDisputeWindowReducedForkId(
+        forkId: ForkId
+    ): Promise<ForkId> {
+        const [window] =
+            await this.service.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                this.service.sm.channelId,
+                [forkId]
+            );
+        return window.reducedResult.forkId as ForkId;
+    }
+
+    /** Encoded (`Type.StateSnapshot`) snapshot with `snapshotHash`, or null. */
+    public getStateSnapshotStructByHash(
+        snapshotHash: Hash
+    ): { encodedSnapshot: string } | null {
+        const struct = this.service.storage.stateSnapshots
+            .getStateSnapshotByHash(snapshotHash)
+            ?.toStruct();
+        return struct
+            ? {
+                  encodedSnapshot: Codec.encode(
+                      struct,
+                      Type.StateSnapshot
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Encoded (`Type.MessageBlock`) inbound message block, or null. */
+    public getInboundMessageBlock(
+        messageBlockHash: Hash
+    ): { encodedMessageBlock: string } | null {
+        const block =
+            this.service.storage.inboundMessages.getMessageBlock(
+                messageBlockHash
+            );
+        return block
+            ? {
+                  encodedMessageBlock: Codec.encode(
+                      block,
+                      Type.MessageBlock
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Encoded (`Type.MessageBlock`) outbound message block, or null. */
+    public getOutboundMessageBlock(
+        messageBlockHash: Hash
+    ): { encodedMessageBlock: string } | null {
+        const block =
+            this.service.storage.outboundMessages.getMessageBlock(
+                messageBlockHash
+            );
+        return block
+            ? {
+                  encodedMessageBlock: Codec.encode(
+                      block,
+                      Type.MessageBlock
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Outbound message head (hash + height), or null before any block. */
+    public getOutboundHead(): { hash: Hash; height: number } | null {
+        const outbound = this.service.storage.outboundMessages;
+        const hash = outbound.getLatestBlockHash();
+        const height = outbound.getLatestBlockHeight();
+        return hash !== undefined && height !== undefined
+            ? { hash, height: Number(height) }
+            : null;
+    }
+
+    /** Encoded (`Type.MessageBlock`) outbound message blocks in range. */
+    public getOutboundMessageBlocksInRange(options: {
+        upperBlockHash: string;
+        lowerBlockHash: string;
+    }): { encodedMessageBlocks: string[] } {
+        return {
+            encodedMessageBlocks: this.service.storage.outboundMessages
+                .getMessageBlocksInRange(options)
+                .map((b) => Codec.encode(b, Type.MessageBlock) as string)
+        };
+    }
+
+    /** Encoded (`Type.StateSnapshot`) snapshot at `forkId:height`, or null. */
+    public getStateSnapshotStructAt(
+        forkId: ForkId,
+        height: BlockHeight
+    ): { encodedSnapshot: string } | null {
+        const struct = this.service.storage
+            .getStateSnapshot({ forkId, height })
+            ?.toStruct();
+        return struct
+            ? {
+                  encodedSnapshot: Codec.encode(
+                      struct,
+                      Type.StateSnapshot
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Encoded state-machine state for `stateHash`, or null. */
+    public getStateMachineState(stateHash: Hash): string | null {
+        return (
+            (this.service.storage.stateMachineStates.getStateMachineState(
+                stateHash
+            ) as string | undefined) ?? null
+        );
+    }
+
+    public getInboundLatestHeight(): number | null {
+        const height =
+            this.service.storage.inboundMessages.getLatestBlockHeight();
+        return height === undefined ? null : Number(height);
+    }
+
+    /** Number of distinct state snapshots stored. */
+    public getSnapshotCount(): number {
+        // Reads the storage's private index (no public count accessor).
+        const store = this.service.storage.stateSnapshots as unknown as {
+            snapshotsByHash: Map<string, unknown>;
+        };
+        return store.snapshotsByHash.size;
+    }
+
+    /**
+     * All host-side inputs a (Byzantine) block builder needs: head height, head
+     * hash, head snapshot hash, head timestamp, pending inbound coordinates, and
+     * the host clock. Lets the harness assemble arbitrary blocks client-side and
+     * only round-trip to the host for signing/broadcast.
+     */
+    public getBlockBuildingContext(forkId: ForkId): BlockBuildingContext {
+        const nextBlockHeight =
+            this.service.storage.blocks.getNextBlockHeight(forkId);
+        const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
+        const prevSnapshot = this.service.storage.getPreviousStateSnapshot({
+            forkId,
+            height: nextBlockHeight
+        });
+        return {
+            nextBlockHeight,
+            previousBlockHash: String(
+                this.getPreviousBlockHash(forkId, nextBlockHeight)
+            ),
+            stateSnapshotHash: String(this.getStateSnapshotHash(forkId)),
+            latestBlockTimestamp: latestBlock
+                ? Number(latestBlock.timestamp)
+                : null,
+            latestInboundMessageBlockHash: String(
+                prevSnapshot?.snapshotData.latestInboundMessageBlockHash ??
+                    ethers.ZeroHash
+            ),
+            latestInboundMessageBlockHeight: String(
+                prevSnapshot?.snapshotData.latestInboundMessageBlockHeight ?? 0n
+            ),
+            currentTimestamp: Clock.getTimeInSeconds()
+        };
+    }
+
+    /** On-chain timestamp of the stored calldata for a block, or null. */
+    public getBlockCalldataTimestamp(
+        forkId: ForkId,
+        height: BlockHeight,
+        blockAuthor: Address
+    ): number | null {
+        return (
+            this.service.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                height,
+                blockAuthor
+            )?.onChainTimestamp ?? null
+        );
+    }
+
+    /** The peer's protocol clock in seconds (chain-adjusted, not wall clock). */
+    public getClockTimeInSeconds(): number {
+        return Clock.getTimeInSeconds();
+    }
+
+    /** The peer's local-diamond state snapshot, encoded (`Type.StateSnapshot`). */
+    public async getLocalStateSnapshotStruct(): Promise<{
+        encodedSnapshot: string;
+    }> {
+        const snapshot =
+            await this.service.sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                this.service.sm.channelId
+            );
+        return {
+            encodedSnapshot: Codec.encode(
+                StateSnapshot.from(snapshot).toStruct(),
+                Type.StateSnapshot
+            ) as string
+        };
+    }
+
+    public getGenesisSnapshotHash(forkId: ForkId): Hash | null {
+        return (
+            this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.hash ?? null
+        );
+    }
+
+    public getGenesisSnapshotTimestamp(forkId: ForkId): number | null {
+        return (
+            this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.timestamp ?? null
+        );
+    }
+
+    public getCompletedReductionForkId(forkId: ForkId): ForkId | null {
+        return (
+            this.service.sm.reductionManager["getCompletedReduction"](forkId)
+                ?.reducedForkId ?? null
+        );
+    }
+
+    /**
+     * Hash of the previous block (or genesis snapshot) at the head of `forkId`,
+     * or at `height` when provided.
+     */
+    public getPreviousBlockHash(forkId: ForkId, height?: BlockHeight): Hash {
+        if (height !== undefined) {
+            const prev = this.service.storage.getPreviousBlockOrSnapshot({
+                forkId,
+                height
+            });
+            return (
+                prev.block ? prev.block.hash : prev.stateSnapshot!.hash
+            ) as Hash;
+        }
+        const prevBlock = this.service.storage.blocks.getLatestBlock(forkId);
+        return (prevBlock?.hash ??
+            this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.hash ??
+            ethers.ZeroHash) as Hash;
+    }
+
+    /**
+     * State-snapshot hash to build the next block on top of: the head block's
+     * snapshot hash, else the fork's genesis snapshot hash.
+     */
+    public getStateSnapshotHash(forkId: ForkId): Hash {
+        const prevBlock = this.service.storage.blocks.getLatestBlock(forkId);
+        return (prevBlock?.stateSnapshotHash ??
+            this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.hash ??
+            ethers.ZeroHash) as Hash;
+    }
+
+    /**
+     * Hash of the latest persisted state-machine state for `forkId`, or null if
+     * the latest-block → snapshot → state chain is not fully present.
+     */
+    public getLatestStateMachineStateHash(forkId: ForkId): Hash | null {
+        const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) return null;
+        const snapshot =
+            this.service.storage.stateSnapshots.getStateSnapshotByHash(
+                latestBlock.stateSnapshotHash
+            );
+        if (!snapshot) return null;
+        const state =
+            this.service.storage.stateMachineStates.getStateMachineState(
+                snapshot.stateMachineStateHash
+            );
+        if (!state) return null;
+        return snapshot.stateMachineStateHash as Hash;
+    }
+
+    // ===== Network queries =====
+
+    public getOpenConnectionCount(): number {
+        return this.p2pManager.openConnections.length;
+    }
+
+    /** EVM addresses of the peers this peer currently has open connections to. */
+    public getConnectedPeerAddresses(): string[] {
+        const addresses: string[] = [];
+        for (const transport of this.p2pManager.openConnections) {
+            const profile =
+                this.p2pManager.profileManager.getProfileByTransport(transport);
+            if (profile?.evmAddress) addresses.push(String(profile.evmAddress));
+        }
+        return addresses;
+    }
+
+    public getPreferredTransportType(evmAddress: Address): number | null {
+        return (
+            this.p2pManager.profileManager.getTransportByEvmAddress(evmAddress)
+                ?.transportType ?? null
+        );
+    }
+
+    public isConnectedTo(evmAddress: Address): boolean {
+        const target = String(evmAddress).toLowerCase();
+        return this.getConnectedPeerAddresses().some(
+            (a) => a.toLowerCase() === target
+        );
+    }
+
+    // ===== Storage assertion reads (test harness) =====
+
+    /** Solidity proof-type (as string) of the fraud proof stored against a peer. */
+    public getFraudProofType(participantAddress: Address): string | null {
+        const fp = this.service.storage.fraudProofs.getFraudProofForParticipant(
+            String(participantAddress)
+        );
+        return fp ? String(fp.proofType) : null;
+    }
+
+    /** Solidity proof-types (as strings) of all stored dispute fraud proofs. */
+    public getDisputeFraudProofTypes(): string[] {
+        return this.service.storage.disputeFraudProofs
+            .getDisputeFraudProofs()
+            .map((p) => String(p.proofType));
+    }
+
+    /** Proof type and accused disputer of every stored dispute fraud proof. */
+    public getDisputeFraudProofAccusations(): {
+        proofType: string;
+        participant: string;
+    }[] {
+        return this.service.storage.disputeFraudProofs
+            .getDisputeFraudProofs()
+            .map((p) => ({
+                proofType: String(p.proofType),
+                participant: String(p.participant)
+            }));
+    }
+
+    public getTimeout(
+        forkId: ForkId
+    ): { isForced: boolean; participant: string } | null {
+        const t = this.service.storage.timeout.getTimeout(forkId);
+        return t
+            ? { isForced: t.isForced, participant: String(t.participant) }
+            : null;
+    }
+
+    /** The stored dispute for `disputeHash`, encoded, or null. */
+    public getDispute(disputeHash: Hash): { encodedDispute: string } | null {
+        const dispute = this.service.storage.disputes.getDispute(disputeHash);
+        return dispute
+            ? { encodedDispute: Codec.encode(dispute, Type.Dispute) as string }
+            : null;
+    }
+
+    public didIDispute(forkId: ForkId): boolean {
+        return this.service.storage.disputes.didIDispute(forkId);
+    }
+
+    public hasDisputeConfirmation(disputeHash: Hash): boolean {
+        return !!this.service.storage.disputes.getDisputeConfirmation(
+            disputeHash
+        );
+    }
+
+    public getDisputeConfirmationHashes(): string[] {
+        // Reads the storage's private map (no public hash-listing accessor).
+        const disputes = this.service.storage.disputes as unknown as {
+            disputes: Map<string, unknown>;
+        };
+        return Array.from(disputes.disputes.keys());
+    }
+
+    public getLatestInboundMessageHash(): string | null {
+        const hash = this.service.storage.inboundMessages.getLatestBlockHash();
+        return hash === undefined ? null : String(hash);
+    }
+
+    /**
+     * Verify the full stored block→snapshot→state→message-block chain at
+     * `forkId:height` exists; returns the block hash or a reason it is missing.
+     */
+    public assertStoredBlockChain(
+        forkId: ForkId,
+        height: BlockHeight
+    ): { ok: true; blockHash: string } | { ok: false; reason: string } {
+        const storage = this.service.storage;
+        const block = storage.blocks.getBlock(forkId, height);
+        if (!block) {
+            return { ok: false, reason: `no persisted block` };
+        }
+        const snapshot = storage.stateSnapshots.getStateSnapshotByHash(
+            block.stateSnapshotHash
+        );
+        if (!snapshot) {
+            return {
+                ok: false,
+                reason: `missing state snapshot ${block.stateSnapshotHash}`
+            };
+        }
+        if (
+            !storage.stateMachineStates.getStateMachineState(
+                snapshot.stateMachineStateHash
+            )
+        ) {
+            return {
+                ok: false,
+                reason: `missing state machine state ${snapshot.stateMachineStateHash}`
+            };
+        }
+        for (const messageBlock of block.messageBlocks) {
+            const messageBlockHash = hash(
+                Codec.encode(messageBlock, Type.MessageBlock)
+            ) as Hash;
+            if (!storage.inboundMessages.getMessageBlock(messageBlockHash)) {
+                return {
+                    ok: false,
+                    reason: `missing inbound message block ${messageBlockHash}`
+                };
+            }
+        }
+        if (
+            snapshot.latestInboundMessageBlockHash !== ethers.ZeroHash &&
+            !storage.inboundMessages.getMessageBlock(
+                snapshot.latestInboundMessageBlockHash
+            )
+        ) {
+            return {
+                ok: false,
+                reason: `missing inbound message block ${snapshot.latestInboundMessageBlockHash}`
+            };
+        }
+        if (
+            snapshot.latestOutboundMessageBlockHash !== ethers.ZeroHash &&
+            !storage.outboundMessages.getMessageBlock(
+                snapshot.latestOutboundMessageBlockHash
+            )
+        ) {
+            return {
+                ok: false,
+                reason: `missing outbound message block ${snapshot.latestOutboundMessageBlockHash}`
+            };
+        }
+        return { ok: true, blockHash: String(block.hash) };
+    }
+
+    /**
+     * True if there is no live transport toward `otherAddress`, or it is closed.
+     * Replaces harness-side `transport.isClosed` checks.
+     */
+    public isTransportClosed(otherAddress: Address): boolean {
+        const transport =
+            this.p2pManager.profileManager.getTransportByEvmAddress(
+                otherAddress
+            );
+        return !transport || transport.isClosed;
+    }
+}
+
+export default QueryRpcMethods;

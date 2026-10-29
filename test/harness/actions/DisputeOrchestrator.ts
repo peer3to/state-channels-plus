@@ -1,0 +1,633 @@
+// @spec-test-coverage-ignore: shared dispute staging and resolution helper exercised by owning mapped test declarations
+import type { FinalDisputeResolution } from "./DisputeTamperingActions";
+import { CreateAndResolveDisputeResult } from "../core/types";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { Status } from "@/types";
+import { FraudProofType } from "@/types/sol-enums";
+import { ForkId } from "@/types/types";
+import { Codec, Logger, Type } from "@/utils";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { DisputeValidationRun } from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type {
+    DisputeAuditingDataStruct,
+    DisputeConfirmationStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ZeroHash } from "ethers";
+
+export type SubmittedFinalDispute = {
+    forkId: ForkId;
+    finalAuthorPeerIndex: number;
+    suppressedPeerIndices: number[];
+    finalResolution: FinalDisputeResolution;
+    dispute: DisputeStruct;
+    disputeConfirmation: DisputeConfirmationStruct;
+};
+
+export type DisputeResolutionExpectation = {
+    kind: "final-dispute" | "reduction";
+    forkId: ForkId;
+    genesisTimestamp: number;
+    assertParticipantsRemain?: boolean;
+};
+
+/**
+ * DisputeOrchestrator - High-level dispute resolution workflows
+ */
+export class DisputeOrchestrator<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(
+        protected harness: PeerTestHarness<THost>,
+        protected logger: Logger
+    ) {}
+
+    /**
+     * Construct a dispute host-side on `peerIndex` and return its structs.
+     * They come back ABI-encoded (raw ethers structs don't survive JSON across
+     * the port), decoded here to plain mutable structs.
+     */
+    async fetchConstructedDispute(
+        peerIndex: number,
+        forkId?: ForkId
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+        auditingData: DisputeAuditingDataStruct;
+    }> {
+        const targetForkId = forkId ?? this.harness.activeForkId;
+        if (!targetForkId) {
+            throw new Error("fetchConstructedDispute: no active fork ID");
+        }
+        const {
+            encodedDispute,
+            encodedDisputeConfirmation,
+            encodedAuditingData
+        } = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.constructDispute(targetForkId)
+            .request();
+        return {
+            dispute: Codec.decode(encodedDispute, Type.Dispute),
+            disputeConfirmation: Codec.decode(
+                encodedDisputeConfirmation,
+                Type.DisputeConfirmation
+            ),
+            auditingData: Codec.decode(
+                encodedAuditingData,
+                Type.DisputeAuditingData
+            )
+        };
+    }
+
+    /** Run the real dispute audit on `auditorIndex`; decoded seam projection. */
+    async auditDispute(
+        auditorIndex: number,
+        dispute: DisputeStruct,
+        auditingData?: DisputeAuditingDataStruct
+    ): Promise<DisputeValidationRun> {
+        return (
+            this.harness
+                .control(this.harness.getPeer(auditorIndex))
+                .dispute.runDisputeValidation(
+                    Codec.encode(dispute, Type.Dispute) as string,
+                    auditingData
+                        ? {
+                              encodedAuditingData: Codec.encode(
+                                  auditingData,
+                                  Type.DisputeAuditingData
+                              ) as string
+                          }
+                        : undefined
+                )
+                // audits replay blocks + several staticCalls; the default RPC
+                // budget is sized for quick reads, so allow three complete
+                // protocol windows for the host-side audit
+                .request({
+                    timeoutMs:
+                        this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 3
+                })
+        );
+    }
+
+    async submitFinalDispute(options: {
+        maliciousPeerIndex: number;
+        forkId?: ForkId;
+        finalAuthorPeerIndex?: number;
+        /**
+         * Upload the final dispute without its auditing data, so every
+         * other peer rebuilds it on commit before installing the result.
+         */
+        withoutAuditingData?: boolean;
+    }): Promise<SubmittedFinalDispute> {
+        const forkId = options.forkId ?? this.harness.activeForkId!;
+        const finalAuthor =
+            options.finalAuthorPeerIndex !== undefined
+                ? this.harness.getPeer(options.finalAuthorPeerIndex)
+                : [...this.harness.peers]
+                      .reverse()
+                      .find(
+                          (peer) => peer.index !== options.maliciousPeerIndex
+                      );
+        if (!finalAuthor) {
+            throw new Error(
+                "No participant available to author the final dispute"
+            );
+        }
+        const honestPeers = this.harness.peers.filter(
+            (peer) => peer.index !== options.maliciousPeerIndex
+        );
+        await this.suppressDisputeInitiation(
+            honestPeers.map((peer) => peer.index)
+        );
+        try {
+            await this.harness.byzantine.submitDoubleSignBlock(
+                options.maliciousPeerIndex,
+                { forkId }
+            );
+            await this.harness.eventCountsBarrier.waitFor(
+                async () => {
+                    try {
+                        await this.harness.assert.storage.honestPeersStoredFraudProof(
+                            {
+                                fraudProofType: FraudProofType.BlockDoubleSign,
+                                maliciousPeerIndex: options.maliciousPeerIndex,
+                                peerIndices: [finalAuthor.index],
+                                atLeastOneHonestPeer: false
+                            }
+                        );
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                },
+                {
+                    timeoutMs: this.harness.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }),
+                    timeoutMessage: `Final-dispute author ${finalAuthor.index} did not store double-sign evidence`,
+                    label: "finalDisputeAuthorEvidence"
+                }
+            );
+
+            return this.postFinalDispute(
+                forkId,
+                finalAuthor.index,
+                honestPeers.map((peer) => peer.index),
+                options.withoutAuditingData
+            );
+        } catch (error) {
+            await this.restoreDisputeInitiation(
+                honestPeers.map((peer) => peer.index)
+            );
+            throw error;
+        }
+    }
+
+    async openOrdinaryDisputeWindow(options: {
+        maliciousPeerIndex: number;
+        excludedPeerIndex: number;
+        forkId?: ForkId;
+    }): Promise<ForkId> {
+        const forkId = options.forkId ?? this.harness.activeForkId!;
+        const excludedPeer = this.harness.getPeer(options.excludedPeerIndex);
+        await this.suppressDisputeInitiation([excludedPeer.index]);
+        try {
+            await this.harness.byzantine.submitDoubleSignBlock(
+                options.maliciousPeerIndex,
+                { forkId }
+            );
+            const ordinaryAuthors = this.harness.peers
+                .map((peer) => peer.index)
+                .filter(
+                    (peerIndex) =>
+                        peerIndex !== options.maliciousPeerIndex &&
+                        peerIndex !== options.excludedPeerIndex
+                );
+            await this.harness.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: ordinaryAuthors,
+                expectedCount: ordinaryAuthors.length,
+                initiatedWithAuditingData: false
+            });
+        } finally {
+            await this.harness
+                .control(excludedPeer)
+                .stub.restoreDisputeInitiation()
+                .request();
+        }
+        return forkId;
+    }
+
+    async submitFinalDisputeFromStoredEvidence(options: {
+        forkId: ForkId;
+        finalAuthorPeerIndex: number;
+    }): Promise<SubmittedFinalDispute> {
+        const finalAuthor = this.harness.getPeer(options.finalAuthorPeerIndex);
+        await this.suppressDisputeInitiation([finalAuthor.index]);
+        try {
+            return await this.postFinalDispute(
+                options.forkId,
+                options.finalAuthorPeerIndex,
+                [options.finalAuthorPeerIndex]
+            );
+        } catch (error) {
+            await this.restoreDisputeInitiation([options.finalAuthorPeerIndex]);
+            throw error;
+        }
+    }
+
+    async resolveFinalDispute(
+        submitted: SubmittedFinalDispute,
+        options?: {
+            honestPeerIndices?: number[];
+            syntheticOnChainParticipants?: number;
+            expectedDisputesCommittedPerPeer?: number;
+            /**
+             * Peers that leave during the resolution (e.g. a leaver whose exit
+             * turn comes first on the reduced fork): never read or restored,
+             * and still counted as participants of the reduced fork.
+             */
+            departingPeerIndices?: number[];
+        }
+    ): Promise<CreateAndResolveDisputeResult<THost>> {
+        const departing = options?.departingPeerIndices ?? [];
+        try {
+            return await this.resolveDisputeWait({
+                forkId: submitted.forkId,
+                honestPeerIndices:
+                    options?.honestPeerIndices ??
+                    (departing.length > 0
+                        ? this.harness
+                              .getActiveHonestPeers()
+                              .map((peer) => peer.index)
+                              .filter((index) => !departing.includes(index))
+                        : undefined),
+                expectedDisputesCommittedPerPeer:
+                    options?.expectedDisputesCommittedPerPeer ?? 1,
+                disputesCommittedMode: "atLeast",
+                disputesCommittedTimeoutMs:
+                    this.harness.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }),
+                forkSettleTimeoutMs: this.harness.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                }),
+                syntheticOnChainParticipants:
+                    (options?.syntheticOnChainParticipants ?? 0) +
+                    departing.length,
+                expectedResolution: {
+                    kind: "final-dispute",
+                    forkId: submitted.finalResolution.forkId,
+                    genesisTimestamp:
+                        submitted.finalResolution.genesisTimestamp,
+                    assertParticipantsRemain: true
+                }
+            });
+        } finally {
+            // a departing peer may already be disposed
+            await this.restoreDisputeInitiation(
+                submitted.suppressedPeerIndices.filter(
+                    (index) => !departing.includes(index)
+                )
+            );
+        }
+    }
+
+    /**
+     * Waits for dispute commitment and resolution, agnostic to how the dispute was created.
+     * forkId must be captured before the action that can open the dispute.
+     */
+    async resolveDisputeWait(options: {
+        forkId: ForkId;
+        maliciousPeerIndices?: number[];
+        honestPeerIndices?: number[];
+        disputesCommittedTimeoutMs?: number;
+        forkSettleTimeoutMs?: number;
+        expectedDisputesCommittedPerPeer?: number;
+        disputesCommittedMode?: "exact" | "atLeast";
+        assertMaliciousRemoved?: boolean;
+        syntheticOnChainParticipants?: number;
+        expectedResolution?: DisputeResolutionExpectation;
+    }): Promise<CreateAndResolveDisputeResult<THost>> {
+        if (!options.forkId) {
+            throw new Error(
+                "resolveDisputeWait requires the forkId captured before the dispute"
+            );
+        }
+        const originalForkId = options.forkId;
+        const maliciousPeerIndices = Array.from(
+            new Set<number>([
+                ...(options.maliciousPeerIndices ?? []),
+                ...(this.harness.context.maliciousPeerIndices ?? [])
+            ])
+        );
+        const afkPeerIndices = Array.from(
+            new Set<number>(this.harness.context.afkPeerIndices ?? [])
+        );
+        const activeHonestPeerIndices = this.harness
+            .getActiveHonestPeers()
+            .map((p) => p.index);
+        const honestPeerIndices =
+            options.honestPeerIndices !== undefined
+                ? activeHonestPeerIndices.filter((i) =>
+                      options.honestPeerIndices!.includes(i)
+                  )
+                : activeHonestPeerIndices;
+        if (honestPeerIndices.length < 1) {
+            throw new Error(
+                `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
+            );
+        }
+
+        const syncPeerIndices = [...honestPeerIndices];
+
+        const disputesCommittedTimeoutMs =
+            options.disputesCommittedTimeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
+        const forkSettleTimeoutMs =
+            options.forkSettleTimeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
+
+        await this.harness.event.waitForEventCounts(
+            "onDisputeCommitted",
+            syncPeerIndices.map((peerId) => ({
+                peerId,
+                expectedCount: options.expectedDisputesCommittedPerPeer ?? 1
+            })),
+            disputesCommittedTimeoutMs,
+            { mode: options.disputesCommittedMode ?? "atLeast" }
+        );
+
+        if (options.expectedResolution) {
+            await this.harness.eventCountsBarrier.waitFor(
+                async () => {
+                    const peers = syncPeerIndices.map((index) =>
+                        this.harness.getPeer(index)
+                    );
+                    const forkIds = await this.harness.peerForkIds(peers);
+                    return forkIds.every(
+                        (forkId) =>
+                            forkId === options.expectedResolution!.forkId
+                    );
+                },
+                {
+                    timeoutMs: forkSettleTimeoutMs,
+                    timeoutMessage: `Honest peers did not resolve fork ${originalForkId} to expected fork ${options.expectedResolution.forkId}`
+                }
+            );
+        } else {
+            await this.harness.assert.sync.forkChangedWait({
+                originalForkId,
+                excludeForkIds: [originalForkId],
+                honestPeerIndices: syncPeerIndices,
+                timeoutMs: forkSettleTimeoutMs
+            });
+        }
+
+        const honestPeers = honestPeerIndices.map((idx) =>
+            this.harness.getPeer(idx)
+        );
+        let newForkId = options.expectedResolution
+            ? options.expectedResolution.forkId
+            : (await this.harness.peerForkIds([honestPeers[0]!]))[0];
+
+        if (newForkId === originalForkId || newForkId === ZeroHash) {
+            throw new Error(
+                `Expected new forkId after dispute resolution (got ${newForkId})`
+            );
+        }
+
+        if (options.expectedResolution) {
+            for (const peer of honestPeers) {
+                const [genesisTimestamp, status] = await Promise.all([
+                    this.harness
+                        .control(peer)
+                        .query.getGenesisSnapshotTimestamp(newForkId)
+                        .request(),
+                    this.harness.control(peer).query.getStatus().request()
+                ]);
+                if (
+                    genesisTimestamp !==
+                    options.expectedResolution.genesisTimestamp
+                ) {
+                    throw new Error(
+                        `Peer ${peer.index} resolved fork ${newForkId} at timestamp ${genesisTimestamp}; expected ${options.expectedResolution.genesisTimestamp}`
+                    );
+                }
+                if (
+                    options.expectedResolution.kind === "final-dispute" &&
+                    options.expectedResolution.assertParticipantsRemain &&
+                    status !== Status.PARTICIPATING
+                ) {
+                    throw new Error(
+                        `Peer ${peer.index} left PARTICIPATING after final dispute resolution (status=${Status[status]})`
+                    );
+                }
+            }
+        }
+
+        if (options.assertMaliciousRemoved ?? true) {
+            const maliciousAddresses = maliciousPeerIndices.map(
+                (i) => this.harness.getPeer(i).address
+            );
+            const afkAddresses = afkPeerIndices.map(
+                (i) => this.harness.getPeer(i).address
+            );
+            const retainedAfkCount =
+                maliciousPeerIndices.length > 0 ? afkPeerIndices.length : 0;
+
+            const cap =
+                honestPeers.length +
+                retainedAfkCount +
+                (options.syntheticOnChainParticipants ?? 0);
+
+            const candidatePeers = syncPeerIndices.map((i) =>
+                this.harness.getPeer(i)
+            );
+            // Two evictions can land as consecutive reductions: an invalid
+            // dispute's kill that settles after the honest dispute fixed its
+            // output evicts the poster on a follow-up fork. Without a pinned
+            // resolution, wait for the fork whose participants fit the cap;
+            // the checks below then report the newest fork precisely.
+            if (!options.expectedResolution) {
+                const settleMessage = `Honest peers did not settle on a fork with at most ${cap} participants after resolving ${originalForkId}`;
+                try {
+                    await this.harness.eventCountsBarrier.waitFor(
+                        async () => {
+                            const forkIds =
+                                await this.harness.peerForkIds(candidatePeers);
+                            if (!forkIds.every((id) => id === forkIds[0])) {
+                                return false;
+                            }
+                            const participants = await this.harness
+                                .control(candidatePeers[0]!)
+                                .query.getParticipants()
+                                .request();
+                            if (
+                                participants.length === 0 ||
+                                participants.length > cap
+                            ) {
+                                return false;
+                            }
+                            newForkId = forkIds[0]!;
+                            return true;
+                        },
+                        {
+                            timeoutMs: forkSettleTimeoutMs,
+                            timeoutMessage: settleMessage
+                        }
+                    );
+                } catch (error) {
+                    if (
+                        !(
+                            error instanceof Error &&
+                            error.message.includes(settleMessage)
+                        )
+                    ) {
+                        throw error;
+                    }
+                }
+            }
+            const candidateForkIds =
+                await this.harness.peerForkIds(candidatePeers);
+            const settledPeers = candidatePeers.filter(
+                (_, idx) => candidateForkIds[idx] === newForkId
+            );
+            if (settledPeers.length === 0) {
+                throw new Error(
+                    `No honest peer is on the resolved fork ${newForkId} after resolving ${originalForkId}`
+                );
+            }
+
+            for (const peer of settledPeers) {
+                const participants = await this.harness
+                    .control(peer)
+                    .query.getParticipants()
+                    .request();
+                if (participants.length > cap || participants.length === 0) {
+                    throw new Error(
+                        `Peer ${peer.index} has unexpected participant count ${participants.length} (expected 1..${cap}) on new fork ${newForkId}`
+                    );
+                }
+                for (const addr of maliciousAddresses) {
+                    if (participants.includes(addr)) {
+                        throw new Error(
+                            `Peer ${peer.index}: evicted address ${addr} still in getParticipants() on new fork ${newForkId}`
+                        );
+                    }
+                }
+                for (const addr of afkAddresses) {
+                    const shouldRemain = maliciousPeerIndices.length > 0;
+                    if (participants.includes(addr) !== shouldRemain) {
+                        throw new Error(
+                            `Peer ${peer.index}: AFK address ${addr} ${shouldRemain ? "missing from" : "still in"} getParticipants() on new fork ${newForkId}`
+                        );
+                    }
+                }
+            }
+        }
+
+        this.logger.debug(
+            `Resolved dispute: maliciousPeers=${maliciousPeerIndices.join(",")}, afkPeers=${afkPeerIndices.join(",")}, originalFork=${originalForkId}, newFork=${newForkId}`
+        );
+
+        return {
+            originalForkId,
+            newForkId,
+            maliciousPeerIndices,
+            afkPeerIndices,
+            honestPeerIndices,
+            honestPeers
+        };
+    }
+
+    private async postFinalDispute(
+        forkId: ForkId,
+        finalAuthorPeerIndex: number,
+        suppressedPeerIndices: number[],
+        withoutAuditingData = false
+    ): Promise<SubmittedFinalDispute> {
+        const posted = await this.harness.tamper.postTamperedDispute(
+            finalAuthorPeerIndex,
+            (dispute) => {
+                if (withoutAuditingData) dispute.postedAuditingData = false;
+            },
+            {
+                forkId,
+                markMalicious: false,
+                final: true
+            }
+        );
+        return {
+            forkId,
+            finalAuthorPeerIndex,
+            suppressedPeerIndices,
+            finalResolution: posted.finalResolution,
+            dispute: posted.dispute,
+            disputeConfirmation: posted.disputeConfirmation
+        };
+    }
+
+    public async selfRemoveViaDisputeWait({
+        leaverIndex,
+        forkId
+    }: {
+        leaverIndex: number;
+        forkId?: ForkId;
+    }): Promise<number[]> {
+        await this.harness
+            .control(this.harness.getPeer(leaverIndex))
+            .dispute.setForceExit(true)
+            .request();
+        this.harness.context.leftChannelPeerIndices = [
+            ...this.harness.context.leftChannelPeerIndices,
+            leaverIndex
+        ];
+        await this.harness.tamper.postTamperedDispute(leaverIndex, () => {}, {
+            ...(forkId === undefined ? {} : { forkId }),
+            markMalicious: false
+        });
+        const remainingPeerIndices = this.harness
+            .getActiveHonestPeers()
+            .map((p) => p.index);
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: remainingPeerIndices,
+            expectedCount: 1
+        });
+        return remainingPeerIndices;
+    }
+
+    public async suppressDisputeInitiation(
+        peerIndices: number[]
+    ): Promise<void> {
+        for (const index of peerIndices) {
+            await this.harness
+                .control(this.harness.getPeer(index))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
+        }
+    }
+
+    /** Restore dispute initiation on the peers a final-dispute staging suppressed. */
+    public async restoreDisputeInitiation(
+        peerIndices: number[]
+    ): Promise<void> {
+        for (const peerIndex of peerIndices) {
+            await this.harness
+                .control(this.harness.getPeer(peerIndex))
+                .stub.restoreDisputeInitiation()
+                .request();
+        }
+    }
+}

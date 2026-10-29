@@ -1,0 +1,125 @@
+import { Block, StateSnapshot } from "@/models";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import { BlockValidationResult, Signature } from "@/types";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+
+export type ParticipantSnapshots = {
+    previous: StateSnapshot;
+    resulting: StateSnapshot;
+};
+
+export default abstract class AValidationStrategy {
+    public get name(): string {
+        return this.constructor.name;
+    }
+
+    /**
+     * Whether this pipeline enforces the live fork/ordering gates - the
+     * disputed-fork, future-block and missing-old-block checks. Live gossip,
+     * spectate, and calldata pipelines validate in-order blocks and enforce
+     * all three. Dispute replay audits a fixed proof out of live order on an
+     * already-disputed fork, so it skips these gates (and never pays for the
+     * disputed-fork lookup). When false, `blockForkIsDisputed` and
+     * `blockIsNotNextAndIsInTheFuture` are never called, and a block is past
+     * only when stored (`BlockQueueManager.isPastBlock`).
+     */
+    public abstract get enforcesLiveForkAndOrderingGates(): boolean;
+
+    public abstract interpretFinalValidationResult(
+        blockValidationResult: BlockValidationResult
+    ): Promise<boolean>;
+
+    public abstract authenticateBlockFailed(
+        block: BlockConfirmationStruct
+    ): Promise<BlockValidationResult>;
+
+    public abstract wrongChannel(block: Block): Promise<BlockValidationResult>;
+
+    public abstract channelNotOpened(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    /** Unrecoverable confirmation values; each pipeline owns their consequence. */
+    public abstract malformedConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): Promise<BlockValidationResult>;
+
+    /**
+     * Signatures on the block recover to addresses outside the block's
+     * previous/resulting participant union. The strategy owns the side effects
+     * (filtering, disconnecting the byzantine senders, fraud proofs); SUCCESS
+     * means the block should continue through the pipeline with the stray
+     * signatures removed. The suppliers of the stray signatures resolve from
+     * the entry's per-source contribution map. Signers are derivable O(1) via
+     * `entry.block.signatureToAddress` (cached).
+     */
+    public abstract notAllSingersAreParticipants(
+        entry: QueuedBlockEntry,
+        unexpectedSignatures: Set<Signature>,
+        participantSnapshots?: ParticipantSnapshots
+    ): Promise<BlockValidationResult>;
+
+    public abstract noNewSignaturesOnExistingBlock(
+        block: Block
+    ): Promise<BlockValidationResult>;
+
+    public abstract goodNewSignaturesOnExistingBlock(
+        block: Block
+    ): Promise<BlockValidationResult>;
+
+    public abstract blockAuthorIsNotParticipant(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    public abstract doubleSignDetected(
+        conflictingBlock: Block,
+        block: Block
+    ): Promise<BlockValidationResult>;
+
+    public abstract invalidStateTransitionDetected(
+        block: Block
+    ): Promise<BlockValidationResult>;
+
+    public abstract forgedInboundMessageBlockDetected(
+        block: Block,
+        messageBlock: MessageBlockStruct
+    ): Promise<BlockValidationResult>;
+
+    /**
+     * A height-0 block that doesn't link to the fork's genesis snapshot.
+     * Takes the entry (not just the block) so strategies can attribute the
+     * block to its source peers when the genesis snapshot is missing
+     * entirely — that case can't produce a fraud proof.
+     */
+    public abstract wrongGenesisDetected(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    public abstract conflictingButNotLinkedBlockDetected(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    public abstract blockForkIsDisputed(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    public abstract blockIsNotNextAndIsInTheFuture(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    public abstract blockIsNotLinkedAndIsNotFirstBlock(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
+    public abstract objectiveInvalidTimestampDetected(
+        block: Block
+    ): Promise<BlockValidationResult>;
+
+    public abstract subjectiveInvalidTimestampDetected(
+        block: Block
+    ): Promise<BlockValidationResult>;
+}

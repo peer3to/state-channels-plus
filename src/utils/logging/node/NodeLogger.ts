@@ -1,0 +1,382 @@
+import { config, isNodeRuntime } from "../../config";
+import { formatTimeFromSeconds } from "../formatUtils";
+import {
+    LogEntry,
+    Logger,
+    ExclusiveLoggerContext,
+    LogLevel,
+    SharedLoggerContext
+} from "../Logger";
+import type { LogStore } from "../logStore";
+import type {
+    EventLoopDelayDetails,
+    PerformanceMonitorInternalOptions,
+    PerformanceSampleSource
+} from "../performanceMonitorInternal";
+import { reportPerformanceSample } from "../performanceMonitorInternal";
+import { NodeLogUploader } from "./NodeLogUploader";
+import type { LogUploaderOptions } from "../LogUploader";
+import { Colors } from "./colors";
+import {
+    hostDelta,
+    readHostCounters,
+    readThreadSchedstat
+} from "./kernelCounters";
+import { errorMessage } from "@/utils/errorMessage";
+
+/**
+ * The real Node sample source: the perf_hooks delay histogram plus event-loop
+ * utilization, and on Linux the thread's scheduler counters, read once per
+ * reporting interval. The main thread also reads the host-wide counters, so
+ * one line per process per interval carries the machine's view.
+ */
+async function createNodeSampleSource(
+    sampleIntervalMs: number,
+    includeHost: boolean
+): Promise<PerformanceSampleSource> {
+    const { monitorEventLoopDelay, performance } = await import(
+        "node:perf_hooks"
+    );
+    const h = monitorEventLoopDelay({ resolution: sampleIntervalMs });
+    let last = performance.eventLoopUtilization();
+    let lastSched = readThreadSchedstat();
+    let lastHost = includeHost ? readHostCounters() : undefined;
+
+    const toMs = (nanoseconds: number) => {
+        const ms = nanoseconds / 1e6;
+        return Number.isFinite(ms) ? ms : 0;
+    };
+
+    return {
+        start() {
+            h.enable();
+            last = performance.eventLoopUtilization();
+            lastSched = readThreadSchedstat();
+            lastHost = includeHost ? readHostCounters() : undefined;
+        },
+        sample() {
+            const elu = performance.eventLoopUtilization(last);
+            last = performance.eventLoopUtilization();
+            const sched = readThreadSchedstat();
+            const schedDelta =
+                sched && lastSched
+                    ? {
+                          cpuMs: toMs(sched.runNs - lastSched.runNs),
+                          runQueueWaitMs: toMs(sched.waitNs - lastSched.waitNs)
+                      }
+                    : {};
+            lastSched = sched;
+            const host = includeHost ? readHostCounters() : undefined;
+            const hostFields = hostDelta(host, lastHost);
+            lastHost = host;
+            return {
+                dMean: toMs(h.mean),
+                d50: toMs(h.percentile(50)),
+                d90: toMs(h.percentile(90)),
+                d99: toMs(h.percentile(99)),
+                dMax: toMs(h.max),
+                utilization: elu.utilization,
+                ...schedDelta,
+                ...hostFields
+            };
+        },
+        reset() {
+            h.reset();
+        },
+        stop() {
+            h.disable();
+        }
+    };
+}
+
+export class NodeLogger extends Logger {
+    private excludedTags: Set<string>;
+
+    constructor(
+        context: ExclusiveLoggerContext = {},
+        sharedContext: SharedLoggerContext,
+        level: LogLevel | undefined,
+        logStore: LogStore,
+        logUploaderOptions?: LogUploaderOptions,
+        excludedTags: Set<string> = new Set(),
+        private readonly skipWriting: boolean = false
+    ) {
+        const logUploader =
+            logUploaderOptions?.logUploader ||
+            (logUploaderOptions?.logUploaderConfig
+                ? new NodeLogUploader(
+                      logStore,
+                      logUploaderOptions.logUploaderConfig,
+                      context,
+                      sharedContext,
+                      logUploaderOptions.attachErrorListener ?? true
+                  )
+                : undefined);
+
+        super(context, sharedContext, level, logStore, logUploader);
+        this.excludedTags = excludedTags;
+        logUploader?.setLogger(this);
+    }
+
+    protected createChild(context: ExclusiveLoggerContext): Logger {
+        return new NodeLogger(
+            context,
+            this.sharedContext,
+            this.level,
+            this.logStore,
+            { logUploader: this.logUploader },
+            this.excludedTags,
+            this.skipWriting
+        );
+    }
+
+    private shouldExcludeLog(context: ExclusiveLoggerContext): boolean {
+        const tagsToCheck: string[] = [];
+
+        if (typeof context.component === "string") {
+            tagsToCheck.push(context.component);
+        }
+
+        if (Array.isArray((context as any).tags)) {
+            tagsToCheck.push(...(context as any).tags);
+        }
+
+        return tagsToCheck.some((tag) =>
+            this.excludedTags.has(tag.toLowerCase())
+        );
+    }
+
+    private formatMessage(logEntry: LogEntry): string {
+        // Check if this log should be excluded
+        if (this.shouldExcludeLog(logEntry.context)) {
+            return "";
+        }
+
+        const time = formatTimeFromSeconds(logEntry.time);
+        const level = logEntry.level;
+        const levelUpper = level.toUpperCase();
+
+        let prefix = "";
+
+        // Timestamp
+        prefix += `${Colors.TIMESTAMP}[${time}]${Colors.RESET}`;
+
+        // Log level with color
+        prefix += `${Colors.LEVEL[level as keyof typeof Colors.LEVEL] || Colors.LEVEL.debug}[${levelUpper}]${Colors.RESET}`;
+
+        // Peer context
+        const peerId = logEntry.sharedContext.peerId;
+        const peerAddress = logEntry.sharedContext.peerAddress;
+        if (peerId == null) {
+            prefix += `${Colors.RESET}`;
+        } else {
+            const peerColor = Colors.PEER[Number(peerId) % Colors.PEER.length];
+            prefix += `${peerColor}[Peer ${peerId}]${Colors.RESET}`;
+            if (peerAddress && typeof peerAddress === "string") {
+                prefix += `${peerColor}[${peerAddress.slice(0, 8)}...]${Colors.RESET}`;
+            }
+        }
+
+        // thread role -> a merged replay shows where a line came from
+        prefix += `${Colors.COMPONENT}[${logEntry.sharedContext.threadName ?? "main"}]${Colors.RESET}`;
+
+        // Component
+        if (logEntry.context.component)
+            prefix += `${Colors.COMPONENT}[${logEntry.context.component}]${Colors.RESET}`;
+
+        return `${prefix} ${logEntry.message}`;
+    }
+
+    protected write(logEntry: LogEntry): void {
+        if (this.skipWriting) {
+            return;
+        }
+
+        const { level } = logEntry;
+        const formattedMessage = this.formatMessage(logEntry);
+        const formattedMeta = logEntry.meta;
+        if (
+            console.groupCollapsed &&
+            level !== "debug" &&
+            level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
+        ) {
+            console.groupCollapsed(formattedMessage);
+
+            console.log(formattedMeta);
+
+            console.log(logEntry.stack);
+
+            console.groupEnd();
+            return;
+        }
+
+        // Fallback when groups are not supported
+
+        console.log(formattedMessage, formattedMeta, logEntry.stack);
+    }
+
+    protected createPerformanceMonitor(
+        options: PerformanceMonitorInternalOptions
+    ): () => void {
+        let stopped = false;
+        let stopMonitor: (() => void) | undefined;
+
+        const intervalMs = options.intervalMs ?? 1000;
+        const sampleIntervalMs = options.sampleIntervalMs ?? 10;
+
+        // Report the running event-loop-delay peak for this thread to the
+        // parallel test runner (a ##E2E_TIMING## marker on stdout, which
+        // it prints per test). Emit on each increase because SDK/VM worker
+        // threads may exit before the next sample. Enabled whenever the event-loop
+        // monitor threshold is configured (tests only), so production is
+        // unaffected.
+        // Scripted samples exercise the watchdog, not machine performance.
+        const emitTiming =
+            !options.sampleSource &&
+            config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
+        const elThread = options.threadLabel ?? "main";
+        let peakMs = 0;
+
+        // The sampling interval is installed once the source exists: at once
+        // for an injected source, after the perf_hooks import for the real one.
+        const start = (source: PerformanceSampleSource) => {
+            if (stopped) return;
+            source.start();
+            const timer = setInterval(() => {
+                if (stopped) return;
+                const sample = source.sample();
+                const { dMax } = sample;
+
+                if (emitTiming && dMax > peakMs) {
+                    peakMs = dMax;
+                    // Worker process.stdout is forwarded to the parent's,
+                    // which the runner captures for this test.
+                    process.stdout.write(
+                        `##E2E_TIMING## ${JSON.stringify({
+                            maxEventLoopDelayMs: Math.round(peakMs),
+                            elThread
+                        })}\n`
+                    );
+                }
+                const details = reportPerformanceSample(
+                    this,
+                    sample,
+                    options,
+                    "node"
+                );
+                if (details) {
+                    const { delayErrorThresholdMs } = details;
+                    stopped = true;
+                    stopMonitor?.();
+                    const error = new Error(
+                        `Event loop delay ${dMax}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
+                    );
+                    (
+                        error as Error & {
+                            eventLoopDelay?: EventLoopDelayDetails;
+                        }
+                    ).eventLoopDelay = details;
+                    throw error;
+                }
+                source.reset();
+            }, intervalMs);
+
+            stopMonitor = () => {
+                clearInterval(timer);
+                source.stop();
+            };
+            options.onStarted?.();
+        };
+
+        if (options.sampleSource) {
+            start(options.sampleSource);
+        } else {
+            void createNodeSampleSource(sampleIntervalMs, elThread === "main")
+                .then(start)
+                .catch((error) => {
+                    if (stopped) return;
+                    this.warn("Event loop performance monitoring unavailable", {
+                        error: errorMessage(error)
+                    });
+                });
+        }
+
+        return () => {
+            stopped = true;
+            stopMonitor?.();
+        };
+    }
+
+    public group(label?: string): void {
+        if (label) {
+            console.group(label);
+        } else {
+            console.group();
+        }
+    }
+
+    public groupEnd(): void {
+        console.groupEnd();
+    }
+
+    public static parseLogLevelFromArgs(
+        args: string[] = isNodeRuntime() ? (process as any).argv : []
+    ): LogLevel {
+        const validLevels: LogLevel[] = [
+            "verbose",
+            "debug",
+            "info",
+            "warn",
+            "error"
+        ];
+        let logLevel: LogLevel = "info";
+
+        if (
+            config.LOG_LEVEL &&
+            validLevels.includes(config.LOG_LEVEL.toLowerCase() as LogLevel)
+        ) {
+            logLevel = config.LOG_LEVEL.toLowerCase() as LogLevel;
+        }
+
+        const flags = ["--verbose", "--debug", "--info", "--warn", "--error"];
+        for (const flag of flags) {
+            if (args.includes(flag)) {
+                logLevel = flag.substring(2) as LogLevel;
+                break;
+            }
+        }
+
+        return logLevel;
+    }
+
+    public static parseExcludedTagsFromArgs(
+        args: string[] = isNodeRuntime() ? (process as any).argv : []
+    ): Set<string> {
+        const excludedTags: Set<string> = new Set();
+        const normalize = (tag: string) => tag.trim().toLowerCase();
+
+        const addTags = (value?: string) => {
+            if (!value) return;
+            value
+                .split(/[,\s]+/)
+                .map(normalize)
+                .filter(Boolean)
+                .forEach((tag) => excludedTags.add(tag));
+        };
+
+        addTags(config.LOG_EXCLUDE_TAGS);
+        addTags(config.EXCLUDE_LOG_TAGS);
+
+        const flagIndex = args.findIndex((arg) => arg === "--exclude-tags");
+        if (flagIndex !== -1) {
+            addTags(args[flagIndex + 1]);
+        }
+
+        const eqFlag = args.find((arg) => arg.startsWith("--exclude-tags="));
+        if (eqFlag) {
+            addTags(eqFlag.split("=", 2)[1]);
+        }
+
+        return excludedTags;
+    }
+}

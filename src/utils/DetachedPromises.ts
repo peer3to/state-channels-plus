@@ -1,0 +1,208 @@
+export class DetachedPromises {
+    private static readonly AWAIT_ALL_TIMEOUT_MS = 30000;
+    private static nextId = 1;
+    private static pending: Array<{
+        id: number;
+        promise: Promise<any>;
+        collectedAtStack?: string;
+        adopted?: boolean;
+    }> = [];
+    private static collectUntilTimestamp?: number;
+
+    private constructor() {}
+
+    public static collect(promise: Promise<any>): void {
+        if (
+            DetachedPromises.collectUntilTimestamp !== undefined &&
+            Date.now() > DetachedPromises.collectUntilTimestamp
+        ) {
+            return;
+        }
+
+        DetachedPromises.pending.push({
+            id: DetachedPromises.nextId++,
+            promise,
+            collectedAtStack: new Error("Detached promise collected at").stack
+        });
+    }
+
+    // Track the original promise for draining and also route failure to its owner.
+    // A throwing onError creates an untracked unhandled rejection. requestDispute
+    // uses this to reach the runtime error funnel; other callers must handle or route it.
+    public static observe<T>(
+        promise: Promise<T>,
+        onError: (error: unknown) => void
+    ): void {
+        DetachedPromises.collect(promise);
+        void promise.catch(onError);
+    }
+
+    /**
+     * Hand the future rejection of every pending promise to `onRejection` and
+     * keep each one tracked as work that settles. A disposing root calls this
+     * so a failure of work still in flight at its disposal is that disposal's
+     * outcome rather than an unhandled rejection or a drain failure. Work
+     * adopted by an earlier call is skipped. Returns the collection origins
+     * of the newly adopted work.
+     */
+    public static adoptPending(
+        onRejection: (error: unknown, collectedAtStack?: string) => void
+    ): Array<string | undefined> {
+        return DetachedPromises.pending
+            .filter((entry) => !entry.adopted)
+            .map((entry) => {
+                const { collectedAtStack } = entry;
+                entry.adopted = true;
+                entry.promise = entry.promise.catch((error) =>
+                    onRejection(error, collectedAtStack)
+                );
+                return collectedAtStack;
+            });
+    }
+
+    public static size(): number {
+        return DetachedPromises.pending.length;
+    }
+
+    public static getAndClear(): Array<{
+        id: number;
+        promise: Promise<any>;
+        collectedAtStack?: string;
+    }> {
+        const promises = DetachedPromises.pending;
+        DetachedPromises.pending = [];
+        return promises;
+    }
+
+    public static clear(): void {
+        DetachedPromises.pending = [];
+        DetachedPromises.collectUntilTimestamp = undefined;
+    }
+
+    /**
+     * This one is dangerous since the SDK never stops and can continue collecting detached promises
+     */
+    public static async awaitAllAndClearRecursive(
+        collectionWindowMs?: number
+    ): Promise<PromiseSettledResult<any>[]> {
+        if (collectionWindowMs !== undefined) {
+            DetachedPromises.collectUntilTimestamp =
+                Date.now() + collectionWindowMs;
+        }
+
+        const allSettled: PromiseSettledResult<any>[] = [];
+        while (DetachedPromises.size() > 0) {
+            const batch = await DetachedPromises.awaitAllAndClear();
+            allSettled.push(...batch);
+        }
+
+        return allSettled;
+    }
+    public static async awaitAllAndClear(
+        timeoutMs = DetachedPromises.AWAIT_ALL_TIMEOUT_MS
+    ): Promise<PromiseSettledResult<any>[]> {
+        const batch = DetachedPromises.getAndClear();
+        if (batch.length === 0) {
+            return [];
+        }
+
+        const settledFlags = new Array<boolean>(batch.length).fill(false);
+        const trackedPromises = batch.map((entry, index) =>
+            Promise.resolve(entry.promise).finally(() => {
+                settledFlags[index] = true;
+            })
+        );
+
+        return new Promise<PromiseSettledResult<any>[]>((resolve, reject) => {
+            let timedOut = false;
+            const timeoutId = setTimeout(() => {
+                timedOut = true;
+
+                const unresolved = batch.filter(
+                    (_entry, index) => !settledFlags[index]
+                );
+
+                if (unresolved.length > 0) {
+                    DetachedPromises.pending.unshift(...unresolved);
+                }
+
+                const unresolvedStacks = unresolved
+                    .map((entry, index) => {
+                        const stack =
+                            entry.collectedAtStack ||
+                            "(no stack captured for this promise)";
+                        return `#${index + 1} (id=${entry.id})\n${stack}`;
+                    })
+                    .join("\n\n");
+
+                const message =
+                    `DetachedPromises.awaitAllAndClear timed out after ${DetachedPromises.AWAIT_ALL_TIMEOUT_MS}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
+                    (unresolvedStacks
+                        ? `\nUnresolved promise origins:\n${unresolvedStacks}`
+                        : "");
+
+                reject(new Error(message));
+            }, timeoutMs);
+
+            Promise.allSettled(trackedPromises)
+                .then((results) => {
+                    if (timedOut) {
+                        return;
+                    }
+                    clearTimeout(timeoutId);
+                    resolve(results);
+                })
+                .catch((error) => {
+                    if (timedOut) {
+                        return;
+                    }
+                    clearTimeout(timeoutId);
+                    reject(error);
+                });
+        });
+    }
+
+    public static async collectSettledAndClear(
+        settleWindowMs = 100
+    ): Promise<PromiseSettledResult<any>[]> {
+        const batch = DetachedPromises.getAndClear();
+        if (batch.length === 0) return [];
+
+        const unresolved = Symbol("unresolved");
+        const results = await Promise.all(
+            batch.map((entry) =>
+                Promise.race([
+                    Promise.resolve(entry.promise).then(
+                        (value): PromiseFulfilledResult<any> => ({
+                            status: "fulfilled",
+                            value
+                        }),
+                        (reason): PromiseRejectedResult => ({
+                            status: "rejected",
+                            reason
+                        })
+                    ),
+                    new Promise<typeof unresolved>((resolve) =>
+                        setTimeout(() => resolve(unresolved), settleWindowMs)
+                    )
+                ]).then((result) => ({ entry, result }))
+            )
+        );
+
+        DetachedPromises.pending.unshift(
+            ...results
+                .filter(({ result }) => result === unresolved)
+                .map(({ entry }) => entry)
+        );
+        return results
+            .filter(
+                (
+                    result
+                ): result is {
+                    entry: (typeof batch)[number];
+                    result: PromiseSettledResult<any>;
+                } => result.result !== unresolved
+            )
+            .map(({ result }) => result);
+    }
+}

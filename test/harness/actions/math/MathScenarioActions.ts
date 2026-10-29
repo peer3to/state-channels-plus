@@ -1,0 +1,1151 @@
+// @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { Status, TimeConfig } from "@/types";
+import { ForkId, Hash } from "@/types/types";
+import { Logger, sleep } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
+import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
+import {
+    CreateAndResolveDisputeResult,
+    HarnessOptions,
+    TestPeer
+} from "@test/harness/core/types";
+import type { MathStateMachine } from "@typechain-types";
+import { expect } from "chai";
+import { MathPeerTestHarness } from "test-harness";
+
+type MathTestPeer = TestPeer<
+    P2pRuntimeHostRoot<HarnessControlRpc>,
+    MathStateMachine
+>;
+
+/** Kill period for the shared invalid-dispute staging, in seconds. */
+const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 12;
+
+export class MathScenarioActions extends ScenarioActions {
+    declare public harness: MathPeerTestHarness;
+
+    constructor(harness: MathPeerTestHarness, logger: Logger) {
+        super(harness, logger);
+    }
+
+    /**
+     * A committed settled-path dispute on a fork whose chain inbound
+     * head sits above `laggingIndex`'s store: the top-up of an existing
+     * participant keeps the head final-by-everyone, so no auditing data
+     * is posted and nothing back-fills the missing block.
+     */
+
+    async stageCommittedDisputeOverInboundGap({
+        laggingIndex
+    }: {
+        laggingIndex: number;
+    }) {
+        const observers = this.harness.peers
+            .map((peer) => peer.index)
+            .filter((index) => index !== laggingIndex);
+        await this.topUpAndObserve(observers);
+        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
+            .index;
+        const disputerIndex = observers.find(
+            (index) => index !== offenderIndex
+        )!;
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            offenderIndex
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [disputerIndex],
+            expectedCount: 1,
+            initiatedWithAuditingData: false
+        });
+        return { forkId: this.harness.activeForkId!, disputerIndex };
+    }
+
+    /**
+     * The committed settled-path dispute over an inbound gap, seen by a synced
+     * spectator whose InboundMessagesProcessed handler is held. Spectators do
+     * not audit, so the spectator persists the window and schedules its
+     * reduction while the inbound run that reduction applies stays
+     * unavailable until release. A participant cannot stage this: its audit
+     * of the same window throws on the unavailable run.
+     */
+    async stageSpectatedDisputeOverHeldInboundGap() {
+        await this.harness.setup(3, {
+            timeConfig: INBOUND_GAP_TIME_CONFIG
+        });
+        await this.harness.lifecycle.openChannel();
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+        // no transition is scheduled while the spectator syncs
+        const spectatorIndex = (await this.harness.join.addSpectatorWait())
+            .index;
+        const held =
+            await this.harness.rpcStub.holdInboundMessageEvents(spectatorIndex);
+        // the invalid block below would reach the spectator by gossip, and a
+        // spectator drops the feed on it (abort) -> it would never see the
+        // dispute. it follows the dispute from chain events only
+        await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
+        const { forkId, disputerIndex } =
+            await this.stageCommittedDisputeOverInboundGap({
+                laggingIndex: spectatorIndex
+            });
+        // the spectator persisted the window (the hook fires after its
+        // handler completed)
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: [spectatorIndex],
+            expectedCount: 1
+        });
+        return { forkId, held, spectatorIndex, disputerIndex };
+    }
+
+    /**
+     * 3 peers, two finalized transitions, then a top-up of an existing
+     * participant: block turns and the final-by-everyone head stay intact, so
+     * disputes take the settled path, and the chain's inbound head ends up above
+     * the snapshot every dispute pins. Returns the head the disputes will name.
+     */
+
+    async stageInboundGap({
+        laggingIndex,
+        observePeerIndices
+    }: {
+        laggingIndex: number;
+        observePeerIndices: number[];
+    }) {
+        await this.topUpAndObserve(observePeerIndices);
+
+        const inboundHeadHash = (await this.harness
+            .control(this.harness.getPeer(observePeerIndices[0]))
+            .query.getLatestInboundMessageHash()
+            .request()) as Hash;
+        // premise - the lagging peer holds no block at the inbound head the
+        // other peers' disputes name
+        expect(
+            await this.harness
+                .control(this.harness.getPeer(laggingIndex))
+                .query.getInboundMessageBlock(inboundHeadHash)
+                .request(),
+            "lagging peer must not hold the inbound head"
+        ).to.equal(null);
+        return inboundHeadHash;
+    }
+    private async topUpAndObserve(observePeerIndices: number[]): Promise<void> {
+        await this.harness.join.forceInboundJoinWait({
+            participant: this.harness.getPeer(observePeerIndices[0]).address,
+            observePeerIndices
+        });
+    }
+
+    async disputeWithReduction(options: {
+        maliciousPeerIndex: number;
+        honestPeerIndices?: number[];
+        forkSettleTimeoutMs?: number;
+        disputesCommittedTimeoutMs?: number;
+    }): Promise<CreateAndResolveDisputeResult> {
+        return this.disputeAndResolve({
+            maliciousPeerIndex: options.maliciousPeerIndex,
+            honestPeerIndices: options.honestPeerIndices,
+            forkSettleTimeoutMs: options.forkSettleTimeoutMs,
+            disputesCommittedTimeoutMs: options.disputesCommittedTimeoutMs,
+            disputesCommittedMode: "atLeast",
+            assertMaliciousRemoved: false
+        });
+    }
+
+    async disputeAndResolve(options: {
+        maliciousPeerIndex: number;
+        forkId?: ForkId;
+        honestPeerIndices?: number[];
+        resetEventSpies?: boolean;
+        disputesCommittedTimeoutMs?: number;
+        forkSettleTimeoutMs?: number;
+        expectedDisputesCommittedPerPeer?: number;
+        disputesCommittedMode?: "exact" | "atLeast";
+        assertMaliciousRemoved?: boolean;
+    }): Promise<CreateAndResolveDisputeResult> {
+        const originalForkId = options.forkId || this.harness.activeForkId!;
+        const honestPeerIndices =
+            options.honestPeerIndices ??
+            this.harness.peers
+                .map((_, i) => i)
+                .filter((i) => i !== options.maliciousPeerIndex);
+
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: options.maliciousPeerIndex
+        });
+
+        await this.harness.dispute.createInvalidStateTransitionDispute(
+            options.maliciousPeerIndex,
+            {
+                forkId: originalForkId,
+                resetEventSpies: options.resetEventSpies ?? true
+            }
+        );
+
+        const result = await this.harness.dispute.resolveDisputeWait({
+            maliciousPeerIndices: [options.maliciousPeerIndex],
+            forkId: originalForkId,
+            honestPeerIndices,
+            disputesCommittedTimeoutMs: options.disputesCommittedTimeoutMs,
+            forkSettleTimeoutMs: options.forkSettleTimeoutMs,
+            expectedDisputesCommittedPerPeer:
+                options.expectedDisputesCommittedPerPeer,
+            disputesCommittedMode: options.disputesCommittedMode,
+            assertMaliciousRemoved: options.assertMaliciousRemoved ?? false
+        });
+
+        this.harness.context.originalForkId = originalForkId;
+
+        this.logger.debug(
+            `Scenario disputeAndResolve completed: maliciousPeer=${options.maliciousPeerIndex}, originalFork=${originalForkId}, newFork=${result.newForkId}`
+        );
+
+        return result;
+    }
+
+    async fourPeersDisputeResolution(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }): Promise<CreateAndResolveDisputeResult> {
+        await this.harness.lifecycle.start(4, 2, options);
+        await this.harness.assert.sync.peersInSyncWait();
+        const maliciousPeerIndex = (
+            await this.harness.query.getNextPeerToWrite()
+        ).index;
+        return this.disputeWithReduction({ maliciousPeerIndex });
+    }
+
+    async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        const { newForkId } = await this.fourPeersDisputeResolution(options);
+        this.harness.assert.snapshot.localSnapshotsChangedDetached({
+            expectedForkId: newForkId as string
+        });
+    }
+
+    async fourPeersDisputeResolutionAndSnapshotUpdateWait(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        const { newForkId } = await this.fourPeersDisputeResolution(options);
+        await this.harness.assert.snapshot.localSnapshotsChangedWait({
+            expectedForkId: newForkId as string
+        });
+    }
+
+    async preDisputeSetup(options?: {
+        peerCount?: number;
+        transitionCount?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+        configOverrides?: HarnessOptions["configOverrides"];
+    }) {
+        await this.harness.lifecycle.timeoutSetup(
+            options?.peerCount ?? 3,
+            options?.transitionCount ?? 2,
+            {
+                ...options,
+                // Auditing an invalid dispute and killing it are two
+                // sequential on-chain transactions after the event delivery
+                // and the audit's chain reads; on a loaded farm those alone
+                // have taken five seconds, so the staging's kill period keeps
+                // a few seconds of headroom over the harness default.
+                timeConfig: {
+                    evidenceTime: DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME,
+                    ...options?.timeConfig
+                }
+            }
+        );
+        await this.harness.assert.sync.peersInSyncWait();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    /** Submit only the reduction; leave the chain snapshot unchanged. */
+    async finalizeReductionOnChainOnly(
+        peerIndex: number,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return this.harness.execOnHost(
+            this.harness.getPeer(peerIndex),
+            async (sm, { forkId }) => {
+                const commitments =
+                    await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                        sm.channelId,
+                        forkId
+                    );
+                const disputes = await sm.agreementManager.getForkDisputes(
+                    commitments!
+                );
+                const computation =
+                    await sm.reductionManager.computeReductionLocally(
+                        forkId,
+                        disputes
+                    );
+                if (!computation)
+                    throw new Error("Missing real reduction data");
+                const { reduceData, reducedForkId } = computation;
+                const tx =
+                    await sm.stateChannelManagerContract.reduceAndFinalize(
+                        disputes,
+                        reduceData.latestStateSnapshot,
+                        reduceData.encodedStateMachineState,
+                        reduceData.inboundMessageBlocks,
+                        reducedForkId
+                    );
+                await tx.wait();
+                return sm.stateChannelManagerContract.isReduceChallengePeriodExpired(
+                    sm.channelId,
+                    forkId
+                );
+            },
+            { forkId }
+        );
+    }
+
+    /**
+     * A disputed fork whose kill period has expired, with every peer's
+     * `reduction-*` timer held so nothing reduces until a test says so:
+     * preDisputeSetup, hold the timers, one invalid state transition by the
+     * malicious peer, the committed dispute, `afterDispute` while the
+     * evidence period is still open, then the evidence and kill periods.
+     */
+    async stageReducibleDisputedFork(options?: {
+        configOverrides?: HarnessOptions["configOverrides"];
+        beforeDispute?: () => Promise<void>;
+        afterDispute?: () => Promise<void>;
+        disputingPeerIndices?: number[];
+        peerCount?: number;
+        maliciousPeerIndex?: number;
+        timeConfig?: { evidenceTime?: number };
+    }): Promise<{ sourceForkId: ForkId }> {
+        const peerCount = options?.peerCount ?? 4;
+        await this.preDisputeSetup({
+            peerCount,
+            configOverrides: options?.configOverrides,
+            timeConfig: { evidenceTime: options?.timeConfig?.evidenceTime ?? 3 }
+        });
+        const sourceForkId = this.harness.activeForkId!;
+        for (let peerIndex = 0; peerIndex < peerCount; peerIndex += 1) {
+            await this.harness
+                .control(this.harness.getPeer(peerIndex))
+                .stub.stubHoldReductionTasks()
+                .request();
+        }
+        await options?.beforeDispute?.();
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            options?.maliciousPeerIndex ?? 1
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: options?.disputingPeerIndices,
+            expectedCount: 1
+        });
+        await options?.afterDispute?.();
+        // The evidence period counts from the dispute window's creation, not
+        // from when every peer observed the dispute. Wait it out so no more
+        // evidence can land.
+        const windowCreatedAt = Number(
+            await this.harness.channelManager.getDisputeWindowCreationTimestamp(
+                this.harness.channelId,
+                sourceForkId
+            )
+        );
+        const settlementMarginSeconds = 2;
+        await this.harness.event.waitUntilTimestamp(
+            windowCreatedAt +
+                this.harness.event.evidencePeriodWaitMs(
+                    settlementMarginSeconds
+                ) /
+                    1000
+        );
+        // A peer outside `disputingPeerIndices` can commit late in the
+        // evidence period and move the kill period end. The reduction genesis
+        // carries that end, and the successor's first writer must still be
+        // inside its window once a test releases the reductions.
+        const { killPeriodEnd } =
+            await this.harness.channelManager.isKillPeriodExpired(
+                this.harness.channelId,
+                sourceForkId
+            );
+        await this.harness.event.waitUntilTimestamp(
+            Number(killPeriodEnd) + settlementMarginSeconds
+        );
+        return { sourceForkId };
+    }
+
+    /**
+     * preDisputeSetup + a top-up of an existing participant, consumed by later
+     * blocks -> snapshotData.latestInboundMessageBlockHeight sits on inbound
+     * block 2 with the channel-open block still a real ancestor. Topping up an
+     * existing participant keeps the participant set (and block turns) intact.
+     */
+    async preDisputeSetupConsumedInboundTopUp(options?: {
+        peerCount?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        await this.preDisputeSetup(options);
+        await this.harness.join.forceInboundJoinWait({
+            participant: this.harness.getPeer(0).address
+        });
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    /**
+     * A committed spam dispute (internally valid, no enforcement basis) that
+     * every peer audit-failed, with every peer's `killDispute` suppressed while
+     * it happened. `killerIndex` therefore holds a real dispute fraud proof
+     * against a still-live kill window, and its `killDispute` is restored so a
+     * test can drive the kill itself.
+     */
+    async stageUnkilledSpamDispute(options?: {
+        killerIndex?: number;
+        spammerIndex?: number;
+        peerCount?: number;
+        beforeDispute?: () => Promise<void>;
+        addSpectatorBeforeDispute?: boolean;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }): Promise<{
+        forkId: ForkId;
+        spammer: MathTestPeer;
+        killer: MathTestPeer;
+        spectator: TestPeer<P2pRuntimeHostRoot<HarnessControlRpc>> | undefined;
+    }> {
+        const killerIndex = options?.killerIndex ?? 0;
+        const spammerIndex = options?.spammerIndex ?? 1;
+        const addSpectatorBeforeDispute =
+            options?.addSpectatorBeforeDispute ?? false;
+        await this.preDisputeSetup({
+            peerCount: options?.peerCount,
+            transitionCount: addSpectatorBeforeDispute ? 0 : undefined,
+            timeConfig: { evidenceTime: 12, ...options?.timeConfig }
+        });
+        const spectator = addSpectatorBeforeDispute
+            ? (
+                  await this.harness.join.addSpectatorAuthoring({
+                      authoringPeerIndices: [0, 1, 2],
+                      minimumBlocks: 2,
+                      maximumBlocks: 20,
+                      waitForFinalization: true
+                  })
+              ).peer
+            : undefined;
+        if (spectator) {
+            await this.harness.assert.sync.peersInSyncWait();
+            this.harness.event.resetEventSpies();
+            this.harness.contextApi.captureOriginalFork();
+        }
+        const forkId = this.harness.activeForkId!;
+        await options?.beforeDispute?.();
+
+        const kills = await Promise.all(
+            this.harness.peers.map((peer) =>
+                this.harness.rpcStub.suppressDisputeKill(peer.index)
+            )
+        );
+        await this.harness.tamper.postTamperedDispute(
+            spammerIndex,
+            (dispute) => {
+                dispute.input.timeout.participant =
+                    "0x0000000000000000000000000000000000000000";
+                dispute.input.onChainSlashes = [];
+                dispute.input.selfRemoval = false;
+                dispute.input.requireExistingDisputeWindow = false;
+            }
+        );
+        // the skipped kill is the moment the killer stored its fraud proof
+        await kills[killerIndex].waitUntilSkipped();
+        await kills[killerIndex].restore();
+
+        return {
+            forkId,
+            spammer: this.harness.getPeer(spammerIndex),
+            killer: this.harness.getPeer(killerIndex),
+            spectator
+        };
+    }
+
+    async preDisputeSetupCalldataPath(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+        /**
+         * Hold this peer's InboundMessagesProcessed handler across the join, so
+         * it never stores the inbound head the disputes will name and the other
+         * peers alone wait on the join.
+         */
+        laggingInboundPeerIndex?: number;
+        /**
+         * Drop the lagging peer's join log instead of holding its handler: an
+         * explicit query still applies the log, so on-demand recovery heals
+         * the gap.
+         */
+        recoverableLaggingInbound?: boolean;
+    }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
+        const timeConfig = {
+            evidenceTime: 12,
+            ...options?.timeConfig
+        };
+
+        await this.preDisputeSetup({
+            peerCount: 4,
+            transitionCount: 0,
+            timeConfig
+        });
+        const laggingIndex = options?.laggingInboundPeerIndex;
+        const recoverable = options?.recoverableLaggingInbound ?? false;
+        const held =
+            laggingIndex === undefined || recoverable
+                ? undefined
+                : await this.harness.rpcStub.holdInboundMessageEvents(
+                      laggingIndex
+                  );
+        const dropped =
+            laggingIndex === undefined || !recoverable
+                ? undefined
+                : await this.harness.rpcStub.dropInboundMessageLogs(
+                      laggingIndex
+                  );
+        const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
+        await this.harness.transition.advanceState({ count: 2 });
+        await this.harness.join.submitPreparedForceInboundJoinWait(forceJoin, {
+            observePeerIndices:
+                laggingIndex === undefined
+                    ? undefined
+                    : this.harness.peers
+                          .map((peer) => peer.index)
+                          .filter((index) => index !== laggingIndex)
+        });
+        await dropped?.waitUntilDropped();
+
+        this.harness.contextApi.captureOriginalFork();
+        this.harness.event.resetEventSpies();
+        return {
+            releaseLaggingInbound: held
+                ? () => held.release({ replay: true })
+                : dropped?.release
+        };
+    }
+
+    async setupTwoLeaversAcrossMilestones(options?: {
+        forceExitPeerIndex?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        // p2pTime covers a farm turn: the keep-alive below authors through
+        // both leavers' exit windows, and a stamp is capped at the previous
+        // one plus p2pTime, so a shorter window would leave the stamps behind
+        // the wall clock by the end of it.
+        const timeConfig = {
+            p2pTime: 3,
+            agreementTime: 6,
+            chainFallbackTime: 2,
+            evidenceTime: 12,
+            ...options?.timeConfig
+        };
+
+        await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
+
+        const firstLeaver =
+            await this.harness.transition.participantLeaveDetached({
+                waitForPeers: [0, 1, 3, 4]
+            });
+
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3, 4],
+            count: 1
+        });
+
+        const secondLeaver =
+            await this.harness.transition.participantLeaveDetached({
+                waitForPeers: [0, 1, 3]
+            });
+
+        this.harness.context.leftChannelPeerIndices = [
+            firstLeaver,
+            secondLeaver
+        ];
+
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3],
+            count: 1
+        });
+
+        // Snapshot posting stays automatic. A leaver's SYNCED needs one
+        // agreement window plus a snapshot transaction, longer than the idle
+        // writer slot survives, so the remaining participants keep authoring
+        // until both exits settled.
+        const leavers = [firstLeaver, secondLeaver];
+        await this.harness.transition.keepAuthoringUntilPeersStatus({
+            peerIndices: leavers,
+            status: Status.SYNCED,
+            waitForPeers: [0, 1, 3],
+            excludePeerIndices: leavers,
+            maximumBlocks: 20
+        });
+        // The writer slot never idled past its deadline, so no honest peer
+        // posted a timeout dispute that would throttle the caller's upload.
+        this.harness.assert.dispute.noDisputes();
+
+        if (options?.forceExitPeerIndex !== undefined) {
+            await this.harness
+                .control(this.harness.getPeer(options.forceExitPeerIndex))
+                .dispute.setForceExit(true)
+                .request();
+        }
+
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    async preDisputeSetupDisconnectedPeer(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+        stateTransitionCount?: number;
+        disconnectedPeerIndex?: number;
+    }) {
+        const timeConfig = {
+            evidenceTime: 12,
+            ...options?.timeConfig
+        };
+        const stateTransitionCount = options?.stateTransitionCount ?? 2;
+        const disconnectedPeerIndex = options?.disconnectedPeerIndex ?? 2;
+        await this.harness.lifecycle.timeoutSetup(4, 0, { timeConfig });
+        await this.harness.network.blacklistAndDisconnectPeer(
+            disconnectedPeerIndex
+        );
+        const remainingPeerIndices = [0, 1, 2, 3].filter(
+            (i) => i !== disconnectedPeerIndex
+        );
+        await this.harness.transition.advanceState({
+            waitForPeers: remainingPeerIndices,
+            count: stateTransitionCount
+        });
+
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    async peerWithUnbroadcastedBlock(peerIndex: number = 1) {
+        await this.harness.assert.sync.peersInSyncWait();
+        this.harness.event.resetEventSpies();
+        await this.harness.byzantine.stubBroadcast(peerIndex);
+        await this.harness.transition.advanceState({ waitForSync: false });
+    }
+
+    /**
+     * Three participants author at least `initialTransitions` blocks while a
+     * fourth peer syncs as a spectator; returns that synced spectator.
+     */
+    async syncSpectator(
+        initialTransitions: number = 4,
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+            maxChannelParticipants?: HarnessOptions["maxChannelParticipants"];
+        }
+    ): Promise<TestPeer> {
+        const h = this.harness;
+        await h.lifecycle.start(3, 0, {
+            timeConfig: {
+                p2pTime: 5,
+                agreementTime: 4,
+                chainFallbackTime: 2,
+                evidenceTime: 4,
+                ...options?.timeConfig
+            },
+            configOverrides: options?.configOverrides,
+            maxChannelParticipants: options?.maxChannelParticipants
+        });
+
+        const { peer: joiner } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: initialTransitions,
+            maximumBlocks: initialTransitions + 16
+        });
+        await h.assert.sync.peersInSyncWait();
+        return joiner;
+    }
+
+    async syncSpectatorAndPrepareJoin(
+        initialTransitions: number = 4,
+        options?: {
+            configOverrides?: HarnessOptions["configOverrides"];
+            timeConfig?: HarnessOptions["timeConfig"];
+        }
+    ) {
+        const h = this.harness;
+        const joiner = await this.syncSpectator(initialTransitions, options);
+
+        const stateSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        const preparedJoin = await h.join.buildJoinChannelConfirmation({
+            joiner,
+            channelId: h.channelId
+        });
+
+        return { joiner, stateSnapshot, ...preparedJoin };
+    }
+    async spectatorPromotedViaJoinChannelWait(options?: {
+        initialPeers?: number;
+        initialTransitions?: number;
+        postPromotionTransitions?: number;
+        timeConfig?: HarnessOptions["timeConfig"];
+    }): Promise<TestPeer> {
+        const initialPeers = options?.initialPeers ?? 2;
+        const initialTransitions = options?.initialTransitions ?? 2;
+        const postPromotionTransitions = options?.postPromotionTransitions ?? 2;
+        const timeConfig = options?.timeConfig ?? {
+            p2pTime: 2,
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        };
+
+        await this.harness.lifecycle.start(initialPeers, 0, {
+            timeConfig
+        });
+
+        // Spectating and joining are asynchronous to the channel:
+        // participants author on their own cadence and never wait for a
+        // joiner's spawn, sync or join. The harness keeps them authoring
+        // through all three. The join RPCs and the on-chain join take
+        // seconds on a loaded farm; an idle writer slot across them would
+        // pass p2pTime + agreementTime and get the next block rejected (its
+        // timestamp is capped at prev + p2pTime), disputing the fork.
+        const { peer: joiner } = await this.harness.join.addSpectatorAuthoring({
+            authoringPeerIndices: Array.from(
+                { length: initialPeers },
+                (_, index) => index
+            ),
+            minimumBlocks: initialTransitions,
+            maximumBlocks: initialTransitions + 16
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+
+        // Handlers attached at once: the join promise is never unobserved.
+        const join: { isSettled: boolean; failure?: { error: unknown } } = {
+            isSettled: false
+        };
+        const joining = this.harness.join.joinChannelWait({ joiner }).then(
+            () => {
+                join.isSettled = true;
+            },
+            (error: unknown) => {
+                join.failure = { error };
+                join.isSettled = true;
+            }
+        );
+        // The block that carries the join is the first one whose author has
+        // already received the join's inbound event; author until the joiner
+        // is promoted instead of assuming a fixed block count.
+        await this.harness.transition.keepAuthoringUntil({
+            until: async () => {
+                if (join.failure) throw join.failure.error;
+                if (!join.isSettled) return false;
+                const joinerStatus = await this.harness
+                    .control(this.harness.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request();
+                if (joinerStatus === Status.PARTICIPATING) return true;
+                if (joinerStatus !== Status.PENDING_PARTICIPANT) {
+                    throw new Error(
+                        `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
+                    );
+                }
+                return false;
+            },
+            waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
+            maximumBlocks: 20
+        });
+        await joining;
+
+        if (postPromotionTransitions > 0) {
+            await this.harness.transition.advanceState({
+                count: postPromotionTransitions
+            });
+            await this.harness.assert.sync.peersInSyncWait();
+        }
+
+        this.harness.assert.dispute.noDisputes();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+
+        return joiner;
+    }
+
+    async spectatorJoinedAndSynced(
+        initialTransitions: number = 3,
+        options?: HarnessOptions
+    ) {
+        await this.harness.lifecycle.start(3, 0, options);
+        await this.harness.assert.sync.participantCount({
+            expectedCount: 3
+        });
+        await this.harness.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: initialTransitions,
+            maximumBlocks: initialTransitions + 16,
+            waitForFinalization: true
+        });
+        await this.harness.event.resetEventSpies();
+        await this.harness.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2, 3]
+        });
+    }
+
+    private async setupChannelWithSpectator(options?: {
+        initialPeers?: number;
+        initialTransitions?: number;
+        timeConfig?: HarnessOptions["timeConfig"];
+    }): Promise<{ spectator: TestPeer; initialPeers: number }> {
+        const initialPeers = options?.initialPeers ?? 3;
+        const initialTransitions = options?.initialTransitions ?? 2;
+        const timeConfig = options?.timeConfig ?? {
+            p2pTime: 5,
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        };
+        await this.harness.lifecycle.start(initialPeers, 0, {
+            timeConfig
+        });
+        const { peer: spectator } =
+            await this.harness.join.addSpectatorAuthoring({
+                authoringPeerIndices: Array.from(
+                    { length: initialPeers },
+                    (_, index) => index
+                ),
+                minimumBlocks: initialTransitions,
+                maximumBlocks: initialTransitions + 16
+            });
+        await this.harness.assert.sync.peersInSyncWait();
+        return { spectator, initialPeers };
+    }
+
+    async spectatorPromotedViaForceInboundWait(options?: {
+        initialPeers?: number;
+        initialTransitions?: number;
+        timeConfig?: HarnessOptions["timeConfig"];
+    }): Promise<TestPeer> {
+        const { spectator, initialPeers } =
+            await this.setupChannelWithSpectator(options);
+        await this.harness.join.forceInboundJoinWait({
+            participant: spectator.address
+        });
+        // Author until the promotion block lands (see
+        // spectatorPromotedViaJoinChannelWait).
+        await this.harness.transition.keepAuthoringUntilPeersStatus({
+            peerIndices: [spectator.index],
+            status: Status.PARTICIPATING,
+            waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
+            maximumBlocks: 20
+        });
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+        return spectator;
+    }
+
+    async readyForRedispute() {
+        await this.harness.lifecycle.start(4, 0);
+
+        await this.harness.byzantine.blacklistAndDisconnect(3);
+        await this.harness.transition.increment(1);
+        await this.harness.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2]
+        });
+        this.harness.event.resetEventSpies();
+    }
+
+    /**
+     * Produce a block whose confirmations never reach the other peers, so the
+     * next writer's signature is missing from everyone else's copy - the only
+     * shape in which the parent's on-chain timestamp still matters to the next
+     * block. On-chain posting is suppressed so the parent keeps no on-chain
+     * timestamp. Returns an observer holding the parent, the next writer, and
+     * a candidate timestamp already past the parent's p2p window.
+     */
+    async previousBlockUnsignedByNextWriter(options: {
+        timeConfig: TimeConfig;
+    }) {
+        const { observer, author, previous, forkId, postParent } =
+            await this.unpostedParentUnsignedByNextWriter(options);
+        const parentPostTimestamp = await postParent();
+        return { observer, author, previous, forkId, parentPostTimestamp };
+    }
+
+    /**
+     * The staging of `previousBlockUnsignedByNextWriter` without the parent's
+     * on-chain post: `postParent` performs it when the caller is ready, e.g.
+     * after the observer has built a timeout against the unposted parent.
+     */
+    async unpostedParentUnsignedByNextWriter(options: {
+        timeConfig: TimeConfig;
+    }) {
+        const h = this.harness;
+        await h.lifecycle.start(3, 1, { timeConfig: options.timeConfig });
+        const forkId = h.activeForkId!;
+
+        const parentAuthorAddress = await h
+            .control(h.getPeer(0))
+            .query.getNextToWrite()
+            .request();
+        const parentAuthor = h.peers.find(
+            (p) => p.address === parentAuthorAddress
+        );
+        if (!parentAuthor) {
+            throw new Error(`No peer matches writer ${parentAuthorAddress}`);
+        }
+
+        // no on-chain posting anywhere -> the parent keeps no on-chain
+        // timestamp, and no peer's block reaches the observer through calldata
+        await Promise.all(
+            h.peers.map((peer) =>
+                h
+                    .control(peer)
+                    .stub.stubSuppressMaybePostBlockOnChain()
+                    .request()
+            )
+        );
+        // only the parent author's copy travels -> no other confirmation
+        // signature lands on anyone else's copy
+        for (const peer of h.peers) {
+            if (peer.index !== parentAuthor.index) {
+                await h.byzantine.stubBroadcast(peer.index);
+            }
+        }
+
+        const parentHeight = await h
+            .control(parentAuthor)
+            .query.getNextBlockHeight(forkId)
+            .request();
+        await parentAuthor.p2pInstance.p2pContractInstance.add(1);
+        await h.syncCoordinator.waitForPeersToSync([parentAuthor], forkId, {
+            minHeight: parentHeight,
+            waitForFinalization: false
+        });
+        const parentBundle = await h
+            .control(parentAuthor)
+            .query.getBlockByHeight(forkId, parentHeight)
+            .request();
+        if (!parentBundle) {
+            throw new Error(`Parent author never stored block ${parentHeight}`);
+        }
+
+        const nextWriterAddress = await h
+            .control(parentAuthor)
+            .query.getNextToWrite()
+            .request();
+        const author = h.peers.find((p) => p.address === nextWriterAddress);
+        if (!author || author.index === parentAuthor.index) {
+            throw new Error(`Unexpected next writer ${nextWriterAddress}`);
+        }
+        const observer = h.peers.find(
+            (p) => p.index !== parentAuthor.index && p.index !== author.index
+        );
+        if (!observer) {
+            throw new Error("No third peer available as observer");
+        }
+
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: observer.index,
+            blockHash: parentBundle.hash as Hash
+        });
+        const previous = await h
+            .control(observer)
+            .query.getBlockByHeight(forkId, parentHeight)
+            .request();
+        if (!previous) {
+            throw new Error(`Observer never stored block ${parentHeight}`);
+        }
+        if (previous.confirmationSignerAddresses.includes(author.address)) {
+            throw new Error(
+                "Next writer signed the parent - its on-chain timestamp would be ignored"
+            );
+        }
+        if (previous.onChainTimestamp !== null) {
+            throw new Error("Parent already carries an on-chain timestamp");
+        }
+
+        // every peer but the posting parent author loses the subscribed
+        // delivery: the observer only learns the parent's post time by
+        // recovering it during validation, and no other peer can ingest,
+        // sign, and gossip the parent's copy to it first
+        await h.rpcStub.holdCalldataPostedEventsExceptLeader(
+            parentAuthor.index
+        );
+
+        const postParent = async () => {
+            // leave the parent's p2p window before posting, so its real post time
+            // is strictly later than its own timestamp
+            await sleep((options.timeConfig.p2pTime + 2) * 1000);
+            const { onChainTimestamp: parentPostTimestamp } =
+                await h.transition.postBlockCalldataOnChainWait(
+                    parentAuthor,
+                    previous.encodedSignedBlock
+                );
+            if (parentPostTimestamp <= previous.timestamp) {
+                throw new Error(
+                    `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
+                );
+            }
+            await h
+                .control(observer)
+                .stub.waitForHeldCalldataPostedEvent()
+                .request();
+            return parentPostTimestamp;
+        };
+
+        return { observer, author, parentAuthor, previous, forkId, postParent };
+    }
+
+    /**
+     * A committed dispute the observer never learned of: its reduction entry
+     * points are held so nothing auto-reduces, and its incoming
+     * dispute-committed events are suppressed, so the on-chain window is
+     * genuinely unreadable from its local storage. `passFirst` lets the first
+     * arriving dispute event through, which flips its local `isForkDisputed`.
+     */
+    async disputeWithSuppressedCommitEvents(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+        peerCount?: number;
+        initialBlocks?: number;
+        passFirst?: boolean;
+        /** Harness options of the session, e.g. RPC node proxies. */
+        harnessOptions?: HarnessOptions;
+    }) {
+        const {
+            observerIndex,
+            maliciousPeerIndex,
+            peerCount = 4,
+            initialBlocks = 2,
+            passFirst = false,
+            harnessOptions
+        } = options;
+        const h = this.harness;
+        await h.lifecycle.start(peerCount, initialBlocks, harnessOptions);
+        const forkId = h.activeForkId!;
+
+        const race = await h.rpcStub.holdReductionRace(observerIndex);
+        // drop the observer's incoming dispute-committed events before any
+        // dispute happens: the other honest peers' commitments are then
+        // genuinely never delivered here (not merely cleared from storage,
+        // which the event-dedup cache would treat as already processed and
+        // refuse to redeliver)
+        const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+            observerIndex,
+            { passFirst }
+        );
+
+        // real invalid transition -> honest peers dispute + commit on-chain
+        await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        await h.assert.dispute.initiatedWait();
+        // exclude the observer - its own onDisputeCommitted delivery is held
+        await h.assert.dispute.committedWait({
+            peersIndices: h.peers
+                .map((peer) => peer.index)
+                .filter(
+                    (index) =>
+                        index !== observerIndex && index !== maliciousPeerIndex
+                )
+        });
+
+        return { forkId, race, restoreEvents };
+    }
+
+    /**
+     * A final dispute whose DisputeCommitted log reached the observer, with
+     * its handling held in flight until the observer's next dispute log
+     * query has answered: the window's one commitment is missing from the
+     * observer's storage while its log's handling is scheduled. The
+     * observer's reduction entry points stay held until disposal: the final
+     * dispute's DisputeReducedResultCommitted log would otherwise start a
+     * reduction whose window recovery releases the hold first.
+     */
+    async finalDisputeWithInFlightCommit(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+    }) {
+        const { observerIndex, maliciousPeerIndex } = options;
+        const h = this.harness;
+        await this.preDisputeSetup({ peerCount: 4 });
+        await h.rpcStub.holdReductionRace(observerIndex);
+        const held =
+            await h.rpcStub.holdDisputeCommittedHandlingUntilLogQuery(
+                observerIndex
+            );
+        try {
+            const { forkId } = await h.dispute.submitFinalDispute({
+                maliciousPeerIndex
+            });
+            await held.waitUntilHeld();
+            return { forkId, held };
+        } catch (error) {
+            await held.release();
+            throw error;
+        }
+    }
+
+    async activeChannelWithDispute(options: {
+        numPeers: number;
+        numBlocks: number;
+        byzantinePeer: number;
+    }) {
+        const { numPeers, numBlocks, byzantinePeer } = options;
+
+        await this.harness.lifecycle.start(numPeers, numBlocks);
+        await this.harness.byzantine.submitDoubleSignBlock(byzantinePeer);
+        await this.harness.assert.dispute.committedWait();
+        this.harness.event.resetEventSpies();
+    }
+}

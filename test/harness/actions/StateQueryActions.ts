@@ -1,0 +1,217 @@
+// @spec-test-coverage-ignore: shared harness peer-state query actions exercised by the mapped test declarations that call them
+import { StateSnapshot } from "@/models";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { ForkId, Hash } from "@/types/types";
+import { Codec, Logger, Type } from "@/utils";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+
+/**
+ * StateQueryActions handles all read-only state queries.
+ * Responsibilities:
+ * - Query state machine state
+ * - Query network/transport state
+ * - Query dispute/timeout state
+ * - Determine next peer to write
+ *
+ * NO MUTATIONS - read-only operations only
+ */
+export class StateQueryActions<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>
+> {
+    constructor(
+        private harness: PeerTestHarness<THost>,
+        private logger: Logger
+    ) {}
+
+    /** The newest inbound message block hash a peer holds. */
+    public async getLatestInboundMessageHash(peerIndex: number) {
+        return this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getLatestInboundMessageHash()
+            .request();
+    }
+
+    /**
+     * Get the latest state machine state hash for a peer - ONLY if it exists in storage
+     */
+    public async getLatestStateMachineStateHash(
+        peerIndex: number
+    ): Promise<Hash | null> {
+        const peer = this.harness.getPeer(peerIndex);
+        const forkId = this.harness.activeForkId;
+        if (!forkId) return null;
+        return await this.harness
+            .control(peer)
+            .query.getLatestStateMachineStateHash(forkId)
+            .request();
+    }
+
+    /** The fork the chain records as `forkId`'s window reduction, or the zero hash. */
+    public async reducedForkOnChain(forkId: ForkId): Promise<ForkId> {
+        return (
+            await this.harness.channelManager.getReducedResult(
+                this.harness.channelId,
+                forkId
+            )
+        ).reducedForkId as ForkId;
+    }
+
+    /** On-chain kill-period state for `forkId`, as seen by `peerIndex`. */
+    public async killPeriod(forkId: ForkId, peerIndex: number = 0) {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.getKillPeriod(forkId)
+            .request();
+    }
+
+    /** Participants slashed on-chain, as seen by `peerIndex`. */
+    public async onChainSlashedParticipants(
+        peerIndex: number = 0
+    ): Promise<string[]> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getOnChainSlashedParticipants()
+            .request();
+    }
+
+    public async getOnChainSnapshotHash(channelId?: Hash): Promise<Hash> {
+        const id = channelId ?? this.harness.channelId;
+        return StateSnapshot.from(
+            await this.harness.channelManager.getStateSnapshot(id)
+        ).hash;
+    }
+
+    public async getLocalStateSnapshot(
+        peer: TestPeer<THost>
+    ): Promise<StateSnapshot> {
+        const { encodedSnapshot } = await this.harness
+            .control(peer)
+            .query.getLocalStateSnapshotStruct()
+            .request();
+        return StateSnapshot.from(
+            Codec.decode(encodedSnapshot, Type.StateSnapshot)
+        );
+    }
+    /**
+     * Get the next peer that should write a block
+     */
+    async getNextPeerToWrite(): Promise<TestPeer<THost>> {
+        try {
+            const forkId = this.harness.activeForkId;
+            if (!forkId) {
+                throw new Error("getNextPeerToWrite: no active fork ID");
+            }
+
+            const sourcePeer = await this.harness.peerWithHighestBlock(forkId);
+
+            const nextAddress = await this.harness
+                .control(sourcePeer)
+                .query.getNextToWrite()
+                .request();
+
+            this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
+
+            const nextPeer = this.harness.peers.find(
+                (peer) => peer.address === nextAddress
+            );
+            if (!nextPeer) {
+                // Enhanced error reporting (all host-side queries).
+                const peerAddresses = this.harness.peers.map((p) => p.address);
+                const stateHash = await this.getLatestStateMachineStateHash(0);
+                const latestBlockHeight = await this.harness
+                    .control(sourcePeer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request();
+
+                const participantStates = await Promise.all(
+                    this.harness.peers.map(async (peer, i) => {
+                        try {
+                            const participants = await this.harness
+                                .control(peer)
+                                .query.getParticipants()
+                                .request();
+                            return `Peer ${i}: ${participants.length} participants`;
+                        } catch {
+                            return `Peer ${i}: error getting participants`;
+                        }
+                    })
+                );
+
+                throw new Error(
+                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkId}, StateHash: ${stateHash ?? "none"}, LatestBlockHeight: ${latestBlockHeight ?? "none"}. Participant states: ${participantStates.join(", ")}`
+                );
+            }
+
+            return nextPeer;
+        } catch (error) {
+            this.logger.error(`getNextPeerToWrite failed: ${error}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Get the number of open connections for a peer
+     */
+    async getConnectionCount(peerIndex: number): Promise<number> {
+        const peer = this.harness.getPeer(peerIndex);
+        return await this.harness
+            .control(peer)
+            .query.getOpenConnectionCount()
+            .request();
+    }
+
+    /** The dispute a peer stored under `disputeHash`, decoded, or null. */
+    async getDispute(
+        peerIndex: number,
+        disputeHash: Hash
+    ): Promise<DisputeStruct | null> {
+        const encoded = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getDispute(disputeHash)
+            .request();
+        return encoded
+            ? Codec.decode(encoded.encodedDispute, Type.Dispute)
+            : null;
+    }
+
+    async getDisputeHashes(options?: {
+        peerIndices?: number[];
+        disputedForkId?: ForkId;
+    }): Promise<Hash[]> {
+        const { peerIndices, disputedForkId } = options || {};
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+
+        const forkId = disputedForkId ?? this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "No fork ID available to query dispute commitments"
+            );
+        }
+
+        const disputeHashes = new Set<Hash>();
+
+        const commitmentsByPeer = await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .query.getDisputeWindowCommitments(forkId)
+                    .request()
+            )
+        );
+
+        for (const commitments of commitmentsByPeer) {
+            for (const commitment of commitments) {
+                disputeHashes.add(commitment as Hash);
+            }
+        }
+
+        return Array.from(disputeHashes);
+    }
+}

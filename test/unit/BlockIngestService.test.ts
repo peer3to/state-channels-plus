@@ -1,0 +1,1022 @@
+import * as factory from "../factory";
+import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
+import { BlockOrigin } from "@/storage/QueueStorage";
+import type { Address, Bytes, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import {
+    encodeLinkedNextBlock,
+    signEncodedBlock
+} from "@test/fixtures/BlockEncodingFixture";
+import { BUDGET_ABOVE_DEFAULT } from "@test/fixtures/LocalEvmCallGas.fixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+
+// the pipeline is entered the way production does: through the queue
+// (transition.ingestBlockConfirmation) or, for callers with no transport, by
+// handing a confirmation straight to onBlockConfirmationStruct.
+
+describe("Unit: BlockIngestService", function () {
+    it("fresh signer validation reads the resulting participant union before persisting the snapshot", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const { observer, authored } =
+            await h.transition.authorNextBlockOffWireWait();
+        const result = await h.execOnHost(
+            observer,
+            async (sm, args) => {
+                const union = sm.storage.getParticipantsUnionFromSnapshots.bind(
+                    sm.storage
+                );
+                const observed: {
+                    resultStored: boolean;
+                    participants: string[];
+                }[] = [];
+                sm.storage.getParticipantsUnionFromSnapshots = (
+                    previous,
+                    resulting
+                ) => {
+                    const participants = union(previous, resulting);
+                    if (resulting?.hash === args.snapshotHash)
+                        observed.push({
+                            resultStored:
+                                sm.storage.stateSnapshots.getStateSnapshotByHash(
+                                    resulting.hash
+                                ) !== undefined,
+                            participants: participants.map(String)
+                        });
+                    return participants;
+                };
+                try {
+                    const run =
+                        await sm.p2pManager.localRpc.validation.runBlockIngest(
+                            args.encodedBlockConfirmation
+                        );
+                    return { run, observed };
+                } finally {
+                    sm.storage.getParticipantsUnionFromSnapshots = union;
+                }
+            },
+            {
+                encodedBlockConfirmation: authored.encodedBlockConfirmation,
+                snapshotHash: Codec.decode(
+                    Codec.decode(
+                        authored.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    ).signedBlock.encodedBlock,
+                    Type.Block
+                ).stateSnapshotHash
+            }
+        );
+        expect(result.run.keepConnection).to.equal(true);
+        expect(result.observed.some((entry) => !entry.resultStored)).to.equal(
+            true
+        );
+        expect(result.observed[0].participants).to.have.members(
+            h.peers.map((peer) => peer.address)
+        );
+    });
+
+    describe("isKnownStaleFork", function () {
+        it("current fork, zero hash and an invented fork → all not stale", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+
+            const verdicts = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => ({
+                    current: await sm.validationService.isKnownStaleFork(
+                        sm.forkId
+                    ),
+                    zero: await sm.validationService.isKnownStaleFork(
+                        args.zero
+                    ),
+                    invented: await sm.validationService.isKnownStaleFork(
+                        args.invented
+                    )
+                }),
+                {
+                    zero: factory.zeroHash(),
+                    invented: factory.hash()
+                }
+            );
+
+            // an unknown fork must stay "not stale" so it is sync-probed
+            // instead of silently dropped
+            expect(verdicts.current).to.equal(false);
+            expect(verdicts.zero).to.equal(false);
+            expect(verdicts.invented).to.equal(false);
+        });
+
+        it("the fork we left behind after a dispute → stale", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({ peerCount: 3 });
+            const oldForkId = h.activeForkId!;
+
+            await h.byzantine.submitInvalidStateTransitionBlock(2);
+            await h.assert.dispute.initiatedAndCommitedWait();
+            await h.dispute.resolveDisputeWait({ forkId: oldForkId });
+
+            const observer = h.peers.find((p) => p.index !== 2)!;
+            const stale = await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    sm.validationService.isKnownStaleFork(args.oldForkId),
+                { oldForkId }
+            );
+
+            expect(stale).to.equal(true);
+        });
+
+        it("a non-current fork whose genesis snapshot we hold → stale", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+
+            const stale = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    const next = sm.storage.blocks.getNextBlockHeight(
+                        args.forkId
+                    );
+                    const model =
+                        sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                            { forkId: args.forkId, height: next }
+                        );
+                    // a genesis fork id IS the hash of its snapshot data;
+                    // the StateSnapshot class is reached through the live
+                    // instance (closures are closure-free)
+                    const otherForkId = model.snapshotDataHash;
+                    const SnapshotC = model.constructor as unknown as {
+                        from: (s: unknown) => NonNullable<typeof model>;
+                    };
+                    sm.storage.stateSnapshots.storeStateSnapshot(
+                        SnapshotC.from({
+                            forkId: otherForkId,
+                            blockHeight: 0,
+                            timestamp: model.timestamp,
+                            snapshotData: model.snapshotData
+                        })
+                    );
+                    return await sm.validationService.isKnownStaleFork(
+                        otherForkId
+                    );
+                },
+                { forkId }
+            );
+
+            // a fork we recognize from our own history is known past ->
+            // silently droppable, no sync probe
+            expect(stale).to.equal(true);
+        });
+
+        it("a non-current fork we hold a block of → stale", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+
+            const bundle = await h
+                .control(h.getPeer(0))
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            const signedBlock = Codec.decode(
+                bundle!.encodedSignedBlock,
+                Type.SignedBlock
+            );
+            const blockStruct = Codec.decode(
+                String(signedBlock.encodedBlock),
+                Type.Block
+            );
+            const otherForkId = factory.hash();
+            blockStruct.transaction.header.forkId = otherForkId;
+            const confirmation = {
+                signedBlock: {
+                    encodedBlock: Codec.encode(blockStruct, Type.Block),
+                    signature: signedBlock.signature
+                },
+                signatures: [] as string[]
+            };
+
+            const stale = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    const stored = sm.storage.blocks.getLatestBlock(
+                        args.forkId
+                    );
+                    const BlockC = stored!.constructor as unknown as {
+                        fromBlockConfirmation: (
+                            c: unknown
+                        ) => NonNullable<typeof stored>;
+                    };
+                    sm.storage.blocks.storeBlock(
+                        BlockC.fromBlockConfirmation(args.confirmation)
+                    );
+                    return await sm.validationService.isKnownStaleFork(
+                        args.otherForkId
+                    );
+                },
+                { forkId, otherForkId, confirmation }
+            );
+
+            expect(stale).to.equal(true);
+        });
+    });
+
+    describe("onBlockConfirmation → an already stored block", function () {
+        it("the same confirmation ingested twice → accepted, signatures unchanged", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            await h.assert.sync.peersInSyncWait();
+
+            const observer = h.getPeer(0);
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            const signaturesBefore = [
+                ...stored!.confirmationSignerAddresses
+            ].sort();
+
+            h.event.resetEventSpies(observer.index);
+            const accepted = await h
+                .control(observer)
+                .transition.ingestBlockConfirmation(
+                    stored!.encodedBlockConfirmation,
+                    {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: h.getPeer(0).address
+                    }
+                )
+                .request();
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: stored!.hash,
+                keepConnection: true
+            });
+
+            const after = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+
+            expect(accepted).to.equal(true);
+            expect(
+                [...after!.confirmationSignerAddresses].sort()
+            ).to.deep.equal(signaturesBefore);
+            // a duplicate is not a peer fault
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(h.getPeer(1).address)
+                    .request()
+            ).to.equal(false);
+        });
+
+        it("a confirmation carrying an on-chain timestamp → the stored block records it", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            await h.assert.sync.peersInSyncWait();
+
+            const observer = h.getPeer(0);
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            expect(stored!.onChainTimestamp).to.equal(null);
+
+            const onChainTimestamp = await h
+                .control(observer)
+                .query.getClockTimeInSeconds()
+                .request();
+
+            h.event.resetEventSpies(observer.index);
+            await h
+                .control(observer)
+                .transition.ingestBlockConfirmation(
+                    stored!.encodedBlockConfirmation,
+                    { origin: BlockOrigin.CALLDATA, onChainTimestamp }
+                )
+                .request();
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: stored!.hash,
+                keepConnection: true
+            });
+            // Peers keep gossiping copies of the same block; a copy without
+            // the timestamp can be the first "processed" for this hash, so
+            // wait for the merge that carries it.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(observer)
+                        .query.getBlockByHeight(forkId, 1)
+                        .request())!.onChainTimestamp === onChainTimestamp
+            );
+
+            const after = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            expect(after!.onChainTimestamp).to.equal(onChainTimestamp);
+        });
+
+        it("stray signatures on a stored block → stripped and supplier cut", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            await h.assert.sync.peersInSyncWait();
+
+            const observer = h.getPeer(0);
+            const supplier = h.getPeer(1);
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            const confirmation = Codec.decode(
+                stored!.encodedBlockConfirmation,
+                Type.BlockConfirmation
+            );
+            // a real signature over the block by a key outside the channel
+            const straySignature = signEncodedBlock(
+                factory.randomWallet(),
+                confirmation.signedBlock.encodedBlock as Bytes
+            );
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        straySignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
+                waitForProcessed: false
+            });
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            const after = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            expect(after!.hash).to.equal(stored!.hash);
+            // the valid confirmations stay, the stray one is stripped
+            expect(after!.confirmationSignatures).to.include.members(
+                stored!.confirmationSignatures
+            );
+            expect(after!.confirmationSignatures).to.not.include(
+                straySignature
+            );
+            // only the supplier of the stray signature is cut
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(h.getPeer(2).address)
+                    .request()
+            ).to.equal(false);
+        });
+    });
+
+    describe("onBlockConfirmationStruct", function () {
+        it("a sourceless bad confirmation → rejected without cutting any peer", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const observer = h.getPeer(0);
+
+            // authentic signature, but the author is not in the channel
+            const outsider = factory.randomWallet();
+            const encoded = await factory.buildAndEncodeBlock(outsider, {
+                header: {
+                    channelId: h.channelId,
+                    forkId: h.activeForkId!,
+                    transactionCnt: 1,
+                    participant: outsider.address as Address
+                }
+            });
+            const blockConfirmation = Codec.decode(
+                encoded,
+                Type.BlockConfirmation
+            );
+
+            const accepted = await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    sm.blockIngestService.onBlockConfirmationStruct(
+                        args.blockConfirmation
+                    ),
+                { blockConfirmation },
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
+            );
+
+            expect(accepted).to.equal(false);
+            // no transport supplied it, so there is nobody to punish
+            for (const peer of h.peers) {
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(peer.address)
+                        .request()
+                ).to.equal(false);
+            }
+        });
+    });
+
+    describe("onBlockConfirmationStruct → undecodable bytes under the dispute strategy", function () {
+        // The dispute audit replays the unfinalized tail of the last milestone
+        // through onBlockConfirmationStruct. The state-proof structure is
+        // judged before the replay by the canonical Solidity predicate, so a
+        // block the client cannot decode is not a replay verdict.
+        it("an undecodable replayed block whose state-proof structure is valid → true, no proof, no throw", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const { dispute } = await h.dispute.fetchConstructedDispute(3);
+            // nothing is final: one genesis-linked run from block 0
+            expect(dispute.input.stateProof.milestones.length).to.equal(1);
+            // the state proof keeps its honest first block, which the
+            // contracts decode; only the client's copy does not decode
+            const replayed = {
+                ...dispute.input.stateProof.milestones[0].blockConfirmations[0]
+                    .signedBlock,
+                encodedBlock: factory.hash()
+            };
+            const auditor = h.getPeer(1);
+
+            const probe = await h
+                .control(auditor)
+                .validation.runBlockConfirmationStructUnderDispute(
+                    Codec.encode(
+                        { signedBlock: replayed, signatures: [] },
+                        Type.BlockConfirmation
+                    ) as string,
+                    Codec.encode(dispute, Type.Dispute) as string
+                )
+                .request();
+
+            // SUCCESS continues the replay: this proof type does not apply
+            expect(probe).to.deep.equal({ accepted: true, threw: null });
+            expect(
+                await h
+                    .control(auditor)
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.deep.equal([]);
+        });
+    });
+
+    describe("onBlockConfirmation → a local EVM failure is not an invalid state transition", function () {
+        // Only a failure inside the EVM may become a fraud proof. Peer 2's
+        // local EVM grants the EVM default call gas, below what the machine's
+        // 17M budget needs, so it refuses a transition every other peer runs.
+        it("a block one peer's local EVM refuses to run throws out of its ingest with no fraud proof, no dispute and the VM restored, while another peer commits it", async function () {
+            const h = TestSession.getHarness();
+            const limited = 2;
+            await h.lifecycle.start(3, 0, {
+                stateMachineGasLimit: Number(BUDGET_ABOVE_DEFAULT),
+                executorCallGasLimitByPeer: {
+                    [limited]: Number(DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT)
+                }
+            });
+            const forkId = h.activeForkId!;
+            const { leader, authored } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex: limited
+                });
+            // premise: the limited peer judges the block, it does not author it
+            expect(leader.index).to.not.equal(limited);
+            const other = h.peers.find(
+                (p) => p.index !== leader.index && p.index !== limited
+            )!;
+            const turnBefore = await h
+                .control(h.getPeer(limited))
+                .query.getNextToWrite()
+                .request();
+            const heightBefore = await h
+                .control(h.getPeer(limited))
+                .query.getNextBlockHeight(forkId)
+                .request();
+
+            const refused = await h
+                .control(h.getPeer(limited))
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request();
+
+            // the local failure surfaces instead of judging the block
+            expect(refused.threw).to.include(
+                "ErrorInsufficientGasForStateTransition"
+            );
+            expect(refused.keepConnection).to.equal(null);
+            expect(refused.firedHooks).to.not.include(
+                "invalidStateTransitionDetected"
+            );
+            expect(refused.fraudProofType).to.equal(null);
+            expect(refused.disputedForkIds).to.deep.equal([]);
+            expect(refused.disconnectedAddresses).to.deep.equal([]);
+            // the VM and storage are where they were
+            expect(
+                await h
+                    .control(h.getPeer(limited))
+                    .query.getNextToWrite()
+                    .request()
+            ).to.equal(turnBefore);
+            expect(
+                await h
+                    .control(h.getPeer(limited))
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore);
+
+            // a peer whose local EVM funds the transition commits the block
+            const committed = await h
+                .control(other)
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request();
+            expect(committed).to.include({
+                keepConnection: true,
+                threw: null,
+                fraudProofType: null
+            });
+            expect(committed.firedHooks).to.deep.equal([]);
+            expect(
+                await h
+                    .control(other)
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore + 1);
+        });
+    });
+
+    describe("onBlockConfirmation → carried inbound message blocks", function () {
+        it("a run linked to a held inbound block → the store head advances with the snapshot", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const forkId = h.activeForkId!;
+
+            // held after the channel-open inbound block landed -> peer 2 holds
+            // inbound block 1, only the top-up chain event is withheld
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            const topUpHash = (await h
+                .control(h.getPeer(0))
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash;
+            // two writers -> at least one non-lagging author carries the top-up
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(topUpHash)
+                        .request()) !== null
+            );
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const next = sm.storage.blocks.getNextBlockHeight(
+                        args.forkId
+                    );
+                    const snapshot =
+                        sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                            { forkId: args.forkId, height: next }
+                        );
+                    return {
+                        storedHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null,
+                        storedHeight: Number(
+                            sm.storage.inboundMessages.getLatestBlockHeight() ??
+                                0
+                        ),
+                        snapshotHash: snapshot.latestInboundMessageBlockHash,
+                        snapshotHeight: Number(
+                            snapshot.latestInboundMessageBlockHeight
+                        )
+                    };
+                },
+                { forkId }
+            );
+
+            // premise - the chain event really never landed on this peer
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            // premise - the blocks it ingested carried the top-up
+            expect(r.snapshotHeight).to.equal(2);
+            expect(r.storedHash).to.equal(r.snapshotHash);
+            expect(r.storedHeight).to.equal(r.snapshotHeight);
+        });
+
+        it("runs with no reachable ancestor → persisted, the head never moves above the gap", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            // held from before the channel opens -> peer 2 never stores inbound
+            // block 1, so a run starting at block 2 links to nothing it holds
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.lifecycle.openChannel();
+            const forkId = h.activeForkId!;
+            const synced = h.control(h.getPeer(0));
+
+            // round 1 - a run linked to inbound block 1, which the gapped peer
+            // does not hold at all
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            const firstTopUpHash = (await synced.query
+                .getLatestInboundMessageHash()
+                .request()) as Hash;
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            // round 2 - a run linked to the block round 1 just persisted: held
+            // in the map, but itself sitting above the missing block 1
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            const secondTopUpHash = (await synced.query
+                .getLatestInboundMessageHash()
+                .request()) as Hash;
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(secondTopUpHash)
+                        .request()) !== null
+            );
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const next = sm.storage.blocks.getNextBlockHeight(
+                        args.forkId
+                    );
+                    const snapshot =
+                        sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                            { forkId: args.forkId, height: next }
+                        );
+                    return {
+                        storedHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null,
+                        snapshotHash: snapshot.latestInboundMessageBlockHash,
+                        snapshotHeight: Number(
+                            snapshot.latestInboundMessageBlockHeight
+                        ),
+                        // both carried runs are looked up by hash even though
+                        // the head did not move to either
+                        firstRunPersisted:
+                            sm.storage.inboundMessages.getMessageBlock(
+                                args.firstTopUpHash
+                            ) !== undefined,
+                        secondRunPersisted:
+                            sm.storage.inboundMessages.getMessageBlock(
+                                args.secondTopUpHash
+                            ) !== undefined,
+                        // walking back from the head must not hit the gap
+                        rangeLength:
+                            sm.storage.inboundMessages.getMessageBlocksInRange()
+                                .length
+                    };
+                },
+                { forkId, firstTopUpHash, secondTopUpHash }
+            );
+
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            // premise - two distinct top-ups, and the pinned snapshot sits on
+            // the second one
+            expect(firstTopUpHash).to.not.equal(secondTopUpHash);
+            expect(r.snapshotHash).to.equal(secondTopUpHash);
+            expect(r.snapshotHeight).to.equal(3);
+            expect(r.firstRunPersisted).to.equal(true);
+            expect(r.secondRunPersisted).to.equal(true);
+            // holding the link block is not reaching it -> moving the head
+            // onto either run puts it above the missing block 1
+            expect(r.storedHash).to.equal(null);
+            expect(r.rangeLength).to.equal(0);
+        });
+    });
+
+    describe("onBlockConfirmation → parked behind the mutex while the runtime aborts", function () {
+        it("a valid block parked on the state mutex when the runtime aborts → true, nothing judged or stored once the mutex frees", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const { observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            // keeps the control RPC reachable after the real abort
+            const releaseDisposal = await h.rpcStub.holdRuntimeDisposal(
+                observer.index
+            );
+            try {
+                const hold = await h.rpcStub.holdStateMutex(observer.index);
+                await waitFor(
+                    async () => (await hold.entered()) === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+
+                const parked = h
+                    .control(observer)
+                    .validation.runBlockIngest(
+                        authored.encodedBlockConfirmation
+                    )
+                    .request();
+                await waitFor(
+                    async () =>
+                        (await h.rpcStub.getStateMutexWaitingCount(
+                            observer.index
+                        )) === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                await h.control(observer).stub.abortDetached().request();
+                await h.event.waitForPeers("onAbort", [observer.index], 1);
+                await hold.release();
+
+                const probe = await parked;
+                expect(probe).to.include({ keepConnection: true, threw: null });
+                expect(probe.firedHooks).to.deep.equal([]);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getNextBlockHeight(forkId)
+                        .request()
+                ).to.equal(startHeight);
+            } finally {
+                await releaseDisposal();
+            }
+        });
+    });
+
+    describe("onBlockConfirmation → reject paths (full pipeline probe)", function () {
+        it("a linked writer block with a wrong snapshot hash → invalid transition, VM turn restored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const writer = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find((p) => p.index !== writer.index)!;
+
+            const encoded = await encodeLinkedNextBlock(
+                h,
+                writer.index,
+                observer.index,
+                forkId
+            );
+
+            const turnBefore = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            const probe = await h
+                .control(observer)
+                .validation.runBlockIngest(encoded)
+                .request();
+            const turnAfter = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+
+            expect(probe.keepConnection).to.equal(false);
+            expect(probe.firedHooks).to.include(
+                "invalidStateTransitionDetected"
+            );
+            // the rewind's projection: the transition rotated the VM's turn
+            // index past the writer; the restore puts it back
+            expect(turnAfter).to.equal(turnBefore);
+        });
+
+        it("a linked writer block with a wrong snapshot hash whose restore fails → invalid transition, the runtime aborts", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const writer = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find((p) => p.index !== writer.index)!;
+
+            const encoded = await encodeLinkedNextBlock(
+                h,
+                writer.index,
+                observer.index,
+                forkId
+            );
+            const failedRestore = await h.rpcStub.failNextRestoreAndHoldAbort(
+                observer.index
+            );
+
+            const probe = await h
+                .control(observer)
+                .validation.runBlockIngest(encoded)
+                .request();
+
+            // the verdict stands: the failed restore neither throws nor
+            // replaces it
+            expect(probe.keepConnection).to.equal(false);
+            expect(probe.threw).to.equal(null);
+            expect(probe.firedHooks).to.include(
+                "invalidStateTransitionDetected"
+            );
+            expect(await failedRestore.read()).to.deep.equal({
+                restoreErrors: [
+                    "failed to restore local state after a block that was not committed; aborting"
+                ],
+                heldAborts: 1
+            });
+
+            await failedRestore.releaseAbort();
+            await h.event.waitForPeers("onAbort", [observer.index], 1);
+        });
+
+        it("a forged inbound message block → forged hook fires, block rejected", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const writer = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find((p) => p.index !== writer.index)!;
+
+            const bundle = await h
+                .control(observer)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            const height = await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            // inside the previous block's p2pTime window regardless of how
+            // long the test staging took
+            const timestamp = bundle!.timestamp + 1;
+            const call = await h
+                .getPeer(writer.index)
+                .p2pInstance.p2pContractInstance.add.populateTransaction(1);
+            // chains correctly from the previous snapshot's real inbound head
+            // (so the chain check passes), but no peer stores it and the chain
+            // has no commitment for it -> invented
+            const prevSnapRes = await h
+                .control(observer)
+                .query.getStateSnapshotStructAt(forkId, height - 1)
+                .request();
+            const prevSnap = Codec.decode(
+                prevSnapRes!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+            const forgedInbound = {
+                previousBlockHash:
+                    prevSnap.snapshotData.latestInboundMessageBlockHash ??
+                    factory.zeroHash(),
+                blockHeight:
+                    Number(
+                        prevSnap.snapshotData.latestInboundMessageBlockHeight ??
+                            0
+                    ) + 1,
+                messages: [],
+                totalBalance: { amount: 0, data: "0x" },
+                timestamp
+            };
+            const encoded = await factory.buildAndEncodeBlock(
+                h.getPeer(writer.index).signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: height,
+                        participant: writer.address as Address,
+                        timestamp
+                    },
+                    transaction: factory.transaction({
+                        body: {
+                            data: call.data
+                        }
+                    }),
+                    previousBlockHash: bundle!.hash,
+                    messageBlocks: [forgedInbound]
+                }
+            );
+
+            for (const strategy of ["active", "spectating"] as const) {
+                const probe = await h
+                    .control(observer)
+                    .validation.runBlockIngest(encoded, { strategy })
+                    .request();
+
+                expect(probe.keepConnection).to.equal(false);
+                expect(probe.firedHooks).to.include(
+                    "forgedInboundMessageBlockDetected"
+                );
+                expect(probe.disputedForkIds).to.deep.equal([forkId]);
+                expect(probe.fraudProofType).to.not.equal(null);
+            }
+        });
+
+        it("a rejected block carrying a real inbound run → the run is not stored, the head stays put", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const writer = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find((p) => p.index !== writer.index)!;
+            const synced = h.peers.find(
+                (p) => p.index !== observer.index && p.index !== writer.index
+            )!;
+
+            // the observer stops learning inbound blocks from the chain -> the
+            // top-up reaches it only via the block it is about to reject
+            const held = await h.rpcStub.holdInboundMessageEvents(
+                observer.index
+            );
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [writer.index, synced.index]
+            });
+            const topUpHash = (await h
+                .control(synced)
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash;
+            const topUp = Codec.decode(
+                (await h
+                    .control(synced)
+                    .query.getInboundMessageBlock(topUpHash)
+                    .request())!.encodedMessageBlock,
+                Type.MessageBlock
+            );
+
+            const headBefore = await h
+                .control(observer)
+                .query.getLatestInboundMessageHash()
+                .request();
+            // premise - the observer's head is the channel-open block, and the
+            // top-up is a real on-chain block it does not hold
+            expect(headBefore).to.not.equal(null);
+            expect(headBefore).to.not.equal(topUpHash);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getInboundMessageBlock(topUpHash)
+                    .request()
+            ).to.equal(null);
+
+            // carries the chain's real top-up
+            const encoded = await encodeLinkedNextBlock(
+                h,
+                writer.index,
+                observer.index,
+                forkId,
+                [topUp]
+            );
+
+            const probe = await h
+                .control(observer)
+                .validation.runBlockIngest(encoded)
+                .request();
+            const headAfter = await h
+                .control(observer)
+                .query.getLatestInboundMessageHash()
+                .request();
+            const runStored = await h
+                .control(observer)
+                .query.getInboundMessageBlock(topUpHash)
+                .request();
+
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(probe.keepConnection).to.equal(false);
+            expect(probe.firedHooks).to.include(
+                "invalidStateTransitionDetected"
+            );
+            // a rejected block leaves no trace: nothing to move the head onto,
+            // and nothing for detectForgedInboundMessageBlock to accept later
+            // as "already in our store"
+            expect(headAfter).to.equal(headBefore);
+            expect(runStored).to.equal(null);
+        });
+    });
+});

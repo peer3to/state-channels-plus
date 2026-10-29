@@ -2,33 +2,72 @@
 pragma solidity ^0.8.8;
 
 import "../../AStateMachine.sol";
+import "hardhat/console.sol";
 
 // Uncomment this line to use console.log
 // import "hardhat/console.sol";
 struct MathState {
-    uint number;
+    uint256 number;
     address[] participants;
+    uint256[] balances;
+    uint256 currentTurnIndex;
 }
 
 contract MathStateMachine is AStateMachine {
     MathState state;
+    uint256 public immutable maxChannelParticipants;
 
-    event Addition(uint a, uint b, uint result);
-    event NextToPlay(address player);
+    constructor(uint256 _gasLimit, uint256 _maxChannelParticipants) AStateMachine(_gasLimit) {
+        require(_maxChannelParticipants > 0, "MathStateMachine: invalid maximum participants");
+        maxChannelParticipants = _maxChannelParticipants;
+        gasLimit = _gasLimit;
+    }
 
-    function add(uint _number) public returns (uint) {
-        require(
-            _tx.header.participant == getNextToWrite(),
-            "MathStateMachine: add only next player can write"
-        );
+    event Addition(uint256 a, uint256 b, uint256 result);
+    // Array-typed arguments exercise the runtime-port event mirror: nested
+    // ethers Results must be flattened before crossing the port.
+    event Roster(address[] participants, uint256[] balances);
+
+    function add(uint256 _number) public returns (uint256) {
+        require(_tx.header.participant == getNextToWrite(), "MathStateMachine: add only next player can write");
         emit Addition(state.number, _number, state.number + _number);
+        emit Roster(state.participants, state.balances);
         state.number += _number;
-        emit NextToPlay(getNextToWrite());
+        state.currentTurnIndex++;
         return state.number;
     }
 
-    function getSum() public view returns (uint) {
+    function insertParticipantOffChain(address participant, uint256 amount) public {
+        address author = _tx.header.participant;
+        require(author == getNextToWrite(), "MathStateMachine: insert only next player can write");
+        require(participant != address(0), "MathStateMachine: insert zero participant");
+        uint256 authorIndex = state.participants.length;
+        for (uint256 i = 0; i < state.participants.length; i++) {
+            require(state.participants[i] != participant, "MathStateMachine: insert duplicate participant");
+            if (state.participants[i] == author) authorIndex = i;
+        }
+        require(authorIndex < state.participants.length, "MathStateMachine: insert author not participant");
+        require(state.balances[authorIndex] >= amount, "MathStateMachine: insert insufficient balance");
+        if (state.participants.length < maxChannelParticipants) {
+            state.balances[authorIndex] -= amount;
+            // Append preserves array order; the next turn uses the new roster length.
+            _appendParticipant(participant, amount);
+        }
+        state.currentTurnIndex++;
+    }
+
+    function getSum() public view returns (uint256) {
         return state.number;
+    }
+
+    // Get balance for a specific participant
+    function getBalance(address participant) public view returns (uint256) {
+        for (uint256 i = 0; i < state.participants.length; i++) {
+            if (state.participants[i] == participant) {
+                return state.balances[i];
+            }
+        }
+        return 0;
     }
 
     function _setState(bytes memory encodedState) internal virtual override {
@@ -39,13 +78,7 @@ contract MathStateMachine is AStateMachine {
         return abi.encode(state);
     }
 
-    function getParticipants()
-        public
-        view
-        virtual
-        override
-        returns (address[] memory)
-    {
+    function getParticipants() public view virtual override returns (address[] memory) {
         return state.participants;
     }
 
@@ -53,34 +86,124 @@ contract MathStateMachine is AStateMachine {
         if (state.participants.length == 0) {
             return _tx.header.participant;
         }
-        return state.participants[state.number % state.participants.length];
+        return state.participants[state.currentTurnIndex % state.participants.length];
     }
 
-    function _slashParticipant(
-        address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    function _slashParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
-    function _removeParticipant(
-        address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    function _removeParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
-                state.participants[i] = state.participants[length - 1];
-                state.participants.pop();
+                // Store the participant's balance before removal
+                uint256 participantBalance = state.balances[i];
 
-                processExit.participant = adr;
-                processExit.amount = 0;
-                return (true, processExit);
+                // Shift all participants and balances after the removed one
+                for (uint256 j = i; j < length - 1; j++) {
+                    state.participants[j] = state.participants[j + 1];
+                    state.balances[j] = state.balances[j + 1];
+                }
+
+                // Remove the last element
+                state.participants.pop();
+                state.balances.pop();
+
+                // Adjust currentTurnIndex if necessary
+                uint256 currentIndex = state.currentTurnIndex % length;
+                if (i < currentIndex) {
+                    // If we removed someone before current turn, shift turn index back
+                    state.currentTurnIndex--;
+                } else if (i == currentIndex) {
+                    // If we removed the current turn holder, no adjustment needed
+                    // The next participant shifts into this position
+                }
+
+                // Create exit channel with the participant's balance
+                exitChannel.participant = adr;
+                exitChannel.balance.amount = participantBalance;
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
-    function _joinChannel(
-        JoinChannel memory joinChannel
-    ) internal virtual override returns (bool) {}
+    // Channel-specific function: participant voluntarily leaves the channel and produces an EXIT outbound message.
+    function leaveChannel() public returns (bool) {
+        require(_tx.header.participant == getNextToWrite(), "MathStateMachine: leaveChannel only next player can leave");
+
+        address leavingPlayer = _tx.header.participant;
+        (bool success, ExitChannel memory exitChannel) = _removeParticipant(leavingPlayer);
+
+        if (success) {
+            _addExitChannel(exitChannel);
+        }
+        console.log("Player leaving:", leavingPlayer, "Success:", success);
+
+        return success;
+    }
+
+    function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {
+        for (uint256 i = 0; i < state.participants.length; i++) {
+            if (state.participants[i] == joinChannel.participant) {
+                state.balances[i] += joinChannel.balance.amount;
+                return true;
+            }
+        }
+        _appendParticipant(joinChannel.participant, joinChannel.balance.amount);
+        return true;
+    }
+
+    function _appendParticipant(address participant, uint256 amount) internal {
+        state.participants.push(participant);
+        state.balances.push(amount);
+        if (state.participants.length == 1) {
+            state.currentTurnIndex = 0;
+        }
+    }
+
+    function addBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory sum)
+    {
+        sum.amount = balance1.amount + balance2.amount;
+        return sum;
+    }
+
+    function subtractBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory diff)
+    {
+        require(balance1.amount >= balance2.amount, "MathStateMachine: balance1 < balance2");
+        diff.amount = balance1.amount - balance2.amount;
+        return diff;
+    }
+
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount == balance2.amount;
+    }
+
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount < balance2.amount;
+    }
+
+    function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
+        // Calculate the sum of all participant balances
+        uint256 sum = 0;
+        for (uint256 i = 0; i < state.balances.length; i++) {
+            sum += state.balances[i];
+        }
+        totalBalance.amount = sum;
+        return totalBalance;
+    }
+
+    function getZeroBalance() public pure override returns (Balance memory) {
+        return Balance({amount: 0, data: ""});
+    }
 }

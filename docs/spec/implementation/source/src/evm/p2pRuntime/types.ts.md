@@ -1,0 +1,9 @@
+# types.ts
+
+> **Source:** [src/evm/p2pRuntime/types.ts](../../../../../../../src/evm/p2pRuntime/types.ts)
+
+## Requirements
+
+- [`REQ-RPC-9-8FFE6S` (Application host root)](../../../../../specification/peer-communication/rpc.md#req-rpc-9-8ffe6s)
+- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
+- [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)

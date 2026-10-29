@@ -1,0 +1,9 @@
+# LoggerRpcMethods.ts
+
+> **Source:** [src/rpc/internal/services/logger/LoggerRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/logger/LoggerRpcMethods.ts)
+
+## Requirements
+
+- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
+- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
+- [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)

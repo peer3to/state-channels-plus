@@ -1,0 +1,297 @@
+import { addressesEqual } from "./address";
+import { errorAbis } from "./GeneratedArtifacts";
+import { LoggerUtils } from "./LoggerUtils";
+import { Logger } from "./logging";
+import { ForkId } from "@/types";
+import type { StateChannelManagerInterface } from "@typechain-types";
+import { ErrorDescription, Log, Signer, ethers } from "ethers";
+import { TransactionResponse } from "ethers";
+
+// every custom error the contracts declare, plus ethers' built-in Error(string) and Panic(uint256)
+export type ContractErrorName =
+    | (typeof errorAbis)[number]["name"]
+    | "Error"
+    | "Panic";
+
+export type RaceConditionErrorName = Extract<
+    ContractErrorName,
+    | `RaceCondition${string}`
+    | "ErrorCantParticipateInDispute"
+    | "ErrorDisputePostedAuditingDataMismatch"
+    | "ErrorDisputeChallengePeriodExpired"
+    | "ErrorDisputeCommitmentNotAvailable"
+>;
+
+export type EvmErrorHandlers = Partial<
+    Record<ContractErrorName, (error: CustomEvmError) => void>
+>;
+
+// interface for parsing errors
+const errorInterface = new ethers.Interface(errorAbis);
+export class CustomEvmError extends Error {
+    // Error.name narrowed to the decoded contract error
+    public override name: ContractErrorName;
+    public readonly errorDescription: ErrorDescription;
+    public readonly isCustomError = true;
+    public readonly originalError: any;
+
+    constructor(customError: ErrorDescription, originalError: any) {
+        super(
+            `${customError.name}${customError.args.length > 0 ? ` (args: ${customError.args.join(", ")})` : ""}`
+        );
+        // errorInterface is built from errorAbis, so ethers only decodes those names
+        this.name = customError.name as ContractErrorName;
+        this.errorDescription = customError;
+        this.originalError = originalError;
+    }
+}
+
+export function tryDecodeCustomError(error: any): CustomEvmError | null {
+    if (isCustomEvmError(error)) {
+        return error;
+    }
+    let errorData =
+        error.data ||
+        error.error?.data ||
+        error.info?.error?.data ||
+        error.cause?.data ||
+        null;
+    if (!errorData && error.execResult?.returnValue)
+        errorData = ethers.hexlify(error.execResult.returnValue);
+
+    // Only ABI-decodable hex is a custom error. Non-hex error data (e.g. a
+    // nonce/"replacement underpriced" RPC error object) must not reach
+    // parseError — it throws `invalid BytesLike` and would propagate uncaught.
+    if (
+        typeof errorData !== "string" ||
+        !errorData.startsWith("0x") ||
+        errorData.length < 10
+    ) {
+        return null;
+    }
+
+    try {
+        const errorDescription = errorInterface.parseError(errorData);
+        if (!errorDescription) return null;
+        return new CustomEvmError(errorDescription, error);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * How `ContractExecutor` reports an EVM revert of a local contract call. The
+ * local signer and the executor's RPC boundary keep the text in the messages
+ * they wrap it in, so it identifies a revert wherever the error surfaces.
+ */
+export const LOCAL_EVM_EXECUTION_FAILED = "Local EVM execution failed";
+
+/** Whether `error` is a local EVM revert rather than an infrastructure failure. */
+export function isLocalEvmExecutionFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes(LOCAL_EVM_EXECUTION_FAILED);
+}
+
+/**
+ * Why the local EVM failed, as `ContractExecutor` reports it after
+ * LOCAL_EVM_EXECUTION_FAILED: a decoded custom error name, or the EVM's own
+ * exception ("out of gas", "revert", ...). Undefined for an error that is not
+ * a local EVM failure.
+ */
+function localEvmFailureReason(error: unknown): string | undefined {
+    const message = error instanceof Error ? error.message : String(error);
+    const marker = `${LOCAL_EVM_EXECUTION_FAILED}: `;
+    const at = message.indexOf(marker);
+    if (at < 0) return undefined;
+    return message.slice(at + marker.length).trim();
+}
+
+/**
+ * Whether a failed local `stateTransition` call means the transaction is an
+ * invalid state transition: the transition itself failed inside the EVM,
+ * within its full budget. Not invalid: the machine refused to run because the
+ * call could not grant the full budget (ErrorInsufficientGasForStateTransition),
+ * the call's own frame ran out of gas before or after the transition, or the
+ * failure is not in the EVM at all (executor or transport). Only an invalid
+ * state transition may become a fraud proof; anything else is a local failure.
+ */
+export function isInvalidStateTransitionError(error: unknown): boolean {
+    const reason = localEvmFailureReason(error);
+    if (reason === undefined) return false;
+    return (
+        reason !== "ErrorInsufficientGasForStateTransition" &&
+        reason !== "out of gas"
+    );
+}
+
+/**
+ * What the manager proxy reverts with when a facet reverted without data
+ * (`GeneralUtils._delegatecall`): the proxy's form of a reasonless revert.
+ */
+const PROXY_REASONLESS_FACET_REVERT = ethers.concat([
+    ethers.id("Error(string)").slice(0, 10),
+    ethers.AbiCoder.defaultAbiCoder().encode(
+        ["string"],
+        ["StateChannelManagerProxy - Delegatecall failed"]
+    )
+]);
+
+/**
+ * Whether `revertData` names no reason: it is empty, or the manager proxy's
+ * revert for a facet that reverted without data.
+ */
+export function isReasonlessRevert(revertData: string): boolean {
+    return (
+        revertData === "0x" ||
+        revertData.toLowerCase() === PROXY_REASONLESS_FACET_REVERT
+    );
+}
+
+/**
+ * The raw revert data a mined `multicallBestEffortLast` of `manager` reported
+ * for its last call (`MulticallLastCallFailed`), or undefined when its last
+ * call landed. Only that event of the manager itself is decoded: any other
+ * log of the receipt is skipped before decoding.
+ */
+export async function multicallLastCallRevertData(
+    manager: StateChannelManagerInterface,
+    logs: readonly Log[]
+): Promise<string | undefined> {
+    const address = await manager.getAddress();
+    const topic = manager.interface.getEvent(
+        "MulticallLastCallFailed"
+    ).topicHash;
+    for (const log of logs) {
+        if (!addressesEqual(log.address, address) || log.topics[0] !== topic)
+            continue;
+        return String(manager.interface.parseLog(log)!.args.revertData);
+    }
+    return undefined;
+}
+
+/**
+ * Whether a failed submission is proven not to have landed: the chain named
+ * a reason (`custom`, the decoded custom error of `error`, or null), or the
+ * transaction was mined and its receipt failed. Any other failure (no
+ * receipt, no decoded revert) leaves the outcome uncertain.
+ */
+export function isProvenSubmissionFailure(
+    error: unknown,
+    custom: CustomEvmError | null
+): boolean {
+    if (custom !== null) return true;
+    return (
+        ethers.isError(error, "CALL_EXCEPTION") &&
+        error.receipt !== null &&
+        error.receipt !== undefined &&
+        Number(error.receipt.status) === 0
+    );
+}
+
+export function isCustomEvmError(error: any): error is CustomEvmError {
+    return !!error && error.isCustomError === true;
+}
+
+export type HandleEvmErrorOptions = {
+    tx?: TransactionResponse;
+    logger?: Logger;
+    handlers?: EvmErrorHandlers;
+    signer?: Signer;
+    forkId?: ForkId;
+};
+
+export async function tryHandleEvmError(
+    error: any,
+    options: HandleEvmErrorOptions = {}
+): Promise<boolean> {
+    return _tryHandleEvmError(error, options, 0);
+}
+
+async function _tryHandleEvmError(
+    error: any,
+    options: HandleEvmErrorOptions,
+    recursionDepth: number = 0
+): Promise<boolean> {
+    const { tx, logger, handlers, signer, forkId } = options;
+    if (!error) return false;
+    logger?.info(
+        `tryHandleEvmError recursionDepth: ${recursionDepth} - fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`,
+        {
+            tx,
+            error,
+            signer: signer ? true : false,
+            forkId
+        }
+    );
+    const customError = tryDecodeCustomError(error);
+
+    if (customError) {
+        const handler = handlers?.[customError.name];
+        if (handler) {
+            logger?.info(
+                `tryHandleEvmError - Handling custom EVM error: ${customError.name} for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
+            );
+            handler(customError);
+            return true;
+        }
+        // unhandled custom error
+        logger?.error(
+            `tryHandleEvmError - Unhandled custom EVM error for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`,
+            {
+                customError: LoggerUtils.getCustomEvmErrorMetadata(customError),
+                txHash: tx?.hash
+            }
+        );
+        return false;
+    }
+
+    // tx.wait() path | tx exists but revert data missing
+    if (tx && !recursionDepth && signer) {
+        try {
+            logger?.info(
+                `tryHandleEvmError - preflight and retrying transaction for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
+            );
+            await tx.provider.call({
+                to: tx.to!,
+                from: tx.from,
+                data: tx.data!,
+                value: tx.value
+            });
+            logger?.info(
+                `tryHandleEvmError - call succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
+            );
+            // This peforms a preflight call and then resends the transaction if the preflight succeeds otehrwise reverts with error data
+            const txResponse = await signer.sendTransaction({
+                to: tx.to!,
+                from: tx.from,
+                data: tx.data!,
+                value: tx.value
+            });
+            logger?.info(
+                `tryHandleEvmError - sendTransaction succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
+            );
+            await txResponse.wait();
+            logger?.info(
+                `tryHandleEvmError - wait succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
+            );
+            return true;
+        } catch (callError) {
+            // if call reverts, do nothing here
+            return await _tryHandleEvmError(
+                callError,
+                options,
+                recursionDepth + 1
+            );
+        }
+    }
+
+    // not a custom error
+    logger?.error(
+        `tryHandleEvmError - Non-custom EVM error encountered for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`,
+        {
+            error: error,
+            txHash: tx?.hash
+        }
+    );
+    return false;
+}

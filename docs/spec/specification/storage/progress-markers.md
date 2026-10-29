@@ -1,0 +1,74 @@
+# Progress and Intent Markers
+
+> **Agent status:** Maintained reverse-engineered draft.
+> **Engineer verification:** Pending.
+> **Status:** Draft.
+> **Scope:** The small marker modules: chain-observation progress, the force-exit intent flag, and
+> the force-join record. Shared storage rules: [durability.md](./durability.md).
+
+## Contents
+
+- [Purpose and data model](#purpose-and-data-model)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and data model
+
+Three markers that carry a node's position or intent across protocol phases:
+
+- **Event-sync progress.** Per channel, the latest base-layer block number whose events the node has
+  processed — where chain observation resumes after a gap or restart.
+- **Force-exit intent.** A local flag that the node intends to exit through the dispute path.
+- **Force-join record.** The node's own submitted join: its submission height, its authorization
+  deadline, and its force-join bounds once the join is observed on chain, kept so the node can detect
+  non-inclusion and escalate to forced inclusion. Each submission has its own id; an update for an
+  earlier submission changes nothing
+  ([cross-layer-messages.md](../settlement/cross-layer-messages.md)).
+
+## Requirements and invariants
+
+**<a id="req-rmstore-1-bwkvbg"></a>`REQ-RMSTORE-1-BWKVBG` — Monotone observation progress.** Event-sync progress per channel only advances: a
+store of a lower block number than the retained one leaves the retained value. Progress reflects
+_processed_, not merely observed, events — the producer stores it only after handling, and it never
+advances past a block with an event whose handling failed or is incomplete.
+
+**<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-join record is started on submission, read
+for non-inclusion detection, updated only for the current submission, and cleared explicitly when the
+join ends; clearing returns it to its absent state. The
+force-exit flag is one-way within one membership: off initially ("no exit intent"), set on when
+the node commits to a self-removal exit, and never retracted while that membership lasts — from that
+point every dispute the node raises declares self-removal. It stays set after the membership ends; a
+new membership of the same runtime (a join that makes it a pending joiner, or the opening of a channel) clears it; a state that lists it again without a join keeps it, so
+the disputes of that membership declare no self-removal until it commits to a new exit. Absent/off means "no intent / no pending submission", and
+consumers MUST NOT infer intent from any other module.
+
+## Assumptions and constraints
+
+- A regressed progress marker would make the node re-process events (safe but wasteful); a
+  _forward-jumped_ one would skip events (unsafe) — producers must store only truly processed
+  positions.
+- Under the current in-memory medium these markers reset with the process; the recovery consequences
+  are bounded by [durability.md](./durability.md) [`REQ-STOR-3-4RJGER` (Restart recovery without trust)](durability.md#req-stor-3-4rjger) (re-derive from chain observation).
+
+## Security considerations
+
+The markers are local knowledge with protocol consequences: a lost force-join record delays
+non-inclusion detection; skipped observation progress misses events that other defenses assume were
+seen. Neither is remotely writable; the risk is loss and mis-advancement, addressed by monotonicity
+and the processed-only rule.
+
+## Verification and test plan
+
+### Requirement test matrix
+
+| Plan item                                                     | Requirements / invariants                                          | Setup and stimulus                                                          | Expected result                                                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-rmstore-1-bwkvbg.t1"></a>`REQ-RMSTORE-1-BWKVBG.T1` | [`REQ-RMSTORE-1-BWKVBG`](progress-markers.md#req-rmstore-1-bwkvbg) | Store progress values increasing, repeated, and regressing across channels. | Monotone per channel; regressions ignored; channels independent.    | <a id="req-rmstore-1-bwkvbg.t1.p1"></a>`REQ-RMSTORE-1-BWKVBG.T1.P1` — advance; <a id="req-rmstore-1-bwkvbg.t1.p2"></a>`REQ-RMSTORE-1-BWKVBG.T1.P2` — regression ignored; <a id="req-rmstore-1-bwkvbg.t1.p3"></a>`REQ-RMSTORE-1-BWKVBG.T1.P3` — per-channel isolation; <a id="req-rmstore-1-bwkvbg.t1.p4"></a>`REQ-RMSTORE-1-BWKVBG.T1.P4` — an event whose handling fails leaves the marker below its block, and the next catch-up re-read delivers it again; <a id="req-rmstore-1-bwkvbg.t1.p5"></a>`REQ-RMSTORE-1-BWKVBG.T1.P5` — an event still being handled holds the marker while a later block completes; the marker moves only after that handling ends.                                                                                         |
+| <a id="req-rmstore-2-y2t1pg.t1"></a>`REQ-RMSTORE-2-Y2T1PG.T1` | [`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) | Exercise each marker's lifecycle, including reads before any set.           | Lifecycles honored; defaults distinct and read back before any set. | <a id="req-rmstore-2-y2t1pg.t1.p1"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P1` — force-exit defaults off; set-on reads back on; <a id="req-rmstore-2-y2t1pg.t1.p2"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P2` — read before set; <a id="req-rmstore-2-y2t1pg.t1.p3"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P3` — repeated force-join record clear idempotent; <a id="req-rmstore-2-y2t1pg.t1.p4"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P4` — start/read/update/clear the force-join record; an update for an earlier submission changes nothing; <a id="req-rmstore-2-y2t1pg.t1.p5"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P5` — a runtime whose exit ended its membership keeps the force-exit flag set, then joins again: the new membership reads it off and its next dispute declares no self-removal. |
+
+## Future Work
+
+_Non-normative._ None currently.

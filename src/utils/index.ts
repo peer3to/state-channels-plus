@@ -1,13 +1,32 @@
 export * from "./BarrierLocal";
-export * from "./BlockUtils";
-export * from "./BroadcastLocal";
+export * from "./EventBarrier";
 export * from "./DebugProxy";
-export * from "./DeployUtils";
-export * from "./EvmUtils";
-export * from "./LocalDiscoveryServer";
+export * from "./DeepCopyProxy";
+export * from "@platform/DeployUtils";
+export * from "@platform/LocalDiscoveryServer";
 export * from "./Mutex";
 export * from "./retry";
 export * from "./scheduler";
 export * from "./set";
 export * from "./SignatureCollectionMap";
-export * from "./timestamp";
+export * from "./Codec";
+export * from "./SignatureUtils";
+export * from "./participantUtils";
+export * from "./config";
+export * from "./hash";
+export * from "./evmErrorHandler";
+export * from "./DetachedPromises";
+export * from "./errorPeerAddress";
+export * from "./logging";
+export * from "./EthersResultProxy";
+export * from "./address";
+export * from "./hpAddressKey";
+export * from "./localDiamond";
+export * from "./contractAbi";
+export * from "./contractSize";
+export * from "./stateChannelManager";
+export * from "./discoveryKey";
+
+export function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}

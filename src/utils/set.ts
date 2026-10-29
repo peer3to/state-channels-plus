@@ -65,36 +65,3 @@ export const isSubset = <T>(setA: Set<T>, setB: Set<T>): boolean => {
 export const isSuperset = <T>(setA: Set<T>, setB: Set<T>): boolean => {
     return isSubset(setB, setA);
 };
-
-/**
- * Converts an array to a set
- */
-export const fromArray = <T>(array: T[]): Set<T> => {
-    return new Set<T>(array);
-};
-
-/**
- * Converts a set to an array
- */
-export const toArray = <T>(set: Set<T>): T[] => {
-    return Array.from(set);
-};
-
-/**
- * Creates a set from an array, converting all elements to strings
- * Useful when working with addresses or other values that need string comparison
- */
-export const stringSetFromArray = <T>(array: T[]): Set<string> => {
-    return new Set(array.map(String));
-};
-
-/**
- * Finds elements from the source array that aren't in the excluded set
- * Returns them as an array
- */
-export const excludeFromArray = <T>(
-    source: T[],
-    excluded: Set<string>
-): T[] => {
-    return source.filter((item) => !excluded.has(String(item)));
-};

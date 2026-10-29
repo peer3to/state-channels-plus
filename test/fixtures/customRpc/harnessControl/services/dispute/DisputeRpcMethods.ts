@@ -1,0 +1,262 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
+import type { DisputeService, DisputeValidationRun } from "./DisputeService";
+import {
+    DISPUTE_TAMPER_STRATEGIES,
+    type DisputeTamperStrategy
+} from "./tamperStrategies";
+import Clock from "@/Clock";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { ForkId, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import type {
+    DisputeStruct,
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ZeroAddress } from "ethers";
+
+/** Spec for installing a `constructDispute` tamper (named strategy or shipped body). */
+export interface ConstructDisputeStubSpec {
+    strategy?: DisputeTamperStrategy;
+    /** Source of a `(dispute, args) => void` arrow; must be closure-free. */
+    fnBody?: string;
+    args?: Record<string, unknown>;
+    autoRestore?: boolean;
+}
+
+/**
+ * Dispute construction / auditing reads + tampering, executed host-side. Only
+ * public endpoints live here; helpers/accessors/state are on {@link DisputeService}.
+ */
+export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
+    constructor(transport: NetworkTransport, service: DisputeService) {
+        super(transport, service);
+    }
+
+    /** Start the real fork-scoped reduction without awaiting its shared result. */
+    public startReduction(forkId: ForkId): boolean {
+        void this.service.sm.reductionManager.tryReduce(forkId);
+        return true;
+    }
+
+    /** Await the real fork-scoped reduction completion. */
+    public async awaitReduction(forkId: ForkId): Promise<ForkId | null> {
+        return (
+            (await this.service.sm.reductionManager.tryReduce(forkId))
+                ?.reducedForkId ?? null
+        );
+    }
+
+    /** Recover missed committed-dispute logs through the production query path. */
+    public recoverCommittedDisputes(forkId: ForkId): Promise<number | null> {
+        return this.service.recoverCommittedDisputes(forkId);
+    }
+
+    public probeReductionScheduleIsolation(
+        forkId: ForkId,
+        triggerTimestamp: number
+    ): boolean {
+        this.service.sm.reductionManager.schedule(forkId, triggerTimestamp);
+        this.service.sm.reductionManager.schedule(forkId, triggerTimestamp);
+        return this.service.sm.reductionManager.hasOperation(forkId);
+    }
+
+    /**
+     * Construct a dispute for `forkId` and return its structs ABI-encoded.
+     * These are ethers/typechain structs (addresses, nested tuples) — JSON
+     * serialization over the port flattens ethers `Result`s and nulls fields, so
+     * we encode (`Codec.encode`) and let the harness `Codec.decode` them back to
+     * plain mutable structs (the spectate sync-payload pattern).
+     */
+    public async constructDispute(forkId: ForkId): Promise<{
+        encodedDispute: string;
+        encodedDisputeConfirmation: string;
+        encodedAuditingData: string;
+    }> {
+        const result =
+            await this.service.disputeManager.constructDispute(forkId);
+        return {
+            encodedDispute: Codec.encode(
+                result.dispute,
+                Type.Dispute
+            ) as string,
+            encodedDisputeConfirmation: Codec.encode(
+                result.disputeConfirmation,
+                Type.DisputeConfirmation
+            ) as string,
+            encodedAuditingData: Codec.encode(
+                result.auditingData,
+                Type.DisputeAuditingData
+            ) as string
+        };
+    }
+
+    /** Inbound-hash verdicts from this peer's local diamond and its RPC node. */
+    public probeDisputeInboundHashSources(
+        encodedDispute: string
+    ): Promise<{ local: boolean; rpc: boolean }> {
+        return this.service.probeDisputeInboundHashSources(encodedDispute);
+    }
+
+    /** Run the real dispute audit on this peer; verdict + stored-proof projection. */
+    public runDisputeValidation(
+        encodedDispute: string,
+        options?: { encodedAuditingData?: string }
+    ): Promise<DisputeValidationRun> {
+        return this.service.runDisputeValidation(encodedDispute, options);
+    }
+
+    /**
+     * This peer's own proof through `blockHeight` (-1: the empty genesis
+     * proof) and the auditing data DisputeManager builds for it, ABI-encoded.
+     * `disputeLatestInboundMessageBlockHash` is the bound an auditor recomputes
+     * the inbound range with (default: the inbound head not behind that state).
+     */
+    public async buildOwnAuditingData(
+        forkId: ForkId,
+        blockHeight: number,
+        options?: { disputeLatestInboundMessageBlockHash?: Hash }
+    ): Promise<{ encodedStateProof: string; encodedAuditingData: string }> {
+        const { stateProof, auditingData } =
+            await this.service.buildOwnAuditingData(
+                forkId,
+                blockHeight,
+                options?.disputeLatestInboundMessageBlockHash
+            );
+        return {
+            encodedStateProof: Codec.encode(
+                stateProof,
+                Type.StateProof
+            ) as string,
+            encodedAuditingData: Codec.encode(
+                auditingData,
+                Type.DisputeAuditingData
+            ) as string
+        };
+    }
+
+    /** On-chain kill-period state for `forkId`, as this peer's chain reports it. */
+    public async getKillPeriod(forkId: ForkId): Promise<{
+        windowExists: boolean;
+        isExpired: boolean;
+        killPeriodEnd: number;
+        blockTimestamp: number;
+    }> {
+        const sm = this.service.sm;
+        const { windowExists, isExpired, killPeriodEnd, blockTimestamp } =
+            await sm.stateChannelManagerContract.isKillPeriodExpired(
+                sm.channelId,
+                forkId
+            );
+        return {
+            windowExists,
+            isExpired,
+            killPeriodEnd: Number(killPeriodEnd),
+            blockTimestamp: Number(blockTimestamp)
+        };
+    }
+
+    /** Genesis state-snapshot for `forkId`, encoded (`Type.StateSnapshot`), or null. */
+    public getGenesisSnapshotStruct(
+        forkId: ForkId
+    ): { encodedSnapshot: string } | null {
+        const struct = this.service.storage.stateSnapshots
+            .getGenesisSnapshotByForkId(forkId)
+            ?.toStruct();
+        return struct
+            ? {
+                  encodedSnapshot: Codec.encode(
+                      struct,
+                      Type.StateSnapshot
+                  ) as string
+              }
+            : null;
+    }
+
+    // ===== Tampering =====
+
+    /**
+     * Install a `constructDispute` tamper: a named host-side strategy, or a
+     * closure-free `(dispute, args) => void` body shipped from the harness.
+     */
+    public stubConstructDispute(spec: ConstructDisputeStubSpec): boolean {
+        let tamper: (
+            dispute: DisputeStruct,
+            disputeConfirmation: DisputeConfirmationStruct,
+            auditingData: DisputeAuditingDataStruct
+        ) => void | Promise<void>;
+        if (spec.strategy) {
+            const strategy = DISPUTE_TAMPER_STRATEGIES[spec.strategy];
+            tamper = (dispute) => strategy(dispute);
+        } else if (spec.fnBody) {
+            // Callbacks run host-side: `(dispute, sm, args) => …`. `sm` is the
+            // live host stateManager, so the body reaches every helper via
+            // `sm.p2pManager.localRpc.dispute.*`. `args` carries captured values.
+            const fn = new Function(`return (${spec.fnBody})`)() as (
+                dispute: DisputeStruct,
+                sm: typeof this.service.sm,
+                args: Record<string, unknown>
+            ) => void | Promise<void>;
+            const args = spec.args ?? {};
+            tamper = (dispute) => fn(dispute, this.service.sm, args);
+        } else {
+            throw new Error(
+                "stubConstructDispute requires a strategy or fnBody"
+            );
+        }
+        this.service.installConstructDisputeStub(tamper, spec.autoRestore);
+        return true;
+    }
+
+    public restoreConstructDispute(): boolean {
+        return this.service.restoreConstructDispute();
+    }
+
+    /** Encoded (`Type.Dispute`) disputes produced while `constructDispute` was stubbed (newest last). */
+    public getTamperedDisputes(): { encodedDisputes: string[] } {
+        return {
+            encodedDisputes: this.service.tamperedDisputes.map(
+                (d) => Codec.encode(d, Type.Dispute) as string
+            )
+        };
+    }
+
+    // ===== Storage mutations (dispute scenarios) =====
+
+    /** Set this peer's force-exit flag (voluntary self-removal scenario). */
+    public setForceExit(value: boolean): boolean {
+        this.service.storage.forceExit.setForceExit(value);
+        return true;
+    }
+
+    /**
+     * This peer's self-removal dispute through its SDK: the force-exit flag,
+     * then its dispute. Returns whether its dispute marker is set.
+     */
+    public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
+        this.service.storage.forceExit.setForceExit(true);
+        await this.service.disputeManager.dispute(forkId);
+        return this.service.storage.disputes.didIDispute(forkId);
+    }
+
+    /** Plant a fresh timeout for `participant` at head+1 height on `forkId` (0 on a fork with no block). */
+    public plantFreshTimeout(forkId: ForkId, participant: string): boolean {
+        const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
+        this.service.storage.timeout.storeTimeout(forkId, {
+            participant,
+            blockHeight: latestBlock
+                ? BigInt(Number(latestBlock.height) + 1)
+                : 0n,
+            minTimeStamp: BigInt(Clock.getTimeInSeconds()),
+            isForced: false,
+            previousBlockProducer: ZeroAddress,
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: "0x"
+        });
+        return true;
+    }
+}
+
+export default DisputeRpcMethods;

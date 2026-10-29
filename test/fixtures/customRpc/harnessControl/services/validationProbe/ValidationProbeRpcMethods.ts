@@ -1,0 +1,267 @@
+// @spec-test-coverage-ignore: public validation probe endpoints
+import type {
+    BlockCalldataRecoveryProbe,
+    BlockIngestProbe,
+    BlockProbeOptions,
+    BlockValidationProbe,
+    BlockValidationProbeOptions,
+    ChannelSelectionRaceProbe,
+    ConcurrentCalldataRecoveryProbe,
+    DisputeStrategyResultMatrix,
+    DisputeStructIngestProbe,
+    InboundLogRedelivery,
+    StreamedLogDeliveryProbe,
+    InboundRunRecoveryProbe,
+    IsDisputedForkProbe,
+    MissingParticipantSnapshotsProbe,
+    ReductionChallengeProbe,
+    ValidationProbeService
+} from "./ValidationProbeService";
+
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
+export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProbeService> {
+    constructor(transport: NetworkTransport, service: ValidationProbeService) {
+        super(transport, service);
+    }
+
+    public commitPreparedSnapshot(
+        encodedBlockConfirmation: string,
+        encodedSnapshot: string,
+        encodedState: string
+    ) {
+        return this.service.commitPreparedSnapshot(
+            encodedBlockConfirmation,
+            encodedSnapshot,
+            encodedState
+        );
+    }
+
+    public probeReplayCommitCache(source: Address) {
+        return this.service.probeReplayCommitCache(source);
+    }
+
+    public normalizeConfirmationCopies(
+        copies: { encodedBlockConfirmation: string; source?: Address }[],
+        strategy: "live" | "spectating" | "dispute" | "calldata"
+    ) {
+        return this.service.normalizeConfirmationCopies(copies, strategy);
+    }
+
+    public async probeDisputeReductionChallenge(
+        reducedForkId: ForkId
+    ): Promise<ReductionChallengeProbe> {
+        return this.service.probeDisputeReductionChallenge(reducedForkId);
+    }
+
+    public async drainScheduledEvents(): Promise<boolean> {
+        return this.service.drainScheduledEvents();
+    }
+
+    public async probeInboundLogRedelivery(
+        redelivery: InboundLogRedelivery
+    ): Promise<StreamedLogDeliveryProbe> {
+        return this.service.probeInboundLogRedelivery(redelivery);
+    }
+
+    public async runCatchUpFromFirstNode(): Promise<boolean> {
+        return this.service.runCatchUpFromFirstNode();
+    }
+
+    public async runCatchUpThroughNode(
+        nodeUrl: string,
+        resumeFrom?: number,
+        targetHead?: number
+    ): Promise<number | null> {
+        return this.service.runCatchUpThroughNode(
+            nodeUrl,
+            resumeFrom,
+            targetHead
+        );
+    }
+
+    public async holdEventWatermark(fromBlock?: number): Promise<number> {
+        return this.service.holdEventWatermark(fromBlock);
+    }
+
+    public async releaseEventWatermark(holdId: number): Promise<number | null> {
+        return this.service.releaseEventWatermark(holdId);
+    }
+
+    public async getEventWatermark(): Promise<number | null> {
+        return this.service.getEventWatermark();
+    }
+
+    /** `channelId` defaults to the selected channel. */
+    public async getChannelSubscriptionCounts(
+        channelId?: string
+    ): Promise<(number | null)[]> {
+        return this.service.getChannelSubscriptionCounts(channelId);
+    }
+
+    public async clearChannelListener(): Promise<boolean> {
+        return this.service.clearChannelListener();
+    }
+
+    public async restoreChannelListener(): Promise<boolean> {
+        return this.service.restoreChannelListener();
+    }
+
+    public async probeChannelSelectionRace(
+        first: "select" | "clear"
+    ): Promise<ChannelSelectionRaceProbe> {
+        return this.service.probeChannelSelectionRace(first);
+    }
+
+    public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
+        return this.service.probeStreamedLogBelowWatermark();
+    }
+
+    public async probeInboundRunRecovery(
+        upperBlockHash: Hash
+    ): Promise<InboundRunRecoveryProbe> {
+        return this.service.probeInboundRunRecovery(upperBlockHash);
+    }
+
+    public async probeBlockCalldataRecovery(): Promise<BlockCalldataRecoveryProbe> {
+        return this.service.probeBlockCalldataRecovery();
+    }
+
+    public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
+        return this.service.probeConcurrentCalldataRecovery();
+    }
+
+    public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
+        return this.service.probeDisputeStrategyResultMatrix();
+    }
+
+    public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
+        return this.service.probeMissingParticipantSnapshots();
+    }
+
+    public async probeAuthorGatePreviousSnapshotMember(): Promise<string> {
+        return this.service.probeAuthorGatePreviousSnapshotMember();
+    }
+
+    public async probeAuthorGateMatchingResultingSnapshot(): Promise<string> {
+        return this.service.probeAuthorGateMatchingResultingSnapshot();
+    }
+
+    public async probeAuthorGateStaleHeightSnapshot(): Promise<string> {
+        return this.service.probeAuthorGateStaleHeightSnapshot();
+    }
+
+    public async probeAuthorGateWrongForkSnapshot(): Promise<string> {
+        return this.service.probeAuthorGateWrongForkSnapshot();
+    }
+
+    public async probeAuthorGateMatchingSnapshotExcludingAuthor(): Promise<string> {
+        return this.service.probeAuthorGateMatchingSnapshotExcludingAuthor();
+    }
+
+    public async probeAuthorGateMissingSnapshotPreviousMember(): Promise<string> {
+        return this.service.probeAuthorGateMissingSnapshotPreviousMember();
+    }
+
+    public async probeAuthorGateMissingSnapshotOutsider(): Promise<string> {
+        return this.service.probeAuthorGateMissingSnapshotOutsider();
+    }
+
+    public async probeAuthorGateNoAnchorCurrentParticipant(): Promise<string> {
+        return this.service.probeAuthorGateNoAnchorCurrentParticipant();
+    }
+
+    public async probeAuthorGateNoAnchorPendingParticipant(
+        pendingParticipant: string
+    ): Promise<string> {
+        return this.service.probeAuthorGateNoAnchorPendingParticipant(
+            pendingParticipant as Address
+        );
+    }
+
+    public async probeAuthorGateNoAnchorUnknownAddress(): Promise<string> {
+        return this.service.probeAuthorGateNoAnchorUnknownAddress();
+    }
+
+    /** Run isDisputedFork, counting local-diamond queries. */
+    public async probeIsDisputedFork(
+        forkId: ForkId,
+        markLocallyDisputed: boolean
+    ): Promise<IsDisputedForkProbe> {
+        return this.service.probeIsDisputedFork(forkId, markLocallyDisputed);
+    }
+
+    /** Store a block directly into block storage (dispute-replay fixtures). */
+    public storeBlockFixture(encodedBlockConfirmation: string): {
+        hash: string;
+    } {
+        return this.service.storeBlockFixture(encodedBlockConfirmation);
+    }
+
+    /** Store a state snapshot directly into snapshot storage. */
+    public storeStateSnapshotFixture(encodedSnapshot: string): {
+        hash: string;
+    } {
+        return this.service.storeStateSnapshotFixture(encodedSnapshot);
+    }
+
+    /** Stage on-chain calldata for a block at a chosen timestamp. */
+    public stageBlockCalldata(
+        encodedSignedBlock: string,
+        onChainTimestamp: Timestamp
+    ): boolean {
+        this.service.stageBlockCalldata(encodedSignedBlock, onChainTimestamp);
+        return true;
+    }
+
+    /** Broadcast a block's calldata post (chain-fallback path). */
+    public async postBlockCalldataOnChain(
+        encodedSignedBlock: string
+    ): Promise<{ transactionHash: string }> {
+        return this.service.postBlockCalldataOnChain(encodedSignedBlock);
+    }
+
+    public async runBlockValidation(
+        encodedBlockConfirmation: string,
+        options?: BlockValidationProbeOptions
+    ): Promise<BlockValidationProbe> {
+        return this.service.runBlockValidation(
+            encodedBlockConfirmation,
+            options
+        );
+    }
+
+    public async runBlockIngest(
+        encodedBlockConfirmation: string,
+        options?: BlockProbeOptions
+    ): Promise<BlockIngestProbe> {
+        return this.service.runBlockIngest(encodedBlockConfirmation, options);
+    }
+
+    public async runBlockConfirmationStructUnderDispute(
+        encodedBlockConfirmation: string,
+        encodedDispute: string
+    ): Promise<DisputeStructIngestProbe> {
+        return this.service.runBlockConfirmationStructUnderDispute(
+            encodedBlockConfirmation,
+            encodedDispute
+        );
+    }
+
+    public async runStoredBlockMerge(
+        encodedBlockConfirmation: string,
+        options?: {
+            strategy?: "active" | "dispute" | "spectating" | "calldata";
+        }
+    ): Promise<{
+        result: number | null;
+        persistedSignatures: string[] | null;
+    }> {
+        return this.service.runStoredBlockMerge(
+            encodedBlockConfirmation,
+            options
+        );
+    }
+}
+export default ValidationProbeRpcMethods;

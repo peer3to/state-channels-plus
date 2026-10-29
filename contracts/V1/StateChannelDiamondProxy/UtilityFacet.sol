@@ -1,0 +1,483 @@
+pragma solidity ^0.8.8;
+
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "../types/DisputeTypes.sol";
+import "./utils/GeneralUtils.sol";
+import "./StateChannelCommon.sol";
+import "./UtilityFacetInterface.sol";
+
+/// @dev The pure helpers are called externally on the deployed facet (see
+/// `StateChannelCommon`), the view wrappers are delegatecalled by
+/// `StateChannelManagerProxy`'s selector routing and therefore read the proxy's
+/// storage - hence the `StateChannelCommon` base.
+contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
+    uint256 internal constant REPLAY_CALL_DEPTH = 5;
+
+    /// EIP-191 - the digest every signature over `encodedData` is actually made
+    /// over. Single owner: `verifyThresholdSigned`, `retrieveSignerAddress` and
+    /// `retrieveSignerAddresses` must agree on it or a recovered signer set
+    /// would not match the set the threshold check compared.
+    function _eip191SignedHash(bytes memory encodedData) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(encodedData)));
+    }
+
+    /// The addresses `signatures` recover to over `encodedData`, in the order
+    /// they were supplied. A signature that fails to recover yields
+    /// `address(0)` in its slot rather than reverting, so a rejection can
+    /// report the whole supplied set.
+    function retrieveSignerAddresses(bytes memory encodedData, bytes[] memory signatures)
+        public
+        pure
+        returns (address[] memory signers)
+    {
+        bytes32 signedHash = _eip191SignedHash(encodedData);
+        signers = new address[](signatures.length);
+        for (uint256 i = 0; i < signatures.length; i++) {
+            (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signatures[i]);
+            signers[i] = error == ECDSA.RecoverError.NoError ? recovered : address(0);
+        }
+    }
+
+    /**
+     * @param addressesInThreshold - The public EOA addresses of the signers in the threshold
+     * @param encodedData - The encoded data, which keccak256 hash was signed
+     * @param signatures - Signatures from `addressesInThreshold` signers on keccak256(data)
+     */
+    function verifyThresholdSigned(
+        address[] memory addressesInThreshold,
+        bytes memory encodedData,
+        bytes[] memory signatures
+    ) public pure returns (bool, string memory) {
+        //It's fine if you send more signatures than in the threshold - you'll just pay more gas
+        if (addressesInThreshold.length > signatures.length) {
+            return (false, "Cryptography: Not enough signatures provided");
+        }
+
+        uint256 threshold = addressesInThreshold.length;
+        uint256 count = 0;
+
+        // EIP-191 - This is what actually gets signed
+        bytes32 signedHash = _eip191SignedHash(encodedData);
+
+        //Every address can be counted once
+        uint8[] memory countRemaining = new uint8[](threshold);
+        for (uint256 i = 0; i < threshold; i++) {
+            countRemaining[i] = 1;
+        }
+
+        for (uint256 i = 0; i < signatures.length; i++) {
+            address signer = ECDSA.recover(signedHash, signatures[i]);
+            //Hopefully the caller will sort signatures so this matches
+            if (i < threshold && signer == addressesInThreshold[i] && countRemaining[i] == 1) {
+                count++;
+                countRemaining[i] = 0;
+            } else {
+                // Still possible to work in N^2 time - sadly no memory maps (hash tables) in solidity
+                for (uint256 j = 0; j < threshold; j++) {
+                    if (signer == addressesInThreshold[j] && countRemaining[j] == 1) {
+                        count++;
+                        countRemaining[j] = 0;
+                        break;
+                    }
+                }
+            }
+        }
+        if (count != threshold) {
+            return (false, "Cryptography: Not enough valid signatures");
+        }
+        return (true, "");
+    }
+
+    function retrieveSignerAddress(bytes memory encodedData, bytes memory signature)
+        public
+        pure
+        override
+        returns (address, bool)
+    {
+        bytes32 signedHash = _eip191SignedHash(encodedData);
+        (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
+        if (error != ECDSA.RecoverError.NoError) {
+            return (recovered, false);
+        }
+        return (recovered, true);
+    }
+
+    function decodeBlock(bytes memory encodedBlock) external pure returns (Block memory) {
+        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        require(keccak256(abi.encode(decodedBlock)) == keccak256(encodedBlock), ErrorNonCanonicalEncoding());
+        return decodedBlock;
+    }
+
+    function tryDecodeBlock(bytes memory encodedBlock)
+        public
+        view
+        override
+        returns (bool decoded, Block memory blockData)
+    {
+        try this.decodeBlock(encodedBlock) returns (Block memory decodedBlock) {
+            return (true, decodedBlock);
+        } catch {
+            return (false, blockData);
+        }
+    }
+
+    function isAddressInArray(address[] memory array, address adr) public pure override returns (bool) {
+        return _isAddressInArray(array, adr);
+    }
+
+    function insertBytesInByteArray(bytes memory b, bytes[] memory array) public pure returns (bytes[] memory) {
+        bytes[] memory result = new bytes[](array.length + 1);
+        for (uint256 i = 0; i < array.length; i++) {
+            result[i] = array[i];
+        }
+        result[array.length] = b;
+        return result;
+    }
+
+    function subtractAddressArrays(address[] memory array1, address[] memory array2)
+        public
+        pure
+        override
+        returns (address[] memory)
+    {
+        address[] memory result = new address[](array1.length);
+        uint256 actualCount = 0;
+        for (uint256 i = 0; i < array1.length; i++) {
+            bool found = false;
+            for (uint256 j = 0; j < array2.length; j++) {
+                if (array1[i] == array2[j]) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                result[actualCount++] = array1[i];
+            }
+        }
+        return _shrinkAddressArray(result, actualCount);
+    }
+
+    function concatBytesArrays(bytes[] memory array1, bytes[] memory array2) public pure returns (bytes[] memory) {
+        bytes[] memory result = new bytes[](array1.length + array2.length);
+        for (uint256 i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint256 i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+        return result;
+    }
+
+    function concatExitChannelArrays(ExitChannel[] memory array1, ExitChannel[] memory array2)
+        public
+        pure
+        returns (ExitChannel[] memory)
+    {
+        ExitChannel[] memory result = new ExitChannel[](array1.length + array2.length);
+        for (uint256 i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+        for (uint256 i = 0; i < array2.length; i++) {
+            result[array1.length + i] = array2[i];
+        }
+        return result;
+    }
+
+    function areAddressArraysEqual(address[] memory array1, address[] memory array2) public pure returns (bool) {
+        if (array1.length != array2.length) {
+            return false;
+        }
+        for (uint256 i = 0; i < array1.length; i++) {
+            if (array1[i] != array2[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function concatAddressArraysNoDuplicates(address[] memory array1, address[] memory array2)
+        public
+        pure
+        override
+        returns (address[] memory)
+    {
+        // array1 is assumed to contain no duplicates
+        // Create the result array with maximum possible size
+        address[] memory result = new address[](array1.length + array2.length);
+
+        // Copy all items from first array directly to the result
+        for (uint256 i = 0; i < array1.length; i++) {
+            result[i] = array1[i];
+        }
+
+        uint256 uniqueCount = array1.length;
+
+        // Add items from second array, skipping duplicates
+        for (uint256 i = 0; i < array2.length; i++) {
+            // Check if item already exists in array1
+            if (!isAddressInArray(result, array2[i])) {
+                result[uniqueCount] = array2[i];
+                uniqueCount++;
+            }
+        }
+
+        // If we didn't find any duplicates, we can return the result as is
+        if (uniqueCount == array1.length + array2.length) {
+            return result;
+        }
+
+        // Otherwise shrink to the deduplicated size
+        return _shrinkAddressArray(result, uniqueCount);
+    }
+
+    function insertIntoAddressArrayNoDuplicates(address[] memory array, address newAddress)
+        public
+        pure
+        override
+        returns (address[] memory)
+    {
+        // Check if the address is already in the array
+        for (uint256 i = 0; i < array.length; i++) {
+            if (array[i] == newAddress) {
+                return array; // Address already exists, return the original array
+            }
+        }
+
+        // If not found, create a new array with one additional slot
+        address[] memory newArray = new address[](array.length + 1);
+        for (uint256 i = 0; i < array.length; i++) {
+            newArray[i] = array[i];
+        }
+        newArray[array.length] = newAddress; // Add the new address at the end
+
+        return newArray;
+    }
+
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure override returns (bool) {
+        return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
+    }
+
+    function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
+        public
+        pure
+        returns (bool)
+    {
+        if (newSnapshot.blockHeight > currentSnapshot.blockHeight) return true;
+        if (
+            newSnapshot.blockHeight == 0 && currentSnapshot.blockHeight == 0
+                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot)
+                && keccak256(abi.encode(newSnapshot)) != keccak256(abi.encode(currentSnapshot))
+        ) return true;
+        return false;
+    }
+
+    // ********** proxy storage views - delegatecalled through the proxy's selector routing **********
+
+    function getParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getSnapshotParticipants(channelId);
+    }
+
+    function getP2pTime() public view returns (uint256) {
+        return _getP2pTime();
+    }
+
+    function getAgreementTime() public view returns (uint256) {
+        return _getAgreementTime();
+    }
+
+    function getChainFallbackTime() public view returns (uint256) {
+        return _getChainFallbackTime();
+    }
+
+    function getEvidenceTime() public view returns (uint256) {
+        return _getEvidenceTime();
+    }
+
+    function getGasLimit() public view returns (uint256) {
+        return _getGasLimit();
+    }
+
+    /// Gas a fraud-proof transaction needs when its replay path starts so that every replayed
+    /// transition is granted its full budget; the work before the replay comes on top. The deepest
+    /// replay sits REPLAY_CALL_DEPTH calls below the transaction (multicall, facet delegatecall,
+    /// FraudProofFacet delegatecall, executeStateTransition, the state machine), and EIP-150 keeps
+    /// 1/64 of the gas at each of them.
+    function getStateTransitionReplayGas() public view returns (uint256 required) {
+        required = stateMachineImplementation.getStateTransitionGasRequirement();
+        for (uint256 i = 0; i < REPLAY_CALL_DEPTH; i++) {
+            required = required * 64 / 63 + 1;
+        }
+    }
+
+    function getAllTimes() public view returns (uint256, uint256, uint256, uint256) {
+        return _getAllTimes();
+    }
+
+    function getMaxChannelParticipants() public view returns (uint256) {
+        return _getMaxChannelParticipants();
+    }
+
+    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
+        public
+        view
+        returns (bool found, bytes32 blockCalldataCommitment)
+    {
+        return _getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
+    }
+
+    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view returns (bool) {
+        return _hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        public
+        view
+        returns (address[] memory)
+    {
+        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
+    }
+
+    function getOnChainSlashedParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getOnChainSlashedParticipants(channelId);
+    }
+
+    function isParticipantSlashedOnChain(bytes32 channelId, address participant) public view returns (bool) {
+        return _isParticipantSlashedOnChain(channelId, participant);
+    }
+
+    function getOnChainThresholdSet(bytes32 channelId) public view returns (address[] memory) {
+        return _getOnChainThresholdSet(channelId);
+    }
+
+    function getSnapshotParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getSnapshotParticipants(channelId);
+    }
+
+    function getPendingParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getPendingParticipants(channelId);
+    }
+
+    function getStateSnapshot(bytes32 channelId) public view returns (StateSnapshot memory) {
+        return _getStateSnapshot(channelId);
+    }
+
+    function getOpenChannelCount() public view returns (uint256) {
+        return openChannelIds.length;
+    }
+
+    function getOpenChannelIds(uint256 offset, uint256 limit) public view returns (bytes32[] memory channelIds) {
+        uint256 count = openChannelIds.length;
+        if (offset >= count || limit == 0) return new bytes32[](0);
+
+        uint256 available = count - offset;
+        uint256 pageLength = limit < available ? limit : available;
+        channelIds = new bytes32[](pageLength);
+        for (uint256 i = 0; i < pageLength; i++) {
+            channelIds[i] = openChannelIds[offset + i];
+        }
+    }
+
+    function getChannelBalance(bytes32 channelId) public view returns (ChannelBalance memory) {
+        return _getChannelBalance(channelId);
+    }
+
+    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+        return _canParticipateInDisputesNow(channelId, participant);
+    }
+
+    function isChannelOpen(bytes32 channelId) public view returns (bool, StateSnapshot memory) {
+        return _isChannelOpen(channelId);
+    }
+
+    function isForkDisputed(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        return _isForkDisputed(channelId, forkId);
+    }
+
+    function getWindowCommitments(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bytes32[] memory disputeCommitments)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.disputeCommitments;
+    }
+
+    function getDisputeWindowCreationTimestamp(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (uint256 creationTimestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.creationTimestamp;
+    }
+
+    function getReducedResult(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bytes32 reducedForkId, uint256 timestamp, address reducer)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        DisputeWindowReducedResult storage reducedResult = disputeWindow.reducedResult;
+        return (reducedResult.forkId, reducedResult.timestamp, reducedResult.reducer);
+    }
+
+    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        windowExists = _isDisputeWidnowCreated(disputeWindow);
+        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+        return (windowExists, isExpired, killPeriodEnd, block.timestamp);
+    }
+
+    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        (bool isExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+        return isExpired;
+    }
+
+    function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)
+        public
+        view
+        returns (DisputeWindow[] memory)
+    {
+        DisputeWindow[] memory disputeWindows = new DisputeWindow[](forkIds.length);
+        DisputeData storage disputeData = disputeData[channelId];
+        for (uint256 i = 0; i < forkIds.length; i++) {
+            disputeWindows[i] = disputeData.disputeWindowMap[forkIds[i]];
+        }
+        return disputeWindows;
+    }
+
+    function verifyOutboundMessageBlocks(
+        MessageBlock[] memory outboundMessageBlocks,
+        SnapshotData memory lowerSnapshot,
+        SnapshotData memory upperSnapshot
+    ) public view returns (bool) {
+        return _verifyOutboundMessageBlocks(outboundMessageBlocks, lowerSnapshot, upperSnapshot);
+    }
+
+    /// See `_outboundRunAboveAnchor`.
+    function verifyOutboundRunAboveAnchor(
+        MessageBlock[] memory run,
+        SnapshotData memory anchorData,
+        SnapshotData memory latestData
+    ) public view returns (bool isValid, MessageBlock[] memory aboveAnchor) {
+        return _outboundRunAboveAnchor(run, anchorData, latestData);
+    }
+
+    function pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)
+        public
+        pure
+        returns (MessageBlock[] memory)
+    {
+        return _pruneOutboundMessageBlocks(outboundMessageBlocks, lowerHash);
+    }
+}

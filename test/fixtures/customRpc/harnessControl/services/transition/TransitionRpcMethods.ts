@@ -1,0 +1,128 @@
+// @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
+import type { TransitionService } from "./TransitionService";
+import { Block, StateSnapshot } from "@/models";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
+import SnapshotUpdateService from "@/stateManager/snapshotUpdate/SnapshotUpdateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import { HARNESS_POST_SUPPRESSED } from "@test/fixtures/customRpc/harnessControl/services/stub/StubRpcMethods";
+
+/**
+ * Serializable projection of `prepareUpdateSnapshotSameFork`. Snapshots carry
+ * bigints, so they cross the port `Codec.encode`d as `Type.StateSnapshot`.
+ */
+export interface SameForkSnapshotUpdate {
+    canPost: boolean;
+    callData: string[];
+    encodedExpectedSnapshot?: string;
+    encodedMilestoneSnapshots: string[];
+}
+
+/**
+ * State-transition operations executed host-side. Only public endpoints live
+ * here; accessors are on {@link TransitionService}. Snapshot structs carry
+ * bigints, so they cross the port as `Codec.encode(_, Type.StateSnapshot)`.
+ */
+export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> {
+    constructor(transport: NetworkTransport, service: TransitionService) {
+        super(transport, service);
+    }
+
+    /**
+     * Post a fresh state snapshot for `forkId` and wait until it is mined;
+     * returns the encoded snapshot, or null when nothing was posted. A post
+     * another peer's post beat to the same point returns the chain's
+     * snapshot; a post the chain refuses for unconsumed inbound messages
+     * posts nothing. Any other revert rejects.
+     */
+    public async postStateSnapshot(
+        forkId: ForkId
+    ): Promise<{ encodedSnapshot: string } | null> {
+        const sm = this.service.sm;
+        const service = sm.snapshotUpdateService;
+        if (Reflect.get(service, HARNESS_POST_SUPPRESSED)) return null;
+        let snapshot: StateSnapshot | undefined;
+        try {
+            // the class method: a stub of the runtime's posts
+            // (failStateSnapshotPost) does not catch the harness's own post
+            snapshot =
+                await SnapshotUpdateService.prototype.postStateSnapshotWait.call(
+                    service,
+                    forkId
+                );
+        } catch (error) {
+            const name = tryDecodeCustomError(error)?.name;
+            if (name === "RaceConditionPendingInboundNotConsumed") return null;
+            if (name !== "RaceConditionBlockHeightTooOld") throw error;
+            snapshot = StateSnapshot.from(
+                await sm.stateChannelManagerContract.getStateSnapshot(
+                    sm.channelId
+                )
+            );
+        }
+        return snapshot
+            ? {
+                  encodedSnapshot: Codec.encode(
+                      snapshot.toStruct(),
+                      Type.StateSnapshot
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Same-fork snapshot-update data (calldata + encoded snapshots). */
+    public async prepareUpdateSnapshotSameFork(
+        forkId: ForkId
+    ): Promise<SameForkSnapshotUpdate> {
+        const data =
+            await this.service.sm.snapshotUpdateService[
+                "prepareUpdateSnapshotSameFork"
+            ](forkId);
+        return {
+            canPost: data.canPost,
+            callData: data.callData,
+            encodedExpectedSnapshot: data.expectedSnapshot
+                ? (Codec.encode(
+                      data.expectedSnapshot.toStruct(),
+                      Type.StateSnapshot
+                  ) as string)
+                : undefined,
+            encodedMilestoneSnapshots: data.milestoneSnapshots.map(
+                (s) => Codec.encode(s.toStruct(), Type.StateSnapshot) as string
+            )
+        };
+    }
+
+    public async ingestBlockConfirmation(
+        encodedBlockConfirmation: string,
+        options: IngestBlockConfirmationOptions
+    ): Promise<boolean> {
+        const queue = this.service.sm.blockQueueManager;
+        return await this.service.stub.controlIngestContext.run(true, () =>
+            queue.ingestBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
+                options
+            )
+        );
+    }
+
+    /**
+     * Persist a block straight into storage — bypassing the confirmation
+     * pipeline — the way spectate/state-proof persistence does.
+     */
+    public async storeBlock(
+        encodedBlockConfirmation: string
+    ): Promise<boolean> {
+        this.service.sm.storage.blocks.storeBlock(
+            Block.fromBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+            )
+        );
+        return true;
+    }
+}
+
+export default TransitionRpcMethods;

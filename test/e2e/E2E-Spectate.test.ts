@@ -1,0 +1,2197 @@
+import { Block } from "@/models";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
+import { Status } from "@/types";
+import { Codec, Type } from "@/utils";
+import {
+    assertSyncedParticipantNeverSignsInjectedInbound,
+    assertSyncedParticipantServesOnlyGenuineWindowInputs
+} from "@test/fixtures/DisputeWindowInboundSyncStaging";
+import {
+    countJoinSignatureRequests,
+    waitForHeldJoins
+} from "@test/fixtures/JoinSnapshotRetryStaging";
+import { assertTwoSourceProbeKeepsLocalState } from "@test/fixtures/MonotonicSyncInstallStaging";
+import {
+    assertOffChainPromotion,
+    assertVerifiedSyncPromotion,
+    assertPromotionBeforeReceiverApplication
+} from "@test/fixtures/OffChainPromotionFixture";
+import {
+    expectSyncPayloadAboveRequestedHeightWhileAhead,
+    stageJoinerWaitingOnUnreducedWindow
+} from "@test/fixtures/PinnedSyncStaging";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
+import {
+    assertSpectatorSilence,
+    assertSpectatorRejectedWork
+} from "@test/fixtures/SpectatorSilenceFixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
+
+/**
+ * E2E Tests for Spectate Service
+ *
+ * Maps to: src/rpc/network/services/spectate/SpectateService.ts
+ *          src/rpc/network/services/spectate/SpectateRpcMethods.ts
+ *          src/stateManager/validationStrategy/SpectatingValidationStrategy.ts
+ *
+ * Tests spectator joining, syncing, and fork traversal mechanisms.
+ */
+describe("E2E: Spectate Service", function () {
+    it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
+        await assertPromotionBeforeReceiverApplication("overlap");
+    });
+    it("spectator rejects an invalid envelope without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("invalid");
+    });
+    it("spectator parks not-ready work without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("not-ready");
+    });
+
+    it("new participant gossip can precede another peer applying insertion", async () => {
+        await assertPromotionBeforeReceiverApplication();
+    });
+    it("a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block", async () => {
+        await assertPromotionBeforeReceiverApplication("slowSync");
+    });
+    it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
+        await assertVerifiedSyncPromotion();
+    });
+    it("spectators apply fresh and late confirmations without relaying and still serve sync", async () => {
+        await assertSpectatorSilence();
+    });
+    it("spectator becomes participant through an off-chain balance transfer", async () => {
+        await assertOffChainPromotion(TestSession.getHarness());
+    });
+
+    it("full-capacity insertion advances the turn without promoting a spectator", async () => {
+        await assertOffChainPromotion(TestSession.getHarness(), true);
+    });
+
+    describe("Guard Protection", function () {
+        it("should NOT allow spectate RPC before handshake completes", async function () {
+            const harness = TestSession.getHarness();
+            await harness.lifecycle.start(3, 0, {
+                autoConnect: false,
+                timeConfig: {
+                    agreementTime: 10,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+
+            const peer0 = harness.peers[0];
+            const peer1 = harness.peers[1];
+            const peer2 = harness.peers[2];
+
+            // Peer 1: block handshake completion + install a recording guard on
+            // its spectateService (so an incoming spectate RPC is blocked).
+            await harness
+                .control(peer1)
+                .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                .request();
+            await harness
+                .control(peer1)
+                .stub.stubCountSpectateRequests()
+                .request();
+            // Peer 0: capture the transport it initiates the handshake over —
+            // pre-handshake transports aren't in `openConnections`, so we grab
+            // this one to send over before the handshake completes.
+            await harness
+                .control(peer0)
+                .stub.stubCaptureInitHandshakeTransport()
+                .request();
+
+            // Establish transports (peer 1's handshake stays blocked, so it
+            // never completes); wait until peer 0 has initiated the handshake.
+            await harness.network.connectPeers([0, 1]);
+            await waitFor(
+                () =>
+                    harness.execOnHost(
+                        peer0,
+                        (sm) =>
+                            !!sm.p2pManager.localRpc.stub
+                                .capturedInitHandshakeTransport
+                    ),
+                harness.event.protocolEventTimeoutMs()
+            );
+
+            // Peer 0: send a request over the captured pre-handshake
+            // transport and wait for the guard's request consequence.
+            expect(
+                await harness
+                    .control(peer0)
+                    .stub.sendSpectateRequestOverCapturedHandshakeTransport(
+                        harness.channelId!.toString(),
+                        Date.now()
+                    )
+                    .request()
+            ).to.equal("RPC request rejected by guard");
+
+            // Peer 1's guard should have blocked it (handshake never completed).
+            await waitFor(
+                async () =>
+                    await harness
+                        .control(peer1)
+                        .stub.wasSpectateGuardBlocked()
+                        .request(),
+                harness.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await harness
+                    .control(peer1)
+                    .stub.wasSpectateGuardBlocked()
+                    .request()
+            ).to.equal(
+                true,
+                "Guard should have blocked the spectate RPC before handshake completes"
+            );
+            expect(
+                await harness
+                    .control(peer1)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(0);
+
+            expect(
+                await harness
+                    .control(peer1)
+                    .stub.restoreBlockedHandshake()
+                    .request()
+            ).to.equal(true);
+            await harness.network.connectPeers([1, 2]);
+            await harness.connectionBarrier.waitFor(
+                async () => {
+                    const [peer1Connected, peer2Connected] = await Promise.all([
+                        harness
+                            .control(peer1)
+                            .query.isConnectedTo(peer2.address)
+                            .request(),
+                        harness
+                            .control(peer2)
+                            .query.isConnectedTo(peer1.address)
+                            .request()
+                    ]);
+                    return peer1Connected && peer2Connected;
+                },
+                {
+                    timeoutMs: harness.event.protocolEventTimeoutMs(),
+                    timeoutMessage:
+                        "Peers 1 and 2 did not establish a mutual transport after the blocked handshake was restored"
+                }
+            );
+
+            const response = await harness
+                .control(peer2)
+                .spectateService.onSpectateRequest({
+                    channelId: harness.channelId!.toString()
+                })
+                .request(peer1.address);
+            expect(servedSyncPayload(response)).to.be.a("string");
+        });
+    });
+
+    // NOTE: the former "Channel Binding" test is obsolete. With request/response
+    // the spectator uses its own `syncRequest.channelId` to verify the payload
+    // and never trusts a channelId echoed by the responder, so a mismatched-
+    // channel response is structurally impossible — there is no separate
+    // `onSpectateResponse` endpoint to feed a forged channelId into.
+
+    describe("Same Fork Spectating", function () {
+        it("should spectate successfully when on-chain snapshot is already on the same fork", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.spectatorJoinedAndSynced();
+            await h.transition.advanceState({ count: 3 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2, 3] });
+            await h.assert.sync.participantCount({
+                expectedCount: 3,
+                peerIndex: 3
+            });
+            await h.assert.snapshot.onChainSnapshotOnFork();
+        });
+
+        it("spectate atomic persistence and setState", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 3,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const participantIndices = [0, 1, 2];
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: participantIndices,
+                minimumBlocks: 4,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
+            const spectatorIndex = spectator.index;
+            await h.event.waitUntilPeerStatus(spectatorIndex, Status.SYNCED);
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: participantIndices.concat(spectatorIndex)
+            });
+            const forkId = h.activeForkId;
+            expect(forkId).to.not.be.undefined;
+
+            const staleNextToWrite = await h
+                .control(h.getPeer(spectatorIndex))
+                .query.getNextToWrite()
+                .request();
+
+            await h.network.blacklistAndDisconnectPeer(spectatorIndex);
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+
+            const sourcePeer = h.getPeer(
+                (await h.peerWithHighestBlock(forkId!)).index
+            );
+            const syncResult = await h
+                .control(sourcePeer)
+                .spectate.generateSyncPayload(h.channelId!, forkId!, 0)
+                .request();
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+            const blockInfo = await h
+                .control(sourcePeer)
+                .query.getLatestBlockInfo(forkId!)
+                .request();
+            expect(blockInfo).to.not.be.null;
+            const blockHeight = Number(
+                Codec.decode(blockInfo!.encodedBlock, Type.Block).transaction
+                    .header.transactionCnt
+            );
+            expect(blockInfo!.author).to.not.equal(staleNextToWrite);
+            const blockConfirmationResult = await h
+                .control(sourcePeer)
+                .query.getLatestBlockConfirmation(forkId!)
+                .request();
+            const blockConfirmation = blockConfirmationResult
+                ? Codec.decode(
+                      blockConfirmationResult.encodedBlockConfirmation,
+                      Type.BlockConfirmation
+                  )
+                : null;
+
+            expect(syncResult).to.not.be.null;
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            expect(Number(latestFinalizedSnapshot.blockHeight)).to.equal(
+                blockHeight - 1
+            );
+
+            h.event.resetEventSpies();
+
+            // Drive the atomic interleaving host-side: lock the mutex, queue the
+            // block + apply the sync payload (verify, then persist) behind it,
+            // then release. The body
+            // runs with the live stateManager, so mutex/validationService/
+            // onBlockConfirmation/spectateService are all in-process.
+            const result = await h.execOnHost(
+                h.getPeer(spectatorIndex),
+                async (sm, args) => {
+                    const validation = sm.validationService;
+                    const original =
+                        validation.validateBlockConfirmation.bind(validation);
+                    let didValidateQueuedBlock = false;
+                    let didValidateQueuedBlockAgainstCorruptedState = false;
+                    validation.validateBlockConfirmation = async (
+                        entry,
+                        strategy
+                    ) => {
+                        if (String(entry.block.hash) === args.blockHash) {
+                            didValidateQueuedBlock = true;
+                            const nextBlockHeight =
+                                sm.storage.blocks.getNextBlockHeight(
+                                    args.forkId
+                                );
+                            const nextToWrite =
+                                await sm.diamondStateMachine.getNextToWrite();
+                            didValidateQueuedBlockAgainstCorruptedState =
+                                nextBlockHeight === args.blockHeight &&
+                                String(nextToWrite) !==
+                                    String(args.blockAuthor);
+                        }
+                        return original(entry, strategy);
+                    };
+                    try {
+                        await sm.mutex.lock();
+                        const queuedBlockPromise =
+                            sm.blockIngestService.onBlockConfirmationStruct(
+                                args.blockConfirmation
+                            );
+                        const applyPromise =
+                            sm.p2pManager.localRpc.spectateService
+                                .applySyncResponse(
+                                    args.sourceAddress,
+                                    {
+                                        channelId: sm.channelId,
+                                        forkId: args.forkId
+                                    },
+                                    args.encodedSyncPayload
+                                )
+                                .then(({ synced }) => synced);
+                        await new Promise((r) => setTimeout(r, 100));
+                        sm.mutex.unlock();
+                        await Promise.allSettled([
+                            applyPromise,
+                            queuedBlockPromise
+                        ]);
+                        return {
+                            didValidateQueuedBlock,
+                            didValidateQueuedBlockAgainstCorruptedState
+                        };
+                    } finally {
+                        validation.validateBlockConfirmation = original;
+                    }
+                },
+                {
+                    blockHash: blockInfo!.hash,
+                    forkId: forkId!,
+                    blockHeight,
+                    blockAuthor: blockInfo!.author,
+                    blockConfirmation: blockConfirmation!,
+                    sourceAddress: sourcePeer.address,
+                    encodedSyncPayload: syncResult!.encodedSyncPayload
+                }
+            );
+
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: spectatorIndex,
+                blockHash: blockInfo!.hash,
+                keepConnection: true
+            });
+            expect(result.didValidateQueuedBlock).to.equal(true);
+            expect(result.didValidateQueuedBlockAgainstCorruptedState).to.equal(
+                false
+            );
+            expect(
+                h.getPeer(spectatorIndex).eventSpies.onInitiatingDispute!.called
+            ).to.equal(false);
+        });
+
+        it("skips latest state persistence when local storage is already ahead", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 3,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 4,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
+            const forkId = h.activeForkId;
+            expect(forkId).to.not.be.undefined;
+
+            await h.transition.advanceState({
+                count: 3,
+                waitForFinalization: true
+            });
+
+            const localLatestBlock = await h
+                .control(h.getPeer(spectator.index))
+                .query.getLatestBlockInfo(forkId!)
+                .request();
+            expect(localLatestBlock).to.not.be.null;
+            const localLatestHeight = Number(
+                Codec.decode(localLatestBlock!.encodedBlock, Type.Block)
+                    .transaction.header.transactionCnt
+            );
+            expect(localLatestHeight).to.be.greaterThan(0);
+
+            const sourcePeer = await h.peerWithHighestBlock(forkId!);
+            const syncResult = await h
+                .control(h.getPeer(sourcePeer.index))
+                .spectate.generateSyncPayload(
+                    h.channelId!,
+                    forkId!,
+                    localLatestHeight - 1
+                )
+                .request();
+            expect(syncResult).to.not.be.null;
+
+            await h
+                .control(h.getPeer(spectator.index))
+                .stub.stubRecordUnsafeSetLatestState()
+                .request();
+
+            try {
+                const accepted = await h
+                    .control(h.getPeer(spectator.index))
+                    .spectate.applySyncResponse(
+                        sourcePeer.address,
+                        forkId!,
+                        localLatestHeight - 1,
+                        syncResult!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+
+                const didPersistLatestState = await h
+                    .control(h.getPeer(spectator.index))
+                    .stub.wasUnsafeSetLatestStateCalled()
+                    .request();
+
+                expect(accepted).to.equal(true);
+                expect(didPersistLatestState).to.equal(false);
+                expect(
+                    await h
+                        .control(h.getPeer(spectator.index))
+                        .query.getLatestBlockHash(forkId!)
+                        .request()
+                ).to.equal(localLatestBlock!.hash);
+            } finally {
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .stub.restoreUnsafeSetLatestState()
+                    .request();
+            }
+        });
+
+        it("aborts spectating when a finalized sync block conflicts with storage", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 3,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2, 3],
+                minimumBlocks: 2,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
+            const spectatorIndex = spectator.index;
+            const participantIndices = [0, 1, 2, 3];
+            const forkId = h.activeForkId;
+            expect(forkId).to.not.be.undefined;
+
+            const spectatorLatestInfo = await h
+                .control(h.getPeer(spectator.index))
+                .query.getLatestBlockInfo(forkId!)
+                .request();
+            const spectatorLatestBeforeDisconnect = spectatorLatestInfo
+                ? Number(
+                      Codec.decode(spectatorLatestInfo.encodedBlock, Type.Block)
+                          .transaction.header.transactionCnt
+                  )
+                : -1;
+
+            await h.network.blacklistAndDisconnectPeer(spectatorIndex);
+            const leaverIndex = await h.transition.participantLeaveDetached({
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+            const remainingParticipantIndices = participantIndices.filter(
+                (peerIndex) => peerIndex !== leaverIndex
+            );
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: remainingParticipantIndices,
+                waitForFinalization: true
+            });
+            await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
+
+            const sourcePeer = await h.peerWithHighestBlock(forkId!);
+            const sourceLatestBlock = await h
+                .control(h.getPeer(sourcePeer.index))
+                .query.getLatestBlockInfo(forkId!)
+                .request();
+            expect(sourceLatestBlock).to.not.be.null;
+            const sourceLatestHeight = Number(
+                Codec.decode(sourceLatestBlock!.encodedBlock, Type.Block)
+                    .transaction.header.transactionCnt
+            );
+
+            const syncResult = await h
+                .control(h.getPeer(sourcePeer.index))
+                .spectate.generateSyncPayload(
+                    h.channelId!,
+                    forkId!,
+                    sourceLatestHeight
+                )
+                .request();
+            expect(syncResult).to.not.be.null;
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
+            const finalizedBlocks = syncPayload.stateProof.milestones.flatMap(
+                (milestone, index) => {
+                    if (
+                        index ===
+                        syncPayload.stateProof.milestones.length - 1
+                    ) {
+                        const finalizedBlockConfirmation =
+                            milestone.blockConfirmations[0];
+                        return finalizedBlockConfirmation
+                            ? [
+                                  Block.fromBlockConfirmation(
+                                      finalizedBlockConfirmation
+                                  )
+                              ]
+                            : [];
+                    }
+
+                    return milestone.blockConfirmations.map(
+                        (blockConfirmation) =>
+                            Block.fromBlockConfirmation(blockConfirmation)
+                    );
+                }
+            );
+            const newFinalizedBlocks = finalizedBlocks.filter(
+                (block) =>
+                    block.height > spectatorLatestBeforeDisconnect &&
+                    block.height <= finalizedHeight
+            );
+            expect(newFinalizedBlocks.length).to.be.greaterThan(0);
+
+            const blockToConflict = newFinalizedBlocks.at(-1);
+            expect(blockToConflict).to.not.be.undefined;
+
+            const conflictingBlockStruct = Codec.decode(
+                blockToConflict!.encode(),
+                Type.Block
+            );
+            conflictingBlockStruct.stateSnapshotHash = ethers.keccak256(
+                ethers.toUtf8Bytes(`conflict-${blockToConflict!.hash}`)
+            );
+            const conflictingBlock = await Block.fromBlockStruct(
+                conflictingBlockStruct,
+                spectator.signer
+            );
+
+            expect(conflictingBlock.forkId).to.equal(blockToConflict!.forkId);
+            expect(conflictingBlock.height).to.equal(blockToConflict!.height);
+            expect(conflictingBlock.hash).to.not.equal(blockToConflict!.hash);
+
+            const storedConflictHash = await h
+                .control(h.getPeer(spectator.index))
+                .spectate.storeBlockJustPersist(
+                    Codec.encode(
+                        conflictingBlock.signedBlock,
+                        Type.SignedBlock
+                    ) as string
+                )
+                .request();
+            expect(storedConflictHash).to.equal(conflictingBlock.hash);
+
+            await h
+                .control(h.getPeer(spectator.index))
+                .stub.stubRecordUnsafeSetLatestState()
+                .request();
+            await h
+                .control(h.getPeer(spectator.index))
+                .stub.recordSyncRejections()
+                .request();
+
+            try {
+                const accepted = await h
+                    .control(h.getPeer(spectator.index))
+                    .spectate.applySyncResponse(
+                        sourcePeer.address,
+                        forkId!,
+                        sourceLatestHeight,
+                        syncResult!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+
+                const didPersistLatestState = await h
+                    .control(h.getPeer(spectator.index))
+                    .stub.wasUnsafeSetLatestStateCalled()
+                    .request();
+
+                expect(accepted).to.equal(false);
+                expect(
+                    await h
+                        .control(h.getPeer(spectator.index))
+                        .stub.restoreRecordedSyncRejections()
+                        .request()
+                ).to.deep.equal(["payload persistence aborted"]);
+                expect(didPersistLatestState).to.equal(false);
+                for (const block of newFinalizedBlocks) {
+                    const storedBlockHash = await h
+                        .control(h.getPeer(spectator.index))
+                        .query.getBlockHashAt(block.forkId, block.height)
+                        .request();
+                    if (block.height === blockToConflict!.height) {
+                        expect(storedBlockHash).to.equal(conflictingBlock.hash);
+                    } else {
+                        expect(storedBlockHash).to.be.null;
+                    }
+                }
+            } finally {
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .stub.restoreRecordedSyncRejections()
+                    .request();
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .stub.restoreUnsafeSetLatestState()
+                    .request();
+            }
+        });
+    });
+
+    describe("Fork Traversal Spectating", function () {
+        it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(5, 0, {
+                timeConfig: {
+                    p2pTime: 30,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 5
+                }
+            });
+            await h.transition.advanceState({ count: 5 });
+            await h.assert.sync.peersInSyncWait();
+
+            // Keep this scenario about a bad transition from the valid writer;
+            // participant order differs between parallel account allocations.
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const honestPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== maliciousPeerIndex);
+            await h.scenario.disputeWithReduction({
+                maliciousPeerIndex,
+                honestPeerIndices
+            });
+
+            // Post from an honest peer: when the rotation makes peer 0 the
+            // malicious writer, the slashed peer 0 never reduces and has no
+            // genesis for the reduced fork to post from.
+            await h.transition.postSnapshot({
+                peerIndex: honestPeerIndices[0]
+            });
+            await h.transition.sequenceFromHonestPeers([
+                (c) => c.add(2),
+                (c) => c.add(2),
+                (c) => c.add(2)
+            ]);
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
+
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: honestPeerIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                authorBlock: () =>
+                    h.transition.fromHonestPeersOnly((c) => c.add(2))
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices.concat(5)
+            });
+            await h.transition.fromHonestPeersOnly((c) => c.add(2));
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices.concat(5)
+            });
+
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices.concat(5)
+            });
+            await h.assert.sync.participantCount({
+                expectedCount: 4,
+                peerIndex: 5
+            });
+            // the post above can run before the reduction is final and then
+            // posts nothing; the peers' adoption post moves the chain
+            // snapshot to the reduced fork once the reduction is final
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+        });
+    });
+
+    describe("Participant sync across a chain-final window", function () {
+        it("responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "heldEvent"
+            );
+        });
+        it("responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "droppedLog"
+            );
+        });
+        it("responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs", async function () {
+            await assertSyncedParticipantServesOnlyGenuineWindowInputs(
+                TestSession.getHarness()
+            );
+        });
+    });
+
+    describe("Spectators before and after dispute", function () {
+        it("pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 4
+                }
+            });
+
+            //  peer index 4 is spectator
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2, 3],
+                minimumBlocks: 4,
+                maximumBlocks: 20
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 2, 3, 4]
+            });
+
+            const maliciousPeerIndex = 0;
+            const honestPeerIndices = [1, 2, 3];
+            const forkId = h.activeForkId!;
+
+            const reductionHolds = await Promise.all(
+                [maliciousPeerIndex, ...honestPeerIndices].map((peerIndex) =>
+                    h.rpcStub.holdReductionAttempt(peerIndex, "submit")
+                )
+            );
+            try {
+                h.event.resetEventSpies();
+                await h.byzantine.submitInvalidStateTransitionBlock(
+                    maliciousPeerIndex
+                );
+                await h.event.waitUntilPeerStatus(4, Status.OPENED);
+
+                // initiatedAndCommitedWait is flaky when it expects multiple peer to initiate and commit
+                // Why? Because peers race and if they commit at the same it is ok
+                // If 1 peer commits first and others audit -> it's possible that others hit hasMoreEvidence=false so they don't submit
+                await h.dispute.resolveDisputeWait({
+                    forkId,
+                    honestPeerIndices: honestPeerIndices
+                });
+
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForPeers: honestPeerIndices
+                });
+
+                //  first joiner has observed the dispute and disconnected
+                await h.assert.sync.spectatorNoTransportToPeersWait({
+                    spectatorPeerIndex: 4,
+                    peerIndices: honestPeerIndices
+                });
+                //  add a new peer index 5 as spectator. Authoring through the
+                // spawn keeps the writer slot alive: an idle slot let a participant
+                // time out the next writer on the reduced fork, a second reduction
+                // ran, and the joiner's initial sync landed between the chain's new
+                // result and the responder's convergence.
+                // Finalize without advancing the chain snapshot, so the joiner must
+                // traverse a supplied window whose reduction calldata can be omitted.
+                expect(
+                    await h.scenario.finalizeReductionOnChainOnly(1, forkId)
+                ).to.equal(true);
+                const { peer: postDisputeSpectator } =
+                    await h.join.addSpectatorAuthoring({
+                        beforeConnect: async (peer) => {
+                            // The held chain snapshot still names the removed peer.
+                            // This case checks a surviving participant's final-window proof.
+                            // Withdraw discovery: this new peer has no profile to blacklist yet.
+                            await h
+                                .control(h.getPeer(maliciousPeerIndex))
+                                .network.leaveSelectedKey(
+                                    h.channelId!.toString()
+                                )
+                                .request();
+                            await h
+                                .control(peer)
+                                .stub.recordSyncReductionWindows()
+                                .request();
+                        },
+                        authoringPeerIndices: honestPeerIndices,
+                        minimumBlocks: 1,
+                        maximumBlocks: 20
+                    });
+                const reductionInputs = await h
+                    .control(postDisputeSpectator)
+                    .stub.getSyncReductionWindows()
+                    .request();
+                await h
+                    .control(postDisputeSpectator)
+                    .stub.restoreSyncReductionWindows()
+                    .request();
+                expect(
+                    reductionInputs.some((entry) =>
+                        entry.suppliedForks.includes(forkId)
+                    )
+                ).to.equal(true);
+                expect(
+                    reductionInputs.every(
+                        (entry) => entry.reductionForks.length === 0
+                    )
+                ).to.equal(true);
+                const spectatorIndex = [5];
+
+                await h.assert.sync.peersInSyncWait({
+                    peerIndices: honestPeerIndices.concat(spectatorIndex)
+                });
+            } finally {
+                await Promise.all(reductionHolds.map((hold) => hold.release()));
+            }
+        });
+    });
+
+    describe("Spectator promoted to participant", function () {
+        it("via forceInboundJoin", async function () {
+            const h = TestSession.getHarness();
+            const spectator =
+                await h.scenario.spectatorPromotedViaForceInboundWait();
+            expect(
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
+            await h.assert.sync.participantCount({
+                expectedCount: 4,
+                peerIndex: spectator.index
+            });
+            // Channel keeps moving after the promotion.
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 2, spectator.index]
+            });
+            h.assert.dispute.noDisputes();
+        });
+
+        it("via joinChannel", async function () {
+            const h = TestSession.getHarness();
+            const joiner =
+                await h.scenario.spectatorPromotedViaJoinChannelWait();
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
+        });
+
+        it("joinChannel survives dispute on reduced fork", async function () {
+            const h = TestSession.getHarness();
+            const joiner =
+                await h.scenario.spectatorPromotedViaJoinChannelWait();
+
+            const maliciousPeerIndex = 0;
+            const honestPeerIndices = [1, joiner.index];
+            const forkId = h.activeForkId!;
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedAndCommitedWait({
+                expectedCount: 1,
+                peersIndices: honestPeerIndices
+            });
+
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
+                honestPeerIndices
+            });
+
+            const joinerPeer = h.getPeer(joiner.index);
+            expect(
+                await h.control(joinerPeer).query.getForkId().request()
+            ).to.equal(
+                newForkId,
+                "Joiner must be on the post-dispute (reduced) fork"
+            );
+            expect(
+                await h.control(joinerPeer).query.getStatus().request()
+            ).to.equal(
+                Status.PARTICIPATING,
+                "Joiner must remain PARTICIPATING after dispute resolution"
+            );
+
+            const joinerParticipants = await h
+                .control(joinerPeer)
+                .query.getParticipants()
+                .request();
+            expect(joinerParticipants).to.include(
+                joiner.address,
+                "Joiner must be in getParticipants() on the post-dispute fork"
+            );
+
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
+
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: honestPeerIndices,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
+        });
+    });
+
+    describe("Concurrent promotion", function () {
+        const concurrentTimeConfig = {
+            p2pTime: 6, // 2s too low for joinChannelWait
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        };
+
+        it("joinChannel before forceInboundJoin → both joiners participate", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: concurrentTimeConfig
+            });
+
+            // Spectating is asynchronous to the channel: participants author
+            // on their own cadence and never wait for joiners to spawn/sync.
+            // The bounded spawn keeps them authoring through each spawn and
+            // sync. Blocking spawns between blocks would idle past
+            // p2pTime + agreementTime and the post-promotion block would be
+            // rejected by the original participants while the joiners accept
+            // it, splitting the fork.
+            const { peer: joinerA } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
+            const { peer: joinerB } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 0,
+                maximumBlocks: 20
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            await h.join.joinChannelWait({ joiner: joinerA });
+            await h.join.forceInboundJoinObserveDetached({
+                participant: joinerB.address
+            });
+
+            await h.transition.advanceState({ count: 3 });
+
+            await h.event.waitUntilPeerStatus(
+                joinerA.index,
+                Status.PARTICIPATING
+            );
+            await h.event.waitUntilPeerStatus(
+                joinerB.index,
+                Status.PARTICIPATING
+            );
+
+            for (const joiner of [joinerA, joinerB]) {
+                const localParticipants = (
+                    await h
+                        .control(h.getPeer(joiner.index))
+                        .query.getParticipants()
+                        .request()
+                ).map((a) => String(a).toLowerCase());
+
+                expect(localParticipants).to.include(
+                    joinerA.address.toLowerCase()
+                );
+                expect(localParticipants).to.include(
+                    joinerB.address.toLowerCase()
+                );
+                expect(localParticipants.length).to.equal(5);
+            }
+        });
+
+        it("forceInboundJoin before joinChannel → the pre-signed confirmation reverts ErrorJoinChannelConfirmationNotThresholdSigned, and joinChannel collects it again once with the pending participant's countersignature and lands", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: concurrentTimeConfig
+            });
+
+            // Spawn-only, classified (plan 30 item 5): no transition is scheduled until
+            // the advanceState below, so no author's window is blocked; a block produced
+            // up front would cap the next timestamp and be rejected as stale.
+            const joinerA = await h.join.addSpectatorDetached();
+            const joinerB = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2]
+            });
+            await h.event.waitUntilPeerStatus(joinerA.index, Status.SYNCED);
+            await h.event.waitUntilPeerStatus(joinerB.index, Status.SYNCED);
+            await h.assert.sync.peersInSyncWait();
+
+            // joinerA pre-signs its confirmation while pending is empty.
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner: joinerA,
+                channelId: h.channelId
+            });
+            // forceInboundJoin lands first → joinerB enters the pending set →
+            // join threshold becomes {p0, p1, p2, joinerB}; joinerA's pre-signed
+            // confirmation has only 3 of 4 required signatures.
+            await h.join.forceInboundJoinObserveDetached({
+                participant: joinerB.address
+            });
+
+            // Pin which refusal the join's first submission meets: the
+            // threshold shortfall, not a snapshot move, is what gives it the
+            // retry below.
+            let thresholdRevert: unknown;
+            try {
+                await h.channelManager
+                    .connect(joinerA.signer)
+                    .joinChannel.staticCall(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    );
+                expect.fail(
+                    "expected joinChannel to revert: joinerA's pre-signed confirmation is missing the pending participant's signature"
+                );
+            } catch (e) {
+                thresholdRevert = e;
+            }
+            const thresholdError = expectDecodedError(
+                thresholdRevert,
+                "ErrorJoinChannelConfirmationNotThresholdSigned",
+                "joinChannel must reject the sub-threshold confirmation by name"
+            );
+            expect(thresholdError.errorDescription.args.participant).to.equal(
+                joinerA.address
+            );
+            // The payload carries the two compared sets, so the missing signer
+            // is identifiable: forceInboundJoin widened the threshold to the
+            // three participants plus joinerB, while joinerA's pre-signed
+            // confirmation still only recovers to the three participants.
+            const originalParticipants = [0, 1, 2].map(
+                (peerIndex) => h.getPeer(peerIndex).address
+            );
+            const thresholdParticipants = [
+                ...thresholdError.errorDescription.args.thresholdParticipants
+            ];
+            const confirmationSigners = [
+                ...thresholdError.errorDescription.args.signers
+            ];
+            expect(thresholdParticipants).to.have.members([
+                ...originalParticipants,
+                joinerB.address
+            ]);
+            expect(confirmationSigners).to.have.members(originalParticipants);
+            expect(confirmationSigners).to.not.include(joinerB.address);
+
+            // The refusal is a race the joiner can win: it collects a fresh
+            // confirmation, which joinerB now countersigns, and submits once
+            // more within the same public call.
+            const releaseAll = await h.rpcStub.holdMembershipSubmission(
+                joinerA.index,
+                "joinChannel"
+            );
+            const countersignedByB = await countJoinSignatureRequests(h, [
+                joinerB.index
+            ]);
+            const statusChangesBefore =
+                joinerA.eventSpies.onStatusChanged?.callCount ?? 0;
+            const join = joinerA.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            // observed below; keeps a failure from being an unhandled rejection meanwhile
+            join.catch(() => undefined);
+            await waitForHeldJoins(h, joinerA.index, 1);
+            await h.rpcStub.releaseOneMembershipSubmission(joinerA.index);
+            // the refused submission's retry is the second and last
+            await waitForHeldJoins(h, joinerA.index, 2);
+            await releaseAll();
+
+            expect(await join).to.equal(true);
+            expect(await countersignedByB()).to.equal(1);
+            expect(
+                await h.channelManager.getPendingParticipants(h.channelId)
+            ).to.include(joinerA.address);
+            expect(
+                await h.control(joinerA).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(joinerA.eventSpies.onAbort?.called ?? false).to.equal(false);
+            expect(joinerA.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(
+                0
+            );
+            // one logical join: the refused attempt exposed no SYNCED
+            const statusesSinceJoin = (
+                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
+            )
+                .slice(statusChangesBefore)
+                .map((call) => call.args[1] as Status);
+            expect(statusesSinceJoin).to.not.include(Status.SYNCED);
+        });
+    });
+
+    describe("forceInboundJoin during dispute", function () {
+        // TODO(#352, #353): product bug, NOT a harness-conversion issue. After
+        // resolving the dispute on the reduced fork the on-chain snapshot never
+        // changes within the timeout (same post-dispute-reduction class as the
+        // "traverse forks" test above), and teardown then hits a fatal
+        // `onStateSnapshotUpdated: unknown snapshot while status=4` in
+        // EventHandler.apply — a slashed peer receiving an unknown snapshot
+        // after resolution. Reproduces identically inline; fix on the product
+        // side (dispute-resolution snapshot propagation + status=4 teardown
+        // handling).
+        it("survives dispute on reduced fork", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: {
+                    p2pTime: 2,
+                    agreementTime: 4,
+                    chainFallbackTime: 2,
+                    evidenceTime: 4
+                }
+            });
+
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
+            await h.assert.sync.participantCount({
+                expectedCount: 3,
+                peerIndex: spectator.index
+            });
+            expect(
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.SYNCED);
+
+            // The compatibility helper submits through the spectator's StateManager.
+            await h.join.forceInboundJoinWait({
+                participant: spectator.address
+            });
+            expect(
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            const pendingBefore = await h.channelManager.getPendingParticipants(
+                h.channelId
+            );
+            expect(pendingBefore.map((a) => a.toLowerCase())).to.include(
+                spectator.address.toLowerCase()
+            );
+
+            // Peer 0 voluntarily self-removes via a valid dispute. Done BEFORE any
+            // block consumes the spectator's inbound. agreementTime=4s gives a
+            // window where no peer has posted a block yet.
+            const leaverIndex = 0;
+            const originalForkId = h.activeForkId!;
+            const remainingPeerIndices =
+                await h.dispute.selfRemoveViaDisputeWait({ leaverIndex });
+
+            await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
+                honestPeerIndices: remainingPeerIndices,
+                assertMaliciousRemoved: false
+            });
+
+            await h.assert.snapshot.localSnapshotsChangedWait({
+                previousForkId: originalForkId
+            });
+
+            const onChainParticipants = await h.channelManager.getParticipants(
+                h.channelId
+            );
+            expect(
+                onChainParticipants.map((a) => a.toLowerCase()),
+                "spectator's MESSAGE_TYPE_JOIN must be applied during reduction"
+            ).to.include(spectator.address.toLowerCase());
+
+            await h.event.waitUntilPeerStatus(
+                spectator.index,
+                Status.PARTICIPATING
+            );
+        });
+    });
+
+    describe("block height 0 spectating", function () {
+        it("should spectate successfully when joining at genesis state", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            // Spawn-only, classified (plan 30 item 5): genesis spectating is the
+            // subject and no transition is scheduled while the spawn runs.
+            await h.join.addSpectatorWait();
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
+        });
+
+        it("should spectate successfully when joining at block 0", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            // Create the process before block 0 starts the live writer clock.
+            const spectator = await h.join.createSpectatorPeer();
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [0, 1],
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+            await h.join.connectSpectator(spectator);
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
+        });
+    });
+
+    describe("Concurrent sync dedup", function () {
+        it("collapses two concurrent sync() calls for the same peer into a single on-the-wire request", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            // Count spectate requests arriving at peer 1 (counter resets on
+            // install, so only the requests we trigger below are counted).
+            const restore = await h.rpcStub.stubCountSpectateRequests(1);
+
+            const peer1Address = h.getPeer(1).address;
+            // Fire two concurrent startSync calls for the same peer on peer 0.
+            // `sync()` marks `inFlightByPeerAddress` synchronously before its
+            // background request completes (a full spectate RTT), so the second
+            // must share the pending result. Both control round-trips
+            // land well inside that window.
+            await Promise.all([
+                h
+                    .control(h.getPeer(0))
+                    .spectate.startSync(peer1Address)
+                    .request(),
+                h
+                    .control(h.getPeer(0))
+                    .spectate.startSync(peer1Address)
+                    .request()
+            ]);
+
+            // Wait for the single request to land, then assert it stayed at one
+            // (the deduped second call never produced a second request).
+            await waitFor(
+                async () => (await h.rpcStub.getSpectateRequestCount(1)) >= 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(await h.rpcStub.getSpectateRequestCount(1)).to.equal(
+                1,
+                "two concurrent sync() calls for the same peer must collapse to one on-the-wire request"
+            );
+
+            await restore();
+        });
+    });
+
+    describe("Overlapping queue-expiry syncs from two sources", function () {
+        it("the source with the older final point answers after the other source's sync installed a later base → the local state is kept, no source is cut, and the next live blocks execute", async function () {
+            await assertTwoSourceProbeKeepsLocalState(TestSession.getHarness());
+        });
+    });
+
+    describe("Unprovable sync target mutually blacklists both peers", function () {
+        it("an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            const requester = h.getPeer(0);
+            const responder = h.getPeer(1);
+            const forkId = h.activeForkId!;
+
+            // Ask for a height far above anything the responder can prove. p2p
+            // sync is mutual-cooperation: an unprovable request is a cooperation
+            // failure, so the responder cuts the requester (and never serves a
+            // downgraded latest-height proof). The refusal is not proof of the
+            // responder's misbehaviour, so the requester only strikes it.
+            await h
+                .control(requester)
+                .spectate.startSync(responder.address, forkId, 9999)
+                .request();
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(responder)
+                        .query.isBlacklisted(requester.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
+        });
+    });
+
+    describe("Minimum-height sync payload generation", function () {
+        it("serves the latest sync payload for minimum height 0 while ahead", async function () {
+            await expectSyncPayloadAboveRequestedHeightWhileAhead(
+                TestSession.getHarness(),
+                0
+            );
+        });
+
+        it("serves a newer sync payload when the minimum is the leave-block height", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const forkId = h.activeForkId!;
+            const participantIndices = [0, 1, 2, 3];
+
+            // the requester must be genuinely behind the leave, so cut it
+            // before the leave block is produced
+            const { peer: requester } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: participantIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
+            await h.network.blacklistAndDisconnectPeer(requester.index);
+            const requesterHeightBefore =
+                (await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()) ?? -1;
+
+            for (const peerIndex of participantIndices) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.stubPostStateSnapshot()
+                    .request();
+            }
+
+            const leaverIndex =
+                await h.transition.participantLeaveStateTransition({
+                    waitForPeers: participantIndices,
+                    waitForFinalization: true
+                });
+            const remainingPeerIndices = participantIndices.filter(
+                (peerIndex) => peerIndex !== leaverIndex
+            );
+            const responder = h.getPeer(remainingPeerIndices[0]);
+
+            // pin the request to the real participant-set change point instead
+            // of to whatever block happens to be latest right after the leave
+            const changeHeights = await h
+                .control(responder)
+                .query.getParticipantChangeHeights(forkId)
+                .request();
+            expect(
+                changeHeights.length,
+                "the leave must be the only participant-set change on this fork"
+            ).to.equal(1);
+            const leaveHeight = changeHeights[0];
+
+            // confirming blocks land above the leave, so the responder is
+            // locally ahead of the requested height
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: remainingPeerIndices,
+                waitForFinalization: true
+            });
+
+            // staging sanity: responder genuinely ahead, requester genuinely
+            // behind - otherwise the pin below proves nothing
+            expect(
+                await h
+                    .control(responder)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "responder must be ahead of the requested height"
+            ).to.be.greaterThan(leaveHeight);
+            expect(
+                requesterHeightBefore,
+                "requester must be behind the requested height"
+            ).to.be.lessThan(leaveHeight);
+
+            const responderHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            const syncResult = await h
+                .control(responder)
+                .spectate.generateSyncPayload(h.channelId!, forkId, leaveHeight)
+                .request();
+            expect(syncResult).to.not.equal(null);
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            const milestoneHeights = syncPayload.stateProof.milestones.flatMap(
+                (milestone) =>
+                    milestone.blockConfirmations.map((confirmation) =>
+                        Number(
+                            Codec.decode(
+                                confirmation.signedBlock.encodedBlock,
+                                Type.Block
+                            ).transaction.header.transactionCnt
+                        )
+                    )
+            );
+            expect(
+                milestoneHeights.every((height) => height <= responderHeight!),
+                "sync payload milestones must not exceed the responder height"
+            ).to.equal(true);
+
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            expect(
+                Number(latestFinalizedSnapshot.blockHeight),
+                "the payload must prove the responder height"
+            ).to.equal(responderHeight);
+
+            // The real receive side verifies the leave and adopts the newer proof.
+            await h
+                .control(requester)
+                .spectate.applySyncResponse(
+                    responder.address,
+                    forkId,
+                    leaveHeight,
+                    syncResult!.encodedSyncPayload
+                )
+                .request();
+
+            expect(
+                await h.control(requester).query.getStatus().request(),
+                "a failed sync aborts the spectator, dropping it out of SYNCED"
+            ).to.equal(Status.SYNCED);
+            expect(
+                await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "requester must complete the sync at the responder height"
+            ).to.equal(responderHeight);
+        });
+        it("serves a newer sync payload across a leave above the minimum height", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const forkId = h.activeForkId!;
+            const participantIndices = [0, 1, 2, 3];
+
+            // the requester has to be behind the requested height, so take it
+            // out before any block is produced
+            // Spawn-only, classified (plan 30 item 5): the requester must precede
+            // every block, so nothing authors while it spawns.
+            const requester = await h.join.addSpectatorWait();
+            await h.network.blacklistAndDisconnectPeer(requester.index);
+            const requesterHeightBefore =
+                (await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()) ?? -1;
+
+            // Keep snapshot posting separate so this case exercises proof replay across the leave.
+            for (const peerIndex of participantIndices) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.stubPostStateSnapshot()
+                    .request();
+            }
+
+            await h.transition.advanceState({
+                count: 2, // blocks 0..1, below the leave
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+
+            const leaverIndex =
+                await h.transition.participantLeaveStateTransition({
+                    waitForPeers: participantIndices,
+                    waitForFinalization: true
+                });
+            const remainingPeerIndices = participantIndices.filter(
+                (peerIndex) => peerIndex !== leaverIndex
+            );
+            const responder = h.getPeer(remainingPeerIndices[0]);
+
+            // confirming blocks land above the leave, so the responder is
+            // locally ahead of both the leave and the requested height
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: remainingPeerIndices,
+                waitForFinalization: true
+            });
+
+            const changeHeights = await h
+                .control(responder)
+                .query.getParticipantChangeHeights(forkId)
+                .request();
+            expect(
+                changeHeights.length,
+                "the leave must be the only participant-set change on this fork"
+            ).to.equal(1);
+            const leaveHeight = changeHeights[0];
+            const requestedHeight = leaveHeight - 1;
+
+            // staging sanity: the request is genuinely below the leave, the
+            // responder is genuinely above it, and the requester is behind
+            expect(
+                requestedHeight,
+                "the leave must leave a block below it to request"
+            ).to.be.greaterThan(-1);
+            expect(
+                await h
+                    .control(responder)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "responder must be ahead of the leave"
+            ).to.be.greaterThan(leaveHeight);
+            expect(
+                requesterHeightBefore,
+                "requester must be behind the requested height"
+            ).to.be.lessThan(requestedHeight);
+
+            const responderHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            const syncResult = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId!,
+                    forkId,
+                    requestedHeight
+                )
+                .request();
+            expect(syncResult).to.not.equal(null);
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            // The newer proof includes the participant change above the minimum.
+            const milestoneHeights = syncPayload.stateProof.milestones.flatMap(
+                (milestone) =>
+                    milestone.blockConfirmations.map((confirmation) =>
+                        Number(
+                            Codec.decode(
+                                confirmation.signedBlock.encodedBlock,
+                                Type.Block
+                            ).transaction.header.transactionCnt
+                        )
+                    )
+            );
+            expect(
+                milestoneHeights.every((height) => height <= responderHeight!),
+                "sync payload milestones must not exceed the responder height"
+            ).to.equal(true);
+
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            expect(
+                Number(latestFinalizedSnapshot.blockHeight),
+                "the payload must prove the responder height"
+            ).to.equal(responderHeight);
+
+            // The receiver must accept the proved state across the participant change.
+            await h
+                .control(requester)
+                .spectate.applySyncResponse(
+                    responder.address,
+                    forkId,
+                    requestedHeight,
+                    syncResult!.encodedSyncPayload
+                )
+                .request();
+
+            expect(
+                await h.control(requester).query.getStatus().request(),
+                "a failed sync aborts the spectator, dropping it out of SYNCED"
+            ).to.equal(Status.SYNCED);
+            expect(
+                await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "requester must complete the sync at the responder height"
+            ).to.equal(responderHeight);
+        });
+    });
+
+    describe("Sync across a dispute window the chain has not reduced", function () {
+        it("a joiner whose initial load lands in an open kill period waits for the chain's reduction, then syncs without aborting or blacklisting a responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: false
+            });
+            // premise: the wait outlived the kill period, the window unreduced
+            expect(staged.whileUnreduced).to.deep.equal({
+                status: Status.OPENED,
+                reducedForkId: ethers.ZeroHash,
+                aborts: 0
+            });
+            await staged.reduce();
+            await h.event.waitUntilPeerStatus(
+                staged.joiner.index,
+                Status.SYNCED
+            );
+            // one responder answered twice: before and after the reduction
+            expect(
+                (await staged.requestCounts()).filter((count) => count > 0)
+            ).to.deep.equal([2]);
+            expect(staged.aborts()).to.equal(0);
+            expect(await staged.blacklistedByJoiner()).to.deep.equal([
+                false,
+                false,
+                false,
+                false
+            ]);
+        });
+
+        it("a fresh joiner whose served window the chain has not reduced waits for the chain's reduction, then syncs without aborting or blacklisting its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            // premise: the kill period was over and the chain had not reduced
+            // the window, so only a local reduction could have proved it
+            expect(staged.whileUnreduced).to.deep.equal({
+                status: Status.OPENED,
+                reducedForkId: ethers.ZeroHash,
+                aborts: 0
+            });
+            await staged.reduce();
+            await h.event.waitUntilPeerStatus(
+                staged.joiner.index,
+                Status.SYNCED
+            );
+            expect(
+                (await staged.requestCounts()).filter((count) => count > 0)
+            ).to.deep.equal([2]);
+            expect(staged.aborts()).to.equal(0);
+            expect(await staged.blacklistedByJoiner()).to.deep.equal([
+                false,
+                false,
+                false,
+                false
+            ]);
+        });
+
+        it("a joiner's responder cutting it during the wait fails the repeated request: the initial load aborts once, with no internal error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            const hostErrors: Error[] = [];
+            const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
+                hostErrors.push(error)
+            );
+            try {
+                await h
+                    .control(staged.responder)
+                    .network.blacklistAndDisconnectPeerByAddress(
+                        staged.joiner.address
+                    )
+                    .request();
+                await staged.reduce();
+                await waitFor(async () => staged.aborts() > 0);
+                expect(staged.aborts()).to.equal(1);
+                // only the harness's report that the connect resolved false:
+                // no internal failure reached the top level
+                expect(hostErrors.map((error) => error.message)).to.deep.equal([
+                    `connectToChannel failed for ${h.channelId}`
+                ]);
+            } finally {
+                unsubscribe();
+            }
+        });
+
+        it("stopping a joiner during the wait ends it: stop resolves, no further request, no abort", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            expect(
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    async (sm) => {
+                        await sm.stop();
+                        return sm.isDisposed;
+                    }
+                )
+            ).to.equal(true);
+            await staged.reduce();
+            expect(
+                (await staged.requestCounts()).reduce((a, b) => a + b, 0)
+            ).to.equal(1);
+            expect(staged.aborts()).to.equal(0);
+            // the initial load's sync settled: a new sync to the same
+            // responder does not join it, and the stopped runtime syncs nothing
+            expect(
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    (sm, { responder }) =>
+                        sm.p2pManager.localRpc.spectateService.requestSync(
+                            responder,
+                            sm.channelId,
+                            undefined,
+                            undefined,
+                            1000
+                        ),
+                    { responder: staged.responder.address }
+                )
+            ).not.to.equal(SyncResult.Synced);
+            // the stopped runtime's connect resolves false
+            await TestSession.settleDetached({
+                expectedErrorIncludes: "connectToChannel failed"
+            });
+        });
+
+        it("a joiner the chain moves out of OPENED during the wait settles engaged: the late repeated sync aborts nothing", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            await h
+                .control(staged.joiner)
+                .stub.setPeerStatus(Status.SYNCED)
+                .request();
+            await staged.reduce();
+            await waitFor(async () =>
+                (await staged.requestCounts()).some((count) => count === 2)
+            );
+            expect(
+                await h.control(staged.joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            expect(staged.aborts()).to.equal(0);
+        });
+
+        it("a joiner's repeated request that throws after the wait reports one top-level error and never runs the connection hook for its responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
+                connectAfterKillPeriod: true
+            });
+            const hostErrors: Error[] = [];
+            const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
+                hostErrors.push(error)
+            );
+            try {
+                // the first pass stopped before the milestone walk; the
+                // repeated one reaches it and the local executor fails
+                await h.mirror.observe(staged.joiner.index, "verifyMilestones");
+                await h.mirror.failNextLocalRead(
+                    staged.joiner.index,
+                    "verifyMilestones",
+                    "transport"
+                );
+                await staged.reduce();
+                await waitFor(async () => hostErrors.length > 0);
+                expect(hostErrors).to.have.length(1);
+                // the connection hook never ran for the responder whose
+                // sync threw
+                expect(
+                    (staged.joiner.eventSpies.onConnection?.getCalls() ?? [])
+                        .map((call) => String(call.args[0]))
+                        .includes(staged.responder.address)
+                ).to.equal(false);
+                // stopping the runtime settles its pending connect false
+                await h.execOnHost(
+                    h.getPeer(staged.joiner.index),
+                    async (sm) => {
+                        await sm.stop();
+                    }
+                );
+            } finally {
+                unsubscribe();
+            }
+        });
+
+        it("a participant's source probe while the tip fork's kill period is open waits for the chain's reduction, then proves the target without blacklisting its honest responder", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const [requesterIndex, responderIndex] = [0, 1, 2, 3].filter(
+                (peerIndex) => peerIndex !== maliciousPeerIndex
+            );
+            const requester = h.getPeer(requesterIndex);
+            const responder = h.getPeer(responderIndex);
+            const forkId = h.activeForkId!;
+            await h
+                .control(responder)
+                .stub.stubCountSpectateRequests()
+                .request();
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.committedWait({
+                peersIndices: [requesterIndex, responderIndex]
+            });
+            // premise: the probe starts while the kill period is open
+            expect((await h.query.killPeriod(forkId)).isExpired).to.equal(
+                false
+            );
+
+            // the probe BlockQueueManager.probeSource sends a queued block's
+            // source: the requester's own fork and height
+            const height = await h
+                .control(requester)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            let synced: boolean;
+            let rejections: string[];
+            try {
+                synced = await h
+                    .control(requester)
+                    .spectate.sync(responder.address, forkId, Number(height))
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                rejections = await stub
+                    .restoreRecordedSyncRejections()
+                    .request();
+            } finally {
+                await stub.restoreRecordedSyncRejections().request();
+            }
+
+            // the sync returned only after the chain reduced the window, and
+            // asked the responder again
+            expect(synced).to.equal(true);
+            expect(await h.query.reducedForkOnChain(forkId)).to.not.equal(
+                ethers.ZeroHash
+            );
+            expect(
+                await h
+                    .control(responder)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(2);
+            expect(rejections).to.deep.equal([]);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(responder)
+                    .query.isBlacklisted(requester.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isConnectedTo(responder.address)
+                    .request()
+            ).to.equal(true);
+        });
+    });
+
+    describe("Spectate request across a dispute-window event gap", function () {
+        // A commitment can sit on-chain while the responder's DisputeCommitted
+        // event is still undelivered. generateSyncPayload walks the on-chain
+        // window, so it must close that gap itself before it reads dispute
+        // storage - otherwise the missing-dispute lookup throws and the
+        // spectate request dies instead of being answered.
+        it("suppressed dispute event on the responder → the on-chain window is recovered and its successor is proved", async function () {
+            const h = TestSession.getHarness();
+            const responderIndex = 0;
+            const maliciousPeerIndex = 2;
+
+            await h.lifecycle.start(4, 1);
+            const forkId = h.activeForkId!;
+
+            // freeze the responder's own reduction so it can't close the gap in
+            // the background before the spectate request observes it
+            const race = await h.rpcStub.holdReductionRace(responderIndex);
+
+            // the responder's own dispute is created locally (so isForkDisputed
+            // flips regardless of event delivery), but only the FIRST
+            // externally-arriving dispute event is let through - the other
+            // honest disputers' commitments stay genuinely missing from storage
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                responderIndex,
+                { passFirst: true }
+            );
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [responderIndex, 1, 3]
+            });
+            // exclude the responder - its own onDisputeCommitted delivery is
+            // deliberately held back except for the first event
+            await h.assert.dispute.committedWait({ peersIndices: [1, 3] });
+
+            const responder = h.getPeer(responderIndex);
+            const responderLatestHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(responderLatestHeight).to.not.equal(null);
+
+            const staged = await h.execOnHost(
+                responder,
+                async (sm, args) => {
+                    const isDisputed =
+                        await sm.diamondStateMachine.localDiamondContract.isForkDisputed(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    const commitments =
+                        await sm.stateChannelManagerContract.getWindowCommitments(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    return {
+                        isDisputed,
+                        commitmentCount: commitments.length,
+                        missingBeforeCount: commitments.filter(
+                            (c) => !sm.storage.disputes.getDispute(c)
+                        ).length
+                    };
+                },
+                { forkId }
+            );
+
+            // sanity: the responder really is answering for a disputed fork and
+            // really is missing a commitment of that fork's on-chain window
+            expect(
+                staged.isDisputed,
+                "responder must see the fork as disputed"
+            ).to.equal(true);
+            expect(
+                staged.commitmentCount,
+                "window must hold commitments"
+            ).to.be.greaterThan(0);
+            expect(
+                staged.missingBeforeCount,
+                "at least one commitment must be missing from the responder's storage"
+            ).to.be.greaterThan(0);
+
+            let threw = "";
+            let syncResult: { encodedSyncPayload: string } | null = null;
+            try {
+                // the recovery handles each recovered dispute event in full,
+                // its audit included, before the payload is built
+                syncResult = await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(
+                        h.channelId!,
+                        forkId,
+                        responderLatestHeight!
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+            } catch (e) {
+                threw = e instanceof Error ? e.message : String(e);
+            }
+            expect(
+                threw,
+                "generateSyncPayload must recover, not throw"
+            ).to.equal("");
+
+            const recovered = await h.execOnHost(
+                responder,
+                async (sm, args) => {
+                    const commitments =
+                        await sm.stateChannelManagerContract.getWindowCommitments(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    const disputes =
+                        await sm.agreementManager.getForkDisputes(commitments);
+                    return {
+                        commitmentCount: commitments.length,
+                        missingAfterCount: commitments.filter(
+                            (c) => !sm.storage.disputes.getDispute(c)
+                        ).length,
+                        reducibleDisputeCount: disputes.length
+                    };
+                },
+                { forkId }
+            );
+
+            // the recovery really ran: the whole on-chain window is in storage
+            // afterwards. events are still held and the responder's reduction is
+            // still frozen, so the spectate request is the only thing that could
+            // have stored them.
+            expect(
+                recovered.commitmentCount,
+                "the window must not shrink across the call"
+            ).to.equal(staged.commitmentCount);
+            expect(
+                recovered.missingAfterCount,
+                "generateSyncPayload must recover every missing dispute before reading confirmations"
+            ).to.equal(0);
+
+            expect(
+                recovered.reducibleDisputeCount,
+                "the recovered window must be reducible in full"
+            ).to.equal(recovered.commitmentCount);
+
+            // The recovered reduction supplies a successor proof before installation.
+            expect(syncResult).to.not.be.null;
+            const provedSuccessor = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            ).latestForkGenesisSnapshot.forkId;
+            expect(provedSuccessor).to.not.equal(forkId);
+
+            // the peer-observable part: let the responder finish the reduction
+            // it just gathered the window for, with its dispute events STILL
+            // held. It can only land on the same fork as the honest peers
+            // because the window came from the chain - a reduce over the subset
+            // its own event feed delivered produces a different fork.
+            await race.release({ replayEvents: false, runHeldTasks: true });
+
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId: forkId,
+                peerIndices: [responderIndex, 1, 3]
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [responderIndex, 1, 3]
+            });
+
+            const forkIds = await Promise.all(
+                [responderIndex, 1, 3].map((peerIndex) =>
+                    h.control(h.getPeer(peerIndex)).query.getForkId().request()
+                )
+            );
+            expect(
+                new Set(forkIds).size,
+                "the responder must reduce to the same fork as the honest peers"
+            ).to.equal(1);
+            expect(
+                forkIds[0],
+                "the reduced fork must not be the disputed one"
+            ).to.not.equal(forkId);
+
+            expect(forkIds[0]).to.equal(provedSuccessor);
+            await restoreEvents(false);
+            await h.rpcStub.cancelScheduledReductions(responderIndex);
+        });
+
+        it("a spectator sees posted junk calldata → no forced timeout check and it stays synced", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.spectatorJoinedAndSynced();
+            const spectator = h.getPeer(3);
+            const forkId = h.activeForkId!;
+            // the participants' own disputes would move the spectator's fork
+            await h.dispute.suppressDisputeInitiation([0, 1, 2]);
+            const writerAddress = await h
+                .control(h.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            const writer = h.peers.find((p) => p.address === writerAddress)!;
+            const height = await h
+                .control(spectator)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const tasks = await h.rpcStub.recordScheduledTasks(spectator.index);
+            try {
+                h.event.resetEventSpies();
+                await h.byzantine.postJunkCalldataOnChain(writer.index, {
+                    height
+                });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [spectator.index]
+                );
+                // a spectator judges posted calldata with the spectating
+                // strategy: it never asks for a timeout
+                expect(
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.startsWith("timeoutParticipant")
+                    )
+                ).to.deep.equal([]);
+                expect(
+                    await h.control(spectator).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+            } finally {
+                await tasks.restore();
+            }
+        });
+    });
+});

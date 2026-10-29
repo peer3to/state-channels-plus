@@ -8,21 +8,28 @@ enum Cell {
     X,
     O
 }
+
 struct TicTacToeState {
     address[] participants;
-    uint[] balances;
+    uint256[] balances;
     Cell[3][3] board;
     address currentPlayer;
     bool gameActive;
-    uint movesCount;
-    uint betAmount;
+    uint256 movesCount;
+    uint256 betAmount;
 }
 
 contract TicTacToeStateMachine is AStateMachine {
     TicTacToeState state;
+
+    constructor(uint256 _gasLimit) AStateMachine(_gasLimit) {
+        gasLimit = _gasLimit;
+    }
+
     event MoveMade(address player, uint8 row, uint8 col, Cell cell);
     event GameOver(Cell winner);
-    event RemovedParticipant(address participant, uint amount);
+    event RemovedParticipant(address participant, uint256 amount);
+
     modifier onlyCurrentPlayer() {
         require(_tx.header.participant == state.currentPlayer, "Not your turn");
         _;
@@ -33,32 +40,28 @@ contract TicTacToeStateMachine is AStateMachine {
         _;
     }
 
-    function getBalance(address adr) public view returns (uint) {
+    function getBalance(address adr) public view returns (uint256) {
         return state.balances[adr == state.participants[0] ? 0 : 1];
     }
-    function makeMove(
-        uint8 row,
-        uint8 col
-    ) public onlyCurrentPlayer isActiveGame {
+
+    function makeMove(uint8 row, uint8 col) public onlyCurrentPlayer isActiveGame {
         require(row < 3 && col < 3, "Invalid board position");
         require(state.board[row][col] == Cell.None, "Cell is already occupied");
 
-        state.board[row][col] = state.currentPlayer == state.participants[0]
-            ? Cell.X
-            : Cell.O;
+        state.board[row][col] = state.currentPlayer == state.participants[0] ? Cell.X : Cell.O;
         state.movesCount++;
         emit MoveMade(msg.sender, row, col, state.board[row][col]);
 
         if (checkWinner(row, col)) {
             state.gameActive = false;
-            if(state.board[row][col] == Cell.X){
+            if (state.board[row][col] == Cell.X) {
                 // X (first player) won
-                uint transferAmount = state.betAmount > state.balances[1] ? state.balances[1] : state.betAmount;
+                uint256 transferAmount = state.betAmount > state.balances[1] ? state.balances[1] : state.betAmount;
                 state.balances[0] += transferAmount;
                 state.balances[1] -= transferAmount;
             } else {
                 // O (second player) won
-                uint transferAmount = state.betAmount > state.balances[0] ? state.balances[0] : state.betAmount;
+                uint256 transferAmount = state.betAmount > state.balances[0] ? state.balances[0] : state.betAmount;
                 state.balances[0] -= transferAmount;
                 state.balances[1] += transferAmount;
             }
@@ -68,7 +71,6 @@ contract TicTacToeStateMachine is AStateMachine {
             state.gameActive = false;
             resetGame();
             emit GameOver(Cell.None); // Draw
-
         } else {
             state.currentPlayer = state.participants[state.movesCount % 2];
         }
@@ -77,32 +79,28 @@ contract TicTacToeStateMachine is AStateMachine {
     function checkWinner(uint8 row, uint8 col) internal view returns (bool) {
         // Check row
         if (
-            state.board[row][0] == state.board[row][col] &&
-            state.board[row][1] == state.board[row][col] &&
-            state.board[row][2] == state.board[row][col]
+            state.board[row][0] == state.board[row][col] && state.board[row][1] == state.board[row][col]
+                && state.board[row][2] == state.board[row][col]
         ) {
             return true;
         }
         // Check column
         if (
-            state.board[0][col] == state.board[row][col] &&
-            state.board[1][col] == state.board[row][col] &&
-            state.board[2][col] == state.board[row][col]
+            state.board[0][col] == state.board[row][col] && state.board[1][col] == state.board[row][col]
+                && state.board[2][col] == state.board[row][col]
         ) {
             return true;
         }
         // Check diagonals
         if (
-            state.board[0][0] == state.board[row][col] &&
-            state.board[1][1] == state.board[row][col] &&
-            state.board[2][2] == state.board[row][col]
+            state.board[0][0] == state.board[row][col] && state.board[1][1] == state.board[row][col]
+                && state.board[2][2] == state.board[row][col]
         ) {
             return true;
         }
         if (
-            state.board[0][2] == state.board[row][col] &&
-            state.board[1][1] == state.board[row][col] &&
-            state.board[2][0] == state.board[row][col]
+            state.board[0][2] == state.board[row][col] && state.board[1][1] == state.board[row][col]
+                && state.board[2][0] == state.board[row][col]
         ) {
             return true;
         }
@@ -121,7 +119,7 @@ contract TicTacToeStateMachine is AStateMachine {
         state.participants[1] = t;
 
         //swap balances
-        uint b = state.balances[0];
+        uint256 b = state.balances[0];
         state.balances[0] = state.balances[1];
         state.balances[1] = b;
 
@@ -143,13 +141,7 @@ contract TicTacToeStateMachine is AStateMachine {
         return abi.encode(state);
     }
 
-    function getParticipants()
-        public
-        view
-        virtual
-        override
-        returns (address[] memory)
-    {
+    function getParticipants() public view virtual override returns (address[] memory) {
         return state.participants;
     }
 
@@ -160,38 +152,89 @@ contract TicTacToeStateMachine is AStateMachine {
         return state.currentPlayer;
     }
 
-    function _slashParticipant(
-        address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    function _slashParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         return _removeParticipant(adr);
     }
 
-    function _removeParticipant(
-        address adr
-    ) internal virtual override returns (bool, ProcessExit memory) {
+    function _removeParticipant(address adr) internal virtual override returns (bool, ExitChannel memory) {
         uint256 length = state.participants.length;
-        ProcessExit memory processExit;
+        ExitChannel memory exitChannel;
         for (uint256 i = 0; i < length; i++) {
             if (state.participants[i] == adr) {
-                uint transferAmount = state.betAmount > state.balances[i] ? state.balances[i] : state.betAmount;
+                uint256 transferAmount = state.betAmount > state.balances[i] ? state.balances[i] : state.betAmount;
                 state.balances[i] -= transferAmount;
                 state.balances[(i + 1) % 2] += transferAmount;
 
-                processExit.participant = adr;
-                processExit.amount = state.balances[i];
-                
+                exitChannel.participant = adr;
+                exitChannel.balance.amount = state.balances[i];
+                exitChannel.balance.data = "";
+
                 state.participants[i] = state.participants[length - 1];
                 state.participants.pop();
                 state.balances[i] = state.balances[length - 1];
                 state.balances.pop();
-                emit RemovedParticipant(adr, processExit.amount);
-                return (true, processExit);
+                emit RemovedParticipant(adr, exitChannel.balance.amount);
+                return (true, exitChannel);
             }
         }
-        return (false, processExit);
+        return (false, exitChannel);
     }
 
-    function _joinChannel(
-        JoinChannel memory joinChannel
-    ) internal virtual override returns (bool) {}
+    function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {
+        state.participants.push(joinChannel.participant);
+        state.balances.push(joinChannel.balance.amount);
+        if (state.participants.length == 1) {
+            state.currentPlayer = state.participants[0];
+            state.gameActive = true;
+        }
+        return true;
+    }
+
+    function addBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory sum)
+    {
+        sum.amount = balance1.amount + balance2.amount;
+        return sum;
+    }
+
+    function subtractBalance(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (Balance memory diff)
+    {
+        require(balance1.amount >= balance2.amount, "TicTacToeStateMachine: balance1 < balance2");
+        diff.amount = balance1.amount - balance2.amount;
+        return diff;
+    }
+
+    function areBalancesEqual(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+        return balance1.amount == balance2.amount;
+    }
+
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (bool)
+    {
+        return balance1.amount < balance2.amount;
+    }
+
+    function getTotalStateBalance() public view override returns (Balance memory totalBalance) {
+        uint256 sum = 0;
+        for (uint256 i = 0; i < state.balances.length; i++) {
+            sum += state.balances[i];
+        }
+        totalBalance.amount = sum;
+        totalBalance.data = "";
+        return totalBalance;
+    }
+
+    function getZeroBalance() public pure override returns (Balance memory) {
+        return Balance({amount: 0, data: ""});
+    }
 }

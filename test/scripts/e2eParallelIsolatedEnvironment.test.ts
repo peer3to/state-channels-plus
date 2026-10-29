@@ -1,0 +1,1222 @@
+// @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { dockerBackendWithContainerImages } from "../fixtures/distributed/dockerBackendWithContainerImages";
+import { dockerBackendWithImageLabels } from "../fixtures/distributed/dockerBackendWithImageLabels";
+import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { repoRoot } from "@test/utils/repoRoot";
+import { expect } from "chai";
+import { spawnSync } from "child_process";
+import crypto from "crypto";
+import fs from "fs";
+import { setImmediate } from "node:timers";
+import os from "os";
+import path from "path";
+
+const {
+    shouldTransferAttemptEvidence
+} = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
+const {
+    runnerImageBuildArgs
+} = require("../../scripts/e2e-parallel/distributed/buildRunnerImage.js");
+const {
+    BoundedArtifactAssembler
+} = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
+const {
+    DOCKER_OPERATION_TIMEOUT_MS,
+    DockerBackend,
+    IsolatedEnvironmentManager,
+    runProcess,
+    runtimeNames,
+    trustedRunnerManifest,
+    UnsafeHostBackend
+} = require("../../scripts/e2e-parallel/distributed/isolatedEnvironment.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    RUNNER_IMAGE_DOCKERFILE,
+    RUNNER_IMAGE_REVISION_LABEL,
+    runnerImageRevision
+} = require("../../scripts/e2e-parallel/distributed/runnerImage.js");
+
+const profile = {
+    schedulerTickMs: 1000,
+    workers: 2,
+    slots: 1,
+    cpu: 2,
+    memoryBytes: 1024 ** 3,
+    diskBytes: 2 * 1024 ** 3,
+    pidsLimit: 128,
+    targetLoad: 0.8
+};
+
+describe("distributed isolated environment", function () {
+    it("packages the worker, workspace receiver, and test-infrastructure entry as trusted glue", function () {
+        const manifest = trustedRunnerManifest(repoRoot());
+        const paths = manifest.map((entry: { path: string }) => entry.path);
+        expect(paths).to.include(
+            "scripts/e2e-parallel/distributed/isolatedGuest.js"
+        );
+        expect(paths).to.include("scripts/e2e-parallel/distributed/worker.js");
+        expect(paths).to.include("test/utils/nodeInfra.js");
+        expect(paths).to.include("scripts/infra/local-discovery-registry.js");
+    });
+
+    it("starts, stops, and restarts one retained identity environment", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const allocation = {
+                environmentKey: "a".repeat(64),
+                orchestratorPublicKey: "b".repeat(64),
+                profile
+            };
+            const environment = await manager.allocate(allocation);
+            await environment.start();
+            expect(environment.pending).to.deep.equal([]);
+            await environment.send("ENVIRONMENT_SETUP", {
+                ...allocation,
+                limits: {}
+            });
+            await environment.stop();
+            manager.markClean(environment);
+            const reused = await manager.allocate(allocation);
+            await reused.start();
+            await reused.stop();
+
+            expect(reused).to.equal(environment);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "start")
+            ).to.have.length(2);
+            const metadata = JSON.parse(
+                fs.readFileSync(
+                    path.join(
+                        root,
+                        "host-state",
+                        "environments",
+                        `${allocation.environmentKey}.json`
+                    ),
+                    "utf8"
+                )
+            );
+            expect(metadata.dirty).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("rejects an incompatible cached guest before environment setup", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-protocol-mismatch-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION - 1;
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "7".repeat(64),
+                orchestratorPublicKey: "8".repeat(64),
+                profile
+            });
+            let failure: Error | null = null;
+            try {
+                await environment.start();
+            } catch (error) {
+                failure = error as Error;
+            }
+
+            expect(failure?.message).to.include(
+                `Distributed guest protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, cached guest provides ${DISTRIBUTED_PROTOCOL_VERSION - 1}`
+            );
+            expect(backend.frameKinds()).not.to.include("TRUSTED_RUNNER");
+            expect(backend.frameKinds()).not.to.include("ENVIRONMENT_SETUP");
+            await environment.destroy();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("contains a broken control pipe inside the failed environment", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-control-pipe-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "e".repeat(64),
+                orchestratorPublicKey: "f".repeat(64),
+                profile
+            });
+            await environment.start();
+            const failure = new Promise<Error>((resolve) =>
+                environment.once("failure", resolve)
+            );
+            const brokenPipe = Object.assign(new Error("write EPIPE"), {
+                code: "EPIPE"
+            });
+            backend.controls[0].stdin.emit("error", brokenPipe);
+
+            expect(await failure).to.equal(brokenPipe);
+            expect(environment.state).to.equal("failed");
+            await environment.destroy();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("ignores a control pipe error after the environment stops", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-stopped-control-pipe-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "1".repeat(64),
+                orchestratorPublicKey: "2".repeat(64),
+                profile
+            });
+            await environment.start();
+            await environment.stop();
+            let failed = false;
+            environment.once("failure", () => (failed = true));
+            backend.controls[0].stdin.emit(
+                "error",
+                Object.assign(new Error("write EPIPE"), { code: "EPIPE" })
+            );
+            await new Promise((resolve) => setImmediate(resolve));
+
+            expect(failed).to.equal(false);
+            expect(environment.state).to.equal("stopped");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("updates retained runtime limits and rejects growth beyond its fixed disk quota", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-profile-update-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const allocation = {
+                environmentKey: "9".repeat(64),
+                orchestratorPublicKey: "8".repeat(64),
+                profile
+            };
+            const environment = await manager.allocate(allocation);
+            const changedProfile = {
+                ...profile,
+                cpu: 1,
+                memoryBytes: profile.memoryBytes / 2,
+                diskBytes: profile.diskBytes / 2,
+                pidsLimit: 64
+            };
+            const reused = await manager.allocate({
+                ...allocation,
+                profile: changedProfile
+            });
+            expect(reused).to.equal(environment);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "update")
+            ).to.deep.equal([
+                {
+                    operation: "update",
+                    value: {
+                        handle: environment.handle,
+                        profile: changedProfile
+                    }
+                }
+            ]);
+
+            let refusal: Error & {
+                code?: string;
+                resource?: string;
+            };
+            try {
+                await manager.allocate({
+                    ...allocation,
+                    profile: { ...profile, diskBytes: profile.diskBytes + 1 }
+                });
+            } catch (error) {
+                refusal = error as typeof refusal;
+            }
+            expect(refusal!.code).to.equal("RESOURCE_ALLOCATION_REJECTED");
+            expect(refusal!.resource).to.equal("diskBytes");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("normalizes retained runtime limits when the requested profile is unchanged", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-profile-normalize-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const allocation = {
+                environmentKey: "6".repeat(64),
+                orchestratorPublicKey: "7".repeat(64),
+                profile
+            };
+            const environment = await manager.allocate(allocation);
+            const reused = await manager.allocate(allocation);
+
+            expect(reused).to.equal(environment);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "update")
+            ).to.deep.equal([
+                {
+                    operation: "update",
+                    value: { handle: environment.handle, profile }
+                }
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("maps a retained Docker profile update to cgroup limit flags", async function () {
+        const calls: Array<{
+            args: string[];
+            options: { timeoutMs?: number };
+        }> = [];
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async (
+                _command: string,
+                args: string[],
+                options: { timeoutMs?: number }
+            ) => {
+                calls.push({ args, options });
+                return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+            }
+        });
+        await backend.update({ container: "retained" }, profile);
+        expect(calls).to.deep.equal([
+            {
+                args: [
+                    "update",
+                    "--cpu-quota",
+                    "-1",
+                    "--memory",
+                    String(profile.memoryBytes),
+                    "--memory-swap",
+                    String(profile.memoryBytes),
+                    "--pids-limit",
+                    String(profile.pidsLimit),
+                    "retained"
+                ],
+                options: { timeoutMs: DOCKER_OPERATION_TIMEOUT_MS }
+            }
+        ]);
+    });
+
+    it("reports a cleared retained Docker quota as unlimited", async function () {
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async () => ({
+                stdout: Buffer.from(
+                    JSON.stringify({
+                        NanoCpus: 7e9,
+                        CpuQuota: -1,
+                        CpuPeriod: 0,
+                        Memory: profile.memoryBytes,
+                        MemorySwap: profile.memoryBytes,
+                        PidsLimit: profile.pidsLimit
+                    })
+                ),
+                stderr: Buffer.alloc(0)
+            })
+        });
+
+        expect(
+            await backend.operatorConfiguredLimits({ container: "retained" })
+        ).to.deep.equal({
+            cpuQuota: 0,
+            memoryBytes: profile.memoryBytes,
+            memorySwapBytes: profile.memoryBytes,
+            pidsLimit: profile.pidsLimit
+        });
+    });
+
+    it("bounds Docker startup commands", async function () {
+        const calls: Array<{
+            command: string;
+            options: { timeoutMs?: number };
+        }> = [];
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            platform: "darwin",
+            processFactory: () => ({}),
+            run: async (
+                command: string,
+                _args: string[],
+                options: { timeoutMs?: number }
+            ) => {
+                calls.push({ command, options });
+                return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+            }
+        });
+        await backend.start({ container: "retained" });
+
+        expect(calls).not.to.be.empty;
+        expect(
+            calls.every(
+                (entry) =>
+                    entry.options.timeoutMs === DOCKER_OPERATION_TIMEOUT_MS
+            )
+        ).to.equal(true);
+    });
+
+    it("kills a process that exceeds its operation timeout", async function () {
+        let failure: Error | undefined;
+        try {
+            await runProcess(
+                process.execPath,
+                ["-e", "setInterval(()=>{},1000)"],
+                { timeoutMs: 25 }
+            );
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.include("timed out after 25ms");
+    });
+
+    it("does not poll Docker exit classification while an environment is running", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-no-resource-poll-")
+        );
+        class ClassificationBackend extends TestIsolatedRuntimeBackend {
+            classificationCalls = 0;
+
+            async classifyExit() {
+                this.classificationCalls += 1;
+                return null;
+            }
+        }
+        const backend = new ClassificationBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "5".repeat(64),
+                orchestratorPublicKey: "4".repeat(64),
+                profile
+            });
+            await environment.start();
+            await new Promise((resolve) => setTimeout(resolve, 1100));
+            expect(backend.classificationCalls).to.equal(0);
+            await environment.stop();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("destroys only the failed identity allocation", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const first = await manager.allocate({
+                environmentKey: "1".repeat(64),
+                orchestratorPublicKey: "a".repeat(64),
+                profile
+            });
+            const second = await manager.allocate({
+                environmentKey: "2".repeat(64),
+                orchestratorPublicKey: "b".repeat(64),
+                profile
+            });
+            await first.destroy();
+
+            expect(first.state).to.equal("destroyed");
+            expect(second.state).to.equal("created");
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.have.length(1);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recovers a clean stopped cache and destroys only a dirty crash cache", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const cleanAllocation = {
+                environmentKey: "3".repeat(64),
+                orchestratorPublicKey: "c".repeat(64),
+                profile
+            };
+            const dirtyAllocation = {
+                environmentKey: "4".repeat(64),
+                orchestratorPublicKey: "d".repeat(64),
+                profile
+            };
+            const clean = await firstManager.allocate(cleanAllocation);
+            firstManager.markClean(clean);
+            await firstManager.allocate(dirtyAllocation);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+            const recovered = await restarted.allocate(cleanAllocation);
+
+            expect(recovered.state).to.equal("stopped");
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.have.length(2);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.have.length(1);
+            expect(
+                fs.existsSync(
+                    path.join(
+                        root,
+                        "host-state",
+                        "environments",
+                        `${dirtyAllocation.environmentKey}.json`
+                    )
+                )
+            ).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("discards a retained cache created from another runner image and keeps the current one", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const currentAllocation = {
+                environmentKey: "5".repeat(64),
+                orchestratorPublicKey: "e".repeat(64),
+                profile
+            };
+            const otherImageAllocation = {
+                environmentKey: "6".repeat(64),
+                orchestratorPublicKey: "f".repeat(64),
+                profile
+            };
+            firstManager.markClean(
+                await firstManager.allocate(currentAllocation)
+            );
+            const otherImage =
+                await firstManager.allocate(otherImageAllocation);
+            firstManager.markClean(otherImage);
+            const workspace = path.join(
+                root,
+                "environments",
+                otherImageAllocation.environmentKey
+            );
+            fs.mkdirSync(workspace, { recursive: true });
+            // The worker restarts on a rebuilt image that one cache predates.
+            backend.otherImageContainers.add(otherImage.handle.container);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+            const kept = await restarted.allocate(currentAllocation);
+            const replaced = await restarted.allocate(otherImageAllocation);
+
+            expect(kept.state).to.equal("stopped");
+            expect(replaced.state).to.not.equal("stopped");
+            expect(
+                backend.calls
+                    .filter((entry) => entry.operation === "destroy")
+                    .map(
+                        (entry) =>
+                            (entry.value as { container: string }).container
+                    )
+            ).to.deep.equal([otherImage.handle.container]);
+            expect(fs.existsSync(workspace)).to.equal(false);
+            expect(replaced.handle.container).to.not.equal(
+                otherImage.handle.container
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recognises a retained Docker container by the configured runner image's ID", async function () {
+        const image = `sha256:${"a".repeat(64)}`;
+        const backend = dockerBackendWithContainerImages(image, image, {
+            current: image,
+            rebuilt: `sha256:${"b".repeat(64)}`
+        });
+        expect({
+            current: await backend.runtimeUsesCurrentImage({
+                container: "current"
+            }),
+            rebuilt: await backend.runtimeUsesCurrentImage({
+                container: "rebuilt"
+            }),
+            missing: await backend.runtimeUsesCurrentImage({
+                container: "missing"
+            })
+        }).to.deep.equal({ current: true, rebuilt: false, missing: false });
+    });
+
+    it("compares a retained Docker container with the image ID a pinned repository digest resolves to", async function () {
+        const imageId = `sha256:${"c".repeat(64)}`;
+        const backend = dockerBackendWithContainerImages(
+            `registry.example/runner@sha256:${"d".repeat(64)}`,
+            imageId,
+            { current: imageId }
+        );
+        expect(
+            await backend.runtimeUsesCurrentImage({ container: "current" })
+        ).to.equal(true);
+    });
+
+    it("blocks reuse when orphan stop and detach cannot be confirmed", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        class UnstoppableBackend extends TestIsolatedRuntimeBackend {
+            async stop() {
+                throw new Error("stop confirmation timed out");
+            }
+        }
+        const backend = new UnstoppableBackend();
+        const allocation = {
+            environmentKey: "5".repeat(64),
+            orchestratorPublicKey: "e".repeat(64),
+            profile
+        };
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await firstManager.allocate(allocation);
+            firstManager.markClean(environment);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+
+            let failure: Error | undefined;
+            try {
+                await restarted.allocate(allocation);
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include("cleanup is unconfirmed");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("discards an orphan whose container is gone after a host restart, and allocates its key again", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        class RestartedHostBackend extends TestIsolatedRuntimeBackend {
+            async stop() {
+                throw new Error(
+                    "docker failed (1): Error response from daemon: No such container: peer3-test-gone"
+                );
+            }
+            isMissingRuntime(error: Error) {
+                return /No such container/.test(error.message);
+            }
+        }
+        const backend = new RestartedHostBackend();
+        const allocation = {
+            environmentKey: "6".repeat(64),
+            orchestratorPublicKey: "e".repeat(64),
+            profile
+        };
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await firstManager.allocate(allocation);
+            firstManager.markClean(environment);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+
+            expect(
+                fs.existsSync(restarted.metadataPath(allocation.environmentKey))
+            ).to.equal(false);
+            const reallocated = await restarted.allocate(allocation);
+            expect(reallocated.allocation.environmentKey).to.equal(
+                allocation.environmentKey
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recognises Docker's missing-container failure", function () {
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async () => ({
+                stdout: Buffer.alloc(0),
+                stderr: Buffer.alloc(0)
+            })
+        });
+        expect({
+            missing: backend.isMissingRuntime(
+                new Error(
+                    "docker failed (1): Error response from daemon: No such container: peer3-test-gone"
+                )
+            ),
+            timeout: backend.isMissingRuntime(
+                new Error("stop confirmation timed out")
+            )
+        }).to.deep.equal({ missing: true, timeout: false });
+    });
+
+    it("builds a hardened Docker create request without host mounts or Docker control", async function () {
+        const calls: Array<{
+            command: string;
+            args: string[];
+            options: { timeoutMs?: number };
+        }> = [];
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async (
+                command: string,
+                args: string[],
+                options: { timeoutMs?: number }
+            ) => {
+                calls.push({ command, args, options });
+                return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+            }
+        });
+        backend.securityOptions = ["name=apparmor"];
+        backend.usernsHostRunnerUid = 110001;
+        backend.usernsHostRunnerGid = 210001;
+        await backend.create({ environmentKey: "c".repeat(64), profile });
+        const create = calls.find((entry) => entry.args[0] === "create")!;
+        const volume = calls.find((entry) => entry.args[0] === "volume")!;
+        const initialize = calls.find(
+            (entry) =>
+                entry.args[0] === "run" && entry.args.includes("--userns=host")
+        )!;
+
+        expect(create.args).to.include("--read-only");
+        expect(create.args).to.include("--init");
+        expect(create.args).to.include("--cap-drop=ALL");
+        expect(create.args).to.include("--security-opt=no-new-privileges:true");
+        expect(create.args).to.include(
+            "--security-opt=apparmor=docker-default"
+        );
+        expect(create.args).to.include("--user");
+        expect(create.args).to.include("HOME=/environment/home");
+        expect(create.args.join(" ")).not.to.include("/var/run/docker.sock");
+        expect(create.args.join(" ")).not.to.include("type=bind");
+        expect(create.args.at(-1)).to.include("SIGTERM");
+        expect(initialize.args).to.include("--cap-add=CHOWN");
+        expect(initialize.args).to.include("110001:210001");
+        expect(volume.args).to.include(`size=${profile.diskBytes}`);
+        expect(
+            calls.every(
+                (entry) =>
+                    entry.options.timeoutMs === DOCKER_OPERATION_TIMEOUT_MS
+            )
+        ).to.equal(true);
+        expect(runtimeNames("c".repeat(64)).container).to.match(/^peer3-test-/);
+    });
+
+    it("fails closed when the runner image is not digest pinned", async function () {
+        const backend = new DockerBackend({ image: "runner:latest" });
+        const detected = await backend.detect();
+        expect(detected.available).to.equal(false);
+        expect(detected.reason).to.include("digest-pinned");
+    });
+
+    it("accepts an immutable local Docker image ID built from this checkout's runner Dockerfile", async function () {
+        const backend = dockerBackendWithImageLabels({
+            [RUNNER_IMAGE_REVISION_LABEL]: runnerImageRevision(repoRoot())
+        });
+        expect(await backend.detect()).to.deep.equal({ available: true });
+    });
+
+    it("refuses a runner image built from another revision of the runner Dockerfile", async function () {
+        // A checkout whose Dockerfile moved on since the image was built.
+        const trustedRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "runner-image-revision-")
+        );
+        const dockerfile = path.join(trustedRoot, RUNNER_IMAGE_DOCKERFILE);
+        fs.mkdirSync(path.dirname(dockerfile), { recursive: true });
+        fs.copyFileSync(
+            path.join(repoRoot(), RUNNER_IMAGE_DOCKERFILE),
+            dockerfile
+        );
+        const built = runnerImageRevision(trustedRoot);
+        fs.appendFileSync(dockerfile, "\nENV ADDED_LATER=1\n");
+        try {
+            const detected = await dockerBackendWithImageLabels(
+                { [RUNNER_IMAGE_REVISION_LABEL]: built },
+                trustedRoot
+            ).detect();
+            expect(detected).to.deep.equal({
+                available: false,
+                reason:
+                    `Runner image sha256:${"f".repeat(64)} was built from runner-image.Dockerfile revision ${built.slice(0, 12)}, ` +
+                    `but this checkout expects ${runnerImageRevision(trustedRoot).slice(0, 12)}. ` +
+                    "Rebuild it with `yarn test:parallel:image` and point SCP_TEST_RUNNER_IMAGE at the new image ID"
+            });
+        } finally {
+            fs.rmSync(trustedRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses a runner image that carries no runner Dockerfile revision", async function () {
+        const detected = await dockerBackendWithImageLabels(null).detect();
+        expect(detected.available).to.equal(false);
+        expect(detected.reason).to.include(
+            `has no ${RUNNER_IMAGE_REVISION_LABEL} label`
+        );
+        expect(detected.reason).to.include("yarn test:parallel:image");
+    });
+
+    it("builds the runner image with only flags that cannot change its contents, after the revision label", function () {
+        const args = runnerImageBuildArgs(repoRoot(), "/scratch/id", [
+            "--tag",
+            "scp-runner:ci",
+            "--progress=plain",
+            "--no-cache",
+            "--pull",
+            "--quiet"
+        ]);
+        expect(args).to.deep.equal([
+            "build",
+            "--file",
+            path.join(repoRoot(), RUNNER_IMAGE_DOCKERFILE),
+            "--label",
+            `${RUNNER_IMAGE_REVISION_LABEL}=${runnerImageRevision(repoRoot())}`,
+            "--iidfile",
+            "/scratch/id",
+            "--tag",
+            "scp-runner:ci",
+            "--progress=plain",
+            "--no-cache",
+            "--pull",
+            "--quiet",
+            repoRoot()
+        ]);
+    });
+
+    it("refuses build arguments that could build another image under the checkout's revision", function () {
+        const refused = (extra: string[]) => {
+            try {
+                runnerImageBuildArgs(repoRoot(), "/scratch/id", extra);
+                return "accepted";
+            } catch (error) {
+                return (error as Error).message.split(":")[0];
+            }
+        };
+        expect({
+            buildArg: refused(["--build-arg", "PLAYWRIGHT_VERSION=1.59.0"]),
+            inlineBuildArg: refused(["--build-arg=NODE_IMAGE=node:22"]),
+            label: refused([
+                "--label",
+                `${RUNNER_IMAGE_REVISION_LABEL}=${"0".repeat(64)}`
+            ]),
+            file: refused(["--file", "other.Dockerfile"]),
+            missingTag: refused(["--tag"])
+        }).to.deep.equal({
+            buildArg: "Refusing docker build argument --build-arg",
+            inlineBuildArg:
+                "Refusing docker build argument --build-arg=NODE_IMAGE=node",
+            label: "Refusing docker build argument --label",
+            file: "Refusing docker build argument --file",
+            missingTag: "--tag requires a value"
+        });
+    });
+
+    it("stops yarn test:parallel:image before docker when given a --build-arg", function () {
+        const result = spawnSync(
+            process.execPath,
+            [
+                path.join(
+                    repoRoot(),
+                    "scripts/e2e-parallel/distributed/buildRunnerImage.js"
+                ),
+                "--build-arg",
+                "PLAYWRIGHT_VERSION=1.59.0"
+            ],
+            { encoding: "utf8" }
+        );
+        expect({
+            status: result.status,
+            refused: result.stderr.includes(
+                `Refusing docker build argument --build-arg: the image label covers only ${RUNNER_IMAGE_DOCKERFILE}`
+            )
+        }).to.deep.equal({ status: 2, refused: true });
+    });
+
+    it("classifies cgroup memory and process exhaustion without exposing host state", async function () {
+        let memoryEvents = "oom_kill 1\n";
+        let processEvents = "max 0\n";
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async (_command: string, args: string[]) => {
+                if (args[0] === "inspect") {
+                    return {
+                        stdout: Buffer.from('{"OOMKilled":false}'),
+                        stderr: Buffer.alloc(0)
+                    };
+                }
+                const output = args.some((arg) => arg.endsWith("memory.events"))
+                    ? memoryEvents
+                    : processEvents;
+                return {
+                    stdout: Buffer.from(output),
+                    stderr: Buffer.alloc(0)
+                };
+            }
+        });
+        const handle = {
+            container: "isolated",
+            resourceEvents: {
+                memory: { oom_kill: 0 },
+                pids: { max: 0 }
+            }
+        };
+        expect(await backend.classifyExit(handle, profile)).to.deep.include({
+            resource: "memory",
+            limit: profile.memoryBytes
+        });
+
+        memoryEvents = "oom_kill 0\n";
+        processEvents = "max 1\n";
+        expect(await backend.classifyExit(handle, profile)).to.deep.include({
+            resource: "process",
+            limit: profile.pidsLimit
+        });
+    });
+
+    it("fails closed when the selected Docker backend is unavailable", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const unavailable = {
+            async detect() {
+                return { available: false, reason: "docker missing" };
+            }
+        };
+        try {
+            let failure: Error | undefined;
+            try {
+                await IsolatedEnvironmentManager.create({
+                    workRoot: root,
+                    executionBackend: "docker",
+                    backend: unavailable
+                });
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include(
+                "docker execution backend is unavailable"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("selects unsafe host execution without probing Docker", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "unsafe-host-manager-")
+        );
+        try {
+            const unsafe = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                executionBackend: "unsafe-host"
+            });
+            expect(unsafe.capabilities()).to.deep.equal({
+                backend: "unsafe-host",
+                isolation: {
+                    backend: "unsafe-host",
+                    kernelIsolation: "none",
+                    filesystem: "none",
+                    network: "host",
+                    hardenedSharedWorker: false
+                }
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recovers a clean unsafe-host workspace under the worker work root", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "unsafe-host-recovery-")
+        );
+        const allocation = {
+            environmentKey: "7".repeat(64),
+            orchestratorPublicKey: "6".repeat(64),
+            profile
+        };
+        try {
+            const first = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                executionBackend: "unsafe-host"
+            });
+            const environment = await first.allocate(allocation);
+            fs.writeFileSync(
+                path.join(environment.handle.root, "cached"),
+                "ok"
+            );
+            first.markClean(environment);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                executionBackend: "unsafe-host"
+            });
+            await restarted.recoverOrphans();
+            const recovered = await restarted.allocate(allocation);
+            expect(recovered.handle.root).to.equal(environment.handle.root);
+            expect(
+                fs.readFileSync(
+                    path.join(recovered.handle.root, "cached"),
+                    "utf8"
+                )
+            ).to.equal("ok");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("selects only failed, infrastructure-failed, or starved attempt evidence", function () {
+        expect(
+            shouldTransferAttemptEvidence({
+                code: 0,
+                reduced: { starveCount: 0 }
+            })
+        ).to.equal(false);
+        expect(shouldTransferAttemptEvidence({ code: 1 })).to.equal(true);
+        expect(
+            shouldTransferAttemptEvidence({
+                code: 0,
+                infrastructureFailure: true
+            })
+        ).to.equal(true);
+        expect(
+            shouldTransferAttemptEvidence({
+                code: 0,
+                reduced: { starveCount: 1 }
+            })
+        ).to.equal(true);
+    });
+
+    it("assembles bounded guest artifacts by logical name and verifies their hashes", function () {
+        const stdout = Buffer.from("out");
+        const stderr = Buffer.from("err");
+        const assembler = new BoundedArtifactAssembler(
+            [
+                {
+                    name: "stdout",
+                    bytes: stdout.length,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(stdout)
+                        .digest("hex")
+                },
+                {
+                    name: "stderr",
+                    bytes: stderr.length,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(stderr)
+                        .digest("hex")
+                }
+            ],
+            10,
+            20
+        );
+        assembler.accept("stdout", 0, stdout);
+        assembler.accept("stderr", 1, stderr);
+        expect(assembler.complete()).to.deep.include({
+            sequence: 2,
+            byteCount: 6
+        });
+    });
+
+    it("rejects oversized, unknown, corrupt, and out-of-order guest artifacts", function () {
+        const digest = crypto
+            .createHash("sha256")
+            .update(Buffer.from("ok"))
+            .digest("hex");
+        expect(
+            () =>
+                new BoundedArtifactAssembler(
+                    [{ name: "host-path", bytes: 1, sha256: digest }],
+                    10,
+                    10
+                )
+        ).to.throw("Invalid guest artifact manifest");
+        expect(
+            () =>
+                new BoundedArtifactAssembler(
+                    [{ name: "stdout", bytes: 11, sha256: digest }],
+                    10,
+                    20
+                )
+        ).to.throw("Invalid guest artifact manifest");
+        const assembler = new BoundedArtifactAssembler(
+            [{ name: "stdout", bytes: 2, sha256: digest }],
+            10,
+            10
+        );
+        expect(() => assembler.accept("stdout", 1, Buffer.from("ok"))).to.throw(
+            "Out-of-order"
+        );
+        assembler.accept("stdout", 0, Buffer.from("no"));
+        expect(() => assembler.complete()).to.throw("verification failed");
+    });
+});
+
+describe("unsafe-host browsers path", function () {
+    // Start an unsafe-host environment and return the environment its guest
+    // receives; the guest itself is not needed to read that.
+    async function guestEnvironment(
+        hostEnv: NodeJS.ProcessEnv
+    ): Promise<NodeJS.ProcessEnv> {
+        const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scp-unsafe-"));
+        let guestEnv: NodeJS.ProcessEnv = {};
+        const backend = new UnsafeHostBackend({
+            workRoot,
+            processFactory: (
+                _command: string,
+                _args: string[],
+                options: { env: NodeJS.ProcessEnv }
+            ) => {
+                guestEnv = options.env;
+                return {};
+            }
+        });
+        const saved = process.env.PLAYWRIGHT_BROWSERS_PATH;
+        try {
+            if (hostEnv.PLAYWRIGHT_BROWSERS_PATH === undefined) {
+                delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+            } else {
+                process.env.PLAYWRIGHT_BROWSERS_PATH =
+                    hostEnv.PLAYWRIGHT_BROWSERS_PATH;
+            }
+            const handle = await backend.create({
+                environmentKey: "a".repeat(64)
+            });
+            await backend.start(handle);
+        } finally {
+            if (saved === undefined)
+                delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+            else process.env.PLAYWRIGHT_BROWSERS_PATH = saved;
+            fs.rmSync(workRoot, { recursive: true, force: true });
+        }
+        return guestEnv;
+    }
+
+    function chromiumPathUnder(env: NodeJS.ProcessEnv): string {
+        const result = spawnSync(
+            process.execPath,
+            [
+                "-e",
+                'process.stdout.write(require("playwright").chromium.executablePath())'
+            ],
+            { cwd: repoRoot(), encoding: "utf8", env }
+        );
+        return result.stdout;
+    }
+
+    it("resolves the host's own Chromium from the guest's fresh HOME", async function () {
+        const hostEnv = { ...process.env };
+        delete hostEnv.PLAYWRIGHT_BROWSERS_PATH;
+        const guestEnv = await guestEnvironment(hostEnv);
+
+        expect({
+            homeReplaced: guestEnv.HOME !== process.env.HOME,
+            chromium: chromiumPathUnder(guestEnv)
+        }).to.deep.equal({
+            homeReplaced: true,
+            chromium: chromiumPathUnder(hostEnv)
+        });
+    });
+
+    it("keeps a browsers path the operator exported", async function () {
+        const guestEnv = await guestEnvironment({
+            PLAYWRIGHT_BROWSERS_PATH: "/operator/browsers"
+        });
+
+        expect(guestEnv.PLAYWRIGHT_BROWSERS_PATH).to.equal(
+            "/operator/browsers"
+        );
+    });
+});

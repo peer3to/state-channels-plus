@@ -1,0 +1,315 @@
+import * as factory from "../factory";
+import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
+import { BlockCoordinates, Block, StateSnapshot } from "@/models";
+import Storage from "@/storage";
+import { ForkId } from "@/types/types";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { describe, it, beforeEach, before } from "mocha";
+
+describe("Storage", () => {
+    describe("getStateSnapshot", () => {
+        let genesisSnapshot: StateSnapshot;
+        let blockSnapshot: StateSnapshot;
+        let block: Block;
+        let blockConfirmation: BlockConfirmationStruct;
+        let forkId: ForkId;
+        let storage: Storage;
+
+        before(() => {
+            const stateSnapshot = factory.stateSnapshot();
+            forkId = stateSnapshot.snapshotDataHash;
+
+            // Create genesis state snapshot
+            // A snapshot is genesis if forkId === snapshotDataHash
+            const stateSnapshotStruct = stateSnapshot.toStruct();
+            stateSnapshotStruct.forkId = stateSnapshot.snapshotDataHash;
+            genesisSnapshot = StateSnapshot.from(stateSnapshotStruct);
+
+            // block state snapshot
+            blockSnapshot = factory.stateSnapshot({
+                forkId: forkId
+            });
+
+            // block with the block snapshot hash
+            block = factory.block({
+                stateSnapshotHash: blockSnapshot.hash,
+                transaction: factory.transaction({
+                    header: factory.transactionHeader({
+                        forkId: forkId,
+                        transactionCnt: 1
+                    })
+                })
+            });
+
+            // block confirmation that contains the signed block
+            blockConfirmation = factory.blockConfirmation({
+                signedBlock: factory.signedBlock({
+                    encodedBlock: block.encode()
+                })
+            });
+        });
+
+        beforeEach(() => {
+            storage = new Storage();
+
+            // Store genesis snapshot
+            storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
+
+            // Store block snapshot
+            storage.stateSnapshots.storeStateSnapshot(blockSnapshot);
+
+            // Store block confirmation (at forkId, height 1)
+            storage.blocks.storeBlock(
+                Block.fromBlockConfirmation(blockConfirmation)
+            );
+        });
+
+        it("should return genesis state snapshot when height < 0", () => {
+            const coordinates: BlockCoordinates = {
+                forkId: forkId,
+                height: -1
+            };
+
+            const result = storage.getStateSnapshot(coordinates);
+
+            expect(result).to.not.be.undefined;
+            expect(result?.toStruct()).to.deep.equal(
+                genesisSnapshot.toStruct()
+            );
+        });
+
+        it("should return genesis state snapshot when height is any negative number", () => {
+            const coordinates: BlockCoordinates = {
+                forkId: forkId,
+                // Random height between -200 and -100
+                height: Math.floor(Math.random() * 100) - 200
+            };
+
+            const result = storage.getStateSnapshot(coordinates);
+
+            expect(result).to.not.be.undefined;
+            expect(result?.toStruct()).to.deep.equal(
+                genesisSnapshot.toStruct()
+            );
+        });
+
+        it("should return state snapshot from block when height >= 0", () => {
+            const coordinates: BlockCoordinates = {
+                forkId: forkId,
+                height: 1
+            };
+
+            const result = storage.getStateSnapshot(coordinates);
+
+            expect(result).to.not.be.undefined;
+            expect(result?.toStruct()).to.deep.equal(blockSnapshot.toStruct());
+        });
+
+        it("genesis snapshot doesn't exist", () => {
+            const nonExistentForkId =
+                "0x9999999999999999999999999999999999999999999999999999999999999999";
+
+            expect(
+                storage.getStateSnapshot({
+                    forkId: nonExistentForkId,
+                    height: -1
+                })
+            ).to.be.undefined;
+        });
+
+        it("block confirmation doesn't exist", () => {
+            expect(
+                storage.getStateSnapshot({
+                    forkId: forkId,
+                    height: 999 // Non-existent height
+                })
+            ).to.be.undefined;
+        });
+
+        it("correct block height, wrong forkId", () => {
+            const wrongForkId =
+                "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+            expect(
+                storage.getStateSnapshot({
+                    forkId: wrongForkId,
+                    height: 1
+                })
+            ).to.be.undefined;
+        });
+
+        it("modifying retrieved snapshot doesn't affect stored snapshot", () => {
+            const coordinates: BlockCoordinates = {
+                forkId: forkId,
+                height: 1
+            };
+
+            const snapshot1 = storage.getStateSnapshot(coordinates);
+            const orignalHash = snapshot1!.hash;
+            expect(snapshot1).to.deep.equal(blockSnapshot);
+
+            // Modify the retrieved snapshot's snapshotData
+            snapshot1!.snapshotData.latestInboundMessageBlockHash = "0x11";
+            snapshot1!.snapshotData.latestOutboundMessageBlockHash = "0x22";
+
+            // Get snapshot second time
+            const snapshot2 = storage.getStateSnapshot(coordinates);
+            expect(snapshot2).to.not.be.undefined;
+
+            // Assert that the stored snapshot was not affected by the modification
+            expect(snapshot2!.hash).to.equal(orignalHash);
+            expect(snapshot2!.toStruct()).to.deep.equal(
+                blockSnapshot.toStruct()
+            );
+            expect(snapshot2!.toStruct()).to.not.equal(snapshot1!.toStruct());
+        });
+    });
+});
+
+describe("Storage participant union", () => {
+    it("stored lookup equals direct computation with the same snapshots", () => {
+        const f = new QueueAdmissionFixture();
+        const initial = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address]
+            }
+        });
+        const previous = StateSnapshot.from({
+            ...initial.toStruct(),
+            forkId: initial.snapshotDataHash
+        });
+        const resulting = factory.stateSnapshot({
+            forkId: previous.forkID,
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address, f.wallets[1].address]
+            }
+        });
+        const storage = new Storage();
+        const direct = storage.getParticipantsUnionFromSnapshots(
+            previous,
+            resulting
+        );
+        expect(
+            storage.stateSnapshots.getStateSnapshotByHash(resulting.hash)
+        ).to.equal(undefined);
+        storage.stateSnapshots.storeStateSnapshot(previous);
+        storage.stateSnapshots.storeStateSnapshot(resulting);
+        expect(
+            storage.getParticipantsUnion(
+                { forkId: previous.forkID, height: 0 },
+                resulting.hash
+            )
+        ).to.deep.equal(direct);
+        expect(direct).to.deep.equal([
+            f.wallets[0].address,
+            f.wallets[1].address
+        ]);
+    });
+    it("unions overlapping snapshots and canonicalizes addresses without storing a result", () => {
+        const f = new QueueAdmissionFixture();
+        const previous = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [
+                    f.wallets[0].address,
+                    f.wallets[1].address.toLowerCase()
+                ]
+            }
+        });
+        const resulting = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[1].address, f.wallets[2].address]
+            }
+        });
+        const storage = new Storage();
+        expect(
+            storage.getParticipantsUnionFromSnapshots(previous, resulting)
+        ).to.deep.equal([
+            f.wallets[0].address,
+            f.wallets[1].address,
+            f.wallets[2].address
+        ]);
+        expect(
+            storage.stateSnapshots.getStateSnapshotByHash(resulting.hash)
+        ).to.equal(undefined);
+    });
+
+    it("preserves both sides of disjoint membership changes", () => {
+        const f = new QueueAdmissionFixture();
+        const previous = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address]
+            }
+        });
+        const resulting = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[1].address]
+            }
+        });
+        expect(
+            new Storage().getParticipantsUnionFromSnapshots(previous, resulting)
+        ).to.deep.equal([f.wallets[0].address, f.wallets[1].address]);
+    });
+
+    it("accepts an absent previous snapshot", () => {
+        const f = new QueueAdmissionFixture();
+        const resulting = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[1].address]
+            }
+        });
+        expect(
+            new Storage().getParticipantsUnionFromSnapshots(
+                undefined,
+                resulting
+            )
+        ).to.deep.equal([f.wallets[1].address]);
+    });
+
+    it("accepts an absent resulting snapshot", () => {
+        const f = new QueueAdmissionFixture();
+        const previous = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address]
+            }
+        });
+        expect(
+            new Storage().getParticipantsUnionFromSnapshots(previous, undefined)
+        ).to.deep.equal([f.wallets[0].address]);
+    });
+
+    it("returns an empty union for absent or empty snapshots", () => {
+        const storage = new Storage();
+        const empty = factory.stateSnapshot({
+            snapshotData: { ...factory.snapshotData(), participants: [] }
+        });
+        expect(
+            storage.getParticipantsUnionFromSnapshots(undefined, undefined)
+        ).to.deep.equal([]);
+        expect(
+            storage.getParticipantsUnionFromSnapshots(empty, empty)
+        ).to.deep.equal([]);
+    });
+});
+
+describe("Storage previous block or snapshot", () => {
+    it("returns neither block nor snapshot when the predecessor is absent", () => {
+        const storage = new Storage();
+        const forkId = factory.stateSnapshot().snapshotDataHash;
+        // height > 0 -> the block at height - 1 is missing
+        expect(
+            storage.getPreviousBlockOrSnapshot({ forkId, height: 3 })
+        ).to.deep.equal({ block: undefined });
+        // height 0 -> the fork's genesis snapshot is missing
+        expect(
+            storage.getPreviousBlockOrSnapshot({ forkId, height: 0 })
+        ).to.deep.equal({ stateSnapshot: undefined });
+    });
+});

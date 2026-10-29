@@ -1,0 +1,508 @@
+// @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { dependencyCheckpoint } from "../fixtures/distributed/dependencyCheckpoint";
+import { expect } from "chai";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+const {
+    IsolatedGuestCommandRunner
+} = require("../../scripts/e2e-parallel/distributed/isolatedGuestCommandRunner.js");
+const {
+    buildWorkerEnvironment
+} = require("../../scripts/e2e-parallel/distributed/remoteEnvironment.js");
+
+const {
+    prepareWorkspace,
+    selectPrepareScript
+} = require("../../scripts/e2e-parallel/distributed/workspacePreparation.js");
+
+describe("distributed workspace preparation", function () {
+    const repository = {
+        path: "state-channels-plus",
+        prepareScript: "full",
+        cachedPrepareScript: "cached",
+        contractCompileInputs: [
+            "contracts/",
+            "hardhat.config.ts",
+            "package.json"
+        ]
+    };
+
+    it("retains dependency preparation after build failure and invalidates it when the lock changes", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "dependency-checkpoint-")
+        );
+        const cwd = path.join(root, "project");
+        fs.mkdirSync(path.join(cwd, "node_modules"), { recursive: true });
+        const manifest = {
+            repositories: [
+                {
+                    path: "project",
+                    name: "project",
+                    hasPnpmLock: true,
+                    prepareScript: "build"
+                }
+            ],
+            files: [{ path: "project/pnpm-lock.yaml", sha256: "first" }]
+        };
+        let installs = 0;
+        let failBuild = true;
+        const options = {
+            storeDir: path.join(root, "store"),
+            onOutput() {},
+            commandRunner: {
+                async run(_command: string, args: string[]) {
+                    if (args[0] === "install") installs++;
+                    if (args[0] === "run" && failBuild)
+                        throw new Error("build interrupted");
+                }
+            }
+        };
+        try {
+            await expect(
+                prepareWorkspace(root, manifest, options)
+            ).to.be.rejectedWith("build interrupted");
+            failBuild = false;
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(1);
+            manifest.files[0].sha256 = "second";
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(2);
+            manifest.files[0].sha256 = "first";
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(3);
+            fs.rmSync(path.join(cwd, "node_modules"), { recursive: true });
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(4);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("reinstalls dependencies after a preparation version bump", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.markPreviousVersion();
+            await fixture.prepare();
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(2);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("reinstalls dependencies when npm configuration changes", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.manifest.files.push({
+                path: "project/.npmrc",
+                sha256: "changed"
+            });
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(2);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("reinstalls dependencies when workspace configuration changes", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.manifest.files.push({
+                path: "project/pnpm-workspace.yaml",
+                sha256: "changed"
+            });
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(2);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("removes the dependency checkpoint after an install failure and retries", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.manifest.files[0].sha256 = "changed";
+            fixture.state.failInstall = true;
+            await expect(fixture.prepare()).to.be.rejectedWith(
+                "install failed"
+            );
+            expect(fs.existsSync(fixture.marker)).to.equal(false);
+            fixture.state.failInstall = false;
+            await fixture.prepare();
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(3);
+            expect(fs.existsSync(fixture.marker)).to.equal(true);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("reuses compiled contracts for non-contract source changes", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("cached");
+    });
+
+    it("retries an incomplete source-only preparation with no new source diff", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: [],
+                deleted: []
+            })
+        ).to.equal("cached");
+    });
+
+    it("falls back to full preparation when an incomplete repository has no cached script", function () {
+        expect(
+            selectPrepareScript(
+                { ...repository, cachedPrepareScript: null },
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    contractPreparationChanged: false,
+                    changed: [],
+                    deleted: []
+                }
+            )
+        ).to.equal("full");
+    });
+
+    it("skips a complete unchanged repository", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: true,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: [],
+                deleted: []
+            })
+        ).to.equal(null);
+    });
+
+    it("recompiles when Solidity inputs change or preparation is stale", function () {
+        for (const changed of [
+            "state-channels-plus/contracts/Channel.sol",
+            "state-channels-plus/hardhat.config.ts",
+            "state-channels-plus/package.json"
+        ]) {
+            expect(
+                selectPrepareScript(repository, {
+                    prepared: true,
+                    preparationChanged: false,
+                    changed: [changed],
+                    deleted: []
+                })
+            ).to.equal("full");
+        }
+        expect(
+            selectPrepareScript(repository, {
+                prepared: true,
+                preparationChanged: true,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("full");
+    });
+
+    it("rebuilds contracts when the cached contract preparation did not complete", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: true,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("full");
+    });
+
+    it("never builds a repository the orchestrator built, even when its contracts changed", function () {
+        const built = {
+            ...repository,
+            prepareScript: null,
+            cachedPrepareScript: null
+        };
+        for (const cache of [
+            {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: true,
+                changed: ["state-channels-plus/contracts/Channel.sol"],
+                deleted: []
+            },
+            {
+                prepared: false,
+                preparationChanged: true,
+                contractPreparationChanged: false,
+                changed: ["state-channels-plus/dist/index.js"],
+                deleted: []
+            }
+        ]) {
+            expect(selectPrepareScript(built, cache)).to.equal(null);
+        }
+    });
+
+    it("does not pass unrelated server secrets into uploaded code", function () {
+        const env = buildWorkerEnvironment({
+            PATH: "/bin",
+            HOME: "/tmp/home",
+            SERVER_SENTINEL_SECRET: "must-not-leak",
+            SCP_TEST_POOL_SECRET: "must-not-leak"
+        });
+        expect(env).to.deep.equal({ PATH: "/bin", HOME: "/tmp/home" });
+    });
+
+    it("reports activity while an isolated preparation command is silent", async function () {
+        const stages: string[] = [];
+        const runner = new IsolatedGuestCommandRunner({
+            keepaliveIntervalMs: 10
+        });
+        await runner.run(
+            process.execPath,
+            ["-e", "setTimeout(() => process.exit(0), 60)"],
+            {
+                cwd: process.cwd(),
+                env: process.env,
+                onOutput() {},
+                onStage(stage: string) {
+                    stages.push(stage);
+                }
+            }
+        );
+        expect(stages.length).to.be.greaterThan(0);
+        expect(stages[0]).to.include("Still running");
+    });
+
+    it("rebuilds missing native modules once and fails the preparation loudly", async function () {
+        const checkpoint = dependencyCheckpoint({
+            verifyNativeModules: ["scp-missing-native-module"]
+        });
+        const calls: Array<{ command: string; args: string[] }> = [];
+        try {
+            // Write the production checkpoint after a successful first preparation.
+            await checkpoint.prepare();
+            let failure: Error | null = null;
+            try {
+                await checkpoint.prepare({
+                    commandRunner: {
+                        async run(command: string, args: string[]) {
+                            calls.push({ command, args });
+                            if (command === "node")
+                                throw new Error("native module missing");
+                        }
+                    }
+                });
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include(
+                "Native modules failed to load after rebuild in project"
+            );
+            expect(failure?.message).to.include("scp-missing-native-module");
+            expect(calls).to.deep.equal([
+                {
+                    command: "node",
+                    args: [
+                        "-e",
+                        'for (const name of ["scp-missing-native-module"]) require(name)'
+                    ]
+                },
+                {
+                    command: "pnpm",
+                    args: ["rebuild", "scp-missing-native-module"]
+                },
+                {
+                    command: "node",
+                    args: [
+                        "-e",
+                        'for (const name of ["scp-missing-native-module"]) require(name)'
+                    ]
+                }
+            ]);
+        } finally {
+            checkpoint.close();
+        }
+    });
+
+    it("does not build a linked repository with no source changes", async function () {
+        const checkpoint = dependencyCheckpoint({ prepareScript: "compile" });
+        const calls: Array<{ command: string; args: string[] }> = [];
+        try {
+            await checkpoint.prepare();
+            await checkpoint.prepare({
+                commandRunner: {
+                    async run(command: string, args: string[]) {
+                        calls.push({ command, args });
+                    }
+                },
+                selectPrepareScript: () => null
+            });
+            expect(calls).to.deep.equal([]);
+            expect(checkpoint.state.installs).to.equal(1);
+        } finally {
+            checkpoint.close();
+        }
+    });
+
+    it("skips an unchanged linked repository after another repository changes", function () {
+        expect(
+            selectPrepareScript(
+                {
+                    path: "poker-contracts",
+                    prepareScript: "compile",
+                    cachedPrepareScript: null,
+                    contractCompileInputs: []
+                },
+                {
+                    prepared: true,
+                    preparationChanged: false,
+                    contractPreparationChanged: false,
+                    changed: ["state-channels-plus/test/utils/nodeInfra.js"],
+                    deleted: []
+                }
+            )
+        ).to.equal(null);
+    });
+
+    it("rebuilds a consumer when linked contract inputs change", function () {
+        const linked = repository;
+        const consumer = {
+            path: "poker-contracts",
+            prepareScript: "compile",
+            cachedPrepareScript: null,
+            contractCompileInputs: []
+        };
+        expect(
+            selectPrepareScript(
+                consumer,
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    changed: [
+                        "state-channels-plus/contracts/V1/AStateMachine.sol"
+                    ],
+                    deleted: []
+                },
+                [linked, consumer]
+            )
+        ).to.equal("compile");
+    });
+
+    it("installs and prepares linked repositories in dependency order", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "workspace-prepare-")
+        );
+        const workspace = path.join(root, "workspace");
+        const recorded: Array<{
+            command: string;
+            cwd: string;
+            args: string[];
+            husky: string;
+        }> = [];
+        try {
+            fs.mkdirSync(path.join(workspace, "linked"), { recursive: true });
+            fs.mkdirSync(path.join(workspace, "project"), { recursive: true });
+            const stages: string[] = [];
+            await prepareWorkspace(
+                workspace,
+                {
+                    repositories: [
+                        {
+                            path: "linked",
+                            name: "linked",
+                            prepareScript: "build",
+                            hasPnpmLock: false,
+                            hasYarnLock: false
+                        },
+                        {
+                            path: "project",
+                            name: "project",
+                            prepareScript: "compile",
+                            hasPnpmLock: false,
+                            hasYarnLock: true
+                        }
+                    ]
+                },
+                {
+                    storeDir: path.join(root, "store"),
+                    commandRunner: {
+                        async run(
+                            command: string,
+                            args: string[],
+                            options: {
+                                cwd: string;
+                                env: Record<string, string>;
+                            }
+                        ) {
+                            recorded.push({
+                                command,
+                                cwd: options.cwd,
+                                args,
+                                husky: options.env.HUSKY
+                            });
+                        }
+                    },
+                    env: {},
+                    onStage(stage: string) {
+                        stages.push(stage);
+                    },
+                    onOutput() {}
+                }
+            );
+            expect(
+                recorded.map((entry) => path.basename(entry.cwd))
+            ).to.deep.equal([
+                "linked",
+                "linked",
+                "project",
+                "project",
+                "project"
+            ]);
+            expect(recorded.map((entry) => entry.args[0])).to.deep.equal([
+                "install",
+                "run",
+                "import",
+                "install",
+                "run"
+            ]);
+            expect(recorded[0].args).to.include("--no-frozen-lockfile");
+            expect(recorded[3].args).to.include("--frozen-lockfile");
+            expect(recorded[3].args).to.include("--shamefully-hoist");
+            expect(recorded[0].args).not.to.include(
+                "--config.dangerously-allow-all-builds=true"
+            );
+            expect(recorded[3].args).not.to.include(
+                "--config.dangerously-allow-all-builds=true"
+            );
+            expect(recorded[0].args).not.to.include("--ignore-scripts");
+            expect(recorded[3].args).not.to.include("--ignore-scripts");
+            expect(recorded.every((entry) => entry.husky === "0")).to.equal(
+                true
+            );
+            expect(fs.existsSync(path.join(root, "store"))).to.equal(true);
+            expect(stages).to.deep.equal([
+                "Installing dependencies for linked",
+                "Building linked",
+                "Installing dependencies for project",
+                "Building project"
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+});

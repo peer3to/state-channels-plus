@@ -1,0 +1,25 @@
+[profile.default]
+src = 'contracts'
+out = 'out'
+# node_modules is reached through remappings, not libs: forge records lib
+# directories by real path, and a symlinked node_modules would pin the cache
+# to this machine's path and make the shipped forge build stale on workers
+libs = ['lib']
+test = 'test'
+cache_path  = 'cache_forge'
+# match hardhat.config.ts so forge compiles the same bytecode the protocol ships
+solc = '0.8.34'
+via_ir = true
+optimizer = true
+optimizer_runs = 100
+remappings = [
+    'forge-std/=lib/forge-std/src/',
+    '@openzeppelin/=node_modules/@openzeppelin/',
+    'hardhat/=node_modules/hardhat/',
+]
+
+# default fuzz iterations; override per-run with `forge test --fuzz-runs N`. A test pinned with an
+# in-line `/// forge-config: default.fuzz.runs = N` comment keeps its pinned count: the pin is
+# applied on top of `--fuzz-runs` and `FOUNDRY_FUZZ_RUNS`.
+[fuzz]
+runs = 1000

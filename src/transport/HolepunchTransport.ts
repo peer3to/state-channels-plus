@@ -1,55 +1,73 @@
-import P2PManager from "@/P2PManager";
-import ATransport from "./ATransport";
-import { Buffer } from "buffer";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-class HolepunchTransport extends ATransport {
+import type { BannablePeerInfo } from "@/PeerProfile";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
+import { Buffer } from "buffer";
+
+class HolepunchTransport extends NetworkTransport {
     transportType = TransportType.HOLEPUNCH;
     holepunchSocket: any;
-    holepunchPeerInfo: any;
-    p2pManager: P2PManager;
     constructor(
         holepunchSocket: any,
-        holepunchPeerInfo: any,
-        p2pManager: P2PManager
+        holepunchPeerInfo: BannablePeerInfo,
+        router: NetworkRpcRouter
     ) {
-        super();
-        console.log("HOLEPUNCH TRANSPORT CREATED");
+        super(router);
         this.holepunchSocket = holepunchSocket;
-        this.holepunchPeerInfo = holepunchPeerInfo;
-        this.p2pManager = p2pManager;
+        this.p2pManager.profileManager.setBannablePeerInfo(
+            this,
+            holepunchPeerInfo
+        );
+        // A suspended key is refused at registration; nothing else to wire.
+        if (this.isClosed) return;
         this.holepunchSocket.on("data", async (data: any) => {
-            if (data instanceof Uint8Array) {
-                data = Buffer.from(data);
-            }
-            console.log("DATA RECEIVED", data);
             this.onMessage(data);
         });
-        this.p2pManager.addConnection(this);
+        this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
         this.holepunchSocket.on("close", () => {
             this.close();
         });
+        this.holepunchSocket.on("error", (error: Error) => {
+            const details = {
+                socketState: this.holepunchSocket?.readyState,
+                error
+            };
+            // Hyperswarm keeps one of two connections to the same peer (two
+            // crossing dials) and destroys the other with this error.
+            if (error.message === "Duplicate connection")
+                this.p2pManager.logger.debug(
+                    "Holepunch dropped a duplicate connection",
+                    details
+                );
+            // A peer that resets its connection (it left or its runtime
+            // ended) is ordinary churn, not a failure of this runtime. A
+            // relayed (browser) socket carries only the message: dht-relay
+            // forwards the remote error's text without its code.
+            else if (
+                (error as NodeJS.ErrnoException).code === "ECONNRESET" ||
+                error.message === "connection reset by peer"
+            )
+                this.p2pManager.logger.warn(
+                    "Holepunch peer reset the connection",
+                    details
+                );
+            else
+                this.p2pManager.logger.error("Holepunch socket error", details);
+            this.close();
+        });
     }
-    send(serializedRPC: string): void {
-        console.log("SENDING RPC", serializedRPC);
+    // Overrides NetworkTransport.onMessage to decode Holepunch input.
+    public override onMessage(data: unknown): void {
+        if (data instanceof Uint8Array) data = Buffer.from(data);
+        super.onMessage(data);
+    }
+
+    _send(serializedRPC: string): void {
         this.holepunchSocket.write(serializedRPC);
     }
-    onMessage(data: any): void {
-        this.p2pManager.localRpcService.senderTransport = this;
-        let serializedRPC = data.toString();
-        console.log("RECEIVED RPC", serializedRPC);
-        this.p2pManager.onRpc(serializedRPC);
-    }
-    _close(): void {
-        console.log("closing holepunch socket");
-        this.holepunchPeerInfo.ban(true);
-        this.holepunchSocket.end();
-        this.p2pManager.removeConnection(this);
-        //TODO! unban if transports are empty
 
-        // setTimeout(() => {
-        //     console.log("PeerInfo unban");
-        //     this.holepunchPeerInfo.ban(false);
-        // }, 10000);
+    _close(): void {
+        this.holepunchSocket.destroy();
     }
 }
 export default HolepunchTransport;

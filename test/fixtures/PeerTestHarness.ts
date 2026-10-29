@@ -1,0 +1,1296 @@
+// @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
+
+import testConfig from "../peer3.test.config";
+import type {
+    HarnessControlRpc,
+    HarnessControlRpcShape
+} from "./customRpc/harnessControl/HarnessControlRpc";
+
+import { HarnessDebug } from "./HarnessDebug";
+import { RpcNodeProxy } from "./node/RpcNodeProxy";
+import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
+import {
+    deployFacets,
+    type LocalStateMachineDeployer
+} from "../../scripts/V1/deploy";
+import { resolveOrDeployShared } from "../harness/core/deploymentCache";
+// Shared with the parallel runner: start a hardhat node / discovery registry
+// child process → URL. Same common infra the runner uses to provision slots
+// (typed via nodeInfra.d.ts).
+import { startDiscoveryRegistry, startHardhatNode } from "../utils/nodeInfra";
+import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
+import type { BusEventMaps } from "@/events/EventBus";
+import { EvmStateMachine } from "@/evm";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
+import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
+import P2pEventHooks from "@/P2pEventHooks";
+import type {
+    ApplicationOf,
+    P2pRuntimeHostRoot
+} from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { CustomRpcManifest } from "@/rpc/network/registry";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
+import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
+import type StateManager from "@/stateManager/StateManager";
+import { TimeConfig } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import {
+    EventBarrier,
+    LocalDiscoveryServer,
+    Logger,
+    createEthersResultProxy,
+    createLogger,
+    getErrorPeerAddress,
+    maybeStampErrorWithPeerAddress
+} from "@/utils";
+import { Config, config, createConfig } from "@/utils/config";
+import { LogLevel } from "@/utils/logging/Logger";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import type { HostExecModules } from "@test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods";
+import { AssertActions } from "@test/harness/actions/assert/AssertActions";
+import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
+import { ContextActions } from "@test/harness/actions/ContextActions";
+import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
+import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
+import { EventActions } from "@test/harness/actions/EventActions";
+import { JoinActions } from "@test/harness/actions/JoinActions";
+import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
+import { MirrorActions } from "@test/harness/actions/MirrorActions";
+import { NetworkController } from "@test/harness/actions/NetworkController";
+import { RPCActions } from "@test/harness/actions/RPCActions";
+import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
+import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
+import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
+import { TransitionActions } from "@test/harness/actions/TransitionActions";
+import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import {
+    EventSpies,
+    HarnessConstructorOptions,
+    HarnessContext,
+    HarnessDeploymentConfig,
+    HarnessOptions,
+    TestPeer
+} from "@test/harness/core/types";
+import SyncCoordinator from "@test/utils/SyncCoordinator";
+import {
+    AStateMachine as AStateMachineContract,
+    StateChannelManagerInterface
+} from "@typechain-types";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import * as dotenv from "dotenv";
+import { NonceManager, Signer, ethers } from "ethers";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { setImmediate } from "node:timers";
+import * as sinon from "sinon";
+
+// Peers booted together per batch in `setup` (see the comment there).
+export const DEFAULT_PEER_SETUP_CONCURRENCY = 1;
+
+// Matches hardhat.config.ts accounts.mnemonic so account N derives the same
+// address whether the chain is in-process, a slot node, or a harness-started one.
+const HARDHAT_MNEMONIC =
+    "test test test test test test test test test test test junk";
+
+const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+
+/**
+ * Main test harness for E2E peer-to-peer testing
+ */
+export class PeerTestHarness<
+    THost extends
+        P2pRuntimeHostRoot<HarnessControlRpcShape> = P2pRuntimeHostRoot<HarnessControlRpc>,
+    TStateMachine extends AStateMachineContract = AStateMachineContract
+> {
+    public peers: TestPeer<THost, TStateMachine>[] = [];
+    public channelManager!: StateChannelManagerInterface;
+    private sharedStateMachineDeployer!: LocalStateMachineDeployer;
+    public channelId!: ChannelId;
+    public options!: HarnessOptions<THost>;
+    private harnessConfig!: Partial<Config>;
+    private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
+    public logger: Logger;
+    public syncCoordinator!: SyncCoordinator<THost>;
+
+    // Chain access. The harness owns its provider built from a node URL — either
+    // one passed in (PROVIDER_URL, e.g. a parallel-runner slot) or one it starts
+    // itself when none is reachable. This keeps the harness indifferent to where
+    // the node came from and independent of hardhat's load-time network binding.
+    public provider!: ethers.WebSocketProvider;
+    private ownNode?: { stop: () => void };
+    private ownDiscovery?: { stop: () => void };
+    /** Peer index -> the RPC node proxies its runtime connects through. */
+    private readonly rpcNodeProxies = new Map<number, RpcNodeProxy[]>();
+
+    /**
+     * Test context for cross-block state sharing
+     * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
+     */
+    public context = new HarnessContext();
+
+    // barriers
+    public connectionBarrier: EventBarrier;
+    public eventCountsBarrier: EventBarrier;
+    public rpcBarrier: EventBarrier;
+    public disconnectionBarrier: EventBarrier;
+
+    // action instances
+    public lifecycle!: LifecycleActions<THost>;
+    public join!: JoinActions<THost>;
+    public transition!: TransitionActions<THost, TStateMachine>;
+    public network!: NetworkController<THost>;
+    public assert!: AssertActions<THost>;
+    public byzantine!: ByzantineActions<THost>;
+    public event!: EventActions<THost>;
+    public query!: StateQueryActions<THost>;
+    public dispute!: DisputeOrchestrator<THost>;
+    public tamper!: DisputeTamperingActions<THost>;
+    public rpc!: RPCActions<THost>;
+    public rpcStub!: RpcStubActions<THost>;
+    public mirror!: MirrorActions<THost>;
+    public contextApi!: ContextActions<THost>;
+    public scenario!: ScenarioActions<THost>;
+    public readonly debug: HarnessDebug<THost>;
+
+    /**
+     * Per-peer fork-id cache. The live fork id lives host-side behind the
+     * runtime port, so it cannot be read synchronously. The cache is refreshed
+     * by {@link peerForkIds} (after channel open/join, transitions, disputes)
+     * and opportunistically from forwarded event-handler invocations.
+     */
+    private forkIdCache = new Map<number, ForkId>();
+    private peerSignersRegistered = new Set<number>();
+    /**
+     * Peers whose membership ended (`onLeftChannel`) and that did not become
+     * pending or participating again since: a runtime whose join failed can
+     * join again, so the event alone does not mark a permanent departure.
+     */
+    private readonly endedMembershipPeerIndices = new Set<number>();
+    private cleanupPromise?: Promise<void>;
+
+    /**
+     * First honest peer's fork ID is considered the active fork ID for the channel.
+     */
+    public get activeForkId(): ForkId | undefined {
+        const honestPeers = this.getHonestPeers();
+
+        if (honestPeers.length === 0) {
+            throw new Error(
+                "No honest peers available to determine active fork ID"
+            );
+        }
+
+        return this.forkIdCache.get(honestPeers[0].index);
+    }
+
+    /**
+     * Typed handle to a peer's host-side harness-control RPC services
+     * (`query` / `network` / `byzantine` / `stub`). Every peer's custom RPC
+     * carries them (`withHarnessControl`), so these services are always
+     * present at runtime; `THost` is constrained to a root over
+     * {@link HarnessControlRpcShape}, but the proxy type does not expand over a
+     * generic host, so the cast keeps call sites typed. Usage:
+     * `harness.control(peer).query.getForkId().request()`.
+     */
+    public control(
+        peer: TestPeer<THost>
+    ): RemoteRpcProxyType<HarnessControlRpcShape> {
+        return peer.p2pInstance
+            .hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpcShape>;
+    }
+
+    /** Harness peers have independent top-level roots, so each starts its own gossip. */
+    public async uploadLogs(
+        message: string,
+        ...meta: unknown[]
+    ): Promise<void> {
+        await Promise.all([
+            this.logger.uploadLogs(message, ...meta),
+            ...this.peers.map((peer) =>
+                peer.logger.uploadLogs(message, ...meta)
+            )
+        ]);
+    }
+
+    /**
+     * Current fork id of each given peer (defaults to all), queried from hosts.
+     * Populates {@link forkIdCache} as a side effect so {@link activeForkId} stays
+     * in sync after the query.
+     */
+    public async peerForkIds(
+        peers: TestPeer<THost, TStateMachine>[] = this.peers
+    ): Promise<ForkId[]> {
+        return Promise.all(
+            peers.map(async (peer) => {
+                const forkId = (await this.control(peer)
+                    .query.getForkId()
+                    .request()) as ForkId;
+                this.forkIdCache.set(peer.index, forkId);
+                return forkId;
+            })
+        );
+    }
+
+    constructor({ deployment }: HarnessConstructorOptions<TStateMachine>) {
+        dotenv.config({ quiet: true }); // use .env since it's gitignored and it's only for testing - not altering SDK usage
+        createConfig({}, testConfig); // Ensure config is initialized for tests
+        this.deployment = deployment;
+
+        // Logger starts with config default and is reconfigured in setup().
+        this.logger = createLogger(
+            {},
+            { component: "TestHarness" },
+            {
+                level: (config.LOG_LEVEL as LogLevel) ?? "error",
+                attachErrorListener: false
+            }
+        );
+        LocalDiscoveryServer.setLogger(this.logger);
+        this.connectionBarrier = new EventBarrier(this.logger);
+        this.eventCountsBarrier = new EventBarrier(this.logger);
+        this.rpcBarrier = new EventBarrier(this.logger);
+        this.disconnectionBarrier = new EventBarrier(this.logger);
+
+        // Initialize action instances
+        this.lifecycle = new LifecycleActions(this, this.logger);
+        this.join = new JoinActions(this);
+        this.transition = new TransitionActions(this, this.logger);
+        this.network = new NetworkController(this, this.logger);
+        this.assert = new AssertActions(this, this.logger);
+        this.byzantine = new ByzantineActions(this, this.logger);
+        this.event = new EventActions(this, this.logger);
+        this.query = new StateQueryActions(this, this.logger);
+        this.dispute = new DisputeOrchestrator(this, this.logger);
+        this.tamper = new DisputeTamperingActions(this, this.logger);
+        this.rpc = new RPCActions(this, this.logger);
+        this.rpcStub = new RpcStubActions(this, this.logger);
+        this.mirror = new MirrorActions(this);
+        this.contextApi = new ContextActions(this, this.logger);
+        this.scenario = new ScenarioActions(this, this.logger);
+        this.debug = new HarnessDebug(this);
+    }
+
+    async setup(
+        numPeers: number,
+        options?: HarnessOptions<THost>
+    ): Promise<void> {
+        const setupStart = Date.now();
+        if (numPeers < 2 || numPeers > 10) {
+            throw new Error("Number of peers must be between 2 and 10");
+        }
+        // Load `testConfig` at config-file precedence (not as a high-priority
+        // override) so `process.env` (RUN_SDK_IN_THREAD, PROVIDER_URL,
+        // LOCAL_DISCOVERY_REGISTRY_URL, …) and any explicit `configOverrides`
+        // still win over it — and the merged result flows into the worker's
+        // setup payload.
+        this.harnessConfig = createConfig(
+            options?.configOverrides || {},
+            testConfig
+        );
+
+        const resolvedTimeConfig: TimeConfig = resolveTestTimeConfig(
+            options?.timeConfig
+        );
+
+        this.options = {
+            logLevel:
+                options?.logLevel ?? (config.LOG_LEVEL as LogLevel) ?? "error",
+            timeConfig: resolvedTimeConfig,
+            channelId:
+                options?.channelId ||
+                `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
+            initialBalance: options?.initialBalance || 500,
+            stateMachineGasLimit: options?.stateMachineGasLimit ?? 500000,
+            maxChannelParticipants:
+                options?.maxChannelParticipants ??
+                DEFAULT_MAX_CHANNEL_PARTICIPANTS,
+            disputeExecutionGasLimit:
+                options?.disputeExecutionGasLimit ??
+                DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
+            autoConnect: options?.autoConnect !== false,
+            peerSetupConcurrency: options?.peerSetupConcurrency,
+            configOverrides: options?.configOverrides || {},
+            customPrecompiles: options?.customPrecompiles || [],
+            customRpcManifest: options?.customRpcManifest,
+            hostRootManifest: options?.hostRootManifest,
+            executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
+            rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
+            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
+        };
+        if (
+            !this.options.timeConfig?.agreementTime ||
+            this.options.timeConfig.agreementTime <= 1
+        )
+            throw new Error(
+                "agreementTime must be greater than 1 second for reliable test execution"
+            );
+        this.syncCoordinator = new SyncCoordinator<THost>(
+            this.logger,
+            this.eventCountsBarrier,
+            (peer) => this.control(peer),
+            this.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+        );
+
+        // Resolve node + discovery before any chain work: use what the runner
+        // passed in, else start our own via the same shared infra calls.
+        await this.resolveInfra();
+
+        const deployStart = Date.now();
+        await this.deployContracts();
+        const deployMs = Date.now() - deployStart;
+
+        // Peers are independent, but each one boots two worker threads that
+        // spend about a second of CPU loading the SDK, so booting every peer
+        // at once demands more cores than a shared farm host has and starves
+        // the SDK event loops during initialization. Two at a time spreads
+        // that burst; a test can raise or lower it through its options.
+        const peerSetupConcurrency =
+            this.options.peerSetupConcurrency ?? DEFAULT_PEER_SETUP_CONCURRENCY;
+        if (
+            !Number.isInteger(peerSetupConcurrency) ||
+            peerSetupConcurrency < 1
+        ) {
+            throw new Error("peerSetupConcurrency must be a positive integer");
+        }
+        for (let start = 0; start < numPeers; start += peerSetupConcurrency) {
+            await Promise.all(
+                Array.from(
+                    {
+                        length: Math.min(peerSetupConcurrency, numPeers - start)
+                    },
+                    (_, offset) => {
+                        const index = start + offset;
+                        return this.createPeer(
+                            index,
+                            this.signerFor(slotAccountIndex(index))
+                        );
+                    }
+                )
+            );
+        }
+
+        this.logger.startPerformanceMonitoring({ threadLabel: "main" });
+
+        // Pulse the event-counts barrier on every mined block so barriers
+        // don't stall waiting for chain-time to advance between transactions.
+
+        // Startup = everything in setup() except the contract deploy (peer/SDK
+        // init + connection). Emitted for the parallel runner to parse/sum; one
+        // line per setup call so multi-setup tests accumulate correctly.
+        const startupMs = Date.now() - setupStart - deployMs;
+        process.stdout.write(
+            `##E2E_TIMING## ${JSON.stringify({ startupMs, deployMs })}\n`
+        );
+
+        this.logger.info("Test harness setup completed");
+    }
+
+    async setChannelId(channelId: ChannelId): Promise<void> {
+        this.channelId = channelId;
+        this.logger.updateSharedContext({ channelId: String(channelId) });
+        await Promise.all(
+            this.peers.map((peer) =>
+                this.control(peer).lifecycle.stageChannelId(channelId).request()
+            )
+        );
+    }
+
+    public get canAddPeer(): boolean {
+        return !!this.channelManager && !!this.sharedStateMachineDeployer;
+    }
+
+    /**
+     * Establish the node + discovery URLs. Use whatever the runner passed in
+     * (PROVIDER_URL / LOCAL_DISCOVERY_REGISTRY_URL, e.g. a slot); for anything
+     * not provided, start it ourselves via the same shared infra calls the
+     * runner uses, and own its teardown. The resolved URLs are written back to
+     * the config so the SDK (and any sdk-in-thread worker) uses the same infra.
+     */
+    private async resolveInfra(): Promise<void> {
+        let nodeUrl = process.env.PROVIDER_URL || process.env.HARDHAT_NODE_URL;
+        if (!nodeUrl) {
+            const node = await startHardhatNode({
+                label: "harness hardhat node",
+                env: { E2E_INTERVAL_MINING: "1" }
+            });
+            this.ownNode = node;
+            nodeUrl = node.url;
+            this.logger.debug(`Started harness hardhat node at ${nodeUrl}`);
+        }
+
+        let discoveryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
+        if (!discoveryUrl) {
+            const disc = await startDiscoveryRegistry({
+                label: "harness discovery"
+            });
+            this.ownDiscovery = disc;
+            discoveryUrl = disc.url;
+            this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
+        }
+
+        this.harnessConfig.PROVIDER_URL = nodeUrl;
+        this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+        config.PROVIDER_URL = nodeUrl;
+        config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+
+        // WebSocket so block/event subscriptions are push-based (eth_subscribe)
+        // rather than HTTP polling — far less main-thread event-loop pressure.
+        // Hardhat's node serves WS on the same port.
+        const wsUrl = nodeUrl.replace(/^http/, "ws");
+        this.provider = new ethers.WebSocketProvider(wsUrl);
+    }
+
+    /** Wallet for an absolute account index, connected to the harness provider. */
+    public signerFor(absoluteIndex: number): ethers.HDNodeWallet {
+        return ethers.HDNodeWallet.fromPhrase(
+            HARDHAT_MNEMONIC,
+            undefined,
+            `m/44'/60'/0'/0/${absoluteIndex}`
+        ).connect(this.provider);
+    }
+
+    private createLocalStateMachineDeployer(
+        deployment: Pick<
+            HarnessDeploymentConfig<TStateMachine>,
+            "deployLocalStateMachine"
+        >
+    ): LocalStateMachineDeployer {
+        const { deployLocalStateMachine } = deployment;
+
+        return async (signer) => {
+            const deployedAddress = await deployLocalStateMachine({
+                signer,
+                maxChannelParticipants:
+                    this.options.maxChannelParticipants ??
+                    DEFAULT_MAX_CHANNEL_PARTICIPANTS,
+                stateMachineGasLimit: this.options.stateMachineGasLimit!,
+                disputeExecutionGasLimit:
+                    this.options.disputeExecutionGasLimit!,
+                timeConfig: this.options.timeConfig as TimeConfig,
+                harnessConfig: this.harnessConfig
+            });
+
+            return deployedAddress;
+        };
+    }
+
+    private async deployContracts(): Promise<void> {
+        // Dedicated deployer account: top of this slot's stride, disjoint from
+        // all peer accounts (0..STRIDE-2). Wrapped in NonceManager so deploy txs
+        // don't collide with each other on a strict external node.
+        const deployerSigner = new NonceManager(
+            this.signerFor(slotDeployerIndex())
+        );
+        const deployment = this.deployment;
+
+        this.sharedStateMachineDeployer =
+            this.createLocalStateMachineDeployer(deployment);
+
+        // Stable deploy-key from the on-chain config values that distinguish
+        // deployments. Intentionally omits the state-machine artifact hash:
+        // the runner resets the per-node cache dir on every node (re)boot so
+        // markers are never stale, and the e2e suite uses a single artifact.
+        // If a second state-machine variant is ever added, fold its hash in.
+        const { timeConfig, stateMachineGasLimit, disputeExecutionGasLimit } =
+            this.options;
+        const sortedTc = JSON.stringify(
+            timeConfig,
+            Object.keys(timeConfig as object).sort()
+        );
+        const deployKey = createHash("sha256")
+            .update(
+                JSON.stringify({
+                    tc: sortedTc,
+                    sm: String(stateMachineGasLimit),
+                    de: String(disputeExecutionGasLimit),
+                    maximum:
+                        this.options.maxChannelParticipants ??
+                        DEFAULT_MAX_CHANNEL_PARTICIPANTS,
+                    // Consumer-side identity (e.g. poker's maxPlayers): a
+                    // stack built with different parameters must never be
+                    // served from this cache.
+                    cs: deployment.getDeploymentCacheKeyFragment?.() ?? ""
+                })
+            )
+            .digest("hex")
+            .slice(0, 16);
+
+        const cacheDir = process.env.E2E_MANAGER_CACHE_DIR;
+
+        const hasCode = async (address: string): Promise<boolean> => {
+            if (!ethers.isAddress(address)) return false;
+            const code = await this.provider.getCode(address);
+            return Boolean(code) && code !== "0x";
+        };
+
+        // The dispute/verification facets are stateless and identical for
+        // every configuration, so one deployment per node serves every test:
+        // the marker cache deploys them once and later tests reuse them.
+        const facetResolution = await resolveOrDeployShared({
+            cacheDir,
+            markerName: "scm-facets.json",
+            validate: async (stored) => {
+                try {
+                    const parsed = JSON.parse(stored) as unknown;
+                    if (!Array.isArray(parsed) || parsed.length === 0) {
+                        return false;
+                    }
+                    const checks = await Promise.all(
+                        parsed.map((address) => hasCode(String(address)))
+                    );
+                    return checks.every(Boolean);
+                } catch {
+                    return false;
+                }
+            },
+            deploy: async () =>
+                JSON.stringify(await deployFacets(deployerSigner)),
+            logger: this.logger
+        });
+        const facetAddresses = JSON.parse(facetResolution.value) as string[];
+
+        const scmResolution = await resolveOrDeployShared({
+            cacheDir,
+            markerName: `${deployKey}.addr`,
+            validate: hasCode,
+            deploy: async () => {
+                const deployedAddress = await deployment.deployOnChainContracts(
+                    {
+                        signer: deployerSigner,
+                        maxChannelParticipants:
+                            this.options.maxChannelParticipants ??
+                            DEFAULT_MAX_CHANNEL_PARTICIPANTS,
+                        stateMachineGasLimit:
+                            this.options.stateMachineGasLimit!,
+                        disputeExecutionGasLimit:
+                            this.options.disputeExecutionGasLimit!,
+                        timeConfig: this.options.timeConfig as TimeConfig,
+                        harnessConfig: this.harnessConfig,
+                        facetAddresses
+                    }
+                );
+                this.logger.debug(
+                    `Deployed StateChannelManager at ${deployedAddress}`
+                );
+                return deployedAddress;
+            },
+            logger: this.logger
+        });
+        const channelManagerAddress = scmResolution.value;
+        if (scmResolution.source === "cache") {
+            this.logger.debug(
+                `Reusing deployed StateChannelManager at ${channelManagerAddress} (cache)`
+            );
+        }
+
+        // Wrap like the SDK wraps its own contracts: converts ethers `Result`s
+        // to plain objects on return AND makes call args mutable. Without it,
+        // round-tripping a frozen `Result` (e.g. `getStateSnapshot().snapshotData`)
+        // back into a `staticCall` throws "Cannot assign to read only property".
+        this.channelManager = createEthersResultProxy(
+            connectStateChannelManager(channelManagerAddress, deployerSigner)
+        );
+    }
+
+    private resolveSignerSecret(
+        index: number,
+        address: string
+    ): string | undefined {
+        const wallet = this.signerFor(slotAccountIndex(index));
+        if (wallet.address.toLowerCase() !== address.toLowerCase()) {
+            return undefined;
+        }
+        return wallet.privateKey;
+    }
+
+    public async createPeer(index: number, signer: Signer): Promise<void> {
+        const address = await signer.getAddress();
+
+        const peerLogger = createLogger(
+            {
+                peerId: index,
+                peerAddress: address
+            },
+            { component: `PeerTestHarness` },
+            { level: this.options.logLevel, attachErrorListener: false } // Use same log level as harness
+        );
+
+        this.logger.debug(`Creating peer ${index} at ${address}`);
+
+        const peerTurnBarrier = new EventBarrier(peerLogger);
+        this.endedMembershipPeerIndices.delete(index);
+
+        const eventSpies: EventSpies = {
+            // P2pEventHooks spies
+            onConnection: sinon.spy(),
+            onTurn: sinon.spy(),
+            onLeaveTurn: sinon.spy(),
+            onLeftChannel: sinon.spy(),
+            onSetState: sinon.spy(),
+            onAbort: sinon.spy(),
+            onStatusChanged: sinon.spy(),
+            onPostingCalldata: sinon.spy(),
+            onPostedCalldata: sinon.spy(),
+            disputeStarted: sinon.spy(),
+            onInitiatingDispute: sinon.spy(),
+            onDisputeUpdate: sinon.spy(),
+            onBlockConfirmationProcessed: sinon.spy(),
+
+            // EventHandler method spies
+            onChannelOpened: sinon.spy(),
+            onStateSnapshotUpdated: sinon.spy(),
+            onBlockCalldataPosted: sinon.spy(),
+            onDisputeCommitted: sinon.spy(),
+            onChainSlashed: sinon.spy(),
+            onDisputeReducedResultCommitted: sinon.spy(),
+            onWithdrawalsUpdated: sinon.spy(),
+            onChannelStorageCleared: sinon.spy(),
+            onDisputeKilled: sinon.spy(),
+            onInboundMessagesProcessed: sinon.spy()
+        };
+
+        const hooks: P2pEventHooks = {
+            onConnection: (addr: Address, isChannelOpened: boolean) => {
+                peerLogger.verbose(`Connection established with ${addr}`, {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onConnection?.(addr, isChannelOpened);
+                void this.connectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onDisconnection: (addr: Address) => {
+                peerLogger.verbose(`Disconnection from ${addr}`, {
+                    component: "P2pEventHooks"
+                });
+                void this.disconnectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onLeaveTurn: () => {
+                eventSpies.onLeaveTurn?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onLeftChannel: () => {
+                peerLogger.debug("Left the channel", {
+                    component: "P2pEventHooks"
+                });
+                this.endedMembershipPeerIndices.add(index);
+                eventSpies.onLeftChannel?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onTurn: (
+                addr: Address,
+                _turnTime: number,
+                _agreementTime: number,
+                _chainFallbackTime: number
+            ) => {
+                peerLogger.verbose(`Turn received from ${addr}`, {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onTurn?.(addr);
+                void peerTurnBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onSetState: (forkId: ForkId) => {
+                peerLogger.debug("State set", { component: "P2pEventHooks" });
+                // Peers push their fork id on setState; keep the cache fresh so
+                // `activeForkId` reflects updates without an explicit query.
+                if (forkId && forkId !== "0x00" && forkId !== "0x0") {
+                    this.forkIdCache.set(index, forkId);
+                }
+                eventSpies.onSetState?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onAbort: () => {
+                peerLogger.debug("Channel participation aborted", {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onAbort?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onStatusChanged: (oldStatus, newStatus) => {
+                peerLogger.debug("Status changed (hook)", {
+                    component: "P2pEventHooks",
+                    oldStatus,
+                    newStatus
+                });
+                // a new join: the peer is a member again
+                if (isCommittedParticipantStatus(newStatus)) {
+                    this.endedMembershipPeerIndices.delete(index);
+                    this.context.leftChannelPeerIndices =
+                        this.context.leftChannelPeerIndices.filter(
+                            (peerIndex) => peerIndex !== index
+                        );
+                }
+                eventSpies.onStatusChanged?.(oldStatus, newStatus);
+                void this.eventCountsBarrier.signal();
+            },
+            onPostingCalldata: () => {
+                peerLogger.debug("Posting calldata to blockchain", {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onPostingCalldata?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onPostedCalldata: () => {
+                peerLogger.debug("Calldata posted to blockchain", {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onPostedCalldata?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onDisputeStarted: (maxDuration: number) => {
+                peerLogger.debug("Dispute started", {
+                    component: "P2pEventHooks",
+                    maxDuration
+                });
+                eventSpies.disputeStarted?.(maxDuration);
+                void this.eventCountsBarrier.signal();
+            },
+            onInitiatingDispute: (
+                disputeHash: Hash,
+                dispute: DisputeStruct
+            ) => {
+                peerLogger.info(
+                    `Initiating dispute - DisputeHash:${disputeHash}`,
+                    {
+                        component: "P2pEventHooks"
+                    }
+                );
+                eventSpies.onInitiatingDispute?.(disputeHash, dispute);
+                void this.eventCountsBarrier.signal();
+            },
+            onDisputeUpdate: (slashes: Address[], timeout?: Address) => {
+                peerLogger.info("Dispute updated", {
+                    component: "P2pEventHooks",
+                    slashes,
+                    timeout
+                });
+                eventSpies.onDisputeUpdate?.(slashes, timeout);
+                void this.eventCountsBarrier.signal();
+            },
+            onDisputeAcknowledgment: (addr: Address) => {
+                peerLogger.verbose(
+                    `Dispute acknowledgment received from ${addr}`,
+                    {
+                        component: "P2pEventHooks"
+                    }
+                );
+                void this.rpcBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onBlockFinalized: () => {
+                void this.eventCountsBarrier.signal();
+            },
+            onBlockConfirmationProcessed: (
+                blockHash: Hash,
+                keepConnection: boolean
+            ) => {
+                peerLogger.verbose("Block confirmation processed", {
+                    component: "P2pEventHooks",
+                    blockHash,
+                    keepConnection
+                });
+                eventSpies.onBlockConfirmationProcessed?.(
+                    blockHash,
+                    keepConnection
+                );
+                void this.eventCountsBarrier.signal();
+            }
+        };
+
+        const contractInstanceMock = this.deployment.connectSigner(
+            ethers.ZeroAddress,
+            signer
+        );
+
+        const useWorker = this.harnessConfig.RUN_SDK_IN_THREAD;
+        const signerSecret = this.resolveSignerSecret(index, address);
+        if (!signerSecret) {
+            throw new Error(
+                `Peer ${index} signer cannot be reconstructed by the runtime host`
+            );
+        }
+
+        const executorCallGasLimit =
+            this.options.executorCallGasLimitByPeer?.[index];
+        // The executor factory is reachable only in an inline host, so a peer
+        // with its own call gas always runs inline.
+        const inline = !useWorker || executorCallGasLimit !== undefined;
+        const rpcNodeProxies = await this.startRpcNodeProxies(index);
+        const setupOptions = {
+            peerId: index,
+            peerLogger: peerLogger,
+            customPrecompiles: this.options.customPrecompiles!,
+            customRpcManifest: this.resolveHarnessRpcManifest(),
+            hostRootManifest: this.options.hostRootManifest,
+            signerSecret,
+            config: {
+                ...this.harnessConfig,
+                ...(executorCallGasLimit === undefined
+                    ? {}
+                    : { RUN_SDK_IN_THREAD: false }),
+                ...(rpcNodeProxies.length > 0
+                    ? {
+                          PROVIDER_URLS: rpcNodeProxies.map(
+                              (proxy) => proxy.url
+                          )
+                      }
+                    : {})
+            },
+            handlerExecutionContext: inline
+                ? new PeerIdentityExecutionContext(address)
+                : undefined
+        };
+        const p2pInstance = await RootCreationControl.observe(() =>
+            executorCallGasLimit === undefined
+                ? EvmStateMachine.p2pSetup<TStateMachine, THost>(
+                      this.channelManager,
+                      contractInstanceMock,
+                      this.sharedStateMachineDeployer,
+                      setupOptions
+                  )
+                : // p2pSetup's own construction, with the production executor
+                  // factory given this peer's call gas
+                  setupP2pRuntime<TStateMachine, THost>(
+                      this.channelManager,
+                      contractInstanceMock,
+                      this.sharedStateMachineDeployer,
+                      setupOptions,
+                      {
+                          hostContext: {
+                              createContractExecutor: (factoryOptions, owner) =>
+                                  createContractExecutor(
+                                      {
+                                          ...factoryOptions,
+                                          configuration:
+                                              factoryOptions.configuration.then(
+                                                  (configuration) => ({
+                                                      ...configuration,
+                                                      callGasLimit:
+                                                          BigInt(
+                                                              executorCallGasLimit
+                                                          )
+                                                  })
+                                              )
+                                      },
+                                      owner
+                                  )
+                          }
+                      }
+                  )
+        );
+
+        const peer: TestPeer<THost, TStateMachine> = {
+            index,
+            signer,
+            address,
+            p2pInstance,
+            contractInstance: p2pInstance.p2pContractInstance,
+            eventSpies,
+            turnBarrier: peerTurnBarrier,
+            logger: peerLogger
+        };
+
+        // Register the p2p-hook listeners (built above) and the EventHandler
+        // spy/barrier listeners on the runtime. All events are forwarded over the
+        // port and dispatched on the main thread.
+        this.registerPeerEventListeners(peer, hooks);
+
+        // Index-addressed (not push) so parallel setup keeps peers in peer-index
+        // order regardless of which createPeer resolves first.
+        this.peers[index] = peer;
+        this.logger.debug(`Peer ${index} created successfully`);
+    }
+
+    /** Start the proxies `rpcNodeProxiesByPeer` asks for in front of the test node. */
+    private async startRpcNodeProxies(index: number): Promise<RpcNodeProxy[]> {
+        const count = this.options.rpcNodeProxiesByPeer?.[index] ?? 0;
+        const nodeUrl = this.harnessConfig.PROVIDER_URL;
+        if (count === 0) return [];
+        if (!nodeUrl)
+            throw new Error("RPC node proxies need the test node URL");
+        const proxies = await Promise.all(
+            Array.from({ length: count }, () => RpcNodeProxy.start(nodeUrl))
+        );
+        for (const position of this.options.rpcNodeProxiesCutAtStart?.[index] ??
+            [])
+            proxies[position].cut();
+        this.rpcNodeProxies.set(index, proxies);
+        return proxies;
+    }
+
+    /**
+     * The custom RPC manifest a peer is built with. Defaults to the
+     * {@link HarnessControlRpc} manifest so every peer exposes the harness
+     * control surface; a test-supplied manifest (whose class applies
+     * `withHarnessControl`, directly or by extending {@link HarnessControlRpc})
+     * takes precedence.
+     */
+    private resolveHarnessRpcManifest(): CustomRpcManifest {
+        // Resolve the sibling RPC with the same extension this module runs as:
+        // ".js" when consumed from the built dist, ".ts" under ts-node. A
+        // hardcoded ".ts" breaks dist consumers, where only ".js" ships.
+        const ext = __filename.endsWith(".ts") ? "ts" : "js";
+        return (
+            this.options.customRpcManifest ?? {
+                module: path.resolve(
+                    __dirname,
+                    `customRpc/harnessControl/HarnessControlRpc.${ext}`
+                )
+            }
+        );
+    }
+
+    /**
+     * Register all runtime-event listeners for a peer: the p2p-hook callbacks
+     * (already wired to spies/barriers) and an EventHandler listener per
+     * mirrored event that drives its spy and signals the event-count barrier.
+     */
+    private registerPeerEventListeners(
+        peer: TestPeer<THost, TStateMachine>,
+        hooks: P2pEventHooks
+    ): void {
+        for (const [name, fn] of Object.entries(hooks)) {
+            if (typeof fn === "function") {
+                peer.p2pInstance.events.on(
+                    "p2pEventHooks",
+                    name as keyof BusEventMaps["p2pEventHooks"],
+                    fn as never
+                );
+            }
+        }
+
+        const spies = peer.eventSpies;
+        for (const name of EVENT_HANDLER_HOOK_NAMES) {
+            peer.p2pInstance.events.on(
+                "eventHandler",
+                name,
+                (...args: unknown[]) => {
+                    const spy = spies[name as keyof EventSpies];
+                    spy?.(...(args as Parameters<sinon.SinonSpy>));
+                    void this.eventCountsBarrier.signal();
+                }
+            );
+        }
+    }
+
+    // ===== PRIVATE HELPERS =====
+
+    cleanup(): Promise<void> {
+        return (this.cleanupPromise ??= Promise.resolve().then(() =>
+            this.cleanupOnce()
+        ));
+    }
+
+    private async cleanupOnce(): Promise<void> {
+        this.logger.debug("Starting cleanup...");
+        this.logger.stopPerformanceMonitoring();
+
+        if (this.channelManager) {
+            await this.channelManager.removeAllListeners();
+        }
+
+        this.connectionBarrier.clear();
+        this.eventCountsBarrier.clear();
+
+        const disposePromises = this.peers.map(async (peer) => {
+            try {
+                peer.logger.verbose("Cleaning up peer", {
+                    component: "TestHarness"
+                });
+
+                await peer.p2pInstance.dispose();
+
+                Object.values(peer.eventSpies).forEach((spy) =>
+                    spy?.resetHistory()
+                );
+
+                peer.logger.verbose("Peer cleanup completed", {
+                    component: "TestHarness"
+                });
+            } catch (error) {
+                peer.logger.error(`Error during cleanup: ${error}`, {
+                    component: "TestHarness"
+                });
+            } finally {
+                // unregister -> otherwise every test's peer loggers keep taking
+                // flush rounds for the life of the process
+                peer.logger.dispose();
+            }
+        });
+
+        await Promise.all(disposePromises);
+
+        await new Promise((resolve) => setImmediate(resolve));
+
+        this.peers = [];
+
+        // Fully reset the context object to ensure no properties leak between tests
+        this.context = new HarnessContext();
+
+        // Cleanup discovery server and peer servers
+        await LocalDiscoveryServer.cleanup();
+
+        // The peers are gone, so their RPC node proxies can close.
+        await Promise.all(
+            [...this.rpcNodeProxies.values()]
+                .flat()
+                .map((proxy) => proxy.close())
+        );
+        this.rpcNodeProxies.clear();
+
+        // Drop the provider's pollers; stop the node/discovery we started (if any).
+        await this.provider?.destroy();
+        this.ownNode?.stop();
+        this.ownDiscovery?.stop();
+        this.ownNode = undefined;
+        this.ownDiscovery = undefined;
+
+        this.logger.dispose();
+    }
+
+    /**
+     * Mine `count` blocks with ordinary self-transfers from this slot's
+     * deployer account, one block each: a chain that advances without
+     * channel events and without any node-wide test RPC.
+     */
+    async produceBlocks(count: number): Promise<void> {
+        const deployer = this.signerFor(slotDeployerIndex());
+        for (let block = 0; block < count; block++) {
+            await (
+                await deployer.sendTransaction({
+                    to: deployer.address,
+                    value: 0n
+                })
+            ).wait();
+        }
+    }
+
+    /** The RPC node proxies of a peer set up with `rpcNodeProxiesByPeer`, in PROVIDER_URLS order. */
+    getRpcNodeProxies(index: number): readonly RpcNodeProxy[] {
+        const proxies = this.rpcNodeProxies.get(index);
+        if (!proxies) throw new Error(`Peer ${index} has no RPC node proxies`);
+        return proxies;
+    }
+
+    getPeer(index: number): TestPeer<THost, TStateMachine> {
+        const peer = this.peers[index];
+        if (!peer) throw new Error(`Peer ${index} not found`);
+        return peer;
+    }
+
+    getPeerAddresses(): Address[] {
+        return this.peers.map((p) => p.address);
+    }
+
+    getFilteredPeers(peerIndices?: number[]): TestPeer<THost, TStateMachine>[] {
+        return peerIndices
+            ? peerIndices.map((i) => this.getPeer(i))
+            : this.peers;
+    }
+
+    getHonestPeers(
+        excludePeerIndices?: number[]
+    ): TestPeer<THost, TStateMachine>[] {
+        const excludeSet = new Set<number>([
+            ...(excludePeerIndices ?? []),
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? [])
+        ]);
+        return this.peers.filter((peer) => !excludeSet.has(peer.index));
+    }
+
+    async peerWithHighestBlock(
+        forkId: ForkId
+    ): Promise<TestPeer<THost, TStateMachine>> {
+        const unavailable = new Set([
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? []),
+            ...this.peers
+                .filter(
+                    (peer) =>
+                        peer.eventSpies.onAbort?.called ||
+                        this.endedMembershipPeerIndices.has(peer.index)
+                )
+                .map((peer) => peer.index)
+        ]);
+        const heights = await Promise.all(
+            this.peers.map((peer) =>
+                unavailable.has(peer.index)
+                    ? Promise.resolve(null)
+                    : this.control(peer)
+                          .query.getLatestBlockHeight(forkId)
+                          .request()
+            )
+        );
+
+        let best: TestPeer<THost, TStateMachine> | undefined;
+        let bestHeight = Number.NEGATIVE_INFINITY;
+        this.peers.forEach((peer, i) => {
+            const h = heights[i];
+            if (h === null || h === undefined) return;
+            if (h > bestHeight) {
+                bestHeight = h;
+                best = peer;
+            }
+        });
+        return (
+            best ??
+            this.peers.find((peer) => !unavailable.has(peer.index)) ??
+            this.peers[0]
+        );
+    }
+
+    /** Every responsive honest harness peer except leavers, removed and aborted peers. */
+    getActiveHonestPeers(): TestPeer<THost, TStateMachine>[] {
+        const exclude = new Set([
+            ...(this.context.leftChannelPeerIndices ?? []),
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? []),
+            ...this.peers
+                .filter(
+                    (peer) =>
+                        peer.eventSpies.onAbort?.called ||
+                        this.endedMembershipPeerIndices.has(peer.index)
+                )
+                .map((peer) => peer.index)
+        ]);
+        return this.peers.filter((p) => !exclude.has(p.index));
+    }
+
+    getFilteredOrHonestPeers(
+        peerIndices?: number[]
+    ): TestPeer<THost, TStateMachine>[] {
+        if (peerIndices) {
+            return this.getFilteredPeers(peerIndices);
+        }
+        return this.getHonestPeers();
+    }
+    getConfig(): Partial<Config> {
+        return this.harnessConfig;
+    }
+
+    /**
+     * Push every peer's private key to `peer`'s host once, so host-side dispute
+     * tamper callbacks can re-sign inner blocks authored by any peer (a peer's
+     * host otherwise holds only its own key). Keys are mnemonic-derived.
+     */
+    /**
+     * Drain every peer's host-side detached async work over the port and return
+     * any rejections. The orchestrator settles host work this way (instead of
+     * reaching into a realm-local global) so it behaves the same inline, in a
+     * worker, or remote.
+     */
+    /**
+     * Run `fn(sm, args)` host-side with the live stateManager injected, returning
+     * its serializable result. The escape hatch for white-box scenarios that must
+     * drive in-process internals (mutex, validationService, local RPC services).
+     * `fn` is shipped as source: closure-free, reach everything via `sm`, pass
+     * captured values via `args`. Host code routinely waits for a protocol
+     * event (an on-chain receipt, a block round), so the request budget is the
+     * protocol event timeout rather than the control RPC default; pass
+     * `options.timeoutMs` only for a longer wait.
+     */
+    async execOnHost<
+        T,
+        A extends Record<string, unknown> = Record<string, never>
+    >(
+        peer: TestPeer<THost, TStateMachine>,
+        fn: (
+            sm: StateManager<ApplicationOf<THost>>,
+            args: A,
+            modules: HostExecModules
+        ) => T | Promise<T>,
+        args: A = {} as A,
+        options?: RpcRequestOptions
+    ): Promise<T> {
+        return (await this.control(peer)
+            .scenario.exec(fn.toString(), args)
+            .request({
+                timeoutMs: this.event.protocolEventTimeoutMs(),
+                ...options
+            })) as T;
+    }
+
+    async quiesceHosts(): Promise<Error[]> {
+        const unavailablePeerIndices = new Set([
+            ...this.context.afkPeerIndices,
+            ...this.context.maliciousPeerIndices
+        ]);
+        const responsivePeers = this.peers.filter(
+            (peer) => !unavailablePeerIndices.has(peer.index)
+        );
+        if (responsivePeers.length === 0) return [];
+        // In worker mode each drained worker thread runs exactly one peer, so
+        // an unstamped rejection is attributable to the peer whose host
+        // returned it. Inline hosts share one process (any peer's quiesce can
+        // drain another's work) - there only collect-time stamps are
+        // trustworthy.
+        const stampPerHostThread = !!this.harnessConfig.RUN_SDK_IN_THREAD;
+        const perPeer = await Promise.all(
+            responsivePeers.map(async (peer) => {
+                const errors = await peer.p2pInstance
+                    .quiesce()
+                    .catch((error: unknown) => {
+                        if (
+                            error instanceof Error &&
+                            error.message.includes("disposed")
+                        ) {
+                            return [];
+                        }
+                        return [
+                            error instanceof Error
+                                ? error
+                                : new Error(String(error))
+                        ];
+                    });
+                if (stampPerHostThread) {
+                    for (const error of errors) {
+                        maybeStampErrorWithPeerAddress(error, peer.address);
+                    }
+                }
+                return errors;
+            })
+        );
+        return perPeer.flat();
+    }
+
+    /**
+     * EVM addresses of peers a scenario marked byzantine/malicious or
+     * left-channel. Errors originating on these peers are expected and
+     * suppressed.
+     */
+    private byzantinePeerAddresses(): Set<string> {
+        return new Set(
+            [...this.context.maliciousPeerIndices].map(
+                (i) => this.getPeer(i).address
+            )
+        );
+    }
+
+    isExpectedByzantineError(error: unknown): boolean {
+        const address = getErrorPeerAddress(error);
+        if (!address) return false;
+        return this.byzantinePeerAddresses().has(address);
+    }
+
+    async ensurePeerSignersRegistered(
+        peer: TestPeer<THost, TStateMachine>
+    ): Promise<void> {
+        if (this.peerSignersRegistered.has(peer.index)) return;
+        const secrets = this.peers
+            .map((p) => this.resolveSignerSecret(p.index, p.address))
+            .filter((secret): secret is string => !!secret);
+        await this.control(peer).signer.registerPeerSigners(secrets).request();
+        this.peerSignersRegistered.add(peer.index);
+    }
+}
+
+export default PeerTestHarness;

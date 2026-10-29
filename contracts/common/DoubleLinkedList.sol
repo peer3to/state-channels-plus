@@ -4,19 +4,20 @@ pragma solidity ^0.8.0;
 struct NodeData {
     bytes32 tableId;
 }
+
 struct Node {
     NodeData data;
     bytes32 uniquePtr;
     bytes32 next;
     bytes32 prev;
 }
-contract InternalDoubleLinkedListIterator{
-    
+
+contract InternalDoubleLinkedListIterator {
     function createIterator(DoubleLinkedList list) internal view returns (DoubleLinkedListIterator memory) {
         Node memory current = list.getAtIndex(0);
         return DoubleLinkedListIterator(list, current);
     }
-    
+
     function iteratorNext(DoubleLinkedListIterator memory iterator) internal view returns (Node memory) {
         iterator.current = iterator.list.getNode(iterator.current.next);
         return iterator.current;
@@ -26,26 +27,27 @@ contract InternalDoubleLinkedListIterator{
         iterator.current = iterator.list.getNode(iterator.current.prev);
         return iterator.current;
     }
+
     function iteratorGetCurrent(DoubleLinkedListIterator memory iterator) internal pure returns (Node memory) {
         return iterator.current;
     }
+
     function iteratorReset(DoubleLinkedListIterator memory iterator) internal view {
         iterator.current = iterator.list.getAtIndex(0);
     }
-
 }
 
-struct DoubleLinkedListIterator{
+struct DoubleLinkedListIterator {
     DoubleLinkedList list;
     Node current;
 }
 
 contract DoubleLinkedList {
-
-    uint public length = 0;
+    uint256 public length = 0;
     mapping(bytes32 => Node) private map;
     Node headNode = Node(NodeData(0), 0, 0, 0);
     // Add data to the front of the list
+
     function addFront(NodeData memory data) public {
         Node memory node = Node(data, data.tableId, 0, 0);
         node.next = headNode.uniquePtr;
@@ -85,10 +87,10 @@ contract DoubleLinkedList {
         return map[uniquePtr];
     }
 
-    function getAtIndex(uint index) public view returns (Node memory) {
+    function getAtIndex(uint256 index) public view returns (Node memory) {
         require(index < length, "Index out of bounds");
         bytes32 current = headNode.uniquePtr;
-        for (uint i = 0; i < index; i++) {
+        for (uint256 i = 0; i < index; i++) {
             current = map[current].next;
         }
         return map[current];
@@ -96,7 +98,7 @@ contract DoubleLinkedList {
 
     function printAll() public view {
         bytes32 current = headNode.uniquePtr;
-        for (uint i = 0; i < length; i++) {
+        for (uint256 i = 0; i < length; i++) {
             Node memory node = map[current];
             // console.logBytes32(node.data.tableId);
             current = node.next;

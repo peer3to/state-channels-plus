@@ -1,0 +1,38 @@
+// @spec-test-coverage-ignore: harness-only detached-error attribution regression; no protocol behavior is specified here
+import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
+
+describe("E2E: Byzantine error attribution", function () {
+    it("suppresses a stray detached error originating on a malicious peer", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 2);
+
+        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+
+        await h.execOnHost(h.getPeer(1), () => {
+            void Promise.reject(new Error("byzantine peer stray error"));
+        });
+
+        // the error carries peer 1's address -> ignored, nothing recorded
+        const err = await TestSession.consumeFirstDetachedError(1500);
+        expect(
+            err,
+            `expected the byzantine peer's error to be suppressed, got: ${err?.message}`
+        ).to.equal(undefined);
+    });
+
+    it("does not suppress the same error when it comes from an honest peer", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 2);
+
+        await h.execOnHost(h.getPeer(1), () => {
+            void Promise.reject(new Error("honest peer stray error"));
+        });
+
+        // honest-peer errors must still be recorded
+
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "honest peer stray error"
+        });
+    });
+});

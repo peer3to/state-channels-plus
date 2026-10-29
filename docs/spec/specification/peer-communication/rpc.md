@@ -1,0 +1,385 @@
+# Peer Communication and RPC Services
+
+> **Agent status:** Maintained reverse-engineered draft.
+> **Engineer verification:** Pending.
+> **Status:** Draft.
+
+## Contents
+
+- [Purpose and observable model](#purpose-and-observable-model)
+- [Service model](#service-model)
+- [Ingress dispatch algorithm](#ingress-dispatch-algorithm)
+- [Guards: caller admission](#guards-caller-admission)
+- [Request lifecycle and correlation](#request-lifecycle-and-correlation)
+- [Replay classification](#replay-classification)
+- [Trusted loopback vs untrusted peers](#trusted-loopback-vs-untrusted-peers)
+- [Application host root](#application-host-root)
+- [Compatibility and versioning](#compatibility-and-versioning)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and observable model
+
+Peer communication exposes typed protocol services over an authenticated transport. The communication layer
+correlates requests and responses, gates methods by session state, validates and decodes untrusted payloads,
+applies bounded scheduling, and reports transport and application failures without changing their meaning.
+
+Two complementary properties are deliberately kept distinct and both required:
+
+- **Type safety protects local callers.** A typed calling surface prevents locally compiled code from
+  constructing a malformed call. It constrains nothing a remote peer can send.
+- **Byzantine safety protects the receiver.** Wire data is untrusted regardless of how the sender was
+  built. Every public method is an adversarial ingress point and must validate as if the transport
+  proved nothing beyond the authenticated peer identity.
+
+## Service model
+
+The required service families are: mutual identity handshake; channel-term negotiation; unanimous join
+authorization; block-confirmation ingress; dispute acknowledgement; verifiable state synchronization; and
+post-authentication transport upgrade/signaling. Implementations may combine or split services, but must
+preserve their state machines, authorization, ordering, and failure outcomes. **Each family has its own
+specification** defining its algorithm, system interactions, failure outcomes, and test plan; this document
+owns only the shared communication model they all run on.
+
+Service resolution follows the declared public service contract. A service loaded from an application
+extension or another valid module graph remains the same protocol service even when its JavaScript
+constructor identity differs. An incomplete object that does not expose the declared service operations is
+still an unknown service and fails at the service-resolution stage.
+
+The remotely callable endpoint set contains function-valued own properties on the methods object and
+function-valued data properties declared by its application class hierarchy. The runtime stops before its
+RPC methods base and the language object base: base helpers, built-in names, accessors, non-functions, and
+`constructor` are unknown methods. The language object base remains a hard stop when the methods object does
+not inherit the runtime's RPC methods base. Every function-valued own property on a methods object is public
+wire API; helpers and stored callbacks MUST stay off that object or use language-enforced private fields.
+
+The caller chooses the delivery mode per call, within what the method's declaration admits: a method
+with no result may be broadcast to every open session or sent one-way to chosen peers, and a method
+with a result is invoked as a correlated request. One-way delivery to a peer with no live session is a
+silent no-op; a request to an unresolvable peer fails locally. An endpoint is therefore exposed to
+every delivery mode its declaration admits ([`REQ-RPC-1-FF89Z0`](rpc.md#req-rpc-1-ff89z0)). Application extensions add entry points only as declared
+services carrying their own guards and payload validation; there is no way to expose a bare function.
+
+| Family                      | Specification                                            | Session precondition          | Delivery shape              |
+| --------------------------- | -------------------------------------------------------- | ----------------------------- | --------------------------- |
+| Identity handshake          | [handshake.md](./handshake.md)                           | None — it _is_ authentication | Challenge/response exchange |
+| Channel-term negotiation    | [channel-negotiation.md](./channel-negotiation.md)       | Authenticated                 | One-way signaling rounds    |
+| Join authorization          | [join-authorization.md](./join-authorization.md)         | Authenticated                 | Request/response            |
+| Block-confirmation ingress  | [block-gossip.md](./block-gossip.md)                     | Authenticated                 | One-way gossip              |
+| Dispute acknowledgement     | [dispute-acknowledgment.md](./dispute-acknowledgment.md) | Authenticated                 | Request/response            |
+| State synchronization       | [synchronization.md](./synchronization.md)               | Authenticated                 | Request/response            |
+| Transport upgrade/signaling | [transport-upgrade.md](./transport-upgrade.md)           | Authenticated                 | One-way signaling           |
+
+## Ingress dispatch algorithm
+
+Every inbound frame passes through one fixed verification order; each stage has a defined failure
+consequence, and no later stage can compensate for an earlier one:
+
+Every consequence is one outcome of a fixed ordered ladder, and each stage states which one it
+applies: **close with reconnect allowed** (the transport goes, the identity keeps its standing);
+**counted close** (reconnect allowed, but the close spends one of a bounded number of retries the
+peer has for the session, and the close that reaches the bound is applied as the next outcome);
+**suspend** (the peer is refused for the rest of the session, with no verdict recorded); or
+**close and exclude** (the identity is refused on reconnect and the verdict is recorded). No close
+inherits another caller's outcome, and an expected or upgrade-driven close is always the first kind.
+
+An authenticated sender that violates a frame-size, envelope, service, or endpoint contract is
+excluded as well as disconnected, so discovery cannot immediately recreate the rejected session.
+Before identity is known, the same wire fault can only terminate its transport. Transport loss,
+response-send failure, timeout, and an unclassified local dispatch exception remain disconnect-only
+because they do not prove peer misconduct.
+
+A frame that arrives on a transport this participant already closed is dropped before step 1: it is
+not bounded, parsed, dispatched or logged, and applies no consequence. The transport's pending requests
+were released at its close ([`REQ-RPC-2-SZDTTM`](rpc.md#req-rpc-2-szdttm)), and the runtime behind it may already be disposed.
+
+1. **Bound the frame** by its UTF-8 byte length against the maximum frame size _before_ any
+   parsing; an oversized frame applies the wire-fault consequence without parse work.
+2. **Classify responses first.** A frame matching the response shape is routed to correlation
+   handling and can never reach service dispatch.
+3. **Verify the envelope**: the frame must identify a service, a method, an argument list, and — for
+   request-style calls — a string correlation identity. Omission selects one-way delivery; presence
+   selects request delivery, including an empty string. Undecodable frames apply the wire-fault
+   consequence.
+4. **Resolve the service.** An unknown service is a protocol violation.
+5. **Run the service's guards** (next section) — before revealing whether the named method exists, so
+   an unauthenticated peer probing a gated service learns nothing about its method names.
+6. **Resolve the method.** Resolve only a declared endpoint from the methods object's application-owned
+   surface, stopping before both the RPC methods base and the language object base. An unknown, base-owned,
+   accessor, or non-function method is a protocol violation.
+7. **Invoke the endpoint.** The endpoint then owns payload decoding, semantic validation,
+   authorization, and resource bounding ([`REQ-RPC-1-FF89Z0`](rpc.md#req-rpc-1-ff89z0), [`REQ-RPC-3-ZM9WR5`](rpc.md#req-rpc-3-zm9wr5)). On the request path, a handler
+   failure is reported to the caller as a declared error without terminating the session; on the
+   one-way path, a handler failure is a session-terminating fault. A handler that ends after its local
+   runtime was disposed answers nobody and logs nothing: it sends no response or error and starts no
+   disconnect, and its dispatch ends without a failure. The caller's request settles by its own timeout or
+   disconnect.
+8. **Backstop.** Any failure escaping the stages above terminates the session rather than leaving it
+   in an undefined state.
+
+## Guards: caller admission
+
+Guards gate a service's entire public surface on objective preconditions about the _caller_ before
+any method logic runs. They are the admission layer, distinct from per-endpoint payload validation:
+
+- A guard's check is a pure predicate; all consequences (terminate, penalize, defer/retry, refuse)
+  live in its failure handler.
+- Guards evaluate in declaration order and short-circuit on the first failure; ordering is part of
+  the service contract (structural checks precede expensive ones).
+- Guard failure consumes the call. A request-style call must still settle deterministically at the
+  caller, never by timeout ambiguity: normally through a declared rejection. A guard whose failure
+  closes the caller's session may withhold that rejection for the request it rejected; the caller's
+  request then settles through the session closure. Settling at the caller and receiving a declared
+  rejection are distinct outcomes.
+- The authentication service itself is deliberately unguarded — it must accept pre-session traffic.
+- New caller-scoped preconditions (role, admission state, channel phase) MUST be expressed as guards,
+  not ad-hoc checks duplicated across endpoints. A guard admits the caller; it never validates the
+  payload.
+
+Unresolved guard-interaction decisions (deferred-retry semantics for request-style calls, penalty
+persistence) are tracked in [`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2).
+
+## Request lifecycle and correlation
+
+- Correlation identity binds one request to at most one settlement: response, declared remote error,
+  timeout, cancellation, or disconnect ([`REQ-RPC-2-SZDTTM`](rpc.md#req-rpc-2-szdttm)). Correlation
+  identities need only be unique per requester; settlement authenticity rests on the addressed-peer
+  rule, not on unpredictable identities. The default request deadline is one agreement window,
+  overridable per call.
+- **Addressed-peer rule.** Only the authenticated peer a request was addressed to may settle it —
+  matched by peer identity, not by transport object, so a transport upgrade does not orphan pending
+  requests. A settlement attempt by any other peer is a protocol violation.
+- A response with no matching pending request (late, duplicate, or never issued) is ignored without
+  penalty; it must also be bounded like any frame.
+- Final peer-session termination settles every pending request bound to that peer with a defined failure
+  and releases its timers. Retirement of one transport keeps a request pending when another live transport
+  is authenticated as the addressed peer; otherwise it keeps the existing disconnect failure.
+- Remote error text is attacker-controlled data. Callers MUST NOT branch protocol decisions on error
+  strings; only the declared success/failure shape is meaningful.
+- A handled request produces at most one response-send attempt. If response delivery fails, the
+  session terminates; the responder does not retry the same request with a second response.
+
+## Replay classification
+
+The communication layer itself provides no replay protection; idempotence is an endpoint obligation.
+Every endpoint MUST be explicitly classified as exactly one of:
+
+1. **Idempotent-by-merge** — re-delivery converges (e.g. block confirmations merge signature sets;
+   duplicates are no-ops).
+2. **Replay-rejecting** — a duplicate is a protocol violation with a defined consequence (e.g. a
+   second handshake completion or a second dispute-acknowledgement round).
+3. **Concurrency-limited** — duplicates are serialized or refused by an explicit in-flight rule
+   (e.g. one sync per peer pair).
+
+An endpoint whose replay silently double-applies a state effect is a defect. The classification is
+part of the service contract and is verified per endpoint ([`REQ-RPC-4-9VX0B9`](rpc.md#req-rpc-4-9vx0b9)).
+
+## Trusted loopback vs untrusted peers
+
+A node may deliver calls to itself over a loopback path that bypasses guards. That exemption is
+strictly for self-delivery: the loopback caller is the node's own trusted runtime, and its calls
+carry local authority. No network transport may ever be trusted, and no remote peer may reach the
+loopback authority. An operation that exposes local authority (secrets, local transactions, local
+intent) is not a network service at all: it is an internal service of the application's host root
+([Application host root](#application-host-root)), which no network transport can name. The application-facing calling surface distinguishes explicitly between invoking
+the local node and relaying the same typed call to an addressed remote peer; neither path exposes
+internal service objects or bypasses the public method contract.
+
+## Application host root
+
+An application extends the participant runtime the same way it extends the network service root: it
+supplies its own runtime host root, declared by a manifest that names a module and an export, next to
+the manifest of its network services. The manifest crosses the runtime boundary as a declarative
+reference and is resolved in the context that runs the runtime; without one, the SDK's own host root
+runs. The application gives manifests and options only; the SDK owns all wiring.
+
+The application declares its map of application events once, on its network root; its host root
+names that network root and adds internal services. Pairing the host root with the manifest of the
+network root it names is the application's obligation: the SDK does not check it, and a mismatched
+pair fails at the first internal call that reaches a member the loaded network root lacks. The internal services serve only the application's own client across the runtime boundary. They are not
+network services: a peer's network call that names one finds no network service and takes the
+unknown-service consequence of [Ingress dispatch algorithm](#ingress-dispatch-algorithm) step 4, with no
+effect on the internal service. An internal service reaches the application's network services, and
+through them the live participant, only once the runtime is built. Its failures reach the client with
+their name, message, and code. The application's network root and its services emit the declared
+events through the runtime's one event surface, checked against that map with no application-side
+conversion; the events reach the client's subscribers with their arguments, typed by the same map, in
+the order the runtime emitted them. When the runtime runs isolated, the root applies its own peer's
+configuration to its own code before it starts, so an extension loaded from a separately built module
+runs with the same configuration as the SDK.
+
+## Compatibility and versioning
+
+Protocol compatibility and encoding versions MUST be established before protected calls are accepted,
+and an incompatible peer MUST be refused cleanly (a declared refusal, not an escalating penalty).
+Compatibility identity should be bound into the signed handshake domain so a session cannot be
+established across incompatible deployments. The concrete negotiation scheme is unresolved —
+[`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2), coupled to the signature-domain decision
+[`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf).
+
+## Requirements and invariants
+
+Deferred admission keeps its existing exact-transport FIFO and owner lifetime. A request handler
+routes its response by authenticated peer address when the inbound transport has one; otherwise it
+replies on that transport. It does not inspect profiles or maintain a second live-route registry.
+
+A response may settle a request when its transport represents the same authenticated peer as the
+original request transport. Retirement of the original transport keeps its pending requests pending on another live transport of the same peer, with their deadlines; only the close of the peer's last live transport rejects them.
+
+**<a id="inv-rpc-1-sjs2t6"></a>`INV-RPC-1-SJS2T6` — Identity-bound dispatch.** Every accepted call MUST be attributable to the authenticated peer
+and dispatched only to a method permitted in the current session state.
+
+**<a id="req-rpc-1-ff89z0"></a>`REQ-RPC-1-FF89Z0` — Typed wire contract.** Envelopes MUST identify method, delivery mode, correlation identity, and
+encoded payload; malformed, unknown, duplicate, or incompatible messages MUST fail deterministically.
+Payloads carrying protocol structs (including any large-integer values) MUST cross the boundary in the
+protocol's canonical encoding and be decoded and semantically validated inside the receiving endpoint;
+decode failure is a handled protocol failure, never an escaping exception. Runtime service resolution MUST
+recognize the declared public service contract independently of JavaScript constructor identity and MUST
+reject incomplete service-shaped values. Every endpoint MUST be safe under every delivery mode its declaration
+admits.
+
+**<a id="req-rpc-2-szdttm"></a>`REQ-RPC-2-SZDTTM` — Request lifecycle.** Each request MUST settle at most once through response, declared remote
+error, timeout, cancellation, or disconnect; pending work MUST be released on the close of the peer's last live transport, or on disposal.
+An inbound request whose handler ends after the local runtime was disposed MUST NOT be answered or reported:
+the disposed runtime sends nothing, and the dispatch ends without a failure.
+Only the addressed authenticated peer may settle a request; unknown or late responses are ignored.
+
+**<a id="req-rpc-3-zm9wr5"></a>`REQ-RPC-3-ZM9WR5` — Service authorization.** Handshake precedes protected services. Join, block, dispute, sync, and
+transport-upgrade calls MUST validate their channel/fork/session binding and required participant role.
+
+**<a id="req-rpc-4-9vx0b9"></a>`REQ-RPC-4-9VX0B9` — Replay and concurrency.** Duplicate or reordered delivery MUST be idempotent, rejected, or
+merged according to the owning protocol operation; it MUST NOT duplicate signatures, membership, blocks,
+effects, or resource ownership. Every endpoint declares its replay class
+([Replay classification](#replay-classification)).
+
+**<a id="req-rpc-5-cv1r1y"></a>`REQ-RPC-5-CV1R1Y` — Resource bounds.** Payload size, outstanding requests, expensive proof/signaling work, and
+per-peer rate MUST be bounded, including per-request chain reads and proof generation, with overload isolated from unrelated peers and services. Unknown-source block intake delegates directly to ordinary sync and creates no separate admission registry or rate window ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df)). Per-entry source limits do not establish a global connection, request-rate, byte-rate, hash-count or channel-count policy.
+
+**<a id="req-rpc-6-e60s4j"></a>`REQ-RPC-6-E60S4J` — Ordered ingress verification.** Inbound frames MUST pass the fixed dispatch order of
+[Ingress dispatch algorithm](#ingress-dispatch-algorithm): size bound before parsing, response
+classification before dispatch, envelope verification, service resolution, guards before
+method-existence disclosure, declared-endpoint resolution, then invocation. Endpoint resolution MUST reject
+RPC-base members, language-base members, accessors, non-functions, and `constructor`. Each stage failure MUST
+have its defined consequence, and every consequence MUST state one outcome of a fixed ordered ladder:
+close with reconnect allowed; close with reconnect allowed but counted against a stated per-peer
+bound, so that the close reaching that bound takes the session-scoped outcome instead; close and
+exclude the identity for the session without recording a verdict; or close and exclude the identity
+with a recorded verdict. The counted outcome MUST use one bound counter per peer for the whole
+session, whichever check raised it, and the policy's stated default bound whenever a caller names
+none. The counter is keyed by the peer's transport key before its identity is proven and by the
+proven identity after; suspension at the bound refuses both. A peer that presents a fresh transport
+key before proof starts a fresh count, which is accepted. A recorded verdict MUST be persisted as the
+identity and the stated reason, so it outlives the session. No close may inherit an outcome from
+another caller, and
+expected or upgrade-driven closes MUST always be the plain reconnect-allowed outcome.
+Authenticated wire-contract violations MUST disconnect and exclude the sender with a recorded
+verdict; unknown identities and failures that do not prove peer misconduct MUST only lose the
+affected transport. A probe against a gated service MUST NOT reveal whether a method exists.
+
+**<a id="req-rpc-7-9cbshk"></a>`REQ-RPC-7-9CBSHK` — Guard semantics.** Guards MUST be pure predicates evaluated in declaration order with
+all consequences in their failure handlers; guard failure MUST settle a request-style call
+deterministically at the caller, either through a declared rejection or, when the failing guard closes
+the caller's session, through that closure; the guard-bypass exemption applies only to the node's own loopback
+self-delivery, never to a network transport. Deferred guard work MUST remain scoped to its original
+transport and owner lifetime: authentication of another transport MUST NOT release it, while closure,
+timeout, or owner disposal MUST drop it without replay or late punishment. Authentication admission is
+per exact incoming transport. An open transport that completed its own handshake remains admitted
+during sanctioned replacement overlap until the upgrade protocol closes it. A frame already dispatched
+when its authenticated transport closes MUST be dropped without execution, disconnection, blacklisting,
+or punishment of a replacement transport.
+
+**<a id="req-rpc-8-44xecf"></a>`REQ-RPC-8-44XECF` — Compatibility before protected calls.** Session compatibility (protocol and encoding
+versions) MUST be established no later than authentication, an incompatible peer MUST be refused
+cleanly without penalty escalation, and compatibility identity SHOULD be bound into the signed
+handshake domain. (Scheme unresolved: [`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2).)
+
+**<a id="req-rpc-9-8ffe6s"></a>`REQ-RPC-9-8FFE6S` — Application host root.** An application MAY replace the runtime host root
+with its own extension of it, named by a declarative manifest resolved in the runtime's context; with no
+manifest the SDK's own host root MUST run, and a manifest whose named export is not a constructor MUST
+reject setup. The extension's internal services MUST serve only the application's own client and MUST be
+unreachable from every network transport: a peer's network call naming one MUST find no network service
+and MUST leave the internal service unaffected. A failing internal call MUST reject at the client with the
+failure's name, message, and code. A call made before the runtime is built MUST reject as not ready; a call
+still running when the client disposes MUST still reply within the runtime's bounded in-flight reply
+drain, and a call made after disposal MUST reject. A request to build the runtime again once it is built
+MUST reject and leave the built runtime serving. When the runtime runs isolated, the host root MUST apply its
+own peer's configuration to its own code before it starts, so an extension built separately from the SDK
+runs with its peer's configuration. An
+event the application declares MUST reach the client's subscribers with its arguments, ahead of the reply
+of the call that emitted it. The application MUST pair its host root with the manifest of the network root that host root
+names; the SDK MUST NOT be relied on to detect a mismatched pair.
+
+## Assumptions and constraints
+
+- Transport confidentiality is optional unless explicitly required; authentication and payload validation are not.
+- Typed local APIs do not make remote data trustworthy.
+- Peers may disconnect, withhold, duplicate, reorder, or send malformed messages at any point.
+- Protocol compatibility and encoding versions are established before protected calls are accepted.
+- The topology is a full mesh: every participant holds a session with every other participant, so
+  connection and broadcast cost grows quadratically with the participant count. This layer is therefore
+  scoped to small partitions — see [`REQ-TRUST-5-NDVRW8`](../security/trust-model.md#req-trust-5-ndvrw8) for the
+  normative limit (up to roughly ten participants, commonly six) and the alternative-topology future work.
+  Resource bounds under [`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y) are sized against that partition size, not against arbitrary fan-out.
+- RPC handlers run outside the block-progression execution boundary: an endpoint never assumes
+  exclusive access to live protocol state and hands validated input to the owning system
+  ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
+- Proven identity and exclusion standing survive transport churn; per-connection negotiation state
+  does not. Endpoint state that must survive a transport replacement is keyed by identity.
+- Request deadlines are denominated in the protocol agreement window
+  ([time.md](../protocol-model/time.md)).
+- Application extensions and production bundles may load compatible SDK code through separate JavaScript
+  module graphs; constructor identity is therefore not a protocol type discriminator.
+- An application host root reaches the runtime only through its manifest; its internal services and
+  events cross the runtime boundary like every other runtime value, so their arguments, results, and
+  event arguments must have a canonical encoding.
+
+## Security considerations
+
+Threats include identity spoofing, pre-auth method access, forged channel/fork context, replay, response
+confusion, malformed encoding, silent-ignore ambiguity, request flooding, proof-serving amplification,
+signaling abuse, and disconnect races. A peer-controlled failure must not corrupt another session or leave
+privileged pending state alive. Two boundary-specific hazards deserve emphasis: transport authentication
+mistaken for payload validity (the endpoint must validate as if the transport proved nothing beyond
+identity), and method-existence disclosure to unauthenticated probes (guards run first). Unsolicited
+response frames are penalty-free by design and therefore must be cheap to ignore and counted against
+frame-level bounds.
+
+Local authority (secret material, local transactions, local intent) is served by the application host
+root's internal services. The defense is structural: the network dispatcher resolves services only on the
+network service root, so no peer, including an authenticated channel participant, can name an internal
+service. A peer that tries learns only the unknown-service consequence it would get for any name.
+Residual risk: an application that also exposes the same operation as a network service reopens it to
+peers; the SDK does not detect such a duplicate.
+
+Request flooding is unbounded until rate limiting is decided ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)): every valid call,
+including handshake signing, proof serving, join countersigning, signaling, and ignored responses,
+costs the receiver work. The decided direction is one central limiter on the common dispatch path,
+shared by all services including extensions, with dispute and handshake traffic kept responsive above
+bulk synchronization. Which failure classes are misconduct evidence and which are tolerable is today
+decided per service; a uniform policy is open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
+
+## Verification and test plan
+
+### Requirement test matrix
+
+| Plan item                                             | Requirements / invariants                     | Setup and stimulus                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Expected result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="inv-rpc-1-sjs2t6.t1"></a>`INV-RPC-1-SJS2T6.T1` | [`INV-RPC-1-SJS2T6`](rpc.md#inv-rpc-1-sjs2t6) | Attempt every service before, during, and after mutual authentication using correct and substituted identities.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Only the bound peer in the correct session state is dispatched.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | <a id="inv-rpc-1-sjs2t6.t1.p1"></a>`INV-RPC-1-SJS2T6.T1.P1` — mutual success; <a id="inv-rpc-1-sjs2t6.t1.p2"></a>`INV-RPC-1-SJS2T6.T1.P2` — forged identity; <a id="inv-rpc-1-sjs2t6.t1.p3"></a>`INV-RPC-1-SJS2T6.T1.P3` — pre-auth; <a id="inv-rpc-1-sjs2t6.t1.p4"></a>`INV-RPC-1-SJS2T6.T1.P4` — reconnect; <a id="inv-rpc-1-sjs2t6.t1.p5"></a>`INV-RPC-1-SJS2T6.T1.P5` — stale identity; <a id="inv-rpc-1-sjs2t6.t1.p6"></a>`INV-RPC-1-SJS2T6.T1.P6` — half-auth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| <a id="req-rpc-1-ff89z0.t1"></a>`REQ-RPC-1-FF89Z0.T1` | [`REQ-RPC-1-FF89Z0`](rpc.md#req-rpc-1-ff89z0) | Encode/decode and dispatch every delivery mode and service payload, including invalid envelopes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Valid messages preserve meaning; invalid messages cannot reach service logic.                                                                                                                                                                                                                                                                                                                                                                                                                                                             | <a id="req-rpc-1-ff89z0.t1.p1"></a>`REQ-RPC-1-FF89Z0.T1.P1` — request/response; <a id="req-rpc-1-ff89z0.t1.p2"></a>`REQ-RPC-1-FF89Z0.T1.P2` — one-way; <a id="req-rpc-1-ff89z0.t1.p3"></a>`REQ-RPC-1-FF89Z0.T1.P3` — malformed message; <a id="req-rpc-1-ff89z0.t1.p4"></a>`REQ-RPC-1-FF89Z0.T1.P4` — boundary payloads; <a id="req-rpc-1-ff89z0.t1.p5"></a>`REQ-RPC-1-FF89Z0.T1.P5` — unknown message; <a id="req-rpc-1-ff89z0.t1.p6"></a>`REQ-RPC-1-FF89Z0.T1.P6` — version mismatch; <a id="req-rpc-1-ff89z0.t1.p7"></a>`REQ-RPC-1-FF89Z0.T1.P7` — compatible service from a separate module graph; <a id="req-rpc-1-ff89z0.t1.p8"></a>`REQ-RPC-1-FF89Z0.T1.P8` — empty-string request ID selects request delivery; <a id="req-rpc-1-ff89z0.t1.p9"></a>`REQ-RPC-1-FF89Z0.T1.P9` — present non-string request ID rejects; <a id="req-rpc-1-ff89z0.t1.p10"></a>`REQ-RPC-1-FF89Z0.T1.P10` — non-empty request ID is preserved; <a id="req-rpc-1-ff89z0.t1.p11"></a>`REQ-RPC-1-FF89Z0.T1.P11` — a result-less endpoint delivered both by broadcast and by one-way delivery to chosen peers is safe under each.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| <a id="req-rpc-2-szdttm.t1"></a>`REQ-RPC-2-SZDTTM.T1` | [`REQ-RPC-2-SZDTTM`](rpc.md#req-rpc-2-szdttm) | Race response, remote error, timeout, cancellation, disconnect, and disposal for pending calls.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Exactly one outcome wins; the pending registry entry and its timer are removed after every implemented settlement path.                                                                                                                                                                                                                                                                                                                                                                                                                   | <a id="req-rpc-2-szdttm.t1.p1"></a>`REQ-RPC-2-SZDTTM.T1.P1` — response settles; <a id="req-rpc-2-szdttm.t1.p2"></a>`REQ-RPC-2-SZDTTM.T1.P2` — response vs remote-error race; <a id="req-rpc-2-szdttm.t1.p3"></a>`REQ-RPC-2-SZDTTM.T1.P3` — late reply; <a id="req-rpc-2-szdttm.t1.p4"></a>`REQ-RPC-2-SZDTTM.T1.P4` — reconnect; <a id="req-rpc-2-szdttm.t1.p5"></a>`REQ-RPC-2-SZDTTM.T1.P5` — settlement attempt by a non-addressed peer; <a id="req-rpc-2-szdttm.t1.p6"></a>`REQ-RPC-2-SZDTTM.T1.P6` — remote-error settles; <a id="req-rpc-2-szdttm.t1.p7"></a>`REQ-RPC-2-SZDTTM.T1.P7` — timeout settles; <a id="req-rpc-2-szdttm.t1.p8"></a>`REQ-RPC-2-SZDTTM.T1.P8` — cancellation settles; <a id="req-rpc-2-szdttm.t1.p9"></a>`REQ-RPC-2-SZDTTM.T1.P9` — disconnect settles; <a id="req-rpc-2-szdttm.t1.p10"></a>`REQ-RPC-2-SZDTTM.T1.P10` — response vs timeout race; <a id="req-rpc-2-szdttm.t1.p11"></a>`REQ-RPC-2-SZDTTM.T1.P11` — response vs cancellation race; <a id="req-rpc-2-szdttm.t1.p12"></a>`REQ-RPC-2-SZDTTM.T1.P12` — response vs disconnect race; <a id="req-rpc-2-szdttm.t1.p13"></a>`REQ-RPC-2-SZDTTM.T1.P13` — remote-error vs timeout race; <a id="req-rpc-2-szdttm.t1.p14"></a>`REQ-RPC-2-SZDTTM.T1.P14` — remote-error vs cancellation race; <a id="req-rpc-2-szdttm.t1.p15"></a>`REQ-RPC-2-SZDTTM.T1.P15` — remote-error vs disconnect race; <a id="req-rpc-2-szdttm.t1.p16"></a>`REQ-RPC-2-SZDTTM.T1.P16` — timeout vs cancellation race; <a id="req-rpc-2-szdttm.t1.p17"></a>`REQ-RPC-2-SZDTTM.T1.P17` — timeout vs disconnect race; <a id="req-rpc-2-szdttm.t1.p18"></a>`REQ-RPC-2-SZDTTM.T1.P18` — cancellation vs disconnect race; <a id="req-rpc-2-szdttm.t1.p19"></a>`REQ-RPC-2-SZDTTM.T1.P19` — disposal; <a id="req-rpc-2-szdttm.t1.p20"></a>`REQ-RPC-2-SZDTTM.T1.P20` — response-send failure attempts once, disconnects, and leaves no unhandled rejection; <a id="req-rpc-2-szdttm.t1.p21"></a>`REQ-RPC-2-SZDTTM.T1.P21` — an inbound request handler that ends after its runtime was disposed: its dispatch resolves, with no response and no log.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| <a id="req-rpc-3-zm9wr5.t1"></a>`REQ-RPC-3-ZM9WR5.T1` | [`REQ-RPC-3-ZM9WR5`](rpc.md#req-rpc-3-zm9wr5) | Exercise every service with valid/invalid role, channel, fork, phase, and signature.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Only authorized, correctly bound calls affect protocol state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | <a id="req-rpc-3-zm9wr5.t1.p1"></a>`REQ-RPC-3-ZM9WR5.T1.P1` — negotiation; <a id="req-rpc-3-zm9wr5.t1.p2"></a>`REQ-RPC-3-ZM9WR5.T1.P2` — block; <a id="req-rpc-3-zm9wr5.t1.p3"></a>`REQ-RPC-3-ZM9WR5.T1.P3` — sync; <a id="req-rpc-3-zm9wr5.t1.p4"></a>`REQ-RPC-3-ZM9WR5.T1.P4` — transport upgrade; <a id="req-rpc-3-zm9wr5.t1.p5"></a>`REQ-RPC-3-ZM9WR5.T1.P5` — join; <a id="req-rpc-3-zm9wr5.t1.p6"></a>`REQ-RPC-3-ZM9WR5.T1.P6` — dispute.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| <a id="req-rpc-4-9vx0b9.t1"></a>`REQ-RPC-4-9VX0B9.T1` | [`REQ-RPC-4-9VX0B9`](rpc.md#req-rpc-4-9vx0b9) | Duplicate, reorder, replay, and concurrently deliver each state-changing call.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The owning operation's idempotence/merge rule holds without duplicate effects.                                                                                                                                                                                                                                                                                                                                                                                                                                                            | <a id="req-rpc-4-9vx0b9.t1.p1"></a>`REQ-RPC-4-9VX0B9.T1.P1` — duplicate block confirmation; <a id="req-rpc-4-9vx0b9.t1.p2"></a>`REQ-RPC-4-9VX0B9.T1.P2` — reordered block confirmations; <a id="req-rpc-4-9vx0b9.t1.p3"></a>`REQ-RPC-4-9VX0B9.T1.P3` — concurrent sync calls; <a id="req-rpc-4-9vx0b9.t1.p4"></a>`REQ-RPC-4-9VX0B9.T1.P4` — block-delivery retry after failure; <a id="req-rpc-4-9vx0b9.t1.p5"></a>`REQ-RPC-4-9VX0B9.T1.P5` — block-confirmation idempotent-by-merge class; <a id="req-rpc-4-9vx0b9.t1.p6"></a>`REQ-RPC-4-9VX0B9.T1.P6` — handshake-completion replay-rejecting class; <a id="req-rpc-4-9vx0b9.t1.p7"></a>`REQ-RPC-4-9VX0B9.T1.P7` — dispute-acknowledgment replay-rejecting class; <a id="req-rpc-4-9vx0b9.t1.p8"></a>`REQ-RPC-4-9VX0B9.T1.P8` — sync concurrency-limited class.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| <a id="req-rpc-5-cv1r1y.t1"></a>`REQ-RPC-5-CV1R1Y.T1` | [`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y) | Saturate payload, pending-call, proof/signaling, and rate boundaries from one and many peers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Work is bounded, overload is explicit, and healthy peers/services continue.                                                                                                                                                                                                                                                                                                                                                                                                                                                               | <a id="req-rpc-5-cv1r1y.t1.p1"></a>`REQ-RPC-5-CV1R1Y.T1.P1` — payload size at bound; <a id="req-rpc-5-cv1r1y.t1.p2"></a>`REQ-RPC-5-CV1R1Y.T1.P2` — one abusive peer; <a id="req-rpc-5-cv1r1y.t1.p3"></a>`REQ-RPC-5-CV1R1Y.T1.P3` — distributed load; <a id="req-rpc-5-cv1r1y.t1.p4"></a>`REQ-RPC-5-CV1R1Y.T1.P4` — recovery; <a id="req-rpc-5-cv1r1y.t1.p5"></a>`REQ-RPC-5-CV1R1Y.T1.P5` — payload size beyond bound; <a id="req-rpc-5-cv1r1y.t1.p6"></a>`REQ-RPC-5-CV1R1Y.T1.P6` — pending-call count at bound; <a id="req-rpc-5-cv1r1y.t1.p7"></a>`REQ-RPC-5-CV1R1Y.T1.P7` — pending-call count beyond bound; <a id="req-rpc-5-cv1r1y.t1.p8"></a>`REQ-RPC-5-CV1R1Y.T1.P8` — proof/signaling work at bound; <a id="req-rpc-5-cv1r1y.t1.p9"></a>`REQ-RPC-5-CV1R1Y.T1.P9` — proof/signaling work beyond bound; <a id="req-rpc-5-cv1r1y.t1.p10"></a>`REQ-RPC-5-CV1R1Y.T1.P10` — per-peer rate at bound; <a id="req-rpc-5-cv1r1y.t1.p11"></a>`REQ-RPC-5-CV1R1Y.T1.P11` — per-peer rate beyond bound.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| <a id="req-rpc-6-e60s4j.t1"></a>`REQ-RPC-6-E60S4J.T1` | [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j) | Deliver frames failing at each dispatch stage from authenticated and unidentified transports, including oversized, response-shaped, and probe frames.                                                                                                                                                                                                                                                                                                                                                                                                               | Each stage fails with its defined consequence; authenticated wire faults exclude the sender, unidentified faults only drop the transport, no stage is skippable, and probes learn nothing about gated methods.                                                                                                                                                                                                                                                                                                                            | <a id="req-rpc-6-e60s4j.t1.p1"></a>`REQ-RPC-6-E60S4J.T1.P1` — oversized before parse; <a id="req-rpc-6-e60s4j.t1.p2"></a>`REQ-RPC-6-E60S4J.T1.P2` — response-shaped frame never dispatched; <a id="req-rpc-6-e60s4j.t1.p3"></a>`REQ-RPC-6-E60S4J.T1.P3` — unknown service; <a id="req-rpc-6-e60s4j.t1.p4"></a>`REQ-RPC-6-E60S4J.T1.P4` — gated-service probe (existent vs nonexistent method indistinguishable); <a id="req-rpc-6-e60s4j.t1.p5"></a>`REQ-RPC-6-E60S4J.T1.P5` — unknown method; <a id="req-rpc-6-e60s4j.t1.p6"></a>`REQ-RPC-6-E60S4J.T1.P6` — application endpoint accepted while RPC/language-base names reject; <a id="req-rpc-6-e60s4j.t1.p7"></a>`REQ-RPC-6-E60S4J.T1.P7` — the session-scoped outcome closes and refuses the identity's reconnect without recording a verdict; <a id="req-rpc-6-e60s4j.t1.p8"></a>`REQ-RPC-6-E60S4J.T1.P8` — the counted outcome stays reconnect-allowed below its per-peer bound and takes the session-scoped outcome on the close that reaches it; <a id="req-rpc-6-e60s4j.t1.p9"></a>`REQ-RPC-6-E60S4J.T1.P9` — the counted outcome is keyed by the transport key before proof and refuses that key at the bound; <a id="req-rpc-6-e60s4j.t1.p10"></a>`REQ-RPC-6-E60S4J.T1.P10` — a suspension bars the proven identity and the transport key together; <a id="req-rpc-6-e60s4j.t1.p11"></a>`REQ-RPC-6-E60S4J.T1.P11` — a recorded verdict persists as identity and reason and is refused by a fresh session that reads it; <a id="req-rpc-6-e60s4j.t1.p12"></a>`REQ-RPC-6-E60S4J.T1.P12` — a request frame that arrives on a transport already closed is dropped: no dispatch, no log line, no pending request.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| <a id="req-rpc-7-9cbshk.t1"></a>`REQ-RPC-7-9CBSHK.T1` | [`REQ-RPC-7-9CBSHK`](rpc.md#req-rpc-7-9cbshk) | Fail each guard in each declared position over network and loopback transports, for one-way and request calls.                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Order and short-circuit respected; requests settle deterministically; only loopback self-delivery bypasses; exact-transport authentication and deferred ownership hold.                                                                                                                                                                                                                                                                                                                                                                   | <a id="req-rpc-7-9cbshk.t1.p1"></a>`REQ-RPC-7-9CBSHK.T1.P1` — order/short-circuit; <a id="req-rpc-7-9cbshk.t1.p2"></a>`REQ-RPC-7-9CBSHK.T1.P2` — request settles on guard failure; <a id="req-rpc-7-9cbshk.t1.p3"></a>`REQ-RPC-7-9CBSHK.T1.P3` — loopback self-delivery bypass; <a id="req-rpc-7-9cbshk.t1.p4"></a>`REQ-RPC-7-9CBSHK.T1.P4` — guard consequence isolation (other sessions unaffected); <a id="req-rpc-7-9cbshk.t1.p5"></a>`REQ-RPC-7-9CBSHK.T1.P5` — network transport non-bypass; <a id="req-rpc-7-9cbshk.t1.p6"></a>`REQ-RPC-7-9CBSHK.T1.P6` — closed or retired transport drops queued work; <a id="req-rpc-7-9cbshk.t1.p7"></a>`REQ-RPC-7-9CBSHK.T1.P7` — disposed owner drops late success; <a id="req-rpc-7-9cbshk.t1.p8"></a>`REQ-RPC-7-9CBSHK.T1.P8` — disposed owner ignores late failure; <a id="req-rpc-7-9cbshk.t1.p9"></a>`REQ-RPC-7-9CBSHK.T1.P9` — late completion after timeout cannot revive stale work; <a id="req-rpc-7-9cbshk.t1.p10"></a>`REQ-RPC-7-9CBSHK.T1.P10` — a replaced but open authenticated transport remains admitted during grace overlap; <a id="req-rpc-7-9cbshk.t1.p11"></a>`REQ-RPC-7-9CBSHK.T1.P11` — another transport's authentication cannot release the original queue, while exact-transport completion drains it once in FIFO order; <a id="req-rpc-7-9cbshk.t1.p12"></a>`REQ-RPC-7-9CBSHK.T1.P12` — a late frame dispatched after its authenticated transport closes is dropped without execution or peer punishment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| <a id="req-rpc-8-44xecf.t1"></a>`REQ-RPC-8-44XECF.T1` | [`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf) | Connect peers with matching and mismatched protocol/encoding versions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Compatible sessions proceed; incompatible peers are refused cleanly before any protected call.                                                                                                                                                                                                                                                                                                                                                                                                                                            | <a id="req-rpc-8-44xecf.t1.p1"></a>`REQ-RPC-8-44XECF.T1.P1` — compatible; <a id="req-rpc-8-44xecf.t1.p2"></a>`REQ-RPC-8-44XECF.T1.P2` — incompatible refused without penalty; <a id="req-rpc-8-44xecf.t1.p3"></a>`REQ-RPC-8-44XECF.T1.P3` — protected call attempted before compatibility established.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| <a id="req-rpc-9-8ffe6s.t1"></a>`REQ-RPC-9-8FFE6S.T1` | [`REQ-RPC-9-8FFE6S`](rpc.md#req-rpc-9-8ffe6s) | Start a runtime, isolated and inline, with a host root manifest naming an extension with one internal service and one declared event, with no manifest, with a manifest naming a non-constructor export, and with an extension whose readiness fails; call the service before the build, after it, while disposing, and after disposal; request a second build; load an isolated extension built separately from the SDK and read its configuration; emit the event; on connected peers, call the service from each client and name it in a peer's network request. | The extension serves its own client next to the SDK services; no manifest runs the SDK root; a bad manifest rejects setup; a failed build rejects setup without waiting out the in-flight reply drain; failures keep name, message, and code; not-ready, drained, and disposed outcomes hold; a second build rejects and the built runtime keeps serving; the separately built extension reads its peer's configuration; the event reaches the typed listener before the reply; a peer's network call finds no service and has no effect. | <a id="req-rpc-9-8ffe6s.t1.p1"></a>`REQ-RPC-9-8FFE6S.T1.P1` — an extension named by the manifest serves its internal service in an isolated runtime, next to the SDK's own services; <a id="req-rpc-9-8ffe6s.t1.p2"></a>`REQ-RPC-9-8FFE6S.T1.P2` — the same inline; <a id="req-rpc-9-8ffe6s.t1.p3"></a>`REQ-RPC-9-8FFE6S.T1.P3` — with no manifest the SDK's own host root starts in an isolated runtime and serves no application service; <a id="req-rpc-9-8ffe6s.t1.p4"></a>`REQ-RPC-9-8FFE6S.T1.P4` — the same inline; <a id="req-rpc-9-8ffe6s.t1.p5"></a>`REQ-RPC-9-8FFE6S.T1.P5` — a manifest whose export is not a constructor rejects setup in an isolated runtime; <a id="req-rpc-9-8ffe6s.t1.p6"></a>`REQ-RPC-9-8FFE6S.T1.P6` — the same inline; <a id="req-rpc-9-8ffe6s.t1.p7"></a>`REQ-RPC-9-8FFE6S.T1.P7` — a failing internal call rejects at the client with its name, message, and code in an isolated runtime; <a id="req-rpc-9-8ffe6s.t1.p8"></a>`REQ-RPC-9-8FFE6S.T1.P8` — the same inline; <a id="req-rpc-9-8ffe6s.t1.p9"></a>`REQ-RPC-9-8FFE6S.T1.P9` — a call made before the runtime is built rejects as not ready; <a id="req-rpc-9-8ffe6s.t1.p10"></a>`REQ-RPC-9-8FFE6S.T1.P10` — a call still running when the client disposes replies, and a call made after disposal rejects; <a id="req-rpc-9-8ffe6s.t1.p11"></a>`REQ-RPC-9-8FFE6S.T1.P11` — a declared event reaches the typed client listener with its arguments before the emitting call's reply in an isolated runtime; <a id="req-rpc-9-8ffe6s.t1.p12"></a>`REQ-RPC-9-8FFE6S.T1.P12` — the same inline; <a id="req-rpc-9-8ffe6s.t1.p13"></a>`REQ-RPC-9-8FFE6S.T1.P13` — on connected peers each client's call reaches only its own runtime's internal service; <a id="req-rpc-9-8ffe6s.t1.p14"></a>`REQ-RPC-9-8FFE6S.T1.P14` — a peer's network request naming an internal service finds no network service, takes the unknown-service consequence, and leaves the internal service unaffected; <a id="req-rpc-9-8ffe6s.t1.p15"></a>`REQ-RPC-9-8FFE6S.T1.P15` — a request to build the runtime again once it is built rejects as already built, and the built runtime keeps serving its internal service; <a id="req-rpc-9-8ffe6s.t1.p16"></a>`REQ-RPC-9-8FFE6S.T1.P16` — an isolated root applies its peer's configuration to its own module copy: an extension built separately from the SDK, with its own copy of the configuration module, reads its peer's configuration value there, not the module default; <a id="req-rpc-9-8ffe6s.t1.p17"></a>`REQ-RPC-9-8FFE6S.T1.P17` — an extension whose readiness fails rejects setup with that failure in an isolated runtime, well within the in-flight reply drain: the failed build's own reply is not awaited by the disposal it runs; <a id="req-rpc-9-8ffe6s.t1.p18"></a>`REQ-RPC-9-8FFE6S.T1.P18` — the same inline. |
+
+## Future Work
+
+_Non-normative._ Load the persisted verdicts at start, so a recorded identity is refused at the
+transport layer before any handshake work. Standardize a language-independent wire schema and
+compatibility negotiation suite. General per-peer and per-service gossip rate limiting remains open ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)).

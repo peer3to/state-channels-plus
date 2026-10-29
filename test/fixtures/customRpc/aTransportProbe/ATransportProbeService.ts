@@ -1,0 +1,254 @@
+// @spec-test-coverage-ignore: host-side support service for the mapped NetworkTransport component cases
+import type { PingPongRpc } from "../PingPongRpcManifest";
+import { ATransportProbeRpcMethods } from "./ATransportProbeRpcMethods";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
+import type P2PManager from "@/P2PManager";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type Rpc from "@/rpc/Rpc";
+import type { RpcResponse } from "@/rpc/Rpc";
+import NetworkTransport from "@/transport/NetworkTransport";
+import { TransportType } from "@/transport/TransportType";
+
+export type ATransportIdentityProbe = {
+    sameReferenceWithoutAddress: boolean;
+    distinctWithoutAddresses: boolean;
+    oneAddressMissing: boolean;
+    sameAddressDifferentCase: boolean;
+    differentAddresses: boolean;
+    replacementTransportType: boolean;
+    baseTransportTrusted: boolean;
+    loopbackTransportTrusted: boolean;
+};
+
+export type ATransportDeliveryProbe = {
+    serializedRpc: string;
+    serializedResponse: string;
+};
+
+export type ATransportCloseProbe = {
+    isClosed: boolean;
+    connectionPresentAfterClose: boolean;
+    disconnectCalls: number;
+    disconnectionEvents: number;
+    concreteCloseCalls: number;
+};
+
+export type ATransportFailureProbe = {
+    serializationErrorPropagated: boolean;
+    sendErrorMessage: string | undefined;
+};
+
+class RecordingTransport extends NetworkTransport {
+    public transportType = TransportType.HOLEPUNCH;
+    public readonly serializedFrames: string[] = [];
+    public concreteCloseCalls = 0;
+    public sendError?: Error;
+
+    public _send(serializedRPC: string): void {
+        if (this.sendError) throw this.sendError;
+        this.serializedFrames.push(serializedRPC);
+    }
+
+    // Overrides NetworkTransport.onMessage: deliver through this probe transport.
+    public override onMessage(): void {}
+
+    protected _close(): void {
+        this.concreteCloseCalls += 1;
+    }
+}
+
+export class ATransportProbeService extends ANetworkRpcService<
+    ATransportProbeRpcMethods,
+    P2PManager<PingPongRpc>
+> {
+    constructor(p2pManager: P2PManager<PingPongRpc>) {
+        super(
+            p2pManager.rpcRouter,
+            p2pManager.stateManager.logger.child({
+                component: "ATransportProbeService"
+            })
+        );
+    }
+
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): ATransportProbeRpcMethods {
+        return new ATransportProbeRpcMethods(transport, this);
+    }
+
+    public probeMessageConversion() {
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
+        const original = this.p2pManager.rpcRouter.onRpc;
+        const frames: string[] = [];
+        let correctReceiver = true;
+        this.p2pManager.rpcRouter.onRpc = async function (frame, source) {
+            frames.push(frame);
+            correctReceiver =
+                correctReceiver &&
+                this === transport.router &&
+                source === transport;
+        };
+        try {
+            NetworkTransport.prototype.onMessage.call(
+                transport,
+                "string-frame"
+            );
+            NetworkTransport.prototype.onMessage.call(
+                transport,
+                Buffer.from("buffer-frame")
+            );
+            const conversionError = new Error("conversion failed");
+            let sameError = false;
+            try {
+                NetworkTransport.prototype.onMessage.call(transport, {
+                    toString() {
+                        throw conversionError;
+                    }
+                });
+            } catch (error) {
+                sameError = error === conversionError;
+            }
+            return { frames, correctReceiver, sameError };
+        } finally {
+            this.p2pManager.rpcRouter.onRpc = original;
+        }
+    }
+
+    public probeIdentity(
+        firstAddress: string,
+        secondAddress: string
+    ): ATransportIdentityProbe {
+        const sameReference = new RecordingTransport(this.p2pManager.rpcRouter);
+        const first = new RecordingTransport(this.p2pManager.rpcRouter);
+        const second = new RecordingTransport(this.p2pManager.rpcRouter);
+
+        const sameReferenceWithoutAddress = NetworkTransport.isSamePeer(
+            sameReference,
+            sameReference
+        );
+        const distinctWithoutAddresses = NetworkTransport.isSamePeer(
+            first,
+            second
+        );
+
+        first.peerAddress = firstAddress;
+        const oneAddressMissing = NetworkTransport.isSamePeer(first, second);
+
+        second.peerAddress = firstAddress.toLowerCase();
+        const sameAddressDifferentCase = NetworkTransport.isSamePeer(
+            first,
+            second
+        );
+
+        second.peerAddress = secondAddress;
+        const differentAddresses = NetworkTransport.isSamePeer(first, second);
+
+        const replacement = new RecordingTransport(this.p2pManager.rpcRouter);
+        replacement.transportType = TransportType.WEBRTC;
+        replacement.peerAddress = firstAddress;
+        const replacementTransportType = NetworkTransport.isSamePeer(
+            first,
+            replacement
+        );
+
+        return {
+            sameReferenceWithoutAddress,
+            distinctWithoutAddresses,
+            oneAddressMissing,
+            sameAddressDifferentCase,
+            differentAddresses,
+            replacementTransportType,
+            baseTransportTrusted: first.isTrusted,
+            loopbackTransportTrusted:
+                this.p2pManager.loopbackTransport.isTrusted
+        };
+    }
+
+    public probeDelivery(
+        rpc: Rpc,
+        response: RpcResponse
+    ): ATransportDeliveryProbe {
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
+        transport.send(rpc);
+        transport.sendRpcResponse(response);
+        return {
+            serializedRpc: transport.serializedFrames[0],
+            serializedResponse: transport.serializedFrames[1]
+        };
+    }
+
+    public probeClose(
+        peerAddress: string,
+        isExpected: boolean,
+        closeTwice: boolean
+    ): ATransportCloseProbe {
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
+        transport.peerAddress = peerAddress;
+        this.p2pManager.addConnection(transport);
+        let disconnectCalls = 0;
+        let disconnectionEvents = 0;
+        const originalDisconnect = this.p2pManager.disconnectConnection.bind(
+            this.p2pManager
+        );
+        const unsubscribe = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onDisconnection",
+            () => {
+                disconnectionEvents += 1;
+            }
+        );
+
+        this.p2pManager.disconnectConnection = (candidate, policy): void => {
+            disconnectCalls += 1;
+            originalDisconnect(candidate, policy);
+        };
+        try {
+            transport.close(isExpected);
+            if (closeTwice) transport.close(isExpected);
+        } finally {
+            this.p2pManager.disconnectConnection = originalDisconnect;
+            unsubscribe();
+        }
+
+        return {
+            isClosed: transport.isClosed,
+            connectionPresentAfterClose:
+                this.p2pManager.openConnections.includes(transport),
+            disconnectCalls,
+            disconnectionEvents,
+            concreteCloseCalls: transport.concreteCloseCalls
+        };
+    }
+
+    public probeFailures(): ATransportFailureProbe {
+        const serializationTransport = new RecordingTransport(
+            this.p2pManager.rpcRouter
+        );
+        let serializationErrorPropagated = false;
+        try {
+            serializationTransport.send({
+                service: "transportProbe",
+                method: "invalidBigInt",
+                params: [1n]
+            });
+        } catch {
+            serializationErrorPropagated = true;
+        }
+
+        const sendTransport = new RecordingTransport(this.p2pManager.rpcRouter);
+        sendTransport.sendError = new Error("recording transport send failed");
+        let sendErrorMessage: string | undefined;
+        try {
+            sendTransport.send({
+                service: "transportProbe",
+                method: "sendFailure",
+                params: []
+            });
+        } catch (error) {
+            sendErrorMessage =
+                error instanceof Error ? error.message : String(error);
+        }
+
+        return { serializationErrorPropagated, sendErrorMessage };
+    }
+}

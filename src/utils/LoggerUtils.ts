@@ -1,0 +1,969 @@
+import { Codec, Type } from "./Codec";
+import { isEthersResult } from "./EthersResultProxy";
+import type { CustomEvmError } from "./evmErrorHandler";
+import { hash } from "./hash";
+import { localDiamondAbi } from "./localDiamond";
+import type { Logger, LogLevel } from "./logging/Logger";
+import { difference } from "./set";
+import type { DoubleSignatureReport } from "@/cache";
+import Clock from "@/Clock";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
+import { Block, StateSnapshot, StateProof } from "@/models";
+import type PeerProfile from "@/PeerProfile";
+import type Rpc from "@/rpc/Rpc";
+import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
+import Storage from "@/storage";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import { TransportType } from "@/transport/TransportType";
+import { ReduceData, TimeConfig, BlockValidationResult } from "@/types";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import {
+    Address,
+    BlockOrSnapshot,
+    Bytes,
+    ForkId,
+    FunctionSelector,
+    Hash,
+    Timestamp
+} from "@/types/types";
+import {
+    MessageStruct,
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    DisputeStruct,
+    TimeoutStruct,
+    DisputeInputStruct,
+    DisputeAuditingDataStruct,
+    ReduceOutputStruct,
+    BlockStruct,
+    BlockConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeFraudProofStruct,
+    FraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ethers, type BigNumberish } from "ethers";
+
+export type InitHandshakeMessage =
+    | "request"
+    | "response"
+    | "ack"
+    | "response-timeout"
+    | "ack-timeout"
+    | "rejected"
+    | "finalize-check"
+    | "completed";
+
+export type InitHandshakeDirection = "send" | "receive" | "local";
+
+export type InitHandshakeLogArgs = {
+    direction: InitHandshakeDirection;
+    message: InitHandshakeMessage;
+    challengeHash?: Hash;
+    challengeInitTime?: number;
+    messageTime?: number;
+    responseTime?: number;
+    rttSeconds?: number;
+    timeDifferenceSeconds?: number;
+    absoluteTimeDifferenceSeconds?: number;
+    agreementTimeSeconds?: number;
+    signerAddress?: string;
+    preferredTransport?: TransportType;
+    verifiedPeerAddress?: string;
+    didReceiveAck?: boolean;
+    remotePreferred?: TransportType;
+    reason?: string;
+};
+
+export class LoggerUtils {
+    private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
+        "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
+            "JOIN_CHANNEL_MESSAGE",
+        "0x7fc958f6d896a018ea54afc012524ea8e277a718198f19cfe9d7795f10efadae":
+            "EXIT_CHANNEL_MESSAGE"
+    };
+
+    private static readonly TRANSPORT_DEBUG_IDS: WeakMap<
+        NetworkTransport,
+        number
+    > = new WeakMap();
+    private static nextTransportDebugId = 1;
+    /**
+     * Selector to function name over the whole SDK contract surface: the local
+     * diamond's own functions plus every selector the manager proxy routes.
+     * Built on first use, since most log lines never need it. A map lookup is
+     * total, so peer-controlled calldata can never reach an ABI parse.
+     */
+    private static functionNames?: Map<FunctionSelector, string>;
+
+    // ====================================
+    // SIMPLE FORMATTERS
+    // ====================================
+
+    static formatHash(
+        hash: Hash | string | Address,
+        prefixLength: number = 4,
+        suffixLength: number = 5
+    ): string {
+        const hashStr = typeof hash === "string" ? hash : String(hash);
+        if (hashStr.length <= prefixLength + suffixLength + 2) {
+            return hashStr;
+        }
+        return `${hashStr.slice(0, 2 + prefixLength)}...${hashStr.slice(-suffixLength)}`;
+    }
+
+    static logTimeValidationFailed(
+        logger: Logger,
+        args: {
+            block: Block;
+            nowSeconds: number;
+            validationResult: BlockValidationResult;
+            checkType: "objective" | "subjective";
+            allowedSkewSeconds: number;
+            violatedRule: string;
+            previousTimestamp?: Timestamp;
+            previousOriginalTimestamp?: Timestamp;
+        }
+    ): void {
+        const { block, nowSeconds } = args;
+        const blockTimestamp = block.timestamp;
+        const differenceSeconds = Math.abs(nowSeconds - blockTimestamp);
+        const excessSeconds = Math.max(
+            0,
+            differenceSeconds - args.allowedSkewSeconds
+        );
+        const validationResultString = LoggerUtils.enumToString(
+            BlockValidationResult,
+            args.validationResult
+        );
+        const logData: Record<string, any> = {
+            checkType: args.checkType,
+            violatedRule: args.violatedRule,
+            validationResult: validationResultString,
+            blockHeight: block.height,
+            nowSeconds,
+            blockTimestamp,
+            differenceSeconds,
+            allowedSkewSeconds: args.allowedSkewSeconds,
+            excessSeconds
+        };
+        // Add previous timestamp context for objective checks
+        if (
+            args.checkType === "objective" &&
+            args.previousTimestamp !== undefined
+        ) {
+            logData.previousTimestamp = args.previousTimestamp;
+            if (args.previousOriginalTimestamp !== undefined) {
+                logData.previousOriginalTimestamp =
+                    args.previousOriginalTimestamp;
+            }
+        }
+        logger.warn(
+            "Time validation failed - block timestamp outside allowed window",
+            logData
+        );
+    }
+
+    static enumToString<T extends Record<string, string | number>>(
+        enumObj: T,
+        value: number | bigint | T[keyof T]
+    ): string {
+        // If already a string (enum name), return it
+        if (typeof value === "string") {
+            return value;
+        }
+
+        const numValue =
+            typeof value === "bigint" ? Number(value) : Number(value);
+
+        // Look up enum name by numeric value
+        const result = (enumObj as unknown as Record<number, string | number>)[
+            numValue
+        ];
+        const enumName = typeof result === "string" ? result : undefined;
+
+        return enumName ?? `UNKNOWN(${numValue})`;
+    }
+
+    // ====================================
+    // LOGGING PATTERNS
+    // ====================================
+
+    static getRpcLogMetadata(rpc: Rpc): Rpc {
+        return {
+            service: rpc.service,
+            method: rpc.method,
+            params: rpc.params.map((param) => this.redactRpcParam(param))
+        };
+    }
+
+    static getRpcRequestMetadata(rpc: Rpc, startedAtMs: number) {
+        return {
+            requestId: rpc.requestId,
+            service: rpc.service,
+            operation: rpc.method,
+            durationMs: Date.now() - startedAtMs
+        };
+    }
+
+    static getContractCallMetadata(data: Bytes, contractAddress?: Address) {
+        const encodedData = ethers.hexlify(data);
+        const functionSelector = encodedData.slice(0, 10);
+        return {
+            ...(contractAddress
+                ? { contractAddress: contractAddress.toString() }
+                : {}),
+            functionSelector,
+            functionName: this.getFunctionName(functionSelector),
+            calldataBytes: ethers.dataLength(encodedData)
+        };
+    }
+
+    /**
+     * One RPC node endpoint without its path, query or credentials: provider
+     * URLs often carry an API key there, and logs are shipped off the host.
+     */
+    static getRpcNodeMetadata(nodeUrl: string) {
+        try {
+            const url = new URL(nodeUrl);
+            return { rpcNode: `${url.protocol}//${url.host}` };
+        } catch {
+            return { rpcNode: "unparseable URL" };
+        }
+    }
+
+    /** Several RPC node endpoints, each without path, query or credentials. */
+    static getRpcNodesMetadata(nodeUrls: readonly string[]) {
+        return {
+            rpcNodes: nodeUrls.map(
+                (url) => this.getRpcNodeMetadata(url).rpcNode
+            )
+        };
+    }
+
+    /** Chain coordinates of one contract log. */
+    static getContractLogMetadata(log: ethers.Log) {
+        return {
+            blockNumber: log.blockNumber,
+            blockHash: log.blockHash,
+            logIndex: log.index,
+            transactionHash: log.transactionHash
+        };
+    }
+
+    /** Metadata of the aggregated gas usage table: the rows and their count. */
+    static getGasUsageMetadata(gasUsage: GasUsageRow[]) {
+        return { functionCount: gasUsage.length, gasUsage };
+    }
+
+    /**
+     * The function a selector names on the SDK contract surface. A selector
+     * that surface does not declare is its own name, so an unknown call still
+     * identifies itself.
+     */
+    private static getFunctionName(functionSelector: FunctionSelector): string {
+        this.functionNames ??= new Map(
+            localDiamondAbi
+                .filter((fragment) =>
+                    ethers.FunctionFragment.isFunction(fragment)
+                )
+                .map((fragment) => [fragment.selector, fragment.name])
+        );
+        return this.functionNames.get(functionSelector) ?? functionSelector;
+    }
+
+    /**
+     * Log metadata for any decoded custom EVM error. The args of an
+     * `ErrorDescription` are an ethers `Result` whose field names come from the
+     * error's ABI, so every error describes itself at runtime and none of them
+     * needs a hand-written field list here. Unnamed solidity params have no key
+     * to convert to, so those come out positional.
+     */
+    static getCustomEvmErrorMetadata(
+        customError: CustomEvmError | null | undefined
+    ) {
+        if (!customError) return undefined;
+        const args = customError.errorDescription.args;
+        return {
+            errorName: customError.name,
+            args: isEthersResult(args)
+                ? Codec.convertEthersResultToObject<
+                      Record<string, unknown> | unknown[]
+                  >(args)
+                : args
+        };
+    }
+
+    private static redactRpcParam(param: any): any {
+        if (!param || typeof param !== "object") return param;
+
+        if ("encodedBlock" in param) {
+            return {
+                ...param,
+                encodedBlock: this.getEncodedBlockLogMetadata(
+                    param.encodedBlock
+                )
+            };
+        }
+
+        if (
+            "signedBlock" in param &&
+            param.signedBlock &&
+            typeof param.signedBlock === "object" &&
+            "encodedBlock" in param.signedBlock
+        ) {
+            return {
+                ...param,
+                signedBlock: {
+                    ...param.signedBlock,
+                    encodedBlock: this.getEncodedBlockLogMetadata(
+                        param.signedBlock.encodedBlock
+                    )
+                }
+            };
+        }
+
+        return param;
+    }
+
+    private static getEncodedBlockLogMetadata(encodedBlock: unknown) {
+        return {
+            redacted: true,
+            byteLength:
+                typeof encodedBlock === "string"
+                    ? this.getHexByteLength(encodedBlock)
+                    : undefined
+        };
+    }
+
+    private static getHexByteLength(value: string): number | undefined {
+        if (!/^0x[0-9a-fA-F]*$/.test(value)) return undefined;
+        return (value.length - 2) / 2;
+    }
+
+    private static getTransportDebugId(transport: NetworkTransport): string {
+        const existing = this.TRANSPORT_DEBUG_IDS.get(transport);
+        if (existing !== undefined) return `transport-${existing}`;
+
+        const next = this.nextTransportDebugId++;
+        this.TRANSPORT_DEBUG_IDS.set(transport, next);
+        return `transport-${next}`;
+    }
+
+    static logDisputeInitiated(
+        logger: Logger,
+        dispute: DisputeStruct,
+        fraudProofs: FraudProofStruct[]
+    ): void {
+        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const formattedHash = this.formatHash(disputeHash);
+        const fraudProofDetails = this.getFraudProofMetadata(fraudProofs);
+
+        logger.warn(`🚨 Dispute: ${formattedHash}`, {
+            dispute: this.getDisputeMetadata(dispute),
+            fraudProofs: fraudProofDetails
+        });
+    }
+
+    static logTimeoutDetected(
+        logger: Logger,
+        blockHeight: number,
+        previousBlockOrSnapshot: BlockOrSnapshot,
+        timeoutStruct: TimeoutStruct
+    ): void {
+        const block = previousBlockOrSnapshot.block
+            ? this.getBlockMetadata(previousBlockOrSnapshot.block)
+            : undefined;
+        const snapshot = previousBlockOrSnapshot.stateSnapshot
+            ? this.getSnapshotMetadata(previousBlockOrSnapshot.stateSnapshot)
+            : undefined;
+        logger.warn(`⏱️ Timeout @ block ${blockHeight}`, {
+            timeoutStruct: this.getTimeoutStructMetadata(timeoutStruct),
+            previousBlockOrSnapshot: block || snapshot
+        });
+    }
+
+    static logSubjectiveTimeValidationSucceeded(
+        logger: Logger,
+        args: {
+            block: Block;
+            strategyName: string;
+            validationPath: string;
+            nowSeconds: number;
+            agreementTimeSeconds: number;
+        }
+    ): void {
+        const differenceSeconds = Math.abs(
+            args.nowSeconds - args.block.timestamp
+        );
+
+        logger.info("Time validation succeeded - subjective", {
+            checkType: "subjective",
+            validationPath: args.validationPath,
+            validatedRule: "abs(now - blockTimestamp) <= agreementTime",
+            strategy: args.strategyName,
+            forkId: args.block.forkId,
+            blockHeight: args.block.height,
+            author: args.block.author,
+            nowSeconds: args.nowSeconds,
+            blockTimestamp: args.block.timestamp,
+            onChainTimestamp: args.block.onChainTimestamp,
+            differenceSeconds,
+            allowedSkewSeconds: args.agreementTimeSeconds,
+            remainingSeconds: Math.max(
+                0,
+                args.agreementTimeSeconds - differenceSeconds
+            )
+        });
+    }
+
+    static logInitHandshakeMessage(
+        logger: Logger,
+        transport: NetworkTransport,
+        args: InitHandshakeLogArgs
+    ): void {
+        const localPeerAddress =
+            transport.p2pManager.p2pSigner.signerAddress.toString();
+        const knownRemotePeerAddress =
+            args.signerAddress ||
+            args.verifiedPeerAddress ||
+            transport.peerAddress ||
+            "unknown";
+        const level: LogLevel =
+            args.message === "ack-timeout" ||
+            args.message === "response-timeout" ||
+            args.message === "rejected"
+                ? "warn"
+                : "debug";
+
+        logger[level]("Init handshake message", {
+            ...this.getTransportMetadata(transport),
+            direction: args.direction,
+            message: args.message,
+            localPeerAddress,
+            knownRemotePeerAddress,
+            transportDebugId: this.getTransportDebugId(transport),
+            localTimeSeconds: Clock.getTimeInSeconds(),
+            challengeHash: args.challengeHash
+                ? this.formatHash(args.challengeHash, 8, 8)
+                : undefined,
+            challengeInitTime: args.challengeInitTime,
+            messageTime: args.messageTime,
+            responseTime: args.responseTime,
+            rttSeconds: args.rttSeconds,
+            timeDifferenceSeconds: args.timeDifferenceSeconds,
+            absoluteTimeDifferenceSeconds: args.absoluteTimeDifferenceSeconds,
+            agreementTimeSeconds: args.agreementTimeSeconds,
+            signerAddress: args.signerAddress,
+            preferredTransport:
+                args.preferredTransport !== undefined
+                    ? TransportType[args.preferredTransport]
+                    : undefined,
+            verifiedPeerAddress: args.verifiedPeerAddress,
+            didReceiveAck: args.didReceiveAck,
+            remotePreferred:
+                args.remotePreferred !== undefined
+                    ? TransportType[args.remotePreferred]
+                    : undefined,
+            reason: args.reason
+        });
+    }
+
+    static async logTimestamp(
+        logger: Logger,
+        level: LogLevel = "info",
+        timeConfig?: TimeConfig
+    ): Promise<void> {
+        const virtualClockBefore = Clock.getTimeInSeconds();
+        const localClockBefore = Math.floor(new Date().getTime() / 1000);
+        const { timestamp, blockNumber } = await Clock.getBlockchainTime();
+        const virtualClockAfter = Clock.getTimeInSeconds();
+        const localClockAfter = Math.floor(new Date().getTime() / 1000);
+        const network = await Clock.getBlockchainNetwork();
+        logger[level](`⏰ CLOCK:`, {
+            virtualClockBefore,
+            localClockBefore,
+            blockchainTime: timestamp,
+            blockNumber,
+            virtualClockAfter,
+            localClockAfter,
+            network,
+            timeConfig
+        });
+    }
+
+    /**
+     * Convenience helper for logging transport disconnects.
+     * Extracts common metadata (peerAddress, channelId, forkId, transportType, logger) from transport.
+     * This is a thin wrapper around logPeerDisconnected() to reduce call-site boilerplate.
+     */
+    static logTransportDisconnect(
+        transport: NetworkTransport,
+        isInfoLevel = false
+    ): void {
+        const meta = this.getTransportMetadata(transport);
+        const logger = transport.p2pManager.logger;
+
+        // An expected close (a refused, retired or replaced transport) ends
+        // one pipe; the peer may still be connected over another.
+        if (isInfoLevel) logger.info("🔌 Peer transport closed", meta);
+        else logger.warn("🔌 Peer disconnected", meta);
+    }
+
+    static logTransportReplacement(
+        logger: Logger,
+        oldTransport: NetworkTransport,
+        newTransport: NetworkTransport,
+        peerAddress: string
+    ): void {
+        logger.info("🔄 Transport upgrade", {
+            oldTransport: this.getTransportMetadata(oldTransport),
+            newTransport: this.getTransportMetadata(newTransport),
+            peerAddress: this.formatHash(peerAddress)
+        });
+    }
+
+    static getPeerProfileMetadata(profile: PeerProfile) {
+        return {
+            peerAddress: profile.getEvmAddress(),
+            hpAddress: profile.getHpAddress(),
+            blacklisted: profile.isBlackListed,
+            transports: profile
+                .getLiveTransports()
+                .map((transport) => this.getTransportMetadata(transport))
+        };
+    }
+
+    /**
+     * `fullEvidence` keeps the whole digest and both canonical signatures so
+     * an exclusion can be verified later; otherwise they are shortened.
+     */
+    static getDoubleSignatureMetadata(
+        report: DoubleSignatureReport,
+        fullEvidence = false
+    ) {
+        const format = (value: string) =>
+            fullEvidence ? value : this.formatHash(value);
+        return {
+            signer: report.signer,
+            message: format(String(report.message)),
+            firstSignature: format(String(report.firstSignature)),
+            secondSignature: format(String(report.secondSignature))
+        };
+    }
+
+    static getTransportMetadata(transport: NetworkTransport) {
+        const peerAddress = transport.peerAddress || "unknown";
+        const stateManager = transport.p2pManager.stateManager;
+        const transportType = TransportType[transport.transportType];
+
+        return {
+            peerAddress,
+            transportType,
+            channelId: stateManager.channelId,
+            forkId: stateManager.forkId.toString()
+        };
+    }
+    static getBlockMetadata(block: Block, storage?: Storage) {
+        const thresholdAddresses = new Set<Address>(
+            storage?.getParticipantsUnion(block.coordinates) || []
+        );
+        const allSignersSet = block.acceptedSignerAddresses;
+        const didntSign = difference(thresholdAddresses, allSignersSet);
+        return {
+            author: String(block.author),
+            blockHash: String(block.hash),
+            stateSnapshotHash: String(block.stateSnapshotHash),
+            blockHeight: block.height,
+            timestamp: block.timestamp,
+            onChainTimestamp: block.onChainTimestamp,
+            allSigners: Array.from(allSignersSet),
+            didntSign: Array.from(didntSign),
+            numberOfInboundMessageBlocks: block.messageBlocks?.length ?? 0,
+            forkId: String(block.forkId),
+            channelId: String(block.channelId)
+        };
+    }
+
+    static getBlockStructMetadata(blockStruct: BlockStruct) {
+        const header = blockStruct.transaction.header;
+        return {
+            author: String(header.participant),
+            blockHash: String(hash(Codec.encode(blockStruct, Type.Block))),
+            blockHeight: Number(header.transactionCnt),
+            timestamp: Number(header.timestamp),
+            forkId: String(header.forkId),
+            channelId: String(header.channelId),
+            stateSnapshotHash: String(blockStruct.stateSnapshotHash),
+            previousBlockHash: String(blockStruct.previousBlockHash),
+            messageBlocks: blockStruct.messageBlocks.map((messageBlock) =>
+                this.getMessageBlockMetadata(messageBlock)
+            )
+        };
+    }
+
+    static getBlockConfirmationStructMetadata(
+        blockConfirmation: BlockConfirmationStruct
+    ) {
+        // Callers log refused confirmations, whose bytes may not decode: the
+        // block fields are then left out instead of the log throwing.
+        let blockMetadata: Record<string, unknown>;
+        try {
+            blockMetadata = this.getBlockStructMetadata(
+                Codec.decode(
+                    blockConfirmation.signedBlock.encodedBlock,
+                    Type.Block
+                )
+            );
+        } catch {
+            blockMetadata = { undecodableBlock: true };
+        }
+
+        return {
+            blockConfirmationHash: String(
+                hash(Codec.encode(blockConfirmation, Type.BlockConfirmation))
+            ),
+            ...blockMetadata,
+            originalSignature: String(blockConfirmation.signedBlock.signature),
+            confirmationSignatures: blockConfirmation.signatures.map(
+                (signature) => String(signature)
+            ),
+            confirmationsCount: blockConfirmation.signatures.length
+        };
+    }
+
+    static getSnapshotMetadata(stateSnapshot: StateSnapshot) {
+        return {
+            blockHeight: stateSnapshot.blockHeight,
+            timestamp: stateSnapshot.timestamp,
+            isGenesis: stateSnapshot.isGenesis,
+            forkId: String(stateSnapshot.forkID),
+            stateSnapshotHash: String(stateSnapshot.hash),
+            snapshotData: this.getSnapshotDataMetadata(
+                stateSnapshot.snapshotData
+            )
+        };
+    }
+
+    static getSnapshotDataMetadata(snapshotData: SnapshotDataStruct) {
+        return {
+            originForkId: String(snapshotData.originForkId),
+            stateMachineStateHash: String(snapshotData.stateMachineStateHash),
+            participants: snapshotData.participants.map((p) => String(p)),
+            latestInboundMessageBlockHash: String(
+                snapshotData.latestInboundMessageBlockHash
+            ),
+            latestInboundMessageBlockHeight: Number(
+                snapshotData.latestInboundMessageBlockHeight ?? 0n
+            ),
+            latestOutboundMessageBlockHash: String(
+                snapshotData.latestOutboundMessageBlockHash
+            ),
+            latestOutboundMessageBlockHeight: Number(
+                snapshotData.latestOutboundMessageBlockHeight ?? 0n
+            ),
+            totalDeposits: {
+                amount: Number(snapshotData.totalDeposits.amount),
+                data: String(snapshotData.totalDeposits.data)
+            },
+            totalWithdrawals: {
+                amount: Number(snapshotData.totalWithdrawals.amount),
+                data: String(snapshotData.totalWithdrawals.data)
+            }
+        };
+    }
+
+    static getMessageBlockMetadata(messageBlock: MessageBlockStruct) {
+        return {
+            blockHash: String(
+                hash(Codec.encode(messageBlock, Type.MessageBlock))
+            ),
+            // `_verifyInboundMessageBlocks` walks the chain by comparing this
+            // against the running head, so it is the field that says where a
+            // linkage check actually broke.
+            previousBlockHash: String(messageBlock.previousBlockHash),
+            blockHeight: Number(messageBlock.blockHeight),
+            timestamp: Number(messageBlock.timestamp),
+            messagesCount: messageBlock.messages.length,
+            totalBalance: {
+                amount: Number(messageBlock.totalBalance.amount),
+                data: String(messageBlock.totalBalance.data)
+            }
+        };
+    }
+
+    /**
+     * An inbound-run request and what storage could prove of it: the bounds the
+     * caller asked for, how much came back, and the first hash we do not hold.
+     */
+    static getInboundRunMetadata(run: {
+        upperBlockHash: Hash;
+        lowerBlockHash: Hash;
+        blocks: MessageBlockStruct[];
+        missingBlockHash?: Hash;
+    }) {
+        return {
+            upperBlockHash: this.formatHash(run.upperBlockHash),
+            lowerBlockHash: this.formatHash(run.lowerBlockHash),
+            blockCount: run.blocks.length,
+            missingBlockHash: run.missingBlockHash
+                ? this.formatHash(run.missingBlockHash)
+                : undefined
+        };
+    }
+
+    /**
+     * A fork's dispute window and what local storage could resolve of it: the
+     * committed set's size and the commitments whose dispute we still lack.
+     */
+    static getDisputeWindowMetadata(window: {
+        forkId: ForkId;
+        commitments: readonly Hash[];
+        missingCommitments: readonly NormalizedDisputeCommitment[];
+    }) {
+        return {
+            forkId: this.formatHash(window.forkId),
+            commitmentCount: window.commitments.length,
+            missingCommitments: window.missingCommitments.map((commitment) =>
+                this.formatHash(commitment)
+            )
+        };
+    }
+
+    /**
+     * A dispute window's deadlines and the seconds left until each by the
+     * chain-estimated clock. A negative remainder means the period is over.
+     */
+    static getDisputeDeadlineMetadata(deadlines: {
+        killPeriodEnd: number;
+        evidencePeriodEnd?: number;
+    }) {
+        const now = Clock.getTimeInSeconds();
+        const { killPeriodEnd, evidencePeriodEnd } = deadlines;
+        return {
+            killPeriodEnd,
+            killPeriodRemainingSeconds: killPeriodEnd - now,
+            evidencePeriodEnd,
+            evidencePeriodRemainingSeconds:
+                evidencePeriodEnd === undefined
+                    ? undefined
+                    : evidencePeriodEnd - now
+        };
+    }
+
+    static getMessageStructMeta(message: MessageStruct) {
+        const messageType = String(message.messageType);
+        const decodedMessageType = this.decodeMessageType(messageType);
+
+        return {
+            messageType,
+            decodedMessageType,
+            participant: String(message.participant),
+            balance: {
+                amount: Number(message.balance.amount),
+                data: String(message.balance.data)
+            },
+            dataHash: String(hash(message.data)),
+            dataLength: String(message.data).length
+        };
+    }
+
+    static decodeMessageType(messageType: string): string {
+        const normalized = messageType.toLowerCase();
+        return (
+            this.MESSAGE_TYPE_LABELS[normalized] ??
+            this.MESSAGE_TYPE_LABELS[messageType] ??
+            "UNKNOWN_MESSAGE_TYPE"
+        );
+    }
+
+    /**
+     * The three inbound-chain values `_verifyInboundMessageBlocks` compares:
+     * where our submitted snapshot says the chain starts, where `reduce()` said
+     * it ends, and the blocks we supplied to bridge them.
+     */
+    static getReductionInboundMetadata(reduceData: ReduceData) {
+        return {
+            submittedSnapshotInboundHash: String(
+                reduceData.latestStateSnapshot.snapshotData
+                    .latestInboundMessageBlockHash
+            ),
+            computedTargetInboundHash: String(
+                reduceData.reducedOutput.latestInboundMessageBlockHash
+            ),
+            submittedInboundBlocks: reduceData.inboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            )
+        };
+    }
+
+    static getReducedOutputMetadata(reducedOutput: ReduceOutputStruct) {
+        return {
+            latestBlock: this.getBlockStructMetadata(reducedOutput.latestBlock),
+            slashedParticipants: reducedOutput.slashedParticipants.map((addr) =>
+                String(addr)
+            ),
+            latestInboundMessageBlockHash: String(
+                reducedOutput.latestInboundMessageBlockHash
+            ),
+            latestInboundMessageBlockHeight: Number(
+                reducedOutput.latestInboundMessageBlockHeight
+            ),
+            timeout: this.getTimeoutStructMetadata(reducedOutput.timeout),
+            selfRemovals: reducedOutput.selfRemovals.map((addr) => String(addr))
+        };
+    }
+
+    static getStateProofMetadata(stateProof: StateProof) {
+        const milestones = stateProof.milestones.map(
+            (milestone, milestoneIndex) => ({
+                milestoneIndex,
+                confirmationsCount: milestone.blocks.length,
+                confirmations: milestone.blocks.map((block) =>
+                    this.getBlockMetadata(block)
+                )
+            })
+        );
+        const milestonesCount = milestones.length;
+        const latestBlockHeight =
+            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ?? 0;
+        return {
+            latestBlockHeight,
+            milestonesCount,
+            milestones
+        };
+    }
+
+    static getDisputeMetadata(dispute: DisputeStruct) {
+        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const postedAuditingData = dispute.postedAuditingData;
+        return {
+            disputeHash,
+            input: this.getDisputeInputMetadata(dispute.input),
+            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash),
+            postedAuditingData
+        };
+    }
+
+    static getDisputeInputMetadata(disputeInput: DisputeInputStruct) {
+        return {
+            channelId: String(disputeInput.channelId),
+            forkId: String(disputeInput.forkId),
+            latestStateSnapshotHash: String(
+                disputeInput.latestStateSnapshotHash
+            ),
+            latestInboundMessageBlockHash: String(
+                disputeInput.latestInboundMessageBlockHash
+            ),
+            lastInboundMessageBlockHeight: Number(
+                disputeInput.lastInboundMessageBlockHeight
+            ),
+            onChainSlashes: disputeInput.onChainSlashes.map((addr) =>
+                String(addr)
+            ),
+            disputeAuditingDataHash: String(
+                disputeInput.disputeAuditingDataHash
+            ),
+            disputer: String(disputeInput.disputer),
+            selfRemoval: disputeInput.selfRemoval,
+            requireExistingDisputeWindow:
+                disputeInput.requireExistingDisputeWindow,
+            timeout: this.getTimeoutStructMetadata(disputeInput.timeout),
+            stateProof: (() => {
+                const sp = StateProof.tryFrom(disputeInput.stateProof);
+                if (sp) return this.getStateProofMetadata(sp);
+                return {
+                    undecodable: true,
+                    milestonesCount: disputeInput.stateProof.milestones.length
+                };
+            })()
+        };
+    }
+
+    static getAuditingMetadata(
+        auditingData: DisputeAuditingDataStruct
+    ): Record<string, any> {
+        return {
+            genesisStateSnapshotData: this.getSnapshotDataMetadata(
+                auditingData.genesisStateSnapshotData
+            ),
+            latestStateSnapshot: this.getSnapshotMetadata(
+                StateSnapshot.from(auditingData.latestStateSnapshot)
+            ),
+            milestoneSnapshots: auditingData.milestoneSnapshots.map(
+                (snapshot) =>
+                    this.getSnapshotMetadata(StateSnapshot.from(snapshot))
+            ),
+            latestFinalizedStateStateMachineStateHash: String(
+                hash(auditingData.latestFinalizedStateStateMachineState || "0x")
+            ),
+            inboundMessageBlocks: auditingData.inboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            ),
+            outboundMessageBlocks: auditingData.outboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            )
+        };
+    }
+
+    static getTimeoutStructMetadata(timeout: TimeoutStruct) {
+        return {
+            timeoutParticipant: String(timeout.participant),
+            timeoutBlockHeight: Number(timeout.blockHeight),
+            minTimeStamp: Number(timeout.minTimeStamp),
+            isForced: timeout.isForced,
+            previousBlockProducer: String(timeout.previousBlockProducer),
+            previousBlockProducerPostedCalldata:
+                timeout.previousBlockProducerPostedCalldata,
+            participantSignatureOnPreviousBlock: String(
+                timeout.participantSignatureOnPreviousBlock
+            )
+        };
+    }
+
+    static getDisputeFraudProofMeta(
+        disputeFraudProof: DisputeFraudProofStruct
+    ) {
+        return {
+            killReason: this.formatProofType(
+                disputeFraudProof.proofType,
+                DisputeFraudProofType,
+                toSolidityDisputeFraudProofType
+            ),
+            participant: String(disputeFraudProof.participant),
+            dispute: this.getDisputeMetadata(disputeFraudProof.dispute)
+        };
+    }
+
+    static getFraudProofMetadata(fraudProofs: FraudProofStruct[]) {
+        return fraudProofs.map((fp) => ({
+            participant: fp.participant,
+            proofType: this.formatProofType(
+                fp.proofType,
+                FraudProofType,
+                toSolidityFraudProofType
+            )
+        }));
+    }
+
+    /** The enum key whose Solidity value the chain carries as `proofType`. */
+    private static formatProofType<T extends number>(
+        proofType: BigNumberish,
+        types: Record<string, string | T>,
+        toSolidity: (value: T) => number
+    ): string {
+        const numValue = Number(proofType);
+        const key = Object.keys(types).find((name) => {
+            const value = types[name];
+            return typeof value === "number" && toSolidity(value) === numValue;
+        });
+        return key ?? `UNKNOWN(${numValue})`;
+    }
+}

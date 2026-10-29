@@ -1,0 +1,717 @@
+import { block as blockFactory } from "../factory";
+import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
+import {
+    __resetSignerRecoveryCache,
+    __signerRecoveryCacheSize
+} from "@/cache/SignerRecoveryCache";
+import Block from "@/models/Block";
+import { Timestamp, Signature } from "@/types/types";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+
+import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
+
+describe("Block Model", () => {
+    let blockStruct: BlockStruct;
+    let block: Block;
+    let signer: HardhatEthersSigner;
+    let signers: HardhatEthersSigner[];
+
+    before(async () => {
+        signers = await ethers.getSigners();
+    });
+
+    beforeEach(async () => {
+        block = blockFactory();
+        blockStruct = block.blockStruct;
+        signer = signers[0];
+    });
+
+    describe("Static factory methods", () => {
+        it("should create Block from BlockStruct", () => {
+            const blockInstance = Block.fromSignedBlock(block.signedBlock);
+            expect(blockInstance).to.be.instanceOf(Block);
+            expect(blockInstance.blockStruct).to.deep.equal(blockStruct);
+        });
+
+        it("should create Block from BlockConfirmation", () => {
+            const blockConfirmation = block.blockConfirmationStruct;
+            const decoded = Block.fromBlockConfirmation(blockConfirmation);
+            expect(decoded).to.be.instanceOf(Block);
+            expect(decoded.blockStruct).to.deep.equal(blockStruct);
+        });
+    });
+
+    describe("Hash computation", () => {
+        it("should compute hash correctly", () => {
+            const hash = block.hash;
+            const expectedHash = ethers.keccak256(block.encode());
+            expect(hash).to.equal(expectedHash);
+        });
+
+        it("should have consistent hash for same data", () => {
+            const block1 = Block.fromSignedBlock(block.signedBlock);
+            const block2 = Block.fromSignedBlock(block.signedBlock);
+            expect(block1.hash).to.equal(block2.hash);
+        });
+    });
+
+    describe("Property getters", () => {
+        it("should return correct coordinates", () => {
+            const coordinates = block.coordinates;
+            expect(coordinates.forkId).to.equal(
+                blockStruct.transaction.header.forkId
+            );
+            expect(coordinates.height).to.equal(
+                Number(blockStruct.transaction.header.transactionCnt)
+            );
+        });
+
+        it("should return correct height", () => {
+            expect(block.height).to.equal(
+                Number(blockStruct.transaction.header.transactionCnt)
+            );
+        });
+
+        it("should return correct forkId", () => {
+            expect(block.forkId).to.equal(
+                blockStruct.transaction.header.forkId
+            );
+        });
+
+        it("should return correct timestamp", () => {
+            expect(block.timestamp).to.equal(
+                Number(blockStruct.transaction.header.timestamp)
+            );
+        });
+
+        it("should return correct author", () => {
+            expect(block.author).to.equal(
+                blockStruct.transaction.header.participant
+            );
+        });
+
+        it("should return correct channelId", () => {
+            expect(block.channelId).to.equal(
+                blockStruct.transaction.header.channelId
+            );
+        });
+
+        it("should return correct previousBlockHash", () => {
+            expect(block.previousBlockHash).to.equal(
+                blockStruct.previousBlockHash
+            );
+        });
+
+        it("should return correct stateSnapshotHash", () => {
+            expect(block.stateSnapshotHash).to.equal(
+                blockStruct.stateSnapshotHash
+            );
+        });
+
+        it("should return correct transaction", () => {
+            expect(block.tx).to.deep.equal(blockStruct.transaction);
+        });
+    });
+
+    describe("Block equality", () => {
+        it("should identify equal blocks", () => {
+            const block1 = block;
+            const block2 = block;
+            expect(block1.equals(block2)).to.be.true;
+        });
+
+        it("should identify different blocks", () => {
+            const block1 = Block.fromSignedBlock(block.signedBlock);
+            const differentBlock = blockFactory({
+                previousBlockHash: ethers.hexlify(ethers.randomBytes(32))
+            });
+            expect(block1.equals(differentBlock)).to.be.false;
+        });
+    });
+
+    describe("Signature operations", () => {
+        it("should get signer address from signature", () => {
+            const message = ethers.getBytes(block.hash);
+            const signature = signer.signMessage(message);
+
+            return signature.then((sig) => {
+                const recoveredAddress = block.signatureToAddress(sig);
+                expect(recoveredAddress).to.equal(signer.address);
+            });
+        });
+
+        it("should find participant signature", async () => {
+            const testBlock = blockFactory();
+            const message = ethers.getBytes(testBlock.hash);
+            const signature = await signer.signMessage(message);
+
+            const signedBlockStruct = {
+                encodedBlock: testBlock.encode(),
+                signature: signature
+            };
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const _signature = realSignedBlock.findSignature(signer.address);
+
+            expect(_signature).to.equal(signature);
+        });
+
+        it("should handle participant who didn't sign", async () => {
+            // Create a block signed by the first signer
+            const testBlock = blockFactory();
+
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            // Try to find signature for a different signer who didn't sign this block
+            const nonSigner = signers[1];
+            const signature = realSignedBlock.findSignature(nonSigner.address);
+
+            expect(signature).to.be.undefined;
+        });
+
+        it("should sign block", async () => {
+            const signature = await block.sign(signer);
+
+            // Verify signature
+            const recoveredAddress = block.signatureToAddress(signature);
+            expect(recoveredAddress).to.equal(signer.address);
+        });
+
+        it("should create signed block", async () => {
+            const signedBlock = await block.signBlock(signer);
+
+            expect(signedBlock.encodedBlock).to.equal(block.encode());
+
+            // Verify signature
+            const recoveredAddress = block.signatureToAddress(
+                signedBlock.signature as Signature
+            );
+            expect(recoveredAddress).to.equal(signer.address);
+        });
+    });
+
+    describe("Signature management", () => {
+        it("should return signer address from original signature", async () => {
+            const testBlock = blockFactory();
+
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const signerAddr = realSignedBlock.signerAddress;
+
+            expect(signerAddr).to.equal(signer.address);
+        });
+
+        it("should return confirmation signatures", () => {
+            const confirmationSigs = block.confirmationSignatures;
+            expect(confirmationSigs).to.be.instanceOf(Set);
+        });
+
+        it("should return all signatures including original and confirmations", () => {
+            const allSigs = block.allSignatures;
+            expect(allSigs).to.be.instanceOf(Set);
+            expect(allSigs.has(block.originalSignature)).to.be.true;
+        });
+
+        it("should return confirmation signer addresses", () => {
+            const confirmationAddrs = block.confirmationSignerAddresses;
+            expect(confirmationAddrs).to.be.instanceOf(Set);
+        });
+
+        it("should return all signer addresses", async () => {
+            const testBlock = blockFactory();
+
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const allAddrs = realSignedBlock.allSignerAddresses;
+            expect(allAddrs).to.be.instanceOf(Set);
+            expect(allAddrs.has(realSignedBlock.signerAddress)).to.be.true;
+        });
+
+        it("should expand signatures with new signatures array", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+
+            const originalConfirmationCount = block.confirmationSignatures.size;
+            block.expandSignatures([signature2]);
+
+            expect(block.confirmationSignatures.size).to.equal(
+                originalConfirmationCount + 1
+            );
+            expect(block.confirmationSignatures.has(signature2)).to.be.true;
+        });
+
+        it("should grow cached signer addresses when expanding signatures", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+
+            expect(block.didSign(signer2.address)).to.equal(false);
+            block.expandSignatures([signature2]);
+
+            expect(block.didSign(signer2.address)).to.equal(true);
+        });
+
+        it("should expand signatures with new signatures Set", async () => {
+            const signer2 = signers[1];
+            const signer3 = signers[2];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            const signature3 = await signer3.signMessage(
+                ethers.getBytes(block.hash)
+            );
+
+            const originalConfirmationCount = block.confirmationSignatures.size;
+            const newSignatures = new Set([signature2, signature3]);
+            block.expandSignatures(newSignatures);
+
+            expect(block.confirmationSignatures.size).to.equal(
+                originalConfirmationCount + 2
+            );
+            expect(block.confirmationSignatures.has(signature2)).to.be.true;
+            expect(block.confirmationSignatures.has(signature3)).to.be.true;
+        });
+
+        it("should not duplicate signatures when expanding", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+
+            block.expandSignatures([signature2]);
+            const countAfterFirst = block.confirmationSignatures.size;
+
+            // Add same signature again
+            block.expandSignatures([signature2]);
+
+            expect(block.confirmationSignatures.size).to.equal(countAfterFirst);
+        });
+
+        it("should remove confirmation signatures", async () => {
+            const signer2 = signers[1];
+            const signer3 = signers[2];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            const signature3 = await signer3.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            block.expandSignatures([signature2, signature3]);
+
+            block.removeConfirmationSignatures(new Set([signature2]));
+
+            expect(block.confirmationSignatures.has(signature2)).to.be.false;
+            expect(block.confirmationSignatures.has(signature3)).to.be.true;
+        });
+
+        it("should shrink cached signer addresses when removing signatures", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            block.expandSignatures([signature2]);
+            // Warm the address cache before removing.
+            expect(block.didSign(signer2.address)).to.equal(true);
+
+            block.removeConfirmationSignatures(new Set([signature2]));
+
+            expect(block.didSign(signer2.address)).to.equal(false);
+        });
+
+        it("should keep the author's original signature when removing", async () => {
+            const testBlock = blockFactory();
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            realSignedBlock.removeConfirmationSignatures(
+                new Set([realSignedBlock.originalSignature])
+            );
+
+            expect(
+                realSignedBlock.allSignatures.has(
+                    realSignedBlock.originalSignature
+                )
+            ).to.be.true;
+            expect(
+                realSignedBlock.allSignerAddresses.has(
+                    realSignedBlock.signerAddress
+                )
+            ).to.be.true;
+        });
+
+        it("should ignore removing unknown signatures", async () => {
+            const signer2 = signers[1];
+            const unknownSignature = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            const countBefore = block.confirmationSignatures.size;
+
+            block.removeConfirmationSignatures(new Set([unknownSignature]));
+
+            expect(block.confirmationSignatures.size).to.equal(countBefore);
+        });
+    });
+
+    describe("Authenticity", () => {
+        it("should be authentic when the author signature recovers to the header participant", async () => {
+            const authored = blockFactory({
+                header: { participant: signer.address }
+            });
+            const signedBlock = await authored.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlock);
+
+            expect(realSignedBlock.isAuthentic).to.be.true;
+        });
+
+        it("should be inauthentic when another key signed for the declared author", async () => {
+            const authored = blockFactory({
+                header: { participant: signers[1].address }
+            });
+            const signedBlock = await authored.signBlock(signer);
+            const forged = Block.fromSignedBlock(signedBlock);
+
+            expect(forged.signerAddress).to.equal(signer.address);
+            expect(forged.isAuthentic).to.be.false;
+        });
+
+        it("should be inauthentic for a malformed signature without throwing", () => {
+            const malformed = Block.fromSignedBlock({
+                encodedBlock: block.signedBlock.encodedBlock,
+                signature: "0x1234"
+            });
+
+            expect(malformed.isAuthentic).to.be.false;
+        });
+
+        it("should be inauthentic when confirmation signatures are valid but the author signature is not", async () => {
+            const authored = blockFactory({
+                header: { participant: signers[1].address }
+            });
+            const signedBlock = await authored.signBlock(signer);
+            const forged = Block.fromSignedBlock(signedBlock);
+            forged.expandSignatures([
+                await signers[1].signMessage(ethers.getBytes(forged.hash))
+            ]);
+
+            expect(forged.confirmationSignerAddresses.has(signers[1].address))
+                .to.be.true;
+            expect(forged.isAuthentic).to.be.false;
+        });
+    });
+
+    describe("Block confirmation struct", () => {
+        it("should return correct block confirmation struct", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            block.expandSignatures([signature2]);
+
+            const blockConfirmation = block.blockConfirmationStruct;
+
+            expect(blockConfirmation.signedBlock).to.deep.equal(
+                block.signedBlock
+            );
+
+            expect(blockConfirmation.signatures).to.include(signature2);
+        });
+    });
+
+    describe("Timestamp utilities", () => {
+        it("should return block timestamp when participant has signed", async () => {
+            const testBlock = blockFactory();
+            const signature = await signer.signMessage(
+                ethers.getBytes(testBlock.hash)
+            );
+            const signedBlockStruct = {
+                encodedBlock: testBlock.encode(),
+                signature: signature
+            };
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const participant = realSignedBlock.signerAddress;
+            const relevantTimestamp =
+                realSignedBlock.getRelevantTimestamp(participant);
+
+            expect(relevantTimestamp).to.equal(realSignedBlock.timestamp);
+        });
+
+        it("should return onChainTimestamp when participant has not signed and onChainTimestamp is set", async () => {
+            const testBlock = blockFactory();
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const nonSignerAddress = signers[1].address;
+            const onChainTime = realSignedBlock.timestamp + 1000;
+            realSignedBlock.onChainTimestamp = onChainTime;
+
+            const relevantTimestamp =
+                realSignedBlock.getRelevantTimestamp(nonSignerAddress);
+
+            expect(relevantTimestamp).to.equal(
+                Math.max(onChainTime, realSignedBlock.timestamp)
+            );
+        });
+
+        it("should return block timestamp when participant has not signed and onChainTimestamp is not set", async () => {
+            const testBlock = blockFactory();
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const nonSignerAddress = signers[1].address;
+            // Ensure onChainTimestamp is undefined
+            realSignedBlock.onChainTimestamp = undefined as any;
+
+            const relevantTimestamp =
+                realSignedBlock.getRelevantTimestamp(nonSignerAddress);
+
+            expect(relevantTimestamp).to.equal(realSignedBlock.timestamp);
+        });
+
+        it("should return max of onChainTimestamp and block timestamp when both are set", async () => {
+            const testBlock = blockFactory();
+
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            const nonSignerAddress = signers[1].address;
+            const onChainTime = realSignedBlock.timestamp - 500; // Earlier than block timestamp
+            realSignedBlock.onChainTimestamp = onChainTime;
+
+            const relevantTimestamp =
+                realSignedBlock.getRelevantTimestamp(nonSignerAddress);
+
+            expect(relevantTimestamp).to.equal(realSignedBlock.timestamp);
+        });
+    });
+
+    describe("Immutability", () => {
+        it("should not allow modification of underlying data", () => {
+            const originalStruct = block.blockStruct;
+            const retrievedStruct = block.blockStruct;
+
+            // Modify the retrieved struct
+            retrievedStruct.previousBlockHash = ethers.hexlify(
+                ethers.randomBytes(32)
+            );
+
+            // Original should remain unchanged
+            expect(block.blockStruct).to.deep.equal(originalStruct);
+        });
+    });
+
+    describe("On-chain timestamp", () => {
+        it("should have undefined onChainTimestamp by default", () => {
+            expect(block.onChainTimestamp).to.be.undefined;
+        });
+
+        it("should set and get onChainTimestamp", () => {
+            const onChainTimestamp: Timestamp = 1234567890;
+            block.onChainTimestamp = onChainTimestamp;
+
+            expect(block.onChainTimestamp).to.equal(onChainTimestamp);
+        });
+
+        it("should not affect encoding when onChainTimestamp is set", () => {
+            const originalEncoded = block.encode();
+
+            block.onChainTimestamp = 1234567890;
+            const encodedWithTimestamp = block.encode();
+
+            expect(encodedWithTimestamp).to.equal(originalEncoded);
+        });
+
+        it("should not change hash when onChainTimestamp is set", () => {
+            const originalHash = block.hash;
+            const onChainTimestamp: Timestamp = 1234567890;
+
+            block.onChainTimestamp = onChainTimestamp;
+
+            expect(block.hash).to.equal(originalHash);
+            expect(block.onChainTimestamp).to.equal(onChainTimestamp);
+        });
+        it("should consider blocks equal regardless of onChainTimestamp", () => {
+            const block1 = block;
+            const block2 = block;
+
+            // Set different onChainTimestamps
+            block1.onChainTimestamp = 1234567890;
+            block2.onChainTimestamp = 9876543210;
+
+            // They should still be equal because onChainTimestamp doesn't affect encoding
+            expect(block1.equals(block2)).to.be.true;
+        });
+    });
+});
+
+describe("Block Model canonical signature bytes", () => {
+    it("equivalent byte representations share one recovery-cache entry", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const first = f.copy([signature]);
+        const second = Block.fromBlockConfirmation({
+            signedBlock: f.block.signedBlock,
+            signatures: [
+                "0x" + signature.slice(2).toUpperCase(),
+                ethers.getBytes(signature)
+            ]
+        });
+        __resetSignerRecoveryCache();
+        expect([...first.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect(__signerRecoveryCacheSize()).to.equal(1);
+        expect([...second.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect(__signerRecoveryCacheSize()).to.equal(1);
+        first.expandSignatures([f.signature(1, 1)]);
+        expect([...first.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect(__signerRecoveryCacheSize()).to.equal(2);
+    });
+    it("merge uses canonical equality and keeps its original author envelope", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const original = f.block.originalSignature;
+        f.block.expandSignatures([signature]);
+        f.block.mergeFrom(
+            f.alternateEnvelope(3, ["0x" + signature.slice(2).toUpperCase()])
+        );
+        expect([...f.block.confirmationSignatures]).to.deep.equal([signature]);
+        expect(f.block.originalSignature).to.equal(original);
+    });
+    it("struct construction and author re-signing normalize real signer output", async () => {
+        const f = new QueueAdmissionFixture();
+        const wallet = f.wallets[0];
+        const sign = wallet.signMessage.bind(wallet);
+        wallet.signMessage = async (message) => {
+            const signature = await sign(message);
+            return "0x" + signature.slice(2).toUpperCase();
+        };
+        const block = await Block.fromBlockStruct(f.block.blockStruct, wallet);
+        expect(block.originalSignature).to.equal(f.block.originalSignature);
+        await block.signAsAuthor(wallet);
+        expect(block.originalSignature).to.equal(f.block.originalSignature);
+        expect(block.signerAddress).to.equal(wallet.address);
+    });
+
+    it("constructors deduplicate hex casing and byte-array confirmations", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const block = Block.fromBlockConfirmation({
+            signedBlock: {
+                encodedBlock: f.block.encode(),
+                signature: ethers.getBytes(String(f.block.originalSignature))
+            },
+            signatures: [
+                signature,
+                "0x" + signature.slice(2).toUpperCase(),
+                ethers.getBytes(signature)
+            ]
+        });
+        expect(block.originalSignature).to.equal(f.block.originalSignature);
+        expect([...block.confirmationSignatures]).to.deep.equal([signature]);
+        expect([...block.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+    });
+
+    it("expansion and removal use the same byte equality", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const upper = "0x" + signature.slice(2).toUpperCase();
+        f.block.expandSignatures([upper, signature]);
+        expect(f.block.confirmationSignatures.size).to.equal(1);
+        f.block.removeConfirmationSignatures(new Set([upper]));
+        expect(f.block.confirmationSignatures.size).to.equal(0);
+    });
+
+    it("keeps malformed envelopes unchanged for authentication failure", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = "0x" + "00".repeat(64) + "ff";
+        const block = Block.fromSignedBlock({
+            encodedBlock: f.block.encode(),
+            signature
+        });
+        expect(block.originalSignature).to.equal(signature);
+        expect(() => block.signatureToAddress(signature)).to.throw();
+    });
+});
+
+describe("Block Model confirmation-free copies", () => {
+    it("authorSignedCopy shares the struct, bytes and hash and drops only the confirmations", () => {
+        const f = new QueueAdmissionFixture();
+        const original = f.copy([f.signature(1), f.signature(2)], 1234);
+        const hash = original.hash;
+
+        const copy = original.authorSignedCopy();
+
+        // shared, not decoded again
+        expect(copy.blockStruct === original.blockStruct).to.equal(true);
+        expect(copy.encode()).to.equal(original.encode());
+        expect(copy.hash).to.equal(hash);
+        expect(copy.originalSignature).to.equal(original.originalSignature);
+        expect(copy.onChainTimestamp).to.equal(1234);
+        expect(copy.author).to.equal(f.wallets[0].address);
+        expect(copy.isAuthentic).to.equal(true);
+        expect([...copy.confirmationSignatures]).to.deep.equal([]);
+        expect([...original.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address,
+            f.wallets[2].address
+        ]);
+    });
+
+    it("authorSignedCopy gives the copy its own confirmation set", () => {
+        const f = new QueueAdmissionFixture();
+        const original = f.copy([f.signature(1)]);
+        const copy = original.authorSignedCopy();
+
+        copy.expandSignatures([f.signature(3)]);
+        original.removeConfirmationSignatures(new Set([f.signature(1)]));
+
+        expect([...copy.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[3].address
+        ]);
+        expect([...original.confirmationSignatures]).to.deep.equal([]);
+    });
+
+    it("isAuthentic is false for every author-signature encoding the contracts reject", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = String(f.block.originalSignature);
+        const verdicts: Record<string, boolean> = {};
+        for (const [name, encoding] of Object.entries(
+            contractRejectedEncodings(signature)
+        )) {
+            verdicts[name] = Block.fromSignedBlock({
+                encodedBlock: f.block.encode(),
+                signature: encoding
+            }).isAuthentic;
+        }
+
+        expect(f.block.isAuthentic).to.equal(true);
+        expect(verdicts).to.deep.equal({
+            "compact 64-byte": false,
+            "v of 0/1": false,
+            "EIP-155 v": false,
+            "high s": false,
+            "zero r": false,
+            "zero s": false,
+            "r at the group order": false,
+            "66 bytes": false,
+            "63 bytes": false,
+            empty: false
+        });
+    });
+});

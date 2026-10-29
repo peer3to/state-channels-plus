@@ -1,33 +1,258 @@
-name: CI - Run Tests
+name: CI - Distributed Test Suite
 
 on:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+    pull_request:
+        types:
+            - opened
+            - synchronize
+            - reopened
+
+permissions:
+    contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+    approve:
+        needs: [review-bot-tests, spec, test, browser]
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        concurrency:
+            group: review-approval-${{ github.event.pull_request.number }}
+            cancel-in-progress: false
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            pull-requests: write
+            issues: read
+            actions: read
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - name: Approve only confirmed resolved reviews with successful CI
+              run: node scripts/bot/final-approval.js
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-approval
 
-    steps:
-      # Step 1: Checkout the repository
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    review-bot-tests:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - run: yarn review-bot:test
 
-      # Step 2: Set up Node.js
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20
-          cache: 'yarn'
+    spec:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
 
-      # Step 3: Install dependencies
-      - name: Install dependencies
-        run: yarn
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
 
-      # Step 4: Compile and run tests
-      - name: Compile and run tests
-        run: yarn testc
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "yarn"
+
+            - name: Install dependencies
+              run: yarn install --frozen-lockfile
+
+            - name: Test spec tools
+              run: yarn spec:test
+
+            - name: Check spec ID links
+              run: yarn spec:ids:check
+
+            - name: Check spec change impact
+              run: yarn spec:impact --base origin/${{ github.base_ref }}
+
+    test:
+        concurrency:
+            group: state-channels-plus-distributed-tests
+            queue: max
+            cancel-in-progress: false
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "yarn"
+
+            - name: Install dependencies
+              run: yarn install --frozen-lockfile
+
+            - name: Check import order
+              run: yarn lint:imports
+
+            - name: Read the pinned Foundry version
+              id: forge
+              run: echo "version=$(cat .forge-version)" >> "$GITHUB_OUTPUT"
+
+            - name: Install Foundry
+              uses: foundry-rs/foundry-toolchain@v1
+              with:
+                  version: ${{ steps.forge.outputs.version }}
+
+            - name: Check Solidity formatting
+              run: forge fmt --check
+
+            - name: Check distributed pool secrets are present
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+              run: |
+                  if [ -z "$SCP_TEST_POOL_SECRET" ]; then
+                    echo "::error::SCP_TEST_POOL_SECRET is not set. Set it with: gh secret set SCP_TEST_POOL_SECRET"
+                    exit 1
+                  fi
+                  if ! printf '%s' "$SCP_TEST_ORCHESTRATOR_SEED" | grep -Eq '^[a-f0-9]{64}$'; then
+                    echo "::error::SCP_TEST_ORCHESTRATOR_SEED must be a 64-character lowercase hex repository secret"
+                    exit 1
+                  fi
+
+            # The runner builds incrementally before shipping the build to the
+            # workers. A PR into dispute restores dispute's build, any PR its own
+            # previous run. Hardhat and forge rebuild what changed; dist is reused
+            # only while its file set is unchanged. Each tool re-checks what it restores.
+            - name: Restore the Foundry build
+              id: forge-cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: |
+                      out
+                      cache_forge
+                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'yarn.lock', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  restore-keys: forge-${{ steps.forge.outputs.version }}-
+
+            - name: Restore the contract and test-tree build
+              id: build-cache
+              uses: actions/cache/restore@v4
+              with:
+                  path: |
+                      artifacts
+                      cache
+                      typechain-types
+                      dist
+                      src/utils/GeneratedArtifacts.ts
+                  key: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json', 'contracts/**/*.sol') }}-${{ github.sha }}
+                  restore-keys: build-${{ hashFiles('yarn.lock', 'hardhat.config.ts', 'tsconfig.json', 'contracts/**/*.sol') }}-
+
+            # Built before the tests so a saved forge entry is always a finished build.
+            - name: Build forge
+              id: forge-build
+              run: forge build
+
+            - name: Run full test suite on the distributed pool
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+              # Schedules by the committed test-costs.json and never writes it.
+              run: yarn test:parallel:distributed --test-parallel-script --test-browser --discovery-timeout 300000 --schedule cost --cost-cache-read-only
+
+            # Saved even when tests fail, so a flaky run still leaves its build.
+            - name: Save the Foundry build
+              if: always() && steps.forge-build.outcome == 'success' && steps.forge-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      out
+                      cache_forge
+                  key: ${{ steps.forge-cache.outputs.cache-primary-key }}
+
+            - name: Save the contract and test-tree build
+              if: always() && steps.build-cache.outcome == 'success'
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      artifacts
+                      cache
+                      typechain-types
+                      dist
+                      src/utils/GeneratedArtifacts.ts
+                  key: ${{ steps.build-cache.outputs.cache-primary-key }}
+
+            - name: Upload run logs
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: distributed-run-logs
+                  path: ./logs/
+                  if-no-files-found: ignore
+                  retention-days: 7
+
+    browser:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+            - name: Build the distributed runner image
+              run: node scripts/e2e-parallel/distributed/buildRunnerImage.js --tag scp-runner:ci
+            # The gates run where the browser tier runs on a worker: inside the
+            # runner image, read-only, without capabilities, with the
+            # environment's 256MB /tmp that SCP_BROWSER_CONTAINED moves
+            # Chromium's shared memory into. Install and compile happen in the
+            # same container so native modules match the image's Node.
+            - name: Run the browser gates in the runner image
+              run: |
+                  chmod -R a+rwX "$GITHUB_WORKSPACE"
+                  docker run --detach --name scp-browser \
+                      --read-only --init --cap-drop=ALL \
+                      --security-opt=no-new-privileges:true \
+                      --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+                      --env HOME=/environment/.home \
+                      --mount "type=bind,source=$GITHUB_WORKSPACE,target=/environment" \
+                      --workdir /environment \
+                      scp-runner:ci \
+                      bash -c 'set -euo pipefail
+                          yarn install --frozen-lockfile
+                          node -e "const p = require(\"playwright\").chromium.executablePath(); console.log(\"Chromium:\", p); if (!p.startsWith(\"/ms-playwright/\")) process.exit(1)"
+                          yarn compile
+                          yarn test:browser:worker
+                          yarn test:browser:webrtc'
+                  # Peak /tmp use while the gates run, for the shared-memory budget.
+                  peak=0
+                  while [ "$(docker inspect --format '{{.State.Running}}' scp-browser)" = "true" ]; do
+                      used=$(docker exec scp-browser df -k /tmp 2>/dev/null | awk 'NR==2 {print $3}')
+                      if [ -n "$used" ] && [ "$used" -gt "$peak" ]; then peak=$used; fi
+                      sleep 1
+                  done
+                  docker logs scp-browser
+                  status=$(docker inspect --format '{{.State.ExitCode}}' scp-browser)
+                  echo "Peak /tmp use in the runner container: $((peak / 1024)) MiB of 256 MiB" | tee -a "$GITHUB_STEP_SUMMARY"
+                  exit "$status"
+            - name: Upload browser logs
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: browser-run-logs
+                  path: ./logs/
+                  if-no-files-found: ignore
+                  retention-days: 7
