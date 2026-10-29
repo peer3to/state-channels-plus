@@ -1907,6 +1907,52 @@ outcome. Related:
 
 **Disposition:** Recorded as an open finding; not addressed now. No fix is selected.
 
+<a id="find-sync-9-364jc0"></a>
+
+### FIND-SYNC-9-364JC0
+
+**Defect:** Open (2026-10-28). A stale `SYNCED` spectator has no resync path, and its failed reduction
+can still end its runtime fatally. Seen on the testnet: a phone browser spectated a lobby table, the
+tab was suspended for about 43 minutes, and in that time a participant timed out and the fork was
+disputed and reduced. On wake, the chain catch-up delivered the dispute, the reduction-final event
+and the new fork's snapshots in one burst. The spectator had none of the blocks it missed. The local
+reduction needs the dispute's latest state snapshot, and `AgreementManager.getReduceData`
+([AgreementManager.ts](../implementation/source/src/agreementManager/AgreementManager.ts.md)) threw
+an untyped `Missing latestStateSnapshot for reducedOutput in storage for syncing`.
+`ReductionManager.failCompletion`
+([ReductionManager.ts](../implementation/source/src/stateManager/reduction/ReductionManager.ts.md))
+aborted the runtime, which the poker client reported as a planned table abort. But the same error
+also reached the reduction's awaiters: the reduction-final branch of `EventHandler`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)) awaits
+`reductionManager.tryReduce` without the non-participant catch-and-abort that the dispute-genesis and
+reduction-validation branches have. The rejection failed the contract event pipeline, surfaced as an
+unhandled rejection, and the poker client failed fatally.
+
+An unknown on-chain snapshot is not a staleness signal. A stopgap that aborted a `SYNCED` runtime
+on an unknown snapshot in `processStateSnapshotUpdated` (the TODO there) was tried and reverted
+(2026-10-28): healthy spectators that are up to date receive such snapshots, and six gate tests
+aborted a healthy spectator or sync-only observer (E2E-Spectate, E2E-MilestoneSyncReconstruction
+E09, E2E-JoinChannelRaceConditions U115, E2E-DisputeConflictsWithFinalState control,
+SpectateService same-fork target, SpectateSyncProofStart U28). The handler still only logs a
+warning, so the observed failure is unchanged.
+
+**Proposed direction:**
+
+1. A spectator whose reduction or validation lacks local inputs (state snapshot, state machine state,
+   inbound blocks) is stale, not broken. Report this with a typed error that the reduction owner
+   turns into a planned abort for a non-participant, and keep it fatal for a participant.
+2. Give the reduction-final branch of `EventHandler` the same non-participant rule as its two
+   sibling branches, so no rejection reaches the event pipeline after a planned abort.
+3. Replace the planned abort of point 1 with a resync: a stale `SYNCED` spectator drops its runtime state and syncs
+   again from a responder (initial-sync rules apply: a failed resync aborts, see
+   [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)).
+   Staleness is decided where the inputs are missing (point 1), not from an unknown snapshot.
+4. Verification: an e2e case that suspends a spectator's chain events and transport across a
+   dispute and its reduction, then resumes them in both event orders. The spectator ends with a
+   planned abort (or a resync, after 3) and never with a fatal runtime error.
+
+**Disposition:** Open; not started. No stopgap in tree.
+
 <a id="find-stipend-1-9ysnwb"></a>
 
 ### FIND-STIPEND-1-9YSNWB

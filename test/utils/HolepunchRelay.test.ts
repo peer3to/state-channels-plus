@@ -5,9 +5,9 @@ import { expect } from "chai";
 describe("HolepunchRelay", function () {
     let fixture: HolepunchRelayFixture;
 
-    beforeEach(function () {
+    beforeEach(async function () {
         fixture = new HolepunchRelayFixture();
-        fixture.setup();
+        await fixture.setup();
     });
 
     afterEach(function () {

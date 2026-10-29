@@ -1,11 +1,35 @@
 import { RelayerPool } from "@/transport/relay/RelayerPool";
 import { Logger } from "@/utils";
-//@ts-ignore
-import DHT from "@hyperswarm/dht-relay";
-//@ts-ignore
-import Stream from "@hyperswarm/dht-relay/ws";
-//@ts-ignore
-import Hyperswarm from "hyperswarm";
+import { DetachedPromises } from "@/utils/DetachedPromises";
+
+type RelayModules = { DHT: any; Stream: any; Hyperswarm: any };
+
+let relayModules: RelayModules | undefined;
+let relayModulesLoad: Promise<RelayModules> | undefined;
+
+/**
+ * Loaded on the first relay connection, not with the SDK: the relay's crypto
+ * instantiates five WebAssembly modules when it loads, and each one holds a
+ * WebAssembly memory. Every thread that loads the SDK (the page, the VM
+ * worker) paid them; only the thread that runs the relay needs them.
+ */
+export function loadRelayModules(): Promise<RelayModules> {
+    return (relayModulesLoad ??= Promise.all([
+        //@ts-ignore
+        import("@hyperswarm/dht-relay"),
+        //@ts-ignore
+        import("@hyperswarm/dht-relay/ws"),
+        //@ts-ignore
+        import("hyperswarm")
+    ]).then(
+        ([dht, stream, hyperswarm]) =>
+            (relayModules = {
+                DHT: dht.default,
+                Stream: stream.default,
+                Hyperswarm: hyperswarm.default
+            })
+    ));
+}
 
 class HolepunchRelay {
     relayerUrls: string[];
@@ -14,6 +38,7 @@ class HolepunchRelay {
     logger: Logger;
     private relayerPool: RelayerPool;
     private socket?: WebSocket;
+    private isDisposed = false;
 
     private static instance: HolepunchRelay;
 
@@ -27,7 +52,7 @@ class HolepunchRelay {
             updateCallback,
             logger
         );
-        HolepunchRelay.instance.connectToRelayer();
+        HolepunchRelay.instance.connect();
         return HolepunchRelay.instance;
     }
     public static getInstance(): HolepunchRelay {
@@ -45,10 +70,28 @@ class HolepunchRelay {
      * act only for the current socket, so nothing logs or reconnects after.
      */
     public dispose(): void {
+        this.isDisposed = true;
         this.relayerPool.dispose();
         const socket = this.socket;
         this.socket = undefined;
         socket?.close();
+    }
+
+    /**
+     * Connects at once when the relay modules are loaded (every reconnect),
+     * else once they are. A failed load is an internal failure: it is fatal,
+     * never retried.
+     */
+    private connect(): void {
+        if (relayModules) return this.connectToRelayer(relayModules);
+        DetachedPromises.observe(
+            loadRelayModules().then((modules) => {
+                if (!this.isDisposed) this.connectToRelayer(modules);
+            }),
+            (error) => {
+                throw error;
+            }
+        );
     }
 
     /**
@@ -58,7 +101,7 @@ class HolepunchRelay {
      * only as the socket's error or close event, or as the relay's failed
      * opening.
      */
-    private connectToRelayer(): void {
+    private connectToRelayer({ DHT, Stream, Hyperswarm }: RelayModules): void {
         if (this.relayerUrls.length === 0) {
             this.logger.warn("No holepunch relayers configured");
             return;
@@ -82,7 +125,7 @@ class HolepunchRelay {
             this.relayerPool.onFailure(
                 relayerUrl,
                 relayerFailure(relayerUrl, failure),
-                () => this.connectToRelayer()
+                () => this.connect()
             );
         };
         const dht = new DHT(new Stream(true, ws));

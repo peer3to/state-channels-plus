@@ -4,9 +4,9 @@ import { Buffer } from "buffer";
 describe("Holepunch disposal on a browser relay", function () {
     let fixture: HolepunchRelayFixture;
 
-    beforeEach(function () {
+    beforeEach(async function () {
         fixture = new HolepunchRelayFixture();
-        fixture.setup();
+        await fixture.setup();
     });
 
     afterEach(function () {

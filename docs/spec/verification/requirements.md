@@ -615,7 +615,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 36/36.
+Specification cases tested: 37/37.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -756,7 +756,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 2/5. Untested: T1.P1, T1.P4, T1.P5.
 
 [`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)
-Specification cases tested: 0/4.
+Specification cases tested: 1/5. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
 Specification cases tested: 9/11. Untested: T1.P6, T1.P11.

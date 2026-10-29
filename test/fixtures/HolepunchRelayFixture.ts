@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: typed WebSocket boundary for HolepunchRelay component tests
 
 import Holepunch from "@/Holepunch";
-import HolepunchRelay from "@/HolepunchRelay";
+import HolepunchRelay, { loadRelayModules } from "@/HolepunchRelay";
 import type P2PManager from "@/P2PManager";
 import { RelayerPool } from "@/transport/relay/RelayerPool";
 import { type Logger, createLogger } from "@/utils";
@@ -83,7 +83,16 @@ export class HolepunchRelayFixture {
     private failureSpy?: sinon.SinonSpy;
     private unhandled?: UnhandledRejectionRecorder;
 
-    public setup(randomValues: number[] = [0]): void {
+    /**
+     * Loads the relay modules first, as a runtime does on its first
+     * connection: every relay of the test then connects synchronously.
+     */
+    public async setup(randomValues: number[] = [0]): Promise<void> {
+        await loadRelayModules();
+        this.install(randomValues);
+    }
+
+    private install(randomValues: number[]): void {
         this.clock = this.sandbox.useFakeTimers();
         let randomIndex = 0;
         this.sandbox.stub(Math, "random").callsFake(() => {
@@ -161,7 +170,7 @@ export class HolepunchRelayFixture {
 
     public reset(randomValues: number[]): void {
         this.cleanup();
-        this.setup(randomValues);
+        this.install(randomValues);
     }
 
     public latestSocket(): RecordingWebSocket {

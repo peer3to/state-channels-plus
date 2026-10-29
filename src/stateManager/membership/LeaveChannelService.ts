@@ -37,10 +37,11 @@ export type LeaveChannelState = {
  * is committed, each finalized block posts the latest state snapshot: any
  * posted snapshot that includes the exit lands it. Every dispute of an
  * exiting signer carries its self-removal (the force-exit flag), and the
- * leave watchdog starts one. A reduction that leaves no participant is
- * posted by the leaver once installed: no member is left to post it, and
- * only that post closes the channel. Once the runtime observes that it is in
- * neither the local state nor the chain's membership it drops to SYNCED.
+ * leave watchdog starts one; a new membership of the runtime clears the
+ * flag. A reduction that leaves no participant is posted by the leaver once
+ * installed: no member is left to post it, and only that post closes the
+ * channel. Once the runtime observes that it is in neither the local state
+ * nor the chain's membership it drops to SYNCED.
  * Every drop of a member or pending joiner to SYNCED, whatever caused it
  * (a leave, a removal, a refused or expired join), emits `onLeftChannel`.
  */
@@ -163,7 +164,7 @@ export default class LeaveChannelService {
         };
         this.exit = exit;
         // every dispute of this signer now carries its self-removal; a
-        // started exit is never retracted
+        // started exit is never retracted, only a new membership clears it
         sm.storage.forceExit.setForceExit(true);
         this.armWatchdog(config.LEAVE_CHANNEL_WATCHDOG_MS);
         return exit;
@@ -218,16 +219,19 @@ export default class LeaveChannelService {
 
     /**
      * A member or pending joiner that becomes SYNCED left, whatever ended
-     * the membership: its leave, a removal, a refused or expired join.
+     * the membership: its leave, a removal, a refused or expired join. A new
+     * membership (a join, or the opening of a channel) does not carry the
+     * ended one's self-removal; a state that lists a leaver again without a
+     * join is no new membership and keeps it.
      */
     private onStatusChanged(oldStatus: Status, status: Status): void {
-        if (
-            isCommittedParticipantStatus(oldStatus) &&
-            status === Status.SYNCED
-        ) {
+        const wasMember = isCommittedParticipantStatus(oldStatus);
+        if (wasMember && status === Status.SYNCED) {
             this.endExit();
             this.logger.info("Left the channel");
             this.stateManager.p2pEventHooks.onLeftChannel?.();
+        } else if (isNewMembership(oldStatus, status)) {
+            this.stateManager.storage.forceExit.setForceExit(false);
         }
         this.requestCheck();
     }
@@ -347,4 +351,11 @@ export default class LeaveChannelService {
         this.cancelWatchdog();
         this.exit = undefined;
     }
+}
+
+/** A join (a pending joiner) or a channel opening starts a new membership; SYNCED to a member without a join does not. */
+function isNewMembership(oldStatus: Status, status: Status): boolean {
+    if (isCommittedParticipantStatus(oldStatus)) return false;
+    if (status === Status.PENDING_PARTICIPANT) return true;
+    return status === Status.PARTICIPATING && oldStatus !== Status.SYNCED;
 }

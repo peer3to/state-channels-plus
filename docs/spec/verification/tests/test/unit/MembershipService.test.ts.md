@@ -60,6 +60,10 @@ the hole. After a cache reset, `publishOnChainSnapshot` with the chain snapshot 
 participant eligible from the one linked block, while the range down to the snapshot stays
 truncated.
 
+Two own-exit cases follow a participant's exit block to `SYNCED`. The exit keeps the force-exit flag set
+after the membership ends. When the same runtime joins again and participates, the flag reads off, and the
+dispute it constructs declares no self-removal.
+
 ## Tests
 
 - `an authoritative slash survives failed slash log recovery and repeated lookups`: none
@@ -112,3 +116,4 @@ truncated.
 - `force join waits for its JOIN to land and submits only once at the block bound`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P50, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P8, INV-TJOIN-2-H7JSQM.T1.P6, INV-TJOIN-2-H7JSQM.T2.P9, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P71
 - `U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1`: INV-TJOIN-2-H7JSQM.T2.P7, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P41
 - `a clean leave everyone signed → snapshot path, force-exit flag kept`: none
+- `a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-RMSTORE-2-Y2T1PG.T1.P5, REQ-LIF-10-QR8NQ9.T1.P36

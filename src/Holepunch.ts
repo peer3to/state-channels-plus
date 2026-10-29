@@ -5,8 +5,6 @@ import { isWorkerRuntime } from "@/rpc/network/services/WebRTCSetup/connection/W
 import { HolepunchTransport, TransportType } from "@/transport";
 import { config } from "@/utils/config";
 import { Buffer } from "buffer";
-//@ts-ignore
-import Hyperswarm from "hyperswarm";
 
 class Holepunch {
     swarm: any;
@@ -68,10 +66,10 @@ class Holepunch {
         else await teardown;
     }
     public async join(topic: Buffer) {
-        this.ensureNodeSwarm();
+        await this.ensureNodeSwarm();
         this.topics.push(topic);
-        this.announceTopic(topic);
-        return;
+        // A browser relay that is still loading announces it on `setupSwarm`.
+        if (this.swarm) this.announceTopic(topic);
     }
 
     public async leave(topic: Buffer) {
@@ -154,10 +152,19 @@ class Holepunch {
         };
     }
 
-    private ensureNodeSwarm() {
+    private async ensureNodeSwarm(): Promise<void> {
         if (this.swarm || this.isBrowserRuntime) return;
         // @ts-ignore
-        this.swarm = global.Hyperswarm || new Hyperswarm();
+        const injected = global.Hyperswarm;
+        if (injected) {
+            this.swarm = injected;
+        } else {
+            // Loaded on first use, like the browser relay's modules (see HolepunchRelay).
+            // @ts-ignore
+            const { default: Hyperswarm } = await import("hyperswarm");
+            if (this.swarm) return;
+            this.swarm = new Hyperswarm();
+        }
         this.setupSwarm();
     }
 
@@ -252,7 +259,7 @@ class Holepunch {
 
     private leaveTopics() {
         for (const topic of this.topics) {
-            this.swarm.leave(topic);
+            this.swarm?.leave(topic);
             this.p2pManager.logger.debug("Left holepunch topic", {
                 topic: topic.toString("hex")
             });

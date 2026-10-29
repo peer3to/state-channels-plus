@@ -11,7 +11,7 @@
 
 Relay wrapper connection lifecycle
 
-- Setup: Initialize the public wrapper over a typed WebSocket boundary and drive socket open, error, and close events through the real DHT/Hyperswarm construction
+- Setup: Initialize the public wrapper over a typed WebSocket boundary and drive socket open, error, and close events through the real DHT/Hyperswarm construction; the relay modules are loaded first, as after a runtime's first connection (the relay loads them on first use, so a thread that never connects creates none of their WebAssembly; see [`UNIT-TEST-INTERNAL-ROOT-1-ZDDYFP.P5`](internalRoot.ts.md#unit-test-internal-root-1-zddyfp))
 - Oracle: Empty configuration stays idle; failures reconnect through pool exhaustion; success resets selection; paired events schedule once; a socket that fails before it opens, also by the relay's own Error or by a close event alone, is one pool failure, with a reason naming the relayer and no unhandled rejection; a close reason names the relayer, close code and close reason; after disposal a socket event or a failed relay opening neither logs nor reconnects; an invalid relayer URL among valid ones throws at initialization, before any socket opens, and is no pool failure
 
 - [x] `UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P1` — empty configuration no-op

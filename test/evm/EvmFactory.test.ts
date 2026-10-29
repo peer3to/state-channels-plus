@@ -1,5 +1,6 @@
 import { CONSOLE_ADDRESS, createEvm, type EvmCustomPrecompile } from "@/evm";
-import { Address } from "@ethereumjs/util";
+import type { DefaultStateManager } from "@ethereumjs/statemanager";
+import { Address, type MapDB } from "@ethereumjs/util";
 import {
     assertDisposalAbandonsStuckAdmittedWork,
     assertDisposalKeepsAdmittedFailure,
@@ -98,6 +99,44 @@ describe("EvmFactory", function () {
         expect(
             consoleDebug.calledWith("hello from console precompile")
         ).to.equal(true);
+    });
+
+    it("keeps the trie database the same size while calls rewrite the same storage slots", async function () {
+        const logger = { child: () => ({ debug: () => undefined }) } as any;
+        const evm = await createEvm({}, logger);
+        const stateManager = evm.stateManager as DefaultStateManager;
+        const trieDatabase = stateManager["_trie"].database().db as MapDB<
+            string,
+            Uint8Array
+        >;
+
+        // Runtime code: SSTORE(slot, calldata word `slot`) for each slot, then STOP.
+        const slotCount = 8;
+        let code = "0x";
+        for (let slot = 0; slot < slotCount; slot++) {
+            code += `60${(slot * 32).toString(16).padStart(2, "0")}3560${slot.toString(16).padStart(2, "0")}55`;
+        }
+        code += "00";
+        const contract = Address.fromString(
+            "0x00000000000000000000000000000000000000bb"
+        );
+        await stateManager.putContractCode(contract, ethers.getBytes(code));
+
+        const rewriteSlots = async () => {
+            const result = await evm.runCall({
+                to: contract,
+                caller: Address.zero(),
+                data: ethers.randomBytes(slotCount * 32),
+                block: buildBlock()
+            });
+            expect(result.execResult.exceptionError).to.equal(undefined);
+        };
+
+        await rewriteSlots();
+        const sizeAfterFirstCall = trieDatabase._database.size;
+        for (let call = 0; call < 50; call++) await rewriteSlots();
+
+        expect(trieDatabase._database.size).to.equal(sizeAfterFirstCall);
     });
 
     it("gives a manifest precompile its inline executor root during startup and releases its child with that executor", async function () {

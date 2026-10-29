@@ -292,7 +292,7 @@ try {
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 
-    await test("browser worker importing the internal-root entry creates no WASM, while one importing the relay does", async () => {
+    await test("browser worker importing the internal-root entry or the relay creates no WASM, while loading the relay's modules does", async () => {
         const { internalRoot, relay } = await runSmoke(
             "runInternalRootWasmBrowserSmoke"
         );
@@ -301,6 +301,7 @@ try {
             memories: 0,
             startRootWorker: "function"
         });
+        assert.equal(relay.importMemories, 0, JSON.stringify(relay));
         assert.ok(relay.memories > 0, JSON.stringify(relay));
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });

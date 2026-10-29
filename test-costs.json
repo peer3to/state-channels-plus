@@ -5539,6 +5539,12 @@
       "peakRssGb": 0.259,
       "measurementReason": null
     },
+    "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps the trie database the same size while calls rewrite the same storage slots": {
+      "durationMs": 1714,
+      "avgCores": 0.968,
+      "peakRssGb": 0.188,
+      "measurementReason": null
+    },
     "hardhat|test/evm/EvmFactory.test.ts|EvmFactory rejects executor calls, deploys and simulations that arrive after disposal began without entering the EVM": {
       "durationMs": 20666,
       "avgCores": 0.318,
@@ -19943,6 +19949,12 @@
       "durationMs": 13734,
       "avgCores": 1.055,
       "peakRssGb": 0.843,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService own exit block a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal": {
+      "durationMs": 11556,
+      "avgCores": 0.695,
+      "peakRssGb": 0.671,
       "measurementReason": null
     },
     "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService reset removes both cached sets until a verified chain refresh": {

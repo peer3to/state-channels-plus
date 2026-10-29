@@ -9,11 +9,12 @@
 
 ## UNIT-TEST-EVM-FACTORY-1-002C8D
 
-Precompile composition and the executor owner context
+Precompile composition, the executor owner context, and bounded state memory
 
 - Setup: `createEvm` directly with a caller-supplied precompile; and a real SDK-owned executor (inline and worker) whose manifest factory rejects unless its owner is the executor root and then creates a real probe child under it, returning bytes through the child's echo endpoint.
-- Oracle: Bare EVM: the custom precompile runs once with its exact return and the console precompile still logs. Executor: the owner is the executor root, the child is registered as its child, precompile results carry the child's echoed bytes, and executor disposal closes the child. Forbidden: a missing or foreign owner, a child outliving its executor.
+- Oracle: Bare EVM: the custom precompile runs once with its exact return and the console precompile still logs. Executor: the owner is the executor root, the child is registered as its child, precompile results carry the child's echoed bytes, and executor disposal closes the child. Forbidden: a missing or foreign owner, a child outliving its executor. State: the EVM's state manager prunes replaced trie nodes, so rewriting the same storage slots leaves its trie database the same size; forbidden: a database that grows with every call until the thread runs out of memory.
 
 - [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P1` — inline executor: factory receives that executor root during startup, its child serves the precompile call, and executor disposal closes the child
 - [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P2` — worker executor: factory receives the worker-side executor root and call and simulation both return the child's bytes
 - [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P3` — bare two-argument EVM: a custom precompile executes once with its return value and the built-in console precompile still logs
+- [x] `UNIT-TEST-EVM-FACTORY-1-002C8D.P4` — bare EVM: 50 calls that rewrite the same 8 storage slots leave the trie database at its size after the first call
