@@ -1,7 +1,10 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
-import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
+import {
+    assertSyncedParticipantNeverSignsInjectedInbound,
+    assertSyncedParticipantServesOnlyGenuineWindowInputs
+} from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     countJoinSignatureRequests,
     waitForHeldJoins
@@ -38,7 +41,7 @@ import { ethers } from "ethers";
  */
 describe("E2E: Spectate Service", function () {
     it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
-        await assertPromotionBeforeReceiverApplication(true);
+        await assertPromotionBeforeReceiverApplication("overlap");
     });
     it("spectator rejects an invalid envelope without executing or relaying it", async () => {
         await assertSpectatorRejectedWork("invalid");
@@ -49,6 +52,9 @@ describe("E2E: Spectate Service", function () {
 
     it("new participant gossip can precede another peer applying insertion", async () => {
         await assertPromotionBeforeReceiverApplication();
+    });
+    it("a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block", async () => {
+        await assertPromotionBeforeReceiverApplication("slowSync");
     });
     it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
         await assertVerifiedSyncPromotion();
@@ -739,6 +745,11 @@ describe("E2E: Spectate Service", function () {
             await assertSyncedParticipantNeverSignsInjectedInbound(
                 TestSession.getHarness(),
                 "droppedLog"
+            );
+        });
+        it("responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs", async function () {
+            await assertSyncedParticipantServesOnlyGenuineWindowInputs(
+                TestSession.getHarness()
             );
         });
     });

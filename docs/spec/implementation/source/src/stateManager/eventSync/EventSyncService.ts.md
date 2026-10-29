@@ -78,6 +78,7 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P22` — the dispute-window recovery joins an in-flight dispute log that stores its dispute and then fails, and resolves with the window
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
 
 ## UNIT-TEST-LOG-PAGES-1-39HC9S
 

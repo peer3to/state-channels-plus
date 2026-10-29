@@ -231,7 +231,8 @@ stubbed; and the first inbound block's height is not bound to the lower snapshot
 Additional implementation gaps: the SDK promotes itself to `PENDING_PARTICIPANT`
 **before** the join transaction is even sent (never waiting for a canonical chain event; a
 dropped transaction leaves the node pending — candidate rule: stage locally, promote on the
-canonical event, roll back on reorg); and the spectate path **blacklists a peer for any request
+canonical event, roll back on reorg; the roll-back-on-reorg part is pending on the chain-finality
+assumption, [chain finality](runtime/chain-observation.md#assumptions-and-constraints)); and the spectate path **blacklists a peer for any request
 failure**, including plain timeouts and transport errors — conflating unavailability with
 Byzantine behavior, contrary to the fault taxonomy in
 [security/trust-model.md](./security/trust-model.md).
@@ -744,12 +745,10 @@ because the evidence period already expired lost the race to another participant
 that refusal is a no-op, with or without a kill in front of it
 ([dispute processing](disputes/dispute-processing.md), [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
-A leaver's self-removal upload can lose the same race, and today the leave outcome depends on the
-path that sent it (recorded 2026-10-08, no behavior change). When the leave's exit-post fallback
-ends in a self-removal dispute that loses the race, the leave still settles: the committed window's
-reduction removes the leaver. When the leave starts the self-removal dispute directly as its fallback,
-either bound to a block or from the leave watchdog, the lost race fails the leave. Whether both paths
-should settle the leave is part of this decision.
+A leaver's self-removal upload can lose the same race;
+[`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) requires it
+to wait for the committed window's reduction, which removes the leaver or restarts the exit on the successor fork
+(engineer decision 2026-10-10).
 
 Owner: [dispute processing](disputes/dispute-processing.md), the kill-and-dispute and replacement rules.
 Requested engineer decision: whether the node should do more after a lost race. Examples: rebuild

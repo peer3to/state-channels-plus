@@ -237,10 +237,12 @@ describe("E2E: evidence in the dispute window", function () {
         expect(reduction.timeoutParticipant).to.equal(ZeroAddress);
 
         await releaseReductions(h);
-        await h.dispute.resolveDisputeWait({
+        const resolved = await h.dispute.resolveDisputeWait({
             forkId,
             honestPeerIndices: [auditorIndex, bystanderIndex]
         });
+        // the successor is the reduction that carries the non-final block
+        expect(resolved.newForkId).to.equal(reduction.reducedForkId);
         const participants = await h
             .control(auditor)
             .query.getParticipants()
@@ -248,6 +250,8 @@ describe("E2E: evidence in the dispute window", function () {
         expect([...participants].sort()).to.deep.equal(
             [auditor.address, h.getPeer(bystanderIndex).address].sort()
         );
+        // execution resumes on the successor
+        await h.transition.fromHonestPeersOnly((contract) => contract.add(1));
     });
 
     it("E19: an auditor frozen by its own dispute replays a higher dispute as stored data only: no view change and no new signature, its own proof and dispute stay at the frozen height, and the reduction after the kill window uses the replayed state", async function () {

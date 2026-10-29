@@ -179,6 +179,41 @@ export class AssertDisputeActions<
         expect(completedForkIds).to.deep.equal(expectedForkIds);
     }
 
+    /**
+     * Every active honest auditor reached the same audit result: it sits on
+     * `forkId`, lists the same participants and stored the same dispute
+     * fraud proofs (proof type and accused disputer).
+     */
+    async auditorsAgree(forkId: ForkId): Promise<void> {
+        const auditors = this.harness.getActiveHonestPeers();
+        expect(auditors.length).to.be.greaterThan(1);
+        const views = await Promise.all(
+            auditors.map(async (peer) => {
+                const query = this.harness.control(peer).query;
+                const [peerForkId, participants, accusations] =
+                    await Promise.all([
+                        query.getForkId().request(),
+                        query.getParticipants().request(),
+                        query.getDisputeFraudProofAccusations().request()
+                    ]);
+                return {
+                    forkId: peerForkId,
+                    participants: [...participants].sort(),
+                    accusations: accusations
+                        .map((a) => `${a.proofType}:${a.participant}`)
+                        .sort()
+                };
+            })
+        );
+        expect(views).to.deep.equal(
+            auditors.map(() => ({
+                forkId,
+                participants: views[0].participants,
+                accusations: views[0].accusations
+            }))
+        );
+    }
+
     noDisputes(): void {
         const totalInitiated = this.harness.peers.reduce((sum, peer) => {
             return (

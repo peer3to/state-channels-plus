@@ -78,7 +78,7 @@ the deadline task, checks that the settle cancelled it, then runs the held task 
 - `unsigned targeted failure retains the target and blacklists neither peer`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P1, REQ-TJOIN-5-Q795M7.T1.P11
 - `explicit same-ID retry creates a fresh matcher and negotiation attempt`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2, REQ-TJOIN-5-Q795M7.T1.P2
 - `fatal initial sync closes its root and rejects later same-channel client calls`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3, REQ-TJOIN-5-Q795M7.T1.P4
-- `observer initial sync request to a participant that never answers times out after two agreement windows`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P42, REQ-TJOIN-3-DCZKS6.T1.P18, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110
+- `observer initial sync request to a participant that never answers times out after two agreement windows`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P42, REQ-TJOIN-3-DCZKS6.T1.P18, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
 - `observer connect resolves false when no participant handshake completes within the initial window`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P28, REQ-TJOIN-3-DCZKS6.T1.P6
 - `observer holds the initial deadline while a completed handshake's participant check runs and syncs once the check answers participant`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P37, REQ-TJOIN-3-DCZKS6.T1.P13
 - `observer aborts once a held participant check ends without a sync after the initial deadline elapsed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P38, REQ-TJOIN-3-DCZKS6.T1.P14

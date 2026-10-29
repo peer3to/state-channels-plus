@@ -168,8 +168,14 @@ is now armed before any handle closes, with an unconditional exit. The bots' Web
 is inferred, not confirmed; the leaked referenced timer that then held the loop (likely werift's) is
 not removed and now ends at the drain bound with a warning.
 
-**Status:** Open; medium. Fix implemented, tests pending the lead's gate; recheck the bots for a
-drain warning naming the remaining timer.
+**Status:** _Resolved (2026-10-27)._ The hang is fixed and covered by
+[`REQ-RUNTIME-7-A2VAR0.T1.P1`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p1)
+to [`.P4`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p4) and
+[`.P7`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p7) to
+[`.P10`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p10). A disposal now ends
+within the drain bound even when a timer leaks. Residual: the leaked timer (likely werift's) is
+not identified, so each affected disposal waits out the drain bound and logs the warning that names
+it; the bot recheck was dropped.
 
 ## Browser WebAssembly failures
 
@@ -602,7 +608,7 @@ list. The genuine blocks arrive through chain events and chain-log recovery. The
 a window whose disputes name another fork or channel, which let the local reduce return early and
 the sync adopt an unchecked successor fork
 ([`INV-SYNC-1-XCQZ28.T1.P15`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p15)).
-Residual limit: [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
+The other reduction inputs followed under [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf). Engineer review
 pending. Mapped regressions:
 [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11),
 [`INV-SYNC-1-XCQZ28.T1.P14`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p14).
@@ -612,7 +618,11 @@ pending. Mapped regressions:
 ### FIND-SECURITY-6-884TAJ
 
 **Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state.
+trusted walk now chooses canonical final state. The same unverified timestamp can also arrive as
+the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
+reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
+`genesisSnapshotByForkId` (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
 
 **Proposed direction and handoff:**
 [Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
@@ -766,6 +776,32 @@ tests are the regression suite.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
+**Update (2026-10-16, PR #556):** Part (2) — blaming the sender — is fixed: the ingest catch now
+logs the local failure and returns the accepting verdict, so no local failure blacklists, suspends
+or strikes the sender ([`DEF-9-724SXP`](open-findings.md#def-9-724sxp)). **Engineer decision
+(2026-10-16): the loose policy is adopted for block intake** — every ingest failure is tolerated
+(logged, copy dropped, session kept) rather than surfaced as fatal, because an unaccounted honest
+failure must never blacklist an honest node; the general rate limit (planned) is the spam bound,
+and invalid inputs keep their explicit blacklisting verdicts. The ingest half of the
+surface-vs-tolerate question is therefore closed; the disposal design above remains deferred on
+its own. The swallow remains a recorded divergence from
+[`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)'s
+refresh-is-fatal rule, recorded on the
+[`BlockQueueManager` report](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md).
+
+**Side-effect audit of tolerating more (2026-10-16).** (1) No partial queue state: ingest's
+mutations before a throw point are the pre-mutation block clone, one synchronous queue set/merge
+(a mid-merge throw would leave only valid merged signatures), and the disputed fork's queue clear,
+which the success path performs identically; the post-queue scheduling calls return a dummy handle
+after disposal instead of throwing. (2) No liveness loss for the non-network callers (all ignore
+the return value, as they did with `false`): calldata is stored before ingest is attempted, the
+participant-timeout check ingests recovered calldata itself on each re-armed check, and later
+validation reads the stored calldata — a fault-dropped validation is delayed, not lost. (3) Log
+cost is one error line per swallowed network fault (two on the sync-application loop), bounded by
+the accepted frame rate until the general rate limit lands; no state grows. The one attacker-shaped
+cost remains the absent-sender sync-application loop, bounded by per-peer in-flight sync coalescing
+until rate limiting; a crafted payload that throws there is not demonstrated.
+
 <a id="find-inbound-gas-1-2bz8de"></a>
 
 ### FIND-INBOUND-GAS-1-2BZ8DE
@@ -778,30 +814,44 @@ tests are the regression suite.
 
 ### DEF-1-92NTAG
 
-**Defect:** `open()` does not check `participants.length == balances.length` (out-of-bounds or
-silently ignored extras) and accepts `address(0)` participants.
+**Defect:** _Withdrawn (2026-10-26)._ Not a defect: `open()` still takes parallel `participants` and
+`balances` arrays without a length or zero-address check
+([`StateChannelManagerProxy.sol`](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)),
+but no input harms anyone beyond the submitter's gas. Fewer balances than participants reads out of
+bounds and reverts the whole open. Extra balances are never read, and every listed participant signs
+the same `encodedOpenChannel` (unanimous `verifyThresholdSigned`), so each join uses the balance its
+participant signed. An `address(0)` participant can never sign: OpenZeppelin `ECDSA.recover` reverts
+rather than return `address(0)`, so the unanimous check fails. Was: the missing checks were read as
+out-of-bounds or silently ignored extras and an accepted `address(0)` participant.
 
-**Proposed direction:** Add explicit length and nonzero-address requires.
+**Proposed direction:** No change.
 
 <a id="def-2-shqr0a"></a>
 
 ### DEF-2-SHQR0A
 
-**Defect:** `OutboundMessagesProcessed` is emitted by
+**Defect:** _Resolved (2026-10-26)._ Not a defect for the SDK: `WithdrawalsUpdated` carries the
+final total in the same transaction, emitted by
 [`StateSnapshotFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
-but absent from the SDK's dispatched-event set — local withdrawal accounting can go stale.
+even with no outbound blocks, and the SDK dispatches it; the unused `OutboundMessagesProcessed`
+event was removed. Engineer decision (Luke, 2026-10-26).
 
-**Proposed direction:** Dispatch it idempotently, or document that `WithdrawalsUpdated` fully
-substitutes.
+**Proposed direction:** No further action.
 
 <a id="def-3-1xwq30"></a>
 
 ### DEF-3-1XWQ30
 
-**Defect:** `LocalDiamond.onChannelOpened` builds the genesis inbound message block in memory and
-never persists it — the local mirror diverges from the production `open` path.
+**Defect:** _Resolved (2026-08-23, PR #451)._ `LocalDiamond.onChannelOpened` once built the genesis
+inbound message block in memory and never persisted it. Now the production `open` stores that block
+through `_appendInboundMessages` → `_persistInboundMessageBlock`, which emits
+`InboundMessagesProcessed`; the SDK dispatches it and `LocalDiamond.onInboundMessagesProcessed`
+persists the same block. `onChannelOpened` records the genesis snapshot and its balance fields but
+stores no inbound block.
 
-**Proposed direction:** Persist it (or delete the dead code deliberately).
+**Proposed direction:** None — fixed; covered by
+`test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`
+([`UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3`](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#unit-test-local-diamond-1-pje47m)).
 
 <a id="def-4-qb3kqm"></a>
 
@@ -855,8 +905,10 @@ transaction receipt before setting `PENDING_PARTICIPANT`; a reverted uncommitted
 disposes rather than leaving false pending state. Later block inclusion promotes pending to
 participating but does not gate the completed connect result.
 
-**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg,
-forced-inclusion, and later exit policy remain under their existing settlement owners.
+**Proposed direction:** No further action for the pre-transaction promotion defect. Reorg is
+pending on the chain-finality assumption
+([`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm)); forced-inclusion and later exit
+policy remain under their existing settlement owners.
 
 <a id="def-7-pk564b"></a>
 
@@ -890,9 +942,9 @@ guard-rejection send failure, including one attempt, one disconnect, and no unha
 
 ### DEF-9-724SXP
 
-**Defect:** Block ingest wraps everything in try/catch → `false` → disconnect+blacklist the sender,
-so a _local_ chain-provider failure (kill-period read in `maybeScheduleForkRecovery`) blacklists an
-honest gossiper for our own infrastructure fault
+**Defect:** _Resolved (2026-10-16) for block ingest._ Block ingest wrapped everything in try/catch →
+`false` → disconnect+blacklist the sender, so a _local_ chain-provider failure (kill-period read in
+`maybeScheduleForkRecovery`) blacklisted an honest gossiper for our own infrastructure fault
 ([peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)). _Scope
 note (2026-09-02):_ the lobby accepted-lease exclusion approved under
 [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5)
@@ -903,17 +955,23 @@ a measured universal execution bound. _Scope note (2026-09-16):_ one instance cl
 opening receipt that fails on this node's own chain provider no longer blacklists the counterparty;
 it closes with reconnect allowed and no strike. _Scope note (2026-09-18):_ a sync request that fails
 and a dispute acknowledgement that never arrives now take a counted close rather than a verdict, so
-a local outage during those requests costs the peer one retry, not its identity. Block ingest is
-unchanged, so the finding stays open.
+a local outage during those requests costs the peer one retry, not its identity.
 
-**Proposed direction:** Partition input faults from local faults; never penalize a peer for a local
-error.
+**Resolution:** `BlockQueueManager.ingestBlockConfirmation` now logs an ingest exception and
+returns the accepting verdict instead of the rejecting one, so a local fault drops the copy and
+keeps the sender's session; only its explicit verdicts reject the sender (failed authentication
+through the validation strategy, a wrong-channel network copy, and a sender still absent after an
+eligibility sync that succeeded — a failed sync ends intake without that verdict, see
+[`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)). Rethrowing was rejected: on the fire-and-forget gossip path it would
+make the RPC layer drop the sender's session for our own failure. Regression:
+`a local disputed-fork check failure during ingest does not blacklist the honest sender`
+([`REQ-GOSSIP-2-9PMMNH.T2.P1`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh.t2.p1)).
 
 <a id="def-10-199c7f"></a>
 
 ### DEF-10-199C7F
 
-**Defect:** _Partially resolved (2026-08-31)._ An `OPENED` responder that has not applied
+**Defect:** _Resolved (2026-10-27); partially resolved 2026-08-31._ An `OPENED` responder that has not applied
 genesis/state now retains one initial-load request per authenticated address behind
 `DeferredAdmissionGuard`, waits up to two local agreement windows for `onSetState`, and then uses
 the ordinary payload path. A duplicate from that address is rejected without replacing the first.
@@ -926,9 +984,65 @@ timeout and transport-failure liability, retained by the owner on 2026-09-07 und
 that honest peers observe the same reality within agreementTime. This is a protocol assumption, not
 a measured universal execution bound.
 
-**Proposed direction:** The weaponizable initial-readiness case is closed. The remaining
-exact-recovery classification is accepted by the current protocol and must stay visible in security
-review.
+_Scope note (2026-10-23):_ narrowed. A responder whose own view lags a disputed window (the window's
+disputes, or the inbound run its reduce consumed, not yet locally readable) now fails the request
+with an error reply instead of returning no payload, so it no longer blacklists the requester; the
+requester takes its ordinary counted close. **Engineer decision (Luke, 2026-10-23):** a blacklist
+needs a failed check on the peer's own data; the responder's own lag is not one. A target the
+responder cannot prove for another reason (a requested fork other than the derived latest, an
+above-latest height) keeps the existing punishment rule.
+
+_Resolution (2026-10-27):_ the remaining refusals that still blacklist the requester are a target
+above the responder's latest height and a fork other than its derived latest fork. No honest request
+reaches either. A pinned request goes only to the peers that sent that block, and a peer
+stores a block before it gossips or relays it, so the target height is always held. A request for a
+non-current fork came from the queue's expiry probe, which also asked a block's author about an
+unknown fork; a later snapshot clears an old fork's dispute record on chain, so a participant could
+replay a genuine old block to a node that synced afterwards and have its honest author blacklist that
+node. The probe now asks only the peers that sent the block, not an author that did not send it. A sender stored the
+block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
+([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
+[`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
+[`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).
+Engineer decision (Luke, 2026-10-27).
+
+**Proposed direction:** None.
+
+<a id="find-bqm-3-182x91"></a>
+
+### FIND-BQM-3-182X91
+
+**Defect:** _Resolved (2026-10-23)._ A failed eligibility sync blacklisted an honest joiner.
+[`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+ignored what the intake-gate `sync` returned and blacklisted an absent sender whenever its cached
+eligibility was still not `ELIGIBLE`. A new joiner whose gossip reached a peer that had not yet
+applied its insertion, and which answered the admission sync slower than the sync timeout, took the
+sync's counted close and then a permanent blacklist for the same timeout.
+
+**Resolution:** Intake keeps the sync result and blacklists only when the sync succeeded and the
+sender is still not eligible. A failed sync carries its own consequence: an invalid payload already
+excluded the sender, and a failed request already took a counted close. **Engineer decision (Luke,
+2026-10-23):** a blacklist needs a failed check on the peer's own data; our own failure drops the
+copy and keeps the peer, and the counted close bounds a really silent peer
+([`REQ-GOSSIP-4-J5Z4DF.T1.P29`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p29),
+[`REQ-GOSSIP-4-J5Z4DF.T1.P47`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p47)).
+
+<a id="find-dack-1-7c03s9"></a>
+
+### FIND-DACK-1-7C03S9
+
+**Defect:** _Resolved (2026-10-23)._ A dispute acknowledgment on a lagging chain view blacklisted an
+honest disputer.
+[`IsForkDisputedRpcMethods.onDisputeAcknowledgmentRequest`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
+judged the requester by the responder's own chain view (local diamond, then its provider). The
+requester asks only after it has seen the dispute event, so a responder whose provider lags
+blacklisted an honest disputer; at a two-player table that cut the pair off.
+
+**Resolution:** A request for a fork the responder does not see as disputed now takes a counted close
+of the requester, the same bound the requester side already applies to a refusing responder. A
+duplicate request stays a protocol violation and still blacklists. **Engineer decision (Luke,
+2026-10-23)**, as in [`FIND-BQM-3-182X91`](open-findings.md#find-bqm-3-182x91)
+([`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../specification/peer-communication/dispute-acknowledgment.md#req-ifd-2-13862z)).
 
 <a id="def-11-jn8n6h"></a>
 
@@ -1020,22 +1134,22 @@ a live chain.
 
 ### FIND-LEAVE-4-WDH0XC
 
-**Defect:** _Open (2026-09-15)._ The terminal-leave watchdog fallback still rejects the leave on
-`RaceConditionDisputeEvidencePeriodExpired`. `LeaveChannelService.armWatchdog`
-(src/stateManager/membership/LeaveChannelService.ts:236-247) starts the self-removal dispute
-directly after `LEAVE_CHANNEL_WATCHDOG_MS`; when the chain refuses it because the window already
-holds commitments and its evidence period ended, `fail` rejects the operation, as
-[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
-and
+**Defect:** _Resolved (2026-10-11)._ PR #541 removed the leave operation and its `fail` path:
+`LeaveChannelService.onWatchdog` awaits `DisputeManager.dispute`, which logs
+`RaceConditionDisputeEvidencePeriodExpired` as a lost evidence race, rolls its marker back and
+returns the refusal instead of throwing, so the exit stays open for that window's reduction, as the
+rewritten
+[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10),
 [`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9)
-specify. The window still reduces, so the same settlement argument that resolved
-[`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq) applies; this path predates the
-disputed-fork refusal and was left out of that change. Code-traced, not executed.
+and
+[`REQ-LIF-10-QR8NQ9.T1.P8`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p8)
+specify. Original finding: the
+terminal-leave watchdog's self-removal dispute, refused on chain because the window already held
+commitments and its evidence period ended, rejected the leave although the window still reduced.
 
-**Proposed direction:** Follow-up: treat the watchdog fallback's evidence-expired refusal as
-awaiting settlement, like the authored exit fallback, and rewrite
-[`REQ-TJOIN-7-NNGTAY.T1.P10`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p10)
-and `CX6QH9.P14` with it.
+**Proposed direction:** None — fixed. The runtime-port cases inject the refusal at the watchdog's
+dispute send: one keeps the leave pending with no error, the other settles it through the window's
+reduction and `onLeftChannel`. No test stages the refusal on a live chain for the leave path.
 
 <a id="find-leave-5-a1xaa4"></a>
 
@@ -1246,7 +1360,8 @@ log: [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm),
 committed block (`BlockIngestService` → `storeVerifiedRun`), and the inbound list of a window this
 node reduced itself during sync (`SpectateService`) — the last two are checked before they are
 stored; no `src/` code reads the outbound tip. The equal-height (`>=`) case matters only on a reorg
-and stays with [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
+and is pending on the chain-finality assumption under
+[`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm). Rejected: strict
 exact extension with forward catch-up and a snapshot-anchor seed (broke U113/U114); `DisputeBuilder`
 reading the chain head; a non-extending store triggering `recoverInboundRun`; another
 late-subscriber seed. Each rebuilds what the height tip already provides and adds machinery to
@@ -1275,33 +1390,38 @@ deposit; the live SDK collector test proves the collected signer set excludes th
 
 ### FIND-STORAGE-3-GYR34M
 
-**Defect:** `Storage.getPreviousBlockOrSnapshot`/`getPreviousRelevantTimestamp` use non-null
-assertions, so an absent predecessor produces an unclassified throw instead of the explicit absence
+**Defect:** _Resolved (2026-10-27)._ `Storage.getPreviousBlockOrSnapshot` returns explicit absence:
+its non-null assertions are compile-time only, so an absent predecessor comes back with neither
+`block` nor `stateSnapshot` set, and its timeout and dispute-audit callers check for that
+([`ParticipantTimeoutService`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
+[`DisputeValidationService`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
+`getPreviousRelevantTimestamp` and
+[`BlockProductionService.createBlock`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
+presume the predecessor exists, as
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
-requires ([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
+allows for a read whose join links the pipeline maintains: the timestamp read's one caller,
+[`CalldataPostingService`](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md),
+reads it for a stored block, the producer builds on its own stored head, and participants commit
+history contiguously. Was: both reads were
+taken to throw an unclassified error on an absent predecessor
+([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
 
-**Proposed direction:** Decided (engineer review): documented precondition — the contiguity
-invariants (participants commit contiguously; sync persists state-proof anchor blocks before replay)
-make an absent predecessor unreachable through any designed flow, and the throw stands as the
-invariant tripwire. Spec-noted in
-[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
+**Proposed direction:** No change.
 
 <a id="find-storage-4-mfd7rz"></a>
 
 ### FIND-STORAGE-4-MFD7RZ
 
-**Defect:** `FraudProofStorage` violates the first-write-wins clause of
-[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm):
-`storeFraudProof` overwrites unconditionally (src/storage/FraudProofStorage.ts:22) and appends to
-the participant index (:25-28), so re-storing the same `encodedProof` with a different `participant`
-field (the key hashes `encodedProof` only, :19) both replaces the stored proof and strands a stale
-index entry. `DisputeFraudProofStorage` complies (:26-29). No live impact today — current producers
-derive `participant` from the proof content — so this is a spec-letter violation and a latent
-producer-bug trap, not an active defect.
+**Defect:** _Resolved (2026-09-02)._ `FraudProofStorage.storeFraudProof` now returns the existing
+hash when the `encodedProof` hash is already stored, before writing the proof or the participant
+index (src/storage/FraudProofStorage.ts, ca92f7f18), so it is first-write-wins and the participant
+index holds exactly the stored proofs, satisfying
+[`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm).
+Was: a re-store of the same `encodedProof` with a different `participant` replaced the stored proof
+and left a stale participant index entry.
 
-**Proposed direction:** Decided (engineer review): the spec is the intent — make `FraudProofStorage`
-first-write-wins and keep the participant index exactly consistent with the stored set. Closes when
-that lands.
+**Proposed direction:** Covered by
+[`REQ-DSTORE-3-ZNXSTM.T1.P3`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p3).
 
 <a id="find-storage-5-t301z1"></a>
 
@@ -1371,16 +1491,13 @@ caller.
 
 ### FIND-RUNTIME-1-GAPY72
 
-**Defect:** `p2pSetup` deploys the two local state machines _outside_ the `try` that owns runtime
-teardown (the two `deployStateMachine` calls in `src/evm/EvmDiamondStateMachine.ts`). A rejection
-there leaves whatever `startP2pRuntimeHost` had already built running for the life of the process.
-Narrow by construction: every failure raised _inside_ that `try` is already covered, because
-`startP2pRuntimeHost` runs `disposeRuntime()` before rethrowing and a readiness failure disposes
-through the `deployComplete` handler. Not introduced by the cross-thread log work.
+**Defect:** _Resolved (2026-09-13)._ `setupP2pRuntime` (src/evm/p2pRuntime/setupP2pRuntime.ts, the
+construction behind `p2pSetup`) now runs both `deployStateMachine` calls and `deployComplete` inside
+the `try` that owns runtime teardown; its `catch` disposes the instance, or the client root when no
+instance exists yet, before rethrowing (906316b0f). Was: the two deploys ran outside that `try`, so
+a deploy rejection left the partly built runtime running for the life of the process.
 
-**Proposed direction:** Move the two deploys inside the `try`, or wrap them so a rejection tears the
-partly built runtime down before it propagates. Then add an E2E that forces a deploy failure and
-asserts a later crash-log round reaches the same number of stores as before the attempt.
+**Proposed direction:** No further change. Regression: [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md), first- and second-deployment failure cases.
 
 <a id="find-gas-1-m26tmb"></a>
 
@@ -1803,26 +1920,32 @@ nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for 
 
 ### FIND-SYNC-4-KGP4KF
 
-**Defect:** _Open (2026-10-05), engineer decision: tracked, not fixed with
-[`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)._ A sync window whose reduction
-the requester did not execute itself still persists the responder's unchecked
-`disputeConfirmations`, and in some cases its `latestStateSnapshot`. A window chain-final at the
-finality read skips `reduceAndFinalize`; persistence then skips its snapshot, state and inbound list
-(`chainFinalForkIds`) but still stores its confirmations. A window reduced on chain after that read,
-or already reduced in the local EVM, makes `reduceAndFinalize` return early before it checks either
-input, and persistence stores both. `persistSyncPayload` stores each confirmation through
-`storeDisputeConfirmation`, which merges the given signatures into an existing record, and stores
-the snapshot
-([SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md),
-src/rpc/network/services/spectate/SpectateService.ts:1042-1052). A genesis-shaped snapshot there
-would land in `genesisSnapshotByForkId` with an unverified timestamp, the same class as
-[`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) through another field.
-Pre-existing; code-traced, not executed. No signature or penalty consequence is shown yet.
+**Defect:** _Resolved (2026-10-20)._ A sync window whose reduction the requester did not execute
+itself persisted the responder's unchecked `disputeConfirmations`, and in some cases its
+`latestStateSnapshot`. A window chain-final at the finality read skipped `reduceAndFinalize` but
+still stored its confirmations; a window reduced on chain after that read, or already reduced in
+the local EVM, made `reduceAndFinalize` return early before it checked either input, and both were
+stored. A dispute's commitment pins only its encoded dispute, so a responder could add signatures
+to a genuine confirmation, store a confirmation of a dispute the chain never committed, or replace
+the window snapshot (a genesis-shaped one would land in `genesisSnapshotByForkId` with an
+unverified timestamp). The requester treated a stored confirmation as present and never recovered
+the genuine one from the chain, and it served the forged signatures to its own sync requesters. No
+signature or penalty consequence was shown.
 
-**Proposed direction:** Apply the inbound rule to these fields too: persist a window's reduction
-inputs only when this sync's own reduction checked them, or validate them against chain data first.
-Confirm with a unit test that serves a chain-final window with an extra signature on a dispute
-confirmation, then checks the stored confirmation and any later forwarding of it.
+**Fix:** `persistSyncPayload` never stores a window's dispute confirmations, since no reduction
+checks their signatures, and stores a window's latest snapshot, state and inbound blocks only for a
+window this sync reduced itself. Disputes are recovered from the chain's dispute logs when a reader
+needs them (`loadSynchronizedWindowCommitments`); the recovery stores the chain's copy of any
+dispute its handler left unstored (a fork the node already left, or a dispute its audit rejected), so
+a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
+Residual: until the chain adopts a window reduced on chain after the finality read, the requester
+lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
+window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
+that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+Regressions:
+[`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
+[`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
+[`INV-SYNC-1-XCQZ28.T1.P20`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p20).
 
 <a id="find-sync-5-7w9tww"></a>
 
@@ -2266,19 +2389,46 @@ and test mapping in the specification and verification layers.
 
 ### FIND-EVENTS-1-3JF8FM
 
-**Defect:** **Open (2026-09-09), design question.**
+**Defect:** **Pending on the chain-finality assumption (2026-10-21, engineer decision).** Not
+fixed and not closed: the whole code base treats chain data as final
+([chain finality](../specification/runtime/chain-observation.md#assumptions-and-constraints)), so this defect cannot occur under that assumption. The
+assumption is known to be wrong on any chain that can reorganize and must be lifted at some point;
+this entry is the single place that lists what lifting it must revisit (below).
 [EventSyncService.ts](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 applies chain logs delivered by the provider subscription as canonical: a `ChannelOpened` log
-installs the genesis, and no path re-checks that the log's block is still on the chain or handles a
-`removed` log. A node that delivers logs for a block it later drops (hardhat's pending-block
+installs the genesis, and no path re-checks that the log's block is still on the chain; a later
+`removed` delivery is logged and ignored (`EventSyncService.scheduleLog`), so the installed genesis
+stays. A node that delivers logs for a block it later drops (hardhat's pending-block
 simulation did this on the shared test node until the peer3 fork muted it; a real chain does it on a
 reorg) leaves the node on a genesis fork the chain never stored, which breaks spectator
 synchronisation and every dispute audit that follows.
 
-**Proposed direction:** Decide the specification: either require the event path to confirm
-canonicality before acting (compare the log's block hash with `eth_getBlockByNumber`, or handle
-`removed`), or record the assumption that the node's log feed is canonical as an explicit trust
-boundary. The observed instance was a node defect and is fixed there.
+The observed instance was a node defect (hardhat) and is fixed there.
+
+**Engineer decision (Luke, 2026-10-21).** Finality is assumed throughout the code base, so a fix
+for this one log would not make the node reorg-safe; lifting the assumption is a larger rewrite
+than this finding. Record the assumption, acknowledge it is wrong, and park every reorg-dependent
+item on it instead of closing or deleting them.
+
+**Lifting the assumption must revisit:**
+
+- this finding: a removed `ChannelOpened` log leaves the installed genesis in place;
+- the reorg half of [`OQ-30-2G0Q5M` (Chain-reorg handling and canonical event ordering)](../implementation/open-questions.md#oq-30-2g0q5m): the
+  progress marker is a bare block number, with no block hash and no rollback of a removed event's
+  effects (local diamond, storage, marker, decisions taken from them);
+- the equal-height inbound tip case of
+  [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf), which only matters on a reorg;
+- [`DEF-6-B4ZN7S`](open-findings.md#def-6-b4zn7s): a pending participant is set from a single
+  receipt;
+- every transaction wait acts on first inclusion (default one confirmation), and chain reads use
+  `latest`, never `safe` or `finalized` (clock, pinned membership read, nonce handling, catch-up
+  head);
+- the event key carries the block hash, the only reorg-aware piece: a log mined again in another
+  block is handled as a new log;
+- the runtime clock is synced once per session and never corrects for a reorganization
+  ([`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe));
+- the join candidate rule "promote on the canonical event, roll back on reorg" in
+  [`OQ-10-04YNC4` (Spectate/join failure-point details)](../specification/open-questions.md#oq-10-04ync4) has no rollback to call.
 
 <a id="find-mirror-1-yecyeq"></a>
 
@@ -2474,20 +2624,46 @@ how it handles its own task's errors.
 **Status:** Open, deferred: the change touches every `scheduleTask` caller, so the surface is too big for
 now.
 
+<a id="find-lif-1-b36vst"></a>
+
+### FIND-LIF-1-B36VST
+
+**Defect:** _Withdrawn (2026-10-27)._ Luke decided to keep `onDisputeStarted(3 × evidenceTime)`
+in `EventHandler.handleDisputeCommitted`
+([EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)): the surfaced
+value is a conservative ceiling that also covers the reduction transaction landing after the kill
+period (measured pipeline latency in [`FIND-DISPUTE-5-MZPTTC`](open-findings.md#find-dispute-5-mzpttc)), while
+about `2 × evidenceTime` stays the protocol-side pause. [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) now states the
+ceiling, so the code no longer departs from it.
+
 ## Evidence backlog retained after traceability repair
 
 <a id="find-verify-1-gferdm"></a>
 
-### FIND-VERIFY-1-GFERDM — Four specified behavior families lack exact evidence
+### FIND-VERIFY-1-GFERDM — The host-environment matrix lacks exact evidence
 
-Status: open verification gap. The implementation links exist, but no declaration currently owns a complete permutation for these families. Adding an implementation link does not close this gap.
+Status: open verification gap, narrowed (2026-10-27) to the host matrix.
+[`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) and [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+now have exact evidence for every permutation. [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) has it
+for the valid, invalid, calldata and no-calldata cases. Luke decided the two other audit cases
+(2026-10-27):
 
-- [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The runtime setup report identifies its platform boundary; its code contribution does not supply the missing test evidence.
-- [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt): no exact declaration currently proves its planned dispute-window invariants in full.
-- [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81): no exact declaration currently owns its complete planned audit invariant.
-- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm): the required pause, queued-work, unrelated-fork, resume, notification and duplicate-event observations have no assigned specification evidence.
+- The delivery-order permutation is removed. Auditors learn disputes only from chain events, which
+  arrive in one canonical (block, log index) order, and a lagging auditor receives the same order
+  in a burst, so delivery order is not a variable the system can produce.
+- [`INV-DISPUTE-PIPE-1-BN0K81.T1.P4`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81.t1.p4) (restart) is deferred until persistence exists
+  ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../implementation/open-questions.md#oq-23-sdbgyb)). Storage is in memory only and a
+  restarted peer comes back as a fresh spectator and resyncs, so resuming an audit after a restart
+  does not exist yet.
 
-Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix; the current source changes do not claim to implement this broader test matrix.
+What remains is [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and
+worker-less capability matrix is unverified as a whole. The browser gates run transport, executor,
+clock and logging scenarios, not the protocol capabilities in a browser host, a mixed
+browser/Node channel or browser lifecycle suspension. The runtime setup report identifies the
+platform boundary; its code contribution does not supply the missing test evidence.
+
+Keep its generated evidence cells as `none — gap`. Close a permutation only after a test asserts
+its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix.
 
 <a id="find-sync-1-jwy1c8"></a>
 

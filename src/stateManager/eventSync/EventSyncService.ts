@@ -701,7 +701,9 @@ export default class EventSyncService {
                 const commitment = hash(
                     args.disputeConfirmation.signedDispute.encodedDispute
                 ).toLowerCase();
-                return missing.has(commitment) ? [{ log, commitment }] : [];
+                return missing.has(commitment)
+                    ? [{ log, commitment, args }]
+                    : [];
             });
             const joinedFailures: {
                 commitment: NormalizedDisputeCommitment;
@@ -728,6 +730,16 @@ export default class EventSyncService {
                 missing.has(commitment)
             );
             if (fatal) throw fatal.error;
+            // a handler that stored no dispute (a fork this node left, or a
+            // dispute its audit rejected) leaves the chain's copy to back
+            // this window's readers
+            for (const { commitment, args } of recovered) {
+                if (missing.has(commitment))
+                    this.storage.disputes.storeDisputeConfirmation(
+                        args.disputeConfirmation
+                    );
+            }
+            missing = this.getMissingDisputes(commitments);
             if (missing.size === 0) break;
         }
         return missing;

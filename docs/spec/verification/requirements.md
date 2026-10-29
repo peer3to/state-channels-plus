@@ -42,13 +42,13 @@ Specification cases tested: 1/18. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 0/19.
 
 [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)
-Specification cases tested: 0/6.
+Specification cases tested: 4/5. Untested: T1.P4.
 
 [`INV-ENFADM-1-H53AQY` (Inbound append is the only membership/value entry)](../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy)
 Specification cases tested: 5/5.
 
 [`INV-ENFDIS-1-1K65DT` (Commitment-exact reduction)](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt)
-Specification cases tested: 0/7.
+Specification cases tested: 7/7.
 
 [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
 Specification cases tested: 6/17. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P14.
@@ -156,7 +156,7 @@ Specification cases tested: 0/19.
 Specification cases tested: 1/1.
 
 [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
-Specification cases tested: 9/17. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
+Specification cases tested: 12/20. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
 
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
 Specification cases tested: 3/4. Untested: T1.P2.
@@ -228,7 +228,7 @@ Specification cases tested: 4/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)
-Specification cases tested: 7/10. Untested: T1.P2, T1.P4, T1.P5.
+Specification cases tested: 9/12. Untested: T1.P2, T1.P4, T1.P5.
 
 [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)
 Specification cases tested: 0/11.
@@ -525,13 +525,13 @@ Specification cases tested: 0/9.
 Specification cases tested: 0/4.
 
 [`REQ-GOSSIP-2-9PMMNH` (Verdict-mapped consequences)](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)
-Specification cases tested: 0/7.
+Specification cases tested: 5/11. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P7.
 
 [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)
 Specification cases tested: 7/10. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
-Specification cases tested: 32/33. Untested: T1.P37.
+Specification cases tested: 37/38. Untested: T1.P37.
 
 [`REQ-GOSSIP-5-2EQ7P6` (Live gossip waits for the initial sync)](../specification/peer-communication/block-gossip.md#req-gossip-5-2eq7p6)
 Specification cases tested: 5/5.
@@ -609,7 +609,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 0/6.
 
 [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
-Specification cases tested: 0/6.
+Specification cases tested: 6/6.
 
 [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 Specification cases tested: 9/9.
@@ -927,7 +927,7 @@ Specification cases tested: 79/79.
 Specification cases tested: 45/45.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
-Specification cases tested: 3/4. Untested: T1.P1.
+Specification cases tested: 4/5. Untested: T1.P1.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.

@@ -165,13 +165,13 @@ aborts at once, as today."
    [`UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH`](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md#unit-test-spectate-methods-1-zab4yh) described the waiting responder and are deleted;
    new cases are [`REQ-SPC-3-AZBKR1.T1.P4`](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1.t1.p4)–`.P6`,
    [`REQ-AUTH-5-BQG9AG.T3.P5`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag.t3.p5)–`.P6`,
-   [`UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P9`](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md#unit-test-spectate-methods-1-zab4yh)–`.P11`, [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) and
+   [`UNIT-TEST-SPECTATE-METHODS-1-ZAB4YH.P9`](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md#unit-test-spectate-methods-1-zab4yh)–`.P11`, [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) and
    [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P43`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz)–`.P48`.
 5. Tests: the H11 cases in
    [E2E-BotConnectionFixes.test.ts](../verification/tests/test/e2e/E2E-BotConnectionFixes.test.ts.md).
    The "requester times out" and "responder sync already failed" cases are gone; "another participant
    serves", "no participant serves in time" and "responder answers at once" are new.
-   [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) (two-window default) moved to the P2PManager timeout test.
+   [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) (two-window default) moved to the P2PManager timeout test.
    [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz) (a running sync holds the deadline) and `.P48` (only the first
    syncing answer re-arms it) have no test yet.
 6. [`FIND-SYNC-OBSERVER-1-YF6CJA`](open-findings.md#find-sync-observer-1-yf6cja) states the new fix.
@@ -1180,7 +1180,9 @@ canonical and has no `removed`-log handling or block-hash confirmation. That is 
 well-behaved node and for the local runner after the fork fix, and it is the same assumption a real
 chain breaks on a reorg. Recorded as
 [`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm) for a specification decision; no
-code change made here.
+code change made here. (As of 2026-09-09; a `removed` log is now logged and ignored, its effects
+not undone.) Decided 2026-10-21: chain finality is a recorded, known-wrong assumption, and
+the finding is pending on it.
 
 ## Estimate margin instead of a search — 2026-09-09
 

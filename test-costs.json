@@ -1339,6 +1339,12 @@
       "peakRssGb": 0.804,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a local disputed-fork check failure during ingest does not blacklist the honest sender": {
+      "durationMs": 13659,
+      "avgCores": 0.576,
+      "peakRssGb": 1.244,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a queue timeout accepts a proved successor fork without excluding the supplier or author": {
       "durationMs": 38146,
       "avgCores": 0.843,

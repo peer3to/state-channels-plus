@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: test helper that reads the payload of a served spectate response for the sync stagings
 import type { SpectateResponse } from "@/rpc/network/services/spectate/SpectateService";
 import type { Bytes } from "@/types/types";
 

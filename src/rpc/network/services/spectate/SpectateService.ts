@@ -34,9 +34,7 @@ type VerifiedSync = {
     walk: ProofTierWalk;
     evidence: StateProofEvidence;
     base: SyncReplayBase;
-    /** windows the chain already reduced: their reduce input is not stored */
-    chainFinalForkIds: Set<ForkId>;
-    /** windows this sync's own reduction verified: only their inbound list is stored */
+    /** windows this sync's own reduction verified: only their reduce input is stored */
     selfReducedForkIds: Set<ForkId>;
 };
 
@@ -762,11 +760,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     walk,
                     evidence,
                     base,
-                    chainFinalForkIds: new Set(
-                        linkedDisputeWindows
-                            .map((dw) => dw.forkId)
-                            .filter((forkId) => finalizedByFork.get(forkId))
-                    ),
                     selfReducedForkIds: reducedByThisSync
                 }
             );
@@ -892,13 +885,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!currentWindowCommitments) {
                 // the window's disputes are on-chain but not locally readable
-                // yet, so we cannot prove the tip -> refuse to serve rather
-                // than serve a proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - dispute window unavailable",
-                    { channelId, forkId: currentForkId }
+                // yet, so we cannot prove the tip -> fail the request; our lag
+                // is no verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - dispute window unavailable for fork ${currentForkId}`
                 );
-                return undefined;
             }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -918,13 +909,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!computation) {
                 // we cannot rebuild the run this window's reduce consumed, so we
-                // cannot prove the tip -> refuse to serve rather than serve a
-                // proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - reduce data unavailable for a disputed window",
-                    { channelId, forkId: currentForkId }
+                // cannot prove the tip -> fail the request; our lag is no
+                // verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - reduce data unavailable for disputed fork ${currentForkId}`
                 );
-                return undefined;
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;
@@ -979,10 +968,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId) {
             // The requested fork isn't the tip we derive from our own reductions,
             // so we can't prove it. Return undefined → the caller cuts the
-            // requester and the requester cuts us (mutual). A sync requester only
-            // ever asks peers expected to prove the target - the block's own
-            // suppliers/author for the block's fork, or a participant for the
-            // latest - so a peer that can't prove it failed to cooperate.
+            // requester; the requester counts a close against us. A sync
+            // requester only ever asks peers expected to prove the target - the
+            // peers that sent the block, for the block's fork, or a
+            // participant for the latest - so a peer that can't prove it failed
+            // to cooperate.
             this.logger.debug(
                 `generateSyncPayload - requested fork ${forkId} is not the derived latest fork ${currentForkId}`
             );
@@ -1253,22 +1243,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     if (stateManager.isDisposed || !persistProof())
                         return false;
                     for (const dw of syncPayload.disputeWindows) {
-                        for (const dispute of dw.disputeConfirmations) {
-                            storage.disputes.storeDisputeConfirmation(dispute);
-                        }
-                        // a chain-final window ran no local reduction, so its
-                        // reduction input is unverified: never stored
-                        if (verified.chainFinalForkIds.has(dw.forkId)) continue;
+                        // no reduction checks a confirmation's signatures, so the
+                        // window's disputes come from chain logs only. only this
+                        // sync's own reduction checked the rest of a window's reduce
+                        // input; a chain-final or early-return window ran no check
+                        if (!verified.selfReducedForkIds.has(dw.forkId))
+                            continue;
                         storage.stateSnapshots.storeStateSnapshot(
                             StateSnapshot.from(dw.latestStateSnapshot)
                         );
                         storage.stateMachineStates.storeStateMachineState(
                             dw.latestEncodedStateMachineState
                         );
-                        // only this sync's own reduction checked a window's inbound list; any
-                        // other window's list is dropped and chain events deliver the genuine blocks
-                        if (!verified.selfReducedForkIds.has(dw.forkId))
-                            continue;
                         for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
                             storage.inboundMessages.store(inboundBlock);
                         }
