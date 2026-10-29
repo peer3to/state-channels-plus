@@ -452,6 +452,11 @@ describe("StorageDiffService backfill checked against the chain", function () {
                 await backfilled(service);
                 await sleep(300);
 
+                // the service says at once that no snapshot is coming
+                const notice = await client.nextSnapshot(subscription);
+                expect(notice.accounts).to.deep.equal({});
+                expect(notice.lazy).to.deep.equal([writer]);
+                expect(notice.block.hash).to.equal(head.hash);
                 expect(client.unreadSnapshots(subscription)).to.deep.equal([]);
                 const warning = session.warnings.find(({ message }) =>
                     message.includes("stays lazy")
@@ -472,6 +477,39 @@ describe("StorageDiffService backfill checked against the chain", function () {
                 expect(service.statistics.lazyFieldFetches - fetched).to.equal(
                     1
                 );
+            }
+        );
+    });
+
+    it("tells a subscriber of a lazy account that no snapshot is coming also when it subscribes after the backfill", async function () {
+        await backfillWith(3, async ({ writer, client, service }) => {
+            await client.subscribe([writer]);
+            await backfilled(service);
+
+            const later = await client.subscribe([writer]);
+            const notice = await client.nextSnapshot(later);
+
+            expect(notice.lazy).to.deep.equal([writer]);
+        });
+    });
+
+    it("tells the subscriber at once when the backfill fails", async function () {
+        await withStorageDiffSession(
+            async ({ client, relay, signer, warnings }) => {
+                const writer = await deploySlotWriter(signer);
+                await writeSlot(signer, writer, 1, 5n);
+                relay.failNext("debug_traceBlockByNumber", 50);
+
+                const subscription = await client.subscribe([writer]);
+                const notice = await client.nextSnapshot(subscription);
+
+                expect(notice.lazy).to.deep.equal([writer]);
+                expect(notice.accounts).to.deep.equal({});
+                expect(
+                    warnings.some(({ message }) =>
+                        message.includes("Backfill failed")
+                    )
+                ).to.equal(true);
             }
         );
     });

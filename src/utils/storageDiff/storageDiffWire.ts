@@ -80,6 +80,12 @@ export interface BlockAnchor {
 export interface StorageDiffSnapshot {
     block: BlockAnchor;
     accounts: AccountDiffs;
+    /**
+     * Accounts the subscription follows that no snapshot is coming for: the
+     * service does not hold their complete state, so the subscriber reads
+     * their state as it needs it.
+     */
+    lazy?: AccountAddress[];
 }
 
 /** A block as the upstream's `eth_getBlockBy*` returns it, transactions as objects or hashes. */

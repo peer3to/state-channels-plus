@@ -1316,15 +1316,25 @@ export class StorageDiffService {
         )
             return;
         const job = this.runBackfill(address)
-            .catch((error) =>
+            .catch((error) => {
                 this.logger.warn(
                     "Backfill failed; the account is read lazily",
                     {
                         address,
                         reason: this.sanitize(describeError(error))
                     }
-                )
-            )
+                );
+                // tell the subscribers now, so they do not wait for a snapshot
+                return this.enqueue(async () => {
+                    for (const peer of this.peers.values())
+                        if (!peer.closing)
+                            this.sendSnapshots(
+                                peer,
+                                [address],
+                                new Set([address])
+                            );
+                });
+            })
             .finally(() => this.backfills.delete(address));
         this.backfills.set(address, job);
     }
@@ -1572,14 +1582,18 @@ export class StorageDiffService {
      */
     private sendSnapshots(
         peer: StorageDiffPeer,
-        addresses: AccountAddress[]
+        addresses: AccountAddress[],
+        lazy: ReadonlySet<AccountAddress> = this.lazyAccounts
     ): void {
         const head = this.canonical[this.canonical.length - 1];
         for (const [subscription, subscribed] of peer.subscriptions) {
             const accounts: AccountDiffs = {};
+            // accounts no snapshot is coming for: the peer reads them as needed
+            const noSnapshot: AccountAddress[] = [];
             for (const address of addresses) {
+                if (!subscribed.includes(address)) continue;
+                if (lazy.has(address)) noSnapshot.push(address);
                 if (
-                    !subscribed.includes(address) ||
                     peer.snapshotted.has(address) ||
                     !this.stateCache.isComplete(address)
                 )
@@ -1587,7 +1601,8 @@ export class StorageDiffService {
                 accounts[address] = this.stateCache.accountOf(address);
                 peer.snapshotted.add(address);
             }
-            if (Object.keys(accounts).length === 0) continue;
+            if (Object.keys(accounts).length === 0 && noSnapshot.length === 0)
+                continue;
             this.counters.snapshotsSent++;
             this.send(peer.socket, {
                 jsonrpc: "2.0",
@@ -1596,7 +1611,8 @@ export class StorageDiffService {
                     subscription,
                     result: {
                         block: { number: head.number, hash: head.hash },
-                        accounts
+                        accounts,
+                        ...(noSnapshot.length > 0 && { lazy: noSnapshot })
                     }
                 }
             });
