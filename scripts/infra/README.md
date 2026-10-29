@@ -230,6 +230,12 @@ forward block by block over what the step has read, when the step extends the
 head; from reads at the parent hash otherwise. A touched key whose value did
 not change produces no entry in `pre` or `post`.
 
+A block whose trace values were used keeps them for **every** account its
+trace names, so an account first watched later finds its retained history in
+memory and costs no read; the memory is bounded by the retention window. A
+block that was read from the node holds only the watched accounts, and the
+history of an account watched later is read for those blocks.
+
 This is required by an Asset Hub bug: its `prestateTracer` in `diffMode`
 reports storage writes (and value transfers) of **reverted sub-call frames** in
 `post`. The reproduction is a contract whose `f()` sets `a = 1` and calls
@@ -274,6 +280,11 @@ that nest and re-enter" checks this on nested and re-entered frames against
   and the records after it, and reads nothing else from the service on the
   normal path. A later subscribe pushes snapshots only for addresses not
   already complete.
+- **No snapshot coming.** When an account stays lazy (the entry count
+  mismatch below, or a failed backfill) the service pushes `scp_snapshot` with
+  `lazy: [addresses]` (and `accounts` without them) to the subscriptions that
+  follow it, at once and again to each later subscriber, so the subscriber
+  stops waiting for a snapshot and reads the account lazily.
 - **Lazy path.** A read of anything not held still goes through `scp_getState`
   (which reads the upstream once); the peer falls back to its node on `-32002`.
 - **Persistence.** With `--cache-dir` the service writes `state.json`
