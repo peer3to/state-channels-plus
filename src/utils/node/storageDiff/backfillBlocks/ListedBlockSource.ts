@@ -72,7 +72,7 @@ export class ListedBlockSource extends ABackfillBlockSource {
         return { numbers, blocks, blockReads, rootReads: 0, roundTrips };
     }
 
-    public async countStorageEntries(): Promise<undefined> {
+    public async countStorageEntries(): Promise<number | undefined> {
         return undefined;
     }
 
