@@ -1195,6 +1195,12 @@
       "peakRssGb": 0.552,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager a block confirmation whose block bytes do not decode still cuts its sender": {
+      "durationMs": 10192,
+      "avgCores": 0.911,
+      "peakRssGb": 0.735,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager a delivered pending join event admits the first network copy without another read": {
       "durationMs": 12744,
       "avgCores": 1.03,
@@ -1231,10 +1237,16 @@
       "peakRssGb": 0.795,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager failed ingress sync blacklists its sender without queueing the triggering block": {
-      "durationMs": 11700,
-      "avgCores": 1.091,
-      "peakRssGb": 0.804,
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager committed dispute on the current fork a committed dispute discards the queued block and rejects the leader's genuine next block; the head stays put": {
+      "durationMs": 26410,
+      "avgCores": 0.713,
+      "peakRssGb": 0.974,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager failed ingress sync ends intake with a counted close of its sender, no blacklist and no queued triggering block": {
+      "durationMs": 9735,
+      "avgCores": 0.87,
+      "peakRssGb": 0.753,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager independent source allowances preserve honest signatures for ordinary processing": {
@@ -1339,16 +1351,40 @@
       "peakRssGb": 0.804,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a kill-period chain read failure while scheduling fork recovery does not blacklist the honest sender": {
+      "durationMs": 12472,
+      "avgCores": 1.082,
+      "peakRssGb": 0.967,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a later spectator asks only the sender of a replayed old-fork block: its genuine author is never asked and does not blacklist the spectator": {
+      "durationMs": 30570,
+      "avgCores": 0.701,
+      "peakRssGb": 1.164,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a local disputed-fork check failure during ingest does not blacklist the honest sender": {
       "durationMs": 13659,
       "avgCores": 0.576,
       "peakRssGb": 1.244,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a local failure during the sender's eligibility refresh does not blacklist the honest sender": {
+      "durationMs": 7890,
+      "avgCores": 1.153,
+      "peakRssGb": 0.742,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a queue timeout accepts a proved successor fork without excluding the supplier or author": {
       "durationMs": 38146,
       "avgCores": 0.843,
       "peakRssGb": 1.037,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks an absent sender whose intake-gate sync fails on our side gets no verdict": {
+      "durationMs": 9534,
+      "avgCores": 1.083,
+      "peakRssGb": 0.745,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks drains an early reduced-fork block once the fork transition catches up": {
@@ -1381,16 +1417,16 @@
       "peakRssGb": 1.015,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown fork: both the supplier and the author are asked and both are cut": {
-      "durationMs": 23559,
-      "avgCores": 0.772,
-      "peakRssGb": 0.796,
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown fork: only the sender is asked and cut; the author keeps the observer": {
+      "durationMs": 15190,
+      "avgCores": 0.648,
+      "peakRssGb": 0.742,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown-fork timeout asks both the supplier and the author to sync": {
-      "durationMs": 17902,
-      "avgCores": 0.651,
-      "peakRssGb": 0.799,
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown-fork timeout asks only the sender to sync, never the author": {
+      "durationMs": 12236,
+      "avgCores": 0.58,
+      "peakRssGb": 0.736,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks wrongGenesisDetected (host-side unit scope) missing genesis: no proof to build, sources blacklisted, no dispute": {
@@ -2053,16 +2089,16 @@
       "peakRssGb": 1.039,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection a request for a fork the responder does not yet see as disputed closes with a counted retry, not a blacklist": {
+      "durationMs": 6615,
+      "avgCores": 1.167,
+      "peakRssGb": 0.713,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should disconnect peer building on acknowledged disputed fork": {
       "durationMs": 13254,
       "avgCores": 1.109,
       "peakRssGb": 0.815,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should disconnect peer requesting acknowledgment of non-disputed fork": {
-      "durationMs": 11704,
-      "avgCores": 1.112,
-      "peakRssGb": 0.792,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should run stubbed RPC method via createRPCMethods wrapper": {
@@ -3241,6 +3277,12 @@
       "peakRssGb": 0.991,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Participant sync across a chain-final window responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs": {
+      "durationMs": 24747,
+      "avgCores": 0.737,
+      "peakRssGb": 0.986,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Participant sync across a chain-final window responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor": {
       "durationMs": 36273,
       "avgCores": 0.877,
@@ -3361,6 +3403,12 @@
       "peakRssGb": 0.613,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block": {
+      "durationMs": 20845,
+      "avgCores": 0.721,
+      "peakRssGb": 0.766,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service block height 0 spectating should spectate successfully when joining at block 0": {
       "durationMs": 13948,
       "avgCores": 1.009,
@@ -3463,10 +3511,10 @@
       "peakRssGb": 1.175,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running": {
-      "durationMs": 21972,
-      "avgCores": 1.18,
-      "peakRssGb": 1.157,
+    "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running": {
+      "durationMs": 20948,
+      "avgCores": 0.906,
+      "peakRssGb": 1.117,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running": {
@@ -4358,9 +4406,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash": {
-      "durationMs": 42888,
-      "avgCores": 1.383,
-      "peakRssGb": 1.575,
+      "durationMs": 36719,
+      "avgCores": 1.502,
+      "peakRssGb": 1.547,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post refused for an unconsumed inbound join → its watchdog self-removal dispute; the others contribute newer state into the existing window and remain participants": {
@@ -15793,6 +15841,12 @@
       "peakRssGb": 0.212,
       "measurementReason": null
     },
+    "hardhat|test/storage/Storage.test.ts|Storage previous block or snapshot returns neither block nor snapshot when the predecessor is absent": {
+      "durationMs": 539,
+      "avgCores": 0.631,
+      "peakRssGb": 0.102,
+      "measurementReason": null
+    },
     "hardhat|test/storage/keys.test.ts|coordinateKey preserves zero-height coordinates": {
       "durationMs": 2439,
       "avgCores": 0.615,
@@ -17149,6 +17203,12 @@
       "peakRssGb": 0.579,
       "measurementReason": null
     },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry": {
+      "durationMs": 9177,
+      "avgCores": 0.807,
+      "peakRssGb": 0.744,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an oversized verified eligibility cache does not expand the N-source allowance": {
       "durationMs": 10449,
       "avgCores": 0.772,
@@ -17263,10 +17323,10 @@
       "peakRssGb": 0.805,
       "measurementReason": null
     },
-    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager sync with no sender transport ends intake without queueing the block": {
-      "durationMs": 12241,
-      "avgCores": 0.766,
-      "peakRssGb": 0.604,
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager sync with no sender transport ends intake with a counted close, no blacklist and no queued block": {
+      "durationMs": 6578,
+      "avgCores": 0.783,
+      "peakRssGb": 0.54,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager wrong channel is rejected before sender refresh or retention": {
@@ -20443,10 +20503,22 @@
       "peakRssGb": 1.026,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window synced by a requester that handled none of its dispute logs → the sync stores no confirmation, and the requester, now on the reduced fork, recovers every window dispute from chain logs without auditing": {
+      "durationMs": 22792,
+      "avgCores": 0.788,
+      "peakRssGb": 0.973,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged": {
       "durationMs": 25212,
       "avgCores": 0.872,
       "peakRssGb": 1.036,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored": {
+      "durationMs": 20638,
+      "avgCores": 0.934,
+      "peakRssGb": 0.975,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage first dispute window not on the on-chain fork → rejected, dispute window not linked": {
@@ -20465,6 +20537,12 @@
       "durationMs": 29363,
       "avgCores": 0.849,
       "peakRssGb": 1.027,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage reduction lands on chain after the finality read and before the window fetch, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored": {
+      "durationMs": 19856,
+      "avgCores": 0.956,
+      "peakRssGb": 0.975,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage second dispute window not continuing from the first reduced fork → rejected, dispute window not linked": {
@@ -20497,10 +20575,22 @@
       "peakRssGb": 1.028,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window already reduced locally by a concurrent sync, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored": {
+      "durationMs": 20464,
+      "avgCores": 0.88,
+      "peakRssGb": 0.973,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync → accepted, its inbound blocks stored": {
       "durationMs": 21779,
       "avgCores": 1.023,
       "peakRssGb": 1.025,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync, with forged confirmation signatures → accepted, no forged signature stored": {
+      "durationMs": 16671,
+      "avgCores": 0.946,
+      "peakRssGb": 0.979,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → local reduction reverts, no verdict naming the window, no window inbound block stored, inbound head unchanged": {
@@ -20587,10 +20677,10 @@
       "peakRssGb": 1.014,
       "measurementReason": null
     },
-    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload dispute window unavailable → payload refused, no throw": {
-      "durationMs": 17228,
-      "avgCores": 1.252,
-      "peakRssGb": 1.013,
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload dispute window unavailable → the request fails, the requester is not blacklisted": {
+      "durationMs": 15527,
+      "avgCores": 1.208,
+      "peakRssGb": 0.966,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService historic verification on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted": {
