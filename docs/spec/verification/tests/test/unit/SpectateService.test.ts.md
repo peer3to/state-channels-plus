@@ -69,6 +69,7 @@ blacklist.
 - `sync accepts a reduction landing after its chain window was persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P22
 - `plain pinned sync accepts a proved successor of the requested fork`: REQ-SYNC-1-T2589H.T1.P9, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P19
 - `plain pinned sync refuses an unknown fork`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P20
+- `one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116, REQ-SPC-3-AZBKR1.T1.P10
 - `one sync request supports initial load and exact recovery`: INV-SYNC-2-AT3RXE.T1.P1
 - `exact recovery failure preserves a synced observer runtime`: INV-SYNC-3-A7A2ED.T1.P4
 - `a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28

@@ -4,20 +4,9 @@ import {
     trackWorker,
     type WasmFailureDiagnostics
 } from "@/utils/threadResources";
+import { assertRefusedGrowProbeIsReused } from "@test/fixtures/node/RefusedMemoryProbeFixture";
+import { catchWasmTrap, MEMORY_MODULE } from "@test/fixtures/WasmTestModules";
 import { expect } from "chai";
-
-/** A module that exports one one-page memory. */
-const MEMORY_MODULE = new Uint8Array([
-    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x05, 0x03, 0x01, 0x00,
-    0x01, 0x07, 0x0a, 0x01, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x00
-]);
-
-/** A module that exports `trap`, a function that runs `unreachable`. */
-const TRAP_MODULE = new Uint8Array([
-    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60,
-    0x00, 0x00, 0x03, 0x02, 0x01, 0x00, 0x07, 0x08, 0x01, 0x04, 0x74, 0x72,
-    0x61, 0x70, 0x00, 0x00, 0x0a, 0x05, 0x01, 0x03, 0x00, 0x00, 0x0b
-]);
 
 describe("Thread resources", function () {
     it("counts the instances and memories this thread creates through each WebAssembly entry point, and keeps instanceof working", async function () {
@@ -42,14 +31,26 @@ describe("Thread resources", function () {
         expect(after.largestWasmMemoryMiB).to.be.at.least(0.1);
     });
 
+    it("counts the instance and memory that instantiateStreaming creates from a streamed module", async function () {
+        const before = getThreadResources();
+        const streamed = await WebAssembly.instantiateStreaming(
+            new Response(MEMORY_MODULE, {
+                headers: { "content-type": "application/wasm" }
+            })
+        );
+        const after = getThreadResources();
+
+        expect(streamed.instance).to.be.instanceOf(WebAssembly.Instance);
+        expect(
+            after.wasmInstancesCreated - before.wasmInstancesCreated
+        ).to.equal(1);
+        expect(after.wasmMemoriesCreated - before.wasmMemoriesCreated).to.equal(
+            1
+        );
+    });
+
     it("attaches this thread's resources, a working memory probe, and the device to a WebAssembly trap it serializes, and the receiving side keeps them", async function () {
-        const { instance } = await WebAssembly.instantiate(TRAP_MODULE);
-        let trap: unknown;
-        try {
-            (instance.exports.trap as () => void)();
-        } catch (error) {
-            trap = error;
-        }
+        const trap = await catchWasmTrap();
 
         const serialized = serializeError(trap);
         const diagnostics = serialized.wasmDiagnostics;
@@ -75,6 +76,10 @@ describe("Thread resources", function () {
         expect(
             serializeError(new Error("ordinary failure")).wasmDiagnostics
         ).to.equal(undefined);
+    });
+
+    it("reports a refused 16 MiB grow in the memory probe with its error, and a later WebAssembly failure in the same thread reuses that probe", async function () {
+        await assertRefusedGrowProbeIsReused();
     });
 
     it("counts a spawned worker until its first shutdown ends, once across repeated shutdowns", async function () {

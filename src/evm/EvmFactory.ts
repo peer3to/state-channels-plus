@@ -12,15 +12,6 @@ import { Trie } from "@ethereumjs/trie";
 import { Address } from "@ethereumjs/util";
 import { installEvmJumpdestCache } from "@platform/evmJumpdestCache";
 
-export {
-    isEvmCustomPrecompileManifest,
-    type EvmCustomPrecompile,
-    type EvmCustomPrecompileContext,
-    type EvmCustomPrecompileFactory,
-    type EvmCustomPrecompileManifest,
-    type EvmNativeCustomPrecompile
-} from "./EvmCustomPrecompiles";
-
 export interface EvmFactoryOptions extends Omit<EVMOpts, "customPrecompiles"> {
     customPrecompiles?: EvmCustomPrecompile[];
 }

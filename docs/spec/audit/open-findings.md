@@ -76,7 +76,8 @@ as a participant, that peer's `SpectateService` answers "No genesis snapshot fou
 connecting at once. Relates to
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed).
 Fix: a responder whose own initial sync is in flight answers at once that it is not synced yet, and
-the requester does not count that as a failed sync: it syncs from another participant instead, asks
+the requester does not count that as a failed sync (block intake excepted since 2026-10-29: a block's source that
+answers so takes one counted close per answer, see the implementation assessment): it syncs from another participant instead, asks
 the syncing one again, and aborts only when no participant serves before its initial-sync deadline. A
 real sync failure still aborts at once
 ([`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1),

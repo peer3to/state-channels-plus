@@ -431,14 +431,16 @@ export class RpcStubActions<
     }
 
     /**
-     * Holds the peer's first join send between its gas estimate and its
-     * broadcast. Returns a wait until the send is held, and its release.
+     * Holds the peer's first `kind` send (a join by default) between its gas
+     * estimate and its broadcast. Returns a wait until the send is held, and
+     * its release.
      */
     async holdFirstJoinSendAfterEstimate(
-        peerIndex: number
+        peerIndex: number,
+        kind: HeldMembershipReceiptKind = "joinChannel"
     ): Promise<JoinSendHold> {
         const stub = this.peerStub(peerIndex);
-        await stub.holdFirstJoinSendAfterEstimate().request();
+        await stub.holdFirstJoinSendAfterEstimate(kind).request();
         return {
             waitUntilHeld: () =>
                 waitFor(
@@ -464,18 +466,24 @@ export class RpcStubActions<
 
     /**
      * Fail the peer's `kind` submissions with a mined, failed receipt (with
-     * `once` only the first; later ones run for real). Each submission is
-     * counted in `getHeldMembershipReceiptCount`. Returns the restore.
+     * `once` only the first; later ones run for real). Its replay reverts
+     * with no data, or with `isReplayPassing` runs on the real chain. Each
+     * submission is counted in `getHeldMembershipReceiptCount`. Returns the
+     * restore.
      */
     async failMembershipReceipt(
         peerIndex: number,
         kind: HeldMembershipReceiptKind,
-        options: { once?: boolean } = {}
+        options: { once?: boolean; isReplayPassing?: boolean } = {}
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.failMembershipReceipt(kind, options.once ?? false)
+            .stub.failMembershipReceipt(
+                kind,
+                options.once ?? false,
+                options.isReplayPassing ?? false
+            )
             .request();
         return async () =>
             await this.harness

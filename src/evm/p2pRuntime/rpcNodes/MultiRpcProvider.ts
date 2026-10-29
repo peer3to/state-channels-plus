@@ -38,6 +38,8 @@ abstract class RpcNodesSocketSubscriber implements Subscriber {
     private readonly unwatchNodes: (() => void)[] = [];
     /** Node sockets this subscriber listens on. */
     private readonly sockets = new NodeSocketSubscriptions();
+    /** Called with each event of any node socket. */
+    protected abstract readonly onEvent: Listener;
 
     constructor(
         provider: AbstractProvider,
@@ -48,9 +50,6 @@ abstract class RpcNodesSocketSubscriber implements Subscriber {
         this.nodes = nodes;
         this.event = event;
     }
-
-    /** Called with each event of any node socket. */
-    protected abstract readonly onEvent: Listener;
 
     start(): void {
         for (const node of this.nodes) {

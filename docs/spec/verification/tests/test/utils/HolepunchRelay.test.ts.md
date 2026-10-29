@@ -14,7 +14,10 @@ close code and reason, which the close case reads back from the reason handed to
 socket that is already CLOSED when it is created makes the relay reject its opening with its own
 Error and no socket event; a close event alone, and a failure after disposal, are the other
 before-open cases. An unparsable URL and an https URL, each after a valid one, show that
-initialization rejects the configuration before any socket exists. A shared recorder from the
+initialization rejects the configuration before any socket exists. A fixture helper deletes
+`URL.canParse` from the global `URL` and restores it after: inside it, an unparsable URL still
+throws the configuration error with no socket, and a wss: plus ws: configuration initializes and
+opens its first socket. A shared recorder from the
 fixtures records each rejection nobody handled once.
 
 ## Tests
@@ -31,3 +34,4 @@ fixtures records each rejection nobody handled once.
 - `counts one failure when a socket closes before it opens with no error event`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P11, REQ-UPG-5-YQV7MJ.T1.P11
 - `a relay opening that fails after disposal neither counts a failure nor reconnects`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P12, REQ-UPG-5-YQV7MJ.T1.P12
 - `throws at initialization for an invalid relayer URL among valid ones, a configuration error, and opens no socket, counts no relay failure and retries nothing`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P13, REQ-UPG-5-YQV7MJ.T1.P13
+- `validates relayer URLs on an engine without URL.canParse`: UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P14

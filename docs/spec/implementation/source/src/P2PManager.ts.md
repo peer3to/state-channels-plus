@@ -75,8 +75,8 @@ Dispatch and correlation
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P44` — a participant checked while the initial sync request runs starts no second request; when the asked participant answers it is still syncing, the next request goes to the waiting participant at once, before the re-ask, and the observer reaches `SYNCED` without striking or cutting the syncing one
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P45` — a participant that keeps answering it is still syncing does not hold the deadline: the observer aborts at its initial-sync deadline, adopts nothing, and does not cut that participant
 - [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P46` — a still-syncing participant whose own initial sync then fails aborts and disconnects; a re-ask that reaches it fails, so the observer aborts at once, else at its deadline, adopting nothing
-- [ ] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47` — an initial sync request still running when the deadline ends holds it: no abort until the request answers, and the request keeps its own two-window timeout
-- [ ] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P48` — the first still-syncing answer from a participant restarts the two-window deadline; a later answer from the same participant does not
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47` — an initial sync request still running when the deadline ends holds it: no abort until the request answers, and the request keeps its own two-window timeout
+- [x] `UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P48` — the first still-syncing answer from a participant restarts the two-window deadline; a later answer from the same participant does not
 
 ## UNIT-TEST-P2P-MANAGER-2-HR5HCB
 

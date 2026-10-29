@@ -1,6 +1,6 @@
 import { createHostRpc } from "./ClientHostRpc";
 import type { SerializedContract, SetupPayload } from "./types";
-import type { EvmCustomPrecompileManifest } from "../EvmFactory";
+import type { EvmCustomPrecompileManifest } from "../EvmCustomPrecompiles";
 import P2pInstance from "../P2pInstance";
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import ClientChainSigner from "../signer/ClientChainSigner";

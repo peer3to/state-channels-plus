@@ -15,6 +15,7 @@ import {
     type SpectateSyncSettle
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { runHandshakeFailure } from "@test/fixtures/HandshakeFailureStaging";
+import { withObserverOfSyncingParticipant } from "@test/fixtures/MilestoneSyncStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import {
     clientRootFor,
@@ -937,6 +938,153 @@ describe("P2PManager", function () {
                     await Promise.all(releases.map((release) => release()));
                 }
             });
+        });
+
+        it("observer holds the initial deadline while a still-syncing answer is in flight, restarts it on that participant's first still-syncing answer only, and aborts at the restarted deadline", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withObserverOfSyncingParticipant(
+                h,
+                async ({ observer, responder }) => {
+                    const observerIndex = observer.index;
+                    // The first answer is parked after it is recorded: from
+                    // the observer's side its request is still running.
+                    const restoreSyncRecorder =
+                        await h.rpcStub.recordSpectateSync(observerIndex, {
+                            forward: true,
+                            holdResults: true
+                        });
+                    // recorded under the hold: running the held deadline
+                    // restores scheduling to the recorder
+                    const schedules =
+                        await h.rpcStub.recordScheduledTasks(observerIndex);
+                    const deadline = await h.rpcStub.holdScheduledTasks(
+                        observerIndex,
+                        INITIAL_SYNC_DEADLINE_TASK
+                    );
+                    let isDeadlineHeld = true;
+                    let isRecorderRestored = false;
+                    try {
+                        const connect =
+                            observer.p2pInstance.p2pSigner.connectToChannel(
+                                h.channelId
+                            );
+                        let settles: SpectateSyncSettle[] = [];
+                        await waitFor(async () => {
+                            settles =
+                                await h.rpcStub.spectateSyncSettles(
+                                    observerIndex
+                                );
+                            return (
+                                settles.length === 1 &&
+                                (await deadline.heldCount()) === 1
+                            );
+                        }, h.event.protocolEventTimeoutMs());
+                        expect(settles[0].result).to.equal(
+                            SyncResult.ResponderSyncing
+                        );
+                        // the request keeps its own two-window timeout
+                        expect(settles[0].requestTimeoutMs).to.equal(
+                            2 * 2 * 1000
+                        );
+
+                        // The deadline ends while that request runs: it is
+                        // held, no abort.
+                        expect(await deadline.runHeld()).to.deep.equal({
+                            ran: 1,
+                            errors: []
+                        });
+                        isDeadlineHeld = false;
+                        expect(
+                            await h.execOnHost(observer, async (sm) =>
+                                Boolean(sm.isDisposed)
+                            )
+                        ).to.equal(false);
+                        expect(
+                            await h
+                                .control(observer)
+                                .query.getStatus()
+                                .request()
+                        ).to.equal(Status.OPENED);
+                        expect(
+                            observer.eventSpies.onAbort?.called ?? false
+                        ).to.equal(false);
+
+                        // The first still-syncing answer lands: it restarts
+                        // the two-window deadline. Re-recording releases it
+                        // and keeps recording the re-asks unparked.
+                        await h.rpcStub.recordSpectateSync(observerIndex, {
+                            forward: true
+                        });
+                        // two later answers: the second re-ask is scheduled
+                        // only once the first later answer was handled
+                        await waitFor(async () => {
+                            settles =
+                                await h.rpcStub.spectateSyncSettles(
+                                    observerIndex
+                                );
+                            return settles.length >= 2;
+                        }, h.event.protocolEventTimeoutMs());
+                        expect(
+                            settles.every(
+                                (settle) =>
+                                    settle.result ===
+                                    SyncResult.ResponderSyncing
+                            )
+                        ).to.equal(true);
+                        // later answers from the same participant do not
+                        // restart it
+                        expect(
+                            (await schedules.tasks())
+                                .filter(
+                                    (task) =>
+                                        task.taskName ===
+                                        INITIAL_SYNC_DEADLINE_TASK
+                                )
+                                .map((task) => task.delayMs)
+                        ).to.deep.equal([2 * 2 * 1000]);
+                        const query = h.control(observer).query;
+                        expect(
+                            await query
+                                .isConnectedTo(responder.address)
+                                .request()
+                        ).to.equal(true);
+                        expect(
+                            await query.getStrikes(responder.address).request()
+                        ).to.equal(0);
+                        // The restarted deadline aborts the observer; its
+                        // disposal ends the control port, so restore first.
+                        await schedules.restore();
+                        await restoreSyncRecorder();
+                        isRecorderRestored = true;
+                        expect(await connect).to.equal(false);
+                        expect(observer.eventSpies.onAbort?.called).to.equal(
+                            true
+                        );
+                        expect(
+                            h.event.getEventCallCount(
+                                observerIndex,
+                                "onSetState"
+                            )
+                        ).to.equal(0);
+                    } finally {
+                        if (isDeadlineHeld) await deadline.release(false);
+                        if (!isRecorderRestored) {
+                            await schedules.restore();
+                            await restoreSyncRecorder();
+                        }
+                    }
+                }
+            );
         });
 
         it("observer connect resolves false when no participant handshake completes within the initial window", async function () {

@@ -10,12 +10,9 @@ import type { BlockHeight, ForkId, Hash } from "@/types/types";
 import { Codec, DetachedPromises, Logger, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import {
-    CONTRACT_ERROR_NAMES,
     type CustomEvmError,
-    type EvmErrorHandlers,
     isProvenSubmissionFailure,
-    tryDecodeCustomError,
-    tryHandleEvmError
+    tryDecodeCustomError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type {
@@ -24,8 +21,17 @@ import type {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { ContractTransactionResponse } from "ethers";
 
-/** A join or top-up submission the chain proved failed (see `isProvenSubmissionFailure`). */
-type SubmissionRefusal = { error: unknown; custom: CustomEvmError | null };
+/**
+ * A join or top-up submission the chain proved failed (see
+ * `isProvenSubmissionFailure`). `hasReplayPassed`: it was mined and reverted
+ * with no data, and its replay at the latest block passes, so the reason is
+ * unknown (another submission raced it) and the same submission can go again.
+ */
+type SubmissionRefusal = {
+    error: unknown;
+    custom: CustomEvmError | null;
+    hasReplayPassed: boolean;
+};
 
 /** One join or top-up submission. "uncertain": it may still land. */
 type SubmissionOutcome = "submitted" | "uncertain" | SubmissionRefusal;
@@ -71,9 +77,10 @@ export default class ChannelJoinService {
      * Submits a prepared join; a call while one runs gets the same promise.
      * A refusal that a fresh confirmation can win (the threshold set widened,
      * or the channel's on-chain snapshot moved to a stored one) is collected
-     * again with the same balance and submitted again, for each such refusal
-     * up to the channel's maximum participant count of retries; any other
-     * refusal, or one past that cap, is final. A refusal for a full channel
+     * again with the same balance and submitted again; a mined refusal whose
+     * replay passes is submitted again as it is. Each retry counts toward the
+     * channel's maximum participant count of retries; any other refusal, or
+     * one past that cap, is final. A refusal for a full channel
      * aborts the runtime: this route makes no full-channel read first.
      */
     public joinChannel(
@@ -213,12 +220,14 @@ export default class ChannelJoinService {
             // check already past a read stops at its next isActive check
             const refused = this.markJoinRetrying();
             if (
+                !outcome.hasReplayPassed &&
                 !(await this.shouldRetryWithFreshConfirmation(attempt, outcome))
             )
                 break;
-            const fresh = await this.prepareConfirmationAgain(
-                attempt.confirmation
-            );
+            // a refusal whose replay passes is submitted again as it is
+            const fresh = outcome.hasReplayPassed
+                ? attempt
+                : await this.prepareConfirmationAgain(attempt.confirmation);
             // the join ended or the runtime was disposed meanwhile: no
             // further funded submission
             if (sm.isDisposed || !refused || !this.isCurrent(refused))
@@ -253,12 +262,16 @@ export default class ChannelJoinService {
             typeof outcome === "object" &&
             !sm.isDisposed &&
             retries < sm.storage.queues.maxChannelParticipants &&
-            (await this.shouldRetryWithFreshConfirmation(attempt, outcome));
+            (outcome.hasReplayPassed ||
+                (await this.shouldRetryWithFreshConfirmation(
+                    attempt,
+                    outcome
+                )));
             retries++
         ) {
-            const fresh = await this.prepareConfirmationAgain(
-                attempt.confirmation
-            );
+            const fresh = outcome.hasReplayPassed
+                ? attempt
+                : await this.prepareConfirmationAgain(attempt.confirmation);
             if (!fresh || sm.isDisposed) return false;
             attempt = fresh;
             outcome = await this.submitTopUp(attempt);
@@ -349,8 +362,8 @@ export default class ChannelJoinService {
 
     /**
      * A failed join or top-up. One mined after another join landed reverts with
-     * no revert data: tryHandleEvmError replays it and names the refusal, or
-     * resubmits it when the replay passes.
+     * no revert data: a replay at the latest block names the refusal, or
+     * passes. Nothing is sent here; the caller's retry loop decides.
      */
     private async readOutcome(
         error: unknown,
@@ -359,22 +372,26 @@ export default class ChannelJoinService {
         const decoded = tryDecodeCustomError(error);
         // Replay only a mined failure; an unmined one may still land.
         if (!isProvenSubmissionFailure(error, decoded)) return "uncertain";
-        if (decoded || !tx) return { error, custom: decoded };
-        let refusal: CustomEvmError | null = null;
-        const handlers: EvmErrorHandlers = {};
-        for (const name of CONTRACT_ERROR_NAMES)
-            handlers[name] = (custom) => {
-                refusal = custom;
+        if (decoded || !tx)
+            return { error, custom: decoded, hasReplayPassed: false };
+        try {
+            await tx.provider.call({
+                to: tx.to,
+                from: tx.from,
+                data: tx.data,
+                value: tx.value
+            });
+        } catch (replayError) {
+            return {
+                error,
+                custom: tryDecodeCustomError(replayError),
+                hasReplayPassed: false
             };
-        const isHandled = await tryHandleEvmError(error, {
-            tx,
-            signer: this.stateManager.signer,
-            logger: this.logger,
-            handlers
-        });
-        // handled without a refusal: its resubmission landed
-        if (isHandled && !refusal) return "submitted";
-        return { error, custom: refusal };
+        }
+        this.logger.info(
+            "The mined submission reverted without data but its replay passes; it is submitted again"
+        );
+        return { error, custom: null, hasReplayPassed: true };
     }
 
     /**

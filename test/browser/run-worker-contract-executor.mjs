@@ -38,6 +38,9 @@ const UNPARSABLE_WORKER_SOURCE = "export const = ;";
 // the same, but the diagnostic fetch gets a longer script: the server changed it
 const CHANGED_WORKER_SCRIPT = "changed-worker-entry.js";
 const CHANGED_WORKER_SOURCE = "export const changed = true;";
+// the repeated-failure case's worker script that does not parse; its
+// requests are counted
+const REFAILED_WORKER_SCRIPT = "refailed-worker-entry.js";
 // the failure-log case's logger throws on purpose; the page reports it as uncaught
 const FAILURE_LOG_WRITE_ERROR = "browser worker failure log write failed";
 // the drain-warning case's logger throws on purpose; the page reports it as uncaught
@@ -91,15 +94,18 @@ async function storedChunks(logDir) {
     return chunks;
 }
 
+/** the decoded log entries of `chunks`, in chunk order */
+async function chunkEntries(chunks) {
+    const { decodeChunk } = require("../../scripts/logging/logChunks.js");
+    const entries = [];
+    for (const chunk of chunks)
+        entries.push(...decodeChunk(await fs.readFile(chunk.file, "utf8")));
+    return entries;
+}
+
 /** the decoded log messages of `chunks`, in chunk order */
 async function chunkMessages(chunks) {
-    const { decodeChunk } = require("../../scripts/logging/logChunks.js");
-    const messages = [];
-    for (const chunk of chunks) {
-        for (const entry of decodeChunk(await fs.readFile(chunk.file, "utf8")))
-            messages.push(entry.message);
-    }
-    return messages;
+    return (await chunkEntries(chunks)).map((entry) => entry.message);
 }
 
 async function waitForStoredThreads(logDir, threadNames, timeoutMs, channelId) {
@@ -196,6 +202,15 @@ try {
                     : CHANGED_WORKER_SOURCE
         })
     );
+
+    let refailedWorkerRequests = 0;
+    await page.route(`**/${REFAILED_WORKER_SCRIPT}`, (route) => {
+        refailedWorkerRequests++;
+        return route.fulfill({
+            contentType: "text/javascript",
+            body: UNPARSABLE_WORKER_SOURCE
+        });
+    });
 
     await page.goto(`${origin}/test/browser/index.html`, {
         waitUntil: "networkidle"
@@ -585,7 +600,8 @@ try {
             changed,
             changedUrl,
             throwing,
-            throwingUrl
+            throwingUrl,
+            windowErrors
         } = await runSmoke("runWorkerLoadFailureBrowserSmoke");
         assert.equal(
             missing.message,
@@ -669,6 +685,111 @@ try {
         );
         assert.equal(throwingLog.meta.workerUrl, throwingUrl);
         assert.equal("fetched" in throwingLog.meta, false);
+        // The owner handled every failure: none reached the page's window.
+        assert.deepEqual(windowErrors, []);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker root whose host reports an ErrorEvent with no message fails with that event's position", async () => {
+        const { idleUrl, message, logs } = await runSmoke(
+            "runWorkerEmptyErrorEventBrowserSmoke"
+        );
+        assert.equal(
+            message,
+            `Root worker failed with no error message (${idleUrl}:1:1)`
+        );
+        assert.equal(logs.length, 1, JSON.stringify(logs));
+        const [log] = logs;
+        assert.equal(log.level, "error");
+        assert.equal(log.meta.eventType, "ErrorEvent");
+        assert.equal(log.meta.message, "");
+        assert.equal(log.meta.filename, idleUrl);
+        assert.equal(log.meta.lineno, 1);
+        assert.equal(log.meta.colno, 1);
+        assert.equal("fetched" in log.meta, false);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker root whose load failure is reported twice fetches its script once and fails and logs once", async () => {
+        const workerUrl = `${origin}/test/browser/${REFAILED_WORKER_SCRIPT}`;
+        refailedWorkerRequests = 0;
+        const { message, failures, redispatchedBeforeFetchEnded, logs } =
+            await runSmoke("runWorkerRepeatedLoadFailureBrowserSmoke", [
+                workerUrl
+            ]);
+        // Both bare events reached the worker, the second one while the
+        // diagnostic fetch the first one started was still running.
+        assert.equal(failures, 2);
+        assert.equal(redispatchedBeforeFetchEnded, true);
+        // The browser's load of the script and one diagnostic fetch.
+        assert.equal(refailedWorkerRequests, 2);
+        const bytes = UNPARSABLE_WORKER_SOURCE.length;
+        assert.equal(
+            message,
+            `Root worker script failed to parse or link (the browser received HTTP 200, ${bytes} bytes; a fetch now returns HTTP 200, ${bytes} bytes): ${workerUrl}`
+        );
+        assert.equal(logs.length, 1, JSON.stringify(logs));
+        assert.equal(logs[0].level, "error");
+        assert.equal(logs[0].meta.eventType, "Event");
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker root disposed after its owner saw it fail is terminated without the drain wait", async () => {
+        const {
+            disposeMs,
+            flushMs,
+            failureMessage,
+            observed,
+            failures,
+            warnings
+        } = await runSmoke("runFailedWorkerDisposalBrowserSmoke", [
+            crashLogServer.uploadEndpoint,
+            `0x${"66".repeat(32)}`
+        ]);
+        assert.equal(failures.length, 1, JSON.stringify(failures));
+        assert.equal(failures[0].meta.message, failureMessage);
+        assert.equal(observed.length, 1, JSON.stringify(observed));
+        assert.ok(observed[0].includes(failureMessage), observed[0]);
+        // The worker's upload waits far past the drain bound (flush + 1s);
+        // only a skipped drain ends the disposal before the flush bound.
+        assert.ok(disposeMs < flushMs, `disposal took ${disposeMs}ms`);
+        assert.deepEqual(warnings, []);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker root whose startup fails uploads its error-level startup line with the WebAssembly diagnostics before its creation rejects", async () => {
+        const { message, creationMs, flushMs, uploadJitterMs, threadName } =
+            await runSmoke("runWorkerStartupFailureBrowserSmoke", [
+                crashLogServer.uploadEndpoint
+            ]);
+        assert.equal(message, "unreachable");
+        // The worker waited for its pinned upload jitter, within the flush bound.
+        assert.ok(
+            creationMs >= uploadJitterMs,
+            `creation took ${creationMs}ms`
+        );
+        assert.ok(creationMs < flushMs, `creation took ${creationMs}ms`);
+        // No wait: the creation rejected, so the upload already reached the receiver.
+        const entries = await chunkEntries(
+            (await storedChunks(crashLogServer.logDir)).filter(
+                (chunk) => chunk.threadName === threadName
+            )
+        );
+        const startup = entries.filter(
+            (entry) => entry.message === "Root worker startup failed"
+        );
+        assert.equal(
+            startup.length,
+            1,
+            `stored: ${entries.map((entry) => entry.message).join(" | ")}`
+        );
+        assert.equal(startup[0].level, "error");
+        const { wasm } = startup[0].meta[0];
+        assert.equal(wasm.resources.thread, threadName);
+        assert.ok(wasm.resources.wasmInstancesCreated >= 1);
+        assert.equal(typeof wasm.probe.canCreate, "boolean");
+        assert.equal(typeof wasm.probe.canGrow16MiB, "boolean");
+        assert.equal(typeof wasm.environment.userAgent, "string");
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 

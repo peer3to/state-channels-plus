@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: precompile module and manifests the worker suites load; the suites own the declarations
-import type { EvmCustomPrecompileContext } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileContext } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { PrecompileInput } from "@ethereumjs/evm";
 import { ethers } from "ethers";

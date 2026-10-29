@@ -1,3 +1,4 @@
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import {
     MathTestSession as TestSession,
@@ -169,6 +170,87 @@ describe("E2E: spectating strategy junk-block handling", function () {
             target: attacker,
             expectedStatus: Status.SYNCED
         });
+    });
+
+    it("cuts the sender of an authenticated outsider-authored block that answers it is still in its own initial sync with one counted close and keeps a SYNCED spectator running", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        // the attacker's own initial sync is held at its install, so it
+        // stays OPENED and answers every sync request that it is still syncing
+        const { peer: attacker } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false,
+            beforeConnect: async (peer) => {
+                await h.control(peer).stub.holdSyncInstall().request();
+            }
+        });
+        const attackerStub = h.control(attacker).stub;
+        const restoreSyncRecorder = await h.rpcStub.recordSpectateSync(
+            victim.index,
+            { forward: true }
+        );
+        try {
+            await h.connectionBarrier.waitFor(
+                async () =>
+                    (await attackerStub.getSyncInstallEntered().request()) ===
+                        1 &&
+                    (await h
+                        .control(attacker)
+                        .query.isConnectedTo(victim.address)
+                        .request()),
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs(),
+                    timeoutMessage:
+                        "attacker never held its sync install while connected to victim"
+                }
+            );
+            expect(
+                await h.control(attacker).query.getStatus().request()
+            ).to.equal(Status.OPENED);
+
+            // the absent sender is asked to prove its block and answers it
+            // is still syncing: it has no block to send -> one counted close
+            const { encodedBlockConfirmation } =
+                await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                    0,
+                    forkId,
+                    attacker.signer
+                );
+            await h
+                .control(attacker)
+                .byzantine.sendBlockConfirmation(
+                    encodedBlockConfirmation,
+                    victim.address
+                )
+                .request();
+
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: victim,
+                target: attacker,
+                expectedStrikes: 1,
+                expectedStatus: Status.SYNCED
+            });
+            expect(
+                (await h.rpcStub.spectateSyncSettles(victim.index)).map(
+                    (settle) => settle.result
+                )
+            ).to.deep.equal([SyncResult.ResponderSyncing]);
+            expect(
+                await h.control(attacker).query.getStatus().request()
+            ).to.equal(Status.OPENED);
+        } finally {
+            await restoreSyncRecorder();
+            await attackerStub.releaseSyncInstall().request();
+        }
     });
 
     // supplier != author. every other case here has the attacker author the

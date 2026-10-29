@@ -946,7 +946,7 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(2),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService.sync(
+                await sm.p2pManager.localRpc.spectateService.requestSync(
                     args.offender,
                     sm.channelId
                 );
@@ -974,7 +974,7 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(0),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService.sync(
+                await sm.p2pManager.localRpc.spectateService.requestSync(
                     args.offender,
                     sm.channelId
                 );

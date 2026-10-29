@@ -16,6 +16,16 @@ count of the state manager's trie database (the account trie and every storage t
 first call and after the last, and asserts the two are equal. Without node pruning the count grows with
 every call.
 
+The two pruning-safety cases use the same slot writer through the
+[SlotWriterEvm fixture](../../../../../../test/fixtures/SlotWriterEvmFixture.ts) and read slots through a
+shallow copy of the EVM's state manager with empty caches, set to the current state root, so only the trie
+database answers. The identical-storage case puts the code at two addresses, writes the same random words to
+both, rewrites the first five times, then asserts the second reads back the shared words, writes new words
+without an exception and reads those back. With `prefixStorageTrieKeys` removed it fails: the second contract
+reads all zeros. The revert case commits one write, records the state root, then runs a rewrite between
+`evm.journal.checkpoint()` and `evm.journal.revert()`, as `ContractExecutor` simulation does, and asserts the
+state root and every slot are the committed ones.
+
 The other cases create real SDK-owned contract executors ([ExecutorOwnerFixture](../../../../../../test/fixtures/node/ExecutorOwnerFixture.ts))
 whose manifest loads [RuntimeValuePrecompile](../../../../../../test/fixtures/node/RuntimeValuePrecompile.ts).
 That factory throws unless its context owner is the executor root, creates a real SDK probe worker child
@@ -50,6 +60,8 @@ caching are out of scope.
 
 - `should execute custom precompiles without disabling the built-in console precompile`: UNIT-TEST-EVM-FACTORY-1-002C8D.P3
 - `keeps the trie database the same size while calls rewrite the same storage slots`: UNIT-TEST-EVM-FACTORY-1-002C8D.P4
+- `keeps a contract's storage intact while another contract with identical storage rewrites its slots`: UNIT-TEST-EVM-FACTORY-1-002C8D.P5
+- `keeps the state root and every slot when a checkpointed call that rewrites the slots is reverted`: UNIT-TEST-EVM-FACTORY-1-002C8D.P6
 - `gives a manifest precompile its inline executor root during startup and releases its child with that executor`: UNIT-TEST-EVM-FACTORY-1-002C8D.P1, REQ-RUNTIME-3-VQXW59.T1.P71
 - `gives a manifest precompile its worker executor root during startup`: UNIT-TEST-EVM-FACTORY-1-002C8D.P2, REQ-RUNTIME-3-VQXW59.T1.P72
 - `finishes an admitted precompile call and queued deploy and simulation before disposing the precompile child`: UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P1, REQ-RUNTIME-3-VQXW59.T1.P73

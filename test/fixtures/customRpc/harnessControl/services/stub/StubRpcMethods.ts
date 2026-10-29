@@ -3546,7 +3546,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Record each `spectateService.requestSync` call (`sync` calls it too)
+     * Record each `spectateService.requestSync` call (`syncBlockSource`
+     * calls it too)
      * and its selected peer. A
      * forwarded call also records its start, settle time, result and the
      * timeout of the request it started; with
@@ -3583,7 +3584,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         const runSync = this.service.stubOriginals.get("spectateRunSync") as (
             ...args: unknown[]
-        ) => Promise<boolean>;
+        ) => Promise<SyncResult>;
         let requestTimeoutMs: number | undefined;
         Reflect.set(spectate, "runSync", (...args: unknown[]) => {
             requestTimeoutMs = args[2] as number;
@@ -3770,8 +3771,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public holdFirstJoinSendAfterEstimate(): boolean {
-        this.service.holdFirstJoinSendAfterEstimate();
+    public holdFirstJoinSendAfterEstimate(
+        kind?: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.holdFirstJoinSendAfterEstimate(kind);
         return true;
     }
 
@@ -3998,12 +4001,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getInitHandshakeCallCount();
     }
 
-    /** Fail `kind` submissions with a failed receipt (only the first with `once`); counted, never held. */
+    /** Fail `kind` submissions with a failed receipt (only the first with `once`; a passing replay with `isReplayPassing`); counted, never held. */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
-        once?: boolean
+        once?: boolean,
+        isReplayPassing?: boolean
     ): boolean {
-        this.service.failMembershipReceipt(kind, once);
+        this.service.failMembershipReceipt(kind, once, isReplayPassing);
         return true;
     }
 

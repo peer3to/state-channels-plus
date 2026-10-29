@@ -304,7 +304,8 @@ globalThis.runWorkerRootBootstrapBrowserSmoke = async () => {
 // the runner aborts (its diagnostic fetch fails too), one fails to parse, one
 // fails to parse and then changes on the server, one throws at top level.
 // Each creation rejects; the page returns the error message and the owner's
-// "Root worker failed" log lines.
+// "Root worker failed" log lines, and every `error` event the page's window
+// received meanwhile: a failure the owner left unhandled reaches it.
 globalThis.runWorkerLoadFailureBrowserSmoke = async () => {
     const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
     const { ContractExecutorRoot } = await import(
@@ -363,6 +364,9 @@ globalThis.runWorkerLoadFailureBrowserSmoke = async () => {
             type: "text/javascript"
         })
     );
+    const windowErrors = [];
+    const onWindowError = (event) => windowErrors.push(event.message);
+    globalThis.addEventListener("error", onWindowError, { capture: true });
     try {
         return {
             missingUrl,
@@ -374,9 +378,13 @@ globalThis.runWorkerLoadFailureBrowserSmoke = async () => {
             changedUrl,
             changed: await failure(changedUrl),
             throwingUrl,
-            throwing: await failure(throwingUrl)
+            throwing: await failure(throwingUrl),
+            windowErrors
         };
     } finally {
+        globalThis.removeEventListener("error", onWindowError, {
+            capture: true
+        });
         URL.revokeObjectURL(throwingUrl);
     }
 };
@@ -631,5 +639,295 @@ globalThis.runWorkerFailureLogThrowBrowserSmoke = async () => {
         globalThis.removeEventListener("error", onReported);
         URL.revokeObjectURL(throwingUrl);
         logger.dispose();
+    }
+};
+
+// Runs `operation` while every Worker this page creates is recorded;
+// `onCreated` sees each one in its constructor, before the SDK installs its
+// own `onerror`. The page's Worker is restored after.
+async function withRecordedWorkers(operation, onCreated = () => {}) {
+    const PageWorker = globalThis.Worker;
+    const workers = [];
+    globalThis.Worker = class RecordedWorker extends PageWorker {
+        constructor(url, options) {
+            super(url, options);
+            workers.push(this);
+            onCreated(this);
+        }
+    };
+    try {
+        return await operation(workers);
+    } finally {
+        globalThis.Worker = PageWorker;
+    }
+}
+
+// A logger whose store the page reads back, as the load-failure case uses.
+async function createStoredLogger() {
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const store = new LogStore(1024 * 1024, true);
+    const logger = new BrowserLogger(
+        {},
+        {},
+        "verbose",
+        store,
+        { attachErrorListener: false },
+        true
+    );
+    const linesOf = (message) =>
+        store
+            .getAllLogs()
+            .filter((entry) => entry.message === message)
+            .map((entry) => ({ level: entry.level, meta: entry.meta[0] }));
+    return { logger, linesOf };
+}
+
+// A browser worker root that never starts gets an `ErrorEvent` with no
+// message from its host: the creation rejects with the position alone.
+globalThis.runWorkerEmptyErrorEventBrowserSmoke = async () => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { logger, linesOf } = await createStoredLogger();
+    const idleUrl = URL.createObjectURL(
+        new Blob([""], { type: "text/javascript" })
+    );
+    try {
+        return await withRecordedWorkers(async (workers) => {
+            const creation = createRoot(ContractExecutorRoot, {
+                mode: "worker",
+                workerUrl: idleUrl,
+                args: { customPrecompiles: [] },
+                logger
+            }).then(
+                async (handle) => {
+                    await handle.dispose();
+                    return "created";
+                },
+                (error) => error.message
+            );
+            await waitForPlain(() => workers.length === 1, 15_000, 10);
+            workers[0].dispatchEvent(
+                new ErrorEvent("error", {
+                    message: "",
+                    filename: idleUrl,
+                    lineno: 1,
+                    colno: 1,
+                    cancelable: true
+                })
+            );
+            return {
+                idleUrl,
+                message: await creation,
+                logs: linesOf("Root worker failed")
+            };
+        });
+    } finally {
+        URL.revokeObjectURL(idleUrl);
+        logger.dispose();
+    }
+};
+
+// How long the page waits, once the first diagnostic fetch completed (its
+// "Root worker failed" line is written), for a second diagnostic fetch or
+// failure line that must not come. A repeated report would fetch at once.
+const REPEATED_FAILURE_ABSENCE_MS = 500;
+
+// A browser worker root whose script fails to parse; right after the host's
+// bare `error` event, and before the diagnostic fetch it started completes,
+// the page dispatches a second bare `error` event on the same worker.
+globalThis.runWorkerRepeatedLoadFailureBrowserSmoke = async (workerUrl) => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { logger, linesOf } = await createStoredLogger();
+    let redispatchedBeforeFetchEnded;
+    let failures = 0;
+    // Registered before the SDK's `onerror`, so it runs first on the host's
+    // event; the second event goes out once that handler has returned.
+    const repeatFirstFailure = (worker) => {
+        worker.addEventListener("error", (event) => {
+            if (event instanceof ErrorEvent) return;
+            failures++;
+            if (failures !== 1) return;
+            setTimeout(() => {
+                redispatchedBeforeFetchEnded =
+                    linesOf("Root worker failed").length === 0;
+                worker.dispatchEvent(new Event("error", { cancelable: true }));
+            }, 0);
+        });
+    };
+    try {
+        return await withRecordedWorkers(async () => {
+            const message = await createRoot(ContractExecutorRoot, {
+                mode: "worker",
+                workerUrl,
+                args: { customPrecompiles: [] },
+                logger
+            }).then(
+                async (handle) => {
+                    await handle.dispose();
+                    return "created";
+                },
+                (error) => error.message
+            );
+            await waitForPlain(
+                () => linesOf("Root worker failed").length >= 1,
+                15_000,
+                10
+            );
+            await new Promise((resolve) =>
+                setTimeout(resolve, REPEATED_FAILURE_ABSENCE_MS)
+            );
+            return {
+                message,
+                failures,
+                redispatchedBeforeFetchEnded,
+                logs: linesOf("Root worker failed")
+            };
+        }, repeatFirstFailure);
+    } finally {
+        logger.dispose();
+    }
+};
+
+// The parent's flush bound for the failed-worker disposal case, as in the
+// drain-timeout case: the child's upload waits far longer than the parent's
+// drain bound, so only a skipped drain ends the disposal before that bound.
+// The bound stays below the pinned jitter, which must outlast the drain bound
+// (flush + 1s).
+const FAILED_WORKER_FLUSH_MS = 5_000;
+const FAILED_WORKER_UPLOAD_JITTER_MS = 10_000;
+
+// A ready browser worker root with an upload still pending gets a runtime
+// `ErrorEvent` from its host, then is disposed: the owner saw it fail, so the
+// disposal stops it without the drain wait.
+globalThis.runFailedWorkerDisposalBrowserSmoke = async (
+    uploadEndpoint,
+    channelId
+) => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { LoggerProbeExecutorRoot } = await import(
+        "../fixtures/workerRoot/LoggerProbeExecutorRoot.ts"
+    );
+    const { applyCrashLogConfig } = await import(
+        "../fixtures/logging/crashLogConfig.ts"
+    );
+    const restoreConfig = applyCrashLogConfig({
+        CRASH_LOG_UPLOAD_ENDPOINT: uploadEndpoint
+    });
+    const { logger, linesOf } = await createStoredLogger();
+    const failureMessage = "browser worker failure after ready";
+    try {
+        return await withRecordedWorkers(async (workers) => {
+            const handle = await createRoot(LoggerProbeExecutorRoot, {
+                mode: "worker",
+                workerUrl: new URL(
+                    "../fixtures/workerRoot/NamedLoggerProbeRootEntry.ts",
+                    import.meta.url
+                ),
+                args: { customPrecompiles: [] },
+                logger
+            });
+            const observed = [];
+            handle.onError((error) => observed.push(error.message));
+            let disposeMs;
+            let restoreFlush = () => {};
+            try {
+                await handle.rpc.loggerProbe
+                    .updateContext({ channelId })
+                    .request();
+                await handle.rpc.loggerProbe
+                    .pinUploadJitter(FAILED_WORKER_UPLOAD_JITTER_MS)
+                    .request();
+                await handle.rpc.loggerProbe
+                    .error("browser failed worker pending line")
+                    .request();
+                restoreFlush = applyCrashLogConfig({
+                    CRASH_LOG_FLUSH_MS: FAILED_WORKER_FLUSH_MS
+                });
+                workers[0].dispatchEvent(
+                    new ErrorEvent("error", {
+                        message: failureMessage,
+                        filename: workers[0].url,
+                        lineno: 1,
+                        colno: 1,
+                        cancelable: true
+                    })
+                );
+            } finally {
+                const startedAt = Date.now();
+                await handle.dispose();
+                disposeMs = Date.now() - startedAt;
+                restoreFlush();
+            }
+            return {
+                disposeMs,
+                flushMs: FAILED_WORKER_FLUSH_MS,
+                failureMessage,
+                observed,
+                failures: linesOf("Root worker failed"),
+                warnings: linesOf(
+                    "Root worker did not close within the log flush bound; terminating it"
+                )
+            };
+        });
+    } finally {
+        logger.dispose();
+        restoreConfig();
+    }
+};
+
+// A parentless browser worker root whose start throws a real WebAssembly
+// trap after its logger exists, with its upload jitter pinned: the creation
+// rejects only after the worker's error-level startup line was uploaded.
+globalThis.runWorkerStartupFailureBrowserSmoke = async (uploadEndpoint) => {
+    const { createRoot } = await import("../../src/rpc/internal/createRoot.ts");
+    const { ContractExecutorRoot } = await import(
+        "../../src/rpc/internal/roots/ContractExecutorRoot.ts"
+    );
+    const { config } = await import("../../src/utils/config.ts");
+    const { applyCrashLogConfig } = await import(
+        "../fixtures/logging/crashLogConfig.ts"
+    );
+    const { STARTUP_TRAP_THREAD, STARTUP_TRAP_UPLOAD_JITTER_MS } = await import(
+        "../fixtures/workerRoot/StartupTrapRoot.ts"
+    );
+    // The error lines are stored and uploaded, not written to the console:
+    // the gate fails on any other console error.
+    const restoreConfig = applyCrashLogConfig({
+        CRASH_LOG_UPLOAD_ENDPOINT: uploadEndpoint,
+        LOG_SKIP_WRITING: true
+    });
+    try {
+        const startedAt = Date.now();
+        const message = await createRoot(ContractExecutorRoot, {
+            mode: "worker",
+            workerUrl: new URL(
+                "../fixtures/workerRoot/StartupTrapRootEntry.ts",
+                import.meta.url
+            ),
+            args: { customPrecompiles: [] }
+        }).then(
+            async (handle) => {
+                await handle.dispose();
+                return "created";
+            },
+            (error) => error.message
+        );
+        return {
+            message,
+            creationMs: Date.now() - startedAt,
+            flushMs: config.CRASH_LOG_FLUSH_MS,
+            uploadJitterMs: STARTUP_TRAP_UPLOAD_JITTER_MS,
+            threadName: STARTUP_TRAP_THREAD
+        };
+    } finally {
+        restoreConfig();
     }
 };

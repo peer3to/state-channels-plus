@@ -9,7 +9,7 @@
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-  Contradicts: a local reduction out-of-gas in `sync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
+  Contradicts: a local reduction out-of-gas in `requestSync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
   Contradicts: `generateSyncPayload` cuts the latest-fork outbound run at the responder's own anchor while `applySyncResponse` verifies it from the requester's chain read, so a requester whose provider lags rejects and blacklists an honest responder; likewise `applySyncResponse` rejects a served window as "dispute window not on chain" when the requester's provider lags the responder's dispute commit ([`FIND-SYNC-5-7W9TWW`](../../../../../../../audit/open-findings.md#find-sync-5-7w9tww)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
@@ -28,8 +28,8 @@
 
 Requester verification chain
 
-- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles; a responder that answers it is still in its own initial sync
-- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays; a still-syncing answer is `SyncResult.ResponderSyncing` from `requestSync` and `false` from `sync`, with no close, strike or blacklist
+- Setup: Serve payloads with each element individually forged; alter echoes; force each abort step and snapshot race; both requester roles; a responder that answers it is still in its own initial sync, alone or to a `requestSync` caller and `syncBlockSource` callers sharing one request
+- Oracle: Every forgery aborts at its step with role-correct consequences; echoes ignored; no transaction ever sent; valid payload adopts and replays; a still-syncing answer is `SyncResult.ResponderSyncing` from `requestSync` with no close, strike or blacklist, and `false` from `syncBlockSource` with one counted close (allow-retry, no blacklist) per answer however many block-source callers share it
 
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P1` — forged dispute window
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P2` — altered echo ignored
@@ -139,7 +139,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — the P111 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted and none of the forged inputs is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — the P111 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond first: the sync is accepted and none of the forged inputs is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a sync call with no explicit timeout gets a request deadline of two agreement windows: a responder that does not answer in time fails it only after two windows
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — a responder that answers it is still in its own initial sync: `sync` returns false at once, the requester keeps the connection with no strike, and neither side blacklists the other
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — a responder that answers it is still in its own initial sync: `requestSync` returns `SyncResult.ResponderSyncing` at once, the requester keeps the connection with no strike, and neither side blacklists the other
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — one still-syncing answer shared by a `requestSync` caller and three `syncBlockSource` callers: one request, `requestSync` returns `SyncResult.ResponderSyncing`, every `syncBlockSource` returns false, and the requester counts one strike with no blacklist
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

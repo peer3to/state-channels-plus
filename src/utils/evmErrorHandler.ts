@@ -13,13 +13,6 @@ export type ContractErrorName =
     | "Error"
     | "Panic";
 
-/** Every name `tryDecodeCustomError` can decode. */
-export const CONTRACT_ERROR_NAMES: readonly ContractErrorName[] = [
-    ...errorAbis.map(({ name }) => name),
-    "Error",
-    "Panic"
-];
-
 export type RaceConditionErrorName = Extract<
     ContractErrorName,
     | `RaceCondition${string}`

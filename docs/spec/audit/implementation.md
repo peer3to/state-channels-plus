@@ -3,6 +3,28 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Block intake: a still-syncing source takes a counted close — 2026-10-29
+
+What changed: commit `dd162f81` narrowed the 2026-10-26 rule "the requester does not count that as a
+failed sync" (see "Still-syncing responder answers at once" below) for block intake. Luka's decision A
+(2026-10-29, decided during the PR #579 merge): a block's absent sender, or a queued block's source, that answers it
+is still syncing takes a counted close at intake, because a peer still in its own initial sync has no
+block to send. Luka's decision TO1-a (2026-10-29, PR #579 review): one still-syncing answer counts one
+strike, like a failed request, however many intake callers share it.
+
+1. [SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md):
+   `syncBlockSource` is the intake and source-probe sync. It counts its waiting callers per peer, and
+   `requestAndApply` gives a still-syncing answer one allow-retry close (no blacklist) when a
+   block-source caller waits for it. `requestSync` callers alone get no consequence. `sync` is deleted;
+   its callers use `requestSync`. `SyncOutcome.isResponderSyncing` is gone: `requestAndApply` returns
+   `SyncResult.ResponderSyncing` for that answer.
+2. Spec: [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
+   and the failure-outcome table in [synchronization.md](../specification/peer-communication/synchronization.md)
+   state the intake exception with one counted close per answer.
+3. New cases: [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)
+   (shared answer, one strike), [`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P60`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2)
+   (absent-sender gate) and `.P61` (expiry probe).
+
 ## Early targeted cancel, bounded stats read, strict bridge close — 2026-10-28
 
 What changed (Luka's review decisions 1, 3 and 8; decisions 4 and 7 are recorded as findings, 2, 5
@@ -141,15 +163,16 @@ participant still in its own initial sync waited for that sync, timed out after 
 did-not-sync; the page then excluded a healthy table. Luka chose option a: "A peer that is still in its own
 initial sync answers a sync request at once with 'not synced yet', and does not wait. The requester does
 not count that as a failed sync: it syncs from another table member instead. A real sync failure still
-aborts at once, as today."
+aborts at once, as today." Narrowed for block intake on 2026-10-29: see "Block intake: a still-syncing
+source takes a counted close" above.
 
 1. [SpectateRpcMethods.ts](../implementation/source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md)
    `onSpectateRequest`: an OPENED responder returns `{ isResponderSyncing: true }` at once. It no longer
    waits on its own initial sync, and the "own initial sync failed" refusal is gone.
 2. [SpectateService.ts](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md):
    `SpectateResponse` is the payload or the syncing note; `requestSync` returns `SyncResult` (`Synced`,
-   `Failed`, `ResponderSyncing`). `sync` keeps its boolean for other callers: a syncing responder gives
-   `false` with no disconnect and no strike.
+   `Failed`, `ResponderSyncing`). A syncing responder gives no disconnect and no strike (narrowed for
+   block intake on 2026-10-29).
 3. [P2PManager.ts](../implementation/source/src/P2PManager.ts.md) initial sync: `syncConnectedParticipant`
    records participants checked while a request runs in `waitingParticipants`. On `ResponderSyncing`,
    `onResponderSyncing` does not abort, syncs from the waiting participants, and asks the syncing peer again
@@ -255,10 +278,11 @@ these diagnostics only; no change to the slot count, self-matching, or the numbe
 The logs now carry the user agent and, where the browser gives them, the device model and
 platform version. They go only to the configured log endpoint, as every log line does.
 
-Untested cases stay open: `.P5` and `.P6` of the new family (`instantiateStreaming`, a failing
-probe), `.P6` of [`UNIT-TEST-REMOTE-ROOT-1-7D9JVE`](../implementation/source/src/rpc/internal/RemoteRoot.ts.md#unit-test-remote-root-1-7d9jve), and `.P42` of
-[`UNIT-TEST-ROOT-CREATION-1-1NWN3V`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v) with [`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6).
-Assessment: the reports match the code.
+The cases left untested here have tests since 2026-10-29 (PR #579 review): `.P5` and `.P6` of the
+new family (`instantiateStreaming`, a refused probe grow), `.P6` of
+[`UNIT-TEST-REMOTE-ROOT-1-7D9JVE`](../implementation/source/src/rpc/internal/RemoteRoot.ts.md#unit-test-remote-root-1-7d9jve), and `.P42` of
+[`UNIT-TEST-ROOT-CREATION-1-1NWN3V`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v) with [`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6); see
+[the verification assessment](verification.md). Assessment: the reports match the code.
 
 ## Application chain access, local join-signature answers, closed-transport frames — 2026-10-26
 
@@ -294,8 +318,9 @@ The exported entry's startup failure
 ([`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13`](../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw)) and the 128-block bound
 ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P18`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5)) now have tests in
 [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md); each failed with the code
-temporarily broken and passed with it restored. The untested case that stays open is the WebRTC closed-transport early return
-([`UNIT-TEST-WEBRTC-TRANSPORT-1-XEP60P.P6`](../implementation/source/src/transport/WebRTCTransport.ts.md#unit-test-webrtc-transport-1-xep60p)).
+temporarily broken and passed with it restored. The WebRTC closed-transport early return
+([`UNIT-TEST-WEBRTC-TRANSPORT-1-XEP60P.P6`](../implementation/source/src/transport/WebRTCTransport.ts.md#unit-test-webrtc-transport-1-xep60p)) now has a test in
+[WebRTCTransport.test.ts](../verification/tests/test/utils/WebRTCTransport.test.ts.md); it failed with the early return removed.
 
 Recorded today without a code change: the stale-proof blacklist of an honest sync responder
 ([`FIND-SYNC-7-SHT5K7`](open-findings.md#find-sync-7-sht5k7)), the duplicate probe sync during an initial sync
@@ -333,12 +358,11 @@ decision there: "The SDK spectate sync waits two agreement times before it gives
    [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0),
    [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1).
 
-Untested cases stay open: an `ErrorEvent` with no message
-([`REQ-RUNTIME-8-M3ENFM.T1.P6`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6)), a repeated load or parse failure event after the fetch started
-([`REQ-RUNTIME-8-M3ENFM.T1.P7`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7)), the drain of a worker that already failed
+The cases left untested here have browser gate tests since 2026-10-29 (PR #579 review): an `ErrorEvent`
+with no message ([`REQ-RUNTIME-8-M3ENFM.T1.P6`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6)), a repeated load or parse failure event after the fetch
+started ([`REQ-RUNTIME-8-M3ENFM.T1.P7`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7)), the drain of a worker that already failed
 ([`REQ-RUNTIME-7-A2VAR0.T1.P15`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p15)), and the host not reporting a handled failure event as an uncaught
-error ([`REQ-RUNTIME-8-M3ENFM.T1.P8`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p8)). The first three also stay open as browser root worker cases in the file
-report.
+error ([`REQ-RUNTIME-8-M3ENFM.T1.P8`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p8)); see [the verification assessment](verification.md).
 
 Separate gap fill: [StepTimer.ts](../implementation/source/src/utils/StepTimer.ts.md) and
 [EvmCustomPrecompiles.ts](../implementation/source/src/evm/EvmCustomPrecompiles.ts.md) came with HEAD `6bf307f32`

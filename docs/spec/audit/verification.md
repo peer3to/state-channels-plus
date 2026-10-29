@@ -11,6 +11,30 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
+
+PR #579 review cards TO4, TO5, TY2 and TY3.
+[ThreadResources.test.ts](../verification/tests/test/utils/ThreadResources.test.ts.md) gains two declarations:
+`instantiateStreaming` from a `Response` counts one instance and one memory
+([`UNIT-TEST-THREAD-RESOURCES-1-AY7843`](../implementation/source/src/utils/threadResources.ts.md#unit-test-thread-resources-1-ay7843) `.P5`), and a fresh `worker_threads` worker whose
+`WebAssembly.Memory` refuses to grow before the SDK loads reports `canGrow16MiB: false` with the error, with
+one probe shared by two traps (`.P6`).
+[RuntimeLifecycle.test.ts](../verification/tests/test/rpc/RuntimeLifecycle.test.ts.md) gains one declaration: a child
+failure with a pending request logs `resources`, and `wasm` only for a trap restored from the wire
+([`UNIT-TEST-REMOTE-ROOT-1-7D9JVE`](../implementation/source/src/rpc/internal/RemoteRoot.ts.md#unit-test-remote-root-1-7d9jve) `.P6`).
+The [browser worker gate](../verification/tests/test/browser/run-worker-contract-executor.mjs.md) gains four
+declarations in real Chromium: an `ErrorEvent` with no message, a second bare `error` event during the
+diagnostic fetch, the disposal of a ready worker the owner saw fail, and a worker whose startup throws a real
+trap and uploads its error line, with `wasm`, before its creation rejects. The load-failure case now also checks
+that no `error` event reached the page's window. Each new browser oracle, and the window check, failed with the
+code temporarily broken (no `resolveClosing` in `onerror`, no fetch guard, no `preventDefault`, `startupFailed`
+posted before the upload settled) and passed with it restored. They cover
+[`REQ-RUNTIME-8-M3ENFM.T1.P6`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6), [`REQ-RUNTIME-8-M3ENFM.T1.P7`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7),
+[`REQ-RUNTIME-8-M3ENFM.T1.P8`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p8), [`REQ-RUNTIME-7-A2VAR0.T1.P15`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p15) and
+[`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6), with `.P5`, `.P10` and `.P11` of
+[`UNIT-TEST-BROWSER-ROOT-WORKER-1-1WG3WR`](../implementation/source/src/rpc/internal/browser/RootWorkerRuntime.ts.md#unit-test-browser-root-worker-1-1wg3wr) and `.P42` of
+[`UNIT-TEST-ROOT-CREATION-1-1NWN3V`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v).
+
 ## WebAssembly failure diagnostics — 2026-10-26
 
 New report [ThreadResources.test.ts](../verification/tests/test/utils/ThreadResources.test.ts.md) with four
@@ -19,9 +43,8 @@ declarations. They use two hand-built modules (an exported memory, and a `trap` 
 serialized with its diagnostics and kept through `deserializeError` and a second serialization, no
 diagnostics on an ordinary error, and one worker count across repeated shutdowns. They cover `.P1`
 to `.P4` of [`UNIT-TEST-THREAD-RESOURCES-1-AY7843`](../implementation/source/src/utils/threadResources.ts.md#unit-test-thread-resources-1-ay7843) and `.P7` of
-[`UNIT-TEST-ERROR-WIRE-1-ZWGJ00`](../implementation/source/src/rpc/internal/errorWire.ts.md#unit-test-error-wire-1-zwgj00). The memory probe is only tested where it works; the
-new log fields and the startup-failure upload
-([`REQ-LOG-10-69CTN1.T1.P6`](../specification/runtime/log-collection.md#req-log-10-69ctn1.t1.p6)) have no test.
+[`UNIT-TEST-ERROR-WIRE-1-ZWGJ00`](../implementation/source/src/rpc/internal/errorWire.ts.md#unit-test-error-wire-1-zwgj00). The refused probe, the new log fields and the
+startup-failure upload have tests since 2026-10-29 (above).
 
 ## Application chain access, local join-signature answers, closed-transport frames — 2026-10-26
 
@@ -66,14 +89,7 @@ waits for the recorded settle of the timed-out request (result `false`) instead 
 declarations in real Chromium: load, fetch, parse and top-level failures; the failure-log write that throws;
 the drain that stores a just-written error line before disposal returns; the not-ready disposal without the
 wait; and the drain timeout with and without a throwing warning write.
-These permutations have no test:
-[`REQ-RUNTIME-8-M3ENFM.T1.P6`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p6) (an error with no message),
-[`REQ-RUNTIME-8-M3ENFM.T1.P7`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p7) (a second load or parse
-failure report after the re-fetch started),
-[`REQ-RUNTIME-8-M3ENFM.T1.P8`](../specification/runtime/execution.md#req-runtime-8-m3enfm.t1.p8) (a handled failure event is
-not also reported as uncaught) and
-[`REQ-RUNTIME-7-A2VAR0.T1.P15`](../specification/runtime/execution.md#req-runtime-7-a2var0.t1.p15) (a ready context the owner
-saw fail is stopped on disposal without the closing wait).
+The permutations left untested here have tests since 2026-10-29 (above).
 
 ## Worker drain bound and refused handle close — 2026-10-14
 

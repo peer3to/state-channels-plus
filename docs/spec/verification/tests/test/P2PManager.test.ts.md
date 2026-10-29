@@ -34,7 +34,12 @@ checked transports were closed. A participant answer must give one sync request 
 end must close the host and settle connect `false`; a rejection must also give one error-level line per
 rejected read and a detached error with the stub failure. The two-window case holds every participant's
 spectate response and reads the initial sync's recorded settlement: result `false`, a request timeout of
-two windows, and more than one and a half windows from start to settle. The genesis-settle case holds
+two windows, and more than one and a half windows from start to settle. The still-syncing deadline case
+gives the observer one participant whose own initial sync is held, so it answers that it is still
+syncing; the observer's first answer is parked after it is recorded while the held deadline task runs:
+no abort, `OPENED`. Releasing the answer must schedule one new two-window deadline; two later answers
+schedule none, leave the participant connected with no strike, and the restarted deadline aborts the
+observer with connect `false` and no state set. The genesis-settle case holds
 the deadline task, checks that the settle cancelled it, then runs the held task and expects no abort.
 
 ## Tests
@@ -79,6 +84,7 @@ the deadline task, checks that the settle cancelled it, then runs the held task 
 - `explicit same-ID retry creates a fresh matcher and negotiation attempt`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2, REQ-TJOIN-5-Q795M7.T1.P2
 - `fatal initial sync closes its root and rejects later same-channel client calls`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3, REQ-TJOIN-5-Q795M7.T1.P4
 - `observer initial sync request to a participant that never answers times out after two agreement windows`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P42, REQ-TJOIN-3-DCZKS6.T1.P18, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
+- `observer holds the initial deadline while a still-syncing answer is in flight, restarts it on that participant's first still-syncing answer only, and aborts at the restarted deadline`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47, UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P48
 - `observer connect resolves false when no participant handshake completes within the initial window`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P28, REQ-TJOIN-3-DCZKS6.T1.P6
 - `observer holds the initial deadline while a completed handshake's participant check runs and syncs once the check answers participant`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P37, REQ-TJOIN-3-DCZKS6.T1.P13
 - `observer aborts once a held participant check ends without a sync after the initial deadline elapsed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P38, REQ-TJOIN-3-DCZKS6.T1.P14

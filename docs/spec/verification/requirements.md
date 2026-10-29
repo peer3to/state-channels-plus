@@ -582,7 +582,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 0/6.
 
 [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
-Specification cases tested: 22/23. Untested: T1.P4.
+Specification cases tested: 28/29. Untested: T1.P4.
 
 [`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)
 Specification cases tested: 9/9.
@@ -672,7 +672,7 @@ Specification cases tested: 4/6. Untested: T1.P2, T1.P6.
 Specification cases tested: 0/4.
 
 [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1)
-Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P6.
+Specification cases tested: 4/7. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../specification/runtime/log-collection.md#req-log-11-f5tjqc)
 Specification cases tested: 15/18. Untested: T1.P11, T1.P16, T1.P17.
@@ -813,10 +813,10 @@ Specification cases tested: 0/17.
 Specification cases tested: 2/2.
 
 [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../specification/runtime/execution.md#req-runtime-7-a2var0)
-Specification cases tested: 12/13. Untested: T1.P15.
+Specification cases tested: 13/13.
 
 [`REQ-RUNTIME-8-M3ENFM` (An isolated context's failure names its cause)](../specification/runtime/execution.md#req-runtime-8-m3enfm)
-Specification cases tested: 6/9. Untested: T1.P6, T1.P7, T1.P8.
+Specification cases tested: 9/9.
 
 [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../specification/runtime/execution.md#req-runtime-9-p5vpt5)
 Specification cases tested: 5/5.
@@ -927,7 +927,7 @@ Specification cases tested: 79/79.
 Specification cases tested: 45/45.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
-Specification cases tested: 4/5. Untested: T1.P1.
+Specification cases tested: 7/8. Untested: T1.P1.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.

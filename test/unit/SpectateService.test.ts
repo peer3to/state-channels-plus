@@ -1,6 +1,9 @@
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
+import {
+    SyncResult,
+    type SyncRequest
+} from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -17,6 +20,7 @@ import {
     forgedOutboundBlock,
     stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
+import { shareSyncingAnswerAcrossCallers } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyDisputedSyncPayload,
     applySyncPayload,
@@ -149,7 +153,7 @@ describe("Unit: SpectateService", function () {
             const accepted = await h.execOnHost(
                 observer,
                 async (sm, args) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         args.source,
                         sm.channelId,
                         args.forkId,
@@ -157,7 +161,7 @@ describe("Unit: SpectateService", function () {
                     ),
                 { source: source.address, forkId: sourceForkId }
             );
-            expect(accepted).to.equal(true);
+            expect(accepted).to.equal(SyncResult.Synced);
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(successor);
@@ -180,7 +184,7 @@ describe("Unit: SpectateService", function () {
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     args.forkId,
@@ -188,10 +192,20 @@ describe("Unit: SpectateService", function () {
                 ),
             { source: source.address, forkId: ethers.id("unknown-pinned-fork") }
         );
-        expect(accepted).to.equal(false);
+        expect(accepted).not.to.equal(SyncResult.Synced);
         expect(await h.control(observer).query.getForkId().request()).to.equal(
             before
         );
+    });
+    it("one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist", async function () {
+        const h = TestSession.getHarness();
+        const shared = await shareSyncingAnswerAcrossCallers(h);
+        expect(shared).to.deep.equal({
+            results: [SyncResult.ResponderSyncing, false, false, false],
+            answeredRequests: 1,
+            strikes: 1,
+            isBlacklisted: false
+        });
     });
     describe("sync request policy", function () {
         const channelId = ethers.id("spectate-policy-channel");
@@ -965,7 +979,7 @@ describe("Unit: SpectateService", function () {
             const syncing = h.execOnHost(
                 h.getPeer(2),
                 (sm, { source }) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         source,
                         sm.channelId
                     ),
@@ -994,7 +1008,7 @@ describe("Unit: SpectateService", function () {
                 { mode: "atLeast" }
             );
             await requester.stub.restoreHoldSpectateSyncApplication().request();
-            expect(await syncing).to.equal(true);
+            expect(await syncing).to.equal(SyncResult.Synced);
             expect(
                 await h
                     .control(responder)
@@ -1031,7 +1045,7 @@ describe("Unit: SpectateService", function () {
                     h.execOnHost(
                         h.getPeer(2),
                         (sm, { source }) =>
-                            sm.p2pManager.localRpc.spectateService.sync(
+                            sm.p2pManager.localRpc.spectateService.requestSync(
                                 source,
                                 sm.channelId
                             ),
@@ -1082,7 +1096,7 @@ describe("Unit: SpectateService", function () {
             const syncing = h.execOnHost(
                 h.getPeer(2),
                 (sm, { source }) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         source,
                         sm.channelId
                     ),
@@ -1099,7 +1113,7 @@ describe("Unit: SpectateService", function () {
                 sm.p2pManager.localRpc.spectateService.dispose();
             });
             await requester.stub.restoreHoldSpectateSyncApplication().request();
-            expect(await syncing).to.equal(false);
+            expect(await syncing).not.to.equal(SyncResult.Synced);
             expect(await h.query.reducedForkOnChain(forkId)).to.equal(
                 ethers.ZeroHash
             );
@@ -1128,7 +1142,7 @@ describe("Unit: SpectateService", function () {
             const syncing = h.execOnHost(
                 h.getPeer(2),
                 (sm, { source }) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         source,
                         sm.channelId
                     ),
@@ -1174,7 +1188,7 @@ describe("Unit: SpectateService", function () {
                     .request()
             ).to.equal(1);
             await reduceWindowOnChain(h, 0, forkId);
-            expect(await syncing).to.equal(true);
+            expect(await syncing).to.equal(SyncResult.Synced);
             expect(
                 await h
                     .control(responder)

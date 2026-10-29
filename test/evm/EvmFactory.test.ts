@@ -1,6 +1,5 @@
 import { CONSOLE_ADDRESS, createEvm, type EvmCustomPrecompile } from "@/evm";
-import type { DefaultStateManager } from "@ethereumjs/statemanager";
-import { Address, type MapDB } from "@ethereumjs/util";
+import { Address } from "@ethereumjs/util";
 import {
     assertDisposalAbandonsStuckAdmittedWork,
     assertDisposalKeepsAdmittedFailure,
@@ -13,27 +12,15 @@ import {
     assertRepeatedExecutorDisposalSharesCompletion,
     assertWorkerExecutorOwnerContext
 } from "@test/fixtures/node/ExecutorOwnerFixture";
+import {
+    SlotWriterEvm,
+    buildBlock,
+    randomSlotValues,
+    slotWords
+} from "@test/fixtures/SlotWriterEvmFixture";
 import { expect } from "chai";
 import { ethers } from "ethers";
 import sinon from "sinon";
-
-function buildBlock() {
-    const zeroAddress = Address.zero();
-
-    return {
-        header: {
-            number: 0n,
-            cliqueSigner: () => zeroAddress,
-            coinbase: zeroAddress,
-            timestamp: 0n,
-            difficulty: 0n,
-            prevRandao: new Uint8Array(32),
-            gasLimit: 30_000_000n,
-            baseFeePerGas: 0n,
-            getBlobGasPrice: () => undefined
-        }
-    } as any;
-}
 
 describe("EvmFactory", function () {
     it("should execute custom precompiles without disabling the built-in console precompile", async function () {
@@ -102,41 +89,65 @@ describe("EvmFactory", function () {
     });
 
     it("keeps the trie database the same size while calls rewrite the same storage slots", async function () {
-        const logger = { child: () => ({ debug: () => undefined }) } as any;
-        const evm = await createEvm({}, logger);
-        const stateManager = evm.stateManager as DefaultStateManager;
-        const trieDatabase = stateManager["_trie"].database().db as MapDB<
-            string,
-            Uint8Array
-        >;
-
-        // Runtime code: SSTORE(slot, calldata word `slot`) for each slot, then STOP.
-        const slotCount = 8;
-        let code = "0x";
-        for (let slot = 0; slot < slotCount; slot++) {
-            code += `60${(slot * 32).toString(16).padStart(2, "0")}3560${slot.toString(16).padStart(2, "0")}55`;
-        }
-        code += "00";
+        const slotWriter = await SlotWriterEvm.create();
         const contract = Address.fromString(
             "0x00000000000000000000000000000000000000bb"
         );
-        await stateManager.putContractCode(contract, ethers.getBytes(code));
+        await slotWriter.deploy(contract);
 
-        const rewriteSlots = async () => {
-            const result = await evm.runCall({
-                to: contract,
-                caller: Address.zero(),
-                data: ethers.randomBytes(slotCount * 32),
-                block: buildBlock()
-            });
-            expect(result.execResult.exceptionError).to.equal(undefined);
-        };
+        await slotWriter.write(contract, randomSlotValues());
+        const sizeAfterFirstCall = slotWriter.trieDatabaseSize();
+        for (let call = 0; call < 50; call++)
+            await slotWriter.write(contract, randomSlotValues());
 
-        await rewriteSlots();
-        const sizeAfterFirstCall = trieDatabase._database.size;
-        for (let call = 0; call < 50; call++) await rewriteSlots();
+        expect(slotWriter.trieDatabaseSize()).to.equal(sizeAfterFirstCall);
+    });
 
-        expect(trieDatabase._database.size).to.equal(sizeAfterFirstCall);
+    it("keeps a contract's storage intact while another contract with identical storage rewrites its slots", async function () {
+        const slotWriter = await SlotWriterEvm.create();
+        const rewritten = Address.fromString(
+            "0x00000000000000000000000000000000000000bb"
+        );
+        const untouched = Address.fromString(
+            "0x00000000000000000000000000000000000000cc"
+        );
+        await slotWriter.deploy(rewritten);
+        await slotWriter.deploy(untouched);
+        const sharedValues = randomSlotValues();
+        await slotWriter.write(rewritten, sharedValues);
+        await slotWriter.write(untouched, sharedValues);
+
+        for (let call = 0; call < 5; call++)
+            await slotWriter.write(rewritten, randomSlotValues());
+
+        expect(await slotWriter.readSlotsFromTrie(untouched)).to.deep.equal(
+            slotWords(sharedValues)
+        );
+        const nextValues = randomSlotValues();
+        await slotWriter.write(untouched, nextValues);
+        expect(await slotWriter.readSlotsFromTrie(untouched)).to.deep.equal(
+            slotWords(nextValues)
+        );
+    });
+
+    it("keeps the state root and every slot when a checkpointed call that rewrites the slots is reverted", async function () {
+        const slotWriter = await SlotWriterEvm.create();
+        const contract = Address.fromString(
+            "0x00000000000000000000000000000000000000bb"
+        );
+        await slotWriter.deploy(contract);
+        const committedValues = randomSlotValues();
+        await slotWriter.write(contract, committedValues);
+        const committedRoot = await slotWriter.stateRoot();
+
+        await slotWriter.evm.journal.checkpoint();
+        await slotWriter.write(contract, randomSlotValues());
+        await slotWriter.evm.journal.revert();
+
+        expect(await slotWriter.stateRoot()).to.deep.equal(committedRoot);
+        expect(await slotWriter.readSlotsFromTrie(contract)).to.deep.equal(
+            slotWords(committedValues)
+        );
     });
 
     it("gives a manifest precompile its inline executor root during startup and releases its child with that executor", async function () {

@@ -1,4 +1,3 @@
-import HolepunchRelay from "@/HolepunchRelay";
 import { HolepunchRelayFixture } from "@test/fixtures/HolepunchRelayFixture";
 import { expect } from "chai";
 
@@ -17,7 +16,7 @@ describe("HolepunchRelay", function () {
     it("stays idle when no relayer URL is configured", function () {
         fixture.init([]);
 
-        expect(HolepunchRelay.getInstance().getSwarm()).to.equal(undefined);
+        expect(fixture.swarm()).to.equal(undefined);
         expect(fixture.sockets()).to.deep.equal([]);
         expect(fixture.updates()).to.equal(0);
     });
@@ -202,5 +201,26 @@ describe("HolepunchRelay", function () {
         expect(fixture.relayerFailures()).to.deep.equal([]);
         expect(fixture.sockets()).to.deep.equal([]);
         expect(fixture.updates()).to.equal(0);
+    });
+
+    it("validates relayer URLs on an engine without URL.canParse", function () {
+        fixture.withoutUrlCanParse(() => {
+            expect(URL).not.to.have.property("canParse");
+            expect(() =>
+                fixture.init(["wss://relay-a.example", "not a url"])
+            ).to.throw(
+                Error,
+                'Invalid holepunch relayer URL "not a url": expected a ws: or wss: URL'
+            );
+            expect(fixture.sockets()).to.deep.equal([]);
+
+            fixture.init(["wss://relay-a.example", "ws://relay-b.example"]);
+        });
+
+        expect(URL).to.have.property("canParse");
+        expect(fixture.sockets().map((socket) => socket.url)).to.deep.equal([
+            "wss://relay-a.example"
+        ]);
+        expect(fixture.updates()).to.equal(1);
     });
 });

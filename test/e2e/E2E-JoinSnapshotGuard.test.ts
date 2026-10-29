@@ -1213,6 +1213,164 @@ describe("E2E: join snapshot guard", function () {
         }
     });
 
+    it("a connect's join whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, one JOIN on chain, and no abort", async function () {
+        const h = TestSession.getHarness();
+        const joiner = await h.scenario.syncSpectator();
+        const thresholdPeers = await remoteThresholdPeerIndices(
+            h,
+            joiner.index
+        );
+        const signatureRequests = await countJoinSignatureRequests(
+            h,
+            thresholdPeers
+        );
+        const fromBlock =
+            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+        await h.rpcStub.failMembershipReceipt(joiner.index, "joinChannel", {
+            once: true,
+            isReplayPassing: true
+        });
+
+        expect(
+            await joiner.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+                shouldJoin: true,
+                balance: { amount: 5n, data: "0x00" }
+            })
+        ).to.equal(true);
+
+        expect(
+            await h
+                .control(joiner)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(2);
+        // the second submission reuses the first collection
+        expect(await signatureRequests()).to.equal(thresholdPeers.length);
+        expect(
+            await chainJoinAmounts(h, joiner.address, fromBlock)
+        ).to.deep.equal([5n]);
+        expect(
+            await h.channelManager.getPendingParticipants(h.channelId)
+        ).to.include(joiner.address);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.PENDING_PARTICIPANT
+        );
+        expect(joiner.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(joiner.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(0);
+    });
+
+    it("a connect's join whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before another join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the landed joiner, and lands on its third submission with no abort", async function () {
+        const h = TestSession.getHarness();
+        const first = await h.scenario.syncSpectator();
+        const { peer: second } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 16
+        });
+        await h.assert.sync.peersInSyncWait();
+        const fromBlock =
+            await second.p2pInstance.chainSigner.provider!.getBlockNumber();
+        await h.rpcStub.failMembershipReceipt(second.index, "joinChannel", {
+            once: true,
+            isReplayPassing: true
+        });
+        // the failed first submission sends nothing: the held send is the resubmission
+        const resubmission = await h.rpcStub.holdFirstJoinSendAfterEstimate(
+            second.index
+        );
+        const countersignedByFirst = await countJoinSignatureRequests(h, [
+            first.index
+        ]);
+        const secondJoin = second.p2pInstance.p2pSigner.connectToChannel(
+            h.channelId!,
+            { shouldJoin: true, balance: { amount: 5n, data: "0x00" } }
+        );
+        // observed below; keeps a failure from being an unhandled rejection meanwhile
+        secondJoin.catch(() => undefined);
+        // the resubmission is estimated against the founders alone
+        await resubmission.waitUntilHeld();
+
+        // the first lands pending and widens the threshold set
+        expect(
+            await first.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+                shouldJoin: true
+            })
+        ).to.equal(true);
+        // the resubmission is mined after the first: a failed receipt
+        await resubmission.release();
+
+        expect(await secondJoin).to.equal(true);
+        expect(
+            await h
+                .control(second)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(3);
+        expect(await countersignedByFirst()).to.equal(1);
+        expect(
+            await chainJoinAmounts(h, second.address, fromBlock)
+        ).to.deep.equal([5n]);
+        const pending = await h.channelManager.getPendingParticipants(
+            h.channelId
+        );
+        for (const joiner of [first, second]) {
+            expect(pending).to.include(joiner.address);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(joiner.eventSpies.onAbort?.called ?? false).to.equal(false);
+            expect(joiner.eventSpies.onLeftChannel?.callCount ?? 0).to.equal(0);
+        }
+    });
+
+    it("a connect's join whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the joiner back to SYNCED with no abort", async function () {
+        const h = TestSession.getHarness();
+        // four seats: at most four retries
+        const joiner = await h.scenario.syncSpectator(4, {
+            maxChannelParticipants: 4
+        });
+        const thresholdPeers = await remoteThresholdPeerIndices(
+            h,
+            joiner.index
+        );
+        const signatureRequests = await countJoinSignatureRequests(
+            h,
+            thresholdPeers
+        );
+        const fromBlock =
+            await joiner.p2pInstance.chainSigner.provider!.getBlockNumber();
+        await h.rpcStub.failMembershipReceipt(joiner.index, "joinChannel", {
+            isReplayPassing: true
+        });
+
+        expect(
+            await joiner.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+                shouldJoin: true,
+                balance: { amount: 5n, data: "0x00" }
+            })
+        ).to.equal(false);
+
+        // the first submission and its four retries
+        expect(
+            await h
+                .control(joiner)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(5);
+        // every submission again reuses the first collection
+        expect(await signatureRequests()).to.equal(thresholdPeers.length);
+        expect(
+            await chainJoinAmounts(h, joiner.address, fromBlock)
+        ).to.deep.equal([]);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        expect(joiner.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(
+            await h.channelManager.getPendingParticipants(h.channelId)
+        ).to.not.include(joiner.address);
+    });
+
     it("a join refused twice for threshold sets that two joins landing one after another widened is collected again each time and lands on its third submission: each fresh collection asks the newly landed joiners, and no abort", async function () {
         const h = TestSession.getHarness();
         const race = await raceJoinPastTwoLandingJoins(h);
@@ -1652,6 +1810,157 @@ describe("E2E: join snapshot guard", function () {
         } finally {
             await releaseAll();
         }
+    });
+
+    it("a top-up whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, the amount credited once, and the participation kept", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.syncSpectator();
+        const participant = h.getPeer(0);
+        const thresholdPeers = await remoteThresholdPeerIndices(
+            h,
+            participant.index
+        );
+        const signatureRequests = await countJoinSignatureRequests(
+            h,
+            thresholdPeers
+        );
+        const fromBlock =
+            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+        await h.rpcStub.failMembershipReceipt(
+            participant.index,
+            "topUpBalance",
+            { once: true, isReplayPassing: true }
+        );
+
+        expect(
+            await participant.p2pInstance.p2pSigner.connectToChannel(
+                h.channelId!,
+                { shouldJoin: true, balance: { amount: 5n, data: "0x00" } }
+            )
+        ).to.equal(true);
+
+        expect(
+            await h
+                .control(participant)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(2);
+        // the second submission reuses the first collection
+        expect(await signatureRequests()).to.equal(thresholdPeers.length);
+        expect(
+            await chainJoinAmounts(h, participant.address, fromBlock)
+        ).to.deep.equal([5n]);
+        expect(
+            await h.control(participant).query.getStatus().request()
+        ).to.equal(Status.PARTICIPATING);
+        expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
+    });
+
+    it("a top-up whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before a spectator's join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the new pending participant, and lands on its third submission with the amount credited once", async function () {
+        const h = TestSession.getHarness();
+        const spectator = await h.scenario.syncSpectator();
+        const participant = h.getPeer(0);
+        const fromBlock =
+            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+        const prepared = await h.join.buildJoinChannelConfirmation({
+            joiner: participant,
+            channelId: h.channelId!,
+            jcOverrides: { balance: { amount: 5n, data: "0x00" } }
+        });
+        await h.rpcStub.failMembershipReceipt(
+            participant.index,
+            "topUpBalance",
+            { once: true, isReplayPassing: true }
+        );
+        // the failed first submission sends nothing: the held send is the resubmission
+        const resubmission = await h.rpcStub.holdFirstJoinSendAfterEstimate(
+            participant.index,
+            "topUpBalance"
+        );
+        const countersignedBySpectator = await countJoinSignatureRequests(h, [
+            spectator.index
+        ]);
+        const topUp = participant.p2pInstance.p2pSigner.topUpBalance(
+            prepared.confirmation,
+            prepared.expectedSnapshotHash,
+            prepared.expectedForkId
+        );
+        // observed below; keeps a failure from being an unhandled rejection meanwhile
+        topUp.catch(() => undefined);
+        // the resubmission is estimated against the founders alone
+        await resubmission.waitUntilHeld();
+
+        // the spectator's join lands and widens the threshold set
+        expect(
+            await spectator.p2pInstance.p2pSigner.connectToChannel(
+                h.channelId!,
+                { shouldJoin: true }
+            )
+        ).to.equal(true);
+        // the resubmission is mined after the join: a failed receipt
+        await resubmission.release();
+
+        expect(await topUp).to.equal(true);
+        expect(
+            await h
+                .control(participant)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(3);
+        expect(await countersignedBySpectator()).to.equal(1);
+        expect(
+            await chainJoinAmounts(h, participant.address, fromBlock)
+        ).to.deep.equal([5n]);
+        expect(
+            await h.control(participant).query.getStatus().request()
+        ).to.equal(Status.PARTICIPATING);
+        expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
+    });
+
+    it("a top-up whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the participation kept with no abort", async function () {
+        const h = TestSession.getHarness();
+        // four seats: at most four retries
+        await h.scenario.syncSpectator(4, { maxChannelParticipants: 4 });
+        const participant = h.getPeer(0);
+        const thresholdPeers = await remoteThresholdPeerIndices(
+            h,
+            participant.index
+        );
+        const signatureRequests = await countJoinSignatureRequests(
+            h,
+            thresholdPeers
+        );
+        const fromBlock =
+            await participant.p2pInstance.chainSigner.provider!.getBlockNumber();
+        await h.rpcStub.failMembershipReceipt(
+            participant.index,
+            "topUpBalance",
+            { isReplayPassing: true }
+        );
+
+        expect(
+            await participant.p2pInstance.p2pSigner.connectToChannel(
+                h.channelId!,
+                { shouldJoin: true, balance: { amount: 5n, data: "0x00" } }
+            )
+        ).to.equal(false);
+
+        // the first submission and its four retries
+        expect(
+            await h
+                .control(participant)
+                .stub.getHeldMembershipReceiptCount()
+                .request()
+        ).to.equal(5);
+        // every submission again reuses the first collection
+        expect(await signatureRequests()).to.equal(thresholdPeers.length);
+        expect(
+            await chainJoinAmounts(h, participant.address, fromBlock)
+        ).to.deep.equal([]);
+        expect(
+            await h.control(participant).query.getStatus().request()
+        ).to.equal(Status.PARTICIPATING);
+        expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
     });
 
     it("concurrent topUpBalance calls with one prepared request: the second call reuses the running top-up, so one funded submission credits the amount once and both calls return the same result", async function () {

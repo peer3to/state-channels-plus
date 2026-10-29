@@ -505,6 +505,12 @@
       "peakRssGb": 0.78,
       "measurementReason": null
     },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer holds the initial deadline while a still-syncing answer is in flight, restarts it on that participant's first still-syncing answer only, and aborts at the restarted deadline": {
+      "durationMs": 21091,
+      "avgCores": 0.841,
+      "peakRssGb": 0.771,
+      "measurementReason": null
+    },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer ignores a stale false sync result once chain genesis already synced it": {
       "durationMs": 23278,
       "avgCores": 0.73,
@@ -2233,6 +2239,24 @@
       "peakRssGb": 1.378,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the joiner back to SYNCED with no abort": {
+      "durationMs": 8659,
+      "avgCores": 0.872,
+      "peakRssGb": 0.97,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, one JOIN on chain, and no abort": {
+      "durationMs": 10462,
+      "avgCores": 0.819,
+      "peakRssGb": 0.861,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before another join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the landed joiner, and lands on its third submission with no abort": {
+      "durationMs": 13332,
+      "avgCores": 0.825,
+      "peakRssGb": 1.069,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose snapshot moves again before its retry lands is collected again and lands on its third submission: the joiner is admitted with no abort": {
       "durationMs": 12003,
       "avgCores": 0.816,
@@ -2369,6 +2393,24 @@
       "durationMs": 17013,
       "avgCores": 0.984,
       "peakRssGb": 1.297,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the participation kept with no abort": {
+      "durationMs": 7609,
+      "avgCores": 0.987,
+      "peakRssGb": 0.964,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, the amount credited once, and the participation kept": {
+      "durationMs": 7277,
+      "avgCores": 1.125,
+      "peakRssGb": 0.855,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before a spectator's join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the new pending participant, and lands on its third submission with the amount credited once": {
+      "durationMs": 10175,
+      "avgCores": 0.859,
+      "peakRssGb": 0.896,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose runtime aborts once the fresh confirmation for its retry is collected submits nothing more: the call returns false and no JOIN lands for the participant": {
@@ -3515,6 +3557,12 @@
       "durationMs": 20948,
       "avgCores": 0.906,
       "peakRssGb": 1.117,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an authenticated outsider-authored block that answers it is still in its own initial sync with one counted close and keeps a SYNCED spectator running": {
+      "durationMs": 47979,
+      "avgCores": 0.469,
+      "peakRssGb": 1.119,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running": {
@@ -5575,6 +5623,12 @@
       "peakRssGb": 0.418,
       "measurementReason": null
     },
+    "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps a contract's storage intact while another contract with identical storage rewrites its slots": {
+      "durationMs": 569,
+      "avgCores": 0.65,
+      "peakRssGb": 0.143,
+      "measurementReason": null
+    },
     "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps an admitted operation's failure while disposal waits for it": {
       "durationMs": 15408,
       "avgCores": 0.367,
@@ -5591,6 +5645,12 @@
       "durationMs": 23516,
       "avgCores": 0.151,
       "peakRssGb": 0.259,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps the state root and every slot when a checkpointed call that rewrites the slots is reverted": {
+      "durationMs": 488,
+      "avgCores": 0.758,
+      "peakRssGb": 0.149,
       "measurementReason": null
     },
     "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps the trie database the same size while calls rewrite the same storage slots": {
@@ -8681,6 +8741,12 @@
       "durationMs": 14898,
       "avgCores": 0.375,
       "peakRssGb": 0.477,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle logs the failed worker's WebAssembly diagnostics, or none for an ordinary error, and this thread's resources with pending requests": {
+      "durationMs": 27979,
+      "avgCores": 0.093,
+      "peakRssGb": 0.381,
       "measurementReason": null
     },
     "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle marks worker shutdown expected before parent port closure while client cleanup is held": {
@@ -17185,6 +17251,18 @@
       "peakRssGb": 0.616,
       "measurementReason": null
     },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist": {
+      "durationMs": 9283,
+      "avgCores": 0.902,
+      "peakRssGb": 0.554,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an absent sender still in its own initial sync answers the intake sync that it is still syncing: one counted close, no blacklist and no queued block": {
+      "durationMs": 13285,
+      "avgCores": 1.151,
+      "peakRssGb": 0.742,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted": {
       "durationMs": 24963,
       "avgCores": 0.539,
@@ -20719,6 +20797,12 @@
       "peakRssGb": 1.029,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist": {
+      "durationMs": 8424,
+      "avgCores": 0.874,
+      "peakRssGb": 0.553,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService pinned sync refuses a height above the available proof": {
       "durationMs": 13327,
       "avgCores": 1.093,
@@ -22489,6 +22573,12 @@
       "peakRssGb": 0.179,
       "measurementReason": null
     },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay validates relayer URLs on an engine without URL.canParse": {
+      "durationMs": 2839,
+      "avgCores": 1.025,
+      "peakRssGb": 0.425,
+      "measurementReason": null
+    },
     "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle closes an accepted socket whose ready frame arrives after manager disposal": {
       "durationMs": 5191,
       "avgCores": 0.967,
@@ -23119,16 +23209,34 @@
       "peakRssGb": 0.083,
       "measurementReason": null
     },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts the instance and memory that instantiateStreaming creates from a streamed module": {
+      "durationMs": 542,
+      "avgCores": 0.554,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
     "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts the instances and memories this thread creates through each WebAssembly entry point, and keeps instanceof working": {
       "durationMs": 358,
       "avgCores": 0.95,
       "peakRssGb": 0.087,
       "measurementReason": null
     },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources reports a refused 16 MiB grow in the memory probe with its error, and a later WebAssembly failure in the same thread reuses that probe": {
+      "durationMs": 644,
+      "avgCores": 0.466,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
     "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport drops sends when the channel is already closed": {
       "durationMs": 18717,
       "avgCores": 0.292,
       "peakRssGb": 0.501,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport forwards no frame the channel delivers after the transport closed": {
+      "durationMs": 13962,
+      "avgCores": 0.107,
+      "peakRssGb": 0.202,
       "measurementReason": null
     },
     "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport queues sends on a connecting channel and flushes them once it opens": {

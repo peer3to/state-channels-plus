@@ -1712,11 +1712,13 @@ export class StubService extends ANetworkRpcService<
      * the transaction is mined against the chain as it is at the release.
      * Later join sends run unheld.
      */
-    public holdFirstJoinSendAfterEstimate(): void {
+    public holdFirstJoinSendAfterEstimate(
+        kind: HeldMembershipReceiptKind = "joinChannel"
+    ): void {
         this.releaseJoinSendAfterEstimate();
         const selector =
             this.sm.stateChannelManagerContract.interface.getFunction(
-                "joinChannel"
+                kind
             ).selector;
         const hold = this.createRpcHold("joinSendAfterEstimate");
         this.heldJoinSendAfterEstimate = hold;
@@ -3077,12 +3079,15 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Fails this peer's `kind` submissions with a mined, failed receipt; with
-     * `once` only the first, and later ones run for real. Every submission is
-     * counted in `getHeldMembershipReceiptCount`; none is held.
+     * `once` only the first, and later ones run for real. The replay of a
+     * failed one reverts with no data, or with `isReplayPassing` runs the same
+     * call on the real chain (nothing is sent). Every submission is counted
+     * in `getHeldMembershipReceiptCount`; none is held.
      */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
-        once = false
+        once = false,
+        isReplayPassing = false
     ): void {
         const { contract, original } = this.captureMembershipMethod(kind);
         const submissions = this.countMembershipSubmissions(kind);
@@ -3090,6 +3095,20 @@ export class StubService extends ANetworkRpcService<
             submissions.entered += 1;
             if (once && submissions.entered > 1)
                 return Reflect.apply(original, contract, parameters);
+            if (isReplayPassing)
+                return {
+                    to: await contract.getAddress(),
+                    from: await this.sm.signer.getAddress(),
+                    data: (contract.interface as Interface).encodeFunctionData(
+                        kind,
+                        parameters
+                    ),
+                    value: 0n,
+                    provider: this.chainProvider,
+                    wait: async () => {
+                        throw this.injectedReceiptFailure(kind);
+                    }
+                };
             return {
                 // the replay of a reverting call reverts too
                 provider: {

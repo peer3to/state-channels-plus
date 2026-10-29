@@ -48,7 +48,7 @@ export type EvmCustomPrecompile =
     | EvmNativeCustomPrecompile
     | EvmCustomPrecompileManifest;
 
-export function isEvmCustomPrecompileManifest(
+function isEvmCustomPrecompileManifest(
     precompile: EvmCustomPrecompile
 ): precompile is EvmCustomPrecompileManifest {
     return "module" in precompile;

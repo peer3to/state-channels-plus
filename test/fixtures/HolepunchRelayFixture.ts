@@ -127,6 +127,20 @@ export class HolepunchRelayFixture {
     }
 
     /**
+     * Runs `run` on an engine without `URL.canParse` (before Chrome 120 /
+     * Safari 17), restoring it after.
+     */
+    public withoutUrlCanParse(run: () => void): void {
+        const canParse = Object.getOwnPropertyDescriptor(URL, "canParse");
+        Reflect.deleteProperty(URL, "canParse");
+        try {
+            run();
+        } finally {
+            if (canParse) Object.defineProperty(URL, "canParse", canParse);
+        }
+    }
+
+    /**
      * A browser-runtime Holepunch whose relay is a {@link RecordingWebSocket}:
      * the real Hyperswarm and dht-relay client run on it, and no relayer ever
      * answers what they send.
@@ -189,6 +203,11 @@ export class HolepunchRelayFixture {
     /** Every socket the relay opens from now on is already CLOSED. */
     public createSocketsClosed(): void {
         RecordingWebSocket.isCreatedClosed = true;
+    }
+
+    /** The swarm of the relay {@link init} started. */
+    public swarm(): unknown {
+        return this.relay?.swarm;
     }
 
     public updates(): number {

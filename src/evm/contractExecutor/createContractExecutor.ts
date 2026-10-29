@@ -1,4 +1,4 @@
-import type { EvmCustomPrecompileManifest } from "../EvmFactory";
+import type { EvmCustomPrecompileManifest } from "../EvmCustomPrecompiles";
 import type AContractExecutor from "./AContractExecutor";
 import RpcContractExecutor from "./RpcContractExecutor";
 import Clock from "@/Clock";

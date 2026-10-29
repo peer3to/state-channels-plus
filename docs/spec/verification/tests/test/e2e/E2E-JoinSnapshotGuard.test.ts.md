@@ -112,6 +112,25 @@ both calls return `true`, each threshold member answered one countersignature re
 shared join promise it fails: the second call collects and submits its own join, and the first then rejects
 because the runtime is no longer `SYNCED`.
 
+Four cases fail the first join or top-up submission with a mined, failed receipt that carries no revert data
+(`failMembershipReceipt` with `once` and `isReplayPassing`): nothing is sent, and the replay of the same call
+runs on the real chain and passes. In two, the submission again lands: the call returns `true` after two
+counted submissions, the threshold members answered one collection, and the chain's
+`InboundMessagesProcessed` logs carry one JOIN of the requested amount. In the other two, the submission
+again is held after its gas estimate (`holdFirstJoinSendAfterEstimate`, for `topUpBalance` in the top-up case)
+while another spectator's join lands and widens the threshold set; released, it is mined and reverts with no
+data, its replay names the threshold refusal, the fresh collection is countersigned once by the newly landed
+joiner, and the third submission lands: `true`, three counted submissions, one JOIN of the requested amount,
+the join `PENDING_PARTICIPANT` (the top-up `PARTICIPATING`) and no abort. With the earlier replay that sent
+the transaction again itself, the first two count one submission and the last two end `false`.
+
+Two more cases fail every join or top-up submission that way (`failMembershipReceipt` with
+`isReplayPassing`, without `once`) on a channel of four seats. Each passing replay is one more retry, so the call
+returns `false` after five counted submissions (the first and four retries); the threshold members answered one
+collection, and the chain logs carry no JOIN. The joiner ends `SYNCED` and the participant keeps
+`PARTICIPATING`, both with no abort. With a cap check that allows one more retry it fails: six submissions
+are counted.
+
 ## Tests
 
 - `E42 control: a join prepared against snapshot S with no snapshot update before execution passes the snapshot guard and the joiner is admitted`: REQ-MSG-10-7JS45Q.T2.P1
@@ -140,6 +159,9 @@ because the runtime is no longer `SYNCED`.
 - `a top-up whose runtime aborts once the fresh confirmation for its retry is collected submits nothing more: the call returns false and no JOIN lands for the participant`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P102, REQ-JOINSIG-1-8X1A4V.T1.P23
 - `two synced spectators whose first joins race on one table both end pending: the join that lands second is refused for the threshold set the first widened and lands on its retry, whose fresh collection the first joiner countersigns`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P79, REQ-JOINSIG-1-8X1A4V.T1.P13
 - `two synced spectators whose joins race on one table both end pending when the second's transaction is estimated before the first lands and mined after it: the mined refusal for the widened threshold set is collected again, countersigned by the first, and lands with no abort`: REQ-JOINSIG-1-8X1A4V.T1.P27, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P110
+- `a connect's join whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, one JOIN on chain, and no abort`: REQ-JOINSIG-1-8X1A4V.T1.P28, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P111
+- `a connect's join whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before another join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the landed joiner, and lands on its third submission with no abort`: REQ-JOINSIG-1-8X1A4V.T1.P29, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P112
+- `a connect's join whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the joiner back to SYNCED with no abort`: REQ-JOINSIG-1-8X1A4V.T1.P32, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P115
 - `a join refused twice for threshold sets that two joins landing one after another widened is collected again each time and lands on its third submission: each fresh collection asks the newly landed joiners, and no abort`: REQ-JOINSIG-1-8X1A4V.T1.P19, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P93
 - `a connect's join to a channel already full is neither collected nor submitted: connect returns false and the joiner aborts`: REQ-JOINSIG-4-3NBKHK.T1.P1, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P98
 - `a connect's join with shouldSpectateWhenFull to a channel already full is neither collected nor submitted: connect returns false, and the joiner stays SYNCED with no abort and follows the next block`: REQ-JOINSIG-4-3NBKHK.T1.P2, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P99
@@ -150,5 +172,8 @@ because the runtime is no longer `SYNCED`.
 - `a prepared join submitted to a channel that a landed pending join fills makes no full-channel read and is refused for too many participants: joinChannel returns false after one submission, onLeftChannel then onAbort fire once each, and no JOIN lands for the joiner`: REQ-JOINSIG-4-3NBKHK.T1.P6, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P104
 - `a join refused and retried once, whose runtime aborts while the retry's submission is held at its send, handles no refusal of that submission: connect returns false, and the status stays OPENED`: REQ-JOINSIG-1-8X1A4V.T1.P18, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P92
 - `a participant's top-up held at its send while a spectator's join lands is refused for the threshold set that join widened, collected again once with the new pending participant's countersignature, and lands: two submissions, the amount credited once, and the participation kept`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P87, REQ-JOINSIG-1-8X1A4V.T1.P14
+- `a top-up whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, the amount credited once, and the participation kept`: REQ-JOINSIG-1-8X1A4V.T1.P30, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P113
+- `a top-up whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before a spectator's join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the new pending participant, and lands on its third submission with the amount credited once`: REQ-JOINSIG-1-8X1A4V.T1.P31, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P114
+- `a top-up whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the participation kept with no abort`: REQ-JOINSIG-1-8X1A4V.T1.P33, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P116
 - `concurrent topUpBalance calls with one prepared request: the second call reuses the running top-up, so one funded submission credits the amount once and both calls return the same result`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P82
 - `concurrent connect joins on one synced spectator: the second call gets the running join's promise, so one collection and one funded submission land the join and both calls return true`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P103, REQ-JOINSIG-4-3NBKHK.T1.P5

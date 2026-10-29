@@ -224,7 +224,7 @@ export async function assertInternalClosedAdmission(): Promise<void> {
 }
 
 export async function assertWebRTCTransportDelivery(
-    mode: "queue" | "open" | "repeat" | "send" | "closed"
+    mode: "queue" | "open" | "repeat" | "send" | "closed" | "receiveAfterClose"
 ): Promise<void> {
     await withWebRTCBridge(async (bridge) => {
         const service = bridge.manager.localRpc.initHandshakeService;
@@ -317,6 +317,30 @@ export async function assertWebRTCTransportDelivery(
                 expect(
                     order.filter((frame) => frame === first).length
                 ).to.equal(1);
+            } else if (mode === "receiveAfterClose") {
+                // The channel can still deliver a frame after the transport closed.
+                transport.close(true);
+                const router = bridge.manager.rpcRouter;
+                const sandbox = sinon.createSandbox();
+                const onRpc = sandbox.spy(router, "onRpc");
+                const debug = sandbox.spy(bridge.manager.logger, "debug");
+                try {
+                    transport.webRTCChannel.onmessage?.({ data: first });
+                    transport.webRTCChannel.onmessage?.({
+                        data: new Uint8Array(Buffer.from(second))
+                    });
+                    expect(onRpc.callCount).to.equal(0);
+                    expect(
+                        debug
+                            .getCalls()
+                            .filter(
+                                (call) =>
+                                    call.args[0] === "Received RPC over WebRTC"
+                            )
+                    ).to.deep.equal([]);
+                } finally {
+                    sandbox.restore();
+                }
             } else {
                 transport._send(first);
                 expect(order).to.deep.equal([]);

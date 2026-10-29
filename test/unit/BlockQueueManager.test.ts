@@ -4,6 +4,7 @@ import { BlockConfirmationEthersType } from "@/types/ethers";
 import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { probeSyncingQueuedSource } from "@test/fixtures/MilestoneSyncStaging";
 import {
     restoreDequeuedEntry,
     stagePrunedObserver,
@@ -23,6 +24,7 @@ import {
 } from "@test/fixtures/QueueIntakeFixture";
 import {
     assertOutsiderProofDoesNotAdmitCopy,
+    assertSyncingAbsentSenderTakesOneStrike,
     stageAbsentGossipAcrossUnreducedWindow
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import { MathTestSession } from "@test/harness";
@@ -527,6 +529,21 @@ describe("Unit: BlockQueueManager", () => {
         } finally {
             await f.close();
         }
+    });
+
+    it("an absent sender still in its own initial sync answers the intake sync that it is still syncing: one counted close, no blacklist and no queued block", async () => {
+        await assertSyncingAbsentSenderTakesOneStrike();
+    });
+
+    it("a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist", async () => {
+        const h = MathTestSession.getHarness();
+        const probed = await probeSyncingQueuedSource(h);
+        expect(probed).to.deep.equal({
+            wasQueued: true,
+            strikesBefore: 0,
+            strikesAfter: 1,
+            isBlacklisted: false
+        });
     });
 
     describe("posted calldata keeps its strategy through the queue", function () {

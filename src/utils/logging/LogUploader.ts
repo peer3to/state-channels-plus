@@ -101,40 +101,11 @@ export abstract class LogUploader {
         );
     }
 
-    private async settle(timeoutMs: number): Promise<void> {
-        const [upload, deadlineMs] = this.queuedUpload
-            ? [this.queuedUpload, this.queuedDeadlineMs]
-            : [this.activeUpload, this.activeDeadlineMs];
-        if (!upload) return;
-        await settleBy(
-            upload.catch(() => undefined),
-            Math.min(Date.now() + timeoutMs, deadlineMs)
-        );
-    }
-
     setLogger(logger: Logger) {
         this.logger = logger;
     }
-    protected abstract attachListeners(): void;
-    protected abstract detachListeners(): void;
-
     public isEnabled(): boolean {
         return Boolean(this.config.uploadEndpoint);
-    }
-
-    protected getAxiosOptions(): Record<string, unknown> {
-        return {};
-    }
-
-    protected getSyncNetworkSnapshot(
-        _endpoint: string,
-        _uploadError?: unknown
-    ): unknown {
-        return undefined;
-    }
-
-    protected getDnsLookupSnapshot(_endpoint: string): Promise<unknown> {
-        return Promise.resolve(undefined);
     }
 
     // Single owner of unhandled-error capture for both platforms (browser window
@@ -149,24 +120,6 @@ export abstract class LogUploader {
         this.logger?.error(`Unhandled ${source} captured for log upload`, {
             error
         });
-    }
-
-    // A non-Error rejection reason can have a throwing toString; the global crash
-    // handler must not itself throw and lose the rejection.
-    private static safeStringify(reason: unknown): string {
-        try {
-            return String(reason);
-        } catch {
-            return "[unstringifiable rejection reason]";
-        }
-    }
-
-    // spreads the upload bursts of many realms apart
-    protected getJitterMs(): number {
-        const maxMs =
-            this.config.jitterMaxMs ??
-            globalConfig.CRASH_LOG_UPLOAD_JITTER_MAX_MS;
-        return Math.floor(Math.random() * maxMs);
     }
 
     /**
@@ -204,6 +157,65 @@ export abstract class LogUploader {
             });
         this.queuedUpload = queued;
         return queued;
+    }
+
+    public destroy(): void {
+        if (this.destroyed) {
+            return;
+        }
+
+        // console.trace("Destroying LogUploader");
+
+        this.destroyed = true;
+        this.detachListeners();
+        this.logger = undefined;
+    }
+
+    protected abstract attachListeners(): void;
+    protected abstract detachListeners(): void;
+
+    protected getAxiosOptions(): Record<string, unknown> {
+        return {};
+    }
+
+    protected getSyncNetworkSnapshot(
+        _endpoint: string,
+        _uploadError?: unknown
+    ): unknown {
+        return undefined;
+    }
+
+    protected getDnsLookupSnapshot(_endpoint: string): Promise<unknown> {
+        return Promise.resolve(undefined);
+    }
+
+    // spreads the upload bursts of many realms apart
+    protected getJitterMs(): number {
+        const maxMs =
+            this.config.jitterMaxMs ??
+            globalConfig.CRASH_LOG_UPLOAD_JITTER_MAX_MS;
+        return Math.floor(Math.random() * maxMs);
+    }
+
+    private async settle(timeoutMs: number): Promise<void> {
+        const [upload, deadlineMs] = this.queuedUpload
+            ? [this.queuedUpload, this.queuedDeadlineMs]
+            : [this.activeUpload, this.activeDeadlineMs];
+        if (!upload) return;
+        await settleBy(
+            upload.catch(() => undefined),
+            Math.min(Date.now() + timeoutMs, deadlineMs)
+        );
+    }
+
+    // A non-Error rejection reason can have a throwing toString; the global crash
+    // handler must not itself throw and lose the rejection.
+    private static safeStringify(reason: unknown): string {
+        try {
+            return String(reason);
+        } catch {
+            return "[unstringifiable rejection reason]";
+        }
     }
 
     private startUpload(): Promise<LogUploadOutcome> {
@@ -374,17 +386,5 @@ export abstract class LogUploader {
             // console, not the logger -> logging an upload failure would recurse.
             return { ok: false, entries: 0 };
         }
-    }
-
-    public destroy(): void {
-        if (this.destroyed) {
-            return;
-        }
-
-        // console.trace("Destroying LogUploader");
-
-        this.destroyed = true;
-        this.detachListeners();
-        this.logger = undefined;
     }
 }

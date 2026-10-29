@@ -514,7 +514,7 @@ describe("E2E: Bot connection fixes", function () {
         } = await probeSyncingParticipant(h);
         expect(probe.response).to.deep.equal({ isResponderSyncing: true });
         expect(probe.elapsedMs).to.be.below(probe.windowMs);
-        expect(probe.synced).to.equal(false);
+        expect(probe.syncResult).to.equal(SyncResult.ResponderSyncing);
         expect(responderStatusAfterProbe).to.equal(Status.OPENED);
         expect(toResponder).to.deep.equal({ connected: true, strikes: 0 });
         await h.assert.rpc.peerNotExcluded({
@@ -541,13 +541,13 @@ describe("E2E: Bot connection fixes", function () {
             spectator,
             responder,
             spectatorConnected,
-            synced,
+            syncResult,
             responderAfterProbe,
             toResponder,
             responderConnected
         } = await probeOpenedRuntimeWithoutParticipant(h);
         expect(spectatorConnected).to.equal(true);
-        expect(synced).to.equal(false);
+        expect(syncResult).to.equal(SyncResult.ResponderSyncing);
         expect(responderAfterProbe).to.deep.equal({
             status: Status.OPENED,
             syncCalls: 0,

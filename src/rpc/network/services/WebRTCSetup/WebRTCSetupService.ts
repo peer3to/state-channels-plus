@@ -55,12 +55,6 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
         ConnectionWatch
     >();
 
-    private normalizePeerAddress(
-        peerAddress: WebRTCPeerAddress
-    ): WebRTCPeerAddress {
-        return getChecksumAddress(peerAddress) as WebRTCPeerAddress;
-    }
-
     constructor(p2pManager: P2PManager) {
         super(
             p2pManager.rpcRouter,
@@ -79,6 +73,95 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
 
     public setConnectionFactory(factory: WebRTCConnectionFactory): void {
         this.connectionFactory = factory;
+    }
+
+    public getWebRTCConnectionState(
+        peerAddress: WebRTCPeerAddress
+    ): WebRTCConnectionStateSnapshot {
+        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
+        return (
+            this.connectionFactory?.getState(normalizedPeerAddress) || {
+                connectionState: "unknown",
+                iceState: "unknown"
+            }
+        );
+    }
+
+    /**
+     * Closes the connection of `transport` when it is still its peer's
+     * current one. A replaced connection is already closed, and closing by
+     * peer would close the peer's newer connection.
+     */
+    public closeWebRTCConnection(transport: WebRTCTransport): void {
+        for (const [peerAddress, watch] of this.currentWatches) {
+            if (watch.transport !== transport) continue;
+            this.closeConnection(peerAddress, watch);
+            return;
+        }
+    }
+
+    public async acceptWebRTCOffer(
+        peerAddress: WebRTCPeerAddress,
+        offer: any
+    ): Promise<any> {
+        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
+        const factory = await this.getConnectionFactory();
+        return factory.acceptOffer(
+            normalizedPeerAddress,
+            offer,
+            this.createConnectionCallbacks(normalizedPeerAddress)
+        );
+    }
+
+    public async applyWebRTCAnswer(
+        peerAddress: WebRTCPeerAddress,
+        answer: any
+    ): Promise<void> {
+        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
+        const factory = await this.getConnectionFactory();
+        await factory.applyAnswer(normalizedPeerAddress, answer);
+    }
+
+    public async addWebRTCIceCandidate(
+        peerAddress: WebRTCPeerAddress,
+        candidate: any
+    ): Promise<void> {
+        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
+        const factory = await this.getConnectionFactory();
+        await factory.addIceCandidate(normalizedPeerAddress, candidate);
+    }
+
+    //Ran by the peer who is initiating the connection - this creates the offer
+    public async initiateWebRTC(transport: NetworkTransport) {
+        try {
+            this.logger.debug("initiateWebRTC");
+            const profileManager = this.p2pManager.profileManager;
+            let adr =
+                profileManager.getProfileByTransport(transport)?.evmAddress;
+            if (!adr) {
+                this.logger.error("initiateWebRTC - no EVM address");
+                return;
+            }
+            adr = getChecksumAddress(adr);
+
+            const factory = await this.getConnectionFactory();
+            const offer = await factory.createOffer(
+                adr,
+                this.createConnectionCallbacks(adr)
+            );
+            const serializedOffer = JSON.stringify(offer);
+            this.remoteRpc.webRTCSetupService
+                .onOfferWebRTC(serializedOffer)
+                .sendOne(adr);
+        } catch (e) {
+            this.logger.error("initiateWebRTC - error", e);
+        }
+    }
+
+    private normalizePeerAddress(
+        peerAddress: WebRTCPeerAddress
+    ): WebRTCPeerAddress {
+        return getChecksumAddress(peerAddress) as WebRTCPeerAddress;
     }
 
     private async getConnectionFactory(): Promise<WebRTCConnectionFactory> {
@@ -203,31 +286,6 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
         };
     }
 
-    public getWebRTCConnectionState(
-        peerAddress: WebRTCPeerAddress
-    ): WebRTCConnectionStateSnapshot {
-        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
-        return (
-            this.connectionFactory?.getState(normalizedPeerAddress) || {
-                connectionState: "unknown",
-                iceState: "unknown"
-            }
-        );
-    }
-
-    /**
-     * Closes the connection of `transport` when it is still its peer's
-     * current one. A replaced connection is already closed, and closing by
-     * peer would close the peer's newer connection.
-     */
-    public closeWebRTCConnection(transport: WebRTCTransport): void {
-        for (const [peerAddress, watch] of this.currentWatches) {
-            if (watch.transport !== transport) continue;
-            this.closeConnection(peerAddress, watch);
-            return;
-        }
-    }
-
     /**
      * Forgets `watch`, the peer's current connection, and closes that
      * connection in the factory. A failed close is not caught: it escapes
@@ -240,64 +298,6 @@ class WebRTCSetupService extends ANetworkRpcService<WebRTCSetupRpcMethods> {
         if (this.currentWatches.get(peerAddress) !== watch) return;
         this.currentWatches.delete(peerAddress);
         void this.connectionFactory?.close(peerAddress);
-    }
-
-    public async acceptWebRTCOffer(
-        peerAddress: WebRTCPeerAddress,
-        offer: any
-    ): Promise<any> {
-        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
-        const factory = await this.getConnectionFactory();
-        return factory.acceptOffer(
-            normalizedPeerAddress,
-            offer,
-            this.createConnectionCallbacks(normalizedPeerAddress)
-        );
-    }
-
-    public async applyWebRTCAnswer(
-        peerAddress: WebRTCPeerAddress,
-        answer: any
-    ): Promise<void> {
-        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
-        const factory = await this.getConnectionFactory();
-        await factory.applyAnswer(normalizedPeerAddress, answer);
-    }
-
-    public async addWebRTCIceCandidate(
-        peerAddress: WebRTCPeerAddress,
-        candidate: any
-    ): Promise<void> {
-        const normalizedPeerAddress = this.normalizePeerAddress(peerAddress);
-        const factory = await this.getConnectionFactory();
-        await factory.addIceCandidate(normalizedPeerAddress, candidate);
-    }
-
-    //Ran by the peer who is initiating the connection - this creates the offer
-    public async initiateWebRTC(transport: NetworkTransport) {
-        try {
-            this.logger.debug("initiateWebRTC");
-            const profileManager = this.p2pManager.profileManager;
-            let adr =
-                profileManager.getProfileByTransport(transport)?.evmAddress;
-            if (!adr) {
-                this.logger.error("initiateWebRTC - no EVM address");
-                return;
-            }
-            adr = getChecksumAddress(adr);
-
-            const factory = await this.getConnectionFactory();
-            const offer = await factory.createOffer(
-                adr,
-                this.createConnectionCallbacks(adr)
-            );
-            const serializedOffer = JSON.stringify(offer);
-            this.remoteRpc.webRTCSetupService
-                .onOfferWebRTC(serializedOffer)
-                .sendOne(adr);
-        } catch (e) {
-            this.logger.error("initiateWebRTC - error", e);
-        }
     }
 }
 

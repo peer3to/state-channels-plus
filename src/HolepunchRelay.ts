@@ -33,35 +33,21 @@ export function loadRelayModules(): Promise<RelayModules> {
 
 class HolepunchRelay {
     relayerUrls: string[];
-    updateCallback: Function;
+    updateCallback: (swarm: any) => void;
     swarm: any;
     logger: Logger;
     private relayerPool: RelayerPool;
     private socket?: WebSocket;
     private isDisposed = false;
 
-    private static instance: HolepunchRelay;
-
     public static init(
         relayerUrls: string[],
-        updateCallback: Function,
+        updateCallback: (swarm: any) => void,
         logger: Logger
     ): HolepunchRelay {
-        HolepunchRelay.instance = new HolepunchRelay(
-            relayerUrls,
-            updateCallback,
-            logger
-        );
-        HolepunchRelay.instance.connect();
-        return HolepunchRelay.instance;
-    }
-    public static getInstance(): HolepunchRelay {
-        if (!HolepunchRelay.instance)
-            throw new Error("HolepunchRelay not initialized");
-        return HolepunchRelay.instance;
-    }
-    public getSwarm(): any {
-        return this.swarm;
+        const relay = new HolepunchRelay(relayerUrls, updateCallback, logger);
+        relay.connect();
+        return relay;
     }
 
     /**
@@ -145,12 +131,12 @@ class HolepunchRelay {
         ws.onclose = fail;
         ws.onerror = fail;
 
-        this.updateCallback();
+        this.updateCallback(this.swarm);
     }
 
     private constructor(
         relayerUrls: string[],
-        updateCallback: Function,
+        updateCallback: (swarm: any) => void,
         logger: Logger
     ) {
         for (const relayerUrl of relayerUrls) assertRelayerUrl(relayerUrl);
@@ -166,13 +152,20 @@ class HolepunchRelay {
  * throws at construction, not when a failover first selects it.
  */
 function assertRelayerUrl(relayerUrl: string): void {
-    const protocol = URL.canParse(relayerUrl)
-        ? new URL(relayerUrl).protocol
-        : undefined;
+    const protocol = urlProtocol(relayerUrl);
     if (protocol !== "ws:" && protocol !== "wss:")
         throw new Error(
             `Invalid holepunch relayer URL "${relayerUrl}": expected a ws: or wss: URL`
         );
+}
+
+/** The URL's protocol, or undefined for a string that is not a URL. */
+function urlProtocol(url: string): string | undefined {
+    try {
+        return new URL(url).protocol;
+    } catch {
+        return undefined;
+    }
 }
 
 /**

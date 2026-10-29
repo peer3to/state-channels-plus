@@ -32,9 +32,8 @@ class Holepunch {
             this.p2pManager.logger.info("Using browser Hyperswarm relay");
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
-            const relayerUpdateCallback = () => {
+            const relayerUpdateCallback = (swarm: any) => {
                 this.swarm?.off("update", this.onSwarmUpdate);
-                const swarm = HolepunchRelay.getInstance().getSwarm();
                 this.swarm = (globalThis as any).Hyperswarm || swarm;
                 this.setupSwarm();
             };
