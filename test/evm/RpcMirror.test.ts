@@ -1,3 +1,5 @@
+import { MiscountingBlockSource } from "../fixtures/node/MiscountingBlockSource";
+import { SNAPSHOT_WAIT_MS } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
 import { sleep } from "@/utils";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
@@ -95,6 +97,31 @@ describe("MirrorRpcProvider", function () {
                 lazyReads: 0
             });
         });
+    });
+
+    it("reads an account the service keeps lazy at once, without waiting for a snapshot", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                await (await storage.setValue(5n)).wait();
+
+                const started = Date.now();
+                const word = await session.provider.getStorage(address, 0);
+                const elapsed = Date.now() - started;
+
+                expect(BigInt(word)).to.equal(5n);
+                // far below the wait for a snapshot that is not coming
+                expect(elapsed).to.be.lessThan(SNAPSHOT_WAIT_MS / 2);
+                expect(session.provider.mirrorStatistics).to.include({
+                    lazyNotices: 1,
+                    snapshotTimeouts: 0,
+                    snapshots: 0,
+                    lazyReads: 1
+                });
+            },
+            { backfillBlocks: new MiscountingBlockSource() }
+        );
     });
 
     it("asks the service for exactly the missing fields, at the head block, when no snapshot comes", async function () {

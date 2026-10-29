@@ -43,7 +43,7 @@ const OWN_TRANSACTION_WAIT_MS = 4_000;
  * that already holds the account pushes it at once; one that must rebuild it
  * from history pushes it when that is done.
  */
-const SNAPSHOT_WAIT_MS = 4_000;
+export const SNAPSHOT_WAIT_MS = 4_000;
 
 /**
  * Passes over one read the mirror makes before giving up on it: each pass
@@ -92,6 +92,8 @@ export interface MirrorChainStatistics {
     snapshots: number;
     /** Waits for a snapshot that ran out. */
     snapshotTimeouts: number;
+    /** Accounts the feed said no snapshot is coming for. */
+    lazyNotices: number;
 }
 
 export type MirrorChainOptions = {
@@ -142,7 +144,8 @@ export class MirrorChain {
         lazyReads: 0,
         lazyFields: 0,
         snapshots: 0,
-        snapshotTimeouts: 0
+        snapshotTimeouts: 0,
+        lazyNotices: 0
     };
     private failedAttempts = 0;
     private retryAfterMs = 0;
@@ -486,6 +489,14 @@ export class MirrorChain {
      * turn behind the reads and records in hand.
      */
     private receiveSnapshot(snapshot: StorageDiffSnapshot): void {
+        // no snapshot is coming for these: stop waiting, the reads fetch them
+        for (const address of snapshot.lazy ?? []) {
+            this.counters.lazyNotices++;
+            const done = this.awaitedSnapshots.get(address);
+            this.awaitedSnapshots.delete(address);
+            done?.();
+        }
+        if (Object.keys(snapshot.accounts).length === 0) return;
         const awaited = Object.keys(snapshot.accounts).some((address) =>
             this.awaitedSnapshots.has(address)
         );
