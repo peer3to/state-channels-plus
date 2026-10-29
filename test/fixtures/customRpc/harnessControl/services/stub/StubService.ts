@@ -658,7 +658,7 @@ export class StubService extends ANetworkRpcService<
         completed: number;
         succeeded: number;
     };
-    private originalQueueProbe?: SpectateService["sync"];
+    private originalQueueProbe?: SpectateService["syncBlockSource"];
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
@@ -1140,7 +1140,7 @@ export class StubService extends ANetworkRpcService<
         const broadcast = router.broadcastRpc.bind(router);
         const request = router.sendRpcRequest.bind(router);
         const spectate = this.p2pManager.localRpc.spectateService;
-        const sync = spectate.sync.bind(spectate);
+        const sync = spectate.syncBlockSource.bind(spectate);
         let releaseMembership: () => void = () => {};
         const gate = new Promise<void>((resolve) => {
             releaseMembership = resolve;
@@ -1163,7 +1163,7 @@ export class StubService extends ANetworkRpcService<
             releaseMembership,
             restore: () => {
                 queue.ingestBlockConfirmation = intake;
-                spectate.sync = sync;
+                spectate.syncBlockSource = sync;
                 queues.createEntry = createEntry;
                 chain.readPinnedChainMembership = read;
                 machine.getParticipants = participants;
@@ -1172,7 +1172,7 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.admissionObservation = observation;
-        spectate.sync = async (...args) => {
+        spectate.syncBlockSource = async (...args) => {
             try {
                 const result = await sync(...args);
                 if (result) observation.successfulSyncs++;
@@ -2525,7 +2525,7 @@ export class StubService extends ANetworkRpcService<
 
     public holdQueueProbe(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original = service.sync.bind(service);
+        const original = service.syncBlockSource.bind(service);
         this.originalQueueProbe = original;
         const hold = {
             ...this.createRpcHold("spectate"),
@@ -2533,7 +2533,7 @@ export class StubService extends ANetworkRpcService<
             succeeded: 0
         };
         this.queueProbeHold = hold;
-        service.sync = async (...args) => {
+        service.syncBlockSource = async (...args) => {
             hold.entered += 1;
             await hold.gate;
             try {
@@ -2558,7 +2558,7 @@ export class StubService extends ANetworkRpcService<
     public releaseQueueProbe(): void {
         this.queueProbeHold?.release();
         if (this.originalQueueProbe)
-            this.p2pManager.localRpc.spectateService.sync =
+            this.p2pManager.localRpc.spectateService.syncBlockSource =
                 this.originalQueueProbe;
         this.originalQueueProbe = undefined;
     }

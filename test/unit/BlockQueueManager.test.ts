@@ -111,7 +111,7 @@ describe("Unit: BlockQueueManager", () => {
             f.h.getPeer(0),
             async (sm, args, { ethers }) => {
                 const spectate = sm.p2pManager.localRpc.spectateService;
-                const sync = spectate.sync;
+                const sync = spectate.syncBlockSource;
                 let release!: () => void;
                 const gate = new Promise<void>((resolve) => {
                     release = resolve;
@@ -131,7 +131,7 @@ describe("Unit: BlockQueueManager", () => {
                     drainEntered();
                     return dispose.call(queue);
                 };
-                spectate.sync = async (...parameters) => {
+                spectate.syncBlockSource = async (...parameters) => {
                     entered();
                     await gate;
                     try {
@@ -165,7 +165,7 @@ describe("Unit: BlockQueueManager", () => {
                     return { stoppedWhileHeld, syncedWhenStopped };
                 } finally {
                     release();
-                    spectate.sync = sync;
+                    spectate.syncBlockSource = sync;
                     queue.dispose = dispose;
                 }
             },
@@ -237,9 +237,9 @@ describe("Unit: BlockQueueManager", () => {
             f.h.getPeer(0),
             async (sm, args, { ethers }) => {
                 const spectate = sm.p2pManager.localRpc.spectateService;
-                const sync = spectate.sync;
+                const sync = spectate.syncBlockSource;
                 let syncCalls = 0;
-                spectate.sync = (...parameters) => {
+                spectate.syncBlockSource = (...parameters) => {
                     syncCalls++;
                     return sync.apply(spectate, parameters);
                 };
@@ -289,7 +289,7 @@ describe("Unit: BlockQueueManager", () => {
                     return { isDisposed: sm.isDisposed, syncCalls };
                 } finally {
                     release();
-                    spectate.sync = sync;
+                    spectate.syncBlockSource = sync;
                     sm.timeoutManager.scheduleTask = schedule;
                     localRpc.dispose = disposeLocalRpc;
                 }

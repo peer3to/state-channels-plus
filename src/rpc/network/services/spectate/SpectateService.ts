@@ -124,6 +124,32 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return result === SyncResult.Synced;
     }
 
+    /**
+     * `sync` of a block's source (intake and its source probes). A source
+     * that answers it is still in its own initial sync has no block to send:
+     * the answer is a failed request and takes a failed request's counted
+     * close. Every other caller gets no consequence for that answer.
+     */
+    public async syncBlockSource(
+        peerAddress: Address,
+        channelId: ChannelId,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<boolean> {
+        const result = await this.requestSync(
+            peerAddress,
+            channelId,
+            forkId,
+            blockHeight
+        );
+        if (result === SyncResult.ResponderSyncing)
+            this.p2pManager.disconnectConnection(
+                getChecksumAddress(peerAddress),
+                DisconnectPolicy.allowRetry()
+            );
+        return result === SyncResult.Synced;
+    }
+
     public async requestSync(
         peerAddress: Address,
         channelId: ChannelId,
