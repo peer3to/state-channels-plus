@@ -14,8 +14,8 @@
 
 Dispatch-order tail and consequences
 
-- Setup: Drive guarded/unguarded services over real trusted and untrusted transports with valid and invalid endpoint surfaces
-- Oracle: Guards run first; only declared application endpoints execute once; request/one-way consequences keep their existing split
+- Setup: Drive guarded/unguarded services over real trusted and untrusted transports with valid and invalid endpoint surfaces; hold an inline responder's request handler, dispose its runtime, then release the handler
+- Oracle: Guards run first; only declared application endpoints execute once; request/one-way consequences keep their existing split; a handler that ends after its runtime's logger is disposed sends no reply and logs nothing, and its dispatch resolves
 
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P1` — guard failure settles request
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P2` — trusted-flag guard bypass branch
@@ -44,3 +44,4 @@ Dispatch-order tail and consequences
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P25` — empty request ID takes request path
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P26` — handler-response send fails once and disconnects without unhandled rejection
 - [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P27` — guard-response send fails once and disconnects without unhandled rejection
+- [x] `UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P28` — a held join-signature handler released after its inline runtime disposed: every inbound dispatch of the responder resolves, so it neither logs nor replies through its disposed logger

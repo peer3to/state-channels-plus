@@ -26,6 +26,8 @@ import type {
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
+    HeldOpenedStatusRead,
+    ParticipantCheckAnswer,
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
@@ -34,6 +36,7 @@ import type {
     StubService,
     SignatureBlockMatch,
     SnapshotPostHoldPoint,
+    SpectateSyncSettle,
     StateMutexStateHold,
     StopDuringAssemblyRecord,
     FailedRestoreRecord
@@ -50,7 +53,10 @@ import {
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
-import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
+import {
+    type SyncRequest,
+    SyncResult
+} from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Status } from "@/types";
 import type {
@@ -885,30 +891,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.restoreSpectateStaleProof();
     }
 
-    /** Delay join-signature replies while still running the real handler. */
-    public stubDelayJoinSignatureResponses(delayMs: number): boolean {
-        const service = this.p2pManager.localRpc.joinChannelService;
-        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
-            this.service.stubOriginals.set(
-                "joinSignatureCreateRpcMethods",
-                service.createRPCMethods.bind(service)
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "joinSignatureCreateRpcMethods"
-        ) as typeof service.createRPCMethods;
-        service.createRPCMethods = (transport: NetworkTransport) => {
-            const methods = original(transport);
-            const realRequest = methods.requestJoinSignature.bind(methods);
-            methods.requestJoinSignature = async (...args) => {
-                await sleep(delayMs);
-                return realRequest(...args);
-            };
-            return methods;
-        };
-        return true;
-    }
-
     /** Make join-signature requests fail at the responder. */
     public stubFailJoinSignatureRequests(): boolean {
         const service = this.p2pManager.localRpc.joinChannelService;
@@ -1435,15 +1417,29 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         // One dispatcher for every active prefix: a task is held by the first
         // prefix it matches, everything else reaches the real scheduler.
         const base = timeoutManager.scheduleTask.bind(timeoutManager);
+        const cancelBase = timeoutManager.cancelTask.bind(timeoutManager);
         this.service.heldScheduledTaskBase = base;
+        this.service.heldScheduledTaskCancelBase = cancelBase;
         timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
             for (const [held, tasks] of this.service.heldScheduledTasks) {
                 if (taskName.startsWith(held)) {
-                    tasks.push({ taskName, task });
-                    return {} as ReturnType<typeof setTimeout>;
+                    const handle = {} as ReturnType<typeof setTimeout>;
+                    tasks.push({ taskName, task, handle, isCancelled: false });
+                    return handle;
                 }
             }
             return base(task, delayMs, taskName);
+        };
+        // A cancel of a held task is recorded; the task stays held.
+        timeoutManager.cancelTask = (timeoutId) => {
+            for (const tasks of this.service.heldScheduledTasks.values()) {
+                const held = tasks.find((entry) => entry.handle === timeoutId);
+                if (held) {
+                    held.isCancelled = true;
+                    return;
+                }
+            }
+            cancelBase(timeoutId);
         };
         return true;
     }
@@ -1451,6 +1447,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Held task count for `prefix` so far. */
     public getHeldScheduledTaskCount(prefix: string): number {
         return this.service.heldScheduledTasks.get(prefix)?.length ?? 0;
+    }
+
+    /** Held tasks for `prefix` their owner cancelled so far. */
+    public getCancelledHeldScheduledTaskCount(prefix: string): number {
+        return (
+            this.service.heldScheduledTasks
+                .get(prefix)
+                ?.filter((entry) => entry.isCancelled).length ?? 0
+        );
     }
 
     /**
@@ -1471,6 +1476,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         ) {
             timeoutManager.scheduleTask = this.service.heldScheduledTaskBase;
             this.service.heldScheduledTaskBase = undefined;
+            if (this.service.heldScheduledTaskCancelBase)
+                timeoutManager.cancelTask =
+                    this.service.heldScheduledTaskCancelBase;
+            this.service.heldScheduledTaskCancelBase = undefined;
         }
         if (runHeld) for (const { task } of held) void task();
         return true;
@@ -1525,6 +1534,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
     public getJoinThresholdReadEntered(): number {
         return this.service.getJoinThresholdReadEntered();
+    }
+    public failNextJoinThresholdRead(): boolean {
+        this.service.failNextJoinThresholdRead();
+        return true;
+    }
+
+    public holdJoinSignatureResponses(): boolean {
+        this.service.holdJoinSignatureResponses();
+        return true;
+    }
+    public getJoinSignatureResponsesEntered(): number {
+        return this.service.getJoinSignatureResponsesEntered();
+    }
+    public releaseJoinSignatureResponses(): boolean {
+        this.service.releaseJoinSignatureResponses();
+        return true;
     }
     public releaseJoinThresholdRead(): boolean {
         this.service.releaseJoinThresholdRead();
@@ -3520,33 +3545,97 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    /** Count spectate sync requests and record their selected peer. */
-    public stubRecordSpectateSync(forward: boolean): boolean {
+    /**
+     * Record each `spectateService.requestSync` call (`syncBlockSource`
+     * calls it too)
+     * and its selected peer. A
+     * forwarded call also records its start, settle time, result and the
+     * timeout of the request it started; with
+     * `holdResults`, its result is parked after that record until
+     * `restoreSpectateSync`.
+     */
+    public stubRecordSpectateSync(
+        forward: boolean,
+        holdResults = false
+    ): boolean {
         const spectate = this.p2pManager.localRpc.spectateService;
         if (!this.service.stubOriginals.has("spectateSync")) {
             this.service.stubOriginals.set(
                 "spectateSync",
-                spectate.sync.bind(spectate)
+                spectate.requestSync.bind(spectate)
             );
         }
         this.service.spectateSyncCallCount = 0;
         this.service.spectateSyncTargets.length = 0;
+        this.service.spectateSyncSettles.length = 0;
+        this.service.spectateSyncResultGate?.release();
+        const resultGate = holdResults ? this.service.createGate() : undefined;
+        this.service.spectateSyncResultGate = resultGate;
         const original = this.service.stubOriginals.get(
             "spectateSync"
-        ) as typeof spectate.sync;
-        spectate.sync = (...args: Parameters<typeof spectate.sync>) => {
+        ) as typeof spectate.requestSync;
+        // A call that starts its own request reaches `runSync` before its
+        // first await; the wrap reads the timeout that request got.
+        if (!this.service.stubOriginals.has("spectateRunSync")) {
+            this.service.stubOriginals.set(
+                "spectateRunSync",
+                Reflect.get(spectate, "runSync")
+            );
+        }
+        const runSync = this.service.stubOriginals.get("spectateRunSync") as (
+            ...args: unknown[]
+        ) => Promise<SyncResult>;
+        let requestTimeoutMs: number | undefined;
+        Reflect.set(spectate, "runSync", (...args: unknown[]) => {
+            requestTimeoutMs = args[2] as number;
+            return Reflect.apply(runSync, spectate, args);
+        });
+        spectate.requestSync = (
+            ...args: Parameters<typeof spectate.requestSync>
+        ) => {
             this.service.recordSpectateSyncCall(String(args[0]));
-            if (forward) return original(...args);
-            return Promise.resolve(true);
+            if (!forward) return Promise.resolve(SyncResult.Synced);
+            const callNumber = this.service.spectateSyncCallCount;
+            const startedAt = Date.now();
+            requestTimeoutMs = undefined;
+            const pending = original(...args);
+            const startedRequestTimeoutMs = requestTimeoutMs;
+            return pending.then(async (result) => {
+                this.service.spectateSyncSettles.push({
+                    callNumber,
+                    startedAt,
+                    settledAt: Date.now(),
+                    result,
+                    ...(startedRequestTimeoutMs !== undefined && {
+                        requestTimeoutMs: startedRequestTimeoutMs
+                    })
+                });
+                if (resultGate) {
+                    resultGate.entered += 1;
+                    await resultGate.gate;
+                }
+                return result;
+            });
         };
         return true;
     }
 
+    public getSpectateSyncSettles(): SpectateSyncSettle[] {
+        return this.service.spectateSyncSettles;
+    }
+
     public restoreSpectateSync(): boolean {
         const spectate = this.p2pManager.localRpc.spectateService;
+        this.service.spectateSyncResultGate?.release();
+        this.service.spectateSyncResultGate = undefined;
+        const runSync = this.service.stubOriginals.get("spectateRunSync");
+        if (runSync !== undefined) {
+            Reflect.set(spectate, "runSync", runSync);
+            this.service.stubOriginals.delete("spectateRunSync");
+        }
         const original = this.service.stubOriginals.get("spectateSync");
         if (original === undefined) return false;
-        spectate.sync = original as typeof spectate.sync;
+        spectate.requestSync = original as typeof spectate.requestSync;
         this.service.stubOriginals.delete("spectateSync");
         return true;
     }
@@ -3636,17 +3725,37 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldSpectateResponseCount();
     }
 
-    public holdPostMatchTargetRefresh(autoReleaseMs?: number): boolean {
-        this.service.holdPostMatchTargetRefresh(autoReleaseMs);
+    public holdOpenedStatusRefresh(
+        heldRead: HeldOpenedStatusRead,
+        autoReleaseMs?: number
+    ): boolean {
+        this.service.holdOpenedStatusRefresh(heldRead, autoReleaseMs);
         return true;
     }
 
-    public releasePostMatchTargetRefresh(): number {
-        return this.service.releasePostMatchTargetRefresh();
+    public releaseOpenedStatusRefresh(): number {
+        return this.service.releaseOpenedStatusRefresh();
     }
 
-    public getHeldPostMatchTargetRefreshCount(): number {
-        return this.service.getHeldPostMatchTargetRefreshCount();
+    public holdParticipantCheck(): boolean {
+        this.service.holdParticipantCheck();
+        return true;
+    }
+
+    public releaseParticipantCheck(answer: ParticipantCheckAnswer): number {
+        return this.service.releaseParticipantCheck(answer);
+    }
+
+    public releaseOneParticipantCheck(answer: ParticipantCheckAnswer): boolean {
+        return this.service.releaseOneParticipantCheck(answer);
+    }
+
+    public getHeldParticipantCheckCount(): number {
+        return this.service.getHeldParticipantCheckCount();
+    }
+
+    public getHeldOpenedStatusRefreshCount(): number {
+        return this.service.getHeldOpenedStatusRefreshCount();
     }
 
     public holdMembershipReceipt(
@@ -3660,6 +3769,21 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
         this.service.holdMembershipSubmission(kind);
         return true;
+    }
+
+    public holdFirstJoinSendAfterEstimate(
+        kind?: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.holdFirstJoinSendAfterEstimate(kind);
+        return true;
+    }
+
+    public getHeldJoinSendAfterEstimateCount(): number {
+        return this.service.getHeldJoinSendAfterEstimateCount();
+    }
+
+    public releaseJoinSendAfterEstimate(): number {
+        return this.service.releaseJoinSendAfterEstimate();
     }
 
     /** Releases the submissions held so far and keeps holding later ones. */
@@ -3877,12 +4001,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getInitHandshakeCallCount();
     }
 
-    /** Fail `kind` submissions with a failed receipt (only the first with `once`); counted, never held. */
+    /** Fail `kind` submissions with a failed receipt (only the first with `once`; a passing replay with `isReplayPassing`); counted, never held. */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
-        once?: boolean
+        once?: boolean,
+        isReplayPassing?: boolean
     ): boolean {
-        this.service.failMembershipReceipt(kind, once);
+        this.service.failMembershipReceipt(kind, once, isReplayPassing);
         return true;
     }
 

@@ -1,6 +1,7 @@
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
+import { JoinCollectionError } from "@/rpc/network/services/joinChannel/JoinCollectionError";
 import type StateManager from "@/stateManager/StateManager";
 import type { JoinRecord, JoinUpdate } from "@/storage/ForceJoinStorage";
 import { Status, timeoutWaitTime } from "@/types";
@@ -18,9 +19,19 @@ import type {
     BalanceStruct,
     JoinChannelConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { ContractTransactionResponse } from "ethers";
 
-/** A join or top-up submission the chain proved failed (see `isProvenSubmissionFailure`). */
-type SubmissionRefusal = { error: unknown; custom: CustomEvmError | null };
+/**
+ * A join or top-up submission the chain proved failed (see
+ * `isProvenSubmissionFailure`). `hasReplayPassed`: it was mined and reverted
+ * with no data, and its replay at the latest block passes, so the reason is
+ * unknown (another submission raced it) and the same submission can go again.
+ */
+type SubmissionRefusal = {
+    error: unknown;
+    custom: CustomEvmError | null;
+    hasReplayPassed: boolean;
+};
 
 /** One join or top-up submission. "uncertain": it may still land. */
 type SubmissionOutcome = "submitted" | "uncertain" | SubmissionRefusal;
@@ -66,9 +77,10 @@ export default class ChannelJoinService {
      * Submits a prepared join; a call while one runs gets the same promise.
      * A refusal that a fresh confirmation can win (the threshold set widened,
      * or the channel's on-chain snapshot moved to a stored one) is collected
-     * again with the same balance and submitted again, for each such refusal
-     * up to the channel's maximum participant count of retries; any other
-     * refusal, or one past that cap, is final. A refusal for a full channel
+     * again with the same balance and submitted again; a mined refusal whose
+     * replay passes is submitted again as it is. Each retry counts toward the
+     * channel's maximum participant count of retries; any other refusal, or
+     * one past that cap, is final. A refusal for a full channel
      * aborts the runtime: this route makes no full-channel read first.
      */
     public joinChannel(
@@ -89,6 +101,8 @@ export default class ChannelJoinService {
      * `joinChannel`. A channel already full is neither collected for nor
      * submitted to. A full channel, found here or refused by the chain,
      * aborts the runtime, or leaves it SYNCED with `shouldSpectateWhenFull`.
+     * A confirmation the network does not give (`JoinCollectionError`)
+     * aborts the runtime with nothing submitted; any other failure rejects.
      * A call while a join runs gets that join's promise.
      */
     public collectAndJoinChannel(
@@ -100,13 +114,30 @@ export default class ChannelJoinService {
                 this.onChannelFull(shouldSpectateWhenFull);
                 return false;
             }
-            return this.runJoin(
-                await this.stateManager.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
-                    balance
-                ),
-                shouldSpectateWhenFull
-            );
+            const prepared = await this.collectConfirmation(balance);
+            if (!prepared) {
+                // nothing was submitted, so the caller stays uncommitted
+                this.stateManager.abort();
+                return false;
+            }
+            return this.runJoin(prepared, shouldSpectateWhenFull);
         });
+    }
+
+    /**
+     * Collects a top-up confirmation for `balance` and submits it like
+     * `topUpBalance`. A confirmation the network does not give
+     * (`JoinCollectionError`) fails the top-up with nothing submitted and
+     * keeps the participation; any other failure rejects.
+     */
+    public async collectAndTopUp(balance: BalanceStruct): Promise<boolean> {
+        const prepared = await this.collectConfirmation(balance);
+        if (!prepared) return false;
+        return this.topUpBalance(
+            prepared.confirmation,
+            prepared.expectedSnapshotHash,
+            prepared.expectedForkId
+        );
     }
 
     /** Submits a prepared top-up, retried like a join; a failed top-up keeps the participation. */
@@ -189,12 +220,14 @@ export default class ChannelJoinService {
             // check already past a read stops at its next isActive check
             const refused = this.markJoinRetrying();
             if (
+                !outcome.hasReplayPassed &&
                 !(await this.shouldRetryWithFreshConfirmation(attempt, outcome))
             )
                 break;
-            const fresh = await this.prepareConfirmationAgain(
-                attempt.confirmation
-            );
+            // a refusal whose replay passes is submitted again as it is
+            const fresh = outcome.hasReplayPassed
+                ? attempt
+                : await this.prepareConfirmationAgain(attempt.confirmation);
             // the join ended or the runtime was disposed meanwhile: no
             // further funded submission
             if (sm.isDisposed || !refused || !this.isCurrent(refused))
@@ -229,12 +262,16 @@ export default class ChannelJoinService {
             typeof outcome === "object" &&
             !sm.isDisposed &&
             retries < sm.storage.queues.maxChannelParticipants &&
-            (await this.shouldRetryWithFreshConfirmation(attempt, outcome));
+            (outcome.hasReplayPassed ||
+                (await this.shouldRetryWithFreshConfirmation(
+                    attempt,
+                    outcome
+                )));
             retries++
         ) {
-            const fresh = await this.prepareConfirmationAgain(
-                attempt.confirmation
-            );
+            const fresh = outcome.hasReplayPassed
+                ? attempt
+                : await this.prepareConfirmationAgain(attempt.confirmation);
             if (!fresh || sm.isDisposed) return false;
             attempt = fresh;
             outcome = await this.submitTopUp(attempt);
@@ -266,8 +303,9 @@ export default class ChannelJoinService {
         this.logger.info("Submitting the join", {
             submissionHeight: join.submissionHeight
         });
+        let tx: ContractTransactionResponse | undefined;
         try {
-            const tx = await sm.stateChannelManagerContract.joinChannel(
+            tx = await sm.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash,
                 expectedForkId
@@ -275,9 +313,11 @@ export default class ChannelJoinService {
             await tx.wait();
             return "submitted";
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
+            const outcome = await this.readOutcome(error, tx);
             if (
-                custom?.name === "ErrorJoinChannelParticipantAlreadyExists" &&
+                typeof outcome === "object" &&
+                outcome.custom?.name ===
+                    "ErrorJoinChannelParticipantAlreadyExists" &&
                 this.isCurrent(join)
             ) {
                 this.logger.warn(
@@ -285,8 +325,7 @@ export default class ChannelJoinService {
                 );
                 return "submitted";
             }
-            if (isProvenSubmissionFailure(error, custom))
-                return { error, custom };
+            if (outcome !== "uncertain") return outcome;
             if (await sm.membershipService.isSignerOnChain()) {
                 this.logger.warn(
                     "joinChannel - submission outcome uncertain but the chain lists the signer"
@@ -306,8 +345,9 @@ export default class ChannelJoinService {
         expectedSnapshotHash,
         expectedForkId
     }: PreparedJoinChannelConfirmation): Promise<SubmissionOutcome> {
+        let tx: ContractTransactionResponse | undefined;
         try {
-            const tx =
+            tx =
                 await this.stateManager.stateChannelManagerContract.topUpBalance(
                     confirmation,
                     expectedSnapshotHash,
@@ -316,11 +356,42 @@ export default class ChannelJoinService {
             await tx.wait();
             return "submitted";
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            return isProvenSubmissionFailure(error, custom)
-                ? { error, custom }
-                : "uncertain";
+            return this.readOutcome(error, tx);
         }
+    }
+
+    /**
+     * A failed join or top-up. One mined after another join landed reverts with
+     * no revert data: a replay at the latest block names the refusal, or
+     * passes. Nothing is sent here; the caller's retry loop decides.
+     */
+    private async readOutcome(
+        error: unknown,
+        tx: ContractTransactionResponse | undefined
+    ): Promise<SubmissionOutcome> {
+        const decoded = tryDecodeCustomError(error);
+        // Replay only a mined failure; an unmined one may still land.
+        if (!isProvenSubmissionFailure(error, decoded)) return "uncertain";
+        if (decoded || !tx)
+            return { error, custom: decoded, hasReplayPassed: false };
+        try {
+            await tx.provider.call({
+                to: tx.to,
+                from: tx.from,
+                data: tx.data,
+                value: tx.value
+            });
+        } catch (replayError) {
+            return {
+                error,
+                custom: tryDecodeCustomError(replayError),
+                hasReplayPassed: false
+            };
+        }
+        this.logger.info(
+            "The mined submission reverted without data but its replay passes; it is submitted again"
+        );
+        return { error, custom: null, hasReplayPassed: true };
     }
 
     /**
@@ -438,14 +509,25 @@ export default class ChannelJoinService {
             String(confirmation.signedJoinChannel.encodedJoinChannel),
             Type.JoinChannel
         );
+        return this.collectConfirmation(balance);
+    }
+
+    /**
+     * A confirmation for `balance`; undefined when the network does not give
+     * one (`JoinCollectionError`). Any other failure rejects.
+     */
+    private async collectConfirmation(
+        balance: BalanceStruct
+    ): Promise<PreparedJoinChannelConfirmation | undefined> {
         try {
             return await this.stateManager.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                 balance
             );
         } catch (error) {
+            if (!(error instanceof JoinCollectionError)) throw error;
             this.logger.warn(
-                "The fresh confirmation for the retry could not be collected; the call fails without a further submission",
-                { error: errorMessage(error) }
+                "The join confirmation could not be collected; nothing is submitted",
+                { failures: error.failures }
             );
             return undefined;
         }

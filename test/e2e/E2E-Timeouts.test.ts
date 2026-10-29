@@ -276,12 +276,10 @@ describe("E2E: Timeouts", function () {
             await upload.waitUntilHeld();
             h.event.resetEventSpies();
             // the valid block is posted in time, while our upload is in flight
-            await h
-                .control(leader)
-                .validation.postBlockCalldataOnChain(
-                    authored.encodedSignedBlock
-                )
-                .request();
+            await h.transition.postBlockCalldataOnChainWait(
+                leader,
+                authored.encodedSignedBlock
+            );
             // the handler finished: its ingest met the marker and dropped the block
             await h.event.waitUntilEventOccurs(
                 "onBlockCalldataPosted",
@@ -464,12 +462,10 @@ describe("E2E: Timeouts", function () {
                     .control(predecessor)
                     .query.getBlockByHeight(forkId, 0)
                     .request();
-                await h
-                    .control(predecessor)
-                    .validation.postBlockCalldataOnChain(
-                        parent!.encodedSignedBlock
-                    )
-                    .request();
+                await h.transition.postBlockCalldataOnChainWait(
+                    predecessor,
+                    parent!.encodedSignedBlock
+                );
                 await uploads.release();
                 await h.assert.dispute.committedWait({
                     peersIndices: [observer.index],

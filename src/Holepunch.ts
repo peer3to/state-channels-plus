@@ -5,8 +5,6 @@ import { isWorkerRuntime } from "@/rpc/network/services/WebRTCSetup/connection/W
 import { HolepunchTransport, TransportType } from "@/transport";
 import { config } from "@/utils/config";
 import { Buffer } from "buffer";
-//@ts-ignore
-import Hyperswarm from "hyperswarm";
 
 class Holepunch {
     swarm: any;
@@ -19,6 +17,8 @@ class Holepunch {
     /** Bound once, so `off` removes only this listener from a shared swarm. */
     private readonly onSwarmUpdate = () => this.logConnectionAttempts();
     private readonly isBrowserRuntime: boolean;
+    /** The browser relay this instance started; absent in Node. */
+    private relay?: HolepunchRelay;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
 
@@ -32,13 +32,12 @@ class Holepunch {
             this.p2pManager.logger.info("Using browser Hyperswarm relay");
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
-            const relayerUpdateCallback = () => {
+            const relayerUpdateCallback = (swarm: any) => {
                 this.swarm?.off("update", this.onSwarmUpdate);
-                const swarm = HolepunchRelay.getInstance().getSwarm();
                 this.swarm = (globalThis as any).Hyperswarm || swarm;
                 this.setupSwarm();
             };
-            HolepunchRelay.init(
+            this.relay = HolepunchRelay.init(
                 relayerUrls,
                 relayerUpdateCallback,
                 this.p2pManager.logger
@@ -53,21 +52,23 @@ class Holepunch {
 
     //Mark resources for garbage collection
     public async dispose() {
+        this.relay?.dispose();
         this.leaveTopics();
         this.swarm?.off("update", this.onSwarmUpdate);
-        if (typeof this.swarm?.destroy === "function") {
-            await Promise.resolve(this.swarm.destroy());
-            return;
-        }
-        if (typeof this.swarm?.close === "function") {
-            await Promise.resolve(this.swarm.close());
-        }
+        const teardown = Promise.resolve(
+            typeof this.swarm?.destroy === "function"
+                ? this.swarm.destroy()
+                : this.swarm?.close?.()
+        );
+        // Browser: the relay is closed, so the teardown never gets its replies.
+        if (this.relay) void teardown.catch(() => undefined);
+        else await teardown;
     }
     public async join(topic: Buffer) {
-        this.ensureNodeSwarm();
+        await this.ensureNodeSwarm();
         this.topics.push(topic);
-        this.announceTopic(topic);
-        return;
+        // A browser relay that is still loading announces it on `setupSwarm`.
+        if (this.swarm) this.announceTopic(topic);
     }
 
     public async leave(topic: Buffer) {
@@ -150,10 +151,19 @@ class Holepunch {
         };
     }
 
-    private ensureNodeSwarm() {
+    private async ensureNodeSwarm(): Promise<void> {
         if (this.swarm || this.isBrowserRuntime) return;
         // @ts-ignore
-        this.swarm = global.Hyperswarm || new Hyperswarm();
+        const injected = global.Hyperswarm;
+        if (injected) {
+            this.swarm = injected;
+        } else {
+            // Loaded on first use, like the browser relay's modules (see HolepunchRelay).
+            // @ts-ignore
+            const { default: Hyperswarm } = await import("hyperswarm");
+            if (this.swarm) return;
+            this.swarm = new Hyperswarm();
+        }
         this.setupSwarm();
     }
 
@@ -248,7 +258,7 @@ class Holepunch {
 
     private leaveTopics() {
         for (const topic of this.topics) {
-            this.swarm.leave(topic);
+            this.swarm?.leave(topic);
             this.p2pManager.logger.debug("Left holepunch topic", {
                 topic: topic.toString("hex")
             });

@@ -12,7 +12,9 @@ confirmations with the byzantine helpers, and deliver them over real transports 
 `sendBlockConfirmation`. Unauthenticated junk is rejected synchronously in ingest and blacklists
 its sender. An authenticated block from an absent sender (an outsider or an ex-member) triggers
 the admission sync; the sender cannot prove the block it sent, so the failed sync is one counted
-close of the sender and no blacklist. One test separates supplier from author: an eligible
+close of the sender and no blacklist. A sibling case holds the outsider's own initial sync at its
+install, so it is `OPENED` and answers the admission sync that it is still syncing; the victim's recorded
+sync result is that answer, and the sender takes exactly one counted close. One test separates supplier from author: an eligible
 relayer delivers an outsider-authored block, which reaches `blockAuthorIsNotParticipant` on the
 live queue, and both are cut. The last test repeats the stale-membership attack against an active
 participant. Oracles are `peerBlacklistedAndDisconnected` for the junk and live-queue cases,
@@ -28,6 +30,7 @@ The pending-participant victim case keeps a spawn-only attacker (`addSpectator`)
 - `cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P1
 - `cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running`: none
 - `cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running`: REQ-GOSSIP-4-J5Z4DF.T1.P49
+- `cuts the sender of an authenticated outsider-authored block that answers it is still in its own initial sync with one counted close and keeps a SYNCED spectator running`: REQ-GOSSIP-4-J5Z4DF.T1.P49
 - `cuts both an eligible relayer and the outsider author while the victim keeps spectating`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P7, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P9, INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P21
 - `cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED`: REQ-GOSSIP-4-J5Z4DF.T1.P50
 - `cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute`: REQ-GOSSIP-4-J5Z4DF.T1.P51

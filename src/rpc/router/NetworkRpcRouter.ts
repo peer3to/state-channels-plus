@@ -76,6 +76,8 @@ export class NetworkRpcRouter<
     }
 
     public async onRpc(serializedRpc: string, transport: NetworkTransport) {
+        // A closed socket can still emit frames; its runtime may be disposed.
+        if (transport.isClosed) return;
         try {
             // Reject oversized frames before parsing so a peer can't force
             // unbounded JSON.parse/dispatch work.

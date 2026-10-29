@@ -1,6 +1,12 @@
 // @spec-test-coverage-ignore: typed SDK-edge recorders for transport component tests
 import type { BannablePeerInfo } from "@/PeerProfile";
-import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
+import type {
+    WebRTCConnectionStateName,
+    WebRTCDataChannelLike,
+    WebRTCIceStateName,
+    WebRTCPeerConnectionLike,
+    WebRTCStatsReport
+} from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
 
 type HolepunchSocketEvent = "data" | "close" | "error";
 
@@ -60,6 +66,83 @@ export class RecordingWebRTCDataChannel implements WebRTCDataChannelLike {
     public close(): void {
         this.closed = true;
         this.readyState = "closed";
+    }
+}
+
+/**
+ * RTCPeerConnection stand-in. `changeState` sets the states and fires both
+ * change events, ICE first, as a browser does; `changeIceState` fires only
+ * the ICE one. `getStats` answers with `statsReport`,
+ * or rejects with `statsError`; each call first waits for the next entry of
+ * `statsHolds`, if any. Without `withStats` the instance has no `getStats`,
+ * like the Node implementation.
+ */
+export class RecordingRTCPeerConnection implements WebRTCPeerConnectionLike {
+    public connectionState: WebRTCConnectionStateName = "new";
+    public iceConnectionState: WebRTCIceStateName = "new";
+    private readonly listeners = {
+        connectionstatechange: [] as (() => void)[],
+        iceconnectionstatechange: [] as (() => void)[]
+    };
+    public onicecandidate: ((event: { candidate?: any }) => void) | null = null;
+    public statsReport = new Map<string, Record<string, any>>();
+    public readonly statsHolds: Promise<void>[] = [];
+    public statsError?: Error;
+    public getStats?: () => Promise<WebRTCStatsReport>;
+
+    constructor(withStats = true) {
+        if (withStats)
+            this.getStats = async () => {
+                const report = new Map(this.statsReport);
+                await this.statsHolds.shift();
+                if (this.statsError) throw this.statsError;
+                return report;
+            };
+    }
+
+    public addEventListener(
+        type: "connectionstatechange" | "iceconnectionstatechange",
+        listener: () => void
+    ): void {
+        this.listeners[type].push(listener);
+    }
+
+    public changeState(
+        connectionState: WebRTCConnectionStateName,
+        iceState: WebRTCIceStateName
+    ): void {
+        this.changeIceState(iceState);
+        this.connectionState = connectionState;
+        for (const listener of this.listeners.connectionstatechange) listener();
+    }
+
+    /** Only the ICE state changes, as werift reports an ICE recovery. */
+    public changeIceState(iceState: WebRTCIceStateName): void {
+        this.iceConnectionState = iceState;
+        for (const listener of this.listeners.iceconnectionstatechange)
+            listener();
+    }
+
+    public createDataChannel(): WebRTCDataChannelLike {
+        return new RecordingWebRTCDataChannel();
+    }
+
+    public async createOffer(): Promise<any> {
+        return {};
+    }
+
+    public async createAnswer(): Promise<any> {
+        return {};
+    }
+
+    public async setLocalDescription(): Promise<void> {}
+
+    public async setRemoteDescription(): Promise<void> {}
+
+    public async addIceCandidate(): Promise<void> {}
+
+    public close(): void {
+        this.connectionState = "closed";
     }
 }
 

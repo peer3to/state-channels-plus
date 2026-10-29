@@ -54,7 +54,6 @@ struct TransactionHeader {
 
 // do this polymorphically later with encoded functions and argument data
 struct TransactionBody {
-    bytes encodedData;
     bytes data; //evm transaction data
 }
 

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import type { ScenarioService } from "./ScenarioService";
+import Clock from "@/Clock";
 import * as eventBusModule from "@/events/EventBus";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -11,6 +12,7 @@ import { ethers } from "ethers";
  * module scope, so imports a test body needs must be injected explicitly.
  */
 export type HostExecModules = {
+    Clock: typeof Clock;
     ethers: typeof ethers;
     eventBus: typeof eventBusModule;
     tryDecodeCustomError: typeof tryDecodeCustomError;
@@ -39,6 +41,7 @@ export class ScenarioRpcMethods extends ANetworkRpcMethods<ScenarioService> {
             modules: HostExecModules
         ) => unknown;
         return await fn(this.service.sm, args, {
+            Clock,
             ethers,
             eventBus: eventBusModule,
             tryDecodeCustomError

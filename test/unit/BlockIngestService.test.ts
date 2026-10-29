@@ -916,7 +916,6 @@ describe("Unit: BlockIngestService", function () {
                     },
                     transaction: factory.transaction({
                         body: {
-                            encodedData: call.data,
                             data: call.data
                         }
                     }),

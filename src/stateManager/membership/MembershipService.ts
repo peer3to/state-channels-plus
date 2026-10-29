@@ -11,6 +11,7 @@ import {
     Codec,
     Type
 } from "@/utils";
+import { preferLocal } from "@/utils/localDiamond";
 import type {
     MessageBlockStruct,
     StateSnapshotStruct
@@ -224,6 +225,26 @@ export default class MembershipService {
                 channelId
             )
         ).map(String) as Address[];
+    }
+
+    /**
+     * Whether the chain's threshold set lists this signer. A mirror that
+     * lists the signer answers without a chain read; otherwise the chain
+     * answers, since the mirror can lag it.
+     */
+    public async isSignerInThresholdSet(): Promise<boolean> {
+        const sm = this.stateManager;
+        return await preferLocal(
+            async () =>
+                this.includesSigner(
+                    (await sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
+                        sm.channelId
+                    )) as Address[]
+                ),
+            async () =>
+                this.includesSigner(await this.getOnChainThresholdSet()),
+            (isListed) => isListed
+        );
     }
 
     /**

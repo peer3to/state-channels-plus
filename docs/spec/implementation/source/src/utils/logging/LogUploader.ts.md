@@ -36,3 +36,11 @@ Delta upload against a real receiver, and crash capture that never throws.
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P15` — ending its thread cancels an upload still posting at once, with no entries and no retry
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P16` — ending its thread cancels an upload in its jitter wait before it posts
 - [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P17` — ending its thread cancels an upload in its retry delay at once, with no entries and no retry
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P18` — an ending thread first lets an upload in its jitter wait post its entries
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P25` — an ending thread waits for, then cancels, the upload of an uploader from a second copy of the module: the realm's set of busy uploaders is one per realm, on the global object
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P19` — an ending thread waits for a held upload only until its bound, then cancels it
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P20` — an ending thread cancels a running upload of an abort flush whose deadline passed without waiting
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P21` — an earlier abort flush's deadline does not cut the wait for a later upload
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P22` — an upload an error queued behind an abort flush's upload is waited for after that flush's deadline
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P23` — an upload queued during a running abort flush is waited for only until that flush's deadline
+- [x] `UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P24` — a request during an abort flush that is queued behind an earlier upload keeps that flush's deadline

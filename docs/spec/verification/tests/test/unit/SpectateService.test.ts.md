@@ -69,6 +69,7 @@ blacklist.
 - `sync accepts a reduction landing after its chain window was persisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P22
 - `plain pinned sync accepts a proved successor of the requested fork`: REQ-SYNC-1-T2589H.T1.P9, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P19
 - `plain pinned sync refuses an unknown fork`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P20
+- `one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116, REQ-SPC-3-AZBKR1.T1.P10
 - `one sync request supports initial load and exact recovery`: INV-SYNC-2-AT3RXE.T1.P1
 - `exact recovery failure preserves a synced observer runtime`: INV-SYNC-3-A7A2ED.T1.P4
 - `a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28
@@ -109,5 +110,5 @@ blacklist.
 - `chain-final unadopted window synced by a requester that handled none of its dispute logs → the sync stores no confirmation, and the requester, now on the reduced fork, recovers every window dispute from chain logs without auditing`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25
 - `committed dispute missing locally → recovers before generating the payload`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9
 - `reduce data unavailable for a disputed window → the request fails, the requester is not blacklisted (needs a mirror ahead of storage)`: none
-- `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P4
+- `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P7
 - `all dispute events suppressed → recovers and proves the successor fork`: none

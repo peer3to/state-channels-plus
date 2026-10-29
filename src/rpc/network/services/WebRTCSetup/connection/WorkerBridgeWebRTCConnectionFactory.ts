@@ -9,7 +9,10 @@ import type {
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import type { SerializedError } from "@/rpc/internal/errorWire";
 import { deserializeError } from "@/rpc/internal/errorWire";
-import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
+import {
+    isRootDisposedError,
+    type RemoteRoot
+} from "@/rpc/internal/RemoteRoot";
 import type { WebRTCMainThreadBridgeRoot } from "@/rpc/internal/roots/WebRTCMainThreadBridge";
 import type { WebRTCWorkerBridgeRoot } from "@/rpc/internal/roots/WebRTCWorkerBridgeRoot";
 
@@ -85,14 +88,20 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
                     callbacks.onError?.(new Error("WebRTC bridge closed"));
             this.callbacksByPeerAddress.clear();
             this.proxyChannelsByPeerAddress.clear();
-            this.workerBridgeRemoteRoot = undefined;
         });
     }
 
     private get remote(): RuntimeConnection<WebRTCWorkerBridgeRoot> {
         if (!this.workerBridgeRemoteRoot)
             throw new Error("WebRTC worker bridge is not initialized");
+        if (this.workerBridgeRemoteRoot.isClosed)
+            throw new Error("WebRTC worker bridge is closed");
         return this.workerBridgeRemoteRoot.rpc;
+    }
+
+    /** The runtime host's disposal of the bridge closes every connection. */
+    private get isBridgeDisposing(): boolean {
+        return this.workerBridgeRemoteRoot?.isDisposing === true;
     }
 
     setCallbacks(
@@ -207,8 +216,19 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
             .request();
     }
 
-    close(peerAddress: WebRTCPeerAddress): Promise<void> {
-        return this.remote.negotiation.close(peerAddress).request();
+    /**
+     * Resolves when the bridge is disposing or disposed: the disposal closes
+     * the connection, and rejects a close request still in flight with its
+     * disposal error. Every other failure rejects.
+     */
+    async close(peerAddress: WebRTCPeerAddress): Promise<void> {
+        if (this.isBridgeDisposing) return;
+        try {
+            await this.remote.negotiation.close(peerAddress).request();
+        } catch (error) {
+            if (!this.isBridgeDisposing || !isRootDisposedError(error))
+                throw error;
+        }
     }
 }
 

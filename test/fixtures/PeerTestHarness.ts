@@ -869,8 +869,16 @@ export class PeerTestHarness<
                                   createContractExecutor(
                                       {
                                           ...factoryOptions,
-                                          callGasLimit:
-                                              BigInt(executorCallGasLimit)
+                                          configuration:
+                                              factoryOptions.configuration.then(
+                                                  (configuration) => ({
+                                                      ...configuration,
+                                                      callGasLimit:
+                                                          BigInt(
+                                                              executorCallGasLimit
+                                                          )
+                                                  })
+                                              )
                                       },
                                       owner
                                   )

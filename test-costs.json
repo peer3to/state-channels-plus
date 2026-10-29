@@ -313,10 +313,10 @@
       "peakRssGb": 0.588,
       "measurementReason": null
     },
-    "hardhat|test/P2PManager.test.ts|P2PManager original transport retirement rejects its pending request": {
-      "durationMs": 9041,
-      "avgCores": 0.977,
-      "peakRssGb": 0.594,
+    "hardhat|test/P2PManager.test.ts|P2PManager original transport retirement keeps its pending request pending on the replacement, whose reply settles it": {
+      "durationMs": 5433,
+      "avgCores": 0.985,
+      "peakRssGb": 0.551,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager prefers a transport address over its registered profile address": {
@@ -335,6 +335,12 @@
       "durationMs": 6255,
       "avgCores": 0.502,
       "peakRssGb": 0.581,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager reports no disconnection when the remote retires the original transport while the replacement stays live, and one when the last transport closes": {
+      "durationMs": 5236,
+      "avgCores": 1.01,
+      "peakRssGb": 0.553,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager retires a replaced handshake transport and keeps one live connection": {
@@ -391,6 +397,12 @@
       "peakRssGb": 0.576,
       "measurementReason": null
     },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition a cancel during the target's opened-status read ends the connect before matching starts": {
+      "durationMs": 7042,
+      "avgCores": 0.653,
+      "peakRssGb": 1.093,
+      "measurementReason": null
+    },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition a late sync failure after the abort changes nothing": {
       "durationMs": 22422,
       "avgCores": 0.874,
@@ -415,7 +427,7 @@
       "peakRssGb": 0.801,
       "measurementReason": null
     },
-    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition initial handshake selects the two-window channel-load sync entry": {
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition initial handshake starts one channel-load sync and reaches SYNCED": {
       "durationMs": 11167,
       "avgCores": 0.969,
       "peakRssGb": 0.773,
@@ -425,6 +437,30 @@
       "durationMs": 10039,
       "avgCores": 1.015,
       "peakRssGb": 0.787,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer aborts and keeps the error log once a held participant check rejects after the initial deadline elapsed": {
+      "durationMs": 18640,
+      "avgCores": 0.847,
+      "peakRssGb": 0.556,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer aborts once a held participant check ends without a sync after the initial deadline elapsed": {
+      "durationMs": 13493,
+      "avgCores": 0.854,
+      "peakRssGb": 0.772,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer aborts once its held participant checks end on closed transports after the initial deadline elapsed": {
+      "durationMs": 12254,
+      "avgCores": 0.953,
+      "peakRssGb": 0.773,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer cancels the initial deadline when chain genesis settles the wait and stays synced if it still runs": {
+      "durationMs": 12117,
+      "avgCores": 0.948,
+      "peakRssGb": 0.772,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer connect resolves false when no participant handshake completes within the initial window": {
@@ -457,16 +493,34 @@
       "peakRssGb": 0.795,
       "measurementReason": null
     },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer holds the initial deadline until the last of two participant checks ends without a sync": {
+      "durationMs": 19875,
+      "avgCores": 0.966,
+      "peakRssGb": 0.784,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer holds the initial deadline while a completed handshake's participant check runs and syncs once the check answers participant": {
+      "durationMs": 13856,
+      "avgCores": 0.961,
+      "peakRssGb": 0.78,
+      "measurementReason": null
+    },
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer holds the initial deadline while a still-syncing answer is in flight, restarts it on that participant's first still-syncing answer only, and aborts at the restarted deadline": {
+      "durationMs": 21091,
+      "avgCores": 0.841,
+      "peakRssGb": 0.771,
+      "measurementReason": null
+    },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer ignores a stale false sync result once chain genesis already synced it": {
       "durationMs": 23278,
       "avgCores": 0.73,
       "peakRssGb": 0.802,
       "measurementReason": null
     },
-    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer stays synced when the initial deadline elapses after chain genesis settled the wait": {
-      "durationMs": 38846,
-      "avgCores": 0.628,
-      "peakRssGb": 0.818,
+    "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition observer initial sync request to a participant that never answers times out after two agreement windows": {
+      "durationMs": 23894,
+      "avgCores": 0.883,
+      "peakRssGb": 0.785,
       "measurementReason": null
     },
     "hardhat|test/P2PManager.test.ts|P2PManager targeted connect host composition provider open event switches targeted matching to raw channel discovery": {
@@ -1147,6 +1201,12 @@
       "peakRssGb": 0.552,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager a block confirmation whose block bytes do not decode still cuts its sender": {
+      "durationMs": 10192,
+      "avgCores": 0.911,
+      "peakRssGb": 0.735,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager a delivered pending join event admits the first network copy without another read": {
       "durationMs": 12744,
       "avgCores": 1.03,
@@ -1183,10 +1243,16 @@
       "peakRssGb": 0.795,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager failed ingress sync blacklists its sender without queueing the triggering block": {
-      "durationMs": 11700,
-      "avgCores": 1.091,
-      "peakRssGb": 0.804,
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager committed dispute on the current fork a committed dispute discards the queued block and rejects the leader's genuine next block; the head stays put": {
+      "durationMs": 26410,
+      "avgCores": 0.713,
+      "peakRssGb": 0.974,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager failed ingress sync ends intake with a counted close of its sender, no blacklist and no queued triggering block": {
+      "durationMs": 9735,
+      "avgCores": 0.87,
+      "peakRssGb": 0.753,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager independent source allowances preserve honest signatures for ordinary processing": {
@@ -1291,16 +1357,40 @@
       "peakRssGb": 0.804,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a kill-period chain read failure while scheduling fork recovery does not blacklist the honest sender": {
+      "durationMs": 12472,
+      "avgCores": 1.082,
+      "peakRssGb": 0.967,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a later spectator asks only the sender of a replayed old-fork block: its genuine author is never asked and does not blacklist the spectator": {
+      "durationMs": 30570,
+      "avgCores": 0.701,
+      "peakRssGb": 1.164,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a local disputed-fork check failure during ingest does not blacklist the honest sender": {
       "durationMs": 13659,
       "avgCores": 0.576,
       "peakRssGb": 1.244,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a local failure during the sender's eligibility refresh does not blacklist the honest sender": {
+      "durationMs": 7890,
+      "avgCores": 1.153,
+      "peakRssGb": 0.742,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks a queue timeout accepts a proved successor fork without excluding the supplier or author": {
       "durationMs": 38146,
       "avgCores": 0.843,
       "peakRssGb": 1.037,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks an absent sender whose intake-gate sync fails on our side gets no verdict": {
+      "durationMs": 9534,
+      "avgCores": 1.083,
+      "peakRssGb": 0.745,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks drains an early reduced-fork block once the fork transition catches up": {
@@ -1333,16 +1423,16 @@
       "peakRssGb": 1.015,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown fork: both the supplier and the author are asked and both are cut": {
-      "durationMs": 23559,
-      "avgCores": 0.772,
-      "peakRssGb": 0.796,
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown fork: only the sender is asked and cut; the author keeps the observer": {
+      "durationMs": 15190,
+      "avgCores": 0.648,
+      "peakRssGb": 0.742,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown-fork timeout asks both the supplier and the author to sync": {
-      "durationMs": 17902,
-      "avgCores": 0.651,
-      "peakRssGb": 0.799,
+    "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks unknown-fork timeout asks only the sender to sync, never the author": {
+      "durationMs": 12236,
+      "avgCores": 0.58,
+      "peakRssGb": 0.736,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BlockQueueManager.test.ts|E2E: BlockQueueManager wrong-fork blocks wrongGenesisDetected (host-side unit scope) missing genesis: no proof to build, sources blacklisted, no dispute": {
@@ -1417,10 +1507,22 @@
       "peakRssGb": 1.219,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant waits until that runtime's initial-sync deadline fires and is then refused with only a retry-tier close": {
-      "durationMs": 12441,
-      "avgCores": 0.497,
-      "peakRssGb": 0.938,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (another participant serves): a fresh observer whose initial sync first asks a participant with its own initial sync in flight does not abort or cut that participant and syncs at once from another connected participant": {
+      "durationMs": 10425,
+      "avgCores": 1.086,
+      "peakRssGb": 0.762,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant gets a still-syncing answer at once with no close or strike, and that runtime later aborts at its own initial-sync deadline": {
+      "durationMs": 17882,
+      "avgCores": 0.647,
+      "peakRssGb": 0.942,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (no participant serves in time): a fresh observer whose only chain-eligible participant stays in its own initial sync aborts at its initial-sync deadline without cutting that participant, adopting nothing": {
+      "durationMs": 15809,
+      "avgCores": 0.559,
+      "peakRssGb": 0.755,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (not a member): a fresh spectator whose first handshake is with a synced spectator that is not slashed and not a member skips it and syncs from a participant": {
@@ -1435,28 +1537,22 @@
       "peakRssGb": 1.239,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (requester times out): a probe to a participant whose own initial sync is still in flight times out after one window with only a retry-tier close, neither side blacklists the other, and the late answer changes nothing on the requester": {
-      "durationMs": 13352,
-      "avgCores": 0.519,
-      "peakRssGb": 0.467,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder answers at once): a participant with its own initial sync in flight answers a spectate request at once that it is still syncing, and the requester's sync returns false with no close, strike or blacklist": {
+      "durationMs": 6849,
+      "avgCores": 1.06,
+      "peakRssGb": 0.567,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder still syncing): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight gets its answer once that sync succeeds and syncs from it": {
-      "durationMs": 9780,
-      "avgCores": 0.652,
-      "peakRssGb": 0.707,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder still syncing): a fresh observer whose only chain-eligible handshake is a participant with its own initial sync in flight gets a still-syncing answer, keeps the connection, asks again after half a window and syncs from it once that sync succeeds": {
+      "durationMs": 10589,
+      "avgCores": 0.939,
+      "peakRssGb": 0.765,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync already failed): a spectate request that enters the endpoint after the responder's own initial sync failed is refused at once with the own-sync failure": {
-      "durationMs": 9401,
-      "avgCores": 0.696,
-      "peakRssGb": 0.479,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync fails): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight aborts when that sync fails, adopting nothing": {
-      "durationMs": 8666,
-      "avgCores": 0.726,
-      "peakRssGb": 0.735,
+    "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (responder sync fails): a fresh observer whose only chain-eligible handshake is a participant with its own initial sync in flight gets a still-syncing answer and aborts once that sync fails, adopting nothing": {
+      "durationMs": 18413,
+      "avgCores": 0.546,
+      "peakRssGb": 0.746,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-BotConnectionFixes.test.ts|E2E: Bot connection fixes H11 (same fork): a fresh spectator whose first handshake is with a slashed peer that reduced onto the same successor skips it and syncs from an honest participant": {
@@ -1999,16 +2095,16 @@
       "peakRssGb": 1.039,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection a request for a fork the responder does not yet see as disputed closes with a counted retry, not a blacklist": {
+      "durationMs": 6615,
+      "avgCores": 1.167,
+      "peakRssGb": 0.713,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should disconnect peer building on acknowledged disputed fork": {
       "durationMs": 13254,
       "avgCores": 1.109,
       "peakRssGb": 0.815,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should disconnect peer requesting acknowledgment of non-disputed fork": {
-      "durationMs": 11704,
-      "avgCores": 1.112,
-      "peakRssGb": 0.792,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should run stubbed RPC method via createRPCMethods wrapper": {
@@ -2141,6 +2237,24 @@
       "durationMs": 17069,
       "avgCores": 0.982,
       "peakRssGb": 1.378,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the joiner back to SYNCED with no abort": {
+      "durationMs": 8659,
+      "avgCores": 0.872,
+      "peakRssGb": 0.97,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, one JOIN on chain, and no abort": {
+      "durationMs": 10462,
+      "avgCores": 0.819,
+      "peakRssGb": 0.861,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before another join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the landed joiner, and lands on its third submission with no abort": {
+      "durationMs": 13332,
+      "avgCores": 0.825,
+      "peakRssGb": 1.069,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a connect's join whose snapshot moves again before its retry lands is collected again and lands on its third submission: the joiner is admitted with no abort": {
@@ -2281,6 +2395,24 @@
       "peakRssGb": 1.297,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose mined submission keeps reverting with no revert data while its replay keeps passing stops at the channel's maximum participant count of retries: false after that many retries plus the first submission, one collection, no JOIN on chain, and the participation kept with no abort": {
+      "durationMs": 7609,
+      "avgCores": 0.987,
+      "peakRssGb": 0.964,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose mined submission reverts with no revert data while its replay at the latest block passes is submitted again with the same confirmation and lands: true after two submissions, one collection, the amount credited once, and the participation kept": {
+      "durationMs": 7277,
+      "avgCores": 1.125,
+      "peakRssGb": 0.855,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose mined submission reverts with no revert data while its replay passes is submitted again, and that resubmission, estimated before a spectator's join lands and mined after it, is refused for the widened threshold set: it is collected again, countersigned by the new pending participant, and lands on its third submission with the amount credited once": {
+      "durationMs": 10175,
+      "avgCores": 0.859,
+      "peakRssGb": 0.896,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard a top-up whose runtime aborts once the fresh confirmation for its retry is collected submits nothing more: the call returns false and no JOIN lands for the participant": {
       "durationMs": 8518,
       "avgCores": 0.79,
@@ -2321,6 +2453,12 @@
       "durationMs": 21443,
       "avgCores": 1.006,
       "peakRssGb": 1.261,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-JoinSnapshotGuard.test.ts|E2E: join snapshot guard two synced spectators whose joins race on one table both end pending when the second's transaction is estimated before the first lands and mined after it: the mined refusal for the widened threshold set is collected again, countersigned by the first, and lands with no abort": {
+      "durationMs": 13607,
+      "avgCores": 1.307,
+      "peakRssGb": 1.161,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-KillAndDispute.test.ts|E2E: kill then dispute, and challenge timing E22: a challenge sent after the kill period ends reverts with RaceConditionDisputeKillPeriodExpired and is fatal: no kill, no slash, the invalid dispute stays committed": {
@@ -3181,6 +3319,12 @@
       "peakRssGb": 0.991,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Participant sync across a chain-final window responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs": {
+      "durationMs": 24747,
+      "avgCores": 0.737,
+      "peakRssGb": 0.986,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Participant sync across a chain-final window responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor": {
       "durationMs": 36273,
       "avgCores": 0.877,
@@ -3301,6 +3445,12 @@
       "peakRssGb": 0.613,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block": {
+      "durationMs": 20845,
+      "avgCores": 0.721,
+      "peakRssGb": 0.766,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service block height 0 spectating should spectate successfully when joining at block 0": {
       "durationMs": 13948,
       "avgCores": 1.009,
@@ -3403,10 +3553,16 @@
       "peakRssGb": 1.175,
       "measurementReason": null
     },
-    "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running": {
-      "durationMs": 21972,
-      "avgCores": 1.18,
-      "peakRssGb": 1.157,
+    "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an authenticated outsider-authored block it cannot prove with a counted close and keeps a SYNCED spectator running": {
+      "durationMs": 20948,
+      "avgCores": 0.906,
+      "peakRssGb": 1.117,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an authenticated outsider-authored block that answers it is still in its own initial sync with one counted close and keeps a SYNCED spectator running": {
+      "durationMs": 47979,
+      "avgCores": 0.469,
+      "peakRssGb": 1.119,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-SpectatingAbortDoS.test.ts|E2E: spectating strategy junk-block handling cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running": {
@@ -3908,9 +4064,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-AnchorCountersAndChallengeBoundary.test.ts|E2E: dispute validation / anchor counters and block-challenge boundary E18: block zero with the genesis anchor and with its own snapshot as the anchor E18: block zero's resulting snapshot as the anchor protects zero: a forged transaction in block zero gets no block-specific challenge, no kill, the submitter is not slashed": {
-      "durationMs": 38833,
-      "avgCores": 0.639,
-      "peakRssGb": 1.016,
+      "durationMs": 32249,
+      "avgCores": 0.848,
+      "peakRssGb": 1.28,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/E2E-AnchorCountersAndChallengeBoundary.test.ts|E2E: dispute validation / anchor counters and block-challenge boundary E18: block zero with the genesis anchor and with its own snapshot as the anchor E18: genesis anchor, threshold-final block zero with a forged transaction re-signed by every participant → zero stays everyone-final and eligible: an invalid-transition challenge at index 0 kills the dispute on chain, a challenge at the ineligible index 2 is rejected; only the submitter and the rejected challenger are slashed": {
@@ -4298,9 +4454,9 @@
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash": {
-      "durationMs": 42888,
-      "avgCores": 1.383,
-      "peakRssGb": 1.575,
+      "durationMs": 36719,
+      "avgCores": 1.502,
+      "peakRssGb": 1.547,
       "measurementReason": null
     },
     "hardhat|test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts|E2E: dispute validation / disputeInputFields / selfRemoval an honest leaver's exit post refused for an unconsumed inbound join → its watchdog self-removal dispute; the others contribute newer state into the existing window and remain participants": {
@@ -4771,16 +4927,16 @@
       "peakRssGb": 0.797,
       "measurementReason": null
     },
-    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime": {
-      "durationMs": 13741,
-      "avgCores": 0.314,
-      "peakRssGb": 0.487,
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime": {
+      "durationMs": 14285,
+      "avgCores": 0.106,
+      "peakRssGb": 0.225,
       "measurementReason": null
     },
-    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime": {
-      "durationMs": 12159,
-      "avgCores": 0.238,
-      "peakRssGb": 0.327,
+    "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas a rejected startup replay requirement read rejects readiness, ends the inline executor it started, and closes the runtime": {
+      "durationMs": 14017,
+      "avgCores": 0.111,
+      "peakRssGb": 0.247,
       "measurementReason": null
     },
     "hardhat|test/evm/ContractExecutorCallGas.test.ts|ContractExecutor call gas an inline executor runs a transition whose replay requirement exceeds the default call gas": {
@@ -5467,6 +5623,12 @@
       "peakRssGb": 0.418,
       "measurementReason": null
     },
+    "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps a contract's storage intact while another contract with identical storage rewrites its slots": {
+      "durationMs": 569,
+      "avgCores": 0.65,
+      "peakRssGb": 0.143,
+      "measurementReason": null
+    },
     "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps an admitted operation's failure while disposal waits for it": {
       "durationMs": 15408,
       "avgCores": 0.367,
@@ -5483,6 +5645,18 @@
       "durationMs": 23516,
       "avgCores": 0.151,
       "peakRssGb": 0.259,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps the state root and every slot when a checkpointed call that rewrites the slots is reverted": {
+      "durationMs": 488,
+      "avgCores": 0.758,
+      "peakRssGb": 0.149,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/EvmFactory.test.ts|EvmFactory keeps the trie database the same size while calls rewrite the same storage slots": {
+      "durationMs": 1714,
+      "avgCores": 0.968,
+      "peakRssGb": 0.188,
       "measurementReason": null
     },
     "hardhat|test/evm/EvmFactory.test.ts|EvmFactory rejects executor calls, deploys and simulations that arrive after disposal began without entering the EVM": {
@@ -5729,6 +5903,12 @@
       "durationMs": 3313,
       "avgCores": 0.89,
       "peakRssGb": 0.315,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/LocalContractExecutorSigner.test.ts|LocalContractExecutorSigner deploys through the local EVM with no chain request, numbering its local transactions": {
+      "durationMs": 790,
+      "avgCores": 1.127,
+      "peakRssGb": 0.176,
       "measurementReason": null
     },
     "hardhat|test/evm/P2pRuntimeClientRoot.test.ts|P2pRuntimeClientRoot cleans owned inline executor endpoints after domain disposal fails": {
@@ -6013,10 +6193,28 @@
       "peakRssGb": 0.338,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) names a worker's non-Error rejection value that String() cannot convert by its object tag": {
+      "durationMs": 14430,
+      "avgCores": 0.111,
+      "peakRssGb": 0.367,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) reports a detached worker crash and keeps serving": {
       "durationMs": 14957,
       "avgCores": 0.357,
       "peakRssGb": 0.368,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) reports a worker's uncaught non-Error throw as one Error naming the kind, the thread and the value": {
+      "durationMs": 14402,
+      "avgCores": 0.108,
+      "peakRssGb": 0.366,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) reports a worker's unhandled non-Error rejection as one Error naming the kind, the thread and the value": {
+      "durationMs": 14385,
+      "avgCores": 0.11,
+      "peakRssGb": 0.359,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcContractExecutorWorker.test.ts|RpcContractExecutor (worker placement) request failure preserves nested revert data and peer metadata across the worker": {
@@ -6085,6 +6283,12 @@
       "peakRssGb": 1.064,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider does not relay a log 128 or more blocks below the highest relayed log": {
+      "durationMs": 3953,
+      "avgCores": 0.817,
+      "peakRssGb": 0.632,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a read over to the next node when the first drops mid-request": {
       "durationMs": 8533,
       "avgCores": 1.168,
@@ -6115,6 +6319,12 @@
       "peakRssGb": 1.148,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider keeps relaying logs through the next node socket after the first drops": {
+      "durationMs": 4520,
+      "avgCores": 0.934,
+      "peakRssGb": 0.627,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider leaves no unhandled rejection and keeps reading when a node answers an unsubscribe with an error": {
       "durationMs": 4667,
       "avgCores": 0.688,
@@ -6125,6 +6335,12 @@
       "durationMs": 4781,
       "avgCores": 0.684,
       "peakRssGb": 0.597,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider leaves no unhandled rejection when destroyed right after a log subscription": {
+      "durationMs": 3717,
+      "avgCores": 0.815,
+      "peakRssGb": 0.635,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider marks a node whose socket stops answering as dead and fails the read over": {
@@ -6175,6 +6391,18 @@
       "peakRssGb": 1.139,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects the exported chain access startup when no node is reachable and destroys every node": {
+      "durationMs": 4317,
+      "avgCores": 0.908,
+      "peakRssGb": 0.637,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each matching log once from the node sockets": {
+      "durationMs": 3428,
+      "avgCores": 0.869,
+      "peakRssGb": 0.61,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each new block once from the node sockets without polling": {
       "durationMs": 23206,
       "avgCores": 0.458,
@@ -6203,6 +6431,18 @@
       "durationMs": 9937,
       "avgCores": 1.011,
       "peakRssGb": 1.043,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider subscribes a reconnected node socket again and relays its logs once": {
+      "durationMs": 3654,
+      "avgCores": 0.78,
+      "peakRssGb": 0.636,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider unsubscribes every node socket when the last log listener goes": {
+      "durationMs": 3892,
+      "avgCores": 0.678,
+      "peakRssGb": 0.652,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider warns once per outage of every node and again after a reconnect": {
@@ -7273,6 +7513,12 @@
       "peakRssGb": 0.583,
       "measurementReason": null
     },
+    "hardhat|test/rpc/ARpcService.test.ts|ANetworkRpcService on a disposed runtime a handler that ends after its runtime disposed answers nobody and logs nothing: its dispatch resolves": {
+      "durationMs": 5613,
+      "avgCores": 1.108,
+      "peakRssGb": 0.481,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/ARpcService.test.ts|ANetworkRpcService rejects ANetworkRpcMethods and Object prototype names": {
       "durationMs": 7701,
       "avgCores": 1.092,
@@ -7349,6 +7595,18 @@
       "durationMs": 9624,
       "avgCores": 1.057,
       "peakRssGb": 0.578,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a failed build answers the setup without waiting out the reply drain in a worker": {
+      "durationMs": 10574,
+      "avgCores": 0.257,
+      "peakRssGb": 0.309,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a failed build answers the setup without waiting out the reply drain inline": {
+      "durationMs": 10156,
+      "avgCores": 0.147,
+      "peakRssGb": 0.213,
       "measurementReason": null
     },
     "hardhat|test/rpc/ApplicationHostRoot.test.ts|ApplicationHostRoot a host root loaded by manifest serves its own internal service in a worker": {
@@ -7579,6 +7837,12 @@
       "peakRssGb": 0.308,
       "measurementReason": null
     },
+    "hardhat|test/rpc/NetworkRpcRouter.test.ts|NetworkRpcRouter drops network frames on a closed transport before dispatch or logging": {
+      "durationMs": 11637,
+      "avgCores": 0.283,
+      "peakRssGb": 0.218,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/NetworkRpcRouter.test.ts|NetworkRpcRouter gives the real SDK manager one router shared by services and loopback": {
       "durationMs": 18015,
       "avgCores": 0.265,
@@ -7589,12 +7853,6 @@
       "durationMs": 16828,
       "avgCores": 0.237,
       "peakRssGb": 0.446,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/NetworkRpcRouter.test.ts|NetworkRpcRouter keeps network receive-after-close admission unchanged": {
-      "durationMs": 17832,
-      "avgCores": 0.271,
-      "peakRssGb": 0.491,
       "measurementReason": null
     },
     "hardhat|test/rpc/RootCreation.test.ts|RootCreation borrows a caller's logger for a parentless worker and leaves it usable after disposal": {
@@ -8485,6 +8743,12 @@
       "peakRssGb": 0.477,
       "measurementReason": null
     },
+    "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle logs the failed worker's WebAssembly diagnostics, or none for an ordinary error, and this thread's resources with pending requests": {
+      "durationMs": 27979,
+      "avgCores": 0.093,
+      "peakRssGb": 0.381,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/RuntimeLifecycle.test.ts|RuntimeLifecycle marks worker shutdown expected before parent port closure while client cleanup is held": {
       "durationMs": 32900,
       "avgCores": 0.257,
@@ -8585,6 +8849,18 @@
       "durationMs": 2591,
       "avgCores": 1.015,
       "peakRssGb": 0.18,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/WorkerMonitorStart.test.ts|Worker root event-loop monitor start starts a worker root's monitor before its start with EVENT_LOOP_MONITOR_STARTUP": {
+      "durationMs": 483,
+      "avgCores": 0.766,
+      "peakRssGb": 0.102,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/WorkerMonitorStart.test.ts|Worker root event-loop monitor start starts a worker root's monitor once its start is done by default": {
+      "durationMs": 512,
+      "avgCores": 0.645,
+      "peakRssGb": 0.098,
       "measurementReason": null
     },
     "hardhat|test/rpc/guards/DeferredAdmissionGuard.test.ts|DeferredAdmissionGuard passes ready work, replays one FIFO queue, and separates rejection from expiry": {
@@ -8899,13 +9175,31 @@
       "peakRssGb": 0.583,
       "measurementReason": null
     },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a committed member's top-up through connect with one silent threshold member returns false: it keeps its status and submits nothing": {
+      "durationMs": 18097,
+      "avgCores": 0.713,
+      "peakRssGb": 0.955,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a connect's join whose threshold set read fails rejects: the failure is not a collection failure, so the joiner neither aborts nor submits": {
+      "durationMs": 12030,
+      "avgCores": 1.038,
+      "peakRssGb": 0.975,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a connect's join with one silent threshold member returns false: the joiner aborts and disposes, and submits nothing": {
+      "durationMs": 13770,
+      "avgCores": 0.974,
+      "peakRssGb": 0.975,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests a prepared first join's deadline is its chain time plus the configured lifetime; a later runtime gets the default": {
       "durationMs": 11921,
       "avgCores": 0.83,
       "peakRssGb": 0.753,
       "measurementReason": null
     },
-    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests accepts the exact responder deadline and rejects one second past it on an owned chain": {
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests accepts the exact responder deadline and rejects one second past it on the responder's local clock": {
       "durationMs": 16679,
       "avgCores": 0.882,
       "peakRssGb": 1.3,
@@ -8915,6 +9209,12 @@
       "durationMs": 16468,
       "avgCores": 0.979,
       "peakRssGb": 1.113,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests collects every countersignature while a threshold member's chain RPC holds every read: the member answers from its local clock and mirror": {
+      "durationMs": 13988,
+      "avgCores": 0.899,
+      "peakRssGb": 0.753,
       "measurementReason": null
     },
     "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests excludes an on-chain-slashed participant from collection": {
@@ -8945,6 +9245,12 @@
       "durationMs": 13924,
       "avgCores": 0.863,
       "peakRssGb": 0.791,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests signs for a threshold member whose mirror misses its own pending join: the chain lists it": {
+      "durationMs": 17023,
+      "avgCores": 0.979,
+      "peakRssGb": 0.947,
       "measurementReason": null
     },
     "hardhat|test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts|JoinChannel signature requests validates requests, signs exact joins, and waits through reachability grace for a missing threshold transport": {
@@ -14011,6 +14317,12 @@
       "peakRssGb": 1.008,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService starts no log dispatch after stop, so a recovery still running in a disposing runtime needs nothing its disposal closes": {
+      "durationMs": 7380,
+      "avgCores": 1.089,
+      "peakRssGb": 0.741,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService tryRecoverBlockCalldataAndScheduleValidation missed calldata log → recovered by query, validation scheduled": {
       "durationMs": 21864,
       "avgCores": 0.766,
@@ -14293,6 +14605,12 @@
       "peakRssGb": 0.792,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort cancels a VM worker's held upload when the worker ends, so the client closes without the drain timeout": {
+      "durationMs": 11483,
+      "avgCores": 0.571,
+      "peakRssGb": 0.599,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort cancels session-owned timeout work": {
       "durationMs": 11304,
       "avgCores": 0.936,
@@ -14315,6 +14633,12 @@
       "durationMs": 11089,
       "avgCores": 0.694,
       "peakRssGb": 0.904,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort sends the VM worker's upload an error started right before a dispose, before the worker ends": {
+      "durationMs": 13120,
+      "avgCores": 0.534,
+      "peakRssGb": 0.597,
       "measurementReason": null
     },
     "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort stops host work before provider destruction and final listener removal": {
@@ -15583,6 +15907,12 @@
       "peakRssGb": 0.212,
       "measurementReason": null
     },
+    "hardhat|test/storage/Storage.test.ts|Storage previous block or snapshot returns neither block nor snapshot when the predecessor is absent": {
+      "durationMs": 539,
+      "avgCores": 0.631,
+      "peakRssGb": 0.102,
+      "measurementReason": null
+    },
     "hardhat|test/storage/keys.test.ts|coordinateKey preserves zero-height coordinates": {
       "durationMs": 2439,
       "avgCores": 0.615,
@@ -15931,6 +16261,12 @@
       "peakRssGb": 0.528,
       "measurementReason": null
     },
+    "hardhat|test/transport/HolepunchRelayDispose.test.ts|Holepunch disposal on a browser relay disposes while the first topic announce still waits on the relayer's listening reply": {
+      "durationMs": 607,
+      "avgCores": 0.626,
+      "peakRssGb": 0.175,
+      "measurementReason": null
+    },
     "hardhat|test/transport/InternalTransport.test.ts|InternalTransport closes once and rejects only calls owned by that connection": {
       "durationMs": 31354,
       "avgCores": 0.152,
@@ -16015,10 +16351,10 @@
       "peakRssGb": 0.207,
       "measurementReason": null
     },
-    "hardhat|test/transport/RelayerPool.test.ts|RelayerPool deduplicates paired error and close failures for one connection": {
-      "durationMs": 2611,
-      "avgCores": 1.072,
-      "peakRssGb": 0.453,
+    "hardhat|test/transport/RelayerPool.test.ts|RelayerPool logs each failure with its relayer, reason and counts": {
+      "durationMs": 528,
+      "avgCores": 0.701,
+      "peakRssGb": 0.19,
       "measurementReason": null
     },
     "hardhat|test/transport/RelayerPool.test.ts|RelayerPool returns undefined and schedules nothing for an empty relayer list": {
@@ -16043,6 +16379,60 @@
       "durationMs": 2932,
       "avgCores": 0.992,
       "peakRssGb": 0.3,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes a replaced connection's transport when its replacement starts, without closing the replacement's connection": {
+      "durationMs": 9566,
+      "avgCores": 0.578,
+      "peakRssGb": 1.085,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes and forgets a connection that fails or closes during a grace before it has a transport": {
+      "durationMs": 15208,
+      "avgCores": 0.389,
+      "peakRssGb": 1.097,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes the transport and its connection at once when the connection or its path fails or closes, also a DTLS failure on a working path": {
+      "durationMs": 6746,
+      "avgCores": 0.869,
+      "peakRssGb": 0.968,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes the transport at once when the connection fails during the grace, and the grace closes nothing more": {
+      "durationMs": 10493,
+      "avgCores": 0.625,
+      "peakRssGb": 1,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace closes the transport of a connection whose path is still down when the grace ends, with one grace for repeated reports": {
+      "durationMs": 12549,
+      "avgCores": 0.51,
+      "peakRssGb": 0.946,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace ends the grace when the path recovers while the connection state stays disconnected, as in Node": {
+      "durationMs": 10638,
+      "avgCores": 0.602,
+      "peakRssGb": 1.105,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace gives each path loss its own full grace": {
+      "durationMs": 11162,
+      "avgCores": 0.521,
+      "peakRssGb": 1.084,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace keeps the transport of a connection whose path recovers within the grace, and logs the loss and the recovery": {
+      "durationMs": 13460,
+      "avgCores": 0.486,
+      "peakRssGb": 1.101,
+      "measurementReason": null
+    },
+    "hardhat|test/transport/WebRTCConnectionGrace.test.ts|WebRTC connection grace keeps the transport open during the grace": {
+      "durationMs": 12095,
+      "avgCores": 0.556,
+      "peakRssGb": 1.011,
       "measurementReason": null
     },
     "hardhat|test/types/flags.test.ts|isCommittedParticipantStatus classifies DISCOVERING": {
@@ -16861,6 +17251,18 @@
       "peakRssGb": 0.616,
       "measurementReason": null
     },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist": {
+      "durationMs": 9283,
+      "avgCores": 0.902,
+      "peakRssGb": 0.554,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an absent sender still in its own initial sync answers the intake sync that it is still syncing: one counted close, no blacklist and no queued block": {
+      "durationMs": 13285,
+      "avgCores": 1.151,
+      "peakRssGb": 0.742,
+      "measurementReason": null
+    },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an absent sender's gossip whose sync meets a window the chain has not reduced stays pending through the kill period, then the sender is asked again after the reduction and blacklisted": {
       "durationMs": 24963,
       "avgCores": 0.539,
@@ -16877,6 +17279,12 @@
       "durationMs": 8577,
       "avgCores": 1.019,
       "peakRssGb": 0.579,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an intake-gate sync whose payload fails validation blacklists the sender through the sync with no queue entry": {
+      "durationMs": 9177,
+      "avgCores": 0.807,
+      "peakRssGb": 0.744,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager an oversized verified eligibility cache does not expand the N-source allowance": {
@@ -16993,10 +17401,10 @@
       "peakRssGb": 0.805,
       "measurementReason": null
     },
-    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager sync with no sender transport ends intake without queueing the block": {
-      "durationMs": 12241,
-      "avgCores": 0.766,
-      "peakRssGb": 0.604,
+    "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager sync with no sender transport ends intake with a counted close, no blacklist and no queued block": {
+      "durationMs": 6578,
+      "avgCores": 0.783,
+      "peakRssGb": 0.54,
       "measurementReason": null
     },
     "hardhat|test/unit/BlockQueueManager.test.ts|Unit: BlockQueueManager wrong channel is rejected before sender refresh or retention": {
@@ -19687,6 +20095,12 @@
       "peakRssGb": 0.843,
       "measurementReason": null
     },
+    "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService own exit block a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal": {
+      "durationMs": 11556,
+      "avgCores": 0.695,
+      "peakRssGb": 0.671,
+      "measurementReason": null
+    },
     "hardhat|test/unit/MembershipService.test.ts|Unit: MembershipService reset removes both cached sets until a verified chain refresh": {
       "durationMs": 8198,
       "avgCores": 0.966,
@@ -20167,10 +20581,22 @@
       "peakRssGb": 1.026,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window synced by a requester that handled none of its dispute logs → the sync stores no confirmation, and the requester, now on the reduced fork, recovers every window dispute from chain logs without auditing": {
+      "durationMs": 22792,
+      "avgCores": 0.788,
+      "peakRssGb": 0.973,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged": {
       "durationMs": 25212,
       "avgCores": 0.872,
       "peakRssGb": 1.036,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored": {
+      "durationMs": 20638,
+      "avgCores": 0.934,
+      "peakRssGb": 0.975,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage first dispute window not on the on-chain fork → rejected, dispute window not linked": {
@@ -20189,6 +20615,12 @@
       "durationMs": 29363,
       "avgCores": 0.849,
       "peakRssGb": 1.027,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage reduction lands on chain after the finality read and before the window fetch, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored": {
+      "durationMs": 19856,
+      "avgCores": 0.956,
+      "peakRssGb": 0.975,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage second dispute window not continuing from the first reduced fork → rejected, dispute window not linked": {
@@ -20221,10 +20653,22 @@
       "peakRssGb": 1.028,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window already reduced locally by a concurrent sync, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored": {
+      "durationMs": 20464,
+      "avgCores": 0.88,
+      "peakRssGb": 0.973,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync → accepted, its inbound blocks stored": {
       "durationMs": 21779,
       "avgCores": 1.023,
       "peakRssGb": 1.025,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync, with forged confirmation signatures → accepted, no forged signature stored": {
+      "durationMs": 16671,
+      "avgCores": 0.946,
+      "peakRssGb": 0.979,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window the chain has not reduced, reduced locally during sync with a fabricated inbound successor → local reduction reverts, no verdict naming the window, no window inbound block stored, inbound head unchanged": {
@@ -20311,10 +20755,10 @@
       "peakRssGb": 1.014,
       "measurementReason": null
     },
-    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload dispute window unavailable → payload refused, no throw": {
-      "durationMs": 17228,
-      "avgCores": 1.252,
-      "peakRssGb": 1.013,
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload dispute window unavailable → the request fails, the requester is not blacklisted": {
+      "durationMs": 15527,
+      "avgCores": 1.208,
+      "peakRssGb": 0.966,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService historic verification on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted": {
@@ -20351,6 +20795,12 @@
       "durationMs": 36356,
       "avgCores": 0.865,
       "peakRssGb": 1.029,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService one still-syncing answer shared by a plain sync and three block-source syncs gives one counted close and no blacklist": {
+      "durationMs": 8424,
+      "avgCores": 0.874,
+      "peakRssGb": 0.553,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService pinned sync refuses a height above the available proof": {
@@ -22051,10 +22501,40 @@
       "peakRssGb": 0.16,
       "measurementReason": null
     },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay a relay opening that fails after disposal neither counts a failure nor reconnects": {
+      "durationMs": 594,
+      "avgCores": 0.64,
+      "peakRssGb": 0.175,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay a relay socket closing after disposal neither logs nor reconnects": {
+      "durationMs": 2094,
+      "avgCores": 0.879,
+      "peakRssGb": 0.243,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay counts one failure when a socket closes before it opens with no error event": {
+      "durationMs": 636,
+      "avgCores": 0.582,
+      "peakRssGb": 0.157,
+      "measurementReason": null
+    },
     "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay deduplicates error and close events from one socket": {
       "durationMs": 3097,
       "avgCores": 0.898,
       "peakRssGb": 0.28,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay fails over once, naming the relayer, when the relay's opening rejects with its own Error": {
+      "durationMs": 618,
+      "avgCores": 0.615,
+      "peakRssGb": 0.161,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay fails over once, with no unhandled rejection, when a socket fails before it opens": {
+      "durationMs": 637,
+      "avgCores": 0.597,
+      "peakRssGb": 0.171,
       "measurementReason": null
     },
     "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay keeps reconnecting after the whole relay pool fails": {
@@ -22085,6 +22565,18 @@
       "durationMs": 2928,
       "avgCores": 1.014,
       "peakRssGb": 0.295,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay throws at initialization for an invalid relayer URL among valid ones, a configuration error, and opens no socket, counts no relay failure and retries nothing": {
+      "durationMs": 538,
+      "avgCores": 0.706,
+      "peakRssGb": 0.179,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/HolepunchRelay.test.ts|HolepunchRelay validates relayer URLs on an engine without URL.canParse": {
+      "durationMs": 2839,
+      "avgCores": 1.025,
+      "peakRssGb": 0.425,
       "measurementReason": null
     },
     "hardhat|test/utils/LocalDiscoveryServer.test.ts|LocalDiscoveryServer topic lifecycle closes an accepted socket whose ready frame arrives after manager disposal": {
@@ -22163,6 +22655,66 @@
       "durationMs": 7734,
       "avgCores": 1.042,
       "peakRssGb": 0.531,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports raises a throw in the state handling once as an unhandled rejection, not as a reported factory error, and still reports the later changes": {
+      "durationMs": 340,
+      "avgCores": 1.118,
+      "peakRssGb": 0.181,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reads the pair marked selected where the runtime has no transport stats, as Firefox reports it": {
+      "durationMs": 360,
+      "avgCores": 1.028,
+      "peakRssGb": 0.167,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports a state change whose stats read fails, without path stats, and reports the failure": {
+      "durationMs": 348,
+      "avgCores": 1.092,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports a state change whose stats read never settles after the time limit, without path stats, and still reports the later changes": {
+      "durationMs": 330,
+      "avgCores": 1.152,
+      "peakRssGb": 0.18,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports an ICE change that comes without a connection-state change, as werift reports a recovered path": {
+      "durationMs": 339,
+      "avgCores": 1.121,
+      "peakRssGb": 0.174,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports each state change with its selected path's stats, in the order of the changes, also when the first stats read is slow": {
+      "durationMs": 367,
+      "avgCores": 1.008,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports nothing more for a connection once it is closed, also a change whose stats read was running": {
+      "durationMs": 349,
+      "avgCores": 1.089,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports nothing more for a connection replaced by the peer's next one, and reports the next one's changes": {
+      "durationMs": 350,
+      "avgCores": 1.086,
+      "peakRssGb": 0.174,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports only the transport stats while no candidate pair is selected": {
+      "durationMs": 345,
+      "avgCores": 1.101,
+      "peakRssGb": 0.172,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LocalWebRTCConnectionFactory.test.ts|LocalWebRTCConnectionFactory state reports reports state changes without path stats where the runtime has no getStats": {
+      "durationMs": 340,
+      "avgCores": 1.118,
+      "peakRssGb": 0.174,
       "measurementReason": null
     },
     "hardhat|test/utils/LogUploader.test.ts|LogUploader captures a non-Error reason whose toString throws without itself throwing": {
@@ -22639,10 +23191,52 @@
       "peakRssGb": 0.267,
       "measurementReason": null
     },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources attaches no WebAssembly diagnostics to an ordinary error": {
+      "durationMs": 401,
+      "avgCores": 0.848,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources attaches this thread's resources, a working memory probe, and the device to a WebAssembly trap it serializes, and the receiving side keeps them": {
+      "durationMs": 343,
+      "avgCores": 0.962,
+      "peakRssGb": 0.093,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts a spawned worker until its first shutdown ends, once across repeated shutdowns": {
+      "durationMs": 395,
+      "avgCores": 0.937,
+      "peakRssGb": 0.083,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts the instance and memory that instantiateStreaming creates from a streamed module": {
+      "durationMs": 542,
+      "avgCores": 0.554,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources counts the instances and memories this thread creates through each WebAssembly entry point, and keeps instanceof working": {
+      "durationMs": 358,
+      "avgCores": 0.95,
+      "peakRssGb": 0.087,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/ThreadResources.test.ts|Thread resources reports a refused 16 MiB grow in the memory probe with its error, and a later WebAssembly failure in the same thread reuses that probe": {
+      "durationMs": 644,
+      "avgCores": 0.466,
+      "peakRssGb": 0.077,
+      "measurementReason": null
+    },
     "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport drops sends when the channel is already closed": {
       "durationMs": 18717,
       "avgCores": 0.292,
       "peakRssGb": 0.501,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport forwards no frame the channel delivers after the transport closed": {
+      "durationMs": 13962,
+      "avgCores": 0.107,
+      "peakRssGb": 0.202,
       "measurementReason": null
     },
     "hardhat|test/utils/WebRTCTransport.test.ts|WebRTCTransport queues sends on a connecting channel and flushes them once it opens": {
@@ -22747,10 +23341,22 @@
       "peakRssGb": 0.328,
       "measurementReason": null
     },
+    "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory rejects a close whose own failure arrives while the bridge is disposing": {
+      "durationMs": 14069,
+      "avgCores": 0.11,
+      "peakRssGb": 0.365,
+      "measurementReason": null
+    },
     "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory rejects in-flight requests when the shared bridge is disposed": {
       "durationMs": 15614,
       "avgCores": 0.487,
       "peakRssGb": 0.297,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory resolves a close that the bridge disposal interrupts and a close after the disposal": {
+      "durationMs": 14083,
+      "avgCores": 0.104,
+      "peakRssGb": 0.349,
       "measurementReason": null
     },
     "hardhat|test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts|WorkerBridgeWebRTCConnectionFactory routes bridge state and ICE events to connection callbacks": {
@@ -22891,6 +23497,18 @@
       "peakRssGb": 0.223,
       "measurementReason": null
     },
+    "hardhat|test/utils/errorMessage.test.ts|errorMessage valueText converts a value String() converts": {
+      "durationMs": 298,
+      "avgCores": 0.436,
+      "peakRssGb": 0.114,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/errorMessage.test.ts|errorMessage valueText names a value String() cannot convert by its object tag": {
+      "durationMs": 309,
+      "avgCores": 0.421,
+      "peakRssGb": 0.111,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logEncoder.test.ts|encodeLogEntry coerces a hostile message without running its code": {
       "durationMs": 2119,
       "avgCores": 0.76,
@@ -22987,6 +23605,48 @@
       "peakRssGb": 0.401,
       "measurementReason": null
     },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits again for a later upload once an abort flush's upload finished": {
+      "durationMs": 665,
+      "avgCores": 0.556,
+      "peakRssGb": 0.099,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for a request during an abort flush queued behind an earlier upload only until that flush's deadline": {
+      "durationMs": 2544,
+      "avgCores": 0.256,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload of a second copy of the uploader module in it, and cancels it": {
+      "durationMs": 627,
+      "avgCores": 0.558,
+      "peakRssGb": 0.095,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload queued by an error behind an abort flush's upload whose deadline passed": {
+      "durationMs": 527,
+      "avgCores": 0.702,
+      "peakRssGb": 0.107,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for an upload queued during a running abort flush only until that flush's deadline": {
+      "durationMs": 2526,
+      "avgCores": 0.277,
+      "peakRssGb": 0.144,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits for its running upload no longer than its bound": {
+      "durationMs": 749,
+      "avgCores": 0.841,
+      "peakRssGb": 0.141,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an ending thread waits no longer for an upload of an abort flush whose deadline passed": {
+      "durationMs": 470,
+      "avgCores": 0.766,
+      "peakRssGb": 0.11,
+      "measurementReason": null
+    },
     "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads an idle store resolves without paying the jitter": {
       "durationMs": 5231,
       "avgCores": 0.382,
@@ -23027,6 +23687,12 @@
       "durationMs": 4147,
       "avgCores": 0.651,
       "peakRssGb": 0.251,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads lets an upload in its jitter wait post before its thread ends": {
+      "durationMs": 546,
+      "avgCores": 0.659,
+      "peakRssGb": 0.098,
       "measurementReason": null
     },
     "hardhat|test/utils/logging/LogUploaderDelta.test.ts|LogUploader delta uploads re-sends the delta after a failed upload": {

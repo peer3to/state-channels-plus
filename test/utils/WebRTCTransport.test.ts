@@ -16,4 +16,7 @@ describe("WebRTCTransport", function () {
     it("drops sends when the channel is already closed", async function () {
         await assertWebRTCTransportDelivery("closed");
     });
+    it("forwards no frame the channel delivers after the transport closed", async function () {
+        await assertWebRTCTransportDelivery("receiveAfterClose");
+    });
 });

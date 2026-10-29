@@ -117,11 +117,11 @@ describe("ContractExecutor call gas", function () {
             expect(await peer.contractInstance.getSum()).to.equal(before + 2n);
     });
 
-    it("a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime", async function () {
+    it("a rejected startup replay requirement read rejects readiness, ends the inline executor it started, and closes the runtime", async function () {
         await assertStartupReplayGasReadFailure(false);
     });
 
-    it("a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime", async function () {
+    it("a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime", async function () {
         await assertStartupReplayGasReadFailure(true);
     });
 });

@@ -5,6 +5,7 @@ import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createRuntimeChainContext } from "@/evm/p2pRuntime/RuntimeChainContext";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
+import { createRpcNodesProvider } from "@/index";
 import { readLogPages } from "@/stateManager/eventSync/EventSyncService";
 import { sleep } from "@/utils";
 import { config } from "@/utils/config";
@@ -19,6 +20,7 @@ import {
     type HDNodeWallet,
     isError,
     type JsonRpcProvider,
+    Log,
     Transaction,
     type TransactionReceipt,
     Wallet,
@@ -381,6 +383,288 @@ export async function assertBlockEventsComeFromNodeSockets(): Promise<void> {
     });
 }
 
+/**
+ * Creation code of a contract that emits one topicless log on every call:
+ * it returns the runtime `PUSH1 0 PUSH1 0 LOG0 STOP`.
+ */
+const LOG_EMITTER_CREATION_CODE = "0x6560006000a0006000526006601af3";
+
+type LogEmitter = {
+    /** Logs of this emitter only. */
+    filter: { address: string };
+    /** Mines one call; resolves with the transaction hash of its log. */
+    emitLog: () => Promise<string>;
+};
+
+/** Deploys a {@link LOG_EMITTER_CREATION_CODE} contract on `node`. */
+async function deployLogEmitter(node: JsonRpcProvider): Promise<LogEmitter> {
+    const funder = await node.getSigner(0);
+    const deployment = await funder.sendTransaction({
+        data: LOG_EMITTER_CREATION_CODE
+    });
+    const { contractAddress: address } = await minedReceiptOf(
+        node,
+        deployment.hash
+    );
+    if (!address) throw new Error("Expected the log emitter's address");
+    return {
+        filter: { address },
+        emitLog: async () => {
+            const sent = await funder.sendTransaction({ to: address });
+            await minedReceiptOf(node, sent.hash);
+            return sent.hash;
+        }
+    };
+}
+
+/** Every log `provider` delivers for `filter`, in order. */
+async function recordLogs(
+    provider: MultiRpcProvider,
+    filter: LogEmitter["filter"]
+): Promise<{
+    logs: Log[];
+    /** The transaction hash of each delivered log. */
+    received: () => string[];
+    listener: (log: Log) => void;
+}> {
+    const logs: Log[] = [];
+    const listener = (log: Log) => logs.push(log);
+    await provider.on(filter, listener);
+    return {
+        logs,
+        received: () => logs.map((log) => log.transactionHash),
+        listener
+    };
+}
+
+/**
+ * The transaction hash of each log every node socket delivers for `filter`,
+ * per node. The listener joins the socket's subscription for `filter`, so it
+ * runs in the same emit as the provider's own socket listener.
+ */
+function recordSocketLogs(
+    nodes: readonly RpcNodeProvider[],
+    filter: LogEmitter["filter"]
+): string[][] {
+    return nodes.map((rpcNode) => {
+        const hashes: string[] = [];
+        rpcNode.watchSockets((socket) => {
+            void socket.on(filter, (log: Log) =>
+                hashes.push(log.transactionHash)
+            );
+        });
+        return hashes;
+    });
+}
+
+export async function assertLogsComeOnceFromNodeSockets(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            const emitter = await deployLogEmitter(node);
+            const { logs, received } = await recordLogs(
+                provider,
+                emitter.filter
+            );
+            const socketLogs = recordSocketLogs(nodes, emitter.filter);
+            await waitFor(() =>
+                proxies.every((proxy) =>
+                    proxy.forwardedMethods.includes("eth_subscribe")
+                )
+            );
+            // a subscription is live once a log reached every socket
+            const warmUp = await emitter.emitLog();
+            await waitFor(() =>
+                socketLogs.every((hashes) => hashes.includes(warmUp))
+            );
+
+            const first = await emitter.emitLog();
+            const second = await emitter.emitLog();
+            // each socket delivers in order: once every socket delivered the
+            // second log, every socket delivered its copy of the first
+            await waitFor(
+                () =>
+                    socketLogs.every((hashes) => hashes.includes(second)) &&
+                    received().includes(second)
+            );
+
+            // every log once, whichever socket delivered it first
+            expect([...received()].sort()).to.deep.equal(
+                [warmUp, first, second].sort()
+            );
+            for (const log of logs) {
+                expect(log).to.be.instanceOf(Log);
+                expect(log.provider).to.equal(provider);
+            }
+            expect(
+                proxies.map((proxy) => proxy.forwardedCount("eth_newFilter"))
+            ).to.deep.equal([0, 0]);
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
+export async function assertLogsFailOverToNextNodeSocket(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            // the second node never made a filter of the first one
+            proxies[1].failRequests("eth_getFilterChanges");
+            const emitter = await deployLogEmitter(node);
+            const { received } = await recordLogs(provider, emitter.filter);
+            await waitFor(() =>
+                proxies.every((proxy) =>
+                    proxy.forwardedMethods.includes("eth_subscribe")
+                )
+            );
+            const warmUp = await emitter.emitLog();
+            await waitFor(() => received().includes(warmUp));
+
+            await cutAndWaitForDrop(proxies[0], nodes[0]);
+            const afterDrop = await emitter.emitLog();
+
+            await waitFor(() => received().includes(afterDrop));
+            expect(
+                received().filter((hash) => hash === afterDrop)
+            ).to.deep.equal([afterDrop]);
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
+export async function assertDestroyAfterLogSubscriptionStaysQuiet(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, nodes, logger }) => {
+        const emitter = await deployLogEmitter(node);
+        const provider = new MultiRpcProvider(nodes, logger);
+        const rejections = await recordUnhandledRejections(async () => {
+            await provider.on(emitter.filter, () => undefined);
+            provider.destroy();
+        });
+
+        expect(rejections).to.deep.equal([]);
+    });
+}
+
+export async function assertLogUnsubscribeLeavesNoRequest(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            const emitter = await deployLogEmitter(node);
+            const { received, listener } = await recordLogs(
+                provider,
+                emitter.filter
+            );
+            await waitFor(() =>
+                proxies.every((proxy) =>
+                    proxy.forwardedMethods.includes("eth_subscribe")
+                )
+            );
+            const warmUp = await emitter.emitLog();
+            await waitFor(() => received().includes(warmUp));
+            const rejections = await recordUnhandledRejections(async () => {
+                await provider.off(emitter.filter, listener);
+                await waitFor(() =>
+                    proxies.every(
+                        (proxy) => proxy.forwardedCount("eth_unsubscribe") === 1
+                    )
+                );
+            });
+
+            expect(rejections).to.deep.equal([]);
+            expect(await provider.listenerCount()).to.equal(0);
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
+export async function assertLogsResubscribedOnReconnectedNodeSocket(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        try {
+            const emitter = await deployLogEmitter(node);
+            const { received } = await recordLogs(provider, emitter.filter);
+            await waitFor(() =>
+                proxies.every(
+                    (proxy) => proxy.forwardedCount("eth_subscribe") === 1
+                )
+            );
+            const warmUp = await emitter.emitLog();
+            await waitFor(() => received().includes(warmUp));
+
+            await cutAndWaitForDrop(proxies[0], nodes[0]);
+            proxies[0].restore();
+            await waitFor(
+                () => proxies[0].forwardedCount("eth_subscribe") === 2
+            );
+            // the node answers one socket in order: once this read is back,
+            // the reopened socket's subscription is live
+            await nodes[0].send("eth_blockNumber", []);
+            // only the reconnected node is left to deliver the next log
+            await cutAndWaitForDrop(proxies[1], nodes[1]);
+            const afterReconnect = await emitter.emitLog();
+
+            await waitFor(() => received().includes(afterReconnect));
+            expect(
+                received().filter((hash) => hash === afterReconnect)
+            ).to.deep.equal([afterReconnect]);
+        } finally {
+            provider.destroy();
+        }
+    });
+}
+
+/** Block heights below the highest delivered log whose logs still deliver. */
+const REMEMBERED_LOG_BLOCKS = 128;
+
+export async function assertLogsBelowRememberedBlocksNotDelivered(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ node, proxies: [proxy], nodes, logger }) => {
+            const provider = new MultiRpcProvider(nodes, logger);
+            try {
+                const emitter = await deployLogEmitter(node);
+                const { received } = await recordLogs(provider, emitter.filter);
+                await waitFor(
+                    () => proxy.forwardedCount("eth_subscribe") === 1
+                );
+                await nodes[0].send("eth_blockNumber", []);
+                const withheld = proxy.withholdNotifications();
+                const oldest = await emitter.emitLog();
+                const older = await emitter.emitLog();
+                withheld.stop();
+                const oldestBlock = (await minedReceiptOf(node, oldest))
+                    .blockNumber;
+                // automine: the older log's block is the head, and the next
+                // log lands exactly REMEMBERED_LOG_BLOCKS above the oldest
+                const head = (await minedReceiptOf(node, older)).blockNumber;
+                const blocksToMine =
+                    oldestBlock + REMEMBERED_LOG_BLOCKS - 1 - head;
+                await node.send("hardhat_mine", [
+                    ethers.toQuantity(blocksToMine)
+                ]);
+                const highest = await emitter.emitLog();
+                expect(
+                    (await minedReceiptOf(node, highest)).blockNumber
+                ).to.equal(oldestBlock + REMEMBERED_LOG_BLOCKS);
+                await waitFor(() => received().includes(highest));
+
+                // one socket delivers in order: once the older log is in, the
+                // oldest one was already handled
+                withheld.release(oldest);
+                withheld.release(older);
+                await waitFor(() => received().includes(older));
+
+                expect(received()).to.deep.equal([highest, older]);
+            } finally {
+                provider.destroy();
+            }
+        }
+    );
+}
+
 export async function assertStartupWithOneUnreachableNode(): Promise<void> {
     await withIsolatedHardhatNode(async (node) => {
         const logger = quietLogger();
@@ -450,6 +734,49 @@ export async function assertStartupFailsWithoutReachableNode(): Promise<void> {
             expect(message).to.include(`${proxies[0].url}: `);
             expect(message).to.include(`${proxies[1].url}: `);
             expect(message).not.to.include("secret");
+        } finally {
+            await Promise.all(proxies.map((proxy) => proxy.close()));
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertRpcNodesProviderFailsWithoutReachableNode(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const nodeUrl = node._getConnection().url;
+        const proxies = await Promise.all([
+            RpcNodeProxy.start(nodeUrl),
+            RpcNodeProxy.start(nodeUrl)
+        ]);
+        for (const proxy of proxies) proxy.cut();
+        try {
+            const urls = proxies.map(
+                // a hosted endpoint's path and query carry its API key
+                (proxy) => `${proxy.url}/v2/secret-path?key=secret-key`
+            );
+            const failure = await createRpcNodesProvider(
+                { PROVIDER_URL: urls[0], PROVIDER_URLS: urls },
+                logger
+            ).then(
+                () => undefined,
+                (error: unknown) => error
+            );
+
+            if (!(failure instanceof Error))
+                throw new Error("Expected chain access startup to fail");
+            expect(failure.message).to.match(
+                /^Chain access requires a reachable WebSocket provider at /
+            );
+            expect(failure.message).to.include(`${proxies[0].url}: `);
+            expect(failure.message).to.include(`${proxies[1].url}: `);
+            expect(failure.message).not.to.include("secret");
+            // a destroyed node never reconnects once its endpoint is back
+            for (const proxy of proxies) proxy.restore();
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(
+                proxies.map((proxy) => proxy.forwardedMethods)
+            ).to.deep.equal([[], []]);
         } finally {
             await Promise.all(proxies.map((proxy) => proxy.close()));
             logger.dispose();

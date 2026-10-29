@@ -20,6 +20,7 @@ import type {
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
+import type { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { deserializeRpcFrame } from "@/rpc/Rpc";
 import type MembershipService from "@/stateManager/membership/MembershipService";
 import type StateManager from "@/stateManager/StateManager";
@@ -94,6 +95,9 @@ type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
 type InboundMessageLogKey = string;
 
+/** The manager contract runner's gas estimate, as the estimate stubs wrap it. */
+type EstimateGas = (tx: TransactionRequest) => Promise<bigint>;
+
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
     | "proofWalkHold"
@@ -136,6 +140,7 @@ export type StubKey =
     | "reductionSimulation"
     | "finalDisputePreparation"
     | "spectateSync"
+    | "spectateRunSync"
     | "spectateExactRecoverySync"
     | "pausedReduction"
     | "pausedReductionKillPeriod"
@@ -179,8 +184,9 @@ export type StubKey =
     | "failMatchedNegotiation"
     | "setChannelId"
     | "eventListenerRemoval"
-    | "postMatchTargetRefresh"
+    | "openedStatusRefresh"
     | "membershipJoinReceipt"
+    | "joinSendAfterEstimate"
     | "membershipTopUpReceipt"
     | "countInitHandshake"
     | "lobbyRoleDuration"
@@ -191,6 +197,8 @@ export type StubKey =
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
 export type HeldMembershipReceiptKind = "joinChannel" | "topUpBalance";
+/** Which of a connect's opened-status reads a hold parks. */
+export type HeldOpenedStatusRead = "first" | "second";
 
 /**
  * Where the reduction genesis application is paused (`hold`) or made to fail
@@ -221,6 +229,32 @@ export type ReductionAttemptHoldPoint =
  * (a fatal attempt error).
  */
 export type ReductionAttemptResume = "original" | "undefined" | "throw";
+/**
+ * What a released handshake participant check answers: the real chain read,
+ * "not a participant" without a read, or a read that rejects with
+ * `PARTICIPANT_CHECK_STUB_FAILURE`.
+ */
+export type ParticipantCheckAnswer = "chain" | "notParticipant" | "throw";
+export const PARTICIPANT_CHECK_STUB_FAILURE =
+    "Stubbed participant check failure";
+/** One forwarded `spectateService.requestSync`, timed inside the runtime that made it. */
+export type SpectateSyncSettle = {
+    /** 1 for the first call recorded, in call order. */
+    callNumber: number;
+    startedAt: number;
+    settledAt: number;
+    result: SyncResult;
+    /** The timeout of the request this call started; absent when it joined one in flight. */
+    requestTimeoutMs?: number;
+};
+/** One timer task the hold-scheduled-tasks stub captured instead of scheduling. */
+export type HeldScheduledTask = {
+    taskName: string;
+    task: () => void | Promise<void>;
+    /** The handle its scheduler got back; a cancel of it is recorded. */
+    handle: ReturnType<typeof setTimeout>;
+    isCancelled: boolean;
+};
 export const REDUCTION_ATTEMPT_STUB_FAILURE =
     "Stubbed reduction attempt failure";
 /** The error of a stubbed snapshot post that fails with no chain refusal. */
@@ -250,9 +284,11 @@ type HeldRpcReply = {
         | "timeoutBuild"
         | "eventListenerRemoval"
         | "joinThresholdRead"
+        | "joinSignatureResponse"
         | "joinRetryEligibilityRead"
         | "joinRetryDecision"
-        | "joinCollectionResult";
+        | "joinCollectionResult"
+        | "joinSendAfterEstimate";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -546,6 +582,12 @@ export class StubService extends ANetworkRpcService<
     private restoreChainCallRecording?: () => void;
     private chainMembershipReadCount = 0;
     private restoreChainMembership?: () => void;
+    private heldParticipantChecks?: {
+        entered: number;
+        /** One answer resolver per parked check, oldest first. */
+        parked: ((answer: ParticipantCheckAnswer) => void)[];
+    };
+    private restoreParticipantCheck?: () => void;
     private syncWindowHold?: HeldRpcReply;
     private restoreSyncWindow?: () => void;
     private syncInstallHold?: HeldRpcReply;
@@ -616,7 +658,7 @@ export class StubService extends ANetworkRpcService<
         completed: number;
         succeeded: number;
     };
-    private originalQueueProbe?: SpectateService["sync"];
+    private originalQueueProbe?: SpectateService["syncBlockSource"];
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private restoreChainReads?: () => void;
@@ -668,6 +710,9 @@ export class StubService extends ANetworkRpcService<
     /** The held threshold read of a join collection, and the restore of the real read. */
     private joinThresholdReadHold?: HeldRpcReply;
     private restoreJoinThresholdRead?: () => void;
+    /** The held join-signature answers of this responder, and the restore of the real handler. */
+    private joinSignatureResponseHold?: HeldRpcReply;
+    private restoreJoinSignatureResponses?: () => void;
     /** The held chain snapshot read of a join or top-up retry-eligibility check, and the restore of the real read. */
     private joinRetryEligibilityReadHold?: HeldRpcReply;
     private restoreJoinRetryEligibilityRead?: () => void;
@@ -693,16 +738,15 @@ export class StubService extends ANetworkRpcService<
      * Timer tasks captured by the hold-scheduled-tasks stub, keyed by the task
      * name prefix that holds them (for example `reduction-`).
      */
-    readonly heldScheduledTasks = new Map<
-        string,
-        { taskName: string; task: () => void | Promise<void> }[]
-    >();
+    readonly heldScheduledTasks = new Map<string, HeldScheduledTask[]>();
     /**
      * The real `scheduleTask`, kept while any prefix is held. One dispatcher
      * serves every active prefix, so prefixes are released in any order and
      * the real scheduler comes back only when the last one goes.
      */
     heldScheduledTaskBase?: TimeoutManager["scheduleTask"];
+    /** The real `cancelTask`, kept while `heldScheduledTaskBase` is. */
+    heldScheduledTaskCancelBase?: TimeoutManager["cancelTask"];
     /** The scheduled task held in flight until the timeout manager's dispose. */
     disposeWaitTaskGate?: StubGate;
     /** Chain writes attempted by a reduction submission while the submit hold is installed. */
@@ -774,11 +818,15 @@ export class StubService extends ANetworkRpcService<
     readonly heldReducedCommitArgs: unknown[][] = [];
     /** Incremented per `ReductionManager.tryReduce` call by the noop/record stubs. */
     reduceCallCount = 0;
-    /** Incremented per `spectateService.sync` by the record stub. */
+    /** Incremented per `spectateService.requestSync` by the record stub. */
     spectateSyncCallCount = 0;
-    /** Addresses `spectateService.sync` was asked to sync from, newest last. */
+    /** Addresses `spectateService.requestSync` was asked to sync from, newest last. */
     readonly spectateSyncTargets: string[] = [];
-    /** Resolvers waiting for a given number of `spectateService.sync` calls. */
+    /** Forwarded `spectateService.requestSync` calls that settled, in settle order. */
+    readonly spectateSyncSettles: SpectateSyncSettle[] = [];
+    /** Parks each forwarded sync's result after its settle is recorded. */
+    spectateSyncResultGate?: StubGate;
+    /** Resolvers waiting for a given number of `spectateService.requestSync` calls. */
     private readonly spectateSyncWaiters: {
         target: number;
         resolve: () => void;
@@ -846,12 +894,13 @@ export class StubService extends ANetworkRpcService<
     private heldSetChannelId?: HeldRpcReply;
     private heldEventListenerRemoval?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
-    private heldPostMatchTargetRefresh?: HeldRpcReply;
-    private postMatchTargetRefreshCallCount = 0;
+    private heldOpenedStatusRefresh?: HeldRpcReply;
+    private openedStatusRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
     /** The latest call a membership submission hold let through. */
     private releasedMembershipSubmission?: Promise<unknown>;
+    private heldJoinSendAfterEstimate?: HeldRpcReply;
     /** Record-only probe on the post-audit evidence comparison. */
     readonly evidenceComparisons = new EvidenceComparisonRecorder();
     /** Record-only probe on live block RPCs and their sync-wait retention. */
@@ -1091,7 +1140,7 @@ export class StubService extends ANetworkRpcService<
         const broadcast = router.broadcastRpc.bind(router);
         const request = router.sendRpcRequest.bind(router);
         const spectate = this.p2pManager.localRpc.spectateService;
-        const sync = spectate.sync.bind(spectate);
+        const sync = spectate.syncBlockSource.bind(spectate);
         let releaseMembership: () => void = () => {};
         const gate = new Promise<void>((resolve) => {
             releaseMembership = resolve;
@@ -1114,7 +1163,7 @@ export class StubService extends ANetworkRpcService<
             releaseMembership,
             restore: () => {
                 queue.ingestBlockConfirmation = intake;
-                spectate.sync = sync;
+                spectate.syncBlockSource = sync;
                 queues.createEntry = createEntry;
                 chain.readPinnedChainMembership = read;
                 machine.getParticipants = participants;
@@ -1123,7 +1172,7 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.admissionObservation = observation;
-        spectate.sync = async (...args) => {
+        spectate.syncBlockSource = async (...args) => {
             try {
                 const result = await sync(...args);
                 if (result) observation.successfulSyncs++;
@@ -1267,7 +1316,7 @@ export class StubService extends ANetworkRpcService<
         return this.p2pManager.stateManager;
     }
 
-    /** Record one `spectateService.sync` call and release anyone waiting on it. */
+    /** Record one `spectateService.requestSync` call and release anyone waiting on it. */
     public recordSpectateSyncCall(peerAddress: string): void {
         this.spectateSyncCallCount += 1;
         this.spectateSyncTargets.push(peerAddress);
@@ -1278,7 +1327,7 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Resolve with the recorded targets once `spectateService.sync` has been
+     * Resolve with the recorded targets once `spectateService.requestSync` has been
      * called `count` times. Signal, not a poll - the record stub releases it.
      */
     public waitForSpectateSyncCalls(count: number): Promise<string[]> {
@@ -1545,19 +1594,23 @@ export class StubService extends ANetworkRpcService<
         return this.heldSpectateResponse?.entered ?? 0;
     }
 
-    /** Park the second opened-status refresh; `autoReleaseMs` frees it by timer. */
-    public holdPostMatchTargetRefresh(autoReleaseMs?: number): void {
-        this.releasePostMatchTargetRefresh();
+    /** Park the `heldRead` opened-status refresh; `autoReleaseMs` frees it by timer. */
+    public holdOpenedStatusRefresh(
+        heldRead: HeldOpenedStatusRead,
+        autoReleaseMs?: number
+    ): void {
+        this.releaseOpenedStatusRefresh();
         const original = this.sm.refreshOpenedStatusFromChain.bind(this.sm);
-        this.stubOriginals.set("postMatchTargetRefresh", original);
+        this.stubOriginals.set("openedStatusRefresh", original);
         const hold = this.createRpcHold("exchangeTerms");
-        this.heldPostMatchTargetRefresh = hold;
-        this.postMatchTargetRefreshCallCount = 0;
+        this.heldOpenedStatusRefresh = hold;
+        this.openedStatusRefreshCallCount = 0;
+        const heldCallCount = heldRead === "first" ? 1 : 2;
         if (autoReleaseMs !== undefined)
             setTimeout(() => hold.release(), autoReleaseMs).unref();
         this.sm.refreshOpenedStatusFromChain = async () => {
-            this.postMatchTargetRefreshCallCount += 1;
-            if (this.postMatchTargetRefreshCallCount === 2) {
+            this.openedStatusRefreshCallCount += 1;
+            if (this.openedStatusRefreshCallCount === heldCallCount) {
                 hold.entered += 1;
                 await hold.gate;
             }
@@ -1565,21 +1618,21 @@ export class StubService extends ANetworkRpcService<
         };
     }
 
-    public releasePostMatchTargetRefresh(): number {
-        const entered = this.heldPostMatchTargetRefresh?.entered ?? 0;
-        this.heldPostMatchTargetRefresh?.release();
-        const original = this.stubOriginals.get("postMatchTargetRefresh");
+    public releaseOpenedStatusRefresh(): number {
+        const entered = this.heldOpenedStatusRefresh?.entered ?? 0;
+        this.heldOpenedStatusRefresh?.release();
+        const original = this.stubOriginals.get("openedStatusRefresh");
         if (original) {
             this.sm.refreshOpenedStatusFromChain =
                 original as typeof this.sm.refreshOpenedStatusFromChain;
-            this.stubOriginals.delete("postMatchTargetRefresh");
+            this.stubOriginals.delete("openedStatusRefresh");
         }
-        this.heldPostMatchTargetRefresh = undefined;
+        this.heldOpenedStatusRefresh = undefined;
         return entered;
     }
 
-    public getHeldPostMatchTargetRefreshCount(): number {
-        return this.heldPostMatchTargetRefresh?.entered ?? 0;
+    public getHeldOpenedStatusRefreshCount(): number {
+        return this.heldOpenedStatusRefresh?.entered ?? 0;
     }
 
     private membershipStubKey(kind: HeldMembershipReceiptKind): StubKey {
@@ -1607,16 +1660,16 @@ export class StubService extends ANetworkRpcService<
         Reflect.set(contract, kind, async (...parameters: unknown[]) => {
             if (fail) {
                 return {
+                    // the replay of a reverting call reverts too
+                    provider: {
+                        call: async () => {
+                            throw this.injectedReceiptFailure(kind);
+                        }
+                    },
                     wait: async () => {
                         hold.entered += 1;
                         await hold.gate;
-                        throw Object.assign(
-                            new Error(`injected ${kind} receipt failure`),
-                            {
-                                code: "CALL_EXCEPTION",
-                                receipt: { status: 0 }
-                            }
-                        );
+                        throw this.injectedReceiptFailure(kind);
                     }
                 };
             }
@@ -1651,6 +1704,82 @@ export class StubService extends ANetworkRpcService<
             this.releasedMembershipSubmission = submission;
             return submission;
         });
+    }
+
+    /**
+     * Holds this peer's first `joinChannel` send between its gas estimate and
+     * its broadcast: the estimate runs against the chain as it is now, and
+     * the transaction is mined against the chain as it is at the release.
+     * Later join sends run unheld.
+     */
+    public holdFirstJoinSendAfterEstimate(
+        kind: HeldMembershipReceiptKind = "joinChannel"
+    ): void {
+        this.releaseJoinSendAfterEstimate();
+        const selector =
+            this.sm.stateChannelManagerContract.interface.getFunction(
+                kind
+            ).selector;
+        const hold = this.createRpcHold("joinSendAfterEstimate");
+        this.heldJoinSendAfterEstimate = hold;
+        this.wrapManagerEstimateGas(
+            "joinSendAfterEstimate",
+            (estimateGas) => async (tx) => {
+                const estimate = await estimateGas(tx);
+                if (
+                    String(tx.data).slice(0, 10) !== selector ||
+                    hold.entered > 0
+                )
+                    return estimate;
+                hold.entered += 1;
+                await hold.gate;
+                return estimate;
+            }
+        );
+    }
+
+    public getHeldJoinSendAfterEstimateCount(): number {
+        return this.heldJoinSendAfterEstimate?.entered ?? 0;
+    }
+
+    /** Lets the held join send broadcast; later join sends run unheld. */
+    public releaseJoinSendAfterEstimate(): number {
+        const entered = this.heldJoinSendAfterEstimate?.entered ?? 0;
+        this.heldJoinSendAfterEstimate?.release();
+        this.heldJoinSendAfterEstimate = undefined;
+        this.restoreManagerEstimateGas("joinSendAfterEstimate");
+        return entered;
+    }
+
+    /** Wraps the manager contract's `estimateGas` under `key` until `restoreManagerEstimateGas(key)`. */
+    private wrapManagerEstimateGas(
+        key: StubKey,
+        wrap: (estimateGas: EstimateGas) => EstimateGas
+    ): void {
+        const runner = this.sm.stateChannelManagerContract.runner;
+        if (!runner?.estimateGas)
+            throw new Error("the manager contract's runner cannot estimate");
+        this.stubOriginals.set(
+            key,
+            Object.getOwnPropertyDescriptor(runner, "estimateGas") ?? null
+        );
+        Reflect.set(
+            runner,
+            "estimateGas",
+            wrap(runner.estimateGas.bind(runner))
+        );
+    }
+
+    private restoreManagerEstimateGas(key: StubKey): boolean {
+        if (!this.stubOriginals.has(key)) return false;
+        const original = this.stubOriginals.get(
+            key
+        ) as PropertyDescriptor | null;
+        const runner = this.sm.stateChannelManagerContract.runner!;
+        if (original) Object.defineProperty(runner, "estimateGas", original);
+        else Reflect.deleteProperty(runner, "estimateGas");
+        this.stubOriginals.delete(key);
+        return true;
     }
 
     /**
@@ -1764,6 +1893,57 @@ export class StubService extends ANetworkRpcService<
             await hold.gate;
             return original(...args);
         };
+    }
+
+    /** Fail this runtime's next on-chain threshold read once; later reads are real. */
+    public failNextJoinThresholdRead(): void {
+        this.releaseJoinThresholdRead();
+        const membership = this.sm.membershipService;
+        const original = membership.getOnChainThresholdSet.bind(membership);
+        this.restoreJoinThresholdRead = () => {
+            membership.getOnChainThresholdSet = original;
+        };
+        membership.getOnChainThresholdSet = async () => {
+            this.releaseJoinThresholdRead();
+            throw new Error("stubbed threshold set read failure");
+        };
+    }
+
+    /**
+     * Hold every join-signature request this responder gets. Each held
+     * request runs the real handler once released.
+     */
+    public holdJoinSignatureResponses(): void {
+        this.releaseJoinSignatureResponses();
+        const service = this.p2pManager.localRpc.joinChannelService;
+        const original = service.createRPCMethods;
+        const hold = this.createRpcHold("joinSignatureResponse");
+        this.joinSignatureResponseHold = hold;
+        this.restoreJoinSignatureResponses = () => {
+            service.createRPCMethods = original;
+        };
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original.call(service, transport);
+            const realRequest = methods.requestJoinSignature.bind(methods);
+            methods.requestJoinSignature = async (...args) => {
+                hold.entered += 1;
+                await hold.gate;
+                return realRequest(...args);
+            };
+            return methods;
+        };
+    }
+
+    public getJoinSignatureResponsesEntered(): number {
+        return this.joinSignatureResponseHold?.entered ?? 0;
+    }
+
+    /** Restore the real handler, then run every held request. */
+    public releaseJoinSignatureResponses(): void {
+        this.restoreJoinSignatureResponses?.();
+        this.restoreJoinSignatureResponses = undefined;
+        this.joinSignatureResponseHold?.release();
+        this.joinSignatureResponseHold = undefined;
     }
 
     public getJoinThresholdReadEntered(): number {
@@ -2188,6 +2368,58 @@ export class StubService extends ANetworkRpcService<
         this.restoreChainMembership = undefined;
     }
 
+    /** Parks every handshake participant check (`canParticipateInDisputes`) until released. */
+    public holdParticipantCheck(): void {
+        this.releaseParticipantCheck("chain");
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract.canParticipateInDisputes;
+        const held = {
+            entered: 0,
+            parked: [] as ((answer: ParticipantCheckAnswer) => void)[]
+        };
+        this.heldParticipantChecks = held;
+        this.restoreParticipantCheck = () => {
+            Reflect.set(contract, "canParticipateInDisputes", original);
+        };
+        Reflect.set(
+            contract,
+            "canParticipateInDisputes",
+            async (...args: Parameters<typeof original>) => {
+                held.entered += 1;
+                const answer = await new Promise<ParticipantCheckAnswer>(
+                    (resolve) => held.parked.push(resolve)
+                );
+                if (answer === "notParticipant") return false;
+                if (answer === "throw")
+                    throw new Error(PARTICIPANT_CHECK_STUB_FAILURE);
+                return original(...args);
+            }
+        );
+    }
+
+    /** Releases the oldest parked check with `answer`; later checks stay parked. */
+    public releaseOneParticipantCheck(answer: ParticipantCheckAnswer): boolean {
+        const resolve = this.heldParticipantChecks?.parked.shift();
+        resolve?.(answer);
+        return resolve !== undefined;
+    }
+
+    /** Releases every parked check with `answer` and restores; returns how many were parked. */
+    public releaseParticipantCheck(answer: ParticipantCheckAnswer): number {
+        const held = this.heldParticipantChecks;
+        this.restoreParticipantCheck?.();
+        this.restoreParticipantCheck = undefined;
+        this.heldParticipantChecks = undefined;
+        if (!held) return 0;
+        const parked = held.parked.splice(0);
+        for (const resolve of parked) resolve(answer);
+        return parked.length;
+    }
+
+    public getHeldParticipantCheckCount(): number {
+        return this.heldParticipantChecks?.entered ?? 0;
+    }
+
     // `beforeFetch` parks after the finality read; `afterPersist` after the local window write
     public holdSyncWindowPersistence(at: "beforeFetch" | "afterPersist"): void {
         const service = this.p2pManager.localRpc.spectateService;
@@ -2295,7 +2527,7 @@ export class StubService extends ANetworkRpcService<
 
     public holdQueueProbe(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original = service.sync.bind(service);
+        const original = service.syncBlockSource.bind(service);
         this.originalQueueProbe = original;
         const hold = {
             ...this.createRpcHold("spectate"),
@@ -2303,7 +2535,7 @@ export class StubService extends ANetworkRpcService<
             succeeded: 0
         };
         this.queueProbeHold = hold;
-        service.sync = async (...args) => {
+        service.syncBlockSource = async (...args) => {
             hold.entered += 1;
             await hold.gate;
             try {
@@ -2328,7 +2560,7 @@ export class StubService extends ANetworkRpcService<
     public releaseQueueProbe(): void {
         this.queueProbeHold?.release();
         if (this.originalQueueProbe)
-            this.p2pManager.localRpc.spectateService.sync =
+            this.p2pManager.localRpc.spectateService.syncBlockSource =
                 this.originalQueueProbe;
         this.originalQueueProbe = undefined;
     }
@@ -2847,12 +3079,15 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Fails this peer's `kind` submissions with a mined, failed receipt; with
-     * `once` only the first, and later ones run for real. Every submission is
-     * counted in `getHeldMembershipReceiptCount`; none is held.
+     * `once` only the first, and later ones run for real. The replay of a
+     * failed one reverts with no data, or with `isReplayPassing` runs the same
+     * call on the real chain (nothing is sent). Every submission is counted
+     * in `getHeldMembershipReceiptCount`; none is held.
      */
     public failMembershipReceipt(
         kind: HeldMembershipReceiptKind,
-        once = false
+        once = false,
+        isReplayPassing = false
     ): void {
         const { contract, original } = this.captureMembershipMethod(kind);
         const submissions = this.countMembershipSubmissions(kind);
@@ -2860,17 +3095,39 @@ export class StubService extends ANetworkRpcService<
             submissions.entered += 1;
             if (once && submissions.entered > 1)
                 return Reflect.apply(original, contract, parameters);
+            if (isReplayPassing)
+                return {
+                    to: await contract.getAddress(),
+                    from: await this.sm.signer.getAddress(),
+                    data: (contract.interface as Interface).encodeFunctionData(
+                        kind,
+                        parameters
+                    ),
+                    value: 0n,
+                    provider: this.chainProvider,
+                    wait: async () => {
+                        throw this.injectedReceiptFailure(kind);
+                    }
+                };
             return {
+                // the replay of a reverting call reverts too
+                provider: {
+                    call: async () => {
+                        throw this.injectedReceiptFailure(kind);
+                    }
+                },
                 wait: async () => {
-                    throw Object.assign(
-                        new Error(`injected ${kind} receipt failure`),
-                        {
-                            code: "CALL_EXCEPTION",
-                            receipt: { status: 0 }
-                        }
-                    );
+                    throw this.injectedReceiptFailure(kind);
                 }
             };
+        });
+    }
+
+    /** A mined membership submission that reverted, with no revert data. */
+    private injectedReceiptFailure(kind: HeldMembershipReceiptKind): Error {
+        return Object.assign(new Error(`injected ${kind} receipt failure`), {
+            code: "CALL_EXCEPTION",
+            receipt: { status: 0 }
         });
     }
 
@@ -4943,15 +5200,7 @@ export class StubService extends ANetworkRpcService<
         denominator: number
     ): void {
         const contract = this.sm.stateChannelManagerContract;
-        const runner = contract.runner;
-        if (!runner?.estimateGas)
-            throw new Error("the manager contract's runner cannot estimate");
         this.restoreReplayGasEstimateScale();
-        this.stubOriginals.set(
-            "replayGasEstimates",
-            Object.getOwnPropertyDescriptor(runner, "estimateGas") ?? null
-        );
-        const estimateGas = runner.estimateGas.bind(runner);
         const selectors = new Map(
             methods.map((method) => [
                 contract.interface.getFunction(method)!.selector,
@@ -4959,10 +5208,9 @@ export class StubService extends ANetworkRpcService<
             ])
         );
         this.recordedGasEstimates.length = 0;
-        Reflect.set(
-            runner,
-            "estimateGas",
-            async (tx: TransactionRequest): Promise<bigint> => {
+        this.wrapManagerEstimateGas(
+            "replayGasEstimates",
+            (estimateGas) => async (tx) => {
                 const estimate = await estimateGas(tx);
                 const method = selectors.get(String(tx.data).slice(0, 10));
                 if (method === undefined) return estimate;
@@ -4979,15 +5227,7 @@ export class StubService extends ANetworkRpcService<
     }
 
     public restoreReplayGasEstimateScale(): boolean {
-        if (!this.stubOriginals.has("replayGasEstimates")) return false;
-        const original = this.stubOriginals.get(
-            "replayGasEstimates"
-        ) as PropertyDescriptor | null;
-        const runner = this.sm.stateChannelManagerContract.runner!;
-        if (original) Object.defineProperty(runner, "estimateGas", original);
-        else Reflect.deleteProperty(runner, "estimateGas");
-        this.stubOriginals.delete("replayGasEstimates");
-        return true;
+        return this.restoreManagerEstimateGas("replayGasEstimates");
     }
 
     /**

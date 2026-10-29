@@ -8,6 +8,7 @@
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-DISPUTE-PIPE-7-76N72X` (Combined membership intent)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-7-76n72x)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+- [`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)
 
 ## UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9
 
@@ -61,3 +62,4 @@ Terminal leave state machine
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P49` — a queued exit post is replayed once: an exit-block leaver whose exit leaves no participant makes one follow-up post per queued trigger while its posts are refused, never back-to-back posts
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P50` — a leave watchdog that expires after the leaver submitted its self-removal dispute for an observed dispute, while that fork is still disputed, starts no second dispute; the reduced snapshot that drops the leaver emits `onLeftChannel` once
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P51` — an exit snapshot that lands on chain before the leaver's self-removal dispute is sent: the chain refuses the upload with `ErrorCantParticipateInDispute`, the refusal raises no runtime error, and the leaver drops to `SYNCED` with one `onLeftChannel` and no `onAbort`
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52` — a runtime that becomes a pending joiner or participant again after its membership ended clears the ended exit's force-exit flag; the flag stays set from the exit until then

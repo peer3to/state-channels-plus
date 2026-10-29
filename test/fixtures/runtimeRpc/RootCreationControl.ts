@@ -28,6 +28,29 @@ export class RootCreationControl {
         return connection;
     }
 
+    /**
+     * Sends the detached errors of the next child `owner` connects to
+     * `report` while it is open, and to `owner` once it closed: a handler in
+     * place before the child starts, so its earliest error is a report too.
+     */
+    public static reportNextChildErrors(
+        owner: AInternalRpcRoot,
+        report: (error: Error) => void
+    ): void {
+        const connect = owner.connect;
+        owner.connect = function <T extends AInternalRpcRoot>(
+            ...args: Parameters<typeof connect<T>>
+        ) {
+            owner.connect = connect;
+            const child = connect.bind(this)<T>(...args);
+            child.onError((error) => {
+                if (child.isClosed) owner.reportError(error);
+                else report(error);
+            });
+            return child;
+        };
+    }
+
     public static connections(
         root: AInternalRpcRoot,
         observe: (connection: RemoteRoot<AInternalRpcRoot>) => void

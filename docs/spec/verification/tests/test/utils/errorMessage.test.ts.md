@@ -5,7 +5,7 @@ Exercises: [errorMessage.ts.md](../../../../implementation/source/src/utils/erro
 
 ## Overview
 
-Call the leaf helper with Error and non-Error inputs; compare exact message or String conversion, including empty strings and custom conversion.
+Call the leaf helpers with Error and non-Error inputs; compare exact message or String conversion, including empty strings and custom conversion, and a null-prototype object that `String()` cannot convert.
 
 ## Tests
 
@@ -17,3 +17,5 @@ Call the leaf helper with Error and non-Error inputs; compare exact message or S
 - `formats number`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P6
 - `formats symbol`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P7
 - `formats custom conversion`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P8
+- `valueText converts a value String() converts`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P9
+- `valueText names a value String() cannot convert by its object tag`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P10

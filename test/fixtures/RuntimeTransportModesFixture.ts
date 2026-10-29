@@ -649,9 +649,14 @@ export async function assertReportABugReportsItsThreads(): Promise<void> {
         const sent = await p2pInstance.logger.uploadLogs("user report");
 
         expect(sent.ok).to.equal(true);
-        await receiver.waitForRequests(2);
-        expect(threadStream(receiver, "main").length).to.be.greaterThan(0);
-        expect(threadStream(receiver, "sdk").length).to.be.greaterThan(0);
+        // Each thread uploads on its own, in no fixed order (the vm thread's
+        // may come first): wait for the two this report needs.
+        await waitFor(
+            () =>
+                threadStream(receiver, "main").length > 0 &&
+                threadStream(receiver, "sdk").length > 0,
+            UPLOAD_WAIT_MS
+        );
 
         failUploads = true;
         p2pInstance.logger.warn("a second thing to report");

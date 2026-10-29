@@ -129,7 +129,7 @@ export default class BlockQueueManager {
                         // a failed sync already rejected bad data or counted
                         // the failed request -> no verdict here
                         const synced =
-                            await this.stateManager.p2pManager.localRpc.spectateService.sync(
+                            await this.stateManager.p2pManager.localRpc.spectateService.syncBlockSource(
                                 options.senderAddress,
                                 block.channelId,
                                 block.forkId,
@@ -733,8 +733,10 @@ export default class BlockQueueManager {
      * it sends it, so an honest source can always prove it, while an old
      * block replayed to us would make its honest author cut us for asking.
      * A probe whose payload fails validation excludes the peer inside
-     * `sync`; a failed request is the sync's counted close; one that meets a dispute window the chain has not reduced waits inside
-     * `sync` for that reduction and is judged after it. A
+     * `syncBlockSource`; a failed request, or a source still in its own
+     * initial sync, is the sync's counted close; one that meets a dispute
+     * window the chain has not reduced waits inside `syncBlockSource` for
+     * that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
      * peer supplied junk: it is excluded here. Probes are owned work that
      * `dispose` waits for.
@@ -755,7 +757,7 @@ export default class BlockQueueManager {
         // request is a counted close, an unreduced dispute window is waited
         // out first.
         const synced =
-            await this.stateManager.p2pManager.localRpc.spectateService.sync(
+            await this.stateManager.p2pManager.localRpc.spectateService.syncBlockSource(
                 peer,
                 block.channelId,
                 block.forkId,

@@ -8,7 +8,8 @@ import { onUnhandledWorkerError } from "@/rpc/internal/browser/RootWorkerRuntime
 import type { ContractExecutorInitialization } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
 import {
     onRootBootstrap,
-    adaptTransferredPort
+    adaptTransferredPort,
+    closeRootWorker
 } from "@platform/rootWorkerRuntime";
 
 // Construction-time selection rides in the worker name as JSON.
@@ -27,7 +28,7 @@ onRootBootstrap<ContractExecutorInitialization>(
             mode,
             {
                 runtimePort: adaptTransferredPort(transferredPort),
-                onDisposed: () => globalThis.close(),
+                onDisposed: () => closeRootWorker(),
                 subscribeArm: (handler) => {
                     channel.onmessage = (
                         event: MessageEvent<WatchdogArmMessage>

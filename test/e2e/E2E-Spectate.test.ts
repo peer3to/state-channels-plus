@@ -1,4 +1,5 @@
 import { Block } from "@/models";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -19,6 +20,7 @@ import {
     expectSyncPayloadAboveRequestedHeightWhileAhead,
     stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
     assertSpectatorRejectedWork
@@ -189,7 +191,7 @@ describe("E2E: Spectate Service", function () {
                     channelId: harness.channelId!.toString()
                 })
                 .request(peer1.address);
-            expect(response.encodedSyncPayload).to.be.a("string");
+            expect(servedSyncPayload(response)).to.be.a("string");
         });
     });
 
@@ -1799,7 +1801,7 @@ describe("E2E: Spectate Service", function () {
                 await h.execOnHost(
                     h.getPeer(staged.joiner.index),
                     (sm, { responder }) =>
-                        sm.p2pManager.localRpc.spectateService.sync(
+                        sm.p2pManager.localRpc.spectateService.requestSync(
                             responder,
                             sm.channelId,
                             undefined,
@@ -1808,7 +1810,7 @@ describe("E2E: Spectate Service", function () {
                         ),
                     { responder: staged.responder.address }
                 )
-            ).to.equal(false);
+            ).not.to.equal(SyncResult.Synced);
             // the stopped runtime's connect resolves false
             await TestSession.settleDetached({
                 expectedErrorIncludes: "connectToChannel failed"

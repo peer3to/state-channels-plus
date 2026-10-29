@@ -29,11 +29,15 @@ import { assertWorkerFailureOrder } from "@test/fixtures/node/WorkerExecutorStag
 import {
     watchdogWorkerRuntime,
     crashingPrecompile,
+    workerNonErrorReports,
     useReceiver,
     createLogOnlyInitCode
 } from "@test/fixtures/node/WorkerExecutorStaging";
 import { RuntimeRpcControl } from "@test/fixtures/runtimeRpc/RuntimeRpcControl";
-import { WORKER_ASYNC_CRASH_MESSAGE } from "@test/fixtures/workerAnswerPrecompile";
+import {
+    WORKER_ASYNC_CRASH_MESSAGE,
+    WORKER_THROWN_STRING
+} from "@test/fixtures/workerAnswerPrecompile";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -330,6 +334,34 @@ describe("RpcContractExecutor (worker placement)", function () {
                 childDisposedError().message
             );
         }
+    });
+
+    it("reports a worker's unhandled non-Error rejection as one Error naming the kind, the thread and the value", async function () {
+        const reports = await workerNonErrorReports("event-rejection");
+
+        expect(reports).to.have.length(1);
+        expect(reports[0].message).to.equal(
+            "unhandled rejection in the vm worker with a non-Error value: [object Event]"
+        );
+    });
+
+    it("reports a worker's uncaught non-Error throw as one Error naming the kind, the thread and the value", async function () {
+        const reports = await workerNonErrorReports("string-throw");
+
+        expect(reports).to.have.length(1);
+        expect(reports[0].message).to.equal(
+            `uncaught exception in the vm worker with a non-Error value: ${WORKER_THROWN_STRING}`
+        );
+    });
+
+    it("names a worker's non-Error rejection value that String() cannot convert by its object tag", async function () {
+        const [report] = await workerNonErrorReports(
+            "null-prototype-rejection"
+        );
+
+        expect(report.message).to.equal(
+            "unhandled rejection in the vm worker with a non-Error value: [object Object]"
+        );
     });
 
     it("reports a detached worker crash and keeps serving", async function () {

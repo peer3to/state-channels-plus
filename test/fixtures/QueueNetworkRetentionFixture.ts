@@ -4,6 +4,7 @@ import { signBlockVariant } from "./QueueAdmissionFixture";
 import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { reduceWindowOnChain } from "@test/fixtures/PinnedSyncStaging";
 import { stageUnreducedWindowPayload } from "@test/fixtures/QueueDrainStaging";
@@ -210,6 +211,89 @@ export async function assertStoredMalformedNetworkCopy() {
             .request()
     ).to.equal(false);
     h.assert.dispute.noDisputes();
+}
+
+/**
+ * A spectator whose own initial sync is held at its application step stays
+ * OPENED and sends participant 0 a block. Participant 0's intake gate finds
+ * the sender absent and syncs from it; the spectator answers at once that it
+ * is still syncing, so intake ends with one counted close: no blacklist and
+ * no queued block.
+ */
+export async function assertSyncingAbsentSenderTakesOneStrike() {
+    const h = MathTestSession.getHarness();
+    await h.lifecycle.start(2, 1);
+    const observer = h.getPeer(0);
+    const spectator = await h.join.createSpectatorPeer();
+    const sync = await h.rpcStub.holdSpectateSyncApplication(spectator.index);
+    try {
+        await h.join.connectSpectator(spectator);
+        await waitFor(
+            async () => (await sync.entered()) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(await h.control(spectator).query.getStatus().request()).to.equal(
+            Status.OPENED
+        );
+        const block = await h.byzantine.craftUnbackedFutureBlockConfirmation(
+            1,
+            h.activeForkId!,
+            5
+        );
+        await h
+            .control(observer)
+            .stub.observeAdmission({ source: spectator.address })
+            .request();
+        await h
+            .control(spectator)
+            .byzantine.sendBlockConfirmation(
+                block.encodedBlockConfirmation,
+                observer.address
+            )
+            .request();
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(observer)
+                        .stub.getAdmissionObservation()
+                        .request()
+                ).completedIntakes === 1
+        );
+        const observation = await h
+            .control(observer)
+            .stub.getAdmissionObservation()
+            .request();
+        expect({
+            syncRequests: observation.syncRequests,
+            completedSyncs: observation.completedSyncs,
+            successfulSyncs: observation.successfulSyncs,
+            networkEntries: observation.networkEntries
+        }).to.deep.equal({
+            syncRequests: 1,
+            completedSyncs: 1,
+            successfulSyncs: 0,
+            networkEntries: 0
+        });
+        expect(
+            await h.control(observer).query.isBlockQueued(block.hash).request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(spectator.address)
+                .request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(observer)
+                .query.getStrikes(spectator.address)
+                .request()
+        ).to.equal(1);
+    } finally {
+        await h.control(observer).stub.restoreAdmissionObservation().request();
+        await sync.release();
+    }
 }
 
 export async function assertOutsiderProofDoesNotAdmitCopy(

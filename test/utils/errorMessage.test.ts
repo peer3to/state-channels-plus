@@ -1,4 +1,4 @@
-import { errorMessage } from "@/utils/errorMessage";
+import { errorMessage, valueText } from "@/utils/errorMessage";
 import { expect } from "chai";
 
 describe("errorMessage", function () {
@@ -27,5 +27,11 @@ describe("errorMessage", function () {
         expect(errorMessage({ toString: () => "custom failure" })).to.equal(
             "custom failure"
         );
+    });
+    it("valueText converts a value String() converts", function () {
+        expect(valueText(Symbol("failure"))).to.equal("Symbol(failure)");
+    });
+    it("valueText names a value String() cannot convert by its object tag", function () {
+        expect(valueText(Object.create(null))).to.equal("[object Object]");
     });
 });

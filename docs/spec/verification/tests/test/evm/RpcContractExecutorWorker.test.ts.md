@@ -7,7 +7,7 @@ Exercises: [RpcContractExecutor.ts](../../../../implementation/source/src/evm/co
 
 These cases obtain the actual executor through SDK setup with its owning root, callback service and connection. Real worker entries and manifest precompiles exercise readiness, concurrent success/error correlation, logs, disposal, first-fatal-error selection and detached report-and-continue behavior. Both placements exercise the same RPC facade and canonical engine mutex. Crash collection reaches the linked stores and preserves the supplied caller logger.
 
-Scripted fault entries use production bootstrap. Load-time failure rejects SDK-owned construction with the original error; an error after funnel installation reports once and leaves the worker serving. The removed standalone factory/no-route cases receive no coverage credit.
+Scripted fault entries use production bootstrap. Load-time failure rejects SDK-owned construction with the original error; an error after funnel installation reports once and leaves the worker serving, and a value that is not an Error and escapes there (an `Event` rejected, a string thrown, a null-prototype object rejected) reports as one Error whose message names the escape kind, the worker and the value's text, or its object tag when `String()` cannot convert it. After the first report one more call to the worker settles the rest, since the worker posts every report of the escape before it answers a later call on the same port; the rejection and throw cases then assert exactly one report. The removed standalone factory/no-route cases receive no coverage credit.
 
 ## Tests
 
@@ -19,6 +19,9 @@ Scripted fault entries use production bootstrap. Load-time failure rejects SDK-o
 - `late worker failure after disposal leaves the pending request rejected only by disposal`: UNIT-TEST-WORKER-CONTRACT-EXECUTOR-1-GQGAW7.P17
 - `should dispose idempotently`: UNIT-TEST-WORKER-CONTRACT-EXECUTOR-1-GQGAW7.P4, UNIT-TEST-CONTRACT-EXECUTOR-WORKER-HOST-1-2TRSYV.P4, UNIT-TEST-CONTRACT-EXECUTOR-WORKER-PROTOCOL-1-0CQ37K.P4
 - `should reject calls immediately after disposal`: UNIT-TEST-WORKER-CONTRACT-EXECUTOR-1-GQGAW7.P5
+- `reports a worker's unhandled non-Error rejection as one Error naming the kind, the thread and the value`: REQ-RUNTIME-9-P5VPT5.T1.P1
+- `reports a worker's uncaught non-Error throw as one Error naming the kind, the thread and the value`: REQ-RUNTIME-9-P5VPT5.T1.P4
+- `names a worker's non-Error rejection value that String() cannot convert by its object tag`: REQ-RUNTIME-9-P5VPT5.T1.P5
 - `reports a detached worker crash and keeps serving`: UNIT-TEST-WORKER-CONTRACT-EXECUTOR-1-GQGAW7.P18
 - `keeps the caller's logger working after the worker crashed`: UNIT-TEST-WORKER-CONTRACT-EXECUTOR-1-GQGAW7.P19
 - `uploads the worker's logs under the vm thread`: UNIT-TEST-WORKER-CONTRACT-EXECUTOR-1-GQGAW7.P20, REQ-LOG-6-Q8KY4N.T1.P3

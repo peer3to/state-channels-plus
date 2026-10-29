@@ -6,7 +6,8 @@ Exercises: [RelayerPool](../../../../implementation/source/src/transport/relay/R
 ## Overview
 
 Uses scoped fake time and randomness against the real pool to verify selection, delay bounds,
-exhaustion, reset, pending-retry cancellation, and failure-event deduplication.
+exhaustion, reset, pending-retry cancellation, and the warning each failure logs, read from a spy
+on the pool's logger.
 
 ## Tests
 
@@ -17,4 +18,4 @@ exhaustion, reset, pending-retry cancellation, and failure-event deduplication.
 - `caps repeated full-pool backoff at thirty seconds`: UNIT-TEST-RELAYER-POOL-1-F0230R.P5, REQ-UPG-5-YQV7MJ.T1.P5
 - `clears exclusions and backoff after a successful connection`: UNIT-TEST-RELAYER-POOL-1-F0230R.P6, REQ-UPG-5-YQV7MJ.T1.P6
 - `cancels a pending retry after success`: UNIT-TEST-RELAYER-POOL-1-F0230R.P7, REQ-UPG-5-YQV7MJ.T1.P7
-- `deduplicates paired error and close failures for one connection`: UNIT-TEST-RELAYER-POOL-1-F0230R.P8, REQ-UPG-5-YQV7MJ.T1.P8
+- `logs each failure with its relayer, reason and counts`: UNIT-TEST-RELAYER-POOL-1-F0230R.P10, REQ-UPG-5-YQV7MJ.T1.P14

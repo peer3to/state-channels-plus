@@ -68,7 +68,7 @@ describe("isInvalidStateTransitionError", function () {
         const error = await machine
             .stateTransition({
                 ...machine.addOneTransaction,
-                body: { encodedData: data, data }
+                body: { data }
             })
             .then(
                 () => undefined,

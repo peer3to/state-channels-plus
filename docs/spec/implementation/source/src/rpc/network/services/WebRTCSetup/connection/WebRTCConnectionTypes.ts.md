@@ -5,3 +5,4 @@
 ## Requirements
 
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`REQ-UPG-9-60XCXK` (A direct connection survives a short path loss)](../../../../../../../../specification/peer-communication/transport-upgrade.md#req-upg-9-60xcxk)

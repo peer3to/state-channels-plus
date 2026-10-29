@@ -6,6 +6,7 @@ import type { SyncPayload } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -268,7 +269,7 @@ async function stageAndApplyDisputeWindowInboundSync(
                 .request(args.source),
         { source: responder.address, forkId: sourceForkId }
     );
-    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    const payload = Codec.decode(servedSyncPayload(response), Type.SyncPayload);
     expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
         [sourceForkId]
     );
@@ -389,7 +390,7 @@ async function stageAndApplyDisputeWindowInboundSync(
                     expect(
                         (
                             await applyPayload(
-                                response.encodedSyncPayload as string
+                                servedSyncPayload(response) as string
                             )
                         ).synced
                     ).to.equal(true);
@@ -683,7 +684,7 @@ export async function assertSyncedParticipantServesOnlyGenuineWindowInputs(
             forkId: r.sourceForkId
         }
     );
-    const served = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    const served = Codec.decode(servedSyncPayload(response), Type.SyncPayload);
     expect(served.disputeWindows.map((window) => window.forkId)).to.deep.equal([
         r.sourceForkId
     ]);
@@ -798,7 +799,7 @@ export async function stageLocalWindowReduction(h: MathPeerTestHarness) {
                 .request(args.source),
         { source: responder.address, forkId: sourceForkId }
     );
-    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    const payload = Codec.decode(servedSyncPayload(response), Type.SyncPayload);
     expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
         [sourceForkId]
     );

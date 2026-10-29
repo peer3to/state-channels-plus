@@ -1053,5 +1053,44 @@ describe("Unit: MembershipService", function () {
                 await h.control(leaver).query.getForceExit().request()
             ).to.equal(true);
         });
+
+        it("a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+
+            const leaverIndex = await h.transition.participantLeaveWait();
+            const leaver = h.getPeer(leaverIndex);
+            const remainingPeerIndices = [0, 1, 2].filter(
+                (index) => index !== leaverIndex
+            );
+            await h.event.waitUntilLeftChannel(leaverIndex);
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(true);
+
+            // the same runtime joins again: its pending join is already a new membership
+            await h.join.joinChannelWait({ joiner: leaver });
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(false);
+            await h.assert.storage.honestPeersObserveInboundMessageWait({
+                peerIndices: remainingPeerIndices
+            });
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remainingPeerIndices
+            });
+            await h.event.waitUntilPeerStatus(
+                leaverIndex,
+                Status.PARTICIPATING
+            );
+
+            expect(
+                await h.control(leaver).query.getForceExit().request()
+            ).to.equal(false);
+            const { dispute } =
+                await h.dispute.fetchConstructedDispute(leaverIndex);
+            expect(dispute.input.selfRemoval).to.equal(false);
+        });
     });
 });
