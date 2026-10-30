@@ -16,6 +16,13 @@ import {
     redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
+    applyForgedGenesisPastChainGenesis,
+    applyGenesisCaseWindowSyncPayload,
+    applyGenesisOnlySyncPayload,
+    applySyncPayloadOverBlockZeroSnapshot,
+    forgeWindowGenesisTimestamp
+} from "@test/fixtures/GenesisTimestampSyncStaging";
+import {
     applyAnchoredSyncPayload,
     forgedOutboundBlock,
     stageAnchoredSyncPayload
@@ -24,6 +31,7 @@ import { applySyncFromChainAheadResponder } from "@test/fixtures/LaggingChainVie
 import { shareSyncingAnswerAcrossCallers } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyDisputedSyncPayload,
+    applyServedSyncPayload,
     applySyncPayload,
     applySyncPayloadServedBeforeAdoption,
     assertConcurrentSyncWindowOverwrite,
@@ -34,6 +42,7 @@ import {
     assertPinnedHeight,
     assertQueuedSuccessorBlockSurvivesSyncInstall,
     assertSyncWindowReadRace,
+    fetchServedSyncPayload,
     openSelfRemovalDispute,
     reduceWindowOnChain
 } from "@test/fixtures/PinnedSyncStaging";
@@ -1522,6 +1531,177 @@ describe("Unit: SpectateService", function () {
             );
             expect(r.heldDisputeHashes).to.have.members(r.servedDisputeHashes);
             expect(r.auditReads).to.equal(0);
+        });
+    });
+
+    describe("genesis timestamp binding", function () {
+        it("genesis-only payload before block zero with only the timestamp changed → rejected, genesis timestamp mismatch, responder blacklisted, altered genesis not stored", async function () {
+            const result = await applyGenesisOnlySyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    const genesis = payload.latestForkGenesisSnapshot;
+                    genesis.timestamp = BigInt(genesis.timestamp) + 1n;
+                }
+            );
+            expect(result.servedGenesisHash).to.not.equal(
+                result.onChainGenesisHash
+            );
+            expect(result.accepted).to.equal(false);
+            expect(result.rejections).to.deep.equal([
+                "genesis timestamp mismatch"
+            ]);
+            expect(result.responderBlacklisted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(
+                result.onChainGenesisHash
+            );
+        });
+
+        it("genesis-only payload before block zero matching the on-chain genesis → accepted, responder not blacklisted", async function () {
+            const result = await applyGenesisOnlySyncPayload(
+                TestSession.getHarness(),
+                () => {}
+            );
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.responderBlacklisted).to.equal(false);
+            expect(result.storedGenesisHash).to.equal(
+                result.onChainGenesisHash
+            );
+        });
+
+        it("block 0's snapshot on chain, height 0 but not a genesis, unaltered payload → accepted, no rejection, responder not blacklisted", async function () {
+            const result = await applySyncPayloadOverBlockZeroSnapshot(
+                TestSession.getHarness()
+            );
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.responderBlacklisted).to.equal(false);
+        });
+
+        it("reduced-fork genesis with only the timestamp changed → rejected, genesis timestamp mismatch, altered genesis not stored", async function () {
+            const h = TestSession.getHarness();
+            let reducedForkId = "";
+            let alteredHash = "";
+            const { accepted, rejections } = await applyDisputedSyncPayload(
+                h,
+                (payload) => {
+                    const genesis = payload.latestForkGenesisSnapshot;
+                    genesis.timestamp = BigInt(genesis.timestamp) + 1n;
+                    reducedForkId = String(genesis.forkId);
+                    alteredHash = String(StateSnapshot.from(genesis).hash);
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["genesis timestamp mismatch"]);
+            const stored = await h
+                .control(h.getPeer(2))
+                .dispute.getGenesisSnapshotStruct(reducedForkId)
+                .request();
+            expect(
+                stored && StateSnapshot.decode(stored.encodedSnapshot).hash
+            ).to.not.equal(alteredHash);
+        });
+        it("chain past genesis on the same fork, lagging requester, genesis with only the timestamp changed → accepted, the held genesis is kept", async function () {
+            const result = await applyForgedGenesisPastChainGenesis(
+                TestSession.getHarness()
+            );
+            // residual: no chain value binds this timestamp, so it is not checked
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(result.heldGenesisHash);
+        });
+
+        it("successor genesis applied while the chain has not yet expired its origin window → not synced with no verdict, the origin window named unsettled, responder not blacklisted, not stored", async function () {
+            const h = TestSession.getHarness();
+            // a long evidence time keeps the chain window open while the requester applies;
+            // an inline VM reads the clock per call -> the offset below reaches the local mirror;
+            // a worker-hosted SDK keeps the offset to the requester's process
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork({
+                    configOverrides: {
+                        RUN_SDK_IN_THREAD: true,
+                        VM_DEDICATED_THREAD: false
+                    },
+                    timeConfig: { evidenceTime: 30 },
+                    skipEvidenceWait: true
+                });
+            const requester = h.getPeer(2);
+            const responder = h.getPeer(0);
+            const payload = await fetchServedSyncPayload(
+                h,
+                requester,
+                responder,
+                sourceForkId
+            );
+            const reducedForkId = payload.latestForkGenesisSnapshot.forkId;
+            expect(reducedForkId).to.not.equal(sourceForkId);
+            // requester clock ahead of the chain -> its local mirror already sees the window expired
+            const stub = h.control(requester).stub;
+            await stub.holdClockOffset(60).request();
+            const result = await applyServedSyncPayload(
+                h,
+                requester,
+                responder,
+                sourceForkId,
+                payload
+            ).finally(() => stub.releaseClockOffset().request());
+            expect(result.accepted).to.equal(false);
+            expect(result.unsettledForkId).to.equal(sourceForkId);
+            expect(result.rejections).to.deep.equal([]);
+            expect(
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(requester)
+                    .dispute.getGenesisSnapshotStruct(String(reducedForkId))
+                    .request()
+            ).to.equal(null);
+        });
+
+        it("genesis-case window snapshot with only the timestamp changed → rejected, window genesis timestamp mismatch, responder blacklisted, the held genesis is kept", async function () {
+            const result = await applyGenesisCaseWindowSyncPayload(
+                TestSession.getHarness(),
+                { mutate: forgeWindowGenesisTimestamp }
+            );
+            expect(result.accepted).to.equal(false);
+            expect(result.rejections).to.deep.equal([
+                "window genesis timestamp mismatch"
+            ]);
+            expect(result.responderBlacklisted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(
+                result.genuineGenesisHash
+            );
+        });
+
+        it("genesis-case window snapshot unaltered → accepted, responder not blacklisted, the genesis stays the genuine one", async function () {
+            const result = await applyGenesisCaseWindowSyncPayload(
+                TestSession.getHarness()
+            );
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.responderBlacklisted).to.equal(false);
+            expect(result.storedGenesisHash).to.equal(
+                result.genuineGenesisHash
+            );
+        });
+
+        it("genesis-case window applied while the chain has not yet expired its kill period → not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis is kept", async function () {
+            // requester clock ahead of the chain -> its local mirror already sees the window expired
+            const result = await applyGenesisCaseWindowSyncPayload(
+                TestSession.getHarness(),
+                { mutate: forgeWindowGenesisTimestamp, clockAhead: true }
+            );
+            expect(result.accepted).to.equal(false);
+            expect(result.unsettledForkId).to.equal(result.sourceForkId);
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.responderBlacklisted).to.equal(false);
+            expect(result.storedGenesisHash).to.equal(
+                result.genuineGenesisHash
+            );
         });
     });
 

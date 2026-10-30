@@ -34,6 +34,8 @@ service stops while the sync waits; the sync fails with no
 rejection well before the agreement window ends.
 One `applySyncResponse` case stubs the requester's local diamond so the unfinalized blocks of an honest payload start with a block whose bytes do not decode; the sync returns false and records only the "block confirmation rejected" reason, so neither the pipeline log nor the pipeline throws.
 
+The genesis-timestamp cases mutate only the served genesis timestamp. A genesis-only payload before block zero, with one second added, is rejected as genesis timestamp mismatch, blacklists the responder and leaves the stored genesis equal to the on-chain one; the unaltered payload is accepted. A reduced-fork payload, with the chain still on the disputed fork, is rejected the same way and its altered genesis is not stored. With the chain snapshot already past genesis, a lagging spectator that holds the genesis accepts a proof whose genesis is one second later and keeps its held genesis. Taken before the chain kill period ends, with the requester's clock held ahead so its local mirror already sees the window expired, the same successor gets no verdict: the sync is not accepted, names the origin window as unsettled, records no rejection and keeps the responder off the blacklist. With block 0's snapshot on chain (height 0 but not a genesis), an unaltered payload is accepted.
+
 Two install cases stage a reducible disputed fork and sync an observer onto the successor. In the first, a read inside the install throws after the VM write: the sync throws, the VM keeps its state, the successor genesis is not stored and the fork stays. In the second, the install is held at its entry while a successor block authored after the payload was served waits in the observer's queue; its held queue timeout runs inside that window, sees an unknown fork (not a known stale one) and probes its source, and after the install the block is stored on the successor without a blacklist.
 
 The unreduced-window cases have peer 0 serve peer 2 a real latest-state payload around a valid
@@ -128,3 +130,12 @@ blacklist.
 - `reduce data unavailable for a disputed window → the request fails, no fraud proof stored`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P11
 - `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P7
 - `all dispute events suppressed → recovers and proves the successor fork`: none
+- `genesis-only payload before block zero with only the timestamp changed → rejected, genesis timestamp mismatch, responder blacklisted, altered genesis not stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P121
+- `genesis-only payload before block zero matching the on-chain genesis → accepted, responder not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P122
+- `reduced-fork genesis with only the timestamp changed → rejected, genesis timestamp mismatch, altered genesis not stored`: INV-SYNC-1-XCQZ28.T1.P13, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P123
+- `chain past genesis on the same fork, lagging requester, genesis with only the timestamp changed → accepted, the held genesis is kept`: INV-SYNC-1-XCQZ28.T1.P22, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P125
+- `successor genesis applied while the chain has not yet expired its origin window → not synced with no verdict, the origin window named unsettled, responder not blacklisted, not stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124
+- `block 0's snapshot on chain, height 0 but not a genesis, unaltered payload → accepted, no rejection, responder not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126
+- `genesis-case window snapshot with only the timestamp changed → rejected, window genesis timestamp mismatch, responder blacklisted, the held genesis is kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P127
+- `genesis-case window snapshot unaltered → accepted, responder not blacklisted, the genesis stays the genuine one`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P128
+- `genesis-case window applied while the chain has not yet expired its kill period → not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis is kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P129

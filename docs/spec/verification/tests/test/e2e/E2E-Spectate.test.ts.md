@@ -30,7 +30,7 @@ explicit signature on the tip: a peer that commits a block from calldata can mis
 before it held the block, and the next block finalizes the tip by virtual voting. The fork-traversal
 case then waits until the chain snapshot reaches the reduced fork: its own post can run before the
 reduction is final, and the peers' adoption post moves the chain snapshot. Out of scope: the
-forged-payload element matrix, balance-invariant checks, and chain-level no-transaction
+forged-payload element matrix (except the forged genesis timestamp below), balance-invariant checks, and chain-level no-transaction
 observation (`INV-SYNC-4-Z6HER7`). The former bundled permutations have been atomized into
 one-scenario IDs, so the latest/pinned successes, refusals, no-op skips, and abort cases here
 now carry their own assignments.
@@ -39,6 +39,8 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 The finalized-window joiner scenario selects surviving honest responders. The removed-responder case covers the other side: a self-removed peer, cut off from the survivors, is still listed by the held chain snapshot, so a new observer's initial sync goes to it and gets the successor genesis only while the survivors are two blocks ahead. The observer catches up from the next live block's sender, stays synced, and blacklists nobody. The idle variant lets the survivors dispute the reduced fork while the observer still holds only its genesis: the observer, a non-participant, aborts cleanly at its reduction, no survivor blacklists it, and the survivors resolve the dispute.
 
 The kill-period case runs the real `sync` RPC, parks the requester at its window persistence after the proof arrived, commits a dispute on the pinned fork, and releases: the sync resolves `true`, neither peer blacklists the other, the requester stays on the fork, and the dispute still resolves with no host error.
+
+The two forged-genesis cases stub a byzantine responder to serve the real genesis with its timestamp one second later, to the peer that will author the fork's block 0. In the same-fork case the channel is open with no block yet; in the successor case the chain still sits on a reducible disputed fork and another peer reduces after the sync. Both assert that the responder is blacklisted, that the author stores the chain genesis (the open snapshot, or the adopted successor whose hash the chain accepted), and that block 0 links that genesis with no fraud proof, dispute or new on-chain slash.
 
 The lagging-provider case pins a participant's provider at the current block, lands a held exit
 snapshot post that the responder observes, and runs the participant's real `sync` RPC to the
@@ -122,3 +124,6 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `a participant's source probe while the tip fork's kill period is open waits for the chain's reduction, then proves the target without blacklisting its honest responder`: REQ-SYNC-4-AWHFPA.T1.P5
 - `suppressed dispute event on the responder → the on-chain window is recovered and its successor is proved`: none
 - `a spectator sees posted junk calldata → no forced timeout check and it stays synced`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P19
+- `byzantine responder serves a timestamp-altered genesis before block zero -> the writer rejects it, never stores it, and its block 0 is not slashable`: INV-SYNC-1-XCQZ28.T1.P12
+- `byzantine responder serves a timestamp-altered successor genesis before its block zero -> the writer rejects it, installs the chain genesis, and its block 0 is not slashable`: INV-SYNC-1-XCQZ28.T1.P21
+- `byzantine responder serves a genesis-case dispute window whose genesis timestamp is altered -> the participant rejects it and keeps the genuine genesis, and the dispute still resolves`: INV-SYNC-1-XCQZ28.T1.P23

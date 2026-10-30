@@ -380,7 +380,8 @@ export class MathScenarioActions extends ScenarioActions {
      * `reduction-*` timer held so nothing reduces until a test says so:
      * preDisputeSetup, hold the timers, one invalid state transition by the
      * malicious peer, the committed dispute, `afterDispute` while the
-     * evidence period is still open, then the evidence and kill periods.
+     * evidence period is still open, then the evidence and kill periods
+     * (skipped with `skipEvidenceWait`).
      */
     async stageReducibleDisputedFork(options?: {
         configOverrides?: HarnessOptions["configOverrides"];
@@ -388,16 +389,33 @@ export class MathScenarioActions extends ScenarioActions {
         afterDispute?: () => Promise<void>;
         disputingPeerIndices?: number[];
         peerCount?: number;
-        maliciousPeerIndex?: number;
+        /** blocks before the dispute; 0 -> the invalid block is block 0 and the disputes carry no block */
+        transitionCount?: number;
+        /** "nextWriter" -> the peer that writes the next height, so the invalid block passes the leader gate */
+        maliciousPeerIndex?: number | "nextWriter";
         timeConfig?: { evidenceTime?: number };
-    }): Promise<{ sourceForkId: ForkId }> {
+        /** return right after the commit, before the kill period expires */
+        skipEvidenceWait?: boolean;
+    }): Promise<{ sourceForkId: ForkId; maliciousPeerIndex: number }> {
         const peerCount = options?.peerCount ?? 4;
         await this.preDisputeSetup({
             peerCount,
+            transitionCount: options?.transitionCount,
             configOverrides: options?.configOverrides,
             timeConfig: { evidenceTime: options?.timeConfig?.evidenceTime ?? 3 }
         });
         const sourceForkId = this.harness.activeForkId!;
+        let maliciousPeerIndex = 1;
+        if (options?.maliciousPeerIndex === "nextWriter") {
+            const writer = await this.harness
+                .control(this.harness.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            maliciousPeerIndex = this.harness.peers.findIndex(
+                (peer) => peer.address === writer
+            );
+        } else if (options?.maliciousPeerIndex !== undefined)
+            maliciousPeerIndex = options.maliciousPeerIndex;
         for (let peerIndex = 0; peerIndex < peerCount; peerIndex += 1) {
             await this.harness
                 .control(this.harness.getPeer(peerIndex))
@@ -406,43 +424,45 @@ export class MathScenarioActions extends ScenarioActions {
         }
         await options?.beforeDispute?.();
         await this.harness.byzantine.submitInvalidStateTransitionBlock(
-            options?.maliciousPeerIndex ?? 1
+            maliciousPeerIndex
         );
         await this.harness.assert.dispute.initiatedAndCommitedWait({
             peersIndices: options?.disputingPeerIndices,
             expectedCount: 1
         });
         await options?.afterDispute?.();
-        // The evidence period counts from the dispute window's creation, not
-        // from when every peer observed the dispute. Wait it out so no more
-        // evidence can land.
-        const windowCreatedAt = Number(
-            await this.harness.channelManager.getDisputeWindowCreationTimestamp(
-                this.harness.channelId,
-                sourceForkId
-            )
-        );
-        const settlementMarginSeconds = 2;
-        await this.harness.event.waitUntilTimestamp(
-            windowCreatedAt +
-                this.harness.event.evidencePeriodWaitMs(
-                    settlementMarginSeconds
-                ) /
-                    1000
-        );
-        // A peer outside `disputingPeerIndices` can commit late in the
-        // evidence period and move the kill period end. The reduction genesis
-        // carries that end, and the successor's first writer must still be
-        // inside its window once a test releases the reductions.
-        const { killPeriodEnd } =
-            await this.harness.channelManager.isKillPeriodExpired(
-                this.harness.channelId,
-                sourceForkId
+        if (!options?.skipEvidenceWait) {
+            // The evidence period counts from the dispute window's creation, not
+            // from when every peer observed the dispute. Wait it out so no more
+            // evidence can land.
+            const windowCreatedAt = Number(
+                await this.harness.channelManager.getDisputeWindowCreationTimestamp(
+                    this.harness.channelId,
+                    sourceForkId
+                )
             );
-        await this.harness.event.waitUntilTimestamp(
-            Number(killPeriodEnd) + settlementMarginSeconds
-        );
-        return { sourceForkId };
+            const settlementMarginSeconds = 2;
+            await this.harness.event.waitUntilTimestamp(
+                windowCreatedAt +
+                    this.harness.event.evidencePeriodWaitMs(
+                        settlementMarginSeconds
+                    ) /
+                        1000
+            );
+            // A peer outside `disputingPeerIndices` can commit late in the
+            // evidence period and move the kill period end. The reduction genesis
+            // carries that end, and the successor's first writer must still be
+            // inside its window once a test releases the reductions.
+            const { killPeriodEnd } =
+                await this.harness.channelManager.isKillPeriodExpired(
+                    this.harness.channelId,
+                    sourceForkId
+                );
+            await this.harness.event.waitUntilTimestamp(
+                Number(killPeriodEnd) + settlementMarginSeconds
+            );
+        }
+        return { sourceForkId, maliciousPeerIndex };
     }
 
     /**

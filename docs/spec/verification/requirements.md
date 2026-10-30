@@ -156,7 +156,7 @@ Specification cases tested: 0/19.
 Specification cases tested: 1/1.
 
 [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
-Specification cases tested: 12/20. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
+Specification cases tested: 17/23. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P17.
 
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
 Specification cases tested: 6/7. Untested: T1.P2.

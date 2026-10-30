@@ -5,7 +5,7 @@
 ## Requirements
 
 - [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
-  Contradicts: The supplied genesis timestamp is still persisted; downstream impact needs recheck under the new trusted walk ([`FIND-SECURITY-6-884TAJ`](../../../../../../../audit/open-findings.md#find-security-6-884taj)). The former chain-final reduction-input persistence path is removed; its broader regression assessment remains pending.
+  Contradicts: the genesis timestamp is bound to chain values read in the sync (step-1 chain genesis on the same fork, the origin window's chain-expired kill-period end for a successor), and a self-reduced genesis-case window's snapshot to its disputes' signed `latestStateSnapshotHash` once the chain's kill period ended ([`FIND-SECURITY-6-884TAJ`](../../../../../../../audit/open-findings.md#find-security-6-884taj)); past genesis on chain the payload's timestamp is accepted unverified unless a genesis is held ([`FIND-FRAUD-1-TRWDPS`](../../../../../../../audit/open-findings.md#find-fraud-1-trwdps)). The former chain-final reduction-input persistence path is removed; its broader regression assessment remains pending.
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
@@ -144,6 +144,15 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P118` — the requester's provider never reaches the payload's chain block: after one agreement window the sync fails with no verdict, no rejection, and the responder neither blacklisted nor disconnected
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P119` — the requester's sync service stops while the sync waits for its chain head: the sync fails at once with no verdict
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P120` — the responder's own provider lags logs another node streamed into its local diamond: the payload names the streamed block, the lagging requester waits for it and accepts, with the responder kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P121` — genesis-only payload before block zero, chain snapshot still genesis, only the genesis timestamp changed: rejected as genesis timestamp mismatch, responder blacklisted, the stored genesis stays the on-chain one
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P122` — the same genesis-only payload unaltered: accepted, responder not blacklisted, the stored genesis is the on-chain one
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P123` — successor-fork genesis with only its timestamp changed from the origin window's kill-period end: rejected as genesis timestamp mismatch and the altered genesis is not stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124` — successor-fork genesis applied while the requester's local mirror already sees the origin window expired but the chain does not: not synced with no verdict, the origin window named unsettled, no rejection, the responder not blacklisted and the successor genesis not stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P125` — lagging requester holding the genesis, on-chain snapshot past genesis on the same fork, genesis altered only in its timestamp: accepted with no rejection and the held genesis is kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P127` — genesis-case window snapshot with only its timestamp changed: rejected as window genesis timestamp mismatch, responder blacklisted, the held genesis kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P128` — the same genesis-case window unaltered: accepted, responder not blacklisted, the genesis stays the genuine one
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P129` — genesis-case window applied while the chain's kill period is still open and the requester's clock runs ahead: not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis kept
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

@@ -1627,6 +1627,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdClockOffset(seconds: number): boolean {
+        this.service.holdClockOffset(seconds);
+        return true;
+    }
+
+    public releaseClockOffset(): boolean {
+        this.service.releaseClockOffset();
+        return true;
+    }
+
     public recordSyncRejections(): boolean {
         this.service.recordSyncRejections();
         return true;

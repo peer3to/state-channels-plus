@@ -618,18 +618,23 @@ pending. Mapped regressions:
 
 ### FIND-SECURITY-6-884TAJ
 
-**Current defect:** **Open; impact needs recheck.** Supplied genesis persistence remains; the
-trusted walk now chooses canonical final state. The same unverified timestamp can also arrive as
+**Current defect:** **Resolved (2026-10-03, window path 2026-10-30); high.** `applySyncResponse` binds the
+genesis timestamp before persistence, to the step-1 chain genesis on the same fork and to the
+origin window's chain-expired kill-period end for a successor fork; a mismatch rejects as "genesis
+timestamp mismatch". Past genesis on chain no value authenticates it: sync keeps a held genesis, the
+rest is [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps). The same timestamp could also arrive as
 the `latestStateSnapshot` of a genesis-case window (its disputes carry no block) that the sync
-reduces itself: that reduction pins only the snapshot data, so the stored snapshot can overwrite
-`genesisSnapshotByForkId` (handed over from
-[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf); code-traced, not executed).
+reduces itself, whose reduction pins only the snapshot data (handed over from
+[`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf)): that snapshot must now hash to the
+`latestStateSnapshotHash` every committed dispute of the window signed, trusted once the chain
+reports the window's kill period ended (Luke, 2026-10-30: no extra chain read, the flag comes
+from the existing finality multicall).
 
 **Proposed direction and handoff:**
-[Evidence and proposed fix](./codex-security-triage.md#sync-genesis-time). Engineer review pending;
-preserve the report's prerequisites and proof gaps. Owed regression:
+[Evidence and fix](./codex-security-triage.md#sync-genesis-time). Mapped regressions:
 [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12),
-[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+[`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13),
+[`INV-SYNC-1-XCQZ28.T1.P23`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p23).
 
 ## No relayer or RPC node available
 
@@ -682,6 +687,14 @@ backoff). Gaps seen in the code:
 Distinct from open questions: for these, the finding is verified in code and a reasonable
 direction exists, but the direction still needs engineer confirmation before implementation.
 Each should become a normal fix + test once confirmed.
+
+<a id="find-fraud-1-trwdps"></a>
+
+### FIND-FRAUD-1-TRWDPS
+
+**Defect:** _Open (2026-10-03)._ An honest peer files a WrongGenesis proof that cannot succeed, and is slashed for it, when a block 0 is judged on a fork whose on-chain snapshot is already past genesis. `_handleWrongGenesis` returns invalid for that fork (contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:295-297) and `applyFraudProofs` slashes the submitter of an invalid proof (FraudProofFacet.sol:19-25). A block 0 still reaches validation after a sync that persisted only history above the anchor: the queue lets stored heights through for double-sign detection, and `isLinked` then compares it with the stored genesis (src/stateManager/ingest/ValidationService.ts:412-418). Triggers: a genuinely wrong late block 0, or an honest block 0 judged against a genesis whose timestamp a sync responder altered while the chain was past genesis (the residual of [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj)). Also unverified: a forged genesis timestamp as the block-timestamp floor in `BlockProductionService.adjustTimestampIfNeeded` when that fork has no stored block. Code-traced, not executed.
+
+**Proposed direction:** Stop judging WrongGenesis for a block 0 once the chain snapshot on its fork is past genesis. Engineer choices: WrongGenesis only or any stale block; a guard in `wrongGenesisDetected` or a new strategy deviation on all strategies; dispute or disconnect at all; the lag of the event-fed local view (preflight through the local diamond); keying stored fraud proofs by fork.
 
 <a id="find-contract-devlog-1-s97s2h"></a>
 
@@ -1970,8 +1983,8 @@ dispute its handler left unstored (a fork the node already left, or a dispute it
 a stored confirmation no longer always means an accepted audit. Inbound blocks arrive through chain events.
 Residual: until the chain adopts a window reduced on chain after the finality read, the requester
 lacks that window's reduction input and refuses to serve it, as it already did for a chain-final
-window. A genesis-shaped snapshot of a self-reduced window is not checked against its timestamp;
-that case belongs to [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+window. A genesis-shaped snapshot of a self-reduced window is checked against its disputes' signed hash;
+that case is resolved in [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
 Regressions:
 [`INV-SYNC-1-XCQZ28.T1.P18`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p18),
 [`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19),
