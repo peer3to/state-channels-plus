@@ -286,8 +286,12 @@ async function createLateCompletingExecutor(failAfterDelay: boolean) {
             }
         ]
     });
-    // The inline executor handed the precompile factory its exact root.
-    const owner = workerAnswerPrecompileOwners[before];
+    // The inline executor handed the precompile factory its exact root. Other
+    // roots of the process that run the precompile locally (a runtime host's
+    // mirror, when the runner gave the process a storage diff service) are not it.
+    const owner = workerAnswerPrecompileOwners
+        .slice(before)
+        .find((candidate) => candidate instanceof ContractExecutorRoot);
     if (!(owner instanceof ContractExecutorRoot))
         throw new Error("Expected the executor root as the precompile owner");
     return { executor, service: owner.executor };
