@@ -159,10 +159,10 @@ Specification cases tested: 1/1.
 Specification cases tested: 17/23. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P17.
 
 [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
-Specification cases tested: 3/4. Untested: T1.P2.
+Specification cases tested: 6/7. Untested: T1.P2.
 
 [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-Specification cases tested: 11/31. Untested: T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22, T1.P25, T1.P26, T1.P27, T1.P28.
+Specification cases tested: 12/32. Untested: T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P15, T1.P16, T1.P17, T1.P18, T1.P19, T1.P20, T1.P21, T1.P22, T1.P25, T1.P26, T1.P27, T1.P28.
 
 [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 Specification cases tested: 0/5.
@@ -420,7 +420,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 6/6.
 
 [`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../specification/disputes/dispute-processing.md#req-dvp-2-rg8qr3)
-Specification cases tested: 0/1.
+Specification cases tested: 1/2. Untested: T1.P1.
 
 [`REQ-DVP-3-CFFAW1` (Incorrect reductions are challenged in time)](../specification/disputes/dispute-processing.md#req-dvp-3-cffaw1)
 Specification cases tested: 0/1.
@@ -615,7 +615,7 @@ Specification cases tested: 6/6.
 Specification cases tested: 9/9.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-Specification cases tested: 37/37.
+Specification cases tested: 39/39.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
@@ -948,7 +948,7 @@ Specification cases tested: 0/6.
 Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
-Specification cases tested: 16/20. Untested: T1.P2, T1.P4, T1.P7, T1.P16.
+Specification cases tested: 17/20. Untested: T1.P2, T1.P4, T1.P7.
 
 [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
 Specification cases tested: 1/3. Untested: T1.P1, T1.P3.

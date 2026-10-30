@@ -155,6 +155,43 @@ What changed (review fixes on the connection grace of
    [`FIND-TIMEOUT-1-R8EWZ5`](open-findings.md#find-timeout-1-r8ewz5). Still open, Luka decides: the
    grace end without a transport only resets the grace.
 
+## Leave watchdog checks membership before its self-removal dispute — 2026-10-26
+
+Before this change, a leave watchdog that expired disputed the fork unconditionally. When the remaining
+participants' exit snapshot had already landed but the leaver's membership check had not yet observed it, the
+watchdog started the self-removal dispute anyway; a leaver behind that snapshot failed to build its proof (below
+its anchor), and the dispute error was fatal although the leave settled
+([`FIND-LEAVE-5-7071C7`](open-findings.md#find-leave-5-7071c7)). In the
+[LeaveChannelService report](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md)
+`onWatchdog` now requests the serialized membership check, waits for it, and returns when the exit ended (settled,
+or disposed) or was restarted; only an exit still pending after that check disputes. Evidence:
+[`REQ-LIF-10-QR8NQ9.T1.P37`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p37) with
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P53`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (an event-triggered check already parked on its chain read; it fails with the
+`this.exit !== exit` return removed: "below its anchor"),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P54`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (the leaver received no chain event, so only the watchdog's own check
+sees the settlement; it times out waiting for `onLeftChannel` with the `this.requestCheck()` line removed), and
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (disposal during the watchdog's own parked check; it fails when the exit
+return is weakened to a status check: the dispute starts on the disposed runtime).
+
+The window after that check is closed too. An exit snapshot that lands while the self-removal dispute is
+built moves the leaver's anchor past its latest block; in the
+[AgreementManager report](../implementation/source/src/agreementManager/AgreementManager.ts.md)
+the sibling `tryBuildStateProof` returns no proof below the anchor (this view is behind the chain), as
+`tryBuildFinalProofAt` and `computeLocalFinalizedSnapshot` already did, and `buildStateProof` delegates to it and
+keeps the one "below its anchor at height …" throw. In the
+[DisputeManager report](../implementation/source/src/disputeManager/DisputeManager.ts.md) `dispute` treats a
+construction with no proof as a no-op like `ErrorCantParticipateInDispute`: marker rolled back, info log, no
+upload. Only `DisputeBuilder.constructDispute` calls `tryBuildStateProof`: `reconstructAuditingData`,
+`buildFinalProof`, the snapshot update and spectate serve keep calling `buildStateProof` and its throw; the audit's
+early proof build in `EventHandler` still resolves any failed build to undefined, as
+[`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P23`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w) requires. Evidence:
+[`REQ-LIF-10-QR8NQ9.T1.P38`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p38) with
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P56`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9) (the watchdog's check finds the exit pending, the
+construction is parked, the exit snapshot lands, then it is released),
+[`UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P55`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-1-sqv6zd) and
+[`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d). Switching `constructDispute` back to `buildStateProof`
+makes the first two fail with "below its anchor". [`FIND-LEAVE-5-7071C7`](open-findings.md#find-leave-5-7071c7) is resolved.
+
 ## Still-syncing responder answers at once — 2026-10-26
 
 What changed: a peer that is still in its own initial sync answers a sync request at once that it is not

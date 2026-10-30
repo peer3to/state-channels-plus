@@ -1,6 +1,8 @@
 import { Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
+import { tryReduceAfterKillPeriod } from "@test/fixtures/DeferredReductionStaging";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import {
     assertSettledAdoptionRefusal,
     type FinalLaterReduction,
@@ -9,16 +11,17 @@ import {
     stageHeldSuccessorAdoption
 } from "@test/fixtures/SettledAdoptionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
 
 describe("Unit: ReductionExecutor", function () {
-    // a reduce whose inbound run this peer cannot walk yields no reduce data.
-    // that outcome must reschedule, never reach ReductionManager.failCompletion
-    // (which answers with abort() and strands the peer for good)
+    // a reduce whose inbound run or head state this peer lacks yields no reduce
+    // data. a non-participant aborts cleanly on it (it can resync later); a
+    // participant reschedules instead
     describe("reduce data unavailable", function () {
-        it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
+        it("inbound run unavailable on a spectator → the attempt aborts it cleanly without a throw, and the participants still reduce", async function () {
             const h = TestSession.getHarness();
             // the reading peer is a synced spectator: it does not audit, so it
             // holds the window while the run stays unavailable. a
@@ -26,80 +29,28 @@ describe("Unit: ReductionExecutor", function () {
             // so a participant never reaches the reduce with it missing
             const {
                 forkId,
-                held,
+                disputerIndex,
                 spectatorIndex: laggingIndex
             } = await h.scenario.stageSpectatedDisputeOverHeldInboundGap();
-            const scheduled =
-                await h.rpcStub.recordScheduledTasks(laggingIndex);
 
-            // let the kill period lapse - before that the attempt returns at
-            // the gate and never reaches the reduce computation
+            const outcome = await tryReduceAfterKillPeriod(
+                h,
+                laggingIndex,
+                forkId
+            );
+
+            expect(outcome).to.deep.equal({
+                threw: "",
+                forkIdAfter: forkId,
+                statusAfter: Status.OPENED
+            });
             await waitFor(
-                async () =>
-                    h.execOnHost(
-                        h.getPeer(laggingIndex),
-                        async (sm, a) => {
-                            const { isExpired } =
-                                await sm.reductionManager.isKillPeriodExpiredCached(
-                                    a.forkId
-                                );
-                            return isExpired;
-                        },
-                        { forkId }
-                    ),
+                () => runtimeIsClosed(h.getPeer(laggingIndex).p2pInstance),
                 h.event.protocolEventTimeoutMs()
             );
-
-            // drive the executor directly: ReductionManager.tryReduce returns
-            // the shared completion promise, which a deferred attempt leaves
-            // pending on purpose
-            const outcome = await h.execOnHost(
-                h.getPeer(laggingIndex),
-                async (sm, args) => {
-                    let threw = "";
-                    try {
-                        await sm.reductionManager[
-                            "reductionExecutor"
-                        ].tryReduce(args.forkId);
-                    } catch (e) {
-                        threw = e instanceof Error ? e.message : String(e);
-                    }
-                    return { threw, forkIdAfter: String(sm.forkId) };
-                },
-                { forkId },
-                {
-                    timeoutMs: h.event.hostExecTimeoutMs()
-                }
-            );
-
-            // the regression: this used to throw out of the executor, and
-            // ReductionManager answered the throw with abort()
-            expect(outcome.threw).to.equal("");
-            expect(outcome.forkIdAfter).to.equal(forkId);
-            expect(
-                (await scheduled.tasks()).map((task) => task.taskName)
-            ).to.include(`reduction-${forkId}`);
-            expect(
-                await h
-                    .control(h.getPeer(laggingIndex))
-                    .query.getStatus()
-                    .request(),
-                "a deferred reduction must not evict the peer"
-            ).to.equal(Status.SYNCED);
-            expect(
-                await h
-                    .control(h.getPeer(laggingIndex))
-                    .query.getDisputeFraudProofTypes()
-                    .request()
-            ).to.deep.equal([]);
-            await scheduled.restore();
-
-            // the missing log lands -> the rescheduled attempt has the run it
-            // needs and the fork finally moves
-            await held.release();
             await h.assert.sync.forkChangedWait({
                 originalForkId: forkId,
-                honestPeerIndices: [laggingIndex]
+                honestPeerIndices: [disputerIndex]
             });
         });
 
@@ -136,6 +87,131 @@ describe("Unit: ReductionExecutor", function () {
             expect(healthy.challengeCalls).to.equal(1);
 
             await held.release({ replay: false });
+        });
+
+        it("reduced head the spectator never received → the attempt aborts it cleanly without a throw, and the participants still reduce", async function () {
+            const h = TestSession.getHarness();
+            // a spectator cut off before the participants' last block: the
+            // window reduces to that block, whose state it never stored
+            const { forkId, spectatorIndex, disputerIndex } =
+                await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
+            const spectator = h.getPeer(spectatorIndex);
+            // premise - the window reduces to a head above everything the
+            // spectator holds
+            const reducedHeight = await h.query.reducedHeadHeight(
+                forkId,
+                spectatorIndex
+            );
+            const spectatorHeight = await h
+                .control(spectator)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(reducedHeight).to.not.equal(null);
+            expect(reducedHeight).to.be.greaterThan(Number(spectatorHeight));
+
+            const outcome = await tryReduceAfterKillPeriod(
+                h,
+                spectatorIndex,
+                forkId
+            );
+
+            expect(outcome).to.deep.equal({
+                threw: "",
+                forkIdAfter: forkId,
+                statusAfter: Status.OPENED
+            });
+            await waitFor(
+                () => runtimeIsClosed(spectator.p2pInstance),
+                h.event.protocolEventTimeoutMs()
+            );
+            await h.assert.sync.forkChangedWait({
+                originalForkId: forkId,
+                honestPeerIndices: [disputerIndex]
+            });
+        });
+
+        it("inbound run unavailable on a participant → the attempt reschedules after chainFallbackTime, the participant keeps its status", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3, { timeConfig: INBOUND_GAP_TIME_CONFIG });
+            await h.lifecycle.openChannel();
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+            // a participant that neither writes the invalid block nor disputes it
+            const offenderIndex = (await h.query.getNextPeerToWrite()).index;
+            const laggingIndex = h.peers
+                .map((peer) => peer.index)
+                .find((index) => index !== offenderIndex)!;
+            // its InboundMessagesProcessed handler is held, so recovery
+            // cannot heal the run either
+            await h.rpcStub.holdInboundMessageEvents(laggingIndex);
+            await h.rpcStub.holdReductionRace(laggingIndex);
+            // its audit of the window would throw on the unavailable run
+            // (fatal) -> record the audit; its own dispute is not under test
+            const audits = await h.rpcStub.recordDisputeAudits(laggingIndex);
+            await h.dispute.suppressDisputeInitiation([laggingIndex]);
+            const { forkId } =
+                await h.scenario.stageCommittedDisputeOverInboundGap({
+                    laggingIndex
+                });
+            await h.assert.dispute.committedWait({
+                peersIndices: [laggingIndex],
+                expectedCount: 1
+            });
+            expect(await audits.auditCount()).to.be.greaterThan(0);
+            const scheduled =
+                await h.rpcStub.recordScheduledTasks(laggingIndex);
+
+            const outcome = await tryReduceAfterKillPeriod(
+                h,
+                laggingIndex,
+                forkId
+            );
+
+            expect(outcome).to.deep.equal({
+                threw: "",
+                forkIdAfter: forkId,
+                statusAfter: Status.PARTICIPATING
+            });
+            // the retry lands chainFallbackTime out (whole seconds: a clock
+            // tick between the reads shaves one)
+            const delays = (await scheduled.tasks())
+                .filter((task) => task.taskName === `reduction-${forkId}`)
+                .map((task) => task.delayMs);
+            const fallbackMs = INBOUND_GAP_TIME_CONFIG.chainFallbackTime * 1000;
+            expect(delays.at(-1)).to.be.within(fallbackMs - 1000, fallbackMs);
+            expect(
+                runtimeIsClosed(h.getPeer(laggingIndex).p2pInstance)
+            ).to.equal(false);
+        });
+
+        it("someone else's reduction while the reduced head is not held → not challenged, no throw", async function () {
+            const h = TestSession.getHarness();
+            const { disputerIndex, spectatorIndex } =
+                await h.scenario.stageSpectatedDisputeAboveSpectatorHead();
+
+            // a reduced fork id that matches nothing locally: with reduce data
+            // the peer would challenge it, without reduce data it must not
+            const claimedReducedForkId = randomHash() as ForkId;
+            const lagging = await h
+                .control(h.getPeer(spectatorIndex))
+                .validation.probeDisputeReductionChallenge(claimedReducedForkId)
+                .request();
+
+            expect(lagging.threw).to.equal(null);
+            // true = do not challenge, and follow the chain instead
+            expect(lagging.isValid).to.equal(true);
+            expect(lagging.challengeCalls).to.equal(0);
+
+            // control: a peer that holds the head challenges the same claim
+            const healthy = await h
+                .control(h.getPeer(disputerIndex))
+                .validation.probeDisputeReductionChallenge(claimedReducedForkId)
+                .request();
+            expect(healthy.isValid).to.equal(false);
+            expect(healthy.challengeCalls).to.equal(1);
         });
     });
 

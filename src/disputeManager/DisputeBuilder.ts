@@ -139,6 +139,8 @@ export default class DisputeBuilder {
      * through its latest block (persistence-only replay never moves it).
      * `expectedSlashes` are slashes a kill in the same multicall lands first.
      * `latestStateProof` is used when it still reaches the latest block.
+     * undefined when the latest block is below the anchor: this view is
+     * behind the chain.
      */
     public async constructDispute(
         forkId: ForkId,
@@ -146,7 +148,7 @@ export default class DisputeBuilder {
             expectedSlashes?: Address[];
             latestStateProof?: Promise<BuiltStateProof | undefined>;
         }
-    ): Promise<ConstructDisputeResult> {
+    ): Promise<ConstructDisputeResult | undefined> {
         const inputs = await this.readInputs(forkId, options?.expectedSlashes);
         const built = this.built.get(forkId);
         if (
@@ -158,10 +160,11 @@ export default class DisputeBuilder {
         const builtStateProof =
             latestStateProof?.blockHeight === inputs.latestBlockHeight
                 ? latestStateProof
-                : await this.agreementManager.buildStateProof(
+                : await this.agreementManager.tryBuildStateProof(
                       forkId,
                       inputs.latestBlockHeight
                   );
+        if (!builtStateProof) return undefined;
         // evidence stored while the proof was built goes in too
         const latest = await this.readInputs(forkId, options?.expectedSlashes);
         // a block that landed meanwhile needs its own proof
@@ -225,7 +228,8 @@ export default class DisputeBuilder {
     ): Promise<boolean> {
         const ourDispute = (
             await this.constructDispute(forkId, { latestStateProof })
-        ).dispute;
+        )?.dispute;
+        if (!ourDispute) return false;
 
         this.logger.verbose("Constructed our own dispute for comparison", {
             ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),

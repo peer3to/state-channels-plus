@@ -37,6 +37,7 @@ import type {
     FailedRestoreRecord
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { SLOT_STRIDE, slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 
 /** A held join send: wait until it is held, then let it broadcast. */
@@ -663,6 +664,47 @@ export class RpcStubActions<
                 .stub.restoreDisputeCommittedEvents(replay)
                 .request();
         };
+    }
+
+    /**
+     * Make this peer's provider lag the chain: its head and `latest` reads
+     * stay at the current block. `holdLogs` (default true): its streamed logs
+     * above that block are held too; false models another node that keeps
+     * streaming them. `release` lets it catch up and announces nothing.
+     */
+    async lagChainView(
+        peerIndex: number,
+        options: { holdLogs?: boolean } = {}
+    ): Promise<{
+        pinnedBlock: number;
+        headReads: () => Promise<number>;
+        chainHeadWaitsEntered: () => Promise<number>;
+        release: () => Promise<boolean>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        const pinnedBlock = await ctl()
+            .stubLagChainView(options.holdLogs ?? true)
+            .request();
+        return {
+            pinnedBlock,
+            headReads: () => ctl().getLaggedHeadReads().request(),
+            chainHeadWaitsEntered: () =>
+                ctl().getChainHeadWaitsEntered().request(),
+            release: () => ctl().restoreChainView().request()
+        };
+    }
+
+    /**
+     * Mine one block with a plain transfer that touches no channel state, from
+     * the slot's last participant account, which no staged peer uses.
+     */
+    async mineTransferBlock(): Promise<void> {
+        const signer = this.harness.signerFor(
+            slotAccountIndex(SLOT_STRIDE - 2)
+        );
+        await (
+            await signer.sendTransaction({ to: signer.address, value: 0n })
+        ).wait();
     }
 
     async getHeldDisputeCommittedCount(peerIndex: number): Promise<number> {
@@ -1495,6 +1537,24 @@ export class RpcStubActions<
             (sm, args) => sm.disputeManager.dispute(args.forkId),
             { forkId }
         );
+    }
+
+    /**
+     * Record a peer's dispute audits instead of running them: each counts and
+     * answers valid, so the window persists without the audit's replay.
+     */
+    async recordDisputeAudits(peerIndex: number): Promise<{
+        auditCount: () => Promise<number>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubRecordDisputeAudits().request();
+        return {
+            auditCount: () => ctl().getRecordedDisputeAuditCount().request(),
+            restore: async () => {
+                await ctl().restoreDisputeAudits().request();
+            }
+        };
     }
 
     async suppressDisputeKill(peerIndex: number): Promise<{

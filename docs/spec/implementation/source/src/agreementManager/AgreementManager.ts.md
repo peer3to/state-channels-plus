@@ -89,14 +89,17 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63` — Exact construction at an exit height retains the departing and remaining union signatures through a later linked block, verifies on chain at exactly that height without moving the view, and returns no proof after the sole required later confirmation is removed
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `tryBuildStateProof` below the mirrored anchor returns no proof: this view is behind the chain, and no proof is built from history below the anchor
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 
 Reduction inbound evidence
 
-- Setup: Build reduce data with a complete store, a dropped recoverable event, and an unrecoverable range
-- Oracle: Complete data passes; chain recovery restores dropped events; exhaustion returns unavailable before local reduction
+- Setup: Build reduce data with a complete store, a dropped recoverable event, an unrecoverable range, a reduced head the node never received, and a reduced head whose snapshot the node stored without its state
+- Oracle: Complete data passes; chain recovery restores dropped events; exhaustion or an unheld reduced head returns unavailable before local reduction, never a throw
 
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P1` — complete local range
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P2` — missing event recovered from chain
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P3` — recovery exhaustion returns unavailable for retry
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P4` — a non-genesis reduced head whose snapshot the node never received returns unavailable for retry, not a throw
+- [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P5` — a non-genesis reduced head whose snapshot the node stored without its state (a verified proof hop) returns unavailable for retry, not a throw

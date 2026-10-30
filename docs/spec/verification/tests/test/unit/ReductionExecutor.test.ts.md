@@ -18,10 +18,6 @@ of throwing, that every commitment is stored afterwards, and — the substantive
 events arrived; the released peers then complete the reduction for real. The other planned
 executor permutations (concurrent convergence, empty-window escalation, supersession, provider
 failure) are not exercised here and remain with the dispute e2e flows or unassigned.
-The `no reduce data` reschedule case stages the lagging peer as peer 1: the staging's invalid block comes from the
-next writer (peer 2), which the reduction slashes, so the lagging peer must be a different participant. Before
-plan 30 the case passed with peer 2 as the lagging peer only because its aborted runtime kept reducing after
-disposal.
 The case where someone else's reduction meets an unavailable run stages the lagging peer as a synced
 spectator: a participant's audit of the window throws on the unavailable run, so only a spectator reaches
 the reduction check with it missing. It is not challenged, while a participant that holds the run
@@ -46,10 +42,15 @@ treated the mined resend as mined.
 
 The settled-adoption cases stage a reducible disputed fork that only peer 0 reduces, with every timeout check suppressed. Peer 0's multicalls are recorded and its adopt-only post is parked at its send after it was prepared against the successor fork; peer 0's reduction timers are held again so it never reduces the successor. A successor participant other than peer 0 and the next writer broadcasts an invalid block, and the honest participants open the successor's dispute window. The disputed-fork case releases the post at once. The not-latest-fork case first lets another honest participant reduce the successor and waits until that reduction's challenge period expired, so the parked post targets an older fork the chain reaches on its way to the later one. Each case asserts the real revert name from the released send, settles detached work with no error, finds no `adoptReducedFork-*` retry scheduled and exactly one adopt-only post recorded, and reads the chain snapshot still on the source fork.
 
+Two cases hand-drive the reduction of a synced spectator without reduce data, with its own reduction entry points held: one cut off before the window's reduced head, one whose applied inbound run is unavailable. Each attempt returns without a throw, leaves the spectator OPENED and its runtime closes, while the participants still reduce. Another reducer's committed reduction is not challenged by such a spectator. The participant case holds a participant's InboundMessagesProcessed handler, records its dispute audit instead of running it (the audit would throw on the unavailable run) and suppresses its own dispute; the hand-driven attempt returns without a throw, the participant stays PARTICIPATING with its runtime open, and a `reduction-<fork>` task is scheduled `chainFallbackTime` out.
+
 ## Tests
 
-- `no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes`: none
+- `inbound run unavailable on a spectator → the attempt aborts it cleanly without a throw, and the participants still reduce`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P24
 - `someone else's reduction while the run is unavailable → not challenged, no throw`: none
+- `reduced head the spectator never received → the attempt aborts it cleanly without a throw, and the participants still reduce`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P27
+- `inbound run unavailable on a participant → the attempt reschedules after chainFallbackTime, the participant keeps its status`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P26
+- `someone else's reduction while the reduced head is not held → not challenged, no throw`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P25
 - `unreadable dispute window → the attempt defers instead of aborting`: none
 - `a re-dispatched dispute log that fails → the attempt rejects with that failure`: none
 - `unreadable dispute window → the reduction is not challenged`: none

@@ -35,6 +35,27 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         return this.sm.storage;
     }
 
+    /**
+     * The chain's reduce over `forkId`'s locally readable dispute window, with
+     * the reduced head's height; null when the window is not readable locally.
+     */
+    async reduceWindow(forkId: ForkId) {
+        const disputes =
+            await this.sm.reductionManager.getSyncedForkDisputes(forkId);
+        if (!disputes) return null;
+        const reducedOutput =
+            await this.sm.stateChannelManagerContract.reduce.staticCall(
+                disputes
+            );
+        return {
+            disputes,
+            reducedOutput,
+            reducedHeight: Number(
+                reducedOutput.latestBlock.transaction.header.transactionCnt
+            )
+        };
+    }
+
     /** Project a live `Block` into a serializable bundle for the harness. */
     toBlockBundle(block: Block): BlockBundle {
         return {

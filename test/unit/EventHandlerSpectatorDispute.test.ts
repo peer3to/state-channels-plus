@@ -1,4 +1,6 @@
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 // only participants and pending participants audit a committed dispute
@@ -60,5 +62,62 @@ describe("Unit: EventHandler committed dispute on a spectator", function () {
         expect(
             observerReads.local.reads + observerReads.chain.reads
         ).to.be.greaterThan(0);
+    });
+
+    it("a spectator behind a threshold-final dispute's latest block aborts cleanly, and the participants reach the dispute's output fork", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup({
+            peerCount: 4,
+            timeConfig: { evidenceTime: 3 }
+        });
+        const participants = h.peers.map((peer) => peer.index);
+        const maliciousPeerIndex = 1;
+        const honest = participants.filter(
+            (index) => index !== maliciousPeerIndex
+        );
+        const spectatorIndex = (
+            await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: participants,
+                minimumBlocks: 1,
+                maximumBlocks: 20
+            })
+        ).peer.index;
+        const spectator = h.getPeer(spectatorIndex);
+        // cut off -> the participants' next final block never reaches it, and
+        // it follows the dispute from chain events only
+        await h.network.blacklistAndDisconnectPeer(spectatorIndex);
+        await h.transition.advanceState({
+            count: 1,
+            waitForPeers: participants,
+            waitForFinalization: true
+        });
+        const forkId = h.activeForkId!;
+        const heightOn = async (index: number) =>
+            Number(
+                (await h
+                    .control(h.getPeer(index))
+                    .query.getLatestBlockHeight(forkId)
+                    .request()) ?? -1
+            );
+        // premise - the final point the dispute pins is above the spectator
+        expect(await heightOn(honest[0]!)).to.be.greaterThan(
+            await heightOn(spectatorIndex)
+        );
+
+        const staged = await h.dispute.submitFinalDispute({
+            maliciousPeerIndex,
+            finalAuthorPeerIndex: honest[honest.length - 1]!
+        });
+        await waitFor(
+            () => runtimeIsClosed(spectator.p2pInstance),
+            h.event.protocolEventTimeoutMs() * 2
+        );
+        // the participants reach the dispute's output fork. not
+        // resolveFinalDispute: its cleanup restores the closed spectator too
+        await h.assert.sync.forkChangedWait({
+            originalForkId: forkId,
+            expectedForkId: staged.finalResolution.forkId,
+            honestPeerIndices: honest
+        });
     });
 });

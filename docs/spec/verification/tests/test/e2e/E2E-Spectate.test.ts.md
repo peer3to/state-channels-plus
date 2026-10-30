@@ -36,13 +36,16 @@ one-scenario IDs, so the latest/pinned successes, refusals, no-op skips, and abo
 now carry their own assignments.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 
-The finalized-window joiner scenario selects surviving honest responders. Recovery after accepting a genesis-only proof from a removed peer remains unverified: `REQ-SYNC-1-T2589H.T1.P16`, tracked by `FIND-SYNC-1-JWY1C8`.
+The finalized-window joiner scenario selects surviving honest responders. The removed-responder case covers the other side: a self-removed peer, cut off from the survivors, is still listed by the held chain snapshot, so a new observer's initial sync goes to it and gets the successor genesis only while the survivors are two blocks ahead. The observer catches up from the next live block's sender, stays synced, and blacklists nobody. The idle variant lets the survivors dispute the reduced fork while the observer still holds only its genesis: the observer, a non-participant, aborts cleanly at its reduction, no survivor blacklists it, and the survivors resolve the dispute.
 
 The kill-period case runs the real `sync` RPC, parks the requester at its window persistence after the proof arrived, commits a dispute on the pinned fork, and releases: the sync resolves `true`, neither peer blacklists the other, the requester stays on the fork, and the dispute still resolves with no host error.
 
 The two forged-genesis cases stub a byzantine responder to serve the real genesis with its timestamp one second later, to the peer that will author the fork's block 0. In the same-fork case the channel is open with no block yet; in the successor case the chain still sits on a reducible disputed fork and another peer reduces after the sync. Both assert that the responder is blacklisted, that the author stores the chain genesis (the open snapshot, or the adopted successor whose hash the chain accepted), and that block 0 links that genesis with no fraud proof, dispute or new on-chain slash.
 
-## Tests and covered test IDs
+The lagging-provider case pins a participant's provider at the current block, lands a held exit
+snapshot post that the responder observes, and runs the participant's real `sync` RPC to the
+responder; the provider catches up while the sync waits on the payload's chain block and a real
+block is mined, and the sync completes with no rejection and the responder kept.
 
 The two chain-final window cases lose participant 2's InboundMessagesProcessed delivery from before a top-up of peer 0: one holds its handler, the other drops the subscribed log so that only chain-log recovery can deliver it. That recovery can already run while participant 2 audits the dispute, before the sync. Each then lands only the reduction on chain, so the window is chain-final while the chain stays on the source fork. Peer 0 serves a payload whose window inbound list carries an extra fabricated successor of the top-up, and participant 2 accepts it. Releasing the holds replays the reduction events and, in the held case, the held chain event; the chain adopts the reduced fork. Participant 2 then holds the genuine top-up, from the replayed event or, in the dropped case, from chain-log recovery. The dropped case checks only this end state, not that the block arrives after the sync, because the recovery may run before it. The participants then author three blocks; the test decodes every new block on the reduced fork and requires one authored by participant 2 whose signature recovers to it and whose inbound blocks do not include the fabricated successor. All three stay in sync, none of them holds the fabricated block, and every inbound head equals the genuine top-up.
 
@@ -91,10 +94,13 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `skips latest state persistence when local storage is already ahead`: INV-SYNC-3-A7A2ED.T1.P30
 - `aborts spectating when a finalized sync block conflicts with storage`: INV-SYNC-3-A7A2ED.T1.P3
 - `should spectate successfully even when it must traverse forks (dispute -> reduced fork)`: none
+- `participant whose provider lags a snapshot post syncs from a responder that saw it → the sync waits for its provider to catch up and completes; responder kept`: INV-SYNC-2-AT3RXE.T1.P6
 - `responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it`: INV-SYNC-1-XCQZ28.T1.P11
 - `responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor`: INV-SYNC-1-XCQZ28.T1.P14
 - `responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs`: INV-SYNC-1-XCQZ28.T1.P19
 - `pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P23
+- `a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting`: REQ-SYNC-1-T2589H.T1.P16
+- `the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer, a non-participant behind the reduced head, aborts cleanly at its reduction, nobody blacklists it and the survivors resolve the dispute`: REQ-DVP-2-RG8QR3.T1.P2
 - `via forceInboundJoin`: none
 - `via joinChannel`: none
 - `joinChannel survives dispute on reduced fork`: none

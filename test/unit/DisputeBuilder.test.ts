@@ -48,9 +48,9 @@ describe("Unit: DisputeBuilder", function () {
                 writer,
                 async (sm, args) => {
                     const builder = sm.disputeManager["disputeBuilder"];
-                    const result = await sm.disputeManager.constructDispute(
+                    const result = (await sm.disputeManager.constructDispute(
                         args.forkId
-                    );
+                    ))!;
                     const stored = sm.storage.blocks.getBlock(
                         args.forkId,
                         args.height
@@ -268,9 +268,9 @@ describe("Unit: DisputeBuilder", function () {
                     observer,
                     async (sm, args) => {
                         const { dispute, fraudProofsToApply } =
-                            await sm.disputeManager.constructDispute(
+                            (await sm.disputeManager.constructDispute(
                                 args.forkId
-                            );
+                            ))!;
                         return {
                             onChainSlashes: dispute.input.onChainSlashes.map(
                                 (address) => String(address)
@@ -315,7 +315,7 @@ describe("Unit: DisputeBuilder", function () {
             const first = await h.execOnHost(
                 peer,
                 async (sm, args) =>
-                    (await sm.disputeManager.constructDispute(args.forkId))
+                    (await sm.disputeManager.constructDispute(args.forkId))!
                         .dispute.postedAuditingData,
                 { forkId }
             );
@@ -332,9 +332,9 @@ describe("Unit: DisputeBuilder", function () {
                 async (sm, args) => {
                     const builder = sm.disputeManager["disputeBuilder"];
                     const cached = builder["built"].get(args.forkId)!;
-                    const second = await sm.disputeManager.constructDispute(
+                    const second = (await sm.disputeManager.constructDispute(
                         args.forkId
-                    );
+                    ))!;
                     const third = await sm.disputeManager.constructDispute(
                         args.forkId
                     );
@@ -454,7 +454,9 @@ describe("Unit: DisputeBuilder", function () {
                 h.getPeer(0),
                 async (sm, args) => {
                     const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
+                        (await sm.disputeManager.constructDispute(
+                            args.forkId
+                        ))!;
                     const isAbsent =
                         !sm.storage.stateSnapshots.getStateSnapshotByHash(
                             args.absentSnapshotHash as Hash

@@ -321,6 +321,11 @@ export default class LeaveChannelService {
         // a join in progress lands (forced in if needed) or ends first
         if (sm.channelJoinService.isJoinInProgress())
             return this.armWatchdog(config.LEAVE_CHANNEL_WATCHDOG_MS);
+        // the chain can hold the exit before this runtime observed it: the
+        // check ends a settled exit, a restarted one has its own watchdog
+        this.requestCheck();
+        await this.checks;
+        if (this.exit !== exit) return;
         if (sm.storage.disputes.didIDispute(exit.forkId)) return;
         this.logger.info("Starting the leave's self-removal dispute", {
             forkId: exit.forkId
