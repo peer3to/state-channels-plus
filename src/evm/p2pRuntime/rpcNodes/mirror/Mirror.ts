@@ -29,7 +29,6 @@ export type MirrorCall = {
     to: string;
     data: string;
     value?: bigint;
-    gas?: bigint;
     gasPrice?: bigint;
 };
 
@@ -109,7 +108,7 @@ export class Mirror {
                     data: getBytes(request.data),
                     value: request.value,
                     gasPrice: request.gasPrice,
-                    gasLimit: request.gas ?? BigInt(header.gasLimit),
+                    gasLimit: BigInt(header.gasLimit),
                     block: this.blockOf(head, header)
                 });
                 const data = hexlify(result.execResult.returnValue);

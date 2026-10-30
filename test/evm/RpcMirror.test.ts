@@ -373,6 +373,31 @@ describe("MirrorRpcProvider", function () {
         });
     });
 
+    it("answers a call that carries a gas limit from the node, which charges the transaction gas the local EVM does not", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+            await storage.getValue();
+            const call = (gasLimit?: bigint) =>
+                session.provider.call({
+                    to: address,
+                    data: storage.interface.encodeFunctionData("getValue"),
+                    ...(gasLimit === undefined ? {} : { gasLimit })
+                });
+            const nodeCalls = () => nodeRequests(session, "eth_call").length;
+            const before = nodeCalls();
+
+            // below the 21,000 of intrinsic gas: the node refuses, a local run would not
+            const refused = await rejectionOf(call(21_000n));
+
+            expect(refused).to.be.instanceOf(Error);
+            expect(nodeCalls() - before).to.equal(1);
+            expect(BigInt(await call())).to.equal(5n);
+            // a call without a limit stays local
+            expect(nodeCalls() - before).to.equal(1);
+        });
+    });
+
     it("asks the service for exactly the missing fields, at the head block, when no snapshot comes", async function () {
         await withMirrorSession(async (session) => {
             const { storage, address } = await deployMirroredStorage(session);

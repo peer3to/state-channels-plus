@@ -4,6 +4,7 @@ import {
     type MirrorBlock,
     type MirrorUpstream
 } from "./mirror/MirrorChain";
+import { carriesGasLimit } from "./mirror/LocalExecutionPolicy";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
@@ -130,14 +131,14 @@ function parseCall(params: unknown[]): MirrorCall | undefined {
     if (!Object.keys(fields).every((name) => SUPPORTED_CALL_FIELDS.has(name)))
         return undefined;
     const data = fields.data ?? fields.input ?? "0x";
-    const { from, to, value, gas, gasPrice } = fields;
+    if (carriesGasLimit(fields)) return undefined;
+    const { from, to, value, gasPrice } = fields;
     if (
         !isAddress(to) ||
         (from !== undefined && !isAddress(from)) ||
         typeof data !== "string" ||
         !/^0x([0-9a-fA-F]{2})*$/.test(data) ||
         (value !== undefined && !isQuantity(value)) ||
-        (gas !== undefined && !isQuantity(gas)) ||
         (gasPrice !== undefined && !isQuantity(gasPrice))
     )
         return undefined;
@@ -146,7 +147,6 @@ function parseCall(params: unknown[]): MirrorCall | undefined {
         to,
         data,
         value: value === undefined ? undefined : BigInt(value),
-        gas: gas === undefined ? undefined : BigInt(gas),
         gasPrice: gasPrice === undefined ? undefined : BigInt(gasPrice)
     };
 }

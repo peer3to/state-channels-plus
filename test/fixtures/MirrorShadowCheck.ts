@@ -115,7 +115,6 @@ async function nodeCall(
         ...(request.value === undefined
             ? {}
             : { value: toQuantity(request.value) }),
-        ...(request.gas === undefined ? {} : { gas: toQuantity(request.gas) }),
         ...(request.gasPrice === undefined
             ? {}
             : { gasPrice: toQuantity(request.gasPrice) })
