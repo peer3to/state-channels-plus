@@ -825,7 +825,7 @@ Specification cases tested: 5/5.
 Specification cases tested: 5/14. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P11, T1.P12, T1.P13.
 
 [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8)
-Specification cases tested: 0/5.
+Specification cases tested: 2/5. Untested: T1.P1, T1.P2, T1.P4.
 
 [`REQ-SDK-ARCH-3-WHTDWX` (Event fidelity)](../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx)
 Specification cases tested: 0/7.
