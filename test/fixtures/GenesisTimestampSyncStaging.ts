@@ -299,12 +299,11 @@ async function serveForgedGenesisAndSettle(
         MathStateMachine
     >,
     payload: SyncPayload,
-    syncForkId: ForkId
+    syncForkId: ForkId,
+    forgedGenesis = payload.latestForkGenesisSnapshot
 ) {
-    const genesisForkId = String(payload.latestForkGenesisSnapshot.forkId);
-    const forgedGenesisHash = StateSnapshot.from(
-        payload.latestForkGenesisSnapshot
-    ).hash;
+    const genesisForkId = String(forgedGenesis.forkId);
+    const forgedGenesisHash = StateSnapshot.from(forgedGenesis).hash;
     await h
         .control(responder)
         .stub.stubSpectatePayload(
@@ -338,4 +337,149 @@ async function serveForgedGenesisAndSettle(
     } finally {
         await h.control(responder).stub.restoreSpectateStaleProof().request();
     }
+}
+
+/**
+ * Block 0 is the invalid block, so the window's disputes carry no block and its
+ * latest state is the fork genesis. With every reduction held, an honest peer
+ * serves the unreduced window, `mutate` alters it and another honest
+ * participant, which holds the genesis, applies it and reduces the window itself.
+ * `clockAhead` keeps the chain's kill period open (long evidence time) while the
+ * requester's clock runs past it. Returns the verdict, rejection reasons, whether
+ * the requester blacklisted the responder, and its stored and genuine genesis hashes.
+ */
+export async function applyGenesisCaseWindowSyncPayload(
+    h: MathPeerTestHarness,
+    options: {
+        mutate?: (payload: SyncPayload) => void;
+        clockAhead?: boolean;
+    } = {}
+) {
+    const { sourceForkId, maliciousPeerIndex } =
+        await h.scenario.stageReducibleDisputedFork({
+            transitionCount: 0,
+            maliciousPeerIndex: "nextWriter",
+            ...(options.clockAhead
+                ? {
+                      // an inline VM reads the clock per call -> the offset reaches the local mirror
+                      configOverrides: {
+                          RUN_SDK_IN_THREAD: true,
+                          VM_DEDICATED_THREAD: false
+                      },
+                      timeConfig: { evidenceTime: 30 },
+                      skipEvidenceWait: true
+                  }
+                : {})
+        });
+    const [responder, requester] = h.peers.filter(
+        (_, index) => index !== maliciousPeerIndex
+    );
+    const genuineGenesis = await h
+        .control(requester)
+        .dispute.getGenesisSnapshotStruct(sourceForkId)
+        .request();
+    expect(genuineGenesis, "requester holds the genesis").to.not.equal(null);
+    const genuineGenesisHash = StateSnapshot.decode(
+        genuineGenesis!.encodedSnapshot
+    ).hash;
+
+    const payload = await fetchServedSyncPayload(
+        h,
+        requester,
+        responder,
+        sourceForkId
+    );
+    expect(payload.disputeWindows.length).to.equal(1);
+    const windowSnapshot = StateSnapshot.from(
+        payload.disputeWindows[0].latestStateSnapshot
+    );
+    // the disputes carry no block -> the window's latest state is the fork genesis
+    expect(windowSnapshot.isGenesis).to.equal(true);
+    expect(windowSnapshot.hash).to.equal(genuineGenesisHash);
+    options.mutate?.(payload);
+
+    const stub = h.control(requester).stub;
+    if (options.clockAhead) await stub.holdClockOffset(60).request();
+    const result = await applyServedSyncPayload(
+        h,
+        requester,
+        responder,
+        sourceForkId,
+        payload
+    ).finally(async () => {
+        if (options.clockAhead) await stub.releaseClockOffset().request();
+    });
+    const stored = await h
+        .control(requester)
+        .dispute.getGenesisSnapshotStruct(sourceForkId)
+        .request();
+    return {
+        ...result,
+        sourceForkId,
+        responderBlacklisted: await h
+            .control(requester)
+            .query.isBlacklisted(responder.address)
+            .request(),
+        storedGenesisHash:
+            stored && StateSnapshot.decode(stored.encodedSnapshot).hash,
+        genuineGenesisHash
+    };
+}
+
+/** One second later on the served genesis-case window snapshot only: same data, other hash. */
+export function forgeWindowGenesisTimestamp(payload: SyncPayload): void {
+    const snapshot = payload.disputeWindows[0].latestStateSnapshot;
+    snapshot.timestamp = BigInt(snapshot.timestamp) + 1n;
+}
+
+/**
+ * The genesis-case window of `applyGenesisCaseWindowSyncPayload`, served by a
+ * byzantine responder with its snapshot one second later to an honest
+ * participant over the real sync request; then every reduction is released.
+ * Returns the peers and the genuine genesis hash once the sync settled.
+ */
+export async function syncForgedGenesisCaseWindow(h: MathPeerTestHarness) {
+    const { sourceForkId, maliciousPeerIndex } =
+        await h.scenario.stageReducibleDisputedFork({
+            transitionCount: 0,
+            maliciousPeerIndex: "nextWriter"
+        });
+    const honest = h.peers.filter((_, index) => index !== maliciousPeerIndex);
+    const [responder, victim] = honest;
+    const genuine = await h
+        .control(victim)
+        .dispute.getGenesisSnapshotStruct(sourceForkId)
+        .request();
+    const genuineGenesisHash = StateSnapshot.decode(
+        genuine!.encodedSnapshot
+    ).hash;
+    const payload = await fetchServedSyncPayload(
+        h,
+        victim,
+        responder,
+        sourceForkId
+    );
+    expect(payload.disputeWindows.length).to.equal(1);
+    forgeWindowGenesisTimestamp(payload);
+    const forgedWindowSnapshot = payload.disputeWindows[0].latestStateSnapshot;
+    expect(StateSnapshot.from(forgedWindowSnapshot).hash).to.not.equal(
+        genuineGenesisHash
+    );
+    await serveForgedGenesisAndSettle(
+        h,
+        victim,
+        responder,
+        payload,
+        sourceForkId,
+        forgedWindowSnapshot
+    );
+    for (const peer of h.peers)
+        await h.control(peer).stub.restoreReductionTasks(true).request();
+    return {
+        sourceForkId,
+        victim,
+        responder,
+        honestPeerIndices: honest.map((peer) => peer.index),
+        genuineGenesisHash
+    };
 }

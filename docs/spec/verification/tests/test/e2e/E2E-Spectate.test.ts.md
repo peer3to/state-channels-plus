@@ -120,3 +120,4 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `a spectator sees posted junk calldata → no forced timeout check and it stays synced`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P19
 - `byzantine responder serves a timestamp-altered genesis before block zero -> the writer rejects it, never stores it, and its block 0 is not slashable`: INV-SYNC-1-XCQZ28.T1.P12
 - `byzantine responder serves a timestamp-altered successor genesis before its block zero -> the writer rejects it, installs the chain genesis, and its block 0 is not slashable`: INV-SYNC-1-XCQZ28.T1.P21
+- `byzantine responder serves a genesis-case dispute window whose genesis timestamp is altered -> the participant rejects it and keeps the genuine genesis, and the dispute still resolves`: INV-SYNC-1-XCQZ28.T1.P23

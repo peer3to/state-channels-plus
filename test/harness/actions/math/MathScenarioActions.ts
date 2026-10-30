@@ -339,18 +339,33 @@ export class MathScenarioActions extends ScenarioActions {
         afterDispute?: () => Promise<void>;
         disputingPeerIndices?: number[];
         peerCount?: number;
-        maliciousPeerIndex?: number;
+        /** blocks before the dispute; 0 -> the invalid block is block 0 and the disputes carry no block */
+        transitionCount?: number;
+        /** "nextWriter" -> the peer that writes the next height, so the invalid block passes the leader gate */
+        maliciousPeerIndex?: number | "nextWriter";
         timeConfig?: { evidenceTime?: number };
         /** return right after the commit, before the kill period expires */
         skipEvidenceWait?: boolean;
-    }): Promise<{ sourceForkId: ForkId }> {
+    }): Promise<{ sourceForkId: ForkId; maliciousPeerIndex: number }> {
         const peerCount = options?.peerCount ?? 4;
         await this.preDisputeSetup({
             peerCount,
+            transitionCount: options?.transitionCount,
             configOverrides: options?.configOverrides,
             timeConfig: { evidenceTime: options?.timeConfig?.evidenceTime ?? 3 }
         });
         const sourceForkId = this.harness.activeForkId!;
+        let maliciousPeerIndex = 1;
+        if (options?.maliciousPeerIndex === "nextWriter") {
+            const writer = await this.harness
+                .control(this.harness.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            maliciousPeerIndex = this.harness.peers.findIndex(
+                (peer) => peer.address === writer
+            );
+        } else if (options?.maliciousPeerIndex !== undefined)
+            maliciousPeerIndex = options.maliciousPeerIndex;
         for (let peerIndex = 0; peerIndex < peerCount; peerIndex += 1) {
             await this.harness
                 .control(this.harness.getPeer(peerIndex))
@@ -359,7 +374,7 @@ export class MathScenarioActions extends ScenarioActions {
         }
         await options?.beforeDispute?.();
         await this.harness.byzantine.submitInvalidStateTransitionBlock(
-            options?.maliciousPeerIndex ?? 1
+            maliciousPeerIndex
         );
         await this.harness.assert.dispute.initiatedAndCommitedWait({
             peersIndices: options?.disputingPeerIndices,
@@ -397,7 +412,7 @@ export class MathScenarioActions extends ScenarioActions {
                 Number(killPeriodEnd) + settlementMarginSeconds
             );
         }
-        return { sourceForkId };
+        return { sourceForkId, maliciousPeerIndex };
     }
 
     /**

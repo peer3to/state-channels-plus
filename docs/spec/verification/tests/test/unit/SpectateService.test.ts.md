@@ -120,3 +120,6 @@ blacklist.
 - `chain past genesis on the same fork, lagging requester, genesis with only the timestamp changed → accepted, the held genesis is kept`: INV-SYNC-1-XCQZ28.T1.P22, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P125
 - `successor genesis applied while the chain has not yet expired its origin window → not synced with no verdict, the origin window named unsettled, responder not blacklisted, not stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P124
 - `block 0's snapshot on chain, height 0 but not a genesis, unaltered payload → accepted, no rejection, responder not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126
+- `genesis-case window snapshot with only the timestamp changed → rejected, window genesis timestamp mismatch, responder blacklisted, the held genesis is kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P127
+- `genesis-case window snapshot unaltered → accepted, responder not blacklisted, the genesis stays the genuine one`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P128
+- `genesis-case window applied while the chain has not yet expired its kill period → not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis is kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P129

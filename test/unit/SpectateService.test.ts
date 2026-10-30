@@ -17,8 +17,10 @@ import {
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     applyForgedGenesisPastChainGenesis,
+    applyGenesisCaseWindowSyncPayload,
     applyGenesisOnlySyncPayload,
-    applySyncPayloadOverBlockZeroSnapshot
+    applySyncPayloadOverBlockZeroSnapshot,
+    forgeWindowGenesisTimestamp
 } from "@test/fixtures/GenesisTimestampSyncStaging";
 import {
     applyAnchoredSyncPayload,
@@ -1603,6 +1605,48 @@ describe("Unit: SpectateService", function () {
                     .dispute.getGenesisSnapshotStruct(String(reducedForkId))
                     .request()
             ).to.equal(null);
+        });
+
+        it("genesis-case window snapshot with only the timestamp changed → rejected, window genesis timestamp mismatch, responder blacklisted, the held genesis is kept", async function () {
+            const result = await applyGenesisCaseWindowSyncPayload(
+                TestSession.getHarness(),
+                { mutate: forgeWindowGenesisTimestamp }
+            );
+            expect(result.accepted).to.equal(false);
+            expect(result.rejections).to.deep.equal([
+                "window genesis timestamp mismatch"
+            ]);
+            expect(result.responderBlacklisted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(
+                result.genuineGenesisHash
+            );
+        });
+
+        it("genesis-case window snapshot unaltered → accepted, responder not blacklisted, the genesis stays the genuine one", async function () {
+            const result = await applyGenesisCaseWindowSyncPayload(
+                TestSession.getHarness()
+            );
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.responderBlacklisted).to.equal(false);
+            expect(result.storedGenesisHash).to.equal(
+                result.genuineGenesisHash
+            );
+        });
+
+        it("genesis-case window applied while the chain has not yet expired its kill period → not synced with no verdict, the window named unsettled, responder not blacklisted, the held genesis is kept", async function () {
+            // requester clock ahead of the chain -> its local mirror already sees the window expired
+            const result = await applyGenesisCaseWindowSyncPayload(
+                TestSession.getHarness(),
+                { mutate: forgeWindowGenesisTimestamp, clockAhead: true }
+            );
+            expect(result.accepted).to.equal(false);
+            expect(result.unsettledForkId).to.equal(result.sourceForkId);
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.responderBlacklisted).to.equal(false);
+            expect(result.storedGenesisHash).to.equal(
+                result.genuineGenesisHash
+            );
         });
     });
 

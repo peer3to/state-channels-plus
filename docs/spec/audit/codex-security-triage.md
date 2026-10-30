@@ -6,7 +6,7 @@
 
 ## Result and handoff
 
-**Of the 12 findings, 7 concern the protocol and are assessed here: 2 confirmed, 4 fixed and 1 not actionable because its exact path was already fixed.** The assessment confirmed six; `zero-verdict`, `unbound-snapshot`, `open-deadline` and `sync-inbound` have since been fixed, and `pruned-inbound` and `sync-genesis-time` remain confirmed. Among the six originally confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
+**Of the 12 findings, 7 concern the protocol and are assessed here: 1 confirmed, 5 fixed and 1 not actionable because its exact path was already fixed.** The assessment confirmed six; `zero-verdict`, `unbound-snapshot`, `open-deadline`, `sync-inbound` and `sync-genesis-time` have since been fixed, and `pruned-inbound` remains confirmed. Among the six originally confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
 
 The other 5 findings concern developer tooling. By engineer decision (2026-09-30), tooling findings are tracked in the tooling's own documentation, not in this specification's audit register:
 
@@ -29,12 +29,12 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
 | `open-deadline`     | fixed          | medium            | —          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
 | `sync-inbound`      | fixed          | high              | —          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
-| `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
+| `sync-genesis-time` | fixed          | high              | —          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
 Ranks are unique within the confirmed queue and follow the class that each item's Boundary paragraph names:
 
 - **Unauthenticated on-chain paths (rank 3; ranks 1 and 2 are fixed):** any chain account can use them.
-- **Peer-assisted signing paths (rank 4; rank 5 is fixed):** the attacker must be the sync responder that the victim selected.
+- **Peer-assisted signing paths (ranks 4 and 5, both fixed):** the attacker must be the sync responder that the victim selected.
 - **On-chain path that needs participant-issued credentials (rank 6, now fixed):** only a counterparty that holds every participant's opening signatures could use it, and its original severity is medium.
 
 Fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
@@ -210,11 +210,11 @@ Mapped permutations: [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communic
 
 ## 7. Peer sync can replace genesis time and induce a slashable first block
 
-**Verdict:** `confirmed`, partially fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
 
-**Fix status:** partially resolved; the genesis-case window path below stays open.
+**Fix status:** resolved.
 
-**Current assessment:** open; impact requires recheck with the trusted-start walk.
+**Current assessment:** fixed under the trusted-start walk, including the genesis-case window path.
 Original finding: confirmed, high severity, rank 4;
 [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
 Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occurrence `occ_0c51cce0dbb06ddacb658c01`.
@@ -227,7 +227,7 @@ Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occur
 
 **Counterevidence and limits.** An advanced chain snapshot or already-stored block zero blocked the simple case. The victim had to sync before its first block, with otherwise correct genesis data. The old report's multicall explanation was obsolete: that helper was removed.
 
-**Proof gaps.** None left for the first-block claim: the unit and E2E regressions below fail without the fix. Still open: a genesis-case dispute window's `latestStateSnapshot`, which the sync reduces itself, is stored without a timestamp check and can overwrite `genesisSnapshotByForkId` ([`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj); code-traced, not executed).
+**Proof gaps.** None left for the first-block claim: the unit and E2E regressions below fail without the fix. The genesis-case window path (a self-reduced window whose disputes carry no block, so its reduction pins only the snapshot data) is closed too: the window snapshot must hash to the `latestStateSnapshotHash` every committed dispute of the window signed, trusted once the chain reports the window's kill period ended; its unit cases fail with the check removed.
 
 **Fix (implemented):** `applySyncResponse` binds the genesis timestamp before persistence to chain values read in that sync. While the step-1 chain snapshot is the target fork's genesis, the full genesis must equal it (block 0's snapshot also has height zero but is not a genesis). A successor genesis must carry its origin window's kill-period end, read with `isKillPeriodExpired` in the existing finality multicall and checked only once the chain reports the period expired; before that the sync fails with no verdict and waits for the window's reduction. Past genesis on chain no value authenticates the genesis (a same-fork advance also clears the dispute windows), so sync keeps a held genesis and otherwise accepts the payload's timestamp unverified; an honest peer that then judges a block 0 files a WrongGenesis proof the chain rejects, tracked by [`FIND-FRAUD-1-TRWDPS`](open-findings.md#find-fraud-1-trwdps). A mismatch rejects as "genesis timestamp mismatch". No contract changed. The regression work covered:
 
@@ -236,4 +236,4 @@ Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occur
 
 Mapped permutations: [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12) ([E2E-Spectate report](../verification/tests/test/e2e/E2E-Spectate.test.ts.md)) and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13) ([SpectateService unit report](../verification/tests/test/unit/SpectateService.test.ts.md)), with [`INV-SYNC-1-XCQZ28.T1.P21`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p21) for the successor fork and [`INV-SYNC-1-XCQZ28.T1.P22`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p22) for the past-genesis residual.
 
-**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). Genesis-shaped dispute-window snapshots that sync persists are not timestamp-checked; they are outside this finding's first-block slash path.
+**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). A genesis-shaped dispute-window snapshot that sync persists is bound to its disputes' signed hash.

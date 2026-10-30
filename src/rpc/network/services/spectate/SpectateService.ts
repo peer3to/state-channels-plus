@@ -434,6 +434,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const finalizedByFork = new Map<ForkId, boolean>();
             // a successor fork's genesis timestamp is its origin window's kill period end, final once the chain says expired
             let originKillPeriod = { isExpired: false, killPeriodEnd: 0n };
+            // a window's kill period ended on chain: its committed disputes are past their audit
+            const killPeriodEndedByFork = new Map<ForkId, boolean>();
             if (forkIds.length > 0) {
                 const contract = stateManager.stateChannelManagerContract;
                 const encodedFinalityCalls = forkIds.map((forkId) =>
@@ -442,9 +444,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         [channelId, forkId]
                     )
                 );
+                const encodedKillPeriodCalls = forkIds.map((forkId) =>
+                    contract.interface.encodeFunctionData(
+                        "isKillPeriodExpired",
+                        [channelId, forkId]
+                    )
+                );
                 const encodedFinalityResults =
                     await contract.multicall.staticCall([
                         ...encodedFinalityCalls,
+                        ...encodedKillPeriodCalls,
                         contract.interface.encodeFunctionData(
                             "isKillPeriodExpired",
                             [
@@ -460,11 +469,20 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         encodedFinalityResults[index]
                     );
                     finalizedByFork.set(forkId, isFinal);
+                    const [windowExists, isExpired] =
+                        contract.interface.decodeFunctionResult(
+                            "isKillPeriodExpired",
+                            encodedFinalityResults[forkIds.length + index]
+                        );
+                    killPeriodEndedByFork.set(
+                        forkId,
+                        windowExists && isExpired
+                    );
                 });
                 const [windowExists, isExpired, killPeriodEnd] =
                     contract.interface.decodeFunctionResult(
                         "isKillPeriodExpired",
-                        encodedFinalityResults[forkIds.length]
+                        encodedFinalityResults[2 * forkIds.length]
                     );
                 originKillPeriod = {
                     isExpired: windowExists && isExpired,
@@ -561,6 +579,30 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             peerAddress,
                             "dispute window mismatch"
                         );
+                    // with no block in the disputes the reduction pins only the genesis data, not its
+                    // timestamp -> every committed dispute signed the full genesis hash; trusted once
+                    // the chain's kill period ended (a local clock ahead of the chain is no proof)
+                    const windowSnapshot = StateSnapshot.from(
+                        dw.latestStateSnapshot
+                    );
+                    if (windowSnapshot.isGenesis) {
+                        if (!killPeriodEndedByFork.get(dw.forkId))
+                            return {
+                                synced: false,
+                                unsettledForkId: dw.forkId
+                            };
+                        if (
+                            !disputes.every(
+                                (dispute) =>
+                                    dispute.input.latestStateSnapshotHash ===
+                                    windowSnapshot.hash
+                            )
+                        )
+                            return this.rejectSync(
+                                peerAddress,
+                                "window genesis timestamp mismatch"
+                            );
+                    }
                     try {
                         const committedReduction =
                             await diamondStateMachine.reduceAndFinalizeLocally(

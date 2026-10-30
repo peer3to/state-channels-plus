@@ -8,6 +8,7 @@ import {
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     syncForgedGenesisBeforeFirstBlock,
+    syncForgedGenesisCaseWindow,
     syncForgedSuccessorGenesisBeforeFirstBlock
 } from "@test/fixtures/GenesisTimestampSyncStaging";
 import {
@@ -339,6 +340,41 @@ describe("E2E: Spectate Service", function () {
             expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
                 slashedBefore
             );
+        });
+
+        it("byzantine responder serves a genesis-case dispute window whose genesis timestamp is altered -> the participant rejects it and keeps the genuine genesis, and the dispute still resolves", async function () {
+            const h = TestSession.getHarness();
+            const {
+                sourceForkId,
+                victim,
+                responder,
+                honestPeerIndices,
+                genuineGenesisHash
+            } = await syncForgedGenesisCaseWindow(h);
+            expect(
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(true);
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(sourceForkId)
+                .request();
+            expect(StateSnapshot.decode(stored!.encodedSnapshot).hash).to.equal(
+                genuineGenesisHash
+            );
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId: sourceForkId,
+                honestPeerIndices
+            });
+            expect(
+                await h.control(victim).query.getForkId().request()
+            ).to.equal(newForkId);
+            // the honest participants are not slashed
+            const slashedAfter = await h.query.onChainSlashedParticipants();
+            for (const index of honestPeerIndices)
+                expect(slashedAfter).to.not.include(h.getPeer(index).address);
         });
 
         it("spectate atomic persistence and setState", async function () {
