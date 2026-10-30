@@ -92,9 +92,13 @@ export class Mirror {
         this.chain.requireBlock(block);
     }
 
-    async call(request: MirrorCall): Promise<MirrorCallOutcome> {
+    async call(
+        request: MirrorCall,
+        observe?: (head: MirrorBlock) => void
+    ): Promise<MirrorCallOutcome> {
         const evm = await this.getEvm();
         return await this.chain.run(async (head) => {
+            observe?.(head);
             const header = this.chain.headEnvironment();
             try {
                 const result = await evm.runCall({
@@ -122,38 +126,67 @@ export class Mirror {
     }
 
     /** The 32-byte word of `slot`. */
-    async getStorageAt(address: string, slot: string): Promise<string> {
+    async getStorageAt(
+        address: string,
+        slot: string,
+        observe?: (head: MirrorBlock) => void
+    ): Promise<string> {
         const key = getBytes(zeroPadValue(toBeHex(BigInt(slot)), 32));
-        return await this.chain.run(async () =>
-            hexlify(
+        return await this.chain.run(async (head) => {
+            observe?.(head);
+            return hexlify(
                 await this.state.getContractStorage(
                     Address.fromString(address),
                     key
                 )
-            )
-        );
+            );
+        });
     }
 
-    async getBalance(address: string): Promise<bigint> {
-        return await this.chain.run(
-            async () =>
+    async getBalance(
+        address: string,
+        observe?: (head: MirrorBlock) => void
+    ): Promise<bigint> {
+        return await this.chain.run(async (head) => {
+            observe?.(head);
+            return (
                 (await this.state.getAccount(Address.fromString(address)))
                     ?.balance ?? 0n
-        );
+            );
+        });
     }
 
-    async getTransactionCount(address: string): Promise<bigint> {
-        return await this.chain.run(
-            async () =>
+    async getTransactionCount(
+        address: string,
+        observe?: (head: MirrorBlock) => void
+    ): Promise<bigint> {
+        return await this.chain.run(async (head) => {
+            observe?.(head);
+            return (
                 (await this.state.getAccount(Address.fromString(address)))
                     ?.nonce ?? 0n
-        );
+            );
+        });
     }
 
-    async getCode(address: string): Promise<string> {
-        return await this.chain.run(async () =>
-            hexlify(this.state.readCodeOf(Address.fromString(address)))
-        );
+    async getCode(
+        address: string,
+        observe?: (head: MirrorBlock) => void
+    ): Promise<string> {
+        return await this.chain.run(async (head) => {
+            observe?.(head);
+            return hexlify(this.state.readCodeOf(Address.fromString(address)));
+        });
+    }
+
+    /** Counts a sampled answer; see {@link MirrorChain.noteSample}. */
+    noteSample(outcome: "match" | "mismatch" | "skipped"): void {
+        this.chain.noteSample(outcome);
+    }
+
+    /** Drops `address` to lazy reads after its cached state was found wrong. */
+    async dropToLazy(address: string): Promise<void> {
+        await this.chain.dropToLazy(address.toLowerCase(), true);
     }
 
     /** What the mirror's own state reads cost so far. */

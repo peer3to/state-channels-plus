@@ -96,6 +96,14 @@ export interface MirrorChainStatistics {
     snapshotTimeouts: number;
     /** Accounts the feed said no snapshot is coming for. */
     lazyNotices: number;
+    /** Accounts dropped to lazy reads after they were complete. */
+    lazyDrops: number;
+    /** Local answers re-asked of the node at the same block. */
+    sampleChecks: number;
+    /** Sampled answers the node answered differently. */
+    sampleMismatches: number;
+    /** Sampled answers the node could not be asked about, or declined. */
+    sampleSkipped: number;
 }
 
 export type MirrorChainOptions = {
@@ -140,6 +148,8 @@ export class MirrorChain {
     private requiredNumber = 0n;
     /** Accounts whose snapshot a fill is waiting for, and what ends the wait. */
     private readonly awaitedSnapshots = new Map<AccountAddress, () => void>();
+    /** Accounts whose missing state is read from the node: the feed's copy was found wrong. */
+    private readonly nodeRead = new Set<AccountAddress>();
     /** Snapshots from a block the head has not reached, by arrival. */
     private pendingSnapshots: StorageDiffSnapshot[] = [];
     private readonly counters: MirrorChainStatistics = {
@@ -147,7 +157,11 @@ export class MirrorChain {
         lazyFields: 0,
         snapshots: 0,
         snapshotTimeouts: 0,
-        lazyNotices: 0
+        lazyNotices: 0,
+        lazyDrops: 0,
+        sampleChecks: 0,
+        sampleMismatches: 0,
+        sampleSkipped: 0
     };
     private failedAttempts = 0;
     private retryAfterMs = 0;
@@ -214,6 +228,34 @@ export class MirrorChain {
             throw new MirrorUnavailableError(
                 "Storage diff service query failed"
             );
+        }
+    }
+
+    /**
+     * Forgets the cached state of `address` so that what a read needs of it
+     * is fetched again: from the node when the feed's copy is the suspect.
+     */
+    async dropToLazy(
+        address: AccountAddress,
+        fromNode: boolean
+    ): Promise<void> {
+        await this.lock.lock();
+        try {
+            if (this.closed) return;
+            this.state.dropToLazy(address);
+            if (fromNode) this.nodeRead.add(address);
+            this.counters.lazyDrops++;
+        } finally {
+            this.lock.unlock();
+        }
+    }
+
+    /** Counts one sampled answer: checked and matching, mismatching, or skipped. */
+    noteSample(outcome: "match" | "mismatch" | "skipped"): void {
+        if (outcome === "skipped") this.counters.sampleSkipped++;
+        else {
+            this.counters.sampleChecks++;
+            if (outcome === "mismatch") this.counters.sampleMismatches++;
         }
     }
 
@@ -430,13 +472,22 @@ export class MirrorChain {
                 accounts: lacking.map((miss) => miss.address),
                 fields: this.counters.lazyFields
             });
+            const fromNode = lacking.filter((miss) =>
+                this.nodeRead.has(miss.address)
+            );
+            const fromFeed = lacking.filter(
+                (miss) => !this.nodeRead.has(miss.address)
+            );
+            if (fromNode.length > 0)
+                this.state.fill(await this.readFromNode(head.number, fromNode));
+            if (fromFeed.length === 0) return;
             try {
-                const state = await this.feed!.getState(head.hash, lacking);
+                const state = await this.feed!.getState(head.hash, fromFeed);
                 this.state.fill(state.accounts);
             } catch (error) {
                 if (!(error instanceof StorageDiffNotRetainedError))
                     throw error;
-                this.state.fill(await this.readFromNode(head.number, lacking));
+                this.state.fill(await this.readFromNode(head.number, fromFeed));
             }
         } catch (error) {
             if (error instanceof MirrorUnavailableError) throw error;
@@ -497,6 +548,9 @@ export class MirrorChain {
             const done = this.awaitedSnapshots.get(address);
             this.awaitedSnapshots.delete(address);
             done?.();
+            // the feed found the complete state it pushed before to be short
+            if (this.state.isComplete(address))
+                void this.dropToLazy(address, false);
         }
         if (Object.keys(snapshot.accounts).length === 0) return;
         const awaited = Object.keys(snapshot.accounts).some((address) =>

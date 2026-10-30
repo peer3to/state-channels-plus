@@ -234,6 +234,11 @@ export class MirrorStateManager extends RPCStateManager {
         return lacking;
     }
 
+    /** Forgets everything cached of `address`: its fields are read again when needed. */
+    dropToLazy(address: AccountAddress): void {
+        this.accounts.delete(address);
+    }
+
     /** Whether `address` has its complete state cached. */
     isComplete(address: AccountAddress): boolean {
         return this.accounts.get(address)?.complete === true;

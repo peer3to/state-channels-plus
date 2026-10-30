@@ -14,6 +14,10 @@ export type Config = {
     // state reads at the latest block from that copy. Empty means no copy:
     // every read goes to the RPC nodes.
     STORAGE_DIFF_URL: string;
+    // Fraction (0 to 1) of the reads the local copy answers that are also
+    // asked of the RPC node, at the same block hash, and compared; a
+    // difference drops that account to lazy reads. Default 0.01.
+    MIRROR_SAMPLE_RATE: number;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -73,6 +77,7 @@ const DEFAULT_CONFIG: Config = {
     PROVIDER_URLS: [],
     LOG_QUERY_MAX_BLOCKS: 1000,
     STORAGE_DIFF_URL: "",
+    MIRROR_SAMPLE_RATE: 0.01,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,

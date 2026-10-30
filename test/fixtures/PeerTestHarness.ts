@@ -461,9 +461,12 @@ export class PeerTestHarness<
         this.harnessConfig.PROVIDER_URL = nodeUrl;
         this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
         this.harnessConfig.STORAGE_DIFF_URL = storageDiffUrl;
+        // the shadow check covers the tests; no peer re-asks the nodes
+        this.harnessConfig.MIRROR_SAMPLE_RATE = 0;
         config.PROVIDER_URL = nodeUrl;
         config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
         config.STORAGE_DIFF_URL = storageDiffUrl;
+        config.MIRROR_SAMPLE_RATE = 0;
 
         // WebSocket so block/event subscriptions are push-based (eth_subscribe)
         // rather than HTTP polling — far less main-thread event-loop pressure.

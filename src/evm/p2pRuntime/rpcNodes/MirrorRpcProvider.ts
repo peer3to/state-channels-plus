@@ -1,12 +1,14 @@
 import { Mirror, type MirrorCall } from "./mirror/Mirror";
 import {
     MirrorUnavailableError,
+    type MirrorBlock,
     type MirrorUpstream
 } from "./mirror/MirrorChain";
 import MultiRpcProvider from "./MultiRpcProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     toQuantity,
@@ -18,8 +20,11 @@ import {
 /** The part of a JSON-RPC answer a local read produces. */
 type LocalAnswer = { result: unknown } | { error: JsonRpcError["error"] };
 
-/** A request the mirror can answer, ready to run. */
-type LocalRead = (mirror: Mirror) => Promise<LocalAnswer>;
+/** A request the mirror can answer, ready to run; `observe` is told the head the answer is of. */
+type LocalRead = (
+    mirror: Mirror,
+    observe: (head: MirrorBlock) => void
+) => Promise<LocalAnswer>;
 
 /** JSON-RPC error code nodes use for a reverted call. */
 const REVERT_ERROR_CODE = 3;
@@ -47,7 +52,46 @@ export type MirrorProviderOptions = {
     customPrecompiles?: EvmCustomPrecompileManifest[];
     /** The root that owns the precompiles' child roots, if the host has one. */
     owner?: AInternalRpcRoot;
+    /**
+     * Fraction (0 to 1) of the reads answered locally that are asked of the
+     * node as well, at the same block hash, and compared. Default 0.
+     */
+    sampleRate?: number;
 };
+
+/** Whether a local and a node answer of `method` are the same. */
+function sameAnswer(method: string, local: unknown, remote: unknown): boolean {
+    if (typeof local !== "string" || typeof remote !== "string")
+        return local === remote;
+    if (method === "eth_getBalance" || method === "eth_getTransactionCount")
+        return BigInt(local) === BigInt(remote);
+    return local.toLowerCase() === remote.toLowerCase();
+}
+
+/** Where a sampled read's block tag sits in its params, and the account it reads. */
+function sampleTarget(
+    request: JsonRpcPayload
+): { tagIndex: number; account: string } | undefined {
+    const params = Array.isArray(request.params)
+        ? request.params
+        : [request.params];
+    switch (request.method) {
+        case "eth_call": {
+            const to = (params[0] as { to?: unknown } | undefined)?.to;
+            return typeof to === "string"
+                ? { tagIndex: 1, account: to }
+                : undefined;
+        }
+        case "eth_getStorageAt":
+            return { tagIndex: 2, account: String(params[0]) };
+        case "eth_getBalance":
+        case "eth_getCode":
+        case "eth_getTransactionCount":
+            return { tagIndex: 1, account: String(params[0]) };
+        default:
+            return undefined;
+    }
+}
 
 /** Whether `tag` names the chain's newest state; an absent tag means latest. */
 function isHeadTag(tag: unknown, allowPending: boolean): boolean {
@@ -116,8 +160,8 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
         case "eth_call": {
             const call = parseCall(params);
             if (!call) return undefined;
-            return async (mirror) => {
-                const outcome = await mirror.call(call);
+            return async (mirror, observe) => {
+                const outcome = await mirror.call(call, observe);
                 if (outcome.kind === "return") return { result: outcome.data };
                 if (outcome.kind === "revert")
                     return {
@@ -145,8 +189,8 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 !isHeadTag(tag, true)
             )
                 return undefined;
-            return async (mirror) => ({
-                result: await mirror.getStorageAt(address, slot)
+            return async (mirror, observe) => ({
+                result: await mirror.getStorageAt(address, slot, observe)
             });
         }
         case "eth_getBalance": {
@@ -157,8 +201,8 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 !isHeadTag(tag, true)
             )
                 return undefined;
-            return async (mirror) => ({
-                result: toQuantity(await mirror.getBalance(address))
+            return async (mirror, observe) => ({
+                result: toQuantity(await mirror.getBalance(address, observe))
             });
         }
         case "eth_getCode": {
@@ -169,8 +213,8 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 !isHeadTag(tag, true)
             )
                 return undefined;
-            return async (mirror) => ({
-                result: await mirror.getCode(address)
+            return async (mirror, observe) => ({
+                result: await mirror.getCode(address, observe)
             });
         }
         case "eth_getTransactionCount": {
@@ -182,8 +226,10 @@ function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 !isHeadTag(tag, false)
             )
                 return undefined;
-            return async (mirror) => ({
-                result: toQuantity(await mirror.getTransactionCount(address))
+            return async (mirror, observe) => ({
+                result: toQuantity(
+                    await mirror.getTransactionCount(address, observe)
+                )
             });
         }
         case "eth_blockNumber":
@@ -251,6 +297,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
     /** The chain id the nodes answered; it never changes. */
     private chainIdAnswer?: unknown;
     private readonly unwatchNodes: (() => void)[] = [];
+    private readonly sampleRate: number;
 
     constructor(
         nodes: readonly RpcNodeProvider[],
@@ -258,6 +305,7 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         options: MirrorProviderOptions = {}
     ) {
         super(nodes, logger);
+        this.sampleRate = options.sampleRate ?? 0;
         if (options.storageDiffUrl) {
             // an event a node announced at block N must find the mirror at N
             for (const node of nodes)
@@ -305,11 +353,24 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
         const read = mirror ? parseLocalRead(request) : undefined;
         if (mirror && read) {
             try {
-                const answer = { id: request.id, ...(await read(mirror)) } as
-                    | JsonRpcResult
-                    | JsonRpcError;
+                let head: MirrorBlock | undefined;
+                const answer = {
+                    id: request.id,
+                    ...(await read(mirror, (seen) => (head = seen)))
+                } as JsonRpcResult | JsonRpcError;
                 if ("result" in answer)
                     this.noteOwnTransaction(request, answer);
+                // after the reply: the caller never waits for a sample
+                if (head && Math.random() < this.sampleRate)
+                    setImmediate(
+                        () =>
+                            void this.checkSample(
+                                mirror,
+                                request,
+                                answer,
+                                head!
+                            )
+                    );
                 return answer;
             } catch (error) {
                 if (!(error instanceof MirrorUnavailableError))
@@ -324,6 +385,65 @@ export default class MirrorRpcProvider extends MultiRpcProvider {
             this.chainIdAnswer = response.result;
         this.noteOwnTransaction(request, response);
         return response;
+    }
+
+    // Asks the node the read `request` was answered locally from `head`, at
+    // that block hash, and compares. A node that cannot answer leaves the
+    // sample skipped; a difference is counted and logged, and the account
+    // drops to lazy reads, fetched from the node from now on.
+    private async checkSample(
+        mirror: Mirror,
+        request: JsonRpcPayload,
+        local: JsonRpcResult | JsonRpcError,
+        head: MirrorBlock
+    ): Promise<void> {
+        const target = sampleTarget(request);
+        if (!target) return;
+        try {
+            const params = [
+                ...(Array.isArray(request.params)
+                    ? request.params
+                    : [request.params])
+            ];
+            params[target.tagIndex] = { blockHash: head.hash };
+            let remote: unknown;
+            let remoteFailed = false;
+            try {
+                remote = await this.requestNode(request.method, params);
+            } catch {
+                remoteFailed = true;
+            }
+            const localFailed = "error" in local;
+            // a reverted call fails on the node too; any other failure to ask is no sample
+            if (remoteFailed && !localFailed)
+                return mirror.noteSample("skipped");
+            const same = localFailed
+                ? remoteFailed
+                : !remoteFailed &&
+                  sameAnswer(
+                      request.method,
+                      (local as JsonRpcResult).result,
+                      remote
+                  );
+            mirror.noteSample(same ? "match" : "mismatch");
+            if (same) return;
+            this.logger.warn(
+                "A read the mirror answered locally differs from the node's",
+                LoggerUtils.getMirrorSampleMetadata(
+                    request.method,
+                    params,
+                    head.hash,
+                    target.account
+                )
+            );
+            await mirror.dropToLazy(target.account);
+        } catch (error) {
+            // sampling never disturbs a peer: a failed check is only a skipped one
+            mirror.noteSample("skipped");
+            this.logger.debug("A mirror sample could not be checked", {
+                error
+            });
+        }
     }
 
     // A read after the peer's own transaction is mined must see it.

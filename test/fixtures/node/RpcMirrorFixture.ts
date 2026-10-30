@@ -51,6 +51,8 @@ export type MirrorSessionSettings = StorageDiffServiceSettings & {
     customPrecompiles?: EvmCustomPrecompileManifest[];
     /** Build the provider without a storage diff URL. */
     withoutService?: boolean;
+    /** Fraction of local answers the provider re-asks of the node; default 0. */
+    sampleRate?: number;
 };
 
 /**
@@ -61,7 +63,12 @@ export async function withMirrorSession<T>(
     use: (session: MirrorSession) => Promise<T>,
     settings: MirrorSessionSettings = {}
 ): Promise<T> {
-    const { customPrecompiles, withoutService, ...serviceSettings } = settings;
+    const {
+        customPrecompiles,
+        withoutService,
+        sampleRate,
+        ...serviceSettings
+    } = settings;
     return await withStorageDiffUpstream(
         async ({ provider: chain, relay, signer, start }) => {
             const storageDiff = await start(serviceSettings);
@@ -81,6 +88,7 @@ export async function withMirrorSession<T>(
             const rpcNode = new RpcNodeProvider(node.url, logger);
             const provider = new MirrorRpcProvider([rpcNode], logger, {
                 storageDiffUrl: withoutService ? undefined : service.url,
+                sampleRate,
                 customPrecompiles
             });
             try {

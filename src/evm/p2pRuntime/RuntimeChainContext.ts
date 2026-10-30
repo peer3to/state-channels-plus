@@ -83,7 +83,7 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
  */
 export async function createRpcNodesProvider(
     config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS"> &
-        Partial<Pick<Config, "STORAGE_DIFF_URL">>,
+        Partial<Pick<Config, "STORAGE_DIFF_URL" | "MIRROR_SAMPLE_RATE">>,
     logger: Logger,
     mirror: {
         customPrecompiles?: EvmCustomPrecompileManifest[];
@@ -110,6 +110,7 @@ export async function createRpcNodesProvider(
     }
     return new MirrorRpcProvider(nodes, logger, {
         storageDiffUrl: config.STORAGE_DIFF_URL,
+        sampleRate: config.MIRROR_SAMPLE_RATE,
         ...mirror
     });
 }

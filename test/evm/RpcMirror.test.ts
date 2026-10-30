@@ -1,6 +1,12 @@
 import { MiscountingBlockSource } from "../fixtures/node/MiscountingBlockSource";
+import {
+    RECORDED_ACCOUNT_INFO,
+    withSubstrateNode,
+    type SubstrateContract
+} from "../fixtures/node/SubstrateChildTrieNode";
 import { SNAPSHOT_WAIT_MS } from "@/evm/p2pRuntime/rpcNodes/mirror/MirrorChain";
 import { sleep } from "@/utils";
+import { ChildTrieBlockSource } from "@/utils/node/storageDiff/backfillBlocks/ChildTrieBlockSource";
 import { DepthIncludedHeadStrategy } from "@/utils/node/storageDiff/includedHead/DepthIncludedHeadStrategy";
 import { NOT_RETAINED_ERROR_CODE } from "@/utils/storageDiff/storageDiffWire";
 import {
@@ -14,13 +20,16 @@ import {
     withMirrorSession
 } from "@test/fixtures/node/RpcMirrorFixture";
 import {
+    asksCallFrames,
     deployLogEmitter,
+    deploySlotWriter,
+    writeSlot,
     emitValue,
     rejectionOf
 } from "@test/fixtures/node/StorageDiffService.fixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { AbiCoder, isError, toQuantity, ZeroHash } from "ethers";
+import { AbiCoder, isError, toBeHex, toQuantity, ZeroHash } from "ethers";
 import path from "node:path";
 
 /** Time is the input: how long a read that must wait is watched for. */
@@ -87,7 +96,7 @@ describe("MirrorRpcProvider", function () {
 
             const read = session.provider.getStorage(second.address, 0);
             // the snapshot is pushed while the subscribe reply is held back
-            while (held.heldReplies() === 0) await sleep(20);
+            await waitFor(() => held.heldReplies() > 0, 5_000, 20);
             await sleep(500);
             held.release();
 
@@ -142,6 +151,196 @@ describe("MirrorRpcProvider", function () {
                 snapshotTimeouts: 1,
                 lazyReads: 1
             });
+        });
+    });
+
+    it("re-asks the node about a sampled read after replying, and counts the match", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                await (await storage.setValue(5n)).wait();
+                const held = session.node.holdReplies("eth_getStorageAt");
+
+                const word = await Promise.race([
+                    session.provider.getStorage(address, 0),
+                    sleep(2_000).then(() => "the answer waited for the sample")
+                ]);
+
+                // the caller has its answer while the node's reply to the sample is still held
+                expect(BigInt(word)).to.equal(5n);
+                await waitFor(() => held.heldReplies() > 0, 5_000, 20);
+                held.release();
+                await waitFor(
+                    () => session.provider.mirrorStatistics?.sampleChecks === 1,
+                    5_000,
+                    20
+                );
+                expect(session.provider.mirrorStatistics).to.include({
+                    sampleChecks: 1,
+                    sampleMismatches: 0,
+                    lazyDrops: 0
+                });
+                expect(nodeStateReads(session)).to.equal(1);
+            },
+            { sampleRate: 1 }
+        );
+    });
+
+    it("sends nothing to the node at a sample rate of 0", async function () {
+        await withMirrorSession(async (session) => {
+            const { storage, address } = await deployMirroredStorage(session);
+            await (await storage.setValue(5n)).wait();
+
+            await session.provider.getStorage(address, 0);
+            await session.provider.getBalance(address);
+            await storage.getValue();
+            await sleep(300);
+
+            expect(nodeStateReads(session)).to.equal(0);
+            expect(nodeRequests(session, "eth_call")).to.have.length(0);
+            expect(session.provider.mirrorStatistics).to.include({
+                sampleChecks: 0,
+                sampleSkipped: 0
+            });
+        });
+    });
+
+    it("counts a mismatch between a cached value and the node, and reads the account from the node from then on", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                // the service reads slot values wrongly, so its snapshot is wrong
+                session.relay.tamper("eth_getStorageAt", (result) =>
+                    toBeHex(BigInt(result as string) + 1n, 32)
+                );
+                await (await storage.setValue(5n)).wait();
+
+                const wrong = await session.provider.getStorage(address, 0);
+                await waitFor(
+                    () =>
+                        session.provider.mirrorStatistics?.sampleMismatches ===
+                        1,
+                    5_000,
+                    20
+                );
+                const right = await session.provider.getStorage(address, 0);
+
+                expect(BigInt(wrong)).to.equal(6n);
+                expect(BigInt(right)).to.equal(5n);
+                expect(session.provider.mirrorStatistics).to.include({
+                    sampleMismatches: 1,
+                    lazyDrops: 1
+                });
+            },
+            { sampleRate: 1 }
+        );
+    });
+
+    it("checks a sampled eth_call against the node and drops the called account on a mismatch", async function () {
+        await withMirrorSession(
+            async (session) => {
+                const { storage, address } =
+                    await deployMirroredStorage(session);
+                session.relay.tamper("eth_getStorageAt", (result) =>
+                    toBeHex(BigInt(result as string) + 1n, 32)
+                );
+                await (await storage.setValue(5n)).wait();
+
+                const wrong = await storage.getValue();
+                await waitFor(
+                    () =>
+                        session.provider.mirrorStatistics?.sampleMismatches ===
+                        1,
+                    5_000,
+                    20
+                );
+                const right = await storage.getValue();
+
+                expect([wrong, right]).to.deep.equal([6n, 5n]);
+                expect(session.provider.mirrorStatistics).to.include({
+                    sampleChecks: 1,
+                    lazyDrops: 1
+                });
+            },
+            { sampleRate: 1 }
+        );
+    });
+
+    it("drops a complete account to lazy reads when the service finds its cached entries short after a block, and reads the omitted slot", async function () {
+        let omitFrom = Number.MAX_SAFE_INTEGER;
+        const contract: SubstrateContract = {
+            address: "",
+            changes: [],
+            deployed: 0,
+            tipNumber: -1,
+            tipHash: () => "0xtip",
+            info: RECORDED_ACCOUNT_INFO,
+            entries: (n) => (n >= omitFrom ? 3 : 2)
+        };
+        await withSubstrateNode(contract, async (substrate) => {
+            await withMirrorSession(
+                async (session) => {
+                    const writer = await deploySlotWriter(session.signer);
+                    contract.address = writer;
+                    const deployed = await session.chain.getBlockNumber();
+                    contract.deployed = deployed;
+                    await writeSlot(session.signer, writer, 1, 5n);
+                    await writeSlot(session.signer, writer, 2, 7n);
+                    contract.changes.push(deployed, deployed + 1, deployed + 2);
+                    // the first read follows the account and takes its complete snapshot
+                    expect(
+                        BigInt(await session.provider.getStorage(writer, 1))
+                    ).to.equal(5n);
+                    expect(
+                        session.provider.mirrorStatistics?.snapshots
+                    ).to.equal(1);
+
+                    // the next block's trace lists the account but not the slot it wrote
+                    omitFrom = deployed + 3;
+                    session.relay.tamper(
+                        "debug_traceBlockByNumber",
+                        (result, params) =>
+                            asksCallFrames(params)
+                                ? result
+                                : (
+                                      result as {
+                                          result: {
+                                              pre: object;
+                                              post: Record<string, object>;
+                                          };
+                                      }[]
+                                  ).map((entry) => ({
+                                      ...entry,
+                                      result: {
+                                          pre: entry.result.pre,
+                                          post: {
+                                              ...entry.result.post,
+                                              [writer]: { storage: {} }
+                                          }
+                                      }
+                                  }))
+                    );
+                    await writeSlot(session.signer, writer, 3, 9n);
+                    await waitFor(
+                        () =>
+                            session.provider.mirrorStatistics?.lazyDrops === 1,
+                        5_000,
+                        20
+                    );
+
+                    // a complete cache would answer zero for the slot the trace left out
+                    expect(
+                        BigInt(await session.provider.getStorage(writer, 3))
+                    ).to.equal(9n);
+                    expect(session.provider.mirrorStatistics).to.include({
+                        lazyNotices: 1,
+                        lazyDrops: 1
+                    });
+                },
+                { backfillBlocks: new ChildTrieBlockSource(substrate.url) }
+            );
         });
     });
 
