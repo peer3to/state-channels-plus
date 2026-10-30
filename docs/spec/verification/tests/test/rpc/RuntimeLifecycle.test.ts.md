@@ -49,3 +49,4 @@ The two root diagnostic cases retain service and method metadata without contrac
 - `completes worker SDK disposal after the drain bound when the host leaks a referenced timer`: REQ-RUNTIME-7-A2VAR0.T1.P10, UNIT-TEST-ROOT-WORKER-DRAIN-1-JWKQ0P.P10
 - `settles detached work that fails after root disposal as the disposal outcome`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P9, REQ-RUNTIME-3-VQXW59.T1.P62
 - `keeps a detached failure before root disposal visible in the drain`: UNIT-TEST-ROOT-DISPOSAL-1-NMS66W.P10, REQ-RUNTIME-3-VQXW59.T1.P63
+- `logs a report raised while its root disposes and raises it to nobody`: none

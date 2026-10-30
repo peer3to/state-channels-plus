@@ -15,6 +15,7 @@ import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { DetachedPromises } from "@/utils/DetachedPromises";
 import { createLogger } from "@/utils/logging";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 export async function assertLifecycleReadiness(
@@ -399,12 +400,11 @@ export async function assertRootLoggerCascade(): Promise<void> {
             );
             await root.dispose();
             await root.dispose();
-            expect(() => child.info("late child")).to.throw(
-                "has been disposed"
-            );
-            expect(() => leaf.info("late grandchild")).to.throw(
-                "has been disposed"
-            );
+            expect(child.isDisposed).to.equal(true);
+            expect(leaf.isDisposed).to.equal(true);
+            // a released logger still writes to its console, never fails
+            child.info("late child");
+            leaf.info("late grandchild");
             expect(process.listenerCount("uncaughtException")).to.equal(before);
             expect(process.listenerCount("unhandledRejection")).to.equal(
                 beforeRejection
@@ -413,9 +413,8 @@ export async function assertRootLoggerCascade(): Promise<void> {
                 component: "application child"
             });
             await sdk.instance.dispose();
-            expect(() => appChild.info("late application child")).to.throw(
-                "has been disposed"
-            );
+            expect(appChild.isDisposed).to.equal(true);
+            appChild.info("late application child");
             sdk.logger.info("supplied caller parent survives");
         } finally {
             await root.dispose();
@@ -513,6 +512,48 @@ export async function assertLostDisposalReply(): Promise<void> {
             expect(reported.errors).to.deep.equal([]);
         } finally {
             reported.restore();
+        }
+    });
+}
+
+/**
+ * A host's own report reaches the application's host-error listener while
+ * the host lives; once the client started disposing the host, a report is
+ * that disposal's outcome: logged at error on the client and raised to no
+ * listener.
+ */
+export async function assertReportDuringDisposalIsLogged(): Promise<void> {
+    await withRuntimeRpc(async (sdk) => {
+        const host = [...sdk.roots].find(
+            (root): root is P2pRuntimeHostRoot =>
+                root instanceof P2pRuntimeHostRoot
+        );
+        if (!host) throw new Error("Expected the real SDK host");
+        const client = sdk.clientRoot;
+        const reported: string[] = [];
+        const unsubscribe = client.onHostError((error) =>
+            reported.push(error.message)
+        );
+        const logger = client.logger.attachedLogger;
+        const logged: unknown[] = [];
+        const error = logger.error.bind(logger);
+        logger.error = (message: unknown, ...meta: unknown[]) => {
+            logged.push(message);
+            error(message, ...meta);
+        };
+        try {
+            host.errors.report(new Error("live report"));
+            await waitFor(() => reported.includes("live report"));
+            const disposal = client.p2pRuntimeHostRemoteRoot!.dispose();
+            host.errors.report(new Error("report during disposal"));
+            await waitFor(() =>
+                logged.includes("Host error report while disposing the host")
+            );
+            await disposal;
+            expect(reported).to.not.include("report during disposal");
+        } finally {
+            logger.error = error;
+            unsubscribe();
         }
     });
 }

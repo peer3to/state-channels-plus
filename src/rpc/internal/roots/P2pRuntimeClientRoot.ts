@@ -196,6 +196,16 @@ export class P2pRuntimeClientRoot<
 
     private dispatchHostError(serializedError: SerializedError): void {
         const error = deserializeError(serializedError);
+        // A host this client is disposing is cut and implodes: its late
+        // reports are that disposal's outcome, logged (at error, so they
+        // upload) and raised to no listener.
+        if (this.p2pRuntimeHostRemoteRoot?.isDisposing) {
+            this.logger.attachedLogger.error(
+                "Host error report while disposing the host",
+                { error: errorMessage(error) }
+            );
+            return;
+        }
         // deserializeError only restores a stamp the wire carried - this report
         // comes from a worker, which never stamps -> attribute it here (the
         // whole worker is this one peer)

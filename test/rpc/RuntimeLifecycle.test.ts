@@ -12,7 +12,10 @@ import {
     assertRefusedHandleCloseStillDrains,
     assertWorkerSdkLeakEndsAfterDrainBound
 } from "@test/fixtures/node/WorkerTeardownFixture";
-import { assertWorkerDomainDisposal } from "@test/fixtures/RuntimeLifecycleFixture";
+import {
+    assertReportDuringDisposalIsLogged,
+    assertWorkerDomainDisposal
+} from "@test/fixtures/RuntimeLifecycleFixture";
 import {
     assertLostDisposalReply,
     assertRootDisposalTree,
@@ -49,6 +52,9 @@ describe("RuntimeLifecycle", () => {
         await assertDetachedFailureAfterRootDisposalIsSettled(
             TestSession.getHarness()
         );
+    });
+    it("logs a report raised while its root disposes and raises it to nobody", async () => {
+        await assertReportDuringDisposalIsLogged();
     });
     it("keeps a detached failure before root disposal visible in the drain", async () => {
         await assertDetachedFailureBeforeRootDisposalSurfaces(
