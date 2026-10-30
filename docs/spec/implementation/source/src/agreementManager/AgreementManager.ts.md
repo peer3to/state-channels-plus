@@ -95,9 +95,11 @@ Proof construction
 
 Reduction inbound evidence
 
-- Setup: Build reduce data with a complete store, a dropped recoverable event, and an unrecoverable range
-- Oracle: Complete data passes; chain recovery restores dropped events; exhaustion returns unavailable before local reduction
+- Setup: Build reduce data with a complete store, a dropped recoverable event, an unrecoverable range, a reduced head the node never received, and a reduced head whose snapshot the node stored without its state
+- Oracle: Complete data passes; chain recovery restores dropped events; exhaustion or an unheld reduced head returns unavailable before local reduction, never a throw
 
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P1` — complete local range
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P2` — missing event recovered from chain
 - [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P3` — recovery exhaustion returns unavailable for retry
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P4` — a non-genesis reduced head whose snapshot the node never received returns unavailable for retry, not a throw
+- [ ] `UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX.P5` — a non-genesis reduced head whose snapshot the node stored without its state (a verified proof hop) returns unavailable for retry, not a throw

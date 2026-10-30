@@ -20,6 +20,10 @@ import {
     expectSyncPayloadAboveRequestedHeightWhileAhead,
     stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
+import {
+    assertBehindObserverAbortsOnIdleDispute,
+    assertObserverRecoversFromRemovedResponder
+} from "@test/fixtures/RemovedSyncResponderStaging";
 import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
@@ -868,6 +872,20 @@ describe("E2E: Spectate Service", function () {
             } finally {
                 await Promise.all(reductionHolds.map((hold) => hold.release()));
             }
+        });
+    });
+
+    describe("Initial sync from a removed responder", function () {
+        it("a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting", async function () {
+            await assertObserverRecoversFromRemovedResponder(
+                TestSession.getHarness()
+            );
+        });
+
+        it("the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer, a non-participant behind the reduced head, aborts cleanly at its reduction, nobody blacklists it and the survivors resolve the dispute", async function () {
+            await assertBehindObserverAbortsOnIdleDispute(
+                TestSession.getHarness()
+            );
         });
     });
 

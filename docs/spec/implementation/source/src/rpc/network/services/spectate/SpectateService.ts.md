@@ -159,3 +159,4 @@ Responder proving
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8` — same-fork payload emits an empty pre-genesis outbound segment while preserving the latest-fork outbound proof
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9` — a recovered dispute window identifies a successor whose genesis is not installed; proof serving uses the computed genesis before installation
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the request fails with an error reply and the requester is not blacklisted
+- [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P11` — a disputed window the responder reads from chain events but whose reduced head it never received (a spectator cut off before that block): the request fails with an error reply and the responder stores no fraud proof

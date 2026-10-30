@@ -36,7 +36,7 @@ one-scenario IDs, so the latest/pinned successes, refusals, no-op skips, and abo
 now carry their own assignments.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.
 
-The finalized-window joiner scenario selects surviving honest responders. Recovery after accepting a genesis-only proof from a removed peer remains unverified: `REQ-SYNC-1-T2589H.T1.P16`, tracked by `FIND-SYNC-1-JWY1C8`.
+The finalized-window joiner scenario selects surviving honest responders. The removed-responder case covers the other side: a self-removed peer, cut off from the survivors, is still listed by the held chain snapshot, so a new observer's initial sync goes to it and gets the successor genesis only while the survivors are two blocks ahead. The observer catches up from the next live block's sender, stays synced, and blacklists nobody. The idle variant lets the survivors dispute the reduced fork while the observer still holds only its genesis: the observer, a non-participant, aborts cleanly at its reduction, no survivor blacklists it, and the survivors resolve the dispute.
 
 The kill-period case runs the real `sync` RPC, parks the requester at its window persistence after the proof arrived, commits a dispute on the pinned fork, and releases: the sync resolves `true`, neither peer blacklists the other, the requester stays on the fork, and the dispute still resolves with no host error.
 
@@ -91,6 +91,8 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor`: INV-SYNC-1-XCQZ28.T1.P14
 - `responder forges the confirmations and snapshot of an unadopted chain-final window → the synced participant later serves only the window's genuine confirmations, recovered from chain logs`: INV-SYNC-1-XCQZ28.T1.P19
 - `pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P23
+- `a self-removed peer still listed by the held chain snapshot serves the successor genesis only → the new observer catches up to the survivors without aborting or blacklisting`: REQ-SYNC-1-T2589H.T1.P16
+- `the survivors stay idle and dispute the reduced fork while the observer holds only its genesis → the observer, a non-participant behind the reduced head, aborts cleanly at its reduction, nobody blacklists it and the survivors resolve the dispute`: REQ-DVP-2-RG8QR3.T1.P2
 - `via forceInboundJoin`: none
 - `via joinChannel`: none
 - `joinChannel survives dispute on reduced fork`: none
