@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared live fork-switch staging for mapped reduction tests
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import type { ForkId } from "@/types/types";
 import type { DisputeSubmissionRecording } from "@test/harness/actions/rpcStubActions";
 import { waitFor } from "@test/utils/waitFor";
@@ -333,14 +334,14 @@ export async function syncTargetToUnpostedReduction(
             await h.execOnHost(
                 target,
                 async (sm, args) =>
-                    sm.p2pManager.localRpc.spectateService.sync(
+                    sm.p2pManager.localRpc.spectateService.requestSync(
                         args.address,
                         sm.channelId,
                         args.forkId
                     ),
                 { address: responder.address, forkId: reducedForkId }
             )
-        ).to.equal(true);
+        ).to.equal(SyncResult.Synced);
         expect(await h.control(target).query.getForkId().request()).to.equal(
             reducedForkId
         );

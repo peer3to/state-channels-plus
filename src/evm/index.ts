@@ -4,16 +4,16 @@ import type {
     ContractExecutionLog,
     ContractExecutionResult
 } from "./contractExecutor";
-import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
-import createEvm from "./EvmFactory";
 import type {
     EvmCustomPrecompile,
     EvmCustomPrecompileContext,
     EvmCustomPrecompileFactory,
     EvmCustomPrecompileManifest,
-    EvmFactoryOptions,
     EvmNativeCustomPrecompile
-} from "./EvmFactory";
+} from "./EvmCustomPrecompiles";
+import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
+import createEvm from "./EvmFactory";
+import type { EvmFactoryOptions } from "./EvmFactory";
 import type { GasUsageRow } from "./gasUsage/GasUsageTable";
 import P2pInstance from "./P2pInstance";
 import ClientChainSigner from "./signer/ClientChainSigner";

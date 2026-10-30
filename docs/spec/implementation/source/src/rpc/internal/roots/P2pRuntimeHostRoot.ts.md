@@ -77,12 +77,12 @@ Pre-deployment request dispatch
 Local EVM call-gas wiring
 
 - Setup: Start a host against a manager whose replay gas exceeds 0xffffff, inline and with a dedicated executor; then with a failing `getStateTransitionReplayGas`
-- Oracle: The executor in each placement runs every call with `localEvmCallGasLimit(getGasLimit(), getStateTransitionReplayGas())`; a failed read fails startup and builds no executor
+- Oracle: The executor in each placement runs every call with `localEvmCallGasLimit(getGasLimit(), getStateTransitionReplayGas())`; the executor starts with the chain reads; a failed read fails startup and ends that executor
 
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1` — inline executor gets the host-computed call-gas limit
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2` — dedicated-worker executor gets the same limit after the decimal-string round trip
-- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3` — a failed `getGasLimit` or `getStateTransitionReplayGas` read fails host startup (inline executor): readiness rejects with the read's error, no executor is requested, and every runtime root the start created is closed
-- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4` — the same failed read with a dedicated executor thread: readiness rejects, no executor thread is requested, and every runtime root the start created is closed
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3` — a failed `getGasLimit` or `getStateTransitionReplayGas` read fails host startup (inline executor): readiness rejects with the read's error, the executor requested at the start never gets its configuration, and every runtime root the start created, the executor's included, is closed
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4` — the same failed read with a dedicated executor thread: readiness rejects, the executor thread requested at the start never gets its configuration, and every runtime root the start created is closed
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX
 

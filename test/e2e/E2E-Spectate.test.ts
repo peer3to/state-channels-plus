@@ -1,4 +1,5 @@
 import { Block } from "@/models";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -19,6 +20,7 @@ import {
     expectSyncPayloadAboveRequestedHeightWhileAhead,
     stageJoinerWaitingOnUnreducedWindow
 } from "@test/fixtures/PinnedSyncStaging";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import {
     assertSpectatorSilence,
     assertSpectatorRejectedWork
@@ -40,7 +42,7 @@ import { ethers } from "ethers";
  */
 describe("E2E: Spectate Service", function () {
     it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
-        await assertPromotionBeforeReceiverApplication(true);
+        await assertPromotionBeforeReceiverApplication("overlap");
     });
     it("spectator rejects an invalid envelope without executing or relaying it", async () => {
         await assertSpectatorRejectedWork("invalid");
@@ -51,6 +53,9 @@ describe("E2E: Spectate Service", function () {
 
     it("new participant gossip can precede another peer applying insertion", async () => {
         await assertPromotionBeforeReceiverApplication();
+    });
+    it("a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block", async () => {
+        await assertPromotionBeforeReceiverApplication("slowSync");
     });
     it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
         await assertVerifiedSyncPromotion();
@@ -186,7 +191,7 @@ describe("E2E: Spectate Service", function () {
                     channelId: harness.channelId!.toString()
                 })
                 .request(peer1.address);
-            expect(response.encodedSyncPayload).to.be.a("string");
+            expect(servedSyncPayload(response)).to.be.a("string");
         });
     });
 
@@ -1796,7 +1801,7 @@ describe("E2E: Spectate Service", function () {
                 await h.execOnHost(
                     h.getPeer(staged.joiner.index),
                     (sm, { responder }) =>
-                        sm.p2pManager.localRpc.spectateService.sync(
+                        sm.p2pManager.localRpc.spectateService.requestSync(
                             responder,
                             sm.channelId,
                             undefined,
@@ -1805,7 +1810,7 @@ describe("E2E: Spectate Service", function () {
                         ),
                     { responder: staged.responder.address }
                 )
-            ).to.equal(false);
+            ).not.to.equal(SyncResult.Synced);
             // the stopped runtime's connect resolves false
             await TestSession.settleDetached({
                 expectedErrorIncludes: "connectToChannel failed"

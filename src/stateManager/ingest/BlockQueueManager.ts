@@ -5,7 +5,6 @@ import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
     BlockOrigin,
-    getSourcePeersAndAuthor,
     getSourcePeers,
     getSignatureSuppliers,
     type QueueBlockOptions,
@@ -127,13 +126,17 @@ export default class BlockQueueManager {
                     );
                 if (eligibility !== SourceEligibility.ELIGIBLE) {
                     if (eligibility === SourceEligibility.ABSENT) {
-                        await this.stateManager.p2pManager.localRpc.spectateService.sync(
-                            options.senderAddress,
-                            block.channelId,
-                            block.forkId,
-                            block.height
-                        );
+                        // a failed sync already rejected bad data or counted
+                        // the failed request -> no verdict here
+                        const synced =
+                            await this.stateManager.p2pManager.localRpc.spectateService.syncBlockSource(
+                                options.senderAddress,
+                                block.channelId,
+                                block.forkId,
+                                block.height
+                            );
                         if (
+                            synced &&
                             this.stateManager.membershipService.getCachedSourceEligibility(
                                 options.senderAddress
                             ) !== SourceEligibility.ELIGIBLE
@@ -208,8 +211,15 @@ export default class BlockQueueManager {
 
             return true;
         } catch (error) {
+            // A throw here is a local fault (e.g. an unavailable chain
+            // provider or a failed local-diamond read), not a verdict on
+            // the sender: `false` would blacklist an honest gossiper for
+            // our own infrastructure failure, and rethrowing would make
+            // the RPC layer drop its session. Log it, drop the copy and
+            // keep the connection; gossip redundancy redelivers. Only
+            // the explicit verdicts above reject the sender.
             this.logger.error(`Error ingesting block confirmation:`, { error });
-            return false;
+            return true;
         }
     }
 
@@ -523,7 +533,7 @@ export default class BlockQueueManager {
                 return;
             }
             // Unknown fork (not disputed, no local genesis for it): ask the
-            // suppliers to prove it once; a sync rejected for invalid evidence
+            // senders to prove it once; a sync rejected for invalid evidence
             // punishes them (one that meets a dispute window the chain has not
             // reduced waits for that reduction first), and so does a proven
             // lineage that does not carry the block. This is
@@ -718,16 +728,21 @@ export default class BlockQueueManager {
     }
 
     /**
-     * Ask every attributed source and the author to prove the block's
-     * lineage, once each. A probe rejected for invalid evidence excludes the
-     * peer inside `sync`; one that meets a dispute window the chain has not
-     * reduced waits inside `sync` for that reduction and is judged after it. A
+     * Ask every attributed source to prove the block's lineage, once each,
+     * and not an author that did not send it: a peer stores a block before
+     * it sends it, so an honest source can always prove it, while an old
+     * block replayed to us would make its honest author cut us for asking.
+     * A probe whose payload fails validation excludes the peer inside
+     * `syncBlockSource`; a failed request, or a source still in its own
+     * initial sync, is the sync's counted close; one that meets a dispute
+     * window the chain has not reduced waits inside `syncBlockSource` for
+     * that reduction and is judged after it. A
      * probe that succeeds without that lineage carrying the block proves the
      * peer supplied junk: it is excluded here. Probes are owned work that
      * `dispose` waits for.
      */
     private probeSources(entry: QueuedBlockEntry): void {
-        for (const peer of getSourcePeersAndAuthor(entry)) {
+        for (const peer of getSourcePeers(entry)) {
             this.track(() => this.probeSource(peer, entry));
         }
     }
@@ -738,10 +753,11 @@ export default class BlockQueueManager {
     ): Promise<void> {
         const block = entry.block;
         // Sync waits for an in-flight request and proves this target before
-        // returning success; an invalid proof excludes the peer, an unreduced
-        // dispute window is waited out first.
+        // returning success; an invalid proof excludes the peer, a failed
+        // request is a counted close, an unreduced dispute window is waited
+        // out first.
         const synced =
-            await this.stateManager.p2pManager.localRpc.spectateService.sync(
+            await this.stateManager.p2pManager.localRpc.spectateService.syncBlockSource(
                 peer,
                 block.channelId,
                 block.forkId,

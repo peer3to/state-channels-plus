@@ -1,3 +1,5 @@
+// First: it counts every WebAssembly instance this thread creates after it.
+import "@/utils/threadResources";
 // The internal RPC root API, for a worker that runs only its own services
 // (such as a crypto worker). Unlike the package index it never loads the P2P
 // runtime host, its relay, or their WASM instances; it still loads the channel

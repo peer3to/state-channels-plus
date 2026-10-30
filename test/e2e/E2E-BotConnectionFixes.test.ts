@@ -1,4 +1,5 @@
 import { StateSnapshot } from "@/models";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { Status, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -9,12 +10,12 @@ import {
     expectInitialSyncSkipped,
     postSnapshotSeenBy,
     probeOpenedRuntimeWithoutParticipant,
-    probeSyncingParticipantPastTimeout,
-    requestAfterFailedOwnSync,
+    probeSyncingParticipant,
     spawnSpectatorAfterFirstHandshake,
     stageReducedWithoutAdoption,
     syncFromSyncingParticipant,
-    syncLatestFromUninstalledSuccessor
+    syncLatestFromUninstalledSuccessor,
+    syncPastSyncingParticipant
 } from "@test/fixtures/MilestoneSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
@@ -348,19 +349,31 @@ describe("E2E: Bot connection fixes", function () {
         );
     });
 
-    it("H11 (responder still syncing): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight gets its answer once that sync succeeds and syncs from it", async function () {
+    it("H11 (responder still syncing): a fresh observer whose only chain-eligible handshake is a participant with its own initial sync in flight gets a still-syncing answer, keeps the connection, asks again after half a window and syncs from it once that sync succeeds", async function () {
         const h = TestSession.getHarness();
         const {
             participant,
             responder,
             observer,
+            windowMs,
             responderStatusAtRequest,
-            observerSyncTargets,
+            syncResults,
+            syncTargets,
+            nextRequestDelayMs,
             responderConnected,
             observerConnected
         } = await syncFromSyncingParticipant(h, "success");
         expect(responderStatusAtRequest).to.equal(Status.OPENED);
-        expect(observerSyncTargets).to.deep.equal([responder.address]);
+        expect(syncResults[0]).to.equal(SyncResult.ResponderSyncing);
+        expect(syncResults.at(-1)).to.equal(SyncResult.Synced);
+        expect(
+            syncResults
+                .slice(0, -1)
+                .every((result) => result === SyncResult.ResponderSyncing)
+        ).to.equal(true);
+        expect(syncTargets.every((target) => target === responder.address)).to
+            .be.true;
+        expect(nextRequestDelayMs).to.be.at.least(windowMs / 2);
         expect(responderConnected).to.equal(true);
         expect(observerConnected).to.equal(true);
         expect(await h.control(responder).query.getStatus().request()).to.equal(
@@ -374,32 +387,77 @@ describe("E2E: Bot connection fixes", function () {
         );
         expect(observer.eventSpies.onAbort?.called ?? false).to.equal(false);
         expect(responder.eventSpies.onAbort?.called ?? false).to.equal(false);
-        expect(
-            await h
-                .control(observer)
-                .query.isBlacklisted(responder.address)
-                .request()
-        ).to.equal(false);
-        expect(
-            await h
-                .control(responder)
-                .query.isBlacklisted(observer.address)
-                .request()
-        ).to.equal(false);
+        await h.assert.rpc.peerNotExcluded({
+            observer,
+            target: responder
+        });
+        await h.assert.rpc.peerNotExcluded({
+            observer: responder,
+            target: observer
+        });
     });
 
-    it("H11 (responder sync fails): a fresh observer whose first chain-eligible handshake is a participant with its own initial sync in flight aborts when that sync fails, adopting nothing", async function () {
+    it("H11 (another participant serves): a fresh observer whose initial sync first asks a participant with its own initial sync in flight does not abort or cut that participant and syncs at once from another connected participant", async function () {
+        const h = TestSession.getHarness();
+        const {
+            participant,
+            responder,
+            observer,
+            windowMs,
+            syncCallsBeforeAnswer,
+            syncResults,
+            syncTargets,
+            nextRequestDelayMs,
+            toResponder,
+            observerConnected,
+            responderConnected
+        } = await syncPastSyncingParticipant(h);
+        // the check of the other participant started no second sync
+        expect(syncCallsBeforeAnswer).to.equal(1);
+        expect(syncResults[0]).to.equal(SyncResult.ResponderSyncing);
+        expect(syncTargets[0]).to.equal(responder.address);
+        expect(syncResults.at(-1)).to.equal(SyncResult.Synced);
+        expect(syncTargets.at(-1)).to.equal(participant.address);
+        // asked at once, not on the one-window re-ask
+        expect(nextRequestDelayMs).to.be.below(windowMs);
+        expect(observerConnected).to.equal(true);
+        expect(toResponder).to.deep.equal({ connected: true, strikes: 0 });
+        expect(observer.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(await h.control(observer).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        expect(await h.control(observer).query.getForkId().request()).to.equal(
+            await h.control(participant).query.getForkId().request()
+        );
+        await h.assert.rpc.peerNotExcluded({
+            observer,
+            target: responder
+        });
+        expect(responderConnected).to.equal(true);
+    });
+
+    it("H11 (responder sync fails): a fresh observer whose only chain-eligible handshake is a participant with its own initial sync in flight gets a still-syncing answer and aborts once that sync fails, adopting nothing", async function () {
         const h = TestSession.getHarness();
         const {
             responder,
             observer,
             responderStatusAtRequest,
-            observerSyncTargets,
+            syncResults,
+            syncTargets,
             responderConnected,
             observerConnected
         } = await syncFromSyncingParticipant(h, "failure");
         expect(responderStatusAtRequest).to.equal(Status.OPENED);
-        expect(observerSyncTargets).to.deep.equal([responder.address]);
+        // A re-ask that reaches the failing responder fails: a real failure,
+        // so the observer aborts at once instead of at its deadline.
+        const [firstResult, ...reAskResults] = syncResults;
+        expect(firstResult).to.equal(SyncResult.ResponderSyncing);
+        expect(
+            reAskResults.every((result) => result === SyncResult.Failed)
+        ).to.equal(true);
+        expect(
+            syncTargets.every((target) => target === responder.address)
+        ).to.equal(true);
         expect(responderConnected).to.equal(false);
         expect(observerConnected).to.equal(false);
         expect(responder.eventSpies.onAbort?.called).to.equal(true);
@@ -409,27 +467,56 @@ describe("E2E: Bot connection fixes", function () {
         ).to.equal(0);
     });
 
-    it("H11 (requester times out): a probe to a participant whose own initial sync is still in flight times out after one window with only a retry-tier close, neither side blacklists the other, and the late answer changes nothing on the requester", async function () {
+    it("H11 (no participant serves in time): a fresh observer whose only chain-eligible participant stays in its own initial sync aborts at its initial-sync deadline without cutting that participant, adopting nothing", async function () {
+        const h = TestSession.getHarness();
+        const {
+            responder,
+            observer,
+            syncResults,
+            syncTargets,
+            responderConnected,
+            observerConnected
+        } = await syncFromSyncingParticipant(h, "afterObserverConnect");
+        expect(observerConnected).to.equal(false);
+        expect(observer.eventSpies.onAbort?.called).to.equal(true);
+        expect(syncResults.length).to.be.at.least(1);
+        expect(
+            syncResults.every(
+                (result) => result === SyncResult.ResponderSyncing
+            )
+        ).to.equal(true);
+        expect(syncTargets.every((target) => target === responder.address)).to
+            .be.true;
+        expect(
+            h.event.getEventCallCount(observer.index, "onSetState")
+        ).to.equal(0);
+        expect(responderConnected).to.equal(true);
+        expect(responder.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(await h.control(responder).query.getStatus().request()).to.equal(
+            Status.PARTICIPATING
+        );
+        await h.assert.rpc.peerNotExcluded({
+            observer: responder,
+            target: observer
+        });
+    });
+
+    it("H11 (responder answers at once): a participant with its own initial sync in flight answers a spectate request at once that it is still syncing, and the requester's sync returns false with no close, strike or blacklist", async function () {
         const h = TestSession.getHarness();
         const {
             participant,
             responder,
             probe,
-            responderStatusAtTimeout,
-            responderConnected,
-            lateAnswers,
-            setStatesBefore
-        } = await probeSyncingParticipantPastTimeout(h);
-        expect(probe.synced).to.equal(false);
-        expect(probe.elapsedMs).to.be.at.least(probe.windowMs);
-        expect(responderStatusAtTimeout).to.equal(Status.OPENED);
-        expect(responderConnected).to.equal(true);
-        expect(lateAnswers).to.equal(1);
-        await h.assert.rpc.peerStruckWithoutBlacklist({
-            observer: participant,
-            target: responder,
-            expectedStrikes: 1
-        });
+            responderStatusAfterProbe,
+            toResponder,
+            setStatesBefore,
+            responderConnected
+        } = await probeSyncingParticipant(h);
+        expect(probe.response).to.deep.equal({ isResponderSyncing: true });
+        expect(probe.elapsedMs).to.be.below(probe.windowMs);
+        expect(probe.syncResult).to.equal(SyncResult.ResponderSyncing);
+        expect(responderStatusAfterProbe).to.equal(Status.OPENED);
+        expect(toResponder).to.deep.equal({ connected: true, strikes: 0 });
         await h.assert.rpc.peerNotExcluded({
             observer: participant,
             target: responder
@@ -441,45 +528,38 @@ describe("E2E: Bot connection fixes", function () {
         expect(
             h.event.getEventCallCount(participant.index, "onSetState")
         ).to.equal(setStatesBefore);
+        expect(responderConnected).to.equal(true);
         expect(
             await h.control(participant).query.getStatus().request()
         ).to.equal(Status.PARTICIPATING);
         expect(participant.eventSpies.onAbort?.called ?? false).to.equal(false);
     });
 
-    it("H11 (responder sync already failed): a spectate request that enters the endpoint after the responder's own initial sync failed is refused at once with the own-sync failure", async function () {
-        const h = TestSession.getHarness();
-        const { responder, ownSyncSucceeded, refusal, responderConnected } =
-            await requestAfterFailedOwnSync(h);
-        expect(ownSyncSucceeded).to.equal(false);
-        expect(refusal).to.equal("onSpectateRequest - own initial sync failed");
-        expect(responderConnected).to.equal(false);
-        expect(responder.eventSpies.onAbort?.called).to.equal(true);
-    });
-
-    it("H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant waits until that runtime's initial-sync deadline fires and is then refused with only a retry-tier close", async function () {
+    it("H11 (no participant handshake): a probe to an opened runtime whose only handshake is a non-participant gets a still-syncing answer at once with no close or strike, and that runtime later aborts at its own initial-sync deadline", async function () {
         const h = TestSession.getHarness();
         const {
             spectator,
             responder,
             spectatorConnected,
-            responderWhileWaiting,
-            synced,
-            responderAbortedFirst,
+            syncResult,
+            responderAfterProbe,
+            toResponder,
             responderConnected
         } = await probeOpenedRuntimeWithoutParticipant(h);
         expect(spectatorConnected).to.equal(true);
-        expect(responderWhileWaiting).to.deep.equal({
+        expect(syncResult).to.equal(SyncResult.ResponderSyncing);
+        expect(responderAfterProbe).to.deep.equal({
             status: Status.OPENED,
-            syncCalls: 0
+            syncCalls: 0,
+            spectateRequests: 1,
+            isAborted: false
         });
-        expect(synced).to.equal(false);
-        expect(responderAbortedFirst).to.equal(true);
+        expect(toResponder).to.deep.equal({ connected: true, strikes: 0 });
         expect(responderConnected).to.equal(false);
-        await h.assert.rpc.peerStruckWithoutBlacklist({
+        expect(responder.eventSpies.onAbort?.called).to.equal(true);
+        await h.assert.rpc.peerNotExcluded({
             observer: spectator,
-            target: responder,
-            expectedStrikes: 1
+            target: responder
         });
         expect(await h.control(spectator).query.getStatus().request()).to.equal(
             Status.SYNCED

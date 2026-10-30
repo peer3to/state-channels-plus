@@ -1,6 +1,8 @@
 // @spec-test-coverage-ignore: exercises real root handles and logging through the mapped RuntimeLifecycle cases
 import { withRuntimeRpc } from "../RpcRouterFixture";
 import { RuntimeRpcControl } from "../runtimeRpc/RuntimeRpcControl";
+import { catchWasmTrap } from "../WasmTestModules";
+import { deserializeError, serializeError } from "@/rpc/internal/errorWire";
 import { LogStore } from "@/utils/logging/logStore";
 import { expect } from "chai";
 
@@ -101,4 +103,69 @@ export async function assertRootDiagnostics(fail: boolean): Promise<void> {
             control.release();
         }
     });
+}
+
+/**
+ * A child failure with a request pending, logged by its owner: an ordinary
+ * error and a WebAssembly trap restored from the wire, as one that crossed a
+ * worker hop arrives. Returns the logged metadata.
+ */
+async function logChildFailure(error: Error): Promise<Record<string, unknown>> {
+    let meta: Record<string, unknown> | undefined;
+    await withRuntimeRpc(async (sdk) => {
+        const store = Reflect.get(
+            sdk.clientRoot.rootLogger,
+            "logStore"
+        ) as LogStore;
+        store.clearLogs();
+        const control = RuntimeRpcControl.attach(sdk.parentTransport);
+        const held = control.holdNextResponse("sum");
+        const pending = sdk.remote.runtimeProbe
+            .sum(5, 6)
+            .request()
+            .catch((failure: Error) => failure);
+        try {
+            await held;
+            const observed: Error[] = [];
+            sdk.clientRoot.p2pRuntimeHostRemoteRoot!.onError((failure) =>
+                observed.push(failure)
+            );
+            sdk.clientRoot.errors.failChild(sdk.parentTransport, error);
+            expect((await pending) instanceof Error).to.equal(true);
+            expect(observed).to.deep.equal([error]);
+            const failures = store
+                .getAllLogs()
+                .filter(
+                    (entry) =>
+                        entry.message === "Worker failed with pending requests"
+                );
+            expect(failures).to.have.length(1);
+            meta = failures[0].meta[0];
+        } finally {
+            control.release();
+        }
+    });
+    return meta!;
+}
+
+export async function assertChildFailureWasmDiagnostics(): Promise<void> {
+    const ordinary = await logChildFailure(new Error("Ordinary child failure"));
+    expect(ordinary.wasm).to.equal(undefined);
+    expect(ordinary.resources)
+        .to.have.property("wasmInstancesCreated")
+        .that.is.a("number");
+
+    const trap = await catchWasmTrap();
+    const serialized = serializeError(trap);
+    const failedWorkerDiagnostics = serialized.wasmDiagnostics;
+    expect(failedWorkerDiagnostics).to.not.equal(undefined);
+    const wasm = await logChildFailure(deserializeError(serialized));
+    expect(wasm.wasm).to.deep.equal(failedWorkerDiagnostics);
+    expect(wasm.wasm)
+        .to.have.nested.property("probe.canCreate")
+        .that.equals(true);
+    expect(wasm.wasm).to.have.nested.property("resources.wasmInstancesCreated");
+    expect(wasm.resources)
+        .to.have.property("wasmInstancesCreated")
+        .that.is.a("number");
 }

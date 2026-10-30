@@ -298,3 +298,18 @@ describe("Storage participant union", () => {
         ).to.deep.equal([]);
     });
 });
+
+describe("Storage previous block or snapshot", () => {
+    it("returns neither block nor snapshot when the predecessor is absent", () => {
+        const storage = new Storage();
+        const forkId = factory.stateSnapshot().snapshotDataHash;
+        // height > 0 -> the block at height - 1 is missing
+        expect(
+            storage.getPreviousBlockOrSnapshot({ forkId, height: 3 })
+        ).to.deep.equal({ block: undefined });
+        // height 0 -> the fork's genesis snapshot is missing
+        expect(
+            storage.getPreviousBlockOrSnapshot({ forkId, height: 0 })
+        ).to.deep.equal({ stateSnapshot: undefined });
+    });
+});

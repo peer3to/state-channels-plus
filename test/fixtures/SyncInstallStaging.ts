@@ -2,6 +2,7 @@
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { stageSpectatorBehindUnfinalizedTail } from "./SyncReplayBaseStaging";
 import { Block } from "@/models";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -203,7 +204,7 @@ export async function assertDisposalDuringSyncInstall(
     };
     stub.holdSyncInstall();
     try {
-        const sync = localRpc.spectateService.sync(
+        const sync = localRpc.spectateService.requestSync(
             responder.address,
             sm.channelId,
             forkId,
@@ -212,7 +213,7 @@ export async function assertDisposalDuringSyncInstall(
         await waitFor(async () => stub.getSyncInstallEntered() === 1);
         const stopping = sm.stop();
         stub.releaseSyncInstall();
-        expect(await sync).to.equal(false);
+        expect(await sync).not.to.equal(SyncResult.Synced);
         expect(await state()).to.deep.equal(before);
         expect(sm.p2pManager.isBlacklisted(responder.address)).to.equal(false);
         releaseTeardown();
@@ -263,7 +264,7 @@ export async function assertThrowDuringSyncCommit(
         });
     try {
         const error = await sm.p2pManager.localRpc.spectateService
-            .sync(responder.address, sm.channelId, forkId, tip)
+            .requestSync(responder.address, sm.channelId, forkId, tip)
             .then(
                 () => undefined,
                 (thrown: unknown) => thrown

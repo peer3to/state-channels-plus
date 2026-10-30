@@ -1406,10 +1406,10 @@ describe("Unit: DisputeValidationService", function () {
             const block1Author = h.peers.find(
                 (p) => p.address === block1!.author
             )!;
-            await h
-                .control(block1Author)
-                .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
-                .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+            await h.transition.postBlockCalldataOnChainWait(
+                block1Author,
+                block1!.encodedSignedBlock
+            );
 
             const run = await h.dispute.auditDispute(1, dispute);
             expect(run).to.include({ outcome: "returned", isValid: true });

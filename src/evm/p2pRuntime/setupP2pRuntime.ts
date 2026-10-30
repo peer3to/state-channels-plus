@@ -1,6 +1,6 @@
 import { createHostRpc } from "./ClientHostRpc";
 import type { SerializedContract, SetupPayload } from "./types";
-import type { EvmCustomPrecompileManifest } from "../EvmFactory";
+import type { EvmCustomPrecompileManifest } from "../EvmCustomPrecompiles";
 import P2pInstance from "../P2pInstance";
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import ClientChainSigner from "../signer/ClientChainSigner";
@@ -22,6 +22,11 @@ import type { Logger } from "@/utils";
 import { createConfig } from "@/utils/config";
 import type { Config } from "@/utils/config";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { StepTimer } from "@/utils/StepTimer";
+import {
+    getRuntimeEnvironment,
+    getThreadResources
+} from "@/utils/threadResources";
 import type {
     StateChannelManagerInterface,
     AStateMachine as AStateMachineContract
@@ -112,6 +117,8 @@ export async function setupP2pRuntime<
 
     let root: P2pRuntimeClientRoot<THost> | undefined;
     let instance: P2pInstance<T, THost> | undefined;
+    // The runtime logs its own steps; these are the client's view of them.
+    const steps = new StepTimer();
     try {
         // Client description of the app contract (rebuilt by the client).
         const stateMachine: SerializedContract = {
@@ -151,6 +158,7 @@ export async function setupP2pRuntime<
             )
         };
 
+        steps.mark("payload");
         root = await createRoot(P2pRuntimeClientRoot<THost>, {
             args: {
                 payload,
@@ -160,6 +168,7 @@ export async function setupP2pRuntime<
             handlerExecutionContext: options?.handlerExecutionContext,
             local: dependencies
         });
+        steps.mark("runtimeStart");
         // The SDK's own services, which every host root subclass inherits.
         const remote = root.p2pRuntimeHostRemoteRoot!
             .rpc as RuntimeConnection<P2pRuntimeHostRoot>;
@@ -207,14 +216,25 @@ export async function setupP2pRuntime<
         // They must be separate so dispute replay never clobbers live state.
         const localStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
+        steps.mark("localStateMachineDeploy");
         const diamondStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
+        steps.mark("diamondStateMachineDeploy");
+        // Each deploy step's time against its transactions' round trips to the runtime.
+        logger.debug("Local state machine deploys", deployBridgeSigner.sent);
         await remote.sdkSetup
             .deployComplete(
                 localStateMachineAddress.toString(),
                 diamondStateMachineAddress.toString()
             )
             .request();
+        steps.mark("runtimeBuild");
+        steps.log(logger, "Runtime setup steps");
+        // What a browser limits per process, and the device it runs on.
+        logger.debug("Runtime resources", {
+            resources: getThreadResources(),
+            environment: getRuntimeEnvironment()
+        });
         // On the main thread the surfaced WebRTC bridge port has no further
         // worker nesting to bubble up to, so wire it to the local
         // RTCPeerConnection here; inside a worker it stays on

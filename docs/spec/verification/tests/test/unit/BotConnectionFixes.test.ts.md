@@ -34,6 +34,12 @@ fires it while the joiner's clock is still at or before the deadline; a record-o
 shows the check armed the `join authorization expiry` timer again, and once the chain passed the
 deadline the joiner ends `SYNCED` with one `onLeftChannel`.
 
+The first `U71` case starts two founders, has both leave and send their exits on their leave turns, and
+waits for both `onLeftChannel` events. The oracles are the closed channel with no participants, then
+each founder reaching `NOT_OPENED`, awaited by status: the leave check reports `onLeftChannel` when the
+membership drops, before the channel-close handler sets `NOT_OPENED`, and the specification does not
+order the two.
+
 The second `U71` case runs the same two-founder flow with both founders' exit posts parked before they
 prepare. Once both exit blocks are committed, a JOIN lands that no block can consume, because no member is
 left to author one. The last leaver's parked post is released and refused, and its result is parked. One
@@ -107,10 +113,10 @@ is timed out.
 - `U72: a leaver whose exit is blocked by an inbound join posts the exit once the remaining participants' finalized block consumes the join, with no self-removal dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P33, REQ-LIF-10-QR8NQ9.T1.P12
 - `U72: blocks finalized while the exit's snapshot post runs queue one more post after it when that post did not land the exit, and the next finalized block posts again`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P35
 - `U72: a leaver whose exit the remaining participants post while it sees no further block settles the leave, and the leave watchdog starts no self-removal dispute`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P29, REQ-LIF-10-QR8NQ9.T1.P17
-- `U72: a leave watchdog that expires after the remaining participants' exit snapshot moved the leaver's local anchor past its latest block, while its membership check still reads the chain, starts no self-removal dispute; the check settles the leave once with no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-LIF-10-QR8NQ9.T1.P36
-- `U72: a leave watchdog whose membership check finds the exit pending starts the self-removal dispute; the remaining participants' exit snapshot moves the leaver's local anchor past its latest block while that dispute is built, so the dispute is a no-op: no submission, the dispute marker rolls back, one onLeftChannel and no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55, REQ-LIF-10-QR8NQ9.T1.P37
-- `U72: a leave watchdog that expires after the chain dropped the leaver, while the leaver has not received the exit snapshot's chain events, runs its own membership check: the check settles the leave with no self-removal dispute and no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P53
-- `U72: disposing a leaver while its expired leave watchdog's own membership check reads the chain starts no self-removal dispute and raises no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P54
+- `U72: a leave watchdog that expires after the remaining participants' exit snapshot moved the leaver's local anchor past its latest block, while its membership check still reads the chain, starts no self-removal dispute; the check settles the leave once with no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P53, REQ-LIF-10-QR8NQ9.T1.P37
+- `U72: a leave watchdog whose membership check finds the exit pending starts the self-removal dispute; the remaining participants' exit snapshot moves the leaver's local anchor past its latest block while that dispute is built, so the dispute is a no-op: no submission, the dispute marker rolls back, one onLeftChannel and no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P56, REQ-LIF-10-QR8NQ9.T1.P38
+- `U72: a leave watchdog that expires after the chain dropped the leaver, while the leaver has not received the exit snapshot's chain events, runs its own membership check: the check settles the leave with no self-removal dispute and no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P54
+- `U72: disposing a leaver while its expired leave watchdog's own membership check reads the chain starts no self-removal dispute and raises no runtime error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P55
 - `U72: disposing a leaver whose exit is blocked stops its posts: the block that consumes the join sends nothing from it`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P30
 - `U72: a dispute observed while the leave awaits its leave turn makes the leaver submit its self-removal dispute at once, with no evidence comparison and before the leave watchdog; the leave completes only on the reduced snapshot that drops it, and the leaver posts no snapshot of that reduced state, which keeps other participants`: REQ-LIF-10-QR8NQ9.T1.P18, REQ-LIF-10-QR8NQ9.T1.P30, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P46
 - `U72: a dispute observed after an exit block the application authored with no leave call makes the leaver submit its self-removal dispute at once, with no evidence comparison; the reduced snapshot drops it and its runtime is SYNCED with the self-removal still set`: REQ-LIF-10-QR8NQ9.T1.P19, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P37

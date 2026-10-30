@@ -1,9 +1,18 @@
 // @spec-test-coverage-ignore: precompile module and manifests the worker suites load; the suites own the declarations
-import type { EvmCustomPrecompileContext } from "@/evm/EvmFactory";
+import type { EvmCustomPrecompileContext } from "@/evm/EvmCustomPrecompiles";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { PrecompileInput } from "@ethereumjs/evm";
 import { ethers } from "ethers";
 import { isMainThread } from "node:worker_threads";
+
+/** How a precompile call lets a value that is not an Error escape its thread. */
+export type NonErrorFailure =
+    | "event-rejection"
+    | "null-prototype-rejection"
+    | "string-throw";
+
+/** The string the `string-throw` failure throws. */
+export const WORKER_THROWN_STRING = "worker answer precompile thrown string";
 
 type WorkerAnswerPrecompileOptions = {
     delayMs?: number;
@@ -11,6 +20,9 @@ type WorkerAnswerPrecompileOptions = {
     value: string;
     // unhandled rejection on a timer -> a genuine unhandledRejection in this thread
     crashAsync?: boolean;
+    // the same with a value that is not an Error: a rejection with an
+    // `Event` or with a null-prototype object, or a thrown string
+    nonErrorFailure?: NonErrorFailure;
     // answers only after this long -> a call still in flight when the thread ends
     callDelayMs?: number;
     // after the call delay, fail instead of answering
@@ -50,6 +62,14 @@ export default async function createWorkerAnswerPrecompile(
                 void Promise.reject(new Error(WORKER_ASYNC_CRASH_MESSAGE));
             }, 0);
         }
+        if (options.nonErrorFailure === "event-rejection")
+            setTimeout(() => void Promise.reject(new Event("error")), 0);
+        if (options.nonErrorFailure === "null-prototype-rejection")
+            setTimeout(() => void Promise.reject(Object.create(null)), 0);
+        if (options.nonErrorFailure === "string-throw")
+            setTimeout(() => {
+                throw WORKER_THROWN_STRING;
+            }, 0);
         if (options.callDelayMs) {
             await new Promise((resolve) =>
                 setTimeout(resolve, options.callDelayMs)

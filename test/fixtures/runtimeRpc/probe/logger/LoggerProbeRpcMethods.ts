@@ -48,6 +48,9 @@ export class LoggerProbeRpcMethods extends AInternalRpcMethods<LoggerProbeServic
     public captureUnhandled(message: string): void {
         this.service.captureUnhandled(message);
     }
+    public pinUploadJitter(jitterMs: number): void {
+        this.service.pinUploadJitter(jitterMs);
+    }
     public childWriteAtEndpoint(message: string) {
         return this.service.visitChild((child) =>
             child.loggerProbe.write(message).request()

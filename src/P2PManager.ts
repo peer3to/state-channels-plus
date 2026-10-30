@@ -5,7 +5,7 @@ import type {
 import RemoteRpcProxy, {
     RemoteRpcProxyType
 } from "./rpc/network/RemoteRpcProxy";
-import { Address, PeerKey } from "./types/types";
+import { Address, ChecksumAddress, PeerKey } from "./types/types";
 import { runCleanup } from "./utils/runCleanup";
 import { DoubleSignatureReport, onDoubleSignature } from "@/cache";
 import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
@@ -14,6 +14,7 @@ import Holepunch from "@/Holepunch";
 import type PeerProfile from "@/PeerProfile";
 import ProfileManager from "@/ProfileManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import type StateManager from "@/stateManager";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
@@ -73,6 +74,19 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     // Bounds the wait for the first cooperating participant handshake. An
     // observer that never reaches a sync request must not wait forever.
     private initialSyncDeadline?: ReturnType<typeof setTimeout>;
+    // Completed handshakes still in their participant check or the sync it
+    // starts. One running holds an elapsed initial-sync deadline.
+    private participantChecksInFlight = 0;
+    private isInitialSyncDeadlineHeld = false;
+    // Participants that answered they are still in their own initial sync,
+    // each with its pending re-ask (undefined once it fired).
+    private readonly syncingPeerRetries = new Map<
+        ChecksumAddress,
+        ReturnType<typeof setTimeout> | undefined
+    >();
+    // Participants checked while another initial sync request ran: the ones
+    // to sync from when that request's peer answers it is still syncing.
+    private readonly waitingParticipants = new Set<ChecksumAddress>();
 
     /**
      * `signer` must be deterministic (RFC 6979, as ethers wallets are): one
@@ -259,56 +273,76 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.addConnection(transport);
 
         if (isChannelOpened) {
-            try {
-                // the chain, not the local mirror: a fresh peer's mirror can
-                // miss a slash (the chain's set excludes slashed peers), and
-                // its own slash recovery would then cut the initial sync it
-                // depends on
-                const isPeerParticipant =
-                    await stateManager.stateChannelManagerContract.canParticipateInDisputes(
-                        stateManager.channelId,
-                        peerAddress
-                    );
-                if (stateManager.isDisposed || transport.isClosed) return;
-                if (isPeerParticipant) {
-                    await this.syncConnectedParticipant(peerAddress);
-                } else {
-                    this.logger.debug(
-                        `Skipping sync after handshake with peer ${peerAddress} - not a participant`
-                    );
-                }
-            } catch (error) {
-                // a read or sync cut by teardown is no failure; any other is
-                // fatal: the protocol assumes a working RPC connection
-                if (stateManager.isDisposed || transport.isClosed) return;
-                this.logger.error(
-                    "Participant read or sync after handshake failed",
-                    {
-                        peerAddress,
-                        error: errorMessage(error)
-                    }
-                );
-                throw error;
-            }
+            await this.syncIfParticipant(peerAddress, transport);
+            // a check cut by teardown reports no connection
+            if (stateManager.isDisposed || transport.isClosed) return;
         }
 
         stateManager.p2pEventHooks.onConnection?.(peerAddress, isChannelOpened);
     }
 
+    private async syncIfParticipant(
+        peerAddress: Address,
+        transport: NetworkTransport
+    ): Promise<void> {
+        const stateManager = this.stateManager;
+        this.participantChecksInFlight += 1;
+        try {
+            // the chain, not the local mirror: a fresh peer's mirror can
+            // miss a slash (the chain's set excludes slashed peers), and
+            // its own slash recovery would then cut the initial sync it
+            // depends on
+            const isPeerParticipant =
+                await stateManager.stateChannelManagerContract.canParticipateInDisputes(
+                    stateManager.channelId,
+                    peerAddress
+                );
+            if (stateManager.isDisposed || transport.isClosed) return;
+            if (isPeerParticipant) {
+                await this.syncConnectedParticipant(peerAddress);
+            } else {
+                this.logger.debug(
+                    `Skipping sync after handshake with peer ${peerAddress} - not a participant`
+                );
+            }
+        } catch (error) {
+            // a read or sync cut by teardown is no failure; any other is
+            // fatal: the protocol assumes a working RPC connection
+            if (stateManager.isDisposed || transport.isClosed) return;
+            this.logger.error(
+                "Participant read or sync after handshake failed",
+                {
+                    peerAddress,
+                    error: errorMessage(error)
+                }
+            );
+            throw error;
+        } finally {
+            this.participantChecksInFlight -= 1;
+            // An elapsed deadline this check held fires once no check or sync runs.
+            if (this.isInitialSyncDeadlineHeld)
+                this.expireInitialSyncDeadline();
+        }
+    }
+
     private async syncConnectedParticipant(
         peerAddress: Address
     ): Promise<void> {
-        if (this.initialSyncStarted) return;
+        if (this.initialSyncStarted) {
+            this.waitingParticipants.add(getChecksumAddress(peerAddress));
+            return;
+        }
         this.initialSyncStarted = true;
-        this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
-        const success = await this.localRpc.spectateService.sync(
+        const result = await this.localRpc.spectateService.requestSync(
             peerAddress,
-            stateManager.channelId,
-            undefined,
-            undefined,
-            stateManager.timeConfig.agreementTime * 2 * 1000
+            stateManager.channelId
         );
+        if (result === SyncResult.ResponderSyncing) {
+            this.onResponderSyncing(peerAddress);
+            return;
+        }
+        const success = result === SyncResult.Synced;
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
@@ -322,8 +356,63 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.settleInitialSync(success);
     }
 
+    /**
+     * The participant has no state to prove yet: no failure. Sync from a
+     * participant checked meanwhile now, and ask this one again after half a
+     * window (twice within the deadline). A participant answering this for the
+     * first time re-arms the deadline, so the wait stays bounded and a table
+     * with no usable participant aborts.
+     */
+    private onResponderSyncing(peerAddress: Address): void {
+        this.initialSyncStarted = false;
+        const stateManager = this.stateManager;
+        if (
+            this.initialSyncSettled ||
+            stateManager.isDisposed ||
+            stateManager.status !== Status.OPENED
+        ) {
+            return;
+        }
+        const syncingPeer = getChecksumAddress(peerAddress);
+        if (!this.syncingPeerRetries.has(syncingPeer)) {
+            this.armInitialSyncDeadline();
+        }
+        const pendingRetry = this.syncingPeerRetries.get(syncingPeer);
+        if (pendingRetry) stateManager.timeoutManager.cancelTask(pendingRetry);
+        this.syncingPeerRetries.set(
+            syncingPeer,
+            stateManager.timeoutManager.scheduleTask(
+                () => this.askSyncingPeerAgain(syncingPeer),
+                (stateManager.timeConfig.agreementTime * 1000) / 2,
+                "P2PManager - ask a syncing participant again"
+            )
+        );
+        const waiting = [...this.waitingParticipants];
+        this.waitingParticipants.clear();
+        for (const participant of waiting) {
+            if (participant === syncingPeer) continue;
+            const transport =
+                this.profileManager.getTransportByEvmAddress(participant);
+            if (transport) void this.syncIfParticipant(participant, transport);
+        }
+    }
+
+    private askSyncingPeerAgain(syncingPeer: ChecksumAddress): void {
+        if (this.initialSyncSettled || this.stateManager.isDisposed) return;
+        this.syncingPeerRetries.set(syncingPeer, undefined);
+        const transport =
+            this.profileManager.getTransportByEvmAddress(syncingPeer);
+        if (!transport || transport.isClosed) return;
+        void this.syncIfParticipant(syncingPeer, transport);
+    }
+
     private settleInitialSync(success: boolean): void {
         this.cancelInitialSyncDeadline();
+        for (const retry of this.syncingPeerRetries.values()) {
+            if (retry) this.stateManager.timeoutManager.cancelTask(retry);
+        }
+        this.syncingPeerRetries.clear();
+        this.waitingParticipants.clear();
         if (this.initialSyncSettled) return;
         this.initialSyncSettled = true;
         this.initialSyncOutcome = success;
@@ -423,37 +512,49 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     /**
-     * The initial sync request carries its own two-window timeout. This bound
-     * covers the phase before that request exists: if no participant completes
-     * a handshake within the same two windows, the observer stops waiting and
-     * aborts, exactly as a timed-out sync request would.
+     * The initial sync request uses the sync service's two-window default
+     * timeout. This bound covers the time without a usable participant: if
+     * none completes a handshake, or every one asked is still syncing, within
+     * two windows, the observer stops waiting and aborts, exactly as a
+     * timed-out sync request would. A participant check or sync still running
+     * holds the deadline until it answers; a running sync keeps the deadline
+     * it has.
      */
     private armInitialSyncDeadline(): void {
-        this.cancelInitialSyncDeadline();
         if (this.initialSyncStarted) return;
+        this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
         this.initialSyncDeadline = stateManager.timeoutManager.scheduleTask(
             () => {
                 this.initialSyncDeadline = undefined;
-                if (this.initialSyncStarted || stateManager.isDisposed) return;
-                if (stateManager.status !== Status.OPENED) {
-                    this.settleInitialSync(
-                        isEngagedStatus(this.stateManager.status)
-                    );
-                    return;
-                }
-                this.logger.warn(
-                    "No participant completed a handshake within the initial sync window; aborting"
-                );
-                stateManager.abort();
-                this.settleInitialSync(false);
+                this.expireInitialSyncDeadline();
             },
             stateManager.timeConfig.agreementTime * 2 * 1000,
             "P2PManager - initial sync participant deadline"
         );
     }
 
+    private expireInitialSyncDeadline(): void {
+        const stateManager = this.stateManager;
+        this.isInitialSyncDeadlineHeld = false;
+        if (stateManager.isDisposed) return;
+        if (stateManager.status !== Status.OPENED) {
+            this.settleInitialSync(isEngagedStatus(this.stateManager.status));
+            return;
+        }
+        if (this.participantChecksInFlight > 0) {
+            this.isInitialSyncDeadlineHeld = true;
+            return;
+        }
+        this.logger.warn(
+            "No participant could serve the initial sync within its window; aborting"
+        );
+        stateManager.abort();
+        this.settleInitialSync(false);
+    }
+
     private cancelInitialSyncDeadline(): void {
+        this.isInitialSyncDeadlineHeld = false;
         if (!this.initialSyncDeadline) return;
         this.stateManager.timeoutManager.cancelTask(this.initialSyncDeadline);
         this.initialSyncDeadline = undefined;
@@ -595,10 +696,27 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     private closeConnection(transport: NetworkTransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
 
-        this.rpcRouter.rejectPendingRpcRequestsForTransport(
-            transport,
-            new Error("Peer disconnected before RPC response arrived")
-        );
+        // A reply matches its request by peer address, so a request pending on
+        // this transport stays pending on another live transport of the same
+        // peer (the replacement after a transport upgrade). Only a peer with no
+        // other live transport rejects it.
+        const peerProfile =
+            profile ??
+            (transport.peerAddress
+                ? this.profileManager.getProfileByEvmAddress(
+                      transport.peerAddress as Address
+                  )
+                : undefined);
+        const replacement = peerProfile
+            ?.getLiveTransports()
+            .find((live) => live !== transport);
+        if (replacement)
+            this.rpcRouter.movePendingRpcRequests(transport, replacement);
+        else
+            this.rpcRouter.rejectPendingRpcRequestsForTransport(
+                transport,
+                new Error("Peer disconnected before RPC response arrived")
+            );
 
         const wasOpen = this.openConnections.includes(transport);
         this.openConnections = this.openConnections.filter(

@@ -111,6 +111,16 @@ export default class P2pInstance<
         return this.chainSigner.getGasUsageTable();
     }
 
+    /**
+     * Uploads the logs of every thread of this runtime now; settles once they
+     * are up, or within `CRASH_LOG_FLUSH_MS`. It never fails. A client calls it
+     * before it disposes a runtime whose logs it needs, such as one whose
+     * setup ran past the client's own bound.
+     */
+    public flushLogs(): Promise<void> {
+        return this.p2pRuntimeClientRoot.logger.startFlush();
+    }
+
     public dispose(): Promise<void> {
         return (this.disposal ??= this.disposeApplication());
     }

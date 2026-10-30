@@ -37,3 +37,13 @@ One endpoint root shared by multiple registered connections.
 - [x] `UNIT-TEST-RUNTIME-SERVICE-1-WH4SSY.P1` — Shares one service instance across two actual SDK caller connections
 - [x] `UNIT-TEST-RUNTIME-SERVICE-1-WH4SSY.P3` — Connection roots reject unrelated objects; network/internal router, transport and service pairings reject cross-wiring while valid concrete endpoint arguments and results remain inferred
 - [x] `UNIT-TEST-RUNTIME-SERVICE-1-WH4SSY.P4` — Each actual inline SDK root exposes lifecycle through its own router; ready requests cross all connections; executor root disposal removes its child relationship and retires its connection
+
+## UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB
+
+Worker root event-loop monitor start
+
+- Setup: A worker-mode root with the monitor enabled, started with `EVENT_LOOP_MONITOR_STARTUP` off and on
+- Oracle: Off (the default, which tests rely on), the monitor starts after the root's start; on, it already runs when the start begins; in both it runs once the root started
+
+- [x] `UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P1` — default: the monitor starts once the start is done
+- [x] `UNIT-TEST-ROOT-MONITOR-START-1-MAY5GB.P2` — `EVENT_LOOP_MONITOR_STARTUP`: the monitor runs during the start

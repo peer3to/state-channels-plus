@@ -396,7 +396,9 @@ describe("E2E: Targeted channel join", function () {
             4
         );
         const refreshReleases = await Promise.all(
-            [2, 3].map((index) => h.rpcStub.holdPostMatchTargetRefresh(index))
+            [2, 3].map((index) =>
+                h.rpcStub.holdOpenedStatusRefresh(index, "second")
+            )
         );
         const negotiationReleases = await Promise.all(
             [2, 3].map((index) => h.rpcStub.holdMatchedNegotiation(index))
@@ -410,7 +412,7 @@ describe("E2E: Targeted channel join", function () {
                     [2, 3].map((index) =>
                         h
                             .control(h.getPeer(index))
-                            .stub.getHeldPostMatchTargetRefreshCount()
+                            .stub.getHeldOpenedStatusRefreshCount()
                             .request()
                     )
                 );
@@ -944,7 +946,7 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(2),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService.sync(
+                await sm.p2pManager.localRpc.spectateService.requestSync(
                     args.offender,
                     sm.channelId
                 );
@@ -972,7 +974,7 @@ describe("E2E: Targeted channel join", function () {
         await h.execOnHost(
             h.getPeer(0),
             async (sm, args: { offender: string }) => {
-                await sm.p2pManager.localRpc.spectateService.sync(
+                await sm.p2pManager.localRpc.spectateService.requestSync(
                     args.offender,
                     sm.channelId
                 );

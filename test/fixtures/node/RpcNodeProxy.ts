@@ -8,6 +8,9 @@ type JsonRpcMethod = string;
 /** A JSON-RPC request or response id. */
 type JsonRpcId = number | string;
 
+/** A subscription notification held at the proxy, and the log's transaction. */
+type WithheldNotification = { transactionHash: unknown; send: () => void };
+
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
 
@@ -35,6 +38,15 @@ function readJsonRpcFrame(data: RawData): {
         // not JSON: forwarded unread
         return {};
     }
+}
+
+/** The transaction hash of the log an eth_subscription notification carries. */
+function notifiedTransactionHash(params: unknown): unknown {
+    if (typeof params !== "object" || params === null || !("result" in params))
+        return undefined;
+    const { result } = params;
+    if (typeof result !== "object" || result === null) return undefined;
+    return "transactionHash" in result ? result.transactionHash : undefined;
 }
 
 /** The [fromBlock, toBlock] of an eth_getLogs request, from its hex bounds. */
@@ -118,6 +130,11 @@ export class RpcNodeProxy {
         JsonRpcMethod,
         { forwards: (() => void)[]; remaining: number }
     >();
+    /**
+     * Subscription notifications kept here until released, with the
+     * transaction hash of the log each carries; undefined while they pass.
+     */
+    private withheldNotifications?: WithheldNotification[];
     private isCut = false;
     private isBlackholed = false;
 
@@ -259,6 +276,36 @@ export class RpcNodeProxy {
         };
     }
 
+    /**
+     * Keep the node's subscription notifications at the proxy until
+     * `release` sends the one carrying the log of a transaction; `stop` lets
+     * later notifications pass again and keeps the withheld ones.
+     */
+    withholdNotifications(): {
+        release: (transactionHash: string) => void;
+        stop: () => void;
+    } {
+        const withheld: WithheldNotification[] = [];
+        this.withheldNotifications = withheld;
+        return {
+            release: (transactionHash) => {
+                const index = withheld.findIndex(
+                    (notification) =>
+                        notification.transactionHash === transactionHash
+                );
+                if (index < 0)
+                    throw new Error(
+                        `No withheld notification for ${transactionHash}`
+                    );
+                withheld.splice(index, 1)[0].send();
+            },
+            stop: () => {
+                if (this.withheldNotifications === withheld)
+                    this.withheldNotifications = undefined;
+            }
+        };
+    }
+
     /** Keep every socket open but forward nothing in either direction. */
     blackhole(): void {
         this.isBlackholed = true;
@@ -368,13 +415,20 @@ export class RpcNodeProxy {
         });
         upstream.on("message", (data, isBinary) => {
             if (this.isBlackholed) return;
-            const { method, id } = readJsonRpcFrame(data);
+            const { method, id, params } = readJsonRpcFrame(data);
             if (!method && id !== undefined && this.swallowedReplyIds.has(id))
                 return;
             const send = () => {
                 if (client.readyState === WebSocket.OPEN)
                     client.send(data, { binary: isBinary });
             };
+            if (method === "eth_subscription" && this.withheldNotifications) {
+                this.withheldNotifications.push({
+                    transactionHash: notifiedTransactionHash(params),
+                    send
+                });
+                return;
+            }
             const heldReplies =
                 !method && id !== undefined
                     ? this.heldReplyIds.get(id)

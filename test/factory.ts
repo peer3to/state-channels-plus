@@ -102,7 +102,6 @@ export function transactionBody(
     overrides: Partial<TransactionBodyStruct> = {}
 ): TransactionBodyStruct {
     return {
-        encodedData: "0x",
         data: "0x",
         ...overrides
     };

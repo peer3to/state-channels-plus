@@ -2,6 +2,7 @@
 import type { SpectateControlService } from "./SpectateControlService";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ChannelId, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -18,13 +19,19 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         super(transport, service);
     }
 
-    public sync(peerAddress: Address, forkId: ForkId, blockHeight: number) {
-        return this.service.spectate.sync(
+    /** True when the spectate sync succeeded. */
+    public async sync(
+        peerAddress: Address,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<boolean> {
+        const result = await this.service.spectate.requestSync(
             peerAddress,
             this.service.sm.channelId,
             forkId,
             blockHeight
         );
+        return result === SyncResult.Synced;
     }
 
     /** Generate a sync payload, returned encoded (or null if not provable). */
@@ -51,8 +58,7 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
 
     /**
      * Start a real local spectate sync toward `peerAddress`, targeting the
-     * host peer's own channel. Fire-and-forget (as `SpectateService.sync`
-     * is): returns once the request is launched — tests wait on observable
+     * host peer's own channel. Fire-and-forget: returns once the request is launched — tests wait on observable
      * convergence / blacklist state, not this return.
      */
     public startSync(
@@ -69,7 +75,7 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         }
         // Omitted optionals cross the port as null; the service treats only
         // undefined as "not requested".
-        void this.service.spectate.sync(
+        void this.service.spectate.requestSync(
             peerAddress,
             channelId,
             forkId ?? undefined,

@@ -72,22 +72,14 @@ function anyNodeConnected(nodes: readonly RpcNodeProvider[]): Promise<boolean> {
 }
 
 /**
- * Build and verify the real-chain provider and wallet owned by one runtime
- * host. Startup returns once one node connected; the others keep connecting
- * in the background.
+ * Build the multi-endpoint provider over the configured RPC nodes. Returns
+ * once one node connected; the others keep connecting in the background.
+ * Throws once every node's first attempt failed.
  */
-export async function createRuntimeChainContext(
-    config: Config,
-    signerSecret: string,
+export async function createRpcNodesProvider(
+    config: Pick<Config, "PROVIDER_URL" | "PROVIDER_URLS">,
     logger: Logger
-): Promise<RuntimeChainContext> {
-    // a bad window size would only surface at the first catch-up
-    assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
-    const secret = signerSecret.trim();
-    // derived before any node opens, so a bad secret leaves nothing behind
-    const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)
-        ? new Wallet(secret)
-        : Wallet.fromPhrase(secret);
+): Promise<MultiRpcProvider> {
     const expectedChain: ExpectedChain = {};
     const nodes = resolveProviderUrls(config).map(
         (url) => new RpcNodeProvider(url, logger, expectedChain)
@@ -103,9 +95,28 @@ export async function createRuntimeChainContext(
                 `${LoggerUtils.getRpcNodeMetadata(node.url).rpcNode}: ${String(failures[index])}`
         );
         throw new Error(
-            `P2P runtime requires a reachable WebSocket provider at ${reasons.join("; ")}`
+            `Chain access requires a reachable WebSocket provider at ${reasons.join("; ")}`
         );
     }
-    const provider = new MultiRpcProvider(nodes, logger);
+    return new MultiRpcProvider(nodes, logger);
+}
+
+/**
+ * Build and verify the real-chain provider and wallet owned by one runtime
+ * host.
+ */
+export async function createRuntimeChainContext(
+    config: Config,
+    signerSecret: string,
+    logger: Logger
+): Promise<RuntimeChainContext> {
+    // a bad window size would only surface at the first catch-up
+    assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
+    const secret = signerSecret.trim();
+    // derived before any node opens, so a bad secret leaves nothing behind
+    const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)
+        ? new Wallet(secret)
+        : Wallet.fromPhrase(secret);
+    const provider = await createRpcNodesProvider(config, logger);
     return { provider, signer: wallet.connect(provider) };
 }

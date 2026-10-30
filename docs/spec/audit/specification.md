@@ -22,6 +22,30 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
+
+Luka decided these in the shared poker client manager plan (poker-contracts
+`9-shared-poker-client-manager`, "Implementation-review decisions").
+[`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8) is new: the
+application uses the SDK's provider over the same endpoints, and a contract-log subscription on it
+comes from every node socket, each log once. Its limits (no re-read, no removal report, no throw during a
+full outage) are stated in the chain-observation assumptions and tracked as findings.
+[`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v) and the responder algorithm now say that a
+countersigner answers from local reads, with a chain read only when its local view does not list it.
+The RPC ingress algorithm now drops a frame on a closed transport before step 1. Each change has new
+planned permutations; the application startup failure through the exported entry
+([`REQ-CHAINOBS-4-JA3YF8.T1.P7`](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8.t1.p7)), the reconnected endpoint
+([`REQ-CHAINOBS-4-JA3YF8.T1.P5`](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8.t1.p5)) and the 128-block bound
+([`REQ-CHAINOBS-4-JA3YF8.T1.P6`](../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8.t1.p6)) are covered by tests in
+[RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md). The bound text now matches the code: a log
+128 or more blocks below the highest delivered log is not delivered. The overview now limits the no-gap
+rule to the runtime's own observation; an application log subscription can leave a gap
+([`FIND-RPC-4-7H2R11`](open-findings.md#find-rpc-4-7h2r11)). The rejoin-after-eviction and spectator-reduction questions moved
+from the audit register to
+[`OQ-SPEC-JOIN-REJOIN-1-D506RT` (Rejoin after eviction collects against the disputed snapshot)](../specification/open-questions.md#oq-spec-join-rejoin-1-d506rt) and
+[`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](../specification/open-questions.md#oq-spec-reduce-spectator-1-1ywdc5), and the duplicate probe
+sync question to [`OQ-IMPL-SYNC-PROBE-1-1288ZV` (Duplicate probe sync during a runtime's initial sync)](../implementation/open-questions.md#oq-impl-sync-probe-1-1288zv).
+
 ## 2026-10-13 — Message-block tip stays height-based
 
 Ljuba reversed the earlier decision on [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf): the
@@ -331,8 +355,10 @@ and enforcement checks the new pins and the current threshold set. Its cost is b
 countersignature round and one more funded submission per join or top-up. Residual: the rule keys on the snapshot move, not on the revert reason, so any proven failure that coincides with a move to a stored
 snapshot gets the one retry; a pin the runtime never stored gets none. A
 snapshot observation omitting an unseated joiner does not itself abort it; when the new snapshot is
-unstored, no retry is available and the final submission-refusal path determines the outcome. A failure of the fresh collection itself ends the call `false` with no second
-submission: a first join becomes `SYNCED`, a top-up keeps participating (Luka, 2026-10-10;
+unstored, no retry is available and the final submission-refusal path determines the outcome. A collection failure of the fresh collection itself (a threshold member unreachable,
+with no answer or with a wrong-signer answer) ends the call `false` with no second
+submission: a first join becomes `SYNCED`, a top-up keeps participating; any other error of the fresh collection
+rejects the call (Luka, 2026-10-10, narrowed 2026-10-26;
 [`UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P60`](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md#unit-test-channel-join-service-1-bjkheb), `.P64`). The older contradiction in targeted-channel-join.md between "proven
 first-join failure aborts" and a proven failure that restores `SYNCED` is resolved by Luka (2026-10-10): the
 specification now states the implemented behavior, where only a race or authorization revert of the join aborts

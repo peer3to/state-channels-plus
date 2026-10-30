@@ -16,7 +16,8 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
     private readonly stores = new Map<
         LogStore,
         {
-            upload: () => Promise<LogUploadOutcome>;
+            /** `flushDeadlineMs`: the abort flush this upload is part of, if any */
+            upload: (flushDeadlineMs?: number) => Promise<LogUploadOutcome>;
             detach: () => void;
             updateContext: (context: SharedLoggerContext) => void;
         }
@@ -45,7 +46,7 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
     public attachStore(
         store: LogStore,
         callbacks: {
-            upload: () => Promise<LogUploadOutcome>;
+            upload: (flushDeadlineMs?: number) => Promise<LogUploadOutcome>;
             detach: () => void;
             updateContext: (context: SharedLoggerContext) => void;
         }
@@ -97,7 +98,7 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
      * asks each other open neighbour to do the same; settles once all of them
      * have, or at the deadline. Every realm stops waiting at the same deadline,
      * leaving out what has not uploaded by then (a worker cancels it as its
-     * thread ends, see cancelRealmUploads). It never fails: a neighbour's
+     * thread ends, see settleRealmUploads). It never fails: a neighbour's
      * failure is reported through this realm's root at once, since a reply
      * after the deadline would reach no one, and the other uploads run on.
      */
@@ -128,7 +129,7 @@ export class LoggerService extends AInternalRpcService<LoggerRpcMethods> {
             Promise.all([
                 // An upload's own failure is a network outcome it reports itself.
                 ...[...this.stores.values()].map((callbacks) =>
-                    callbacks.upload()
+                    callbacks.upload(deadlineMs)
                 ),
                 ...neighbours
             ]),

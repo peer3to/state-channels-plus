@@ -1114,9 +1114,9 @@
   resolved "https://registry.yarnpkg.com/@humanwhocodes/retry/-/retry-0.4.3.tgz#c2b9d2e374ee62c586d3adbea87199b1d7a7a6ba"
   integrity sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==
 
-"@hyperswarm/dht-relay@github:peer3to/hyperswarm-dht-relay#d9f00e9aba7e6e3871ee03a51d417b159ba57981":
+"@hyperswarm/dht-relay@github:peer3to/hyperswarm-dht-relay#d723fbad74d64e4cd083db9f73fd72f16ef94fb7":
   version "0.4.3"
-  resolved "https://codeload.github.com/peer3to/hyperswarm-dht-relay/tar.gz/d9f00e9aba7e6e3871ee03a51d417b159ba57981"
+  resolved "https://codeload.github.com/peer3to/hyperswarm-dht-relay/tar.gz/d723fbad74d64e4cd083db9f73fd72f16ef94fb7"
   dependencies:
     "@hyperswarm/secret-stream" "^6.0.0"
     b4a "^1.1.4"

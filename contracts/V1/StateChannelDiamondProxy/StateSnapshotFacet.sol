@@ -180,8 +180,6 @@ contract StateSnapshotFacet is StateChannelCommon {
                     isLessThan || isEqual, CantWithdrawMoreThanDeposits(totalDeposits.amount, totalWithdrawals.amount)
                 );
             }
-            // TODO - this event is not used
-            emit OutboundMessagesProcessed(channelId, outboundMessageBlocks[i], block.timestamp, totalWithdrawals);
         }
         cb.totalWithdrawals = totalWithdrawals;
         cb.latestOutboundMessageBlockHeight = newSnapshotData.latestOutboundMessageBlockHeight;

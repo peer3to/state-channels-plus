@@ -43,6 +43,8 @@ export async function withWebRTCBridge(
             dispose(): Promise<void>;
         }>;
         captureCurrentChannelCallbacks(): () => void;
+        /** Closes the far side's connection: werift on this side reports it as `disconnected` about 10 s later. */
+        closeRemote(): Promise<void>;
     }) => Promise<void>
 ): Promise<void> {
     await withRuntimeRpc(async (sdk) => {
@@ -119,6 +121,7 @@ export async function withWebRTCBridge(
                 peerAddress,
                 callbacks,
                 dispose,
+                closeRemote: () => local.close(localAddress),
                 captureCurrentChannelCallbacks() {
                     // Retain callbacks from the actual provider channel before retirement.
                     const records = Reflect.get(

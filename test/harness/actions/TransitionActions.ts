@@ -3,7 +3,7 @@ import { Block, StateSnapshot } from "@/models";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import { Status } from "@/types";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Timestamp } from "@/types/types";
 import { Codec, Logger, sleep, Type } from "@/utils";
 import type {
     HarnessControlRpc,
@@ -407,6 +407,32 @@ export class TransitionActions<
         }
 
         return result;
+    }
+
+    /**
+     * `peer` posts a block's calldata on-chain the way the chain-fallback path
+     * does; the harness provider waits until it mines. Returns the chain block
+     * the post landed in and that block's timestamp.
+     */
+    async postBlockCalldataOnChainWait(
+        peer: TestPeer<THost, TContract>,
+        encodedSignedBlock: string
+    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
+        const { transactionHash } = await this.harness
+            .control(peer)
+            .validation.postBlockCalldataOnChain(encodedSignedBlock)
+            .request();
+        const receipt = await this.harness.provider.waitForTransaction(
+            transactionHash,
+            1,
+            this.harness.event.protocolEventTimeoutMs()
+        );
+        if (!receipt) throw new Error("postBlockCalldata produced no receipt");
+        const chainBlock = await receipt.getBlock();
+        return {
+            blockNumber: receipt.blockNumber,
+            onChainTimestamp: chainBlock.timestamp
+        };
     }
 
     async ingestBlockConfirmationWait(options: {

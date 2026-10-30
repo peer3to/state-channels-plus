@@ -14,6 +14,8 @@
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-RUNTIME-7-A2VAR0` (Bounded isolated-context teardown)](../../../../../specification/runtime/execution.md#req-runtime-7-a2var0)
 - [`REQ-CONFIG-4-WW7BRX` (Isolated contexts start with their creator's configuration)](../../../../../specification/runtime/configuration.md#req-config-4-ww7brx)
+- [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)
+- [`REQ-RUNTIME-9-P5VPT5` (An uncaught non-error failure is reported as one error)](../../../../../specification/runtime/execution.md#req-runtime-9-p5vpt5)
 
 ## UNIT-TEST-ROOT-CREATION-1-1NWN3V
 
@@ -60,3 +62,6 @@ Parent-owned root creation
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P37` — A parentless worker root that installs no config itself uploads a line it logged to the endpoint that only the creating thread's config names, under the thread name its entry passed to `startRootWorker`
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P38` — A worker root whose entry passes no thread name to `startRootWorker` logs and uploads under `main`
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P39` — In a browser worker, `startRootWorker` with a thread name gives the root's logger that name, and without one gives it `main`
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P40` — a browser worker child disposed with its parent before it is ready is terminated without the drain wait: its creation rejects with `Runtime child closed before ready` and the disposal ends before the flush bound
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P41` — a ready browser worker root is drained before its child connection closes, so the child's disposal is acknowledged and its closing message ends the drain before the flush bound
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P42` — a browser worker root whose startup throws after its root has a logger that is not disposed logs `Root worker startup failed` at error level with the error and, for a WebAssembly failure, `wasm`, and lets that upload settle within the flush bound before it posts `startupFailed`, so the line is stored when its parent terminates it without a drain wait

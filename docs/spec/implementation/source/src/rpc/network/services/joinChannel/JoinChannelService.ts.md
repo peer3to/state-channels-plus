@@ -15,8 +15,8 @@
 
 Collector unanimity
 
-- Setup: Collect with responsive/silent/erroring/wrong-signer/unreachable members, one member whose handshake completes inside the reachability grace, and deadline pressure
-- Oracle: Only full unanimity assembles; every failure mode fails whole; requests never outlive the join deadline; an unreachable-member failure names every threshold member with no transport; a member reachable within the grace joins the unanimous set; a handshake that leaves another member unreachable does not end the grace
+- Setup: Collect with responsive/silent/erroring/wrong-signer/unreachable members, two failing members in one collection, one member whose handshake completes inside the reachability grace, and deadline pressure
+- Oracle: Only full unanimity assembles; every failure mode fails whole; requests never outlive the join deadline; a failed collection is one `JoinCollectionError` raised after every member's outcome is in, naming each failed member with its reason; an unreachable-member failure names every threshold member with no transport; a member reachable within the grace joins the unanimous set; a handshake that leaves another member unreachable does not end the grace
 
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P1` — unanimous success
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P2` — single silent member
@@ -33,13 +33,14 @@ Collector unanimity
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P14` — a snapshot post that lands after the collector pinned the snapshot and before any countersigner reads its view leaves the collection unanimous; the returned pin is still the collector's
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P15` — a threshold member whose handshake completes while the collector waits through the reachability grace: the collection waits, then assembles every countersignature
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P16` — a handshake during the reachability grace that leaves another threshold member unreachable: the collection keeps waiting and requests no signature until that member is reachable
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-1-32GSQS.P17` — one wrong-signer member and one erroring member in one collection: one `JoinCollectionError` names both members, each with its reason and detail
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ
 
 Responder validation chain
 
-- Setup: Request signatures with each binding/authority violated and fully valid, and after the snapshot moved away from the joiner's pin
-- Oracle: Only fully bound, in-threshold requests are signed over exact bytes, whatever the current snapshot or fork; failures are penalty-free errors
+- Setup: Request signatures with each binding/authority violated and fully valid, after the snapshot moved away from the joiner's pin, with a threshold member's chain calls and block reads held, with a member whose mirror misses its own landed join, and with deadlines around the responder's own clock second
+- Oracle: Only fully bound, in-threshold requests are signed over exact bytes, whatever the current snapshot or fork; failures are penalty-free errors; `signJoinRequest` checks the deadline against `Clock.getTimeInSeconds()` and makes no chain read while the mirror lists the responder
 
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P1` — all triple-binding violations
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P3` — exact and expired deadline boundaries
@@ -51,10 +52,12 @@ Responder validation chain
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P9` — authenticated requester differs from the participant
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P10` — malformed participant signature
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P11` — wrong channel
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P12` — exact responder deadline accepted
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P12` — exact responder deadline (the responder's local clock second) accepted
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P13` — deadline after boundary rejected
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P16` — validation refusal keeps the session usable for retry
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P17` — a join is signed after the snapshot moved away from the joiner's pin
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P18` — a threshold member whose chain calls and block reads are all held signs from its local clock and mirror, so the collection gets every threshold signature
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P19` — a threshold member whose mirror misses its own landed join confirms membership on chain and signs
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-32-BQYC6G
 

@@ -387,6 +387,9 @@ export async function applyPayloads(
                                 await sm.p2pManager.remoteRpc.spectateService
                                     .onSpectateRequest(request)
                                     .request(a.responder);
+                            if (!("encodedSyncPayload" in response)) {
+                                throw new Error("responder still syncing");
+                            }
                             encoded = String(response.encodedSyncPayload);
                             servedEncoded = encoded;
                         }
