@@ -113,8 +113,10 @@ export async function assertRuntimeStartupFailure(): Promise<void> {
  * Real runtime startup against a manager deployed over a contract that
  * answers no transition gas requirement, so the manager's
  * `getStateTransitionReplayGas` read reverts while the reads before it
- * succeed. Readiness must reject with that read's failure, no contract
- * executor may be created and every runtime root must close. The host's
+ * succeed. Readiness must reject with that read's failure; the contract
+ * executor, requested at the start in parallel with the reads, never gets
+ * its configuration, and every runtime root, the executor's included, must
+ * close. The host's
  * provider is not destroyed here: startup already handed it to the
  * process-wide Clock, which keeps it (as after an ordinary disposal).
  */
@@ -166,7 +168,13 @@ export async function assertStartupReplayGasReadFailure(
         const message = (failure as Error).message;
         expect(message).to.include("CALL_EXCEPTION");
         expect(message).to.include(replaySelector);
-        expect(executorRequests).to.deep.equal([]);
+        expect(executorRequests).to.have.length(1);
+        expect(
+            await executorRequests[0].configuration.then(
+                () => "configured",
+                () => "rejected"
+            )
+        ).to.equal("rejected");
         expect(startedRoots.length).to.be.greaterThan(0);
         expect(
             startedRoots.filter((root) => RootCreationControl.roots.has(root))

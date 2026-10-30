@@ -215,10 +215,10 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return true;
     }
 
-    /** Post a block's calldata on-chain (chain-fallback path). */
+    /** Broadcast a block's calldata post (chain-fallback path). */
     public async postBlockCalldataOnChain(
         encodedSignedBlock: string
-    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
+    ): Promise<{ transactionHash: string }> {
         return this.service.postBlockCalldataOnChain(encodedSignedBlock);
     }
 

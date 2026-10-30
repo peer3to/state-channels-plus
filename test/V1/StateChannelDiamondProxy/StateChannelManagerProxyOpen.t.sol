@@ -2,7 +2,6 @@ pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
-import {Vm} from "forge-std/Vm.sol";
 import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
 import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import {
@@ -52,32 +51,27 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         OpenChannel memory terms = abi.decode(confirmation.encodedOpenChannel, (OpenChannel));
         vm.recordLogs();
         diamond.open(confirmation);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-
-        bool foundInboundBlock;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length < 2) continue;
-            if (logs[i].topics[0] != StateChannelManagerEvents.InboundMessagesProcessed.selector) continue;
-            if (logs[i].topics[1] != DEADLINE_CHANNEL_ID) continue;
-            foundInboundBlock = true;
-            MessageBlock memory inbound = abi.decode(logs[i].data, (MessageBlock));
-            assertEq(inbound.messages.length, 2, "inbound join count changed");
-            for (uint256 j = 0; j < inbound.messages.length; j++) {
-                assertEq(inbound.messages[j].messageType, MESSAGE_TYPE_JOIN, "inbound message is not a join");
-                JoinChannel memory expected = JoinChannel({
-                    channelId: terms.channelId,
-                    participant: terms.participants[j],
-                    deadlineTimestamp: terms.deadlineTimestamp,
-                    balance: terms.balances[j]
-                });
-                assertEq(
-                    keccak256(inbound.messages[j].data),
-                    keccak256(abi.encode(expected)),
-                    "inbound join data does not encode the admitted join"
-                );
-            }
+        MessageBlock memory inbound = abi.decode(
+            _logData(
+                vm.getRecordedLogs(), StateChannelManagerEvents.InboundMessagesProcessed.selector, DEADLINE_CHANNEL_ID
+            ),
+            (MessageBlock)
+        );
+        assertEq(inbound.messages.length, 2, "inbound join count changed");
+        for (uint256 j = 0; j < inbound.messages.length; j++) {
+            assertEq(inbound.messages[j].messageType, MESSAGE_TYPE_JOIN, "inbound message is not a join");
+            JoinChannel memory expected = JoinChannel({
+                channelId: terms.channelId,
+                participant: terms.participants[j],
+                deadlineTimestamp: terms.deadlineTimestamp,
+                balance: terms.balances[j]
+            });
+            assertEq(
+                keccak256(inbound.messages[j].data),
+                keccak256(abi.encode(expected)),
+                "inbound join data does not encode the admitted join"
+            );
         }
-        assertTrue(foundInboundBlock, "open did not emit its inbound block");
     }
 
     /// The count in the payload must be the number of SUCCESSFUL joins, not the

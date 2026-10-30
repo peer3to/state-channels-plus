@@ -12,7 +12,6 @@ tuple(
   uint timestamp
 ) header,
 tuple(
-  bytes encodedData,
   bytes data
 ) body
 )`;

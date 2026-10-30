@@ -7,6 +7,7 @@
 - [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 - [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
 - [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+- [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)
 - [`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-LOBBY-7-BXQ1QA` (Symmetric timeout consequence)](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa)
@@ -30,6 +31,7 @@ Identity, delivery, lifecycle, and runtime shape
 - [x] `UNIT-TEST-ATRANSPORT-1-7DGX9R.P10` — repeated close has no additional effects
 - [x] `UNIT-TEST-ATRANSPORT-1-7DGX9R.P11` — serialization and concrete-send errors propagate synchronously
 - [x] `UNIT-TEST-ATRANSPORT-1-7DGX9R.P12` — A fresh network transport constructed through a separate module graph owns an explicit undefined peerAddress slot before authentication and passes structural network recognition
+- [x] `UNIT-TEST-ATRANSPORT-1-7DGX9R.P13` — an unexpected close of a transport whose peer stays connected over another live transport emits no disconnection event; the later unexpected close of the last live transport emits one
 
 ## UNIT-TEST-ATRANSPORT-32-QF87JK
 

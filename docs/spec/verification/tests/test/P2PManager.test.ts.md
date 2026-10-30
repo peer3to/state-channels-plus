@@ -22,6 +22,26 @@ The initial-sync genesis and abort cases keep the original participants authorin
 observer's spawn and the held-request window. This prevents a participant timeout from changing the
 fork before the settlement behavior is exercised; protocol time values are unchanged.
 
+The early targeted-cancel case parks the first opened-status read of a connect with opening permission
+through the stub service, cancels during that read and then releases it; the cancel must return `true`,
+the connect `false`, and the lobby must show no matching session and no joined topic.
+
+The held participant-check cases park the observer's real chain participant reads through the stub
+service while the initial deadline task runs. With the reads still held, they check that the observer is
+neither aborted nor disposed, stays `OPENED` and sent no sync request. Then they release the reads as
+participant, as "not a participant", as a rejection, one at a time with two held reads, or after both
+checked transports were closed. A participant answer must give one sync request and `SYNCED`. Every other
+end must close the host and settle connect `false`; a rejection must also give one error-level line per
+rejected read and a detached error with the stub failure. The two-window case holds every participant's
+spectate response and reads the initial sync's recorded settlement: result `false`, a request timeout of
+two windows, and more than one and a half windows from start to settle. The still-syncing deadline case
+gives the observer one participant whose own initial sync is held, so it answers that it is still
+syncing; the observer's first answer is parked after it is recorded while the held deadline task runs:
+no abort, `OPENED`. Releasing the answer must schedule one new two-window deadline; two later answers
+schedule none, leave the participant connected with no strike, and the restarted deadline aborts the
+observer with connect `false` and no state set. The genesis-settle case holds
+the deadline task, checks that the settle cancelled it, then runs the held task and expects no abort.
+
 ## Tests
 
 - `prefers a transport address over its registered profile address`: UNIT-TEST-P2PMANAGER-32-RX8SQP.P1
@@ -40,7 +60,8 @@ fork before the settlement behavior is exercised; protocol time values are uncha
 - `closes later unpromoted transports and Holepunch after an earlier close fails`: UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P2
 - `rejects and releases every pending request during disposal`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P20, UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P23, REQ-RPC-2-SZDTTM.T1.P19, INTEGRATION-TEST-RPC-3-ZKFXGT.P5
 - `cleans pending state and retains peer identity when transport close throws`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P24, UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P6
-- `original transport retirement rejects its pending request`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P25, REQ-TJOIN-4-SDPZJW.T1.P3
+- `original transport retirement keeps its pending request pending on the replacement, whose reply settles it`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P25, REQ-TJOIN-4-SDPZJW.T1.P3
+- `reports no disconnection when the remote retires the original transport while the replacement stays live, and one when the last transport closes`: UNIT-TEST-ATRANSPORT-1-7DGX9R.P13, REQ-UPG-2-WH7BC7.T1.P6
 - `unrelated peer cannot settle pending request`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P3, REQ-RPC-2-SZDTTM.T1.P5, INTEGRATION-TEST-RPC-3-ZKFXGT.P13, REQ-TJOIN-4-SDPZJW.T1.P4
 - `routes a response by peer address before retirement and ignores duplicates`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P5, UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P11, REQ-RPC-2-SZDTTM.T1.P3, REQ-TJOIN-4-SDPZJW.T1.P1
 - `deduplicates connections, broadcasts once, blacklists peers, and reports known addresses`: UNIT-TEST-P2P-MANAGER-2-HR5HCB.P1, UNIT-TEST-P2P-MANAGER-2-HR5HCB.P2, UNIT-TEST-P2P-MANAGER-3-0FEPCH.P1, UNIT-TEST-P2P-MANAGER-3-0FEPCH.P2, UNIT-TEST-P2P-MANAGER-3-0FEPCH.P3
@@ -52,18 +73,26 @@ fork before the settlement behavior is exercised; protocol time values are uncha
 - `does not promote a late handshake after manager disposal`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P8, REQ-AUTH-5-BQG9AG.T1.P8
 - `retires a replaced handshake transport and keeps one live connection`: UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P9, REQ-AUTH-5-BQG9AG.T1.P9
 - `emits profile loss only after the last live transport closes`: UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P7, REQ-LOBBY-8-31BE0F.T1.P1, REQ-LOBBY-8-31BE0F.T1.P2, REQ-LOBBY-8-31BE0F.T1.P4
-- `initial handshake selects the two-window channel-load sync entry`: none
+- `initial handshake starts one channel-load sync and reaches SYNCED`: none
 - `normal post-open discovery reaches channel participants`: none
 - `provider open event switches targeted matching to raw channel discovery`: none
 - `unopened target without autoOpen leaves raw and matching discovery untouched`: INV-TJOIN-1-R3K75D.T1.P1
 - `targeted matching keeps the selected channel without entering DISCOVERING`: INV-TJOIN-1-R3K75D.T1.P4
 - `targeted matching probe settles after the derived topic is joined`: none
+- `a cancel during the target's opened-status read ends the connect before matching starts`: UNIT-TEST-LOCAL-P2P-SIGNER-3-3XWPRV.P1, REQ-TJOIN-1-5VGR1F.T1.P8
 - `unsigned targeted failure retains the target and blacklists neither peer`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P1, REQ-TJOIN-5-Q795M7.T1.P11
 - `explicit same-ID retry creates a fresh matcher and negotiation attempt`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2, REQ-TJOIN-5-Q795M7.T1.P2
 - `fatal initial sync closes its root and rejects later same-channel client calls`: UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3, REQ-TJOIN-5-Q795M7.T1.P4
+- `observer initial sync request to a participant that never answers times out after two agreement windows`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P42, REQ-TJOIN-3-DCZKS6.T1.P18, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114
+- `observer holds the initial deadline while a still-syncing answer is in flight, restarts it on that participant's first still-syncing answer only, and aborts at the restarted deadline`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P47, UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P48
 - `observer connect resolves false when no participant handshake completes within the initial window`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P28, REQ-TJOIN-3-DCZKS6.T1.P6
+- `observer holds the initial deadline while a completed handshake's participant check runs and syncs once the check answers participant`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P37, REQ-TJOIN-3-DCZKS6.T1.P13
+- `observer aborts once a held participant check ends without a sync after the initial deadline elapsed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P38, REQ-TJOIN-3-DCZKS6.T1.P14
+- `observer aborts and keeps the error log once a held participant check rejects after the initial deadline elapsed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P39, REQ-TJOIN-3-DCZKS6.T1.P15
+- `observer holds the initial deadline until the last of two participant checks ends without a sync`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P40, REQ-TJOIN-3-DCZKS6.T1.P16
+- `observer aborts once its held participant checks end on closed transports after the initial deadline elapsed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P41, REQ-TJOIN-3-DCZKS6.T1.P17
 - `observer connect resolves true when chain genesis lands before any participant handshake`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P29, REQ-TJOIN-3-DCZKS6.T1.P7
-- `observer stays synced when the initial deadline elapses after chain genesis settled the wait`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P32
+- `observer cancels the initial deadline when chain genesis settles the wait and stays synced if it still runs`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P32
 - `observer ignores a stale false sync result once chain genesis already synced it`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P30, REQ-TJOIN-3-DCZKS6.T1.P8
 - `observer connect resolves false when the runtime aborts while the initial wait is armed`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P31
 - `observer connect resolves false when the runtime aborts during the discovery join`: UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P35

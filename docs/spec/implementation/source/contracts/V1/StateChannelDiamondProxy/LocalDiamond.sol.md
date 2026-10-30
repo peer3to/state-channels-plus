@@ -7,7 +7,6 @@
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
-  Partial: [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30) persistence gap.
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-LOCAL-DIAMOND-1-PJE47M
@@ -15,11 +14,11 @@
 Mirror replication
 
 - Setup: Replay event sequences incl. duplicates and the open event; apply inbound blocks again and out of height order
-- Oracle: Idempotent convergence with on-chain state; an inbound block is stored once and the inbound head with its deposit total never moves back; [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30) documented
+- Oracle: Idempotent convergence with on-chain state; an inbound block is stored once and the inbound head with its deposit total never moves back
 
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P1` — event replay convergence
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P2` — duplicate idempotence
-- [ ] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3` — onChannelOpened (documents [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30))
+- [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3` — replaying the open transaction's `InboundMessagesProcessed` and `ChannelOpened`, in either order, stores the genesis inbound block once and leaves the inbound head, its height and the deposit total at the genesis snapshot's values; `ChannelOpened` alone stores no inbound block
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P4` — `onInboundMessagesProcessed` with a block it already stores, the head block or an older one, is a no-op: no revert, the inbound head and its deposit total stay
 - [x] `UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P5` — `onInboundMessagesProcessed` with an older block after a newer one stores the older block; the inbound head and its deposit total stay at the newer block
 

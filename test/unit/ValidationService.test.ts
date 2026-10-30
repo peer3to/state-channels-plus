@@ -1163,12 +1163,10 @@ describe("Unit: ValidationService", function () {
             // gossip the block to the observer first
             await h.rpcStub.holdCalldataPostedEventsExceptLeader(leader.index);
 
-            await h
-                .control(leader)
-                .validation.postBlockCalldataOnChain(
-                    authored.encodedSignedBlock
-                )
-                .request();
+            await h.transition.postBlockCalldataOnChainWait(
+                leader,
+                authored.encodedSignedBlock
+            );
 
             await h
                 .control(observer)

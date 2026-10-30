@@ -79,7 +79,7 @@ signer it fails: the runtime aborts to `OPENED`.
 - `pending terminal leave rejects joinChannel`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P10
 - `pending terminal leave rejects topUpBalance`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P11
 - `pending terminal leave rejects collectJoinChannelConfirmation`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P12
-- `leave watchdog dispute that loses the evidence race keeps the leave waiting with no error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14, REQ-TJOIN-7-NNGTAY.T1.P10
+- `leave watchdog dispute that loses the evidence race keeps the leave waiting with no error`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14
 - `more than N plus one blocks before the leaver's exit start no self-removal dispute and the exit settles the leave`: REQ-TJOIN-7-NNGTAY.T1.P5, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P4
 - `pending participant keeps one leave operation through promotion and exit`: REQ-TJOIN-7-NNGTAY.T1.P4, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P3
 - `rejects invalid join input before changing lifecycle state`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P1, REQ-LOBBY-1-PZTPKD.T1.P3

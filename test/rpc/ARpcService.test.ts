@@ -1,4 +1,6 @@
 import { ARpcServiceFixture } from "@test/fixtures/ARpcServiceFixture";
+import { releaseHeldHandlerIntoDisposedResponder } from "@test/fixtures/DisposedResponderStaging";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 describe("ANetworkRpcService", function () {
@@ -334,5 +336,15 @@ describe("ANetworkRpcService", function () {
         expect(result.methodConstructions).to.equal(0);
         expect(result.responses).to.deep.equal([]);
         expect(result.unhandledRejections).to.deep.equal([]);
+    });
+});
+
+describe("ANetworkRpcService on a disposed runtime", function () {
+    it("a handler that ends after its runtime disposed answers nobody and logs nothing: its dispatch resolves", async function () {
+        expect(
+            await releaseHeldHandlerIntoDisposedResponder(
+                TestSession.getHarness()
+            )
+        ).to.deep.equal([]);
     });
 });

@@ -76,6 +76,7 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `spectator rejects an invalid envelope without executing or relaying it`: REQ-GOSSIP-3-HQZNQX.T1.P7
 - `spectator parks not-ready work without executing or relaying it`: REQ-GOSSIP-3-HQZNQX.T1.P8
 - `new participant gossip can precede another peer applying insertion`: REQ-GOSSIP-4-J5Z4DF.T1.P13
+- `a new joiner slow to answer the admission sync is not blacklisted and is admitted on a later block`: REQ-GOSSIP-4-J5Z4DF.T1.P47
 - `verified sync promotes an off-chain inserted spectator before chain membership changes`: REQ-SM-11-VVP01C.T1.P17
 - `spectators apply fresh and late confirmations without relaying and still serve sync`: REQ-GOSSIP-3-HQZNQX.T1.P4
 - `spectator becomes participant through an off-chain balance transfer`: REQ-GOSSIP-4-J5Z4DF.T1.P12

@@ -1,9 +1,11 @@
 // @spec-test-coverage-ignore: pinned sync staging exercised by explicit component and E2E declarations
 import StateSnapshot from "@/models/StateSnapshot";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { type SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { servedSyncPayload } from "@test/fixtures/SpectateResponseFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
@@ -39,7 +41,7 @@ export async function assertComputedSuccessorSync(
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     args.forkId
@@ -49,7 +51,7 @@ export async function assertComputedSuccessorSync(
                 forkId: requestSuccessor ? successor : sourceForkId
             }
         );
-        expect(accepted).to.equal(true);
+        expect(accepted).to.equal(SyncResult.Synced);
         expect(await h.control(observer).query.getForkId().request()).to.equal(
             successor
         );
@@ -147,7 +149,7 @@ export async function assertFailedSyncInstallPersistsNothing(
                 const stateBefore = String(await machine.getState());
                 let threw = "";
                 try {
-                    await sm.p2pManager.localRpc.spectateService.sync(
+                    await sm.p2pManager.localRpc.spectateService.requestSync(
                         args.source,
                         sm.channelId,
                         args.forkId
@@ -245,7 +247,7 @@ export async function assertQueuedSuccessorBlockSurvivesSyncInstall(
         const sync = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     args.forkId
@@ -299,7 +301,7 @@ export async function assertQueuedSuccessorBlockSurvivesSyncInstall(
         ).to.deep.equal({ forkId: sourceForkId, knownStale: false });
 
         await stub.releaseSyncInstall().request();
-        expect(await sync).to.equal(true);
+        expect(await sync).to.equal(SyncResult.Synced);
         await waitFor(
             async () =>
                 (await h
@@ -366,7 +368,7 @@ export async function assertPinnedHeight(
     const accepted = await h.execOnHost(
         requester,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.sync(
+            sm.p2pManager.localRpc.spectateService.requestSync(
                 args.source,
                 sm.channelId,
                 sm.forkId,
@@ -374,7 +376,7 @@ export async function assertPinnedHeight(
             ),
         { source: source.address, height: height + offset }
     );
-    expect(accepted).to.equal(offset <= 0);
+    expect(accepted === SyncResult.Synced).to.equal(offset <= 0);
     // The refused request is one strike on the requester's side, not a
     // verdict; the responder still blacklists a requester it cannot serve.
     expect(
@@ -453,7 +455,7 @@ export async function assertSyncWindowReadRace(
     const sync = h.execOnHost(
         observer,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.sync(
+            sm.p2pManager.localRpc.spectateService.requestSync(
                 args.source,
                 sm.channelId,
                 args.forkId
@@ -508,6 +510,9 @@ export async function assertSyncWindowReadRace(
                         await sm.p2pManager.remoteRpc.spectateService
                             .onSpectateRequest(request)
                             .request(args.source);
+                    if (!("encodedSyncPayload" in response)) {
+                        throw new Error("responder still syncing");
+                    }
                     return sm.p2pManager.localRpc.spectateService
                         .applySyncResponse(
                             args.source,
@@ -532,7 +537,7 @@ export async function assertSyncWindowReadRace(
             )
         ).to.equal(landOnChain);
         await h.control(observer).stub.releaseSyncWindowPersistence().request();
-        expect(await sync).to.equal(true);
+        expect(await sync).to.equal(SyncResult.Synced);
         expect(
             await h
                 .control(observer)
@@ -564,14 +569,14 @@ export async function assertConcurrentSyncWindowOverwrite(
     const first = h.execOnHost(
         observer,
         async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.sync(
+            sm.p2pManager.localRpc.spectateService.requestSync(
                 args.source,
                 sm.channelId,
                 args.forkId
             ),
         { source: sources[0].address, forkId: sourceForkId }
     );
-    let second: Promise<boolean> | undefined;
+    let second: Promise<SyncResult> | undefined;
     try {
         await waitFor(
             async () => (await stub.getSyncReductionEntered().request()) === 1
@@ -580,7 +585,7 @@ export async function assertConcurrentSyncWindowOverwrite(
         second = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     args.forkId
@@ -605,9 +610,9 @@ export async function assertConcurrentSyncWindowOverwrite(
             )
         ).to.equal(ZeroHash);
         await stub.releaseSyncReductionResult().request();
-        expect(await first).to.equal(true);
+        expect(await first).to.equal(SyncResult.Synced);
         await stub.releaseSyncWindowPersistence().request();
-        expect(await second).to.equal(true);
+        expect(await second).to.equal(SyncResult.Synced);
         for (const source of sources) {
             expect(
                 await h
@@ -651,7 +656,7 @@ export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
             { source: source.address, forkId: sourceForkId }
         );
         const payload = Codec.decode(
-            response.encodedSyncPayload,
+            servedSyncPayload(response),
             Type.SyncPayload
         );
         // Repeat a real proved window to exercise responder-sized input before rejection;
@@ -712,13 +717,13 @@ export async function assertConcurrentPinnedRequests(
         observer,
         (sm, args) =>
             Promise.all([
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     sm.forkId,
                     args.first
                 ),
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     sm.forkId,
@@ -743,9 +748,9 @@ export async function assertConcurrentPinnedRequests(
             1
         );
         await h.control(source).stub.releaseSpectateResponses().request();
-        expect(await pending).to.deep.equal(
-            mode === "failure" ? [false, false] : [true, true]
-        );
+        expect(
+            (await pending).map((result) => result === SyncResult.Synced)
+        ).to.deep.equal(mode === "failure" ? [false, false] : [true, true]);
         expect(await h.rpcStub.getSpectateRequestCount(source.index)).to.equal(
             mode === "higher" ? 2 : 1
         );
@@ -864,7 +869,7 @@ export async function assertTimeoutCheckWaitsForSyncInstall(
         const sync = h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId,
                     args.forkId
@@ -892,7 +897,7 @@ export async function assertTimeoutCheckWaitsForSyncInstall(
                 (await stub.getStateMutexWaiterCount().request()) > waiting
         );
         await stub.releaseSyncInstall().request();
-        expect(await sync).to.equal(true);
+        expect(await sync).to.equal(SyncResult.Synced);
         await check;
         expect(
             await h.control(observer).query.getForkId().request()
@@ -949,7 +954,7 @@ export async function applySyncPayload(
                 .request(args.source),
         { source: source.address, forkId: options.forkId }
     );
-    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    const payload = Codec.decode(servedSyncPayload(response), Type.SyncPayload);
     options.mutate?.(payload);
     await options.afterServe?.();
 

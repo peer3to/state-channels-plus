@@ -4,6 +4,7 @@ import { signBlockVariant } from "./QueueAdmissionFixture";
 import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { reduceWindowOnChain } from "@test/fixtures/PinnedSyncStaging";
 import { stageUnreducedWindowPayload } from "@test/fixtures/QueueDrainStaging";
@@ -212,8 +213,91 @@ export async function assertStoredMalformedNetworkCopy() {
     h.assert.dispute.noDisputes();
 }
 
+/**
+ * A spectator whose own initial sync is held at its application step stays
+ * OPENED and sends participant 0 a block. Participant 0's intake gate finds
+ * the sender absent and syncs from it; the spectator answers at once that it
+ * is still syncing, so intake ends with one counted close: no blacklist and
+ * no queued block.
+ */
+export async function assertSyncingAbsentSenderTakesOneStrike() {
+    const h = MathTestSession.getHarness();
+    await h.lifecycle.start(2, 1);
+    const observer = h.getPeer(0);
+    const spectator = await h.join.createSpectatorPeer();
+    const sync = await h.rpcStub.holdSpectateSyncApplication(spectator.index);
+    try {
+        await h.join.connectSpectator(spectator);
+        await waitFor(
+            async () => (await sync.entered()) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(await h.control(spectator).query.getStatus().request()).to.equal(
+            Status.OPENED
+        );
+        const block = await h.byzantine.craftUnbackedFutureBlockConfirmation(
+            1,
+            h.activeForkId!,
+            5
+        );
+        await h
+            .control(observer)
+            .stub.observeAdmission({ source: spectator.address })
+            .request();
+        await h
+            .control(spectator)
+            .byzantine.sendBlockConfirmation(
+                block.encodedBlockConfirmation,
+                observer.address
+            )
+            .request();
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(observer)
+                        .stub.getAdmissionObservation()
+                        .request()
+                ).completedIntakes === 1
+        );
+        const observation = await h
+            .control(observer)
+            .stub.getAdmissionObservation()
+            .request();
+        expect({
+            syncRequests: observation.syncRequests,
+            completedSyncs: observation.completedSyncs,
+            successfulSyncs: observation.successfulSyncs,
+            networkEntries: observation.networkEntries
+        }).to.deep.equal({
+            syncRequests: 1,
+            completedSyncs: 1,
+            successfulSyncs: 0,
+            networkEntries: 0
+        });
+        expect(
+            await h.control(observer).query.isBlockQueued(block.hash).request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(spectator.address)
+                .request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(observer)
+                .query.getStrikes(spectator.address)
+                .request()
+        ).to.equal(1);
+    } finally {
+        await h.control(observer).stub.restoreAdmissionObservation().request();
+        await sync.release();
+    }
+}
+
 export async function assertOutsiderProofDoesNotAdmitCopy(
-    mode: "success" | "busy" | "failure" = "success"
+    mode: "success" | "busy" | "failure" | "invalid" = "success"
 ) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
@@ -247,6 +331,10 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
         .control(observer)
         .stub.observeAdmission({ source: outsider.address })
         .request();
+    // the outsider answers with bytes that are no sync payload -> the sync
+    // itself rejects the sender's data
+    if (mode === "invalid")
+        await h.control(outsider).stub.stubSpectatePayload("0x1234").request();
     await h.control(outsider).stub.holdSpectateResponses().request();
     const ordinarySync =
         mode === "busy"
@@ -325,7 +413,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
                 ).completedIntakes === 1
         );
         if (ordinarySync) await ordinarySync;
-        if (mode === "success")
+        if (mode === "success" || mode === "invalid")
             expect(
                 (
                     await h
@@ -333,7 +421,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
                         .stub.getAdmissionObservation()
                         .request()
                 ).successfulSyncs
-            ).to.equal(1);
+            ).to.equal(mode === "success" ? 1 : 0);
         expect(
             await h
                 .control(observer)
@@ -344,12 +432,22 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
             (await h.control(observer).stub.getAdmissionObservation().request())
                 .networkEntries
         ).to.equal(0);
+        // a valid sync that leaves the sender absent is a verdict, and so is
+        // an invalid payload; a failed request is only the counted close the
+        // sync already made
         expect(
             await h
                 .control(observer)
                 .query.isBlacklisted(outsider.address)
                 .request()
-        ).to.equal(true);
+        ).to.equal(mode !== "failure");
+        if (mode === "failure")
+            expect(
+                await h
+                    .control(observer)
+                    .query.getStrikes(outsider.address)
+                    .request()
+            ).to.equal(1);
         expect(
             await h
                 .control(observer)
@@ -376,6 +474,11 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
     } finally {
         await h.control(outsider).stub.releaseSpectateResponses().request();
         await ordinarySync;
+        if (mode === "invalid")
+            await h
+                .control(outsider)
+                .stub.restoreSpectateStaleProof()
+                .request();
         await h.control(observer).stub.restoreAdmissionObservation().request();
     }
 }

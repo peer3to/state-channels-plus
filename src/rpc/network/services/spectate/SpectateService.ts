@@ -45,6 +45,32 @@ export interface SyncRequest {
 }
 
 /**
+ * The answer to a sync request: the encoded sync payload, or a note that the
+ * responder is still in its own initial sync and cannot prove a state yet.
+ */
+export type SpectateResponse =
+    | { encodedSyncPayload: Bytes }
+    | { isResponderSyncing: true };
+
+/** A malformed answer is no syncing note: the payload check rejects it. */
+function isResponderSyncingResponse(
+    response: SpectateResponse
+): response is { isResponderSyncing: true } {
+    return (
+        (response as { isResponderSyncing?: unknown } | null)
+            ?.isResponderSyncing === true
+    );
+}
+
+/** A sync request's result for its caller. */
+export enum SyncResult {
+    Synced,
+    Failed,
+    /** the responder is still in its own initial sync: no verdict on it */
+    ResponderSyncing
+}
+
+/**
  * An applied sync payload's result. `unsettledForkId`: the chain has not
  * reduced this fork's dispute window yet -> the sync failed with no verdict
  * and is provable once the chain has.
@@ -57,7 +83,12 @@ export interface SyncOutcome {
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        { request: SyncRequest; result: Promise<boolean> }
+        { request: SyncRequest; result: Promise<SyncResult> }
+    > = new Map();
+    // per peer: how many `syncBlockSource` callers wait for its answer
+    private readonly blockSourceWaitersByPeerAddress: Map<
+        ChecksumAddress,
+        number
     > = new Map();
     // aborted by `dispose`: every wait for a window's chain reduction ends
     private readonly disposal = new AbortController();
@@ -78,13 +109,51 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
-    public async sync(
+    /**
+     * `requestSync` of a block's source (intake and its source probes). A
+     * source that answers it is still in its own initial sync has no block
+     * to send: the answer is a failed request and takes a failed request's
+     * counted close, once per answer however many callers share it. An
+     * answer no block-source caller waits for gets no consequence.
+     */
+    public async syncBlockSource(
+        peerAddress: Address,
+        channelId: ChannelId,
+        forkId: ForkId,
+        blockHeight: number
+    ): Promise<boolean> {
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
+        const waiters = this.blockSourceWaitersByPeerAddress;
+        waiters.set(
+            normalizedPeerAddress,
+            (waiters.get(normalizedPeerAddress) ?? 0) + 1
+        );
+        try {
+            const result = await this.requestSync(
+                peerAddress,
+                channelId,
+                forkId,
+                blockHeight
+            );
+            return result === SyncResult.Synced;
+        } finally {
+            const remaining = waiters.get(normalizedPeerAddress)! - 1;
+            if (remaining === 0) waiters.delete(normalizedPeerAddress);
+            else waiters.set(normalizedPeerAddress, remaining);
+        }
+    }
+
+    public async requestSync(
         peerAddress: Address,
         channelId: ChannelId,
         forkId?: ForkId,
         blockHeight?: number,
-        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime * 1000
-    ): Promise<boolean> {
+        // Two agreement windows: a busy honest peer builds its proof in that time, and a
+        // timeout cuts the peer's connection.
+        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime *
+            2 *
+            1000
+    ): Promise<SyncResult> {
         const syncRequest: SyncRequest = {
             channelId,
             forkId,
@@ -107,8 +176,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     (request.blockHeight !== undefined &&
                         blockHeight !== undefined &&
                         request.blockHeight >= blockHeight));
-            const synced = await inFlight.result;
-            if (!synced || coversRequest) return synced;
+            const result = await inFlight.result;
+            if (result !== SyncResult.Synced || coversRequest) return result;
             inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
@@ -134,10 +203,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     private async runSync(
-        normalizedPeerAddress: string,
+        normalizedPeerAddress: ChecksumAddress,
         syncRequest: SyncRequest,
         timeoutMs: number
-    ): Promise<boolean> {
+    ): Promise<SyncResult> {
         let outcome = await this.requestAndApply(
             normalizedPeerAddress,
             syncRequest,
@@ -146,7 +215,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         // a window the chain has not reduced -> wait for its reduction, then
         // ask the same peer again. a pass names only a window the chain had
         // not reduced, which the next pass finds reduced
-        while (outcome.unsettledForkId !== undefined) {
+        while (
+            outcome !== SyncResult.ResponderSyncing &&
+            outcome.unsettledForkId !== undefined
+        ) {
             const reduced = await this.waitForChainReduction(
                 normalizedPeerAddress,
                 syncRequest.channelId,
@@ -159,15 +231,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 timeoutMs
             );
         }
-        return outcome.synced;
+        if (outcome === SyncResult.ResponderSyncing) return outcome;
+        return outcome.synced ? SyncResult.Synced : SyncResult.Failed;
     }
 
     private async requestAndApply(
-        normalizedPeerAddress: string,
+        normalizedPeerAddress: ChecksumAddress,
         syncRequest: SyncRequest,
         timeoutMs: number
-    ): Promise<SyncOutcome> {
-        let response: { encodedSyncPayload: Bytes };
+    ): Promise<SyncOutcome | SyncResult.ResponderSyncing> {
+        let response: SpectateResponse;
         try {
             response = await this.remoteRpc.spectateService
                 .onSpectateRequest(syncRequest)
@@ -184,6 +257,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 DisconnectPolicy.allowRetry()
             );
             return { synced: false };
+        }
+        if (isResponderSyncingResponse(response)) {
+            // not a failure: the peer has no state to prove yet. a block's
+            // source has no block to send either: see `syncBlockSource`
+            this.logger.debug("spectateSync - responder still syncing", {
+                peerAddress: normalizedPeerAddress
+            });
+            if (this.blockSourceWaitersByPeerAddress.has(normalizedPeerAddress))
+                this.p2pManager.disconnectConnection(
+                    normalizedPeerAddress,
+                    DisconnectPolicy.allowRetry()
+                );
+            return SyncResult.ResponderSyncing;
         }
         try {
             return await this.applySyncResponse(
@@ -259,7 +345,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     /**
      * Validate and apply a sync payload returned by `onSpectateRequest`. Was the
      * body of the old `onSpectateResponse` endpoint; the request now lives in
-     * `sync`'s closure, so the channel is taken from our own `syncRequest`
+     * `requestSync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return not synced. The caller
      * owns the lifecycle consequence of a failed sync. A disposed runtime
@@ -825,13 +911,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!currentWindowCommitments) {
                 // the window's disputes are on-chain but not locally readable
-                // yet, so we cannot prove the tip -> refuse to serve rather
-                // than serve a proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - dispute window unavailable",
-                    { channelId, forkId: currentForkId }
+                // yet, so we cannot prove the tip -> fail the request; our lag
+                // is no verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - dispute window unavailable for fork ${currentForkId}`
                 );
-                return undefined;
             }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -851,13 +935,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             if (!computation) {
                 // we cannot rebuild the run this window's reduce consumed, so we
-                // cannot prove the tip -> refuse to serve rather than serve a
-                // proof we could not build
-                this.logger.warn(
-                    "generateSyncPayload - reduce data unavailable for a disputed window",
-                    { channelId, forkId: currentForkId }
+                // cannot prove the tip -> fail the request; our lag is no
+                // verdict on the requester
+                throw new Error(
+                    `generateSyncPayload - reduce data unavailable for disputed fork ${currentForkId}`
                 );
-                return undefined;
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;
@@ -912,10 +994,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId) {
             // The requested fork isn't the tip we derive from our own reductions,
             // so we can't prove it. Return undefined → the caller cuts the
-            // requester and the requester cuts us (mutual). A sync requester only
-            // ever asks peers expected to prove the target - the block's own
-            // suppliers/author for the block's fork, or a participant for the
-            // latest - so a peer that can't prove it failed to cooperate.
+            // requester; the requester counts a close against us. A sync
+            // requester only ever asks peers expected to prove the target - the
+            // peers that sent the block, for the block's fork, or a
+            // participant for the latest - so a peer that can't prove it failed
+            // to cooperate.
             this.logger.debug(
                 `generateSyncPayload - requested fork ${forkId} is not the derived latest fork ${currentForkId}`
             );

@@ -51,8 +51,10 @@ no detached error.
 The lone-leaver case starts two founders. Founder 0 exits on its leave turn and its posted exit leaves founder 1
 alone; founder 1 then leaves without sending its exit, so its held leave watchdog starts the self-removal dispute,
 which is final at upload and whose reduced state has no participant. The oracles are the closed channel (no open
-flag, chain snapshot fork ID zero, no participants), one `onLeftChannel`, no `onAbort`, the leaver's `NOT_OPENED`
-status and no host error.
+flag, chain snapshot fork ID zero, no participants), the leaver reaching `NOT_OPENED`, then one `onLeftChannel`,
+no `onAbort` and no host error. The status is awaited, not read once: the leave check reports
+`onLeftChannel` when the membership drops, before the channel-close handler sets `NOT_OPENED`, and the
+specification does not order the two.
 
 ## Tests
 

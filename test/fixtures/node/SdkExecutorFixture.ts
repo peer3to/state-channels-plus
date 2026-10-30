@@ -5,6 +5,7 @@ import {
     stopRuntimeTransportModesFixture
 } from "../RuntimeTransportModesFixture";
 import { RootWorkerControl } from "./RootWorkerControl";
+import { RootCreationControl } from "../runtimeRpc/RootCreationControl";
 import { RuntimeRpcControl } from "../runtimeRpc/RuntimeRpcControl";
 import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import {
@@ -67,10 +68,15 @@ export function takeSdkExecutorErrors(executor: AContractExecutor): Error[] {
 
 const cleanups = new Set<() => Promise<void>>();
 
+/**
+ * A real runtime's executor. `beforeConfigure` runs once the host's Clock
+ * runs and its chain reads are done, before the executor gets its
+ * configuration (the executor itself starts with the host).
+ */
 export async function createSdkOwnedExecutor(
-    options: ContractExecutorFactoryOptions,
+    options: Omit<ContractExecutorFactoryOptions, "configuration">,
     dependencies: ScriptedExecutorOptions = {},
-    beforeCreate?: () => Promise<void>,
+    beforeConfigure?: () => Promise<void>,
     silenceScriptedReports = false,
     onRuntimeRoot?: (root: AInternalRpcRoot) => void
 ): Promise<AContractExecutor> {
@@ -98,7 +104,13 @@ export async function createSdkOwnedExecutor(
             hostContext: {
                 createContractExecutor: async (factoryOptions, owner) => {
                     options.logger?.attachLoggerService(owner.logger);
-                    await beforeCreate?.();
+                    // The executor is the host's first child; its handler is in place
+                    // before it starts, so its earliest detached error is a report too.
+                    if (dependencies.onDetachedError)
+                        RootCreationControl.reportNextChildErrors(
+                            owner,
+                            dependencies.onDetachedError
+                        );
                     executor = await RootWorkerControl.run(
                         "vm",
                         dependencies,
@@ -106,19 +118,19 @@ export async function createSdkOwnedExecutor(
                             createContractExecutor(
                                 {
                                     ...factoryOptions,
+                                    configuration:
+                                        factoryOptions.configuration.then(
+                                            async (configuration) => {
+                                                await beforeConfigure?.();
+                                                return configuration;
+                                            }
+                                        ),
                                     logger:
                                         options.logger ?? factoryOptions.logger
                                 },
                                 owner
                             )
                     );
-                    if (dependencies.onDetachedError) {
-                        const child = [...owner.children].at(-1);
-                        child?.onError((error) => {
-                            if (child.isClosed) owner.reportError(error);
-                            else dependencies.onDetachedError?.(error);
-                        });
-                    }
                     owners.set(executor, owner);
                     return executor;
                 }
@@ -151,7 +163,7 @@ export async function disposeSdkExecutorFixtures(): Promise<void> {
 
 /** Keep synthetic watchdog output out of the runner's real starvation classifier. */
 export function createSdkOwnedScriptedExecutor(
-    options: ContractExecutorFactoryOptions,
+    options: Omit<ContractExecutorFactoryOptions, "configuration">,
     dependencies: ScriptedExecutorOptions
 ) {
     return createSdkOwnedExecutor(options, dependencies, undefined, true);

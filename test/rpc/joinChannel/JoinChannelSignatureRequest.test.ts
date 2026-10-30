@@ -1,12 +1,14 @@
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
-import { Codec, SignatureUtils, sleep, Type } from "@/utils";
+import { Codec, getChecksumAddress, SignatureUtils, Type } from "@/utils";
 import { DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS } from "@/utils/config";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { prepareFirstJoinDeadline } from "@test/fixtures/JoinDeadlineStaging";
 import { collectAcrossSnapshotMove } from "@test/fixtures/JoinPinRaceStaging";
+import { remoteThresholdPeerIndices } from "@test/fixtures/JoinSnapshotRetryStaging";
 import { assertJoinSignatureDeadlineBoundary } from "@test/fixtures/node/JoinSignatureDeadlineStaging";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -219,8 +221,119 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
-    it("accepts the exact responder deadline and rejects one second past it on an owned chain", async function () {
+    it("accepts the exact responder deadline and rejects one second past it on the responder's local clock", async function () {
         await assertJoinSignatureDeadlineBoundary(TestSession.getHarness());
+    });
+
+    it("collects every countersignature while a threshold member's chain RPC holds every read: the member answers from its local clock and mirror", async function () {
+        const h = TestSession.getHarness();
+        const heldIndex = 1;
+        await h.lifecycle.start(2, 0, {
+            rpcNodeProxiesByPeer: { [heldIndex]: 1 }
+        });
+        const joiner = await h.join.addSpectatorWait();
+        await h.assert.sync.peersInSyncWait();
+        const thresholdSet = await h
+            .control(h.getPeer(0))
+            .query.getOnChainThresholdSet()
+            .request();
+        const [proxy] = h.getRpcNodeProxies(heldIndex);
+        const releases = ["eth_call", "eth_getBlockByNumber"].map((method) =>
+            proxy.holdRequests(method)
+        );
+        try {
+            const chainTime = await Clock.getBlockchainTime();
+            const prepared =
+                await joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
+                    {
+                        participant: joiner.address,
+                        channelId: h.channelId,
+                        balance: { amount: 500n, data: "0x00" },
+                        deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+                    }
+                );
+            const encodedJoinChannel = String(
+                prepared.confirmation.signedJoinChannel.encodedJoinChannel
+            );
+            expect(
+                prepared.confirmation.signatures.map((signature) =>
+                    SignatureUtils.getSignerAddress(
+                        encodedJoinChannel,
+                        String(signature)
+                    )
+                )
+            ).to.have.deep.members(thresholdSet);
+        } finally {
+            for (const release of releases) release();
+        }
+    });
+
+    it("signs for a threshold member whose mirror misses its own pending join: the chain lists it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const member = await h.join.addSpectatorWait();
+        const joiner = await h.join.addSpectatorWait();
+        await h.assert.sync.peersInSyncWait();
+        const held = await h.mirror.holdUpdates(
+            member.index,
+            "onInboundMessagesProcessed"
+        );
+        try {
+            await h.join.forceInboundJoinWait({ participant: member.address });
+            // the member's mirror missed its join
+            await waitFor(async () => (await held.heldCount()) > 0);
+            const listing = await h.execOnHost(
+                h.getPeer(member.index),
+                async (sm) => ({
+                    mirror: (
+                        await sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
+                            sm.channelId
+                        )
+                    ).map(String),
+                    chain: await sm.membershipService.getOnChainThresholdSet()
+                })
+            );
+            expect(listing.mirror).to.not.include(member.address);
+            expect(listing.chain).to.include(member.address);
+
+            const chainTime = await Clock.getBlockchainTime();
+            const signed = await SignatureUtils.signJoinChannel(
+                {
+                    participant: joiner.address,
+                    channelId: h.channelId,
+                    balance: { amount: 500n, data: "0x00" },
+                    deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+                },
+                joiner.signer
+            );
+            const response = await h.execOnHost(
+                h.getPeer(joiner.index),
+                async (sm, args) =>
+                    sm.p2pManager.remoteRpc.joinChannelService
+                        .requestJoinSignature(args.encodedRequest)
+                        .request(args.member),
+                {
+                    member: member.address,
+                    encodedRequest: String(
+                        Codec.encode(
+                            {
+                                encodedJoinChannel: String(signed.encoded),
+                                signature: String(signed.signature)
+                            },
+                            Type.SignedJoinChannel
+                        )
+                    )
+                }
+            );
+            expect(
+                SignatureUtils.getSignerAddress(
+                    String(signed.encoded),
+                    String(response.signature)
+                )
+            ).to.equal(member.address);
+        } finally {
+            await held.release();
+        }
     });
 
     it("validates requests, signs exact joins, and waits through reachability grace for a missing threshold transport", async function () {
@@ -510,8 +623,9 @@ describe("JoinChannel signature requests", function () {
             ),
             (error: Error) => {
                 // the error names the threshold member that never connected
+                expect(error.name).to.equal("JoinCollectionError");
                 expect(error.message).to.equal(
-                    `collectJoinChannelConfirmation: threshold participant unavailable: ${unreachable}`
+                    `collectJoinChannelConfirmation: collection failed: ${getChecksumAddress(unreachable)} (unreachable: no transport after the reachability grace)`
                 );
                 return true;
             }
@@ -689,7 +803,10 @@ describe("JoinChannel signature requests", function () {
             joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 joinChannel
             ),
-            /stubbed join-signature failure/
+            {
+                name: "JoinCollectionError",
+                message: `collectJoinChannelConfirmation: collection failed: ${responder.address} (no-answer: stubbed join-signature failure)`
+            }
         );
         await h
             .control(responder)
@@ -704,37 +821,150 @@ describe("JoinChannel signature requests", function () {
             joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 joinChannel
             ),
-            new RegExp(`invalid signature from ${responder.address}`)
+            {
+                name: "JoinCollectionError",
+                message: `collectJoinChannelConfirmation: collection failed: ${responder.address} (wrong-signer: signed by ${joiner.address})`
+            }
         );
-        await h
-            .control(responder)
-            .stub.restoreJoinSignatureRequests()
-            .request();
 
-        await h
-            .control(responder)
-            .stub.stubDelayJoinSignatureResponses(1500)
-            .request();
-        const shortWindowTime = await Clock.getBlockchainTime();
-        const startedAt = Date.now();
+        // every failed member is named, not only the first
+        const other = h.getPeer(1);
+        await h.control(other).stub.stubFailJoinSignatureRequests().request();
         await assert.rejects(
-            joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation({
-                ...joinChannel,
-                deadlineTimestamp: BigInt(shortWindowTime.timestamp + 1)
-            })
+            joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
+                joinChannel
+            ),
+            {
+                name: "JoinCollectionError",
+                message: `collectJoinChannelConfirmation: collection failed: ${responder.address} (wrong-signer: signed by ${joiner.address}), ${other.address} (no-answer: stubbed join-signature failure)`
+            }
         );
-        expect(Date.now() - startedAt).to.be.lessThan(2800);
-        await sleep(700);
-        await h
-            .control(responder)
-            .stub.restoreJoinSignatureRequests()
-            .request();
+        for (const member of [responder, other]) {
+            await h
+                .control(member)
+                .stub.restoreJoinSignatureRequests()
+                .request();
+        }
+
+        await h.control(responder).stub.holdJoinSignatureResponses().request();
+        try {
+            const shortWindowTime = await Clock.getBlockchainTime();
+            const startedAt = Date.now();
+            await assert.rejects(
+                joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation({
+                    ...joinChannel,
+                    deadlineTimestamp: BigInt(shortWindowTime.timestamp + 1)
+                })
+            );
+            expect(Date.now() - startedAt).to.be.lessThan(2800);
+        } finally {
+            await h
+                .control(responder)
+                .stub.releaseJoinSignatureResponses()
+                .request();
+        }
 
         expect(await h.control(joiner).query.getStatus().request()).to.equal(
             Status.SYNCED
         );
         expect(await readTrackedJoin(h, h.getPeer(joiner.index))).to.equal(
             null
+        );
+    });
+
+    it("a connect's join with one silent threshold member returns false: the joiner aborts and disposes, and submits nothing", async function () {
+        const h = TestSession.getHarness();
+        const joiner = await h.scenario.syncSpectator();
+        const [silentIndex] = await remoteThresholdPeerIndices(h, joiner.index);
+        const silent = h.getPeer(silentIndex);
+        // the member answers only after the joiner's request deadline
+        await h.control(silent).stub.holdJoinSignatureResponses().request();
+        const nonceBefore = await h.provider.getTransactionCount(
+            joiner.address
+        );
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.connectToChannel(
+                    h.channelId!,
+                    { shouldJoin: true }
+                )
+            ).to.equal(false);
+            await waitFor(
+                async () => joiner.eventSpies.onAbort?.called === true,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(joiner.eventSpies.onAbort?.callCount).to.equal(1);
+            await waitFor(() => runtimeIsClosed(joiner.p2pInstance));
+            expect(
+                await h.provider.getTransactionCount(joiner.address)
+            ).to.equal(nonceBefore);
+            expect(
+                await h.channelManager.getPendingParticipants(h.channelId)
+            ).to.not.include(joiner.address);
+        } finally {
+            await h
+                .control(silent)
+                .stub.releaseJoinSignatureResponses()
+                .request();
+        }
+    });
+
+    it("a committed member's top-up through connect with one silent threshold member returns false: it keeps its status and submits nothing", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.syncSpectator();
+        const participant = h.getPeer(0);
+        const [silentIndex] = await remoteThresholdPeerIndices(
+            h,
+            participant.index
+        );
+        const silent = h.getPeer(silentIndex);
+        await h.control(silent).stub.holdJoinSignatureResponses().request();
+        const nonceBefore = await h.provider.getTransactionCount(
+            participant.address
+        );
+        try {
+            expect(
+                await participant.p2pInstance.p2pSigner.connectToChannel(
+                    h.channelId!,
+                    { shouldJoin: true, balance: { amount: 5, data: "0x" } }
+                )
+            ).to.equal(false);
+            expect(
+                await h.control(participant).query.getStatus().request()
+            ).to.equal(Status.PARTICIPATING);
+            expect(participant.eventSpies.onAbort?.called ?? false).to.equal(
+                false
+            );
+            expect(
+                await h.provider.getTransactionCount(participant.address)
+            ).to.equal(nonceBefore);
+        } finally {
+            await h
+                .control(silent)
+                .stub.releaseJoinSignatureResponses()
+                .request();
+        }
+    });
+
+    it("a connect's join whose threshold set read fails rejects: the failure is not a collection failure, so the joiner neither aborts nor submits", async function () {
+        const h = TestSession.getHarness();
+        const joiner = await h.scenario.syncSpectator();
+        await h.control(joiner).stub.failNextJoinThresholdRead().request();
+        const nonceBefore = await h.provider.getTransactionCount(
+            joiner.address
+        );
+        await assert.rejects(
+            joiner.p2pInstance.p2pSigner.connectToChannel(h.channelId!, {
+                shouldJoin: true
+            }),
+            /stubbed threshold set read failure/
+        );
+        expect(joiner.eventSpies.onAbort?.called ?? false).to.equal(false);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.SYNCED
+        );
+        expect(await h.provider.getTransactionCount(joiner.address)).to.equal(
+            nonceBefore
         );
     });
 });

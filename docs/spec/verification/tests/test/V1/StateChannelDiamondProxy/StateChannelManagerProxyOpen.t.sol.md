@@ -53,9 +53,8 @@ deadline check.
 
 The duplicate-participant, successful-join-count and deadline gates are exercised here. The other `open()`
 gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
-[OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md), and the
-`DEF-1-92NTAG` length and zero-address gaps
-remain open there.
+[OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md). The
+`DEF-1-92NTAG` short-balances and zero-address reverts are planned but not yet tested.
 
 ## Tests
 

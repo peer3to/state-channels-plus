@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared staging for the bot-connection fix unit cases (lobby discovery, leave settlement, join bounds, latest spectate)
 import Clock from "@/Clock";
 import type StateSnapshot from "@/models/StateSnapshot";
+import { SyncResult } from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import type { HarnessOptions } from "@test/harness/core/types";
@@ -707,7 +708,7 @@ async function requestLatestFrom(
     requester: HarnessPeer,
     responderAddress: string
 ): Promise<{ refusal: string; synced: boolean }> {
-    return await h.execOnHost(
+    const { refusal, result } = await h.execOnHost(
         requester,
         async (sm, { source }) => {
             let refusal = "";
@@ -719,15 +720,17 @@ async function requestLatestFrom(
                 refusal =
                     error instanceof Error ? error.message : String(error);
             }
-            const synced = await sm.p2pManager.localRpc.spectateService.sync(
-                source,
-                sm.channelId
-            );
-            return { refusal, synced };
+            const result =
+                await sm.p2pManager.localRpc.spectateService.requestSync(
+                    source,
+                    sm.channelId
+                );
+            return { refusal, result };
         },
         { source: responderAddress },
         { timeoutMs: h.event.hostExecTimeoutMs() }
     );
+    return { refusal, synced: result === SyncResult.Synced };
 }
 
 /**
@@ -850,10 +853,10 @@ export async function latestSyncFromResponderBehindDerivedFork(
             .control(source)
             .query.getForkId()
             .request();
-        const accepted = await h.execOnHost(
+        const result = await h.execOnHost(
             observer,
             async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.sync(
+                sm.p2pManager.localRpc.spectateService.requestSync(
                     args.source,
                     sm.channelId
                 ),
@@ -863,7 +866,7 @@ export async function latestSyncFromResponderBehindDerivedFork(
             sourceForkId,
             responderOwnFork,
             successor,
-            accepted,
+            accepted: result === SyncResult.Synced,
             observerForkId: await h
                 .control(observer)
                 .query.getForkId()

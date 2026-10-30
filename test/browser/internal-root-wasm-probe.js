@@ -49,11 +49,16 @@ WebAssembly.Memory.prototype = NativeMemory.prototype;
 self.onmessage = async ({ data: entry }) => {
     try {
         // Sources under the gate's browser aliases: the gate never builds dist.
-        // The relay module is the control: the index reaches the relay through it.
-        const exports =
-            entry === "relay"
-                ? await import("../../src/HolepunchRelay.ts")
-                : await import("../../src/internalRoot.ts");
+        // The relay is the control: importing it creates no WASM, loading its
+        // modules (its first connection) does.
+        if (entry === "relay") {
+            const relay = await import("../../src/HolepunchRelay.ts");
+            const importMemories = memoryCount;
+            await relay.loadRelayModules();
+            self.postMessage({ importMemories, memories: memoryCount });
+            return;
+        }
+        const exports = await import("../../src/internalRoot.ts");
         self.postMessage({
             instances: instanceCount,
             memories: memoryCount,

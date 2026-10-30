@@ -228,7 +228,7 @@ export function canonicalBlockCorpus() {
         ...base,
         transaction: {
             header: base.transaction.header,
-            body: { encodedData: "0x123456", data: "0xab" }
+            body: { data: "0x123456" }
         },
         messageBlocks: [codecValues.messageBlock()]
     };

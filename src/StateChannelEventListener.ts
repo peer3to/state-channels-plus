@@ -169,7 +169,7 @@ class StateChannelEventListener {
     async stop(): Promise<void> {
         this.disposed = true;
         this.generation += 1;
-        await this.eventSyncService.waitForScheduled(
+        await this.eventSyncService.stop(
             StateChannelEventListener.DISPOSE_TIMEOUT_MS
         );
     }

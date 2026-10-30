@@ -12,6 +12,12 @@ import { ethers, Signer, TransactionResponse } from "ethers";
 class LocalContractExecutorSigner implements Signer {
     signer: Signer;
     provider: ethers.Provider | null;
+    /**
+     * Local transactions sent so far: this signer's nonce. The chain account's
+     * nonce has no meaning for the local EVM, and reading it cost one chain
+     * round trip per local deploy and call.
+     */
+    private sentTransactionCount = 0;
 
     constructor(
         signer: Signer,
@@ -30,7 +36,7 @@ class LocalContractExecutorSigner implements Signer {
     }
 
     getNonce(): Promise<number> {
-        return this.signer.getNonce();
+        return Promise.resolve(this.sentTransactionCount);
     }
 
     populateCall(
@@ -101,7 +107,7 @@ class LocalContractExecutorSigner implements Signer {
                 value: tx.value || BigInt(0),
                 gasLimit: tx.gasLimit || BigInt(0),
                 gasPrice: tx.gasPrice || BigInt(0),
-                nonce: await this.getNonce(),
+                nonce: this.sentTransactionCount++,
                 chainId: tx.chainId || BigInt(0),
                 type: 0,
                 maxFeePerGas: null,

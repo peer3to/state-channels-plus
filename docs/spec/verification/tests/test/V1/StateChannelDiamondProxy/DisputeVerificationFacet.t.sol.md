@@ -28,8 +28,10 @@ author-not-participant proof family with coordinate-bound snapshots; a full wron
 (break index, running hash, reason code) up to the decoded revert payload; the two
 `reduceOutputToSnapshotData` snapshot-linkage gates (genesis fork hash, block-to-snapshot
 hash) with both compared values in the revert; a kill attempt on a dispute the window
-never committed; the two commitment-set gates, where a substituted dispute at equal length and
-an extra dispute beyond the committed set are each matched against both commitment hash arrays
+never committed; the commitment-set gates, where a substituted dispute at equal length, the
+committed set plus an extra dispute and a committed set missing one of its two disputes are each
+rejected by `reduceAndFinalize`, and an extra dispute beyond the committed set by
+`challengeDisputeReduction`, each matched against both commitment hash arrays
 hand-computed from the disputes the test built rather than from the helper under test; the
 on-chain-slash-subset proof, where a strict subset in a different order is matched against both
 address arrays so equal-count ambiguity cannot hide the omitted slash; and a refused inbound
@@ -122,7 +124,9 @@ bytes. A state the state machine cannot decode reverts with empty data, which st
 - `test_reduceOutputToSnapshotData_genesisSnapshotDataNotLinkedToFork_revertsCarryingBothForkIds`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P19
 - `test_reduceOutputToSnapshotData_latestBlockNotLinkedToSnapshot_revertsCarryingBothSnapshotHashes`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P20
 - `test_killDispute_disputeNotInWindowCommitments_revertsCarryingCommitment`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P21
-- `test_reduceAndFinalize_uncommittedDisputeRevertsCarryingBothCommitmentSets`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P23
+- `test_reduceAndFinalize_uncommittedDisputeRevertsCarryingBothCommitmentSets`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P23, INV-ENFDIS-1-1K65DT.T1.P6
+- `test_reduceAndFinalize_committedSetPlusExtraDisputeRevertsCarryingBothCommitmentSets`: INV-ENFDIS-1-1K65DT.T1.P2, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P29
+- `test_reduceAndFinalize_committedSetMissingOneDisputeRevertsCarryingBothCommitmentSets`: INV-ENFDIS-1-1K65DT.T1.P5, UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P30
 - `test_challengeDisputeReduction_extraSubmittedDisputeRevertsCarryingBothCommitmentSets`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P24
 - `test_handleDisputeOnChainSlashesNotSubset_listedSlashesAreSubsetRevertsCarryingBothSlashSets`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P23
 - `test_computeDisputeOutputState_unsupportedInboundMessageRevertsCarryingSeedStateHash`: UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3.P25

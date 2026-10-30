@@ -1078,12 +1078,11 @@ export class MathScenarioActions extends ScenarioActions {
             // leave the parent's p2p window before posting, so its real post time
             // is strictly later than its own timestamp
             await sleep((options.timeConfig.p2pTime + 2) * 1000);
-            const { onChainTimestamp: parentPostTimestamp } = await h
-                .control(parentAuthor)
-                .validation.postBlockCalldataOnChain(
+            const { onChainTimestamp: parentPostTimestamp } =
+                await h.transition.postBlockCalldataOnChainWait(
+                    parentAuthor,
                     previous.encodedSignedBlock
-                )
-                .request();
+                );
             if (parentPostTimestamp <= previous.timestamp) {
                 throw new Error(
                     `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`

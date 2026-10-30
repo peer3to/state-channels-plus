@@ -11,6 +11,8 @@
 - [`REQ-BLOCK-PIPE-9-QA66GT` (Dead-fork containment)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
+  Contradicts: `ingestBlockConfirmation`'s catch swallows local faults (logs, drops the copy, returns the accepting verdict) instead of failing, though this requirement's refresh failure is fatal and sdk.md requires unexpected errors to surface — accepted under the loose-policy decision (engineer, 2026-10-16): local intake failures are tolerated and nobody is blacklisted for them; the general rate limit is the spam bound, [`FIND-RUNTIME-2-4B0D0Q`](../../../../../audit/open-findings.md#find-runtime-2-4b0d0q)
+- [`REQ-GOSSIP-2-9PMMNH` (Verdict-mapped consequences)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
@@ -47,7 +49,7 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P25` — forged author is rejected before sender refresh or retention
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28` — a failed unknown copy preserves the existing honest contribution
 - [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P32` — clear a disputed gossip queue while an audit replay is held; replay persists the snapshot and reduction completes
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34` — sync with no sender transport ends intake without queueing the block
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34` — sync with no sender transport ends intake with the sync's counted close, no blacklist, without queueing the block
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36` — sync succeeds but the sender is still absent: blacklisted with no queue entry
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37` — stopping the manager clears a future queued block and cancels its timeout
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38` — a queued entry that merged a gossip copy with the chain-committed copy is executed in the chain-committed context: the gossip source is cut and the chain-only consequence still runs
@@ -55,14 +57,22 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P40` — a network copy whose author signature is each contract-rejected encoding of the author's real signature (compact 64-byte, `v` of 0/1, EIP-155 `v`, high `s`, zero `r`, zero `s`, `r` at the group order, 66 bytes, 63 bytes, empty) is refused at intake with `keepConnection` false and the block is not stored; the same bytes with the canonical signature are then committed and countersigned by the observer
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P41` — After an older valid sync and future gossip, a queue-timeout probe installs a newer compact proof that omits the probed block, keeps every honest source unblacklisted, and allows later progress
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P42` — a source probe held at its sync when `stop()` starts: `stop()` stays pending while the probe is held and resolves only after the probe settled; no detached failure is reported
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43` — a queue timeout that fires after `stop()` set `isDisposed` (stop held at the custom RPC disposal) starts no source probe: zero `sync` calls
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P43` — a queue timeout that fires after `stop()` set `isDisposed` (stop held at the custom RPC disposal) starts no source probe: zero `syncBlockSource` calls
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P44` — two source probes in flight when `stop()` starts and one rejects: `stop()` stays pending with the other probe still tracked and the timeout manager alive; after that probe settles the queue and the recovery state are cleared and `stop()` rejects with the first failure
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P45` — a fork recovery held in flight when `stop()` starts: `stop()` stays pending with the recovery scheduled and the timeout manager alive; after release nothing stays in flight, the recovery state is cleared and the timeout manager is disposed
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P46` — a fork recovery scheduled after `stop()` began, or whose scheduled run fires after it began, never runs: nothing enters recovery and nothing stays in flight
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P47` — a drain that dequeues a queued copy of a block a sync already stored still drains the queued next block, with no queue timeout armed
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P48` — a network copy of a genuine block at an empty height below the next height is dropped at intake: not queued, stored or executed, no `sync` call, no cut source, no fraud proof
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P48` — a network copy of a genuine block at an empty height below the next height is dropped at intake: not queued, stored or executed, no `syncBlockSource` call, no cut source, no fraud proof
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P49` — a network copy of a stored block below the next height carrying signatures the stored block lacks is still merged
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P50` — a live entry at an empty height below the next height that reaches `onBlockConfirmation` is settled as past before validation: no deviation hook, restore, disconnect or dispute
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P51` — a dispute-replay entry at an empty height below the next height is not past: validation reaches the dispute strategy's linkage guard
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P52` — a queued entry whose height a compact sync left empty below the next height is dropped at queue expiry: no queued execution, no `sync` call, no queue entry or stored block, no cut source, no fraud proof
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P52` — a queued entry whose height a compact sync left empty below the next height is dropped at queue expiry: no queued execution, no `syncBlockSource` call, no queue entry or stored block, no cut source, no fraud proof
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P53` — a dequeued entry handed to `restoreQueuedEntry` after a compact sync left its height empty below the next height is settled as past: processed, not queued again, no new queue timeout
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P54` — a disputed-fork check failure inside intake is never a rejecting verdict for network or calldata origins; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P55` — a kill-period read failure inside intake is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P56` — an eligibility-refresh failure inside intake is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P57` — an intake-gate sync application failure is never a rejecting verdict; the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P58` — an intake-gate sync whose request fails: the sync's counted close only, the sender is not blacklisted and the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59` — an intake-gate sync whose payload fails validation: the sync blacklists the sender and the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P60` — an absent sender still in its own initial sync answers the intake-gate sync that it is still syncing: one sync request, one counted close, the sender is not blacklisted and the copy is not queued
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P61` — a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist

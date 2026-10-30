@@ -27,10 +27,10 @@ describe("E2E: Gas Usage", function () {
         const author = h.peers.find((peer) => peer.address === block!.author)!;
         expect(author, "block 0 author must be a peer").to.not.be.undefined;
 
-        await h
-            .control(author)
-            .validation.postBlockCalldataOnChain(block!.encodedSignedBlock)
-            .request();
+        await h.transition.postBlockCalldataOnChainWait(
+            author,
+            block!.encodedSignedBlock
+        );
 
         // the shipped public read, across the chain-signer port
         const gasUsage = await author.p2pInstance.getGasUsageTable();

@@ -11,6 +11,7 @@ import { AContractExecutor } from "@/evm/contractExecutor";
 import { localEvmCallGasLimit } from "@/evm/contractExecutor/ContractExecutor";
 import {
     createContractExecutor,
+    type ContractExecutorFactoryConfiguration,
     type ContractExecutorFactoryOptions
 } from "@/evm/contractExecutor/createContractExecutor";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
@@ -40,6 +41,7 @@ import { config, createConfig, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { StepTimer } from "@/utils/StepTimer";
 import { reportRootStartupTiming } from "@platform/rootWorkerRuntime";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import { ethers, type InterfaceAbi } from "ethers";
@@ -200,79 +202,52 @@ export class P2pRuntimeHostRoot<
         const payload = this.payload;
         const ctx = this.context;
         const { threadLabel } = ctx;
-        // Provider creation happens before the rest of the runtime graph exists,
-        // but its failure must still settle the paired client's `ready` promise.
-        this.chainContext = await createRuntimeChainContext(
-            payload.config,
-            payload.signerSecret,
-            this.rootLogger
-        );
-        const { signer } = this.chainContext;
-        const signerAddress = (this.signerAddress = await signer.getAddress());
         const logger = this.rootLogger;
-        logger.updateSharedContext({
-            peerId: payload.peerId,
-            peerAddress: signerAddress
-        });
-
-        // Own this account's nonce so the peer's concurrent async flows can't collide
-        // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
-        // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
-        // the read-only Clock stay on the raw signer.
-        const chainSigner = (this.managedSigner = new HostNonceManager(
-            signer,
-            logger
-        ));
-
-        const scmContract = connectStateChannelManager(
-            payload.scm.address,
-            chainSigner,
-            JSON.parse(payload.scm.abiJson) as InterfaceAbi
+        // Where a slow start goes; the setup's own bound counts all of it.
+        const steps = new StepTimer(
+            () => this.chainContext?.provider.requestCount ?? 0
         );
-        this.stateMachineContract = new ethers.Contract(
-            payload.stateMachine.address,
-            JSON.parse(payload.stateMachine.abiJson),
-            signer
+        // The executor starts first and builds its EVM while this root connects
+        // and reads the chain; the chain reads' configuration reaches it after.
+        let configure!: (
+            configuration: ContractExecutorFactoryConfiguration
+        ) => void;
+        let failConfiguration!: (error: unknown) => void;
+        const configuration = new Promise<ContractExecutorFactoryConfiguration>(
+            (resolve, reject) => {
+                configure = resolve;
+                failConfiguration = reject;
+            }
         );
-
-        // Sync clock to DLT.
-        await Clock.init(signer.provider!);
-
-        // Connect the managed signer to the state channel manager contract so every
-        // on-chain SCM send draws its nonce from the owned counter.
-        let connectedScmContract = scmContract;
-        if (payload.config.DEBUG_CHANNEL_CONTRACT) {
-            connectedScmContract = DebugProxy.createProxy(connectedScmContract);
+        // A detached error inside the contract-executor worker is reported the
+        // way the sdk worker's own detached errors are: one host error report, and the
+        // executor keeps serving.
+        const executorCreation = (
+            ctx.createContractExecutor ?? createContractExecutor
+        )(
+            {
+                dedicatedThread: payload.config.VM_DEDICATED_THREAD,
+                customPrecompiles: payload.customPrecompiles,
+                configuration,
+                logger: payload.config.VM_DEDICATED_THREAD
+                    ? undefined
+                    : logger.child({ component: "ContractExecutor" })
+            },
+            this
+        );
+        // Awaited below; a start that fails first leaves it to this root's
+        // disposal. The factory may still be starting the executor when the
+        // configuration fails, so that failure is handled here too.
+        executorCreation.catch(() => undefined);
+        configuration.catch(() => undefined);
+        try {
+            configure({ callGasLimit: await this.readChain(steps) });
+        } catch (error) {
+            failConfiguration(error);
+            throw error;
         }
-
-        // Resolve time configuration from the SCM proxy.
-        const configTimes = await connectedScmContract.getAllTimes();
-        const timeConfig: TimeConfig = (this.timeConfig = {
-            p2pTime: Number(configTimes[0]),
-            agreementTime: Number(configTimes[1]),
-            chainFallbackTime: Number(configTimes[2]),
-            evidenceTime: Number(configTimes[3])
-        });
-        const [disputeExecutionGasLimit, stateTransitionReplayGas] =
-            await Promise.all([
-                connectedScmContract.getGasLimit(),
-                connectedScmContract.getStateTransitionReplayGas()
-            ]);
-        this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
-        this.maxChannelParticipants = Number(
-            await connectedScmContract.getMaxChannelParticipants()
-        );
-        if (
-            !Number.isSafeInteger(this.maxChannelParticipants) ||
-            this.maxChannelParticipants < 1
-        ) {
-            throw new Error(
-                "Deployed maximum participant count is not a positive safe integer"
-            );
-        }
-        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
-
-        this.connectedScmContract = connectedScmContract;
+        const { signer } = this.chainContext!;
+        const chainSigner = this.managedSigner!;
         this.chainSigner = new ChainSignerService(this.router, chainSigner);
         this.deploySigner = new DeploySignerService(
             this.router,
@@ -291,25 +266,8 @@ export class P2pRuntimeHostRoot<
             (local, diamond) => this.buildRuntime(local, diamond),
             logger
         );
-        // A detached error inside the contract-executor worker is reported the
-        // way the sdk worker's own detached errors are: one host error report, and the
-        // executor keeps serving.
-        this.contractExecutor = await (
-            ctx.createContractExecutor ?? createContractExecutor
-        )(
-            {
-                dedicatedThread: payload.config.VM_DEDICATED_THREAD,
-                customPrecompiles: payload.customPrecompiles,
-                callGasLimit: localEvmCallGasLimit(
-                    disputeExecutionGasLimit,
-                    stateTransitionReplayGas
-                ),
-                logger: payload.config.VM_DEDICATED_THREAD
-                    ? undefined
-                    : logger.child({ component: "ContractExecutor" })
-            },
-            this
-        );
+        this.contractExecutor = await executorCreation;
+        steps.mark("contractExecutor");
         this.localDeploySigner = new LocalContractExecutorSigner(
             signer,
             this.contractExecutor
@@ -325,6 +283,8 @@ export class P2pRuntimeHostRoot<
                 error
             });
         }
+        steps.mark("webRTCBridge");
+        steps.log(logger, "Runtime host start steps");
         reportRootStartupTiming({
             runtimeReadyMs: Date.now() - runtimeStartedAt,
             ...(threadLabel ? { runtimeThread: threadLabel } : {})
@@ -419,6 +379,100 @@ export class P2pRuntimeHostRoot<
         return this.runtimeHandle.stateManager.p2pManager;
     }
 
+    /**
+     * Connects to the chain, syncs the Clock and reads the channel manager's
+     * configuration; the Clock and the reads run in parallel. Answers the
+     * local EVM's call gas.
+     */
+    private async readChain(steps: StepTimer): Promise<bigint> {
+        const payload = this.payload;
+        const logger = this.rootLogger;
+        // Provider creation happens before the rest of the runtime graph exists,
+        // but its failure must still settle the paired client's `ready` promise.
+        this.chainContext = await createRuntimeChainContext(
+            payload.config,
+            payload.signerSecret,
+            logger
+        );
+        steps.mark("provider");
+        const { signer } = this.chainContext;
+        const signerAddress = (this.signerAddress = await signer.getAddress());
+        logger.updateSharedContext({
+            peerId: payload.peerId,
+            peerAddress: signerAddress
+        });
+
+        // Own this account's nonce so the peer's concurrent async flows can't collide
+        // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
+        // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
+        // the read-only Clock stay on the raw signer.
+        const chainSigner = (this.managedSigner = new HostNonceManager(
+            signer,
+            logger
+        ));
+
+        // Connect the managed signer to the state channel manager contract so every
+        // on-chain SCM send draws its nonce from the owned counter.
+        let connectedScmContract = connectStateChannelManager(
+            payload.scm.address,
+            chainSigner,
+            JSON.parse(payload.scm.abiJson) as InterfaceAbi
+        );
+        if (payload.config.DEBUG_CHANNEL_CONTRACT) {
+            connectedScmContract = DebugProxy.createProxy(connectedScmContract);
+        }
+        this.connectedScmContract = connectedScmContract;
+        this.stateMachineContract = new ethers.Contract(
+            payload.stateMachine.address,
+            JSON.parse(payload.stateMachine.abiJson),
+            signer
+        );
+
+        // Sync clock to DLT while the SCM proxy's configuration is read. A
+        // failed read still waits for the sync: the Clock then owns the
+        // provider, and disposal leaves it to the Clock instead of destroying
+        // it under the sync.
+        const [clockSync, reads] = await Promise.allSettled([
+            Clock.init(signer.provider!),
+            Promise.all([
+                connectedScmContract.getAllTimes(),
+                connectedScmContract.getGasLimit(),
+                connectedScmContract.getStateTransitionReplayGas(),
+                connectedScmContract.getMaxChannelParticipants()
+            ])
+        ]);
+        if (clockSync.status === "rejected") throw clockSync.reason;
+        if (reads.status === "rejected") throw reads.reason;
+        const [
+            configTimes,
+            disputeExecutionGasLimit,
+            stateTransitionReplayGas,
+            maxChannelParticipants
+        ] = reads.value;
+        const timeConfig: TimeConfig = (this.timeConfig = {
+            p2pTime: Number(configTimes[0]),
+            agreementTime: Number(configTimes[1]),
+            chainFallbackTime: Number(configTimes[2]),
+            evidenceTime: Number(configTimes[3])
+        });
+        this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
+        this.maxChannelParticipants = Number(maxChannelParticipants);
+        if (
+            !Number.isSafeInteger(this.maxChannelParticipants) ||
+            this.maxChannelParticipants < 1
+        ) {
+            throw new Error(
+                "Deployed maximum participant count is not a positive safe integer"
+            );
+        }
+        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
+        steps.mark("clockAndChannelManagerReads");
+        return localEvmCallGasLimit(
+            disputeExecutionGasLimit,
+            stateTransitionReplayGas
+        );
+    }
+
     private async buildRuntime(
         localStateMachineAddress: string,
         diamondStateMachineAddress: string
@@ -435,10 +489,14 @@ export class P2pRuntimeHostRoot<
         const logger = this.rootLogger;
         const remote = this.parent?.rpc;
         const handlerExecutionContext = this.handlerExecutionContext;
+        const steps = new StepTimer(
+            () => this.chainContext?.provider.requestCount ?? 0
+        );
         const customRpcResolved = await resolveCustomRpcConstructor<
             MainRpcService,
             unknown
         >(payload.customRpcManifest);
+        steps.mark("applicationModule");
 
         const { evmDiamondStateMachine } =
             await EvmDiamondStateMachine.createStandaloneFromLocalStateMachineWithExecutor(
@@ -450,6 +508,7 @@ export class P2pRuntimeHostRoot<
                 timeConfig,
                 disputeExecutionGasLimit
             );
+        steps.mark("stateMachine");
 
         const storage = new Storage(this.maxChannelParticipants);
 
@@ -505,6 +564,9 @@ export class P2pRuntimeHostRoot<
         }
 
         this.runtimeHandle = { stateManager, evmDiamondStateMachine };
+        steps.mark("stateManager");
         await stateManager.p2pManager.localRpc.ready();
+        steps.mark("applicationReady");
+        steps.log(logger, "Runtime build steps");
     }
 }
